@@ -10,6 +10,7 @@ if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($top) -ne $root) {
     throw 'Publish from the independent APIShared repository after exporting the reviewed workspace commit.'
 }
 $status = @(& git -C $root status --porcelain)
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the repository Git state.' }
 if ($status.Count -ne 0) { throw 'Commit the reviewed source changes before preparing a release.' }
 $manifest = [IO.File]::ReadAllText((Join-Path $root 'info.json')) | ConvertFrom-Json
 $version = [string]$manifest.Version
@@ -17,6 +18,9 @@ $parsed = $null
 if (-not [version]::TryParse($version, [ref]$parsed)) { throw 'Invalid APIShared version.' }
 $parsed = [version]::new($parsed.Major, $parsed.Minor, [Math]::Max(0, $parsed.Build), [Math]::Max(0, $parsed.Revision))
 $commit = (& git -C $root rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Could not determine the reviewed source commit.' }
+& gh api "repos/$repository/git/commits/$commit" --silent
+if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShared repository before preparing its release.' }
 $tag = "APIShared/v$version"
 & (Join-Path $root 'build.bat') /nopause /noinstall
 if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
