@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <ProjectGuid>{BE541927-B312-4938-BE28-F5868FE26743}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>APIShared</RootNamespace>
+    <AssemblyName>APIShared</AssemblyName>
+    <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);API_SHARED_LOBBY_OBSERVER;API_SHARED_INTERNAL_JSON;API_SHARED_INTERNAL_TOOLTIP</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <OutputPath>BepInEx\plugins\APIShared_Serp\</OutputPath>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <WarningLevel>4</WarningLevel>
+    <DocumentationFile>$(OutputPath)APIShared.xml</DocumentationFile>
+    <WarningsAsErrors>1591</WarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(GameDir)' == ''"><GameDir>E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition</GameDir></PropertyGroup>
+  <PropertyGroup Condition="'$(ExtenderDir)' == ''"><ExtenderDir>$(GameDir)\BepInEx\plugins\000shcdese</ExtenderDir></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="Iced"><HintPath>$(ExtenderDir)\Iced.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="com.rlabrecque.steamworks.net"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\com.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MonoMod.RuntimeDetour"><HintPath>$(GameDir)\BepInEx\core\MonoMod.RuntimeDetour.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Noesis.NoesisGUI"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\Noesis.NoesisGUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="R3"><HintPath>$(ExtenderDir)\R3.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)\SHCDESE.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MessagePack"><HintPath>$(ExtenderDir)\MessagePack.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MessagePack.Annotations"><HintPath>$(ExtenderDir)\MessagePack.Annotations.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Memory"><HintPath>$(ExtenderDir)\System.Memory.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions"><HintPath>$(ExtenderDir)\Microsoft.Extensions.Logging.Abstractions.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)\RedBird.Abstractions.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)\RedBird.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RedBird.X64"><HintPath>$(ExtenderDir)\RedBird.X64.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RedBird.Backends.NativeX64"><HintPath>$(ExtenderDir)\RedBird.Backends.NativeX64.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="src\UnitCommands\NativeDetourContracts.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="src\Core\Contracts.cs" />
+    <Compile Include="src\Core\ModApiClient.cs" />
+    <Compile Include="src\SerpsMods\SerpsModProfiles.cs" />
+    <Compile Include="src\Units\UnitAccess.cs" />
+    <Compile Include="src\Pathfinding\AssassinPathAPI.cs" />
+    <Compile Include="src\Pathfinding\AssassinAttackControlAPI.cs" />
+    <Compile Include="src\Pathfinding\AssassinAttackNativeContract.cs" />
+    <Compile Include="src\Pathfinding\AssassinRouteHandoff.cs" />
+    <Compile Include="src\Pathfinding\AssassinGateTransitionPolicy.cs" />
+    <Compile Include="src\Pathfinding\AssassinEndpointEmitter.cs" />
+    <Compile Include="src\Pathfinding\AssassinPathNativeDefinition.cs" />
+    <Compile Include="src\Buildings\GatehouseDrawbridgeCoupling.cs" />
+    <Compile Include="src\Buildings\BuildingRepairContracts.cs" />
+    <Compile Include="src\Buildings\BuildingRepairCapability.cs" />
+    <Compile Include="src\Units\LocalSelectionAPI.cs" />
+    <Compile Include="src\Units\MarkedUnitSelectionAPI.cs" />
+    <Compile Include="src\Players\PlayerPerspectiveAPI.cs" />
+    <Compile Include="src\GameModes\MissionModePolicy.cs" />
+    <Compile Include="src\Savegames\SavegameModSettings.cs" />
+    <Compile Include="src\GameModes\GameplayModModePolicy.cs" />
+    <Compile Include="src\SerpsMods\GameplayFeatureModePolicy.cs" />
+    <Compile Include="src\ModSettings\Internal\AtomicFileReplacement.cs" />
+    <Compile Include="src\Core\Internal\UnityMainThreadDispatch.cs" />
+    <Compile Include="src\UnitCommands\Internal\GroundMovePreviewEligibility.cs" />
+    <Compile Include="src\Core\Internal\DebugLogHelper.cs" />
+    <Compile Include="src\ModSettings\Internal\DependencyFreeJson.cs" />
+    <Compile Include="src\GameModes\Internal\PlayerIdentityHelper.cs" />
+    <Compile Include="src\Missions\Internal\MissionEventRelay.cs" />
+    <Compile Include="src\ModSettings\ModSettingsSearch.cs" />
+    <Compile Include="src\ModSettings\ToolTipPresentation.cs" />
+    <Compile Include="src\ModSettings\Internal\ToolTipPresentation.cs" />
+    <Compile Include="src\ModSettings\PresetLobbyModSettingsViewModel.cs" />
+    <Compile Include="src\ModSettings\PerPlayerLobbySettings.cs" />
+    <Compile Include="src\ModSettings\PresetLobbyModSettingsViewModel.Persistence.cs" />
+    <Compile Include="src\ModSettings\PresetLobbyModSettingsViewModel.Sources.cs" />
+    <Compile Include="src\ModSettings\LobbyModSettingsPresetRegistration.cs" />
+
+    <Compile Include="src\ModSettings\ModSettingsPresetDocuments.cs" />
+    <Compile Include="src\ModSettings\DynamicPresetSettings.cs" />
+    <Compile Include="src\ModSettings\ModSettingsApplication.cs" />
+    <Compile Include="src\Missions\MissionLifecycleContracts.cs" />
+    <Compile Include="src\Missions\MissionLifecycleState.cs" />
+    <Compile Include="src\Missions\MissionLifecycleCapability.cs" />
+    <Compile Include="src\Diagnostics\AivBuildStepContracts.cs" />
+    <Compile Include="src\Diagnostics\AiBuildDiagnostic.cs" />
+    <Compile Include="src\Lobby\LobbyStateContracts.cs" />
+    <Compile Include="src\Lobby\LobbyPreparationOverride.cs" />
+    <Compile Include="src\Pathfinding\ElevatedMoatAiState.cs" />
+    <Compile Include="src\Players\PlayerDefeatContracts.cs" />
+    <Compile Include="src\Players\PlayerDefeatState.cs" />
+    <Compile Include="src\Presentation\UnitHudContracts.cs" />
+    <Compile Include="src\Presentation\BriefingGoldContracts.cs" />
+    <Compile Include="src\Core\NativeInfrastructure.cs" />
+    <Compile Include="src\Core\UniquePatternSearch.cs" />
+    <Compile Include="src\Buildings\GatehouseDistanceOriginCapability.cs" />
+    <Compile Include="src\Pathfinding\EnemyGatePathPolicyBridge.cs" />
+    <Compile Include="src\Pathfinding\EnemyBridgeDiagnosticBridge.cs" /><Compile Include="src\Pathfinding\TemporaryGateRouteAcceptanceBridge.cs" />
+    <Compile Include="src\Buildings\GatehouseTimingCapability.cs" />
+    <Compile Include="src\Buildings\GatehousePermanentRuntimeState.cs" />
+    <Compile Include="src\Buildings\GatehouseAutomationNativeState.cs" />
+    <Compile Include="src\Presentation\UnitHudPresentationCapability.cs" />
+    <Compile Include="src\Presentation\BriefingGoldPresentationCapability.cs" />
+    <Compile Include="src\Diagnostics\AivBuildStepCapability.cs" />
+    <Compile Include="src\Lobby\LobbyStateCapability.cs" />
+    <Compile Include="src\Players\PlayerDefeatCapability.cs" />
+    <Compile Include="src\Core\ApiSharedRuntime.cs" />
+    <Compile Include="src\Core\Internal\NativePatternResolver.cs" />
+    <Compile Include="src\Buildings\Internal\GameBuildingFootprint.cs" />
+    <Compile Include="src\UnitCommands\Internal\TemporaryPackedRouteInspection.cs" />
+        <Compile Include="src\UnitCommands\AssassinSelectionAdapters.cs" />
+    <Compile Include="src\UnitCommands\CursorConnectivity.cs" />
+    <Compile Include="src\UnitCommands\CursorRegionGraph.cs" />
+    <Compile Include="src\UnitCommands\DirectMoatCommandScopes.cs" />
+    <Compile Include="src\UnitCommands\EnemyGatePolicyIntegration.cs" />
+    <Compile Include="src\UnitCommands\FillWeightedRoutes.cs" />
+    <Compile Include="src\UnitCommands\WeightedGridSearchKernel.cs" />
+    <Compile Include="src\UnitCommands\MoatCandidateField.cs" />
+    <Compile Include="src\UnitCommands\MoatModeFlagIntermediaryFactory.cs" />
+    <Compile Include="src\UnitCommands\MoatPlacement.cs" />
+    <Compile Include="src\UnitCommands\MoatPlacementSearch.cs" />
+    <Compile Include="src\UnitCommands\MoatWorkTargetSelection.cs" />
+    <Compile Include="src\UnitCommands\MovementOptionsSnapshot.cs" />
+    <Compile Include="src\UnitCommands\MovementPathPublication.cs" />
+    <Compile Include="src\UnitCommands\MovementSearchContext.cs" />
+    <Compile Include="src\UnitCommands\FormationModel.cs" />
+    <Compile Include="src\UnitCommands\FormationReleaseStateModel.cs" />
+    <Compile Include="src\UnitCommands\FormationPreviewMarkerModel.cs" />
+    <Compile Include="src\UnitCommands\FormationOrderPacket.cs" />
+    <Compile Include="src\UnitCommands\FormationPresentation.cs" />
+    <Compile Include="src\UnitCommands\FormationRuntime.cs" />
+    <Compile Include="src\UnitCommands\LargeMoveTargetMarkerRenderer.cs" />
+    <Compile Include="src\UnitCommands\LargeMoveTargetOverflowModel.cs" />
+    <Compile Include="src\UnitCommands\GroundMovePreviewAuthorization.cs" />
+    <Compile Include="src\UnitCommands\NativeFormationSlots.cs" />
+    <Compile Include="src\UnitCommands\NativeMovementCadenceResolver.cs" />
+    <Compile Include="src\UnitCommands\NativeMovementRecovery.cs" />
+    <Compile Include="src\UnitCommands\QueueNativeContract.cs" />
+    <Compile Include="src\UnitCommands\TemporaryGateRouteReporting.cs" />
+    <Compile Include="src\UnitCommands\UnitCommandPathRuntime.cs" />
+    <Compile Include="src\UnitCommands\UnitCommandPathRuntime.LadderAttackFix.cs" />
+    <Compile Include="src\UnitCommands\UnitMovementContext.cs" />
+    <Compile Include="src\UnitCommands\WeightedMoatPublication.cs" />
+    <Compile Include="src\UnitCommands\WeightedMoatRoutePlanner.cs" />
+    <Compile Include="src\UnitCommands\UnitCommandContracts.cs" />
+    <Compile Include="src\UnitCommands\UnitCommandPathAPI.cs" />
+    <Compile Include="src\UnitCommands\ManualUnitCommands.cs" />
+    <Compile Include="src\UnitCommands\ManualProbeRepairGuards.cs" />
+    <Compile Include="src\UnitCommands\PermanentCommandHooks.cs" />
+    <Compile Include="src\UnitCommands\TraversalDispatch.cs" />
+    <Compile Include="src\Core\APISharedPlugin.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Patches\**\*.xaml"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="info.json"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+  </ItemGroup>
+  <ItemGroup><Compile Include="src\UnitCommands\TraversalProvider.cs" /></ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(ExtenderDir)\SHCDESE.dll')" Text="SHCDESE.dll was not found: $(ExtenderDir)" />
+    <Error Condition="!Exists('$(ExtenderDir)\R3.dll')" Text="R3.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />
+    <Error Condition="!Exists('$(ExtenderDir)\Microsoft.Extensions.Logging.Abstractions.dll')" Text="Microsoft.Extensions.Logging.Abstractions.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />
+    <Error Condition="!Exists('$(ExtenderDir)\Iced.dll')" Text="Iced.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />
+    <Error Condition="!Exists('$(ExtenderDir)\RedBird.Abstractions.dll')" Text="RedBird.Abstractions.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />
+    <Error Condition="!Exists('$(ExtenderDir)\RedBird.Core.dll')" Text="RedBird.Core.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />
+    <Error Condition="!Exists('$(ExtenderDir)\RedBird.X64.dll')" Text="RedBird.X64.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />
+  </Target>
+</Project>
