@@ -4,6 +4,9 @@ Open an issue with a reproducible problem or submit a pull request against `main
 Describe the resulting behavior, affected contracts and tests you ran. Contributions
 can add services or reorganize implementation; the current folder layout is a guide,
 not a requirement. No AI tools or separate mod workspace are needed.
+Use the [feature implementation guide](ARCHITECTURE.md#finding-and-extending-a-feature)
+to locate contracts, services and hook owners. The HUD and formation services show
+how larger features keep registrations, behavior and hooks in named parts.
 
 ## Setup
 

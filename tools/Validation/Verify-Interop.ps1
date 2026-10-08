@@ -21,7 +21,7 @@ function Get-NativeSize($type) {
         }
     }
 }
-$source = [IO.File]::ReadAllText((Join-Path $apiRoot 'src\UnitCommands\FormationRuntime.cs')) + [IO.File]::ReadAllText((Join-Path $apiRoot 'src\Units\UnitAccess.cs'))
+$source = ((Get-ChildItem -LiteralPath (Join-Path $apiRoot 'src\UnitCommands\Formation') -File -Filter 'FormationRuntime.*.cs' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n") + [IO.File]::ReadAllText((Join-Path $apiRoot 'src\Units\UnitAccess.cs'))
 $consumed = @([regex]::Matches($source, '\br_\w+') | ForEach-Object Value | Sort-Object -Unique)
 $rows = @()
 $expected = @{
