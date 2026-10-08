@@ -39,6 +39,10 @@ The full driver validates runtime contracts and installed interop, runs all suit
 compiles public consumer examples and prepares the plugin package. Remove `/noinstall`
 to install it after closing the game; elevation is only needed for protected directories.
 TRX results from the driver are stored in `.local/test-results`.
+Successful builds also write `.local/build-proof.json`: source/reference fingerprints,
+the source commit and package hashes. `tools/BuildProof.ps1` validates this local evidence;
+it does not attest provenance independently. Game-free build-evidence tests run with
+`./tools/Validation/Test-BuildProof.ps1` and in CI.
 
 Core tests compile the actual dependency-free implementations. UnitAccess doubles model
 the external SDK boundary, not native layout. Runtime tests use the real installed
@@ -67,5 +71,5 @@ changing native behavior and the [API catalog](docs/API_CATALOG.md) for threadin
 
 Releases are prepared from a reviewed, committed and pushed standalone checkout:
 `release.bat` builds and creates a GitHub draft. Version bumps belong to release preparation,
-not test iterations. Community commits are explicitly imported into the maintainer's
-mod workspace; this does not impose workspace tools on contributors.
+not test iterations. The maintainer's mod workspace pins a reviewed commit using a Git submodule;
+contributors work in this repository with ordinary branches and pull requests.

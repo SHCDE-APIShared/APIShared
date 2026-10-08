@@ -16,6 +16,9 @@ jobs:
       - name: Validate sources and metadata
         shell: pwsh
         run: ./tools/Validation/Test-Standalone.ps1 -SourceOnly
+      - name: Validate build evidence contracts
+        shell: pwsh
+        run: ./tools/Validation/Test-BuildProof.ps1
       - name: Run game-independent tests
         run: dotnet test tests/Core.Tests/Core.Tests.csproj --configuration Release --logger trx --results-directory TestResults
       - uses: actions/upload-artifact@v7

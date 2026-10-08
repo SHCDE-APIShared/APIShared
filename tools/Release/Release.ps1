@@ -7,7 +7,7 @@ $identity = (& gh api user --jq .login).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $identity) { throw 'Sign in with gh auth login first.' }
 $top = (& git -C $root rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($top) -ne $root) {
-    throw 'Publish from the independent APIShared repository after exporting the reviewed workspace commit.'
+    throw 'Publish from the APIShared Git checkout (standalone or submodule).'
 }
 $status = @(& git -C $root status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the repository Git state.' }
@@ -24,6 +24,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShar
 $tag = "APIShared/v$version"
 & (Join-Path $root 'build.bat') /nopause /noinstall
 if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
+. (Join-Path $root 'tools/BuildProof.ps1')
+$null = Assert-ApiBuildProof $root -Release
 $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
 $dll = Join-Path $package 'APIShared.dll'
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Version -ne $parsed) { throw 'Assembly and manifest versions differ.' }
