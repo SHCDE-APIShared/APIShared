@@ -274,7 +274,7 @@ namespace APIShared
 
         private void OnBeforeRender()
         {
-            if (activeSurfaces == UnitHudSurface.None && !pendingPresentation && !refreshRequested && recruitmentLease == null) return;
+            if (activeSurfaces == UnitHudSurface.None && !hasActionButtons && !pendingPresentation && !refreshRequested && recruitmentLease == null) return;
             if (lastFrame == Time.frameCount) return;
             lastFrame = Time.frameCount;
             ExpireRecruitment();
@@ -299,6 +299,7 @@ namespace APIShared
                 pendingPresentation = false;
             }
             RestorePresentation(main, restore, images);
+            TryApplyFrameArea("own-troop action buttons", () => ApplyActionButtons(main), FailClosedActionButtons);
             TryApplyFrameArea("refresh", () =>
             {
                 bool troopSelectionChanged = main?.Show_HUD_Troops == true &&

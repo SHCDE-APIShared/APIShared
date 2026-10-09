@@ -128,7 +128,10 @@ namespace APIShared
             recruitmentGameActionOriginal = recruitmentGameActionHook.GenerateTrampoline<RecruitmentGameActionDelegate>();
             recruitmentGameActionHook.Apply();
             APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
-            mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => ResetRecruitment());
+            mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => {
+                ResetRecruitment();
+                ResetActionButtonPresentation();
+            });
             UnityEngine.Application.onBeforeRender += OnBeforeRender;
         }
 

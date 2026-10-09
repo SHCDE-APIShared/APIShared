@@ -1,5 +1,36 @@
 # API catalog
 
+## Own-troop action buttons
+
+Acquire the owner-bound HUD service with `ModApiClient.TryGetUnitHudPresentation`,
+then test for the optional `IUnitHudActionButtonsCapability` interface.
+`TryRegisterActionButton` accepts an owner-local ID, command, nonempty localized
+tooltip, content factory and optional sort order (default `0`). It returns a
+process-lived logical handle for visibility, enabled state, tooltip updates and
+content refresh. No consumer supplies screen coordinates. Duplicate owner-local
+IDs are rejected; the same ID under a different owner is independent.
+
+Active visible entries are sorted by ascending order, then ordinal owner GUID
+and button ID, and placed right to left beside Vanilla's Control Groups button.
+Hidden entries consume no slots. A small arrow to its right cycles pages when
+the measured space is insufficient. Owner activation applies to these entries
+as well as existing HUD contributions.
+
+Content factories run on the Unity thread outside the registration lock and
+must return fresh unattached content fitting 35 by 35 HUD units. They run again
+after explicit refresh, HUD replacement or player/colour changes; the context
+contains the current HUD resource scope and the remapped Vanilla player colour.
+Factory failures hide that entry until refresh or a context change and do not
+stop other entries. Commands are reauthorized and exception-isolated at execution.
+No implicit network command is sent: consumers retain their own multiplayer policy.
+
+The strip is restricted to a nonempty local selection in the interactive Vanilla
+troop container. Replacement foreign-unit displays cannot enable it merely by
+setting `Show_HUD_Troops`. Context notifications report availability changes
+(including owner/button visibility changes), not page changes; hover notifications
+include hiding hovered entries. These optional callbacks also run on the Unity
+thread, outside locks, with exception isolation. Registrations have no hook teardown.
+
 Capabilities are acquired through `ModApiClient` or `IApiShared`. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
 
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |

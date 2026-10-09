@@ -1,5 +1,24 @@
 # Third-party integration guide
 
+## Adding an own-troop HUD button
+
+Use the existing owner-bound Unit HUD capability and cast it to
+`IUnitHudActionButtonsCapability` (see `examples/ThirdPartyMod/HudExample.cs`).
+Register a stable button ID, command, localized tooltip and a factory returning
+fresh Noesis content no larger than 35 by 35 HUD units. Optional `order` controls
+sorting; equal orders use mod GUID and button ID, independently of loading order.
+Keep the returned registration in your process-owned runtime. Use `SetVisible`,
+`SetEnabled`, `SetTooltip` and `RequestContentRefresh` to update it; do not dispose
+the shared HUD or hooks. The optional owner-activation interface also applies.
+
+APIShared handles placement, paging, own-selection authorization and HUD replacement.
+Use the factory context's remapped `PlayerColour` rather than assuming that player
+ID equals colour. Factories, context/hover callbacks and commands run on the Unity
+thread with exception isolation. They must not block. The optional context callback
+can close a consumer popup when the own HUD becomes unavailable. A foreign display,
+empty selection or spectator has no action-button context. Consumers still own
+network synchronization and gameplay authorization for any command they implement.
+
 ## Initialization and ownership
 
 Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client, logger, settings and callbacks in a static runtime or a long-lived publisher. Register managed lifecycle services from `Awake`, after the hard APIShared dependency has initialized. Acquire native services in `WhenReady`. Never treat a native failure as proof that all managed services failed.

@@ -173,7 +173,9 @@ namespace APIShared
         {
             lock (sync)
             {
-                if (!OwnerActive(owner) || (!categoryView.Any(x => x.Owner == owner) && !imageView.Any(x => x.Owner == owner))) return;
+                if (!OwnerActive(owner) || (!categoryView.Any(x => x.Owner == owner) && !imageView.Any(x => x.Owner == owner) &&
+                    !actionButtons.Any(x => x.Owner == owner && x.Visible))) return;
+                foreach (var item in actionButtons.Where(x => x.Owner == owner)) item.Version++;
                 refreshRequested = true;
                 pendingPresentation = true;
             }
@@ -201,11 +203,14 @@ namespace APIShared
         private static NativeCapabilityDiagnostic Available(string reason) =>
             new NativeCapabilityDiagnostic(NativeCapabilityIds.UnitHudPresentation, NativeCapabilityState.Available, ApiSharedRuntime.SupportedHash, reason);
 
-        private sealed class Binding : IUnitHudPresentationCapability, IUnitHudActivationCapability
+        private sealed class Binding : IUnitHudPresentationCapability, IUnitHudActivationCapability, IUnitHudActionButtonsCapability
         {
             private readonly UnitHudPresentationService service;
             private readonly string owner;
             internal Binding(UnitHudPresentationService service, string owner) { this.service = service; this.owner = owner; }
+            public bool TryRegisterActionButton(UnitHudActionButtonDefinition definition,
+                out IUnitHudActionButtonRegistration registration, out NativeCapabilityDiagnostic diagnostic) =>
+                service.RegisterActionButton(owner, definition, out registration, out diagnostic);
             public bool TryRegisterCategory(UnitHudCategoryDefinition definition, UnitHudCategoryMatcher matcher, out NativeCapabilityDiagnostic diagnostic) => service.RegisterCategory(owner, definition, matcher, out diagnostic);
             public bool TryRegisterInteraction(string registrationId, UnitHudInteractionHandler handler, out NativeCapabilityDiagnostic diagnostic) => service.RegisterInteraction(owner, registrationId, handler, out diagnostic);
             public bool TryRegisterImageOverride(UnitHudImageOverrideDefinition definition, UnitHudImageOverrideResolver resolver, out NativeCapabilityDiagnostic diagnostic) => service.RegisterImage(owner, definition, resolver, out diagnostic);

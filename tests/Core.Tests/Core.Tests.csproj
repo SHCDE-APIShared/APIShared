@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Presentation/UnitHud/UnitHudActionButtonLayout.cs" Link="Production/UnitHudActionButtonLayout.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchContracts.cs" Link="Production/RouteSearchContracts.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchEvents.cs" Link="Production/RouteSearchEvents.cs" />
     <Compile Include="../../src/GameModes/CustomizedLaunchOrigins.cs" Link="Production/CustomizedLaunchOrigins.cs" />

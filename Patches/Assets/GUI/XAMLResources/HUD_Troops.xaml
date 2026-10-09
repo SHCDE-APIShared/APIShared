@@ -1,5 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Operation Type="Add" XPath="//n:UserControl.Resources">
+    <Content>
+      <Style x:Key="APISharedTroopActionButtonStyle" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type Button}">
+          <ContentPresenter x:Name="Icon" Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.9"/>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Icon" Property="Opacity" Value="1"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Icon" Property="Opacity" Value="0.7"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Icon" Property="Opacity" Value="0.4"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+      </Style>
+    </Content>
+  </Operation>
+  <Operation Type="Add" XPath="//n:Grid[@Name='TroopSelectionControls']">
+    <Content>
+      <Canvas x:Name="APISharedTroopActionButtonsHost" Visibility="Collapsed" Panel.ZIndex="40">
+        <Button x:Name="APISharedTroopActionButtonsNext" Width="22" Height="22" Visibility="Collapsed" ToolTip="Next page" ToolTipService.ShowDuration="60000">
+          <Button.Template><ControlTemplate TargetType="{x:Type Button}">
+            <Grid x:Name="ArrowVisual" Opacity="0.58">
+              <Ellipse Fill="#D98A00"/>
+              <Path Width="14" Height="10" Fill="#E6000000" Stretch="Fill" Data="M 0,3 L 5,3 L 5,0 L 14,5 L 5,10 L 5,7 L 0,7 Z"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ArrowVisual" Property="Opacity" Value="0.78"/></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="ArrowVisual" Property="Opacity" Value="0.90"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate></Button.Template>
+        </Button>
+      </Canvas>
+    </Content>
+  </Operation>
   <Operation Type="Add" XPath="//n:Grid[@Name='TroopSelectionControls']">
     <Content>
       <Grid x:Name="APISharedUnitHudCategoryHost">
