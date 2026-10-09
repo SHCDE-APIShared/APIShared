@@ -4,7 +4,8 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace APIShared
-{    internal enum NativeReservationMode
+{
+    internal enum NativeReservationMode
     {
         Exclusive
     }

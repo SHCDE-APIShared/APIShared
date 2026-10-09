@@ -24,7 +24,8 @@ using System.Text;
 namespace APIShared.UnitCommands
 {
     internal sealed unsafe partial class UnitCommandPathRuntime : IDisposable
-    {        // Detailed command traces are opt-in diagnostics, not production logging.
+    {
+        // Detailed command traces are opt-in diagnostics, not production logging.
         internal static readonly bool DetailedDiagnosticsEnabled = false;
 
         internal const int CentralMovementPlanRva = 0x18E1E0;

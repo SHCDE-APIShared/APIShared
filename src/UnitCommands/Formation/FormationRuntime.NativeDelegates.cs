@@ -25,7 +25,8 @@ using UnityEngine;
 namespace APIShared.UnitCommands
 {
     internal sealed unsafe partial class FormationRuntime
-    {        private delegate int EngineRunDelegate(bool mpFrameSkip);
+    {
+        private delegate int EngineRunDelegate(bool mpFrameSkip);
         private delegate void CameraUpdateDelegate(CameraControls2D self);
 
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]

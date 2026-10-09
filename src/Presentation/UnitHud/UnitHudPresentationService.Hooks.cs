@@ -17,7 +17,8 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace APIShared
-{    internal sealed unsafe partial class UnitHudPresentationService
+{
+    internal sealed unsafe partial class UnitHudPresentationService
     {
         private delegate void SetupTroopsDelegate(HUD_Troops self);
         private delegate void TroopClickDelegate(MainViewModel self, object parameter);

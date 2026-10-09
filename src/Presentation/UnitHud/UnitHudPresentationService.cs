@@ -17,8 +17,10 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace APIShared
-{    internal sealed unsafe partial class UnitHudPresentationService
-    {        private const int TroopSlotCount = 8;
+{
+    internal sealed unsafe partial class UnitHudPresentationService
+    {
+        private const int TroopSlotCount = 8;
         private const int GroupCount = 10;
         private const int GroupCapacity = 10000;
         private const int GroupRecordWidth = 2;

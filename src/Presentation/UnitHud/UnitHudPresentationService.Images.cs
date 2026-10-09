@@ -17,7 +17,8 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace APIShared
-{    internal sealed unsafe partial class UnitHudPresentationService
+{
+    internal sealed unsafe partial class UnitHudPresentationService
     {
         private void ApplyImageOverrides(MainViewModel self, int colour, bool arabic)
         {
