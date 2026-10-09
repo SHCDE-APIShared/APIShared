@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonLayout.cs" Link="Production/HudExtrasButtonLayout.cs" />
+    <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonContracts.cs" Link="Production/HudExtrasButtonContracts.cs" />
+    <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonsService.cs" Link="Production/HudExtrasButtonsService.cs" />
+    <Compile Include="../../src/Presentation/UnitHud/UnitHudHoverTextPresenter.cs" Link="Production/UnitHudHoverTextPresenter.cs" />
     <Compile Include="../../src/Presentation/UnitHud/UnitHudActionButtonLayout.cs" Link="Production/UnitHudActionButtonLayout.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchContracts.cs" Link="Production/RouteSearchContracts.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchEvents.cs" Link="Production/RouteSearchEvents.cs" />
@@ -13,4 +17,5 @@
     <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
   </ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_Troops.xaml" Link="Fixtures/HUD_Troops.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Patches/Assets/GUI/XAML/IngameUIScreens.xaml" Link="Fixtures/IngameUIScreens.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

@@ -62,6 +62,7 @@ namespace APIShared
                         Button button = categoryButtons[slot];
                         button.Tag = entry.Category.Key;
                         button.ToolTip = ResolveText(entry.Category, UnitHudTextKind.DisplayName);
+                        if (button.IsMouseOver) ShowTroopHover(button, button.ToolTip as string);
                         host.RenderTransform = positions[slot];
                         ImageSource source = ResolveCategoryImage(entry.Category, UnitHudSurface.TroopSelection, panel);
                         ApplyTroopButtonImages(button, entry.Category, panel, source);
@@ -140,6 +141,9 @@ namespace APIShared
             }
             foreach (Button button in resolvedButtons)
             {
+                ToolTipService.SetIsEnabled(button, false);
+                button.MouseEnter += (sender, args) => ShowTroopHover(button, button.ToolTip as string);
+                button.MouseLeave += (sender, args) => troopHover.Close(button);
                 button.PreviewMouseDown -= OnCategoryMouseDown;
                 button.PreviewMouseDown += OnCategoryMouseDown;
             }

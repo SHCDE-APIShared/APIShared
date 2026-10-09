@@ -30,6 +30,9 @@ namespace Core.Tests
             var hostOperation = patch.Elements().Single().Elements().Single(e => e.Descendants().Any(child =>
                 child.Name.LocalName == "Canvas" && child.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == "APISharedTroopActionButtonsHost")));
             Assert.AreEqual("//n:Grid[@Name='TroopSelectionControls']", (string)hostOperation.Attribute("XPath"));
+            var next = hostOperation.Descendants().Single(e => e.Name.LocalName == "Button");
+            Assert.AreEqual("False", (string)next.Attribute("ToolTipService.IsEnabled"));
+            Assert.IsNull(next.Attribute("ToolTip"), "Action paging must not create a popup.");
         }
         [TestMethod]
         public void FitsOnlyWholeButtonsWithGaps()

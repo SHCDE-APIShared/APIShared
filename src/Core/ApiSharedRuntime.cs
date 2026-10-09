@@ -17,6 +17,7 @@ namespace APIShared
         private GatehouseDistanceOriginService gatehouseDistanceOrigin;
         private GatehouseTimingService gatehouse;
         private UnitHudPresentationService unitHudPresentation;
+        private HudExtrasButtonsService hudExtrasButtons;
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
@@ -72,6 +73,11 @@ namespace APIShared
             {
                 MarkedUnitSelectionAPI.Initialize(logger);
                 PlayerPerspectiveAPI.Initialize(logger);
+                if (hudExtrasButtons == null)
+                {
+                    hudExtrasButtons = new HudExtrasButtonsService(logger);
+                    hudExtrasButtons.Start();
+                }
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
                 if (briefingGoldDiagnostic.State == NativeCapabilityState.Pending)
@@ -263,6 +269,24 @@ namespace APIShared
                 capability = unitHudPresentation.Bind(ownerGuid);
                 diagnostic = unitHudDiagnostic;
                 return true;
+            }
+        }
+
+        internal bool TryGetHudExtrasButtons(string ownerGuid, out IHudExtrasButtonsCapability capability, out NativeCapabilityDiagnostic diagnostic)
+        {
+            capability = null;
+            if (string.IsNullOrWhiteSpace(ownerGuid))
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.HudExtrasButtons, NativeCapabilityState.ValidationFailed,
+                    string.Empty, "A nonempty owner GUID is required."); return false;
+            }
+            lock (sync)
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.HudExtrasButtons,
+                    hudExtrasButtons == null ? NativeCapabilityState.Pending : NativeCapabilityState.Available, string.Empty,
+                    hudExtrasButtons == null ? "Managed presentation is not initialized." : "Independent side-HUD presentation is available.");
+                if (hudExtrasButtons == null) return false;
+                capability = hudExtrasButtons.Bind(ownerGuid); return true;
             }
         }
 

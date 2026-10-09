@@ -1,5 +1,13 @@
 # Third-party integration guide
 
+## Adding a side-HUD button
+
+Use `ModApiClient.TryGetHudExtrasButtons`, then `IHudExtrasButtonsCapability.TryRegisterButton` with a `HudExtrasButtonDefinition` (see `HudExample.RegisterSideButtons`). Return a fresh unattached Noesis Button, using `context.Hud.TryFindResource` for Vanilla styles/sprites. APIShared controls its 36 x 34 size, position, command and availability; the command parameter is the actual Button. Do not retain the HUD context or calculate button coordinates.
+
+Keep the returned handle in your process-owned runtime. `SetVisible` removes an entry from layout, `SetEnabled` blocks its command, `SetTooltip` updates localized text, and `RequestContentRefresh` rebuilds button/tooltip or retries a failed factory. `SetOwnerActive` applies to all this owner's entries. Buttons are sorted by order (default 0), then ordinal GUID and ID, bottom to top; five entries appear per page with a cycling arrow. Vanilla HUD hiding and its reserved button slot are inherited automatically.
+
+Nonempty text gets the modoptions popup style by default; empty text creates no popup. To deliberately supply a different presentation, pass `tooltipFactory`, returning a fresh ToolTip with explicit Style or Template. APIShared sets Content to the current localized text and duration to 60000 ms. Factories and commands run on the Unity thread and must not block; exceptions are isolated. Side-HUD actions do not require troop selection, and consumers retain their own gameplay/network authorization.
+
 ## Adding an own-troop HUD button
 
 Use the existing owner-bound Unit HUD capability and cast it to
@@ -18,6 +26,8 @@ thread with exception isolation. They must not block. The optional context callb
 can close a consumer popup when the own HUD becomes unavailable. A foreign display,
 empty selection or spectator has no action-button context. Consumers still own
 network synchronization and gameplay authorization for any command they implement.
+
+Action-button descriptions and page-arrow text appear only at the Vanilla troop rollover location. `SetTooltip` updates that description; it does not create a Noesis popup. Category and recruitment-variant descriptions also use Vanilla rollover text. Mod-owned popup tooltips elsewhere must explicitly use the mod-options style, never the default lion-frame template.
 
 ## Initialization and ownership
 

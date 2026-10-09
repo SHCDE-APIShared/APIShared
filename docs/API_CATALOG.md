@@ -1,12 +1,24 @@
 # API catalog
 
+Own-troop action-button descriptions and page-arrow text appear only at the Vanilla troop rollover location. `SetTooltip` updates that description; it does not create a Noesis popup. Category and recruitment-variant descriptions also use Vanilla rollover text. Side-HUD buttons use the mod-options popup style by default and optionally accept an explicitly styled custom tooltip; they never implicitly fall back to the lion-frame template.
+
+## Side-HUD buttons
+
+`ModApiClient.TryGetHudExtrasButtons` acquires `IHudExtrasButtonsCapability` independently of native Unit HUD hooks or troop selection. `TryRegisterButton` accepts `HudExtrasButtonDefinition`: owner-local ID, command, localized popup text, fresh Noesis Button factory, order (default 0), and optional ToolTip factory. Registration is process-lived; duplicate owner-local IDs are rejected. Existing `IApiShared` interfaces remain unchanged.
+
+APIShared places 36 x 34 buttons bottom to top inside Vanilla's `HUD_ObjectivesPanel`, reserving its Objectives/Freebuild slot. Visible active entries sort by ascending order, then ordinal owner GUID and ID. Five entries fit each page; an arrow above them cycles pages. Hidden and failed entries occupy no slots. Parent containers gate pages and activation because Vanilla's button style animates Button.Visibility.
+
+Handles expose `SetVisible`, `SetEnabled`, `SetTooltip`, and `RequestContentRefresh`; the owner capability exposes `SetOwnerActive`. Commands are rechecked against current owner/button/HUD availability and receive the actual Button. Factories and commands execute on the Unity thread outside registry locks; exceptions isolate the entry. HUD replacement recreates visuals. This API does not impose local-troop selection or multiplayer gameplay authorization.
+
+Default popups use the existing modoptions template, including Script Extender resolution scaling and a 60000 ms duration. Empty text suppresses the popup. An optional tooltip factory must return a fresh unattached ToolTip with explicit Style or Template; APIShared sets its Content to the current text and preserves that custom presentation. `RequestContentRefresh` retries factory failures. No screen coordinates or hook lifetimes are exposed.
+
 ## Own-troop action buttons
 
 Acquire the owner-bound HUD service with `ModApiClient.TryGetUnitHudPresentation`,
 then test for the optional `IUnitHudActionButtonsCapability` interface.
 `TryRegisterActionButton` accepts an owner-local ID, command, nonempty localized
 tooltip, content factory and optional sort order (default `0`). It returns a
-process-lived logical handle for visibility, enabled state, tooltip updates and
+process-lived logical handle for visibility, enabled state, Vanilla rollover text updates and
 content refresh. No consumer supplies screen coordinates. Duplicate owner-local
 IDs are rejected; the same ID under a different owner is independent.
 

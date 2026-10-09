@@ -47,6 +47,8 @@ namespace APIShared
         public const string GatehouseAutomation = "gatehouse-automation";
         /// <summary>Capability for shared unit HUD categories and image overrides.</summary>
         public const string UnitHudPresentation = "unit-hud-presentation";
+        /// <summary>Capability for independent bottom-to-top side-HUD buttons.</summary>
+        public const string HudExtrasButtons = "hud-extras-buttons";
         /// <summary>Capability for observing the process-wide AIV build-step function.</summary>
         public const string AivBuildStep = "aiv-build-step";
         /// <summary>Capability for observing the process-wide multiplayer lobby state.</summary>

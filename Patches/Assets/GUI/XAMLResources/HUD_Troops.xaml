@@ -20,7 +20,7 @@
   <Operation Type="Add" XPath="//n:Grid[@Name='TroopSelectionControls']">
     <Content>
       <Canvas x:Name="APISharedTroopActionButtonsHost" Visibility="Collapsed" Panel.ZIndex="40">
-        <Button x:Name="APISharedTroopActionButtonsNext" Width="22" Height="22" Visibility="Collapsed" ToolTip="Next page" ToolTipService.ShowDuration="60000">
+        <Button x:Name="APISharedTroopActionButtonsNext" Width="22" Height="22" Visibility="Collapsed" ToolTipService.IsEnabled="False">
           <Button.Template><ControlTemplate TargetType="{x:Type Button}">
             <Grid x:Name="ArrowVisual" Opacity="0.58">
               <Ellipse Fill="#D98A00"/>

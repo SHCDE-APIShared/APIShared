@@ -32,7 +32,7 @@ namespace APIShared
         public string ButtonId { get; }
         /// <summary>Command rechecked against the current own selection immediately before execution.</summary>
         public ICommand Command { get; }
-        /// <summary>Nonempty localized tooltip, displayed for 60000 ms.</summary>
+        /// <summary>Nonempty localized description shown at the Vanilla troop rollover location, never as a popup.</summary>
         public string Tooltip { get; }
         /// <summary>Creates fresh unattached content, at most 35 by 35 HUD units. Exceptions isolate this entry.</summary>
         public Func<UnitHudActionButtonContext, FrameworkElement> ContentFactory { get; }

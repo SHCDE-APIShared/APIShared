@@ -17,6 +17,9 @@ namespace APIShared
         private Canvas actionHost;
         private FrameworkElement actionControls;
         private Button actionNext;
+        private readonly UnitHudHoverTextPresenter troopHover = new UnitHudHoverTextPresenter();
+        private bool actionNextHovered;
+        private string actionNextText;
         private int actionPage;
         private int actionCapacity;
         private int actionVisibleCount;
@@ -77,12 +80,12 @@ namespace APIShared
 
         private void ApplyActionButtons(MainViewModel main)
         {
-            if (!hasActionButtons) return;
+            if (!hasActionButtons) { if (!TryGetActionContext(main, out _)) troopHover.Close(); return; }
             ActionButtonState[] states = CaptureActionButtons();
             bool ownContext = TryGetActionContext(main, out UnitHudActionButtonContext context);
             foreach (ActionButtonState state in states)
                 NotifyActionContext(state.Registration, ownContext && state.Visible);
-            if (!ownContext) { HideActionButtons(); return; }
+            if (!ownContext) { HideActionButtons(true); return; }
             EnsureActionHost(main.HUDTroopPanel);
             var anchor = main.HUDTroopPanel.FindName("ToggleControlGroups") as FrameworkElement;
             if (anchor == null || anchor.ActualWidth <= 0 || actionControls.ActualWidth <= 0)
@@ -118,7 +121,8 @@ namespace APIShared
                     if (visual.Failed) continue;
                     Button button = visual.Button;
                     button.IsEnabled = state.Enabled;
-                    ToolTipService.SetToolTip(button, state.Tooltip);
+                    if (!state.Enabled) SetActionHover(state.Registration, false);
+                    else if (state.Registration.Hovered) ShowTroopHover(state.Registration, state.Tooltip);
                     Canvas.SetLeft(button, anchorRect.X - UnitHudActionButtonLayout.Pitch * (index - start + 1));
                     Canvas.SetTop(button, anchorRect.Y);
                     button.Visibility = Visibility.Visible;
@@ -133,11 +137,13 @@ namespace APIShared
                     SetActionHover(pair.Key, false);
                 }
             bool overflow = UnitHudActionButtonLayout.PageCount(visible.Length, actionCapacity) > 1;
-            ToolTipService.SetToolTip(actionNext, (actionPage + 1) + " / " +
-                UnitHudActionButtonLayout.PageCount(visible.Length, actionCapacity) + " →");
+            actionNextText = (actionPage + 1) + " / " +
+                UnitHudActionButtonLayout.PageCount(visible.Length, actionCapacity) + " →";
             Canvas.SetLeft(actionNext, anchorRect.X + anchorRect.Width + 4);
             Canvas.SetTop(actionNext, anchorRect.Y + 6.5f);
             actionNext.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
+            if (actionNextHovered && overflow) ShowTroopHover(actionNext, actionNextText);
+            if (!overflow) { actionNextHovered = false; troopHover.Close(actionNext); }
         }
 
         internal static float ReserveActionObstacle(Type elementType, Rect anchor, Rect obstacle, float leftBoundary)
@@ -171,6 +177,9 @@ namespace APIShared
             actionNext = panel.FindName("APISharedTroopActionButtonsNext") as Button;
             if (actionHost == null || actionControls == null || actionNext == null)
                 throw new MissingMemberException("APIShared own-troop action XAML host is unavailable.");
+            ToolTipService.SetIsEnabled(actionNext, false);
+            actionNext.MouseEnter += (sender, args) => { actionNextHovered = true; ShowTroopHover(actionNext, actionNextText); };
+            actionNext.MouseLeave += (sender, args) => { actionNextHovered = false; troopHover.Close(actionNext); };
             actionNext.Click += (sender, args) => {
                 if (!MainViewModel.viewModelLoaded || !TryGetActionContext(MainViewModel.Instance, out _)) return;
                 actionPage = UnitHudActionButtonLayout.NextPage(actionPage, actionVisibleCount, actionCapacity);
@@ -187,7 +196,7 @@ namespace APIShared
                 var button = new Button { Width = 35, Height = 35, Padding = new Thickness(0),
                     Visibility = Visibility.Collapsed, Style = actionPanel.TryFindResource("APISharedTroopActionButtonStyle") as Style,
                     Command = new ActionButtonCommand(this, registration) };
-                ToolTipService.SetShowDuration(button, 60000);
+                ToolTipService.SetIsEnabled(button, false);
                 button.MouseEnter += (_, __) => SetActionHover(registration, true);
                 button.MouseLeave += (_, __) => SetActionHover(registration, false);
                 visual = new ActionButtonVisual(button);
@@ -234,14 +243,18 @@ namespace APIShared
                 FailClosedActionButtons();
                 actionVisuals.Clear();
                 actionPanel = null; actionHost = null; actionControls = null; actionNext = null;
+                troopHover.Close();
+                recruitmentHover.Close();
                 actionPage = 0; actionCapacity = 0; actionVisibleCount = 0;
             });
         }
 
-        private void HideActionButtons()
+        private void HideActionButtons(bool closeAllHover = false)
         {
             if (actionHost != null) actionHost.Visibility = Visibility.Collapsed;
             if (actionNext != null) actionNext.Visibility = Visibility.Collapsed;
+            actionNextHovered = false;
+            if (closeAllHover) troopHover.Close(); else if (actionNext != null) troopHover.Close(actionNext);
             foreach (var pair in actionVisuals)
             {
                 pair.Value.Button.Visibility = Visibility.Collapsed;
@@ -259,12 +272,35 @@ namespace APIShared
 
         private void SetActionHover(ActionButtonRegistration item, bool hovered)
         {
+            if (hovered) lock (sync) if (!item.Visible || !item.Enabled || !OwnerActive(item.Owner)) hovered = false;
             if (item.Hovered == hovered) return;
             item.Hovered = hovered;
+            try { if (hovered) ShowTroopHover(item, item.Tooltip); else troopHover.Close(item); }
+            catch (Exception ex) { LogCallbackFailure("action rollover " + item.Key, ex); }
             try { item.Definition.HoverChanged?.Invoke(hovered); }
             catch (Exception ex) { LogCallbackFailure("action hover " + item.Key, ex); }
         }
 
+        private void ShowTroopHover(object origin, string text)
+        {
+            if (!MainViewModel.viewModelLoaded) return;
+            MainViewModel main = MainViewModel.Instance;
+            if (!TryGetActionContext(main, out _) || main.HUDTroopPanel.RefTroopsPanelRollover == null) return;
+            HUD_Troops panel = main.HUDTroopPanel;
+            troopHover.Show(panel, origin, text, () => ReferenceEquals(main.HUDTroopPanel, panel) ? main.TroopsPanelRollover : null,
+                value => {
+                    main.TroopsPanelRollover = value;
+                    main.TroopsPanelRollover_AmountReq1 = string.Empty;
+                    main.TroopsPanelRollover_AmountGot1 = string.Empty;
+                    main.TroopsPanelRollover_GoodsImage1 = null;
+                    panel.RefTroopsPanelRollover.Visibility = Visibility.Visible;
+                    if (panel.RefTroopsPanelRollover2 != null) panel.RefTroopsPanelRollover2.Visibility = Visibility.Hidden;
+                },
+                () => {
+                    panel.RefTroopsPanelRollover.Visibility = Visibility.Hidden;
+                    if (panel.RefTroopsPanelRollover2 != null) panel.RefTroopsPanelRollover2.Visibility = Visibility.Hidden;
+                });
+        }
         private sealed class ActionButtonCommand : ICommand
         {
             private readonly UnitHudPresentationService service;

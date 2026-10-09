@@ -1,9 +1,12 @@
 [CmdletBinding()]
 param([int]$NoInstall = 0)
 $ErrorActionPreference = 'Stop'
+$buildWatch = [Diagnostics.Stopwatch]::StartNew()
+Write-Host '[Build] APIShared: checking toolchain and installed game references...'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'BuildProof.ps1')
 function Invoke-Tool([string]$Executable, [string[]]$Arguments) {
+    Write-Host ('[Build] Running {0}: {1}' -f [IO.Path]::GetFileName($Executable), $Arguments[0])
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed with exit code $LASTEXITCODE." }
 }
@@ -27,6 +30,7 @@ try {
     $proofPath = Join-Path $root '.local/build-proof.json'
     if (Test-Path -LiteralPath $proofPath) { Remove-Item -LiteralPath $proofPath }
     if ($NoInstall -eq 0 -and (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue)) { throw 'Close the game before installation.' }
+    Write-Host '[Build] Validating runtime, XAML, native hooks and real interop contracts...'
     & (Join-Path $root 'tools\Validation\Test-Standalone.ps1') -GameDir $game -ExtenderDir $extender
     $results = Join-Path $root '.local\test-results'
     foreach ($project in @('Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
@@ -36,6 +40,7 @@ try {
     foreach ($project in @('tests\PublicPresetConsumer\APISharedPresetConsumerTests.csproj','examples\ThirdPartyMod\ThirdPartyMod.csproj')) {
         Invoke-Tool $msbuild @((Join-Path $root $project), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
     }
+    Write-Host '[Build] Preparing package and build provenance...'
     $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
     $packagePatches = [IO.Path]::GetFullPath((Join-Path $package 'Patches'))
     if (-not $packagePatches.StartsWith($root + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe package patch directory.' }
@@ -48,7 +53,7 @@ try {
     $unexpected = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.dll','.exe') -and $_.Name -ne 'APIShared.dll' })
     if ($unexpected.Count) { throw 'The package contains unexpected runtime binaries.' }
     Write-ApiBuildProof $root $game $extender $msbuild $inputState
-    if ($NoInstall -ne 0) { Write-Host 'APIShared built and tested successfully; installation skipped.'; exit 0 }
+    if ($NoInstall -ne 0) { Write-Host ('APIShared built and tested successfully in {0:N1}s; installation skipped.' -f $buildWatch.Elapsed.TotalSeconds); exit 0 }
     if (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue) { throw 'The game started during the build; close it before installing.' }
     $destination = Join-Path $game 'BepInEx\plugins\APIShared_Serp'
     $packed = Join-Path $game 'BepInEx\plugins\SerpsMods_Serp\Infrastructure\APIShared_Serp'
@@ -64,5 +69,5 @@ try {
         if (-not $standalone.StartsWith($pluginRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe duplicate plugin directory.' }
         if (Test-Path -LiteralPath $standalone) { Remove-Item -LiteralPath $standalone -Recurse -Force }
     }
-    Write-Host 'APIShared built, tested and installed successfully.'
+    Write-Host ('APIShared built, tested and installed successfully in {0:N1}s.' -f $buildWatch.Elapsed.TotalSeconds)
 } catch { Write-Error $_; exit 1 }

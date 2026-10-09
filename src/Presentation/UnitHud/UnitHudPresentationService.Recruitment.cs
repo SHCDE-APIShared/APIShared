@@ -74,6 +74,8 @@ namespace APIShared
             }
         }
 
+        private readonly UnitHudHoverTextPresenter recruitmentHover = new UnitHudHoverTextPresenter();
+
         private void ApplyRecruitmentPresentation(MainViewModel main)
         {
             if (!activeRecruitmentHandlers || main?.HUDBuildingPanel == null) return;
@@ -90,6 +92,8 @@ namespace APIShared
             bool enabled = recruitmentLease == null;
             if (archerVariantPrevious.IsEnabled != enabled) archerVariantPrevious.IsEnabled = enabled;
             if (archerVariantNext.IsEnabled != enabled) archerVariantNext.IsEnabled = enabled;
+            if (recruitmentHover.IsOwnedBy(main.HUDBuildingPanel))
+                ShowRecruitmentHover(archerVariantPrevious.IsMouseOver ? archerVariantPrevious : archerVariantNext);
             if (active == null)
             {
                 RestoreRecruitmentText();
@@ -104,6 +108,7 @@ namespace APIShared
 
         private void ApplyRecruitmentText(MainViewModel main, RecruitmentRegistration active)
         {
+            if (main != null && recruitmentHover.IsOwnedBy(main.HUDBuildingPanel)) return;
             if (active == null || main == null) { RestoreRecruitmentText(); return; }
             string suffix = main.lastTroopsAmountToMake > 1 ? " x" + main.lastTroopsAmountToMake : string.Empty;
             if (!ReferenceEquals(main, recruitmentTextMain) || main.TroopNameCostText != recruitmentTextApplied)
@@ -137,6 +142,13 @@ namespace APIShared
                 archerVariantPrevious.PreviewMouseDown += OnRecruitmentPreviousMouseDown;
                 archerVariantNext.PreviewMouseDown += OnRecruitmentNextMouseDown;
             }
+            recruitmentHover.Close();
+            foreach (Button button in new[] { previous, next })
+            {
+                ToolTipService.SetIsEnabled(button, false);
+                button.MouseEnter += (sender, args) => ShowRecruitmentHover(button);
+                button.MouseLeave += (sender, args) => recruitmentHover.Close(button);
+            }
             archerVariantHost = host;
             archerVariantTint = tint;
             recruitmentPanel = main.HUDBuildingPanel;
@@ -147,6 +159,19 @@ namespace APIShared
             }
         }
 
+        private void ShowRecruitmentHover(Button button)
+        {
+            if (button == null || !MainViewModel.viewModelLoaded) return;
+            MainViewModel main = MainViewModel.Instance;
+            if (main?.HUDBuildingPanel == null || archerVariantHost?.Visibility != Visibility.Visible ||
+                !main.Show_HUD_Building || main.HUDBuildingPanel.RefBarracksPanel.Visibility != Visibility.Visible) return;
+            HUD_Buildings panel = main.HUDBuildingPanel;
+            string original = null;
+            recruitmentHover.Show(panel, button, button.ToolTip as string,
+                () => ReferenceEquals(main.HUDBuildingPanel, panel) ? main.TroopNameCostText : null,
+                value => { original = main.TroopNameCostText; main.TroopNameCostText = value; },
+                () => main.TroopNameCostText = original);
+        }
         private static T RequireBuildingElement<T>(MainViewModel main, string name) where T : class
         {
             T element = main?.HUDBuildingPanel?.FindName(name) as T;
@@ -156,6 +181,7 @@ namespace APIShared
 
         private void HideRecruitmentControls()
         {
+            recruitmentHover.Close();
             if (archerVariantHost != null) SetVisibility(archerVariantHost, Visibility.Collapsed);
         }
 

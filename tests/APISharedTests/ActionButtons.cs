@@ -140,6 +140,22 @@ namespace APISharedTests
             }
             finally { SpriteMapping.mpLoadRemapping = original; }
         }
+        [TestMethod]
+        public void RuntimeHudButtonsExplicitlyDisableNoesisPopups()
+        {
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(UnitHudPresentationService).Assembly.Location))
+            {
+                var type = assembly.MainModule.Types.Single(t => t.Name == nameof(UnitHudPresentationService));
+                foreach (string name in new[] { "GetActionVisual", "EnsureActionHost", "EnsureCategoryButtons", "EnsureRecruitmentControls" })
+                {
+                    var method = type.Methods.Single(m => m.Name == name);
+                    MsAssert.IsTrue(method.Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference reference &&
+                        reference.DeclaringType.FullName == "Noesis.ToolTipService" && reference.Name == "SetIsEnabled"), name);
+                    MsAssert.IsFalse(method.Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference reference &&
+                        reference.DeclaringType.FullName == "Noesis.ToolTipService" && reference.Name == "SetToolTip"), name);
+                }
+            }
+        }
         private sealed class TestActionCommand : ICommand
         {
             public event EventHandler CanExecuteChanged { add { } remove { } }

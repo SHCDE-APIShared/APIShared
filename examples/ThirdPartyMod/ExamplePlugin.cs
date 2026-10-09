@@ -31,6 +31,7 @@ namespace ThirdPartyMod
             if (client.TryGetUnitHudPresentation(out var hud, out var diagnostic))
                 HudExample.Register(hud, Log);
             else Log(diagnostic.Reason);
+            HudExample.RegisterSideButtons(client, Log);
         }
 
         internal static void Log(string message) =>

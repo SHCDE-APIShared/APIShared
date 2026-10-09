@@ -43,6 +43,10 @@ namespace APIShared
         public bool TryGetUnitHudPresentation(out IUnitHudPresentationCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetUnitHudPresentation(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Acquires independent side-HUD buttons for this owner; does not require troop selection or native Unit HUD hooks.</summary>
+        public bool TryGetHudExtrasButtons(out IHudExtrasButtonsCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetHudExtrasButtons(OwnerGuid, out capability, out diagnostic);
+
         /// <summary>Acquires IAivBuildStepCapability for this owner. Inspect the returned diagnostic on failure; independent capabilities remain usable.</summary>
         public bool TryGetAivBuildStep(out IAivBuildStepCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetAivBuildStep(OwnerGuid, out capability, out diagnostic);

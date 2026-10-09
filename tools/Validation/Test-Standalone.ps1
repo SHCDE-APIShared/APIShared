@@ -39,4 +39,5 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $apiRoot 'Patches') -Rec
 & (Join-Path $PSScriptRoot 'Test-DependencyMetadata.ps1')
 & (Join-Path $PSScriptRoot 'Test-PermanentHooks.ps1')
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-Interop.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
+if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-HudExtrasContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 Write-Host "PASS: standalone APIShared boundaries ($links links), runtime JSON/lifecycle/scheduling and XAML; installed interop is checked in the local full run."
