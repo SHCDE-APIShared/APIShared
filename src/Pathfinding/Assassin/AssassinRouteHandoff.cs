@@ -13,6 +13,7 @@ namespace APIShared
         private readonly int controlPlayer, speedDelay;
         private readonly Func<bool> identityValid;
         private readonly Func<byte[], int, int> publish;
+        private readonly Action<string, string, string> reportStage;
         private byte[] bytes;
         private int directions;
         private Func<bool> routeValid;
@@ -23,20 +24,24 @@ namespace APIShared
         { if (TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver) TemporaryRequestReason = reason; return false; }
         private static void Report(string result)
         {
-            if (!(TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver)) return;
-            UnitCommands.UnitCommandPathRuntime.ReportTemporaryAssassinStage("handoff", result,
-                "source=single-unit,requestReason=" + TemporaryRequestReason);
+            // The caller supplies diagnostic provenance; the shared handoff does not own a command runtime.
+            Action<string, string, string> report = current?.reportStage;
+            if (report == null) return;
+            try { report("handoff", result, "source=single-unit,requestReason=" + TemporaryRequestReason); }
+            catch (Exception error) { TemporaryGateRouteAcceptanceBridge.ReportFailure("assassin-handoff", error); }
         }
         internal static bool HasFrame => current != null;
 
         internal AssassinRouteHandoff(IntPtr context, int startX, int startY,
             int targetX, int targetY, int player, Func<bool> identityValid,
-            Func<byte[], int, int> publish, int controlPlayer = -1, int speedDelay = -1)
+            Func<byte[], int, int> publish, int controlPlayer = -1, int speedDelay = -1,
+            Action<string, string, string> reportStage = null)
         {
             previous = current;
             this.context = context; this.startX = startX; this.startY = startY;
             this.targetX = targetX; this.targetY = targetY; this.player = player;
             this.identityValid = identityValid; this.publish = publish;
+            this.reportStage = reportStage;
             this.controlPlayer = controlPlayer; this.speedDelay = speedDelay;
             current = this;
         }

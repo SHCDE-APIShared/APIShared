@@ -24,7 +24,9 @@ namespace LobbyModSettingsPresetTests
             string path = Path.Combine(folder, "LobbyModSettings", ModName + ".msgpack");
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             FakeSettings settings = Start(Path.Combine(folder, "PresetTest.dll"), path, () => true);
-            settings.System_ConfigureDirectLaunchNotice("BuildingCosts_Serp");
+            settings.System_ConfigureDirectLaunchNotice(() => "Consumer-defined direct launch notice");
+            Assert(settings.System_DirectLaunchNoticeText == "Consumer-defined direct launch notice",
+                "Direct launch notice does not use the caller's text.");
 
             settings.System_TestSetSettingsMenuContext(false, true, false);
             Assert(settings.System_DirectLaunchNoticeVisibility == Noesis.Visibility.Visible,
@@ -68,6 +70,16 @@ namespace LobbyModSettingsPresetTests
             settings.System_TestSetSettingsMenuContext(false, true, true);
             Assert(settings.System_DirectLaunchNoticeVisibility == Noesis.Visibility.Collapsed,
                 "Ambiguous front-end state incorrectly claims a direct launch.");
+
+            bool fail = false;
+            settings.System_ConfigureDirectLaunchNotice(() => fail ? throw new InvalidOperationException() : "Localized notice");
+            Assert(settings.System_DirectLaunchNoticeText == "Localized notice", "Valid localized notice was lost.");
+            fail = true;
+            Assert(settings.System_DirectLaunchNoticeText == "Localized notice", "Localization failure discarded the last valid notice.");
+            settings.System_ConfigureDirectLaunchNotice(null);
+            settings.System_TestSetSettingsMenuContext(false, true, false);
+            Assert(settings.System_DirectLaunchNoticeVisibility == Noesis.Visibility.Collapsed &&
+                settings.System_DirectLaunchNoticeText == string.Empty, "Disabling the notice retained visibility or stale text.");
         }
         [TestMethod]
         public void SavegameReturnToLobby() => TestSavegameReturnToLobby(testRoot);

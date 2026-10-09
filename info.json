@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.4.12",
+  "Version": "0.5.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.5.0",
+      "Changes": [
+        "Focus the public API on shared services, expose route search events, separate mod-owned command runtimes, and align assembly version metadata."
+      ]
+    },
     {
       "Version": "0.4.12",
       "Changes": [

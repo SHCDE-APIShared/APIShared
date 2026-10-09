@@ -1,4 +1,4 @@
-param([string]$GameDir, [string]$ExtenderDir)
+param([string]$GameDir, [string]$ExtenderDir, [string[]]$AdditionalSourceFiles = @())
 $ErrorActionPreference = 'Stop'
 $apiRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 if (-not $GameDir) { $GameDir = $env:SHCDE_GAME_DIR }
@@ -21,7 +21,8 @@ function Get-NativeSize($type) {
         }
     }
 }
-$source = ((Get-ChildItem -LiteralPath (Join-Path $apiRoot 'src\UnitCommands\Formation') -File -Filter 'FormationRuntime.*.cs' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n") + [IO.File]::ReadAllText((Join-Path $apiRoot 'src\Units\UnitAccess.cs'))
+$sourcePaths = @((Join-Path $apiRoot 'src\Units\UnitAccess.cs')) + $AdditionalSourceFiles
+$source = (@($sourcePaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n")
 $consumed = @([regex]::Matches($source, '\br_\w+') | ForEach-Object Value | Sort-Object -Unique)
 $rows = @()
 $expected = @{

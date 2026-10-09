@@ -183,52 +183,6 @@ namespace LobbyModSettingsPresetTests
                 throw new InvalidOperationException(message);
         }
 
-        private sealed class FakeAtomicFileOperations : IPresetAtomicFileOperations
-        {
-            private readonly Queue<bool> destinationExists;
-            private readonly Queue<Exception> failures;
-
-            public FakeAtomicFileOperations(
-                IEnumerable<bool> destinationExists,
-                IEnumerable<Exception> failures)
-            {
-                this.destinationExists = new Queue<bool>(destinationExists);
-                this.failures = new Queue<Exception>(failures);
-            }
-
-            public int ReplaceCalls { get; private set; }
-            public int MoveCalls { get; private set; }
-            public List<int> Delays { get; } = new List<int>();
-
-            public bool Exists(string path)
-            {
-                return destinationExists.Count > 0 && destinationExists.Dequeue();
-            }
-
-            public void Replace(string sourcePath, string destinationPath)
-            {
-                ReplaceCalls++;
-                ThrowNextFailure();
-            }
-
-            public void Move(string sourcePath, string destinationPath)
-            {
-                MoveCalls++;
-                ThrowNextFailure();
-            }
-
-            public void Delay(int milliseconds)
-            {
-                Delays.Add(milliseconds);
-            }
-
-            private void ThrowNextFailure()
-            {
-                if (failures.Count > 0)
-                    throw failures.Dequeue();
-            }
-        }
-
         private sealed class FakeSettings : PresetLobbyModSettingsViewModel
         {
             private bool enableMod = true;

@@ -73,23 +73,6 @@ namespace APISharedTests
         }
         [TestMethod]
         [TestCategory("Diagnostics")]
-        public void VerifyAiBuildDiagnosticDormancy() => TestAiBuildDiagnosticDormancy();
-
-        private static void TestAiBuildDiagnosticDormancy()
-        {
-            Assert(!AiBuildDiagnostic.HasObserver, "AI diagnostic observer is absent before registration");
-            Assert(AiBuildDiagnostic.BeginWoodAttempt(6) == 0,
-                "AI diagnostic attempt is inert without an observer");
-            Assert(!AiBuildDiagnostic.TryGetCurrentWoodAttempt(out long id, out int playerId) &&
-                id == 0 && playerId == 0, "AI diagnostic attempt state is absent");
-            Assert(!AiBuildDiagnostic.SchedulerReady && !AiBuildDiagnostic.RouteReady,
-                "AI diagnostic native observation points are not installed without an observer");
-            AiBuildDiagnostic.PublishNearbyPathEvidence("wood-nearby-path-before",
-                6, 0UL, 69, 98, -1, -1);
-            AiBuildDiagnostic.Publish("route-result", 6, 0);
-        }
-        [TestMethod]
-        [TestCategory("Diagnostics")]
         public void VerifyCompiledPatternSearch() => TestCompiledPatternSearch();
 
         private static void TestCompiledPatternSearch()
