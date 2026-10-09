@@ -2,20 +2,17 @@ using APIShared;
 using SHCDESE.Interop.Enums;
 using System;
 using System.Collections.Generic;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace APISharedTests
 {
-    internal static class PlayerDefeatTests
+    [TestClass]
+    [TestCategory("PlayerDefeat")]
+    [DoNotParallelize]
+    public sealed class PlayerDefeatTests
     {
-        internal static void Run()
-        {
-            TestLordStateMachine();
-            TestOfficialDefeatStateMachine();
-            TestSessionBaselines();
-            TestObserverContract();
-        }
-
-        private static void TestLordStateMachine()
+        [TestMethod]
+        public void LordDeathFollowsLivingIdentityAndPublishesOnce()
         {
             var state = new PlayerDefeatState();
             var lordDeaths = new List<PlayerLordDeathNotification>();
@@ -46,7 +43,8 @@ namespace APISharedTests
                 "a lord spawned after the baseline arms the detector");
         }
 
-        private static void TestOfficialDefeatStateMachine()
+        [TestMethod]
+        public void OfficialLossPublishesOnceIndependentlyOfLordIdentity()
         {
             var state = new PlayerDefeatState();
             var defeats = new List<PlayerDefeatNotification>();
@@ -72,7 +70,8 @@ namespace APISharedTests
                 "official defeat does not depend on a lord identity");
         }
 
-        private static void TestSessionBaselines()
+        [TestMethod]
+        public void LoadedAndReplacedSessionsEstablishFreshBaselinesWithoutReplay()
         {
             var state = new PlayerDefeatState();
             var lordDeaths = new List<PlayerLordDeathNotification>();
@@ -91,7 +90,8 @@ namespace APISharedTests
                 "mission end and session change clear armed and official state without replay");
         }
 
-        private static void TestObserverContract()
+        [TestMethod]
+        public void OwnersReceiveOrderedIsolatedAndReentrantNotifications()
         {
             Check(!ApiShared.Current.TryGetPlayerDefeat(
                     "",
@@ -158,8 +158,7 @@ namespace APISharedTests
 
         private static void Check(bool condition, string message)
         {
-            if (!condition)
-                throw new InvalidOperationException("PlayerDefeatTests failed: " + message);
+            Assert.IsTrue(condition, message);
         }
     }
 }

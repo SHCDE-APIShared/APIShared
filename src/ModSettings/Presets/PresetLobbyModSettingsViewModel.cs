@@ -1,6 +1,5 @@
 using APIShared.GameModes;
 using APIShared.ModSettings;
-using APIShared.SerpsMods;
 using APIShared.Internal;
 #pragma warning disable 1591 // XAML and integration surface is documented by the APIShared preset guide.
 using BepInEx;
@@ -54,13 +53,13 @@ namespace APIShared.ModSettings
                 "NotifyRevert",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
-        private PresetController presetController;
+        private LobbyPresetController presetController;
         private int selectedPreset;
         private bool missionPresetContext;
         private bool missionPresetEditable;
         private bool missionPresetHasExplicitSettings;
-        private bool showDirectLaunchNotice;
-        private bool isCastlePlannerSettings;
+        private Func<string> directLaunchNoticeProvider;
+        private string lastDirectLaunchNotice = string.Empty;
         private SettingsMenuContext settingsMenuContext;
         private bool isRealMultiplayer;
         private bool isLocalHost = true;
@@ -145,17 +144,25 @@ namespace APIShared.ModSettings
         public bool IsMissionPresetSelected => missionPresetContext && selectedPreset == (presetController?.MissionPresetIndex ?? 2);
 
         public Visibility System_DirectLaunchNoticeVisibility =>
-            showDirectLaunchNotice &&
+            directLaunchNoticeProvider != null &&
             (settingsMenuContext == SettingsMenuContext.Campaign ||
              (settingsMenuContext == SettingsMenuContext.DirectTrail &&
               (!missionPresetContext || !missionPresetHasExplicitSettings)))
                 ? Visibility.Visible : Visibility.Collapsed;
 
-        public string System_DirectLaunchNoticeText => isCastlePlannerSettings
-            ? ResolveSettingsUiTextSafe("Common.DirectLaunchCastlePlannerNotice",
-                "Castle spawning and gameplay changes are inactive for this direct start. Blueprints remain available. Use Customize to play with these changes; edits here are saved for later games.")
-            : ResolveSettingsUiTextSafe("Common.DirectLaunchNotice",
-                "This mod's gameplay changes are inactive for this direct start. Use Customize to play with them; edits here are saved for later games.");
+        public string System_DirectLaunchNoticeText
+        {
+            get
+            {
+                try
+                {
+                    string message = directLaunchNoticeProvider?.Invoke();
+                    if (!string.IsNullOrWhiteSpace(message)) lastDirectLaunchNotice = message;
+                }
+                catch { /* A consumer's localization failure preserves the last readable notice. */ }
+                return lastDirectLaunchNotice;
+            }
+        }
 
         public Visibility System_TrailSourceNoticeVisibility =>
             settingsMenuContext == SettingsMenuContext.DirectTrail &&
@@ -321,8 +328,6 @@ namespace APIShared.ModSettings
                 case "Common.SettingsSourceTrail": return "Trail-Einstellungen";
                 case "Common.SettingsSourceMap": return "Map-Einstellungen";
                 case "Common.SettingsSourceLoadFailed": return "Einstellungen konnten nicht zurückgesetzt werden";
-                case "Common.DirectLaunchNotice": return "Die Spieländerungen dieser Mod sind für diesen direkten Start inaktiv. Über „Customize“ starten, um damit zu spielen. Änderungen hier werden für spätere Partien gespeichert.";
-                case "Common.DirectLaunchCastlePlannerNotice": return "Burgplatzierung und Spieländerungen sind für diesen direkten Start inaktiv; Blaupausen bleiben verfügbar. Über „Customize“ starten, um die Spieländerungen zu nutzen. Änderungen hier werden gespeichert.";
                 case "Common.TrailSourceReadOnlyNotice": return "Diese Werte stammen aus dem gewählten Trail und sind hier schreibgeschützt. Zum Ändern „Customize“ wählen.";
                 case "Common.PresetConfirm": return "Bestätigen";
                 case "Common.PresetStatusDismiss": return "Schließen";
@@ -623,7 +628,7 @@ namespace APIShared.ModSettings
             // The Extender reaches the setter only after it has verified the packet's
             // sender and opened its authorised-update scope. A read-only Trail locks
             // local edits, but must not reject that authoritative host state.
-            if (PresetController.IsNetworkSyncInProgress())
+            if (LobbyPresetController.IsNetworkSyncInProgress())
                 return CanEdit(propertyName);
 
             System_RefreshSettingsAccess();
@@ -709,8 +714,8 @@ namespace APIShared.ModSettings
             if (presetController != null)
                 throw new InvalidOperationException($"Preset storage for [{modName}] was already prepared.");
 
-            presetController = new PresetController(
-                this,
+            presetController = new LobbyPresetController(
+                new PresetHost(this),
                 log,
                 pluginAssemblyLocation,
                 modName,
@@ -1045,21 +1050,12 @@ namespace APIShared.ModSettings
         }
 #endif
 
-        public void System_ConfigureDirectLaunchNotice(string modGuid)
+        /// <summary>Configures an optional notice for direct campaign/Trail launches. Pass null to hide it.</summary>
+        /// <remarks>Call on the Unity UI thread before settings registration. The view model retains the provider and invokes it on the UI caller's thread when its text is read; no dispatch occurs. Empty results and exceptions preserve the last valid text. The caller supplies policy and localization; no plugin GUID is inspected.</remarks>
+        public void System_ConfigureDirectLaunchNotice(Func<string> messageProvider)
         {
-            if (string.IsNullOrWhiteSpace(modGuid))
-                return;
-            try
-            {
-                SerpsModProfiles.GetProfile(modGuid, modGuid);
-                showDirectLaunchNotice = true;
-                isCastlePlannerSettings = string.Equals(modGuid, "CastlePlanner_Serp", StringComparison.Ordinal);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                showDirectLaunchNotice = false;
-                isCastlePlannerSettings = false;
-            }
+            directLaunchNoticeProvider = messageProvider;
+            lastDirectLaunchNotice = string.Empty;
             RaiseAccessProperties();
         }
 

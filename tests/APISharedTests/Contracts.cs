@@ -60,9 +60,6 @@ namespace APISharedTests
                 "APIShared.GameModes.GameplayModAllowedContext",
                 "APIShared.GameModes.GameplayModActivationProfile",
                 "APIShared.GameModes.GameplayModModePolicy",
-                "APIShared.SerpsMods.GameplayFeatureId",
-                "APIShared.SerpsMods.GameplayFeatureActivationProfile",
-                "APIShared.SerpsMods.GameplayFeatureModePolicy",
                 "APIShared.ModSettings.ModSettingsSearchMatcher",
                 "APIShared.ModSettings.ModSettingsSearch",
                 "APIShared.ModSettings.ModSettingsSearchVisibilityConverter",
@@ -127,14 +124,6 @@ namespace APISharedTests
                 "APIShared.IAivBuildStepInvocation",
                 "APIShared.AivBuildStepContext",
                 "APIShared.AivBuildStepCompletion",
-                "APIShared.AiBuildDiagnosticRecord",
-                "APIShared.AiRouteConnection",
-                "APIShared.AiRouteEvidence",
-                "APIShared.AiPathTileSample",
-                "APIShared.AiCoarseCellSample",
-                "APIShared.AiNearbyPathEvidence",
-                "APIShared.AiEconomyGridEvidence",
-                "APIShared.AiBuildDiagnostic",
                 "APIShared.SavegameModSettingsRecord",
                 "APIShared.TrailCreatorRule",
                 "APIShared.SavegameLoadChoiceState",
@@ -313,8 +302,8 @@ namespace APISharedTests
             Assert(calls == 3, "failing log listeners must not break callback isolation");
             Assert(!client.TryGetGatehouseTiming(out _, out var unsupported) && unsupported.State == NativeCapabilityState.UnsupportedBuild,
                 "global Ready does not imply native service support");
-            Assert(typeof(IApiShared).Assembly.GetType("APIShared.UnitCommands.UnitCommandPathAPI").IsNotPublic,
-                "specialized command runtime is not a public third-party contract");
+            Assert(typeof(IApiShared).Assembly.GetType("APIShared.UnitCommands.UnitCommandPathAPI") == null,
+                "mod-specific command runtime is not shipped in APIShared");
             Assert(!typeof(IApiShared).Assembly.GetExportedTypes().Any(t => t.Namespace == "Shared"),
                 "APIShared no longer exports historical Shared contracts");
         }

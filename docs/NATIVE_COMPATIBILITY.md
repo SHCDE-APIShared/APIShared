@@ -13,7 +13,7 @@ the runtime catalogs. This document explains their purpose; it does not override
 | Gatehouse distance/timing/automation | APIShared owns the coordinated intervals in the shared gatehouse functions |
 | AIV build-step observation | APIShared owns the detour at reference RVA `0x51790` |
 | HUD and recruitment | Shared managed/native presentation hooks and registration brokers |
-| Internal commands and formations | Permanent APIShared command runtime for existing integrations |
+| Additional route preferences | Managed Pre/Post registration; native command hooks belong to the participating publisher |
 | Assassin selection | Script Extender owns its function detour; APIShared uses its audited integration points |
 
 Capability failures remain independent. Hash-bound catalogs, live-byte validation
@@ -58,4 +58,4 @@ stubs on isolated buffers, never on another running game's executable pages.
 `tests/APISharedTests` contains native transactions, byte generation and backend
 fixtures. UI/session doubles and synthetic memory are not gameplay acceptance.
 Relevant gameplay checks include startup cleanup, map transitions, save/load,
-host/client synchronization, gatehouse orientations and formations/MoatMove.
+host/client synchronization, gatehouse orientations and cooperating route-search publishers.

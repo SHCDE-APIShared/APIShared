@@ -6,7 +6,6 @@ using CrusaderDE;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 #if !API_SHARED_PRESET_TESTS
 using Steamworks;
 #endif
@@ -100,14 +99,6 @@ namespace APIShared.GameModes
         private const int NoGameValue = -1;
         private const int NoCoopTrail = 0;
         private const uint NonCampaignMapId = uint.MaxValue;
-        private const int MinimumOriginApiVersion = 1;
-        private const int SupportedOriginApiVersion = 2;
-        private const int FirstCustomTrailId = 90;
-        private const int LastCustomTrailId = 92;
-        private const int FirstCoopTrailId = 0;
-        private const int LastCoopTrailId = 3;
-        private const int FirstMissionId = 1;
-        private const int LastCoopMissionId = 10;
 
         /// <summary>Reads the central current/pending mission snapshot. The legacy save argument does not override authoritative evidence.</summary>
         public static GameModeSnapshot Capture(bool multiplayerSave = false) =>
@@ -482,138 +473,8 @@ namespace APIShared.GameModes
 #endif
         }
 
-        private static ExternalCustomizedOrigin CaptureExternalCustomizedOrigin()
-        {
-#if API_SHARED_PRESET_TESTS
-            return default;
-#else
-            try
-            {
-                string[] providerTypes =
-                {
-                    "BugfixesAndQoL.TrailCustomizationLaunchOriginApi, BugfixesAndQoL",
-                    "ExtendedData.ExtendedDataLaunchOriginApi, ExtendedData",
-                };
-                ExternalCustomizedOrigin active = default;
-                bool hasActive = false;
-                bool providerAvailable = false;
-                bool supportsBuiltInOrigins = false;
-                foreach (string providerType in providerTypes)
-                {
-                    Type api = Type.GetType(providerType, throwOnError: false);
-                    if (api == null)
-                        continue;
-                    providerAvailable = true;
-                    ExternalCustomizedOrigin candidate = CaptureExternalCustomizedOrigin(api);
-                    if (candidate.IsInvalid)
-                        return ExternalCustomizedOrigin.InvalidProvider;
-                    supportsBuiltInOrigins |= candidate.SupportsBuiltInOrigins;
-                    if (candidate.Origin == ExternalCustomizedOrigin.None)
-                        continue;
-                    if (hasActive)
-                        return ExternalCustomizedOrigin.InvalidProvider;
-                    active = candidate;
-                    hasActive = true;
-                }
-                return hasActive
-                    ? active
-                    : providerAvailable
-                        ? ExternalCustomizedOrigin.AvailableProvider(supportsBuiltInOrigins)
-                        : default;
-            }
-            catch
-            {
-                // Optional providers must never enable gameplay mods when their contracts fail.
-                return ExternalCustomizedOrigin.InvalidProvider;
-            }
-#endif
-        }
-
-        private static ExternalCustomizedOrigin CaptureExternalCustomizedOrigin(Type api)
-        {
-            try
-            {
-                if (!TryReadStaticInt(api, "ApiVersion", out int apiVersion) ||
-                    !TryReadStaticInt(api, "Origin", out int origin))
-                {
-                    return ExternalCustomizedOrigin.InvalidProvider;
-                }
-                if (apiVersion < MinimumOriginApiVersion || apiVersion > SupportedOriginApiVersion)
-                    return ExternalCustomizedOrigin.InvalidProvider;
-                if (origin == ExternalCustomizedOrigin.None)
-                    return ExternalCustomizedOrigin.AvailableProvider(apiVersion >= 2);
-                bool knownOrigin = origin == ExternalCustomizedOrigin.CustomTrail ||
-                    origin == ExternalCustomizedOrigin.CoopTrail ||
-                    (apiVersion >= 2 && (origin == ExternalCustomizedOrigin.VanillaTrail ||
-                                         origin == ExternalCustomizedOrigin.SandsOfTime));
-                if (!knownOrigin)
-                    return ExternalCustomizedOrigin.InvalidProvider;
-                bool launchPending = false;
-                bool hasLaunchPending = TryReadStaticBool(api, "LaunchPending", out launchPending);
-                if (!TryReadStaticInt(api, "TrailType", out int trailType) ||
-                    !TryReadStaticInt(api, "TrailId", out int trailId) ||
-                    !TryReadStaticInt(api, "MissionId", out int missionId) ||
-                    !TryReadStaticBool(api, "RestoredFromSave", out bool restoredFromSave) ||
-                    (apiVersion >= 2 && !hasLaunchPending))
-                {
-                    return ExternalCustomizedOrigin.InvalidProvider;
-                }
-                var result = new ExternalCustomizedOrigin(
-                    origin,
-                    trailType,
-                    trailId,
-                    missionId,
-                    restoredFromSave,
-                    launchPending,
-                    supportsBuiltInOrigins: apiVersion >= 2);
-                if ((result.Origin == ExternalCustomizedOrigin.CustomTrail &&
-                        (result.MissionId < FirstMissionId ||
-                         result.TrailId < FirstCustomTrailId || result.TrailId > LastCustomTrailId)) ||
-                    (result.Origin == ExternalCustomizedOrigin.CoopTrail &&
-                        (result.MissionId < FirstMissionId ||
-                         result.TrailId < FirstCoopTrailId || result.TrailId > LastCoopTrailId ||
-                         result.MissionId > LastCoopMissionId)) ||
-                    (result.Origin == ExternalCustomizedOrigin.VanillaTrail &&
-                        (!IsVanillaTrailType(result.TrailType) || result.TrailId < 0 || result.MissionId < 0)) ||
-                    (result.Origin == ExternalCustomizedOrigin.SandsOfTime &&
-                        (!IsSandsTrailType(result.TrailType) || result.TrailId < 0 || result.MissionId < 0)))
-                {
-                    return ExternalCustomizedOrigin.InvalidProvider;
-                }
-                return result;
-            }
-            catch
-            {
-                // Providers are optional; malformed reflection surfaces fail closed.
-                return ExternalCustomizedOrigin.InvalidProvider;
-            }
-        }
-
-        private static bool TryReadStaticInt(Type type, string name, out int result)
-        {
-            result = NoGameValue;
-            PropertyInfo property = type.GetProperty(name, BindingFlags.Public | BindingFlags.Static);
-            if (property == null || property.GetIndexParameters().Length != 0)
-                return false;
-            object value = property.GetValue(null);
-            if (value == null)
-                return false;
-            result = Convert.ToInt32(value);
-            return true;
-        }
-
-        private static bool TryReadStaticBool(Type type, string name, out bool result)
-        {
-            result = false;
-            PropertyInfo property = type.GetProperty(name, BindingFlags.Public | BindingFlags.Static);
-            if (property == null || property.PropertyType != typeof(bool) ||
-                property.GetIndexParameters().Length != 0)
-            {
-                return false;
-            }
-            result = (bool)property.GetValue(null);
-            return true;
-        }
+        private static ExternalCustomizedOrigin CaptureExternalCustomizedOrigin() =>
+            CustomizedLaunchOrigins.Capture();
 
         /// <summary>Reads mission network identity, or lobby authority outside a mission. This alone never grants gameplay permission.</summary>
         public static bool IsRealMultiplayer(bool multiplayerSave = false) =>
@@ -636,52 +497,6 @@ namespace APIShared.GameModes
         /// <summary>Whether the captured context is the map editor.</summary>
         public static bool IsMapEditor() => Capture().IsMapEditor;
 
-    }
-
-    internal readonly struct ExternalCustomizedOrigin
-    {
-        internal const int None = 0;
-        internal const int CustomTrail = 1;
-        internal const int CoopTrail = 2;
-        internal const int VanillaTrail = 3;
-        internal const int SandsOfTime = 4;
-
-        internal static ExternalCustomizedOrigin InvalidProvider =>
-            new ExternalCustomizedOrigin(-1, -1, -1, -1, false, false, isInvalid: true);
-
-        internal static ExternalCustomizedOrigin AvailableProvider(bool supportsBuiltInOrigins) =>
-            new ExternalCustomizedOrigin(
-                None, -1, -1, -1, false, false,
-                supportsBuiltInOrigins: supportsBuiltInOrigins);
-
-        internal ExternalCustomizedOrigin(
-            int origin,
-            int trailType,
-            int trailId,
-            int missionId,
-            bool restoredFromSave,
-            bool launchPending = false,
-            bool isInvalid = false,
-            bool supportsBuiltInOrigins = false)
-        {
-            Origin = origin;
-            TrailType = trailType;
-            TrailId = trailId;
-            MissionId = missionId;
-            RestoredFromSave = restoredFromSave;
-            LaunchPending = launchPending;
-            IsInvalid = isInvalid;
-            SupportsBuiltInOrigins = supportsBuiltInOrigins;
-        }
-
-        internal int Origin { get; }
-        internal int TrailType { get; }
-        internal int TrailId { get; }
-        internal int MissionId { get; }
-        internal bool RestoredFromSave { get; }
-        internal bool LaunchPending { get; }
-        internal bool IsInvalid { get; }
-        internal bool SupportsBuiltInOrigins { get; }
     }
 
     /// <summary>Immutable mode evidence for one captured context; inspect Kind and conflicting-origin status before applying your own policy.</summary>

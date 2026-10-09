@@ -57,9 +57,6 @@ namespace APIShared
                 Logger,
                 nativeRegion: context.Region,
                 installAivBuildStep: true);
-            // AIBuildDiagnoseTest BEGIN -- context only; no hook or sampling without registration.
-            AiBuildDiagnostic.Initialize(context.ModuleHandle.ToInt64(), hash, context.Region, Logger);
-            // AIBuildDiagnoseTest END
         }
 
         private static string ComputeInstalledHash()

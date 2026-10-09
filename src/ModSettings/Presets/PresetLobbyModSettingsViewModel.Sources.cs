@@ -1,6 +1,5 @@
 using APIShared.GameModes;
 using APIShared.ModSettings;
-using APIShared.SerpsMods;
 using APIShared.Internal;
 #pragma warning disable 1591 // XAML and integration surface is documented by the APIShared preset guide.
 using BepInEx;
