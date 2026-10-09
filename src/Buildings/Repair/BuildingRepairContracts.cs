@@ -63,16 +63,17 @@ namespace APIShared
             AvailableIron >= Iron && AvailablePitch >= Pitch && AvailableGold >= Gold;
     }
 
-    /// <summary>Shared repair execution and HUD presentation. All UI methods run on the UI thread.</summary>
+    /// <summary>Owner-bound repair quotes and HUD presentation; these operations do not issue a repair command.</summary>
+    /// <remarks>Use on the Unity/UI thread. The shared service and its hooks persist to process exit; activation is logical. Quotes are immutable snapshots, not guarantees that selection, resources or permission remain unchanged. Hover presentation has one shared current button identity; use a stable mod-qualified ID to avoid collisions.</remarks>
     public interface IBuildingRepairCapability
     {
         /// <summary>Enables or disables this owner's use without removing process-wide hooks.</summary>
         void SetActive(bool active);
-        /// <summary>Reads the selected building's verified simulation snapshot.</summary>
+        /// <summary>Reads the captured quote matching the latest selected building and panel. Returns false with null quote when this owner is inactive or a matching building-HUD snapshot is absent. A returned quote may still deny repair or lack resources.</summary>
         bool TryGetSelectedQuote(out BuildingRepairQuote quote);
-        /// <summary>Begins showing the complete repair tooltip for a stable button identity.</summary>
+        /// <summary>Begins the shared tooltip for a stable button identity; empty IDs or an inactive owner are ignored. Hover errors are logged and clear the tooltip. A later hover may replace this one.</summary>
         void BeginHover(string buttonId);
-        /// <summary>Stops showing the repair tooltip for that button.</summary>
+        /// <summary>Clears hover only if the ID still matches the shared current button, including after owner deactivation. Errors are logged.</summary>
         void EndHover(string buttonId);
     }
 }

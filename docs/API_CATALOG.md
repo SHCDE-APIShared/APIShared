@@ -1,6 +1,47 @@
 # API catalog
 
-Own-troop action-button descriptions and page-arrow text appear only at the Vanilla troop rollover location. `SetTooltip` updates that description; it does not create a Noesis popup. Category and recruitment-variant descriptions also use Vanilla rollover text. Side-HUD buttons use the mod-options popup style by default and optionally accept an explicitly styled custom tooltip; they never implicitly fall back to the lion-frame template.
+Capabilities are acquired through `ModApiClient` or `IApiShared`. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
+
+| Area / entry | Purpose and availability | Thread, ownership and lifetime |
+|---|---|---|
+| `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
+| `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions | Tick/simulation publisher; no initial-state replay; do not change UI directly; process lifetime |
+| `TryGetUnitHudPresentation` | Categories, image overrides, interactions, recruitment tickets and control groups | Unity/Noesis presentation; owner-local IDs; ambiguity preserves Vanilla; logical activation extension; process lifetime |
+| `TryGetHudExtrasButtons` | Independent side-HUD buttons, paging and popup tooltips | Unity-thread factories/commands; owner-local IDs; logical activation; process lifetime |
+| `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
+| `TryGetGatehouseTiming` | Typed timing/distance settings | Native validation required; exclusive owner; permanent hook and logical state; automation via `IGatehouseAutomationCapability` |
+| `TryGetGatehouseDistanceOrigin` | Vanilla begin coordinate or complete-bounds center | Native validation required; exclusive owner; permanent runtime state |
+| `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
+| `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
+| `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
+| `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |
+
+## Source map
+
+Start at the linked contract to learn what a consumer may call. Read the service
+when changing behavior; internal files are not consumer extension points.
+Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
+
+| Feature | Public contracts / entry | Behavior / hook owner | Example |
+|---|---|---|---|
+| Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
+| Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleCapability.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
+| Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateCapability.cs) | — |
+| Defeat notifications | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatCapability.cs) | — |
+| Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
+| Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
+| Briefing gold | [Contracts](../src/Presentation/BriefingGold/BriefingGoldContracts.cs) | [Capability](../src/Presentation/BriefingGold/BriefingGoldPresentationCapability.cs) | — |
+| Repair | [Contracts](../src/Buildings/Repair/BuildingRepairContracts.cs) | [Capability](../src/Buildings/Repair/BuildingRepairCapability.cs) | — |
+| Gatehouse coordination | [Timing](../src/Buildings/Gatehouse/GatehouseTimingCapability.cs), [origin](../src/Buildings/Gatehouse/GatehouseDistanceOriginCapability.cs), [drawbridge helper](../src/Buildings/Gatehouse/GatehouseDrawbridgeCoupling.cs) | [Permanent state](../src/Buildings/Gatehouse/GatehousePermanentRuntimeState.cs), [automation](../src/Buildings/Gatehouse/GatehouseAutomationNativeState.cs) | — |
+| Selection and perspective | [Local selection](../src/Units/LocalSelectionAPI.cs), [marked units](../src/Units/MarkedUnitSelectionAPI.cs), [perspective](../src/Players/PlayerPerspectiveAPI.cs), [unit access](../src/Units/UnitAccess.cs) | Implementation in those files | — |
+| Modes and launch evidence | [Profiles](../src/GameModes/GameplayModModePolicy.cs), [mode capture](../src/GameModes/MissionModePolicy.cs), [origins](../src/GameModes/CustomizedLaunchOrigins.cs) | Implementation in those files | [Mission policy](../examples/ThirdPartyMod/MissionExample.cs), [launch origin](../examples/ThirdPartyMod/CustomizedLaunchExample.cs) |
+| Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettings.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
+| Settings search / tooltips | [Search and attached properties](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Implementation in those files; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
+| Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | — |
+| Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
+| Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
+| AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
 
 ## Side-HUD buttons
 
@@ -42,22 +83,6 @@ setting `Show_HUD_Troops`. Context notifications report availability changes
 (including owner/button visibility changes), not page changes; hover notifications
 include hiding hovered entries. These optional callbacks also run on the Unity
 thread, outside locks, with exception isolation. Registrations have no hook teardown.
-
-Capabilities are acquired through `ModApiClient` or `IApiShared`. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
-
-| Area / entry | Purpose and availability | Thread, ownership and lifetime |
-|---|---|---|
-| `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context | Register on Unity thread; publisher-thread notifications; owner/registration ordering; late start replay only; process lifetime |
-| `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
-| `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions | Tick/simulation publisher; no initial-state replay; do not change UI directly; process lifetime |
-| `TryGetUnitHudPresentation` | Categories, image overrides, interactions, recruitment tickets and control groups | Unity/Noesis presentation; owner-local IDs; ambiguity preserves Vanilla; logical activation extension; process lifetime |
-| `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
-| `TryGetGatehouseTiming` | Typed timing/distance settings | Native validation required; exclusive owner; permanent hook and logical state; automation via `IGatehouseAutomationCapability` |
-| `TryGetGatehouseDistanceOrigin` | Vanilla begin coordinate or complete-bounds center | Native validation required; exclusive owner; permanent runtime state |
-| `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
-| `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
-| `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
-| `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |
 
 ## Direct helpers and advanced integration
 
@@ -122,45 +147,11 @@ See the [public example](../examples/ThirdPartyMod/RouteSearchExample.cs).
 
 ## Failure and registration rules
 
-`NativeApiState.Ready` means the global API is published. Capability diagnostics may still report `Pending`, `UnsupportedBuild`, `PatternMissing`, `Ambiguous`, `ValidationFailed`, `Conflict` or `Faulted`. Each failed operation returns a reason; `ConflictOwnerGuid` identifies an owner where applicable. Native hash fields may be empty for managed services or before native initialization.
+`NativeApiState.Ready` means the global API is published. Capability diagnostics may still report `Pending`, `UnsupportedBuild`, `PatternMissing`, `Ambiguous`, `ValidationFailed`, `Conflict` or `Faulted`. Capability acquisitions and diagnostic-bearing registrations report reasons; boolean queries may instead return false as documented. `ConflictOwnerGuid` identifies an owner where applicable. Native hash fields may be empty for managed services or before native initialization.
 
-Registration IDs are unique within an owner and service; stable IDs allow deterministic ordering. Registrations do not imply replacement or unsubscription. Callback exceptions are isolated where the service explicitly documents that contract; native Vanilla exceptions retain the original propagation rules. No API-wide promise of Unity-thread dispatch exists. Use logical activation to suspend supported presentation features; never dispose a published process-wide hook.
+Registration IDs are unique within an owner and service; stable IDs identify contributors, while ordering follows each service contract. Registrations do not imply replacement or unsubscription. Callback exceptions are isolated where the service explicitly documents that contract; native Vanilla exceptions retain the original propagation rules. No API-wide promise of Unity-thread dispatch exists. Use logical activation to suspend supported presentation features; never dispose a published process-wide hook.
 
-## Public type index
-
-The following index includes data contracts and advanced APIs. XML documentation in `APIShared.xml` provides member-level details.
-
-### Core
-
-`APISharedPlugin`, `ApiShared`, `IApiShared`, `ModApiClient`, `NativeApiState`, `NativeCapabilityDiagnostic`, `NativeCapabilityIds`, `NativeCapabilityState`.
-
-### Missions
-
-`IMissionLifecycleCapability`, `MissionContext`, `MissionEndReason`, `MissionInitializationPhase`, `MissionLifecycleKind`, `MissionLifecycleNotification`, `MissionMapType`, `MissionStartKind`.
-
-### Lobby
-
-`ILobbyStateCapability`, `LobbyPreparationOverride`, `LobbyStateSnapshot`.
-
-### Players
-
-`IPlayerDefeatCapability`, `PlayerDefeatNotification`, `PlayerLordDeathNotification`, `PlayerPerspectiveAPI`.
-
-### Units
-
-`LocalSelectionAPI`, `LocalSelectionSnapshot`, `MarkedUnitSelectionAPI`, `MarkedUnitSelectionSnapshot`, `UnitAccess`, `UnitLookupFailure`.
-
-### Presentation
-
-`BriefingGoldAdjustmentStage`, `BriefingGoldContext`, `IBriefingGoldPresentationCapability`, `IUnitHudActivationCapability`, `IUnitHudPresentationCapability`, `UnitHudCategoryDefinition`, `UnitHudCategorySnapshot`, `UnitHudControlGroupSnapshot`, `UnitHudImageOverrideContext`, `UnitHudImageOverrideDefinition`, `UnitHudImageSlot`, `UnitHudInteractionContext`, `UnitHudMouseButton`, `UnitHudRecruitmentTicket`, `UnitHudSlotSnapshot`, `UnitHudSurface`, `UnitHudTextKind`, `UnitHudTextProfile`, `UnitHudTint`, `UnitHudUnitSnapshot`.
-
-### Buildings
-
-`BuildingRepairQuote`, `GatehouseDistanceOrigin`, `GatehouseDrawbridgeCoupling`, `GatehouseFootprintCandidate`, `GatehouseTimingSettings`, `GatehouseTimingValues`, `IBuildingRepairCapability`, `IGatehouseAutomationCapability`, `IGatehouseDistanceOriginCapability`, `IGatehouseTimingCapability`, `RepairTooltipEntry`, `RepairTooltipViewModel`.
-
-### GameModes
-
-`CustomizedLaunchOrigin`, `CustomizedLaunchOriginKind`, `CustomizedLaunchOrigins`, `GameModeHelper`, `GameModeKind`, `GameModeLaunchVariant`, `GameModeSnapshot`, `GameTrailType`, `GameplayModActivationProfile`, `GameplayModAllowedContext`, `GameplayModModePolicy`.
+## Customized launch evidence
 
 Mods that own customized trail launches register a snapshot callback through
 `CustomizedLaunchOrigins.Register(ownerGuid, capture)` during startup, before the
@@ -176,23 +167,3 @@ inactive; set `SupportsBuiltInOrigins` only if your mod tracks built-in trails t
 The contract uses existing game trail families and ID ranges; it supplies evidence,
 not another mod's permission policy. See the optional
 [customized launch example](../examples/ThirdPartyMod/CustomizedLaunchExample.cs).
-
-### ModSettings
-
-`DynamicPresetSetting`, `ExcludeFromSavegameModSettingsAttribute`, `IDynamicPresetSettingsProvider`, `IModSettingsApplicationBackend`, `IModSettingsMissionSourceEndpoint`, `IModSettingsPresetEndpoint`, `IModSettingsWorkingCopyEndpoint`, `IModSettingsWorkingSourceProvider`, `INetworkModSettingsApplicationBackend`, `LobbyModSettingsPresetRegistration`, `ModSettingsApplication`, `ModSettingsPresetJson`, `ModSettingsPresetListEntry`, `ModSettingsPresetSaveTarget`, `ModSettingsPresetSourceKind`, `ModSettingsSearch`, `ModSettingsSearchEntry`, `ModSettingsSearchMatcher`, `ModSettingsSearchVisibilityConverter`, `ModSettingsWorkingSource`, `ModSettingsWorkingSourceKind`, `ModSettingsWorkingSourceRegistry`, `PerPlayerLobbySettingsBuilder`, `PerPlayerLobbySnapshot`, `PresetLobbyModSettingsViewModel`, `PresetLocalAttribute`, `PresetSaveBulkMode`, `PresetSaveSelection`, `PresetSaveSettingViewModel`, `PresetSettingDescriptor`, `PresetSettingScope`, `PublishedModSettingsPreset`, `PublishedPresetSetting`, `PublishedPresetValueMode`, `RequiresRestartAttribute`, `ToolTipPresentation`.
-
-### Pathfinding
-
-`RouteSearchEvents`, `RouteSearchContext`, `RouteSearchTerrain`,
-`RouteSearchPreEventArgs`, `RouteSearchPostEventArgs` form the targeted additional
-route-calculation extension described above.
-
-`AssassinAttackControlAPI`, `AssassinGateTransitionPolicy`, `AssassinPathAPI`, `AssassinTransitionKind`, `ElevatedMoatAiCapability`, `ElevatedMoatAiState`, `EnemyBridgeDiagnosticBridge`, `EnemyGatePathPolicyBridge`, `EnemyGateSearchKind`, `IAssassinTraversalView`, `IEnemyBridgePathObserver`, `IEnemyBridgeTopologyObserver`, `IEnemyGateAssassinObserver`, `IEnemyGateClimbRoutePolicySnapshot`, `IEnemyGatePathPolicy`, `IEnemyGateRegionPairObserver`, `IEnemyGateRoutePolicyProvider`, `IEnemyGateRoutePolicySnapshot`, `ITemporaryAssassinGateObserver`, `ITemporaryGateRouteAcceptanceObserver`, `TemporaryGateRouteAcceptanceBridge`.
-
-### Diagnostics
-
-`AivBuildStepCompletion`, `AivBuildStepContext`, `IAivBuildStepCapability`, `IAivBuildStepInvocation`, `IAivBuildStepObserver`.
-
-### Savegames
-
-`SavegameLoadChoiceState`, `SavegameModSettings`, `SavegameModSettingsRecord`, `SavegameModSettingsRecordFormatter`, `TrailCreatorRule`.

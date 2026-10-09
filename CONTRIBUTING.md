@@ -8,23 +8,6 @@ Use the [feature implementation guide](ARCHITECTURE.md#finding-and-extending-a-f
 to locate contracts, services and hook owners. The HUD service shows
 how larger features keep registrations, behavior and hooks in named parts.
 
-## HUD descriptions and tooltip appearance
-
-Own-troop action buttons, their page arrow, unit categories and recruitment-variant
-arrows use the existing Vanilla rollover location. Do not add a second Noesis popup.
-Other mod-owned popup tooltips must match the mod-options template: opaque
-`#FF1D1710` background, white wrapped text, `#FFF2D48A` border, 60000-ms duration
-and the existing Script Extender `ToolTipResolutionScale.Enabled` scaling. Never
-fall back to the default `TOOLTIPS.xaml` lion-frame template. Preserve Vanilla
-unit/building cost and limit rollovers; ask the maintainer when classification is
-unclear. Check the actual resource/template scope, not only the tooltip string.
-
-The independent side-HUD registry lives in `Presentation/HudExtras`. Its default
-popup uses that same mod-options template. Consumers may explicitly supply a
-fresh custom ToolTip with a Style or Template through its optional factory; do
-not replace the default with the global lion template. Gate visibility on parent
-containers, since `BTN_Building` animates the Button's own Visibility.
-
 ## Setup
 
 On Windows, install the .NET 10 SDK and Visual Studio or Build Tools with the
@@ -98,3 +81,17 @@ Releases are prepared from a reviewed, committed and pushed standalone checkout:
 `release.bat` builds and creates a GitHub draft. Version bumps belong to release preparation,
 not test iterations. The maintainer's mod workspace pins a reviewed commit using a Git submodule;
 contributors work in this repository with ordinary branches and pull requests.
+
+## Documentation with a change
+
+Explain public contracts where they are declared: prerequisites, owner and ID rules,
+thread, lifetime, ordering, replay, failure and cancellation behavior where applicable.
+Explain the responsibility and persistent call path at complex implementation entries.
+Useful comments describe decisions and constraints rather than repeating names.
+
+Keep the catalog's source map, integration guide and affected examples consistent with
+API changes. Link to existing explanations instead of duplicating every feature in
+several documents. Additional feature documents are useful only when inline contracts
+and these guides cannot adequately explain usage. Preserve the README as a short entry;
+propose a README addition after a new feature is complete. These expectations apply
+equally to human and AI-assisted contributions.

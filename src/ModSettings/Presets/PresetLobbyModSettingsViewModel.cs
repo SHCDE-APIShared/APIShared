@@ -1,7 +1,6 @@
 using APIShared.GameModes;
 using APIShared.ModSettings;
 using APIShared.Internal;
-#pragma warning disable 1591 // XAML and integration surface is documented by the APIShared preset guide.
 using BepInEx;
 using BepInEx.Logging;
 using MessagePack;
@@ -42,9 +41,10 @@ namespace APIShared.ModSettings
     }
 
     /// <summary>
-    /// Adds two local presets to a Script Extender lobby-settings ViewModel while
+    /// Integrates personal and published presets, temporary mission settings and role-aware UI with a Script Extender settings model while
     /// keeping the outer MessagePack dictionary readable by the Script Extender.
     /// </summary>
+    /// <remarks>Register on the Unity thread and retain the model in a static runtime or persistent publisher. System_* members are shared XAML/integration bindings, not another mod network protocol. Classify settings with SyncHostOnly, SyncPerPlayer or PresetLocal, guard setters with CanMutateSetting and notify after changes. Internal controller/storage components own snapshots and persistence.</remarks>
     public abstract partial class PresetLobbyModSettingsViewModel : LobbyModSettingsBaseViewModel, IModSettingsWorkingCopyEndpoint, IModSettingsMissionSourceEndpoint
     {
         private enum SettingsMenuContext { Other, Campaign, DirectTrail, CustomizeSetup }
@@ -96,6 +96,7 @@ namespace APIShared.ModSettings
         private bool presetOperationFailed;
 #endif
 
+        /// <summary>Creates commands and local model state; call LobbyModSettingsPresetRegistration.Register on the Unity thread to initialize persistence and publish integration.</summary>
         protected PresetLobbyModSettingsViewModel()
         {
 #if !API_SHARED_PRESET_TESTS
@@ -115,34 +116,45 @@ namespace APIShared.ModSettings
 #endif
         }
 
+        /// <summary>Whether the prepared schema contains host-owned settings.</summary>
         public bool HasHostSettings => presetController?.HasHostSettings ?? false;
 
+        /// <summary>Whether the prepared schema contains per-player settings.</summary>
         public bool HasClientSettings => presetController?.HasClientSettings ?? false;
 
+        /// <summary>Whether the schema exposes a host activation property.</summary>
         public bool HasHostSettingsActivation => presetController?.HasHostSettingsActivation ?? false;
 
+        /// <summary>Whether the schema exposes a per-player activation property.</summary>
         public bool HasClientSettingsActivation => presetController?.HasClientSettingsActivation ?? false;
 
+        /// <summary>Host activation value managed by the controller; unavailable before preparation.</summary>
         public bool HostSettingsEnabled
         {
             get => presetController?.HostSettingsEnabled ?? false;
             set => presetController?.SetHostSettingsEnabled(value);
         }
 
+        /// <summary>Local player activation value managed by the controller; unavailable before preparation.</summary>
         public bool ClientSettingsEnabled
         {
             get => presetController?.ClientSettingsEnabled ?? false;
             set => presetController?.SetClientSettingsEnabled(value);
         }
 
+        /// <summary>Whether the latest observed context identifies this peer as settings host.</summary>
         public bool IsLocalSettingsHost => isLocalHost;
 
+        /// <summary>Whether the observed context is a real multiplayer session.</summary>
         public bool IsRealMultiplayerContext => isRealMultiplayer;
 
+        /// <summary>Whether the active mission snapshot permits editing.</summary>
         public bool MissionPresetEditable => missionPresetEditable;
 
+        /// <summary>Whether the mission snapshot is the currently selected preset.</summary>
         public bool IsMissionPresetSelected => missionPresetContext && selectedPreset == (presetController?.MissionPresetIndex ?? 2);
 
+        /// <summary>Shows a configured consumer notice for direct campaign/trail entry when no explicit trail settings supersede it.</summary>
         public Visibility System_DirectLaunchNoticeVisibility =>
             directLaunchNoticeProvider != null &&
             (settingsMenuContext == SettingsMenuContext.Campaign ||
@@ -150,6 +162,7 @@ namespace APIShared.ModSettings
               (!missionPresetContext || !missionPresetHasExplicitSettings)))
                 ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Invokes the configured notice provider on the reader thread; empty results or errors preserve the last successful message.</summary>
         public string System_DirectLaunchNoticeText
         {
             get
@@ -164,72 +177,91 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Shows the read-only trail-source explanation when mission settings cannot be edited.</summary>
         public Visibility System_TrailSourceNoticeVisibility =>
             settingsMenuContext == SettingsMenuContext.DirectTrail &&
             missionPresetContext && !missionPresetEditable && missionPresetHasExplicitSettings
                 ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Localized XAML caption/help for Common.TrailSourceReadOnlyNotice; English fallback: These settings come from the selected Trail and are read-only here. Use Customize to change them.</summary>
         public string System_TrailSourceNoticeText =>
             ResolveSettingsUiTextSafe("Common.TrailSourceReadOnlyNotice",
                 "These settings come from the selected Trail and are read-only here. Use Customize to change them.");
 
+        /// <summary>Whether host-owned fields may be edited in the current authority and mission context; use as an XAML gate as well as guarding setters.</summary>
         public bool CanEditHostSettings =>
             isLocalHost && (!IsMissionPresetSelected || missionPresetEditable);
 
         /// <summary>Recognizes removed properties whose stored preset values may be ignored.</summary>
         protected virtual bool IsRetiredPresetProperty(string propertyName) => false;
 
+        /// <summary>Whether personal fields may be edited; a read-only selected mission preset blocks them.</summary>
         public bool CanEditClientSettings => !IsMissionPresetSelected || missionPresetEditable;
 
+        /// <summary>Whether host activation controls are available under the current editing policy.</summary>
         public bool CanToggleHostSettings =>
             HasHostSettings && HasHostSettingsActivation && CanEditHostSettings;
 
+        /// <summary>Whether per-player activation controls are available under the current editing policy.</summary>
         public bool CanToggleClientSettings =>
             HasClientSettings && HasClientSettingsActivation && CanEditClientSettings;
 
+        /// <summary>Whether preset selection is allowed in the current mission context.</summary>
         public bool CanChangePreset =>
             (!IsMissionPresetSelected || missionPresetEditable) && (isLocalHost || HasClientSettings);
 
+        /// <summary>Whether at least one editable host or player settings scope can be reset.</summary>
         public bool CanResetSettings => CanEditHostSettings || (HasClientSettings && CanEditClientSettings);
 
+        /// <summary>Shows the preset selector when settings exist and the current context permits it.</summary>
         public Visibility PresetVisibility =>
             missionPresetContext || isLocalHost || HasClientSettings
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
+        /// <summary>Shows separate client activation controls when the schema and context require them.</summary>
         public Visibility ClientSettingsActivationVisibility =>
             HasClientSettingsActivation
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
+        /// <summary>Shows the explanation when this peer cannot edit host fields.</summary>
         public Visibility HostReadOnlyNoticeVisibility =>
             HasHostSettings && isRealMultiplayer && !isLocalHost
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
+        /// <summary>Localized XAML caption/help for Common.HostOptions; English fallback: HOST OPTIONS</summary>
         public string HostOptionsText =>
             ResolveSettingsUiTextSafe("Common.HostOptions", "HOST OPTIONS");
 
+        /// <summary>Localized XAML caption/help for Common.ClientOptions; English fallback: LOCAL CLIENT OPTIONS</summary>
         public string ClientOptionsText =>
             ResolveSettingsUiTextSafe("Common.ClientOptions", "LOCAL CLIENT OPTIONS");
 
+        /// <summary>Localized XAML caption/help for Common.Preset; English fallback: Preset</summary>
         public string PresetText =>
             ResolveSettingsUiTextSafe("Common.Preset", "Preset");
 
+        /// <summary>Localized XAML caption/help for Common.EnableMod; English fallback: Enable Mod</summary>
         public string ModEnabledText =>
             ResolveSettingsUiTextSafe("Common.EnableMod", "Enable Mod");
 
+        /// <summary>Localized XAML caption/help for Common.HostActivationLabel; English fallback: (Host-)</summary>
         public string HostActivationLabelText =>
             ResolveSettingsUiTextSafe("Common.HostActivationLabel", "(Host-)");
 
+        /// <summary>Localized XAML caption/help for Common.ClientActivationLabel; English fallback: (Client settings)</summary>
         public string ClientActivationLabelText =>
             ResolveSettingsUiTextSafe("Common.ClientActivationLabel", "(Client settings)");
 
+        /// <summary>Shows the notice that shared actions affect only the locally editable scope.</summary>
         public Visibility ActionsScopeNoticeVisibility =>
             isRealMultiplayer && HasClientSettings
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
+        /// <summary>Localized XAML caption/help for Common.ActionsScopeHost; English fallback: Loading a preset or resetting settings affects host settings and your local client settings.</summary>
         public string ActionsScopeNoticeText =>
             HasHostSettings && isLocalHost
                 ? ResolveSettingsUiTextSafe(
@@ -239,18 +271,23 @@ namespace APIShared.ModSettings
                     "Common.ActionsScopeClient",
                     "Loading a preset or resetting settings affects only your local client settings.");
 
+        /// <summary>Localized XAML caption/help for Common.HostReadOnly; English fallback: Values from host - read-only</summary>
         public string HostReadOnlyNoticeText =>
             ResolveSettingsUiTextSafe("Common.HostReadOnly", "Values from host - read-only");
 
+        /// <summary>Localized XAML caption/help for Common.EnableModHelp; English fallback: Enables or disables this mod for the match.</summary>
         public string EnableModHelpText =>
             ResolveSettingsUiTextSafe("Common.EnableModHelp", "Enables or disables this mod for the match.");
 
+        /// <summary>Localized XAML caption/help for Common.HostSettingsActivationHelp; English fallback: Enables or disables all host-controlled settings of this mod.</summary>
         public string HostSettingsActivationHelpText =>
             ResolveSettingsUiTextSafe("Common.HostSettingsActivationHelp", "Enables or disables all host-controlled settings of this mod.");
 
+        /// <summary>Localized XAML caption/help for Common.ClientSettingsActivationHelp; English fallback: Enables or disables all local and personal client settings of this mod.</summary>
         public string ClientSettingsActivationHelpText =>
             ResolveSettingsUiTextSafe("Common.ClientSettingsActivationHelp", "Enables or disables all local and personal client settings of this mod.");
 
+        /// <summary>Localized XAML caption/help for Common.PresetHelp; English fallback: Loads saved settings as an editable working copy.</summary>
         public string PresetHelpText =>
             ResolveSettingsUiTextSafe("Common.PresetHelp", "Loads saved settings as an editable working copy.");
 
@@ -258,10 +295,13 @@ namespace APIShared.ModSettings
 
         // Compatibility alias for older views. New XAML binds host and client
         // sections separately so multiplayer and Trail locks remain independent.
+        /// <summary>Compatibility XAML alias for CanEditHostSettings; per-player controls should use CanEditClientSettings.</summary>
         public bool AreSettingsEditable => CanEditHostSettings;
 
+        /// <summary>Whether a temporary mission preset context is active, independently of which preset is selected.</summary>
         public bool IsMissionPresetActive => missionPresetContext;
 
+        /// <summary>Override to translate common UI keys; return fallback for unknown keys. Called by Unity-thread bindings; the safe wrapper tolerates empty results and exceptions.</summary>
         protected virtual string ResolveSettingsUiText(string key, string fallback) => fallback;
 
         /// <summary>Applies an explicitly confirmed selection. Overrides may add deferred application.</summary>
@@ -335,6 +375,7 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Whether the controller is applying a whole snapshot; use to avoid reentrant partial persistence in custom setters.</summary>
         protected bool IsApplyingSettingsSnapshot =>
             presetController?.IsApplyingSnapshot == true;
 
@@ -351,11 +392,17 @@ namespace APIShared.ModSettings
 
         /// <summary>Optional dynamically described local working configuration.</summary>
         protected virtual IDynamicPresetSettingsProvider DynamicSettingsProvider => null;
+        /// <summary>Optional whole-configuration backend; defaults to the dynamic provider when it implements the application contract.</summary>
         protected virtual IModSettingsApplicationBackend SettingsApplicationBackend => DynamicSettingsProvider as IModSettingsApplicationBackend;
+        /// <summary>Whether this model supplies a dynamic schema rather than only reflected properties.</summary>
         public bool System_HasDynamicSettings => DynamicSettingsProvider != null;
+        /// <summary>Reads one dynamic setting; requires a DynamicSettingsProvider and a valid schema key.</summary>
         public object System_ReadDescribedValue(string key) => DynamicSettingsProvider.ReadValue(key);
+        /// <summary>Whether this model supports separating desired, active and startup-staged configuration.</summary>
         public bool System_HasApplicationBackend => SettingsApplicationBackend != null;
+        /// <summary>Current application/restart explanation shown in common preset status UI.</summary>
         public string System_ApplicationNotice { get; private set; } = "";
+        /// <summary>Whether startup staging exists; errors keep discard reachable for a corrupt package.</summary>
         public bool System_HasPendingConfiguration
         {
             get
@@ -364,6 +411,7 @@ namespace APIShared.ModSettings
                 catch { return SettingsApplicationBackend != null; } // Keep discard reachable for a corrupt package.
             }
         }
+        /// <summary>Discards shared restart preparation or this participant package and refreshes application state; backend errors propagate.</summary>
         public void System_DiscardPendingConfiguration()
         {
             if (ModSettingsApplication.HasRestartPreparation) ModSettingsApplication.DiscardPreparation();
@@ -392,6 +440,7 @@ namespace APIShared.ModSettings
             ReportConfigurationResult(returnToOwn && System_GetPresetSettingDescriptors().Any(x => x.RequiresRestart &&
                 (!activeAfterDiscard.TryGetValue(x.PropertyName, out var value) || !Equals(value, desiredAfterDiscard[x.PropertyName]))));
         }
+        /// <summary>Commits the current working configuration through the shared application coordinator and updates the restart notice.</summary>
         public void System_CommitConfiguration()
         {
             bool restart = ModSettingsApplication.Commit(presetController.TargetGuid);
@@ -399,6 +448,7 @@ namespace APIShared.ModSettings
         }
         internal void ReportConfigurationResult(bool restart) => SetConfigurationNotice(restart
             ? ResolveSettingsUiTextSafe("Common.RestartRequired", "Settings prepared. Restart the game to apply them.") : "");
+        /// <summary>Updates the application notice and dependent UI bindings; null clears the message.</summary>
         protected void SetConfigurationNotice(string message)
         {
             System_ApplicationNotice = message ?? "";
@@ -440,6 +490,7 @@ namespace APIShared.ModSettings
             RaiseAccessProperties();
 #endif
         }
+        /// <summary>Hashes the personal backend snapshot in ordinal key order for restart provenance; empty when no application backend exists.</summary>
         public string System_OwnConfigurationFingerprint()
         {
             if (SettingsApplicationBackend == null) return "";
@@ -458,11 +509,13 @@ namespace APIShared.ModSettings
                     return BitConverter.ToString(sha.ComputeHash(buffer.ToArray())).Replace("-", "");
             }
         }
+        /// <summary>Copies backend personal values into desired working values without applying them live.</summary>
         public void System_RefreshOwnConfiguration()
         {
             if (SettingsApplicationBackend != null)
                 SettingsApplicationBackend.ReplaceDesiredValues(SettingsApplicationBackend.ReadOwnValues());
         }
+        /// <summary>Whether changed restart-marked settings need local startup staging; authenticated network clients defer to their transport.</summary>
         public bool System_ConfigurationNeedsRestart()
         {
             if (SettingsApplicationBackend == null) return false;
@@ -473,6 +526,7 @@ namespace APIShared.ModSettings
             return System_GetPresetSettingDescriptors().Any(x => x.RequiresRestart &&
                 (!active.TryGetValue(x.PropertyName, out var value) || !Equals(value, desired[x.PropertyName])));
         }
+        /// <summary>Applies desired values live or stages restart-marked changes for contextId. Returns true when restart is needed; backend failures propagate. Empty identity denotes personal configuration.</summary>
         public bool System_ApplyConfiguration(string contextId) => System_ApplyConfiguration(contextId, false);
         internal bool System_ApplyConfiguration(string contextId, bool personalChoiceConfirmed)
         {
@@ -516,6 +570,7 @@ namespace APIShared.ModSettings
             if (backend.ReadPendingValues() != null) backend.DiscardPendingConfiguration();
             return false;
         }
+        /// <summary>Restores personal values after temporary context unless a pending restart package must be preserved.</summary>
         public void System_ReturnToOwnConfiguration()
         {
             var backend = SettingsApplicationBackend;
@@ -536,6 +591,7 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Optional participant hook after snapshot application; refresh derived runtime state without introducing another persistence or network engine.</summary>
         protected virtual void OnSettingsSnapshotApplied()
         {
         }
@@ -549,12 +605,15 @@ namespace APIShared.ModSettings
         {
         }
 
+        /// <summary>Whether required per-player reports have converged; true when no coordinator is configured.</summary>
         public bool IsPerPlayerLobbySettingsReady =>
             perPlayerSettingsCoordinator?.IsReady ?? true;
 
+        /// <summary>Explanation of unresolved required reports, or empty when ready.</summary>
         public string PerPlayerLobbySettingsReadinessError =>
             perPlayerSettingsCoordinator?.ReadinessError ?? string.Empty;
 
+        /// <summary>Requests publication through the existing coordinator; no-op before preparation.</summary>
         public void System_RequestPerPlayerSettingsPublish()
         {
             perPlayerSettingsCoordinator?.RequestPublish();
@@ -563,12 +622,14 @@ namespace APIShared.ModSettings
 #if !API_SHARED_PRESET_TESTS
         // SerpsModsHost discovers this method by reflection. Keeping the bridge on the
         // common base type lets every mod remain usable without the optional pack host.
+        /// <summary>Exports search metadata for this settings page, preferring its registered XAML catalog over traversing realized controls.</summary>
         public IReadOnlyList<ModSettingsSearchEntry> System_GetModSettingsSearchEntries(
             Noesis.FrameworkElement view) =>
             ModSettingsSearch.Export(this, view);
 
 #endif
 
+        /// <summary>Checks required reports for the supplied game player slots and returns a reason on failure; true without a coordinator.</summary>
         public bool System_ArePerPlayerSettingsReady(
             IEnumerable<int> playerIds,
             out string error)
@@ -801,15 +862,19 @@ namespace APIShared.ModSettings
         }
 
         // Typed mission-preset endpoint used by ExtendedData and other optional coordinators.
+        /// <summary>Creates a detached serialized mission snapshot with discovered activation settings disabled; does not apply it.</summary>
         public Dictionary<string, byte[]> System_CreateDisabledMissionPresetSnapshot() =>
             presetController?.CreateDisabledSnapshot() ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
+        /// <summary>Creates a detached serialized snapshot of captured code defaults.</summary>
         public Dictionary<string, byte[]> System_CreateModDefaultSnapshot() =>
             presetController?.CreateDefaultSnapshot() ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
+        /// <summary>Compatibility snapshot entry returning the current working settings, including desired application-backend values; empty before preparation.</summary>
         public Dictionary<string, byte[]> System_CreateCurrentMissionPresetSnapshot() =>
             System_CreateCurrentWorkingSnapshot();
 
+        /// <summary>Creates the personal snapshot used as the player contribution to mission settings.</summary>
         public Dictionary<string, byte[]> System_CreatePlayerMissionPresetSnapshot()
         {
             if (SettingsApplicationBackend != null)
@@ -818,22 +883,26 @@ namespace APIShared.ModSettings
             return presetController?.CreatePlayerMissionSnapshot() ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
         }
 
+        /// <summary>Replaces the temporary mission snapshot and label without modifying its external source.</summary>
         public void System_ApplyMissionPresetSnapshot(Dictionary<string, byte[]> snapshot, string label)
         {
             presetController?.ApplyMissionWorkingSnapshot(snapshot, label);
             RaiseAccessProperties();
         }
 
+        /// <summary>Creates a detached serialized snapshot of the currently editable settings.</summary>
         public Dictionary<string, byte[]> System_CreateCurrentWorkingSnapshot() =>
             SettingsApplicationBackend != null ? CaptureApplicationSnapshot() :
             presetController?.CreateCurrentMissionSnapshot() ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
+        /// <summary>Applies a complete working snapshot through the preset controller without replacing its source.</summary>
         public void System_ApplyWorkingSnapshot(Dictionary<string, byte[]> snapshot)
         {
             presetController?.ApplyWorkingSnapshot(snapshot);
             RaiseAccessProperties();
         }
 
+        /// <summary>Loads defaults into the current working settings and commits application state; may stage a restart through the backend. Requires prepared registration and respects editable scope.</summary>
         public void System_LoadModDefaults()
         {
             SetConfigurationNotice("");
@@ -935,12 +1004,14 @@ namespace APIShared.ModSettings
 
 #endif
 
+        /// <summary>Records whether mission data supplied explicit settings, controlling the direct-launch notice.</summary>
         public void System_SetExplicitMissionSettings(bool hasExplicitSettings)
         {
             missionPresetHasExplicitSettings = hasExplicitSettings;
             RaiseAccessProperties();
         }
 
+        /// <summary>Enters a temporary mission snapshot with the supplied label and editability; personal presets are preserved.</summary>
         public void System_EnterMissionPreset(Dictionary<string, byte[]> snapshot, string label, bool editable)
         {
             if (presetController == null)
@@ -952,6 +1023,7 @@ namespace APIShared.ModSettings
             RaiseAccessProperties();
         }
 
+        /// <summary>Leaves temporary mission settings and restores the personal preset context.</summary>
         public void System_ExitMissionPreset()
         {
             if (!missionPresetContext || presetController == null)
@@ -964,6 +1036,7 @@ namespace APIShared.ModSettings
             RaiseAccessProperties();
         }
 
+        /// <summary>Refreshes authority/context-dependent UI gates from the current settings context.</summary>
         public void System_RefreshSettingsAccess()
         {
             bool currentIsRealMultiplayer;
@@ -1060,6 +1133,7 @@ namespace APIShared.ModSettings
         }
 
         // Let the Extender process the notification first; then update our own working state.
+        /// <summary>Notifies the Extender and coordinates persistence/publication for changed participant properties. Invoke after a real value change; snapshot guards prevent partial reentrant saves.</summary>
         protected new void OnPropertyChanged(string name)
         {
             try

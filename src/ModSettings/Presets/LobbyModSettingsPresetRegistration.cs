@@ -1,7 +1,6 @@
 using APIShared.GameModes;
 using APIShared.ModSettings;
 using APIShared.Internal;
-#pragma warning disable 1591 // XAML and integration surface is documented by the APIShared preset guide.
 using BepInEx;
 using BepInEx.Logging;
 using MessagePack;
@@ -32,6 +31,7 @@ using APIShared;
 
 namespace APIShared.ModSettings
 {
+    /// <summary>Unity-thread entry point for integrating a settings model with the Extender page, presets and per-player synchronization. Retain the model for the process lifetime; no SerpsModsHost is required.</summary>
     public static class LobbyModSettingsPresetRegistration
     {
         /// <summary>Attaches shared presets to an existing foreign mod page without a second network registration.</summary>
@@ -70,6 +70,7 @@ namespace APIShared.ModSettings
             return new PreparedExternalSettings(targetGuid, storageAssemblyLocation, viewModel);
         }
 
+        /// <summary>Unpublished external participant candidate. Activate once after the external integration is ready; preparation does not publish an application endpoint.</summary>
         public sealed class PreparedExternalSettings
         {
             private readonly string id, path;
@@ -77,6 +78,7 @@ namespace APIShared.ModSettings
             private bool attempted;
             internal PreparedExternalSettings(string id, string path, PresetLobbyModSettingsViewModel model)
             { this.id = id; this.path = path; this.model = model; }
+            /// <summary>Attempts external activation once, then publishes the participant and persistent UI observer. Exceptions propagate; definitelyRejected may clear failure state only when enable failed before publication.</summary>
             public void Activate(Action enable, Func<Exception, bool> definitelyRejected = null)
             {
                 if (attempted) throw new InvalidOperationException("External registration activation already attempted.");
@@ -102,6 +104,7 @@ namespace APIShared.ModSettings
                 }
             }
         }
+        /// <summary>Registers the plugin-owned settings model and XAML page on the Unity thread. Uses plugin metadata for GUID/version/storage; validates settings before publishing and retains event handlers. This overload leaves scroll diagnostics disabled.</summary>
         public static void Register(
             BaseUnityPlugin plugin,
             ManualLogSource log,
@@ -118,6 +121,7 @@ namespace APIShared.ModSettings
                 true);
         }
 
+        /// <summary>Registers the plugin-owned settings model and XAML page on the Unity thread. Uses plugin metadata for GUID/version/storage; validates settings before publishing and retains event handlers. This overload leaves scroll diagnostics disabled.</summary>
         public static void Register(
             BaseUnityPlugin plugin,
             ManualLogSource log,

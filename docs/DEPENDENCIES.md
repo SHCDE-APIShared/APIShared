@@ -8,7 +8,7 @@ The installed Script Extender also supports arbitrary GUIDs in `info.json`:
 
 ```json
 "Dependencies": [
-  { "GUID": "APIShared_Serp", "MinimumVersion": "0.4.12" },
+  { "GUID": "APIShared_Serp", "MinimumVersion": "0.5.0" },
   { "GUID": "Another.Author.Plugin" }
 ]
 ```

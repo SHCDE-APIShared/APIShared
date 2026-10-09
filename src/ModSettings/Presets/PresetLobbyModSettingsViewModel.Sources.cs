@@ -1,7 +1,6 @@
 using APIShared.GameModes;
 using APIShared.ModSettings;
 using APIShared.Internal;
-#pragma warning disable 1591 // XAML and integration surface is documented by the APIShared preset guide.
 using BepInEx;
 using BepInEx.Logging;
 using MessagePack;
@@ -36,25 +35,32 @@ namespace APIShared.ModSettings
     public abstract partial class PresetLobbyModSettingsViewModel
     {
 #if !API_SHARED_PRESET_TESTS
+        /// <summary>Localized XAML caption/help for Common.PresetLoad; English fallback: Load preset</summary>
         public string System_PresetLoadText =>
             ResolveSettingsUiTextSafe("Common.PresetLoad", "Load preset");
 
+        /// <summary>Localized XAML caption/help for Common.PresetSave; English fallback: Save preset</summary>
         public string System_PresetSaveText =>
             ResolveSettingsUiTextSafe("Common.PresetSave", "Save preset");
 
+        /// <summary>Localized XAML caption/help for Common.SettingsSource; English fallback: Reset settings to</summary>
         public string System_SettingsSourceText =>
             ResolveSettingsUiTextSafe("Common.SettingsSource", "Reset settings to");
 
+        /// <summary>Localized XAML caption/help for Common.SettingsSourceLoad; English fallback: Reset</summary>
         public string System_SettingsSourceLoadText =>
             ResolveSettingsUiTextSafe("Common.SettingsSourceLoad", "Reset");
 
+        /// <summary>Localized XAML caption/help for Common.SettingsSourceHelp; English fallback: Resets this mod&apos;s settings to the selected source. Personal presets are not changed. In multiplayer, only the host can reset host settings.</summary>
         public string System_SettingsSourceHelpText =>
             ResolveSettingsUiTextSafe(
                 "Common.SettingsSourceHelp",
                 "Resets this mod's settings to the selected source. Personal presets are not changed. In multiplayer, only the host can reset host settings.");
 
+        /// <summary>Live observable choices for resetting working settings; bind but do not mutate the collection.</summary>
         public ObservableCollection<ModSettingsWorkingSource> System_SettingsSources => settingsSources;
 
+        /// <summary>Selected reset source; selection alone does not apply it.</summary>
         public ModSettingsWorkingSource System_SelectedSettingsSource
         {
             get => selectedSettingsSource;
@@ -67,12 +73,15 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Whether a source is selected and the mission working copy permits reset.</summary>
         public bool System_CanLoadSettingsSource =>
             selectedSettingsSource != null && (!IsMissionPresetSelected || missionPresetEditable);
 
+        /// <summary>Shows source selection when persistent settings exist.</summary>
         public Visibility System_SettingsSourceVisibility =>
             presetController?.HasPersistentSettings == true ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Application notice or the current source/modified description.</summary>
         public string System_PresetStatusText => !string.IsNullOrEmpty(System_ApplicationNotice) ? System_ApplicationNotice : presetController?.GetStatusText(
             ResolveSettingsUiTextSafe("Common.PresetBasedOn", "Based on"),
             ResolveSettingsUiTextSafe("Common.PresetModified", "modified"),
@@ -80,15 +89,19 @@ namespace APIShared.ModSettings
             ResolveSettingsUiTextSafe("Common.PresetSourceBundled", "Bundled with this mod"),
             ResolveSettingsUiTextSafe("Common.PresetSourceExternal", "External presets")) ?? string.Empty;
 
+        /// <summary>Shows nonempty source/application status.</summary>
         public Visibility System_PresetStatusVisibility =>
             string.IsNullOrWhiteSpace(System_PresetStatusText) ? Visibility.Collapsed : Visibility.Visible;
 
+        /// <summary>Visibility of the current preset chooser.</summary>
         public Visibility System_PresetLoadPanelVisibility =>
             presetLoadPanelOpen ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Live discovered preset rows for the load chooser; selection does not apply a preset.</summary>
         public ObservableCollection<ModSettingsPresetListEntry> System_PresetLoadEntries =>
             presetLoadEntries;
 
+        /// <summary>Current chooser selection; use the confirm command to apply it.</summary>
         public ModSettingsPresetListEntry System_SelectedPresetLoadEntry
         {
             get => selectedPresetLoadEntry;
@@ -102,24 +115,31 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Localized XAML caption/help for Common.PresetLoadConfirm; English fallback: Load</summary>
         public string System_PresetLoadConfirmText =>
             ResolveSettingsUiTextSafe("Common.PresetLoadConfirm", "Load");
 
+        /// <summary>Localized XAML caption/help for Common.PresetLoadCancel; English fallback: Cancel</summary>
         public string System_PresetLoadCancelText =>
             ResolveSettingsUiTextSafe("Common.PresetLoadCancel", "Cancel");
 
+        /// <summary>Localized XAML caption/help for Common.PresetDelete; English fallback: Delete</summary>
         public string System_PresetDeleteText =>
             ResolveSettingsUiTextSafe("Common.PresetDelete", "Delete");
 
+        /// <summary>Whether the selected row is a personal preset that may be deleted.</summary>
         public bool System_CanDeleteSelectedPreset =>
             selectedPresetLoadEntry?.CanDelete == true;
 
+        /// <summary>Shows delete only for a selected personal preset.</summary>
         public Visibility System_PresetDeleteVisibility =>
             System_CanDeleteSelectedPreset ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Live choices for creating or overwriting personal presets.</summary>
         public ObservableCollection<ModSettingsPresetSaveTarget> System_PresetSaveTargets =>
             presetSaveTargets;
 
+        /// <summary>Save destination; selecting an existing preset populates its name, description and resolution modes.</summary>
         public ModSettingsPresetSaveTarget System_SelectedPresetSaveTarget
         {
             get => selectedPresetSaveTarget;
@@ -145,12 +165,15 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveTarget; English fallback: Save as</summary>
         public string System_PresetSaveTargetText =>
             ResolveSettingsUiTextSafe("Common.PresetSaveTarget", "Save as");
 
+        /// <summary>Visibility of the personal-preset authoring panel.</summary>
         public Visibility System_PresetSavePanelVisibility =>
             presetSavePanelOpen ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Editable personal preset name; null becomes empty and empty names disable save confirmation.</summary>
         public string System_PresetSaveName
         {
             get => presetSaveName;
@@ -165,6 +188,7 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Editable optional preset description; null becomes empty.</summary>
         public string System_PresetSaveDescription
         {
             get => presetSaveDescription;
@@ -177,28 +201,35 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Live per-setting resolution-mode rows for personal preset authoring.</summary>
         public ObservableCollection<PresetSaveSettingViewModel> System_PresetSaveSettings =>
             presetSaveSettings;
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveName; English fallback: Preset name</summary>
         public string System_PresetSaveNameText =>
             ResolveSettingsUiTextSafe("Common.PresetSaveName", "Preset name");
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveDescription; English fallback: Description (optional)</summary>
         public string System_PresetSaveDescriptionText =>
             ResolveSettingsUiTextSafe("Common.PresetSaveDescription", "Description (optional)");
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveBulkMode; English fallback: Set all modes</summary>
         public string System_PresetSaveBulkModeText =>
             ResolveSettingsUiTextSafe("Common.PresetSaveBulkMode", "Set all modes");
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveBulkModeHelp; English fallback: Default: use the mod default. Player: keep the player&apos;s current value. Fixed: apply the saved value. Host Fixed: fix host settings and keep player/local values.</summary>
         public string System_PresetSaveBulkModeHelpText =>
             ResolveSettingsUiTextSafe(
                 "Common.PresetSaveBulkModeHelp",
                 "Default: use the mod default. Player: keep the player's current value. Fixed: apply the saved value. Host Fixed: fix host settings and keep player/local values.");
 
+        /// <summary>Localized XAML caption/help for Common.PresetLoadSelectionHelp; English fallback: Selecting a preset changes nothing until you choose Load.</summary>
         public string System_PresetLoadSelectionHelpText =>
             ResolveSettingsUiTextSafe(
                 "Common.PresetLoadSelectionHelp",
                 "Selecting a preset changes nothing until you choose Load.");
 
+        /// <summary>Localized Default, Player, Fixed, Host Fixed and nonselectable Mixed choices in enum order.</summary>
         public ComboBoxItem[] System_PresetSaveBulkModeOptions => new[]
         {
             new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeDefault", "Default") },
@@ -212,6 +243,7 @@ namespace APIShared.ModSettings
             },
         };
 
+        /// <summary>Aggregate resolution mode; Host Fixed fixes host fields and preserves player/local values. Mixed is read-only; setting a supported index updates all rows.</summary>
         public int System_PresetSaveBulkModeIndex
         {
             get
@@ -254,58 +286,84 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveConfirm; English fallback: Save</summary>
         public string System_PresetSaveConfirmText =>
             ResolveSettingsUiTextSafe("Common.PresetSaveConfirm", "Save");
 
+        /// <summary>Whether a nonblank name permits save confirmation; persistence still validates the resulting preset.</summary>
         public bool System_CanConfirmPresetSave =>
             !string.IsNullOrWhiteSpace(presetSaveName);
 
+        /// <summary>Save caption when a name exists, otherwise the localized missing-name explanation.</summary>
         public string System_PresetSaveConfirmHelpText => System_CanConfirmPresetSave
             ? System_PresetSaveConfirmText
             : ResolveSettingsUiTextSafe("Common.PresetSaveNameRequired", "Enter a preset name before saving.");
 
+        /// <summary>Localized XAML caption/help for Common.PresetSaveCancel; English fallback: Cancel</summary>
         public string System_PresetSaveCancelText =>
             ResolveSettingsUiTextSafe("Common.PresetSaveCancel", "Cancel");
 
+        /// <summary>Opens and populates the preset chooser; does not immediately apply a selection.</summary>
         public RelayCommand System_OpenPresetLoadCommand { get; }
 
+        /// <summary>Applies the selected preset through the normal authority-filtered working-copy path.</summary>
         public RelayCommand System_ConfirmPresetLoadCommand { get; }
 
+        /// <summary>Requests explicit deletion confirmation for a selected personal preset.</summary>
         public RelayCommand System_DeletePresetCommand { get; }
 
+        /// <summary>Closes the load chooser without applying its selection.</summary>
         public RelayCommand System_CancelPresetLoadCommand { get; }
 
+        /// <summary>Opens the save form using the current working configuration.</summary>
         public RelayCommand System_OpenPresetSaveCommand { get; }
 
+        /// <summary>Saves the personal preset or requests confirmation before overwriting an existing target.</summary>
         public RelayCommand System_ConfirmPresetSaveCommand { get; }
 
+        /// <summary>Closes personal preset authoring without saving.</summary>
         public RelayCommand System_CancelPresetSaveCommand { get; }
 
+        /// <summary>Resets the editable working copy to the selected source, preserving personal preset files.</summary>
         public RelayCommand System_LoadSettingsSourceCommand { get; }
 
+        /// <summary>Completes the pending delete or overwrite action.</summary>
         public RelayCommand System_ConfirmPresetInlineActionCommand { get; }
 
+        /// <summary>Cancels the pending delete or overwrite action.</summary>
         public RelayCommand System_CancelPresetInlineActionCommand { get; }
 
+        /// <summary>Clears the current operation-status message.</summary>
         public RelayCommand System_DismissPresetStatusCommand { get; }
 
+        /// <summary>Title of the pending delete/overwrite confirmation.</summary>
         public string System_PresetInlineConfirmationTitle => presetInlineConfirmationTitle;
+        /// <summary>Explanation of the pending destructive personal-preset action.</summary>
         public string System_PresetInlineConfirmationMessage => presetInlineConfirmationMessage;
+        /// <summary>Shows confirmation while delete or overwrite is pending.</summary>
         public Visibility System_PresetInlineConfirmationVisibility =>
             pendingDeletePreset != null || pendingOverwriteId != null ? Visibility.Visible : Visibility.Collapsed;
+        /// <summary>Localized XAML caption/help for Common.PresetConfirm; English fallback: Confirm</summary>
         public string System_PresetInlineConfirmText => ResolveSettingsUiTextSafe("Common.PresetConfirm", "Confirm");
+        /// <summary>Localized XAML caption/help for Common.PresetSaveCancel; English fallback: Cancel</summary>
         public string System_PresetInlineCancelText => ResolveSettingsUiTextSafe("Common.PresetSaveCancel", "Cancel");
+        /// <summary>Most recent preset operation message.</summary>
         public string System_PresetOperationStatusText => presetOperationStatus;
+        /// <summary>Shows a nonempty failed-operation message; successful operations do not leave a persistent banner.</summary>
         public Visibility System_PresetOperationStatusVisibility =>
             presetOperationFailed && !string.IsNullOrWhiteSpace(presetOperationStatus)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+        /// <summary>Shows a nonempty failed-operation message.</summary>
         public Visibility System_PresetOperationErrorVisibility =>
             presetOperationFailed && !string.IsNullOrWhiteSpace(presetOperationStatus) ? Visibility.Visible : Visibility.Collapsed;
+        /// <summary>Always collapsed; retained as a compatible XAML binding.</summary>
         public Visibility System_PresetOperationSuccessVisibility =>
             Visibility.Collapsed;
+        /// <summary>Localized XAML caption/help for Common.PresetStatusDismiss; English fallback: Close</summary>
         public string System_PresetStatusDismissText => ResolveSettingsUiTextSafe("Common.PresetStatusDismiss", "Close");
 
+        /// <summary>Editable free-text filter; changing it clears exact-key targeting.</summary>
         public string System_ModSettingsSearchText
         {
             get => modSettingsSearchText;
@@ -323,6 +381,7 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Whether free-text search includes tooltip content as well as visible titles.</summary>
         public bool System_ModSettingsSearchIncludeToolTips
         {
             get => modSettingsSearchIncludeToolTips;
@@ -335,20 +394,26 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Exact target key used by external search navigation, independent of free-text matching.</summary>
         public string System_ModSettingsSearchExactKey => modSettingsSearchExactKey;
 
+        /// <summary>Incrementing focus token for the attached FocusRequest binding.</summary>
         public int System_ModSettingsSearchFocusRequest => modSettingsSearchFocusRequest;
 
+        /// <summary>Whether either free-text filtering or exact-key targeting is active.</summary>
         public bool System_ModSettingsSearchHasActiveFilter =>
             modSettingsSearchExactKey.Length > 0 ||
             !string.IsNullOrWhiteSpace(modSettingsSearchText);
 
+        /// <summary>Shows the expanded search controls.</summary>
         public Visibility System_ModSettingsSearchPanelVisibility =>
             modSettingsSearchExpanded ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>Shows the collapsed search affordance.</summary>
         public Visibility System_ModSettingsSearchInactiveVisibility =>
             System_ModSettingsSearchHasActiveFilter ? Visibility.Collapsed : Visibility.Visible;
 
+        /// <summary>Shows no-results feedback for an active filter with no catalog matches.</summary>
         public Visibility System_ModSettingsSearchNoResultsVisibility =>
             System_ModSettingsSearchHasActiveFilter &&
             !ModSettingsSearch.HasMatches(
@@ -359,29 +424,38 @@ namespace APIShared.ModSettings
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchLabel; English fallback: Search</summary>
         public string System_ModSettingsSearchLabelText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchLabel", "Search");
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchHelp; English fallback: Search setting titles. Optionally include tooltips.</summary>
         public string System_ModSettingsSearchHelpText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchHelp", "Search setting titles. Optionally include tooltips.");
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchToggleHelp; English fallback: Show or hide the settings search.</summary>
         public string System_ModSettingsSearchToggleHelpText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchToggleHelp", "Show or hide the settings search.");
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchIncludeToolTips; English fallback: Search tooltips</summary>
         public string System_ModSettingsSearchIncludeToolTipsText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchIncludeToolTips", "Search tooltips");
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchIncludeToolTipsHelp; English fallback: Also search the explanatory tooltips of settings.</summary>
         public string System_ModSettingsSearchIncludeToolTipsHelpText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchIncludeToolTipsHelp", "Also search the explanatory tooltips of settings.");
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchClearHelp; English fallback: Clear the settings filter.</summary>
         public string System_ModSettingsSearchClearHelpText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchClearHelp", "Clear the settings filter.");
 
+        /// <summary>Localized XAML caption/help for Common.ModSettingsSearchNoResults; English fallback: No matching settings found.</summary>
         public string System_ModSettingsSearchNoResultsText =>
             ResolveSettingsUiTextSafe("Common.ModSettingsSearchNoResults", "No matching settings found.");
 
+        /// <summary>Expands or collapses settings search and requests focus when opening.</summary>
         public RelayCommand System_ToggleModSettingsSearchCommand { get; }
 
+        /// <summary>Clears free-text and exact-key targeting.</summary>
         public RelayCommand System_ClearModSettingsSearchCommand { get; }
 
         private void OpenPresetLoad()

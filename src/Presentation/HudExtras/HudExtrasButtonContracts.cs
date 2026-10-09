@@ -51,9 +51,10 @@ namespace APIShared
     }
 
     /// <summary>Owner-bound access to shared side-HUD buttons, independent of troop selection.</summary>
+    /// <remarks>Visual factories, CanExecute and Execute run on the Unity thread outside registry locks. Failed entries are isolated and can be retried by refresh. Handles update logical state; no unregistration, replay or hook teardown is provided. Your command owns multiplayer/gameplay authorization.</remarks>
     public interface IHudExtrasButtonsCapability
     {
-        /// <summary>Registers without coordinates. At most five visible entries appear per page, bottom to top.</summary>
+        /// <summary>Registers a process-lived owner-local button without coordinates. Returns false with null registration and a ValidationFailed diagnostic for missing ID/command/factory or a duplicate owner-local ID. At most five visible entries appear per page, bottom to top.</summary>
         bool TryRegisterButton(HudExtrasButtonDefinition definition, out IHudExtrasButtonRegistration registration,
             out NativeCapabilityDiagnostic diagnostic);
         /// <summary>Logically activates all this owner's entries without uninstalling callbacks. Defaults to true.</summary>

@@ -1,6 +1,5 @@
 using APIShared.ModSettings;
 using APIShared.Internal;
-#pragma warning disable 1591
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -13,11 +12,14 @@ using MessagePack;
 namespace APIShared.ModSettings
 {
     /// <summary>Optional configuration endpoints, independent of their mod's UI registration.</summary>
+    /// <remarks>Coordinate configuration changes on the Unity thread. This registry is not a concurrent network transport. Backend and storage errors propagate unless a method explicitly reports them; UI notifications are exception-isolated.</remarks>
     public static class ModSettingsApplication
     {
         private static readonly Dictionary<string, PresetLobbyModSettingsViewModel> endpoints = new Dictionary<string, PresetLobbyModSettingsViewModel>(StringComparer.Ordinal);
         private static readonly Dictionary<string, string> activationFailures = new Dictionary<string, string>(StringComparer.Ordinal);
+        /// <summary>Synchronous notification on the thread changing preparation; no replay or automatic dispatch. Each subscriber failure is isolated so diagnostics cannot interrupt publication.</summary>
         public static event Action PreparationChanged;
+        /// <summary>Whether a configuration integration has an unresolved activation failure that blocks launch preparation.</summary>
         public static bool HasActivationFailures => activationFailures.Count != 0;
         internal static void CheckRegistration(string id)
         {
@@ -44,7 +46,9 @@ namespace APIShared.ModSettings
         private static bool consumed;
         private static Dictionary<string, string> personalFingerprints;
         private static Dictionary<string, Dictionary<string, string>> preparedSources;
+        /// <summary>Current temporary mission identity; empty denotes personal configuration.</summary>
         public static string ContextId => contextId;
+        /// <summary>Detached dictionary of published participants by target GUID; the settings models themselves are process-lived.</summary>
         public static IReadOnlyDictionary<string, PresetLobbyModSettingsViewModel> Endpoints => new Dictionary<string, PresetLobbyModSettingsViewModel>(endpoints);
 
         internal static void Register(string id, PresetLobbyModSettingsViewModel endpoint, string assemblyPath)
@@ -60,6 +64,7 @@ namespace APIShared.ModSettings
 #endif
         }
 
+        /// <summary>Discovers host-owned settings, including dynamic descriptors adapted for existing schema consumers.</summary>
         public static PropertyInfo[] GetHostProperties(object endpoint)
         {
             if (endpoint is PresetLobbyModSettingsViewModel model && model.System_HasDynamicSettings)
@@ -70,6 +75,7 @@ namespace APIShared.ModSettings
                     !x.GetCustomAttributes(true).Any(a => a.GetType().Name == "DoNotPersistAttribute")).ToArray();
         }
 
+        /// <summary>Whether an unconsumed durable startup preparation exists; may read and validate its journal.</summary>
         public static bool HasRestartPreparation
         {
             get { EnsureJournalPath(); return resume != null || (journalPath != null && File.Exists(journalPath)); }
@@ -80,6 +86,7 @@ namespace APIShared.ModSettings
             if (journalPath == null) journalPath = Path.Combine(BepInEx.Paths.ConfigPath, "APIShared", "RestartPreparation.json");
 #endif
         }
+        /// <summary>Returns a user-facing explanation of startup preparation, including damaged journal diagnostics.</summary>
         public static string DescribeRestartPreparation()
         {
             var details = activationFailures.Select(x => x.Key + ": " + x.Value).ToList();
@@ -96,10 +103,12 @@ namespace APIShared.ModSettings
             catch (Exception ex) { details.Add(ex.GetBaseException().Message); }
             return string.Join("\n", details);
         }
+        /// <summary>Whether any published participant supplies an application backend.</summary>
         public static bool HasApplicationEndpoints => endpoints.Values.Any(x => x.System_HasApplicationBackend);
 
         // A context is selected before any mission values are materialized. Its identity includes
         // the source content hash; stale preparations are never silently applied to new content.
+        /// <summary>Selects a temporary mission identity and resumes compatible journal evidence. Rejects empty identities and conflicting preparations.</summary>
         public static void EnterContext(string identity)
         {
             RequireActivatedIntegrations();
@@ -119,6 +128,7 @@ namespace APIShared.ModSettings
             contextId = identity;
         }
 
+        /// <summary>Returns a cloned preparation snapshot for this target, or null if consumed, missing or outside the current context.</summary>
         public static Dictionary<string, byte[]> ResumeSnapshot(string id)
         {
             if (resume == null || consumed || resumeContext != contextId) return null;
@@ -126,6 +136,7 @@ namespace APIShared.ModSettings
             return Clone(snapshot);
         }
 
+        /// <summary>Restores saved source-selection metadata for the target in an unconsumed matching preparation.</summary>
         public static void RestorePreparedSources(string id)
         {
             if (resume == null || consumed || resumeContext != contextId || preparedSources == null) return;
@@ -133,6 +144,7 @@ namespace APIShared.ModSettings
                 endpoint.RestoreRestartSources(sources);
         }
 
+        /// <summary>Applies one participant and durably stages restart intent first when needed. Returns whether restart is required; backend errors propagate and restore prior preparation evidence.</summary>
         public static bool Commit(string id)
         {
             if (!endpoints.TryGetValue(id, out var endpoint)) return false;
@@ -191,6 +203,7 @@ namespace APIShared.ModSettings
             }
         }
 
+        /// <summary>Consumes the matching preparation after mission start, removing the journal while retaining active context for in-session restart.</summary>
         public static void ConfirmStarted()
         {
             if (resume != null && resumeContext != contextId) return;
@@ -201,6 +214,7 @@ namespace APIShared.ModSettings
             NotifyPreparationChanged();
         }
 
+        /// <summary>Leaves temporary context; restores personal configuration unless an unconsumed restart preparation must be preserved.</summary>
         public static void ExitContext()
         {
             bool preparingRestart = !consumed && resume != null && resumeContext == contextId;
@@ -213,6 +227,7 @@ namespace APIShared.ModSettings
             consumed = false;
         }
 
+        /// <summary>Explicitly discards startup preparation and participant packages; use DiscardPreparationWithReport to inspect unavailable providers.</summary>
         public static void DiscardPreparation()
         {
             DiscardPreparationWithReport();

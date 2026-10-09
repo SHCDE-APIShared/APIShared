@@ -38,6 +38,7 @@ src/
     Gatehouse/                  timing, origin and drawbridge coordination
   Presentation/
     UnitHud/                    HUD contracts and implementation parts
+    HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
   ModSettings/
     Presets/                    contracts, host adapter, controller, catalog and storage
@@ -95,7 +96,7 @@ For a new service:
    where useful, and test observable behavior in the appropriate suite.
 
 Partial classes here divide one existing service, not independent runtimes.
-`UnitHudPresentationService` retains its field initializers in their original order. Initialization and published-hook lifetime stay centralized. Put a new
+`UnitHudPresentationService` owns the shared state across its named parts. Initialization and published-hook lifetime stay centralized. Put a new
 operation in its feature part; do not grow the state or initialization file with
 unrelated algorithms. A small coherent feature can stay in one file.
 

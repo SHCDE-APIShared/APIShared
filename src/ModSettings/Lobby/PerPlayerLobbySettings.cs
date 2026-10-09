@@ -1,7 +1,6 @@
 using APIShared.GameModes;
 using APIShared.ModSettings;
 using APIShared.Internal;
-#pragma warning disable 1591 // XAML and integration surface is documented by the APIShared preset guide.
 using BepInEx;
 using BepInEx.Logging;
 using MessagePack;
@@ -609,6 +608,8 @@ namespace APIShared.ModSettings
         }
     }
 
+    /// <summary>Optional policies for SyncPerPlayer properties configured by the settings model before publication. Companion NameData arrays must be stable and contain slots 0..8. The coordinator owns transport and convergence.</summary>
+    /// <remarks>Configured callbacks are retained by the coordinator and run synchronously in addition order, without replay or implicit dispatch. They are ordinary delegates: throwing can interrupt the current coordinator operation. Keep them short and use the documented caller context. Register policies before settings publication.</remarks>
     public sealed class PerPlayerLobbySettingsBuilder
     {
         private readonly PresetLobbyModSettingsViewModel owner;
@@ -622,13 +623,21 @@ namespace APIShared.ModSettings
 
         internal PerPlayerLobbySettingsBuilder(PresetLobbyModSettingsViewModel owner) { this.owner = owner; }
 
+        /// <summary>Supplies reset values for a named per-player property when slot ownership changes; a null factory is rejected.</summary>
         public PerPlayerLobbySettingsBuilder ResetSlotsWith(string propertyName, Func<object> resetValueFactory) { Get(propertyName).ResetValueFactory = resetValueFactory ?? throw new ArgumentNullException(nameof(resetValueFactory)); return this; }
+        /// <summary>Requires a player report for launch readiness; the default predicate considers non-null values reported.</summary>
         public PerPlayerLobbySettingsBuilder RequireReport(string propertyName, Func<object, bool> hasReport = null) { PerPlayerLobbySettingOptions item = Get(propertyName); item.IsReportRequired = true; item.HasReport = hasReport ?? (value => value != null); return this; }
+        /// <summary>Adds a callback before the coordinator publishes local values; callbacks use the observation/publish caller thread.</summary>
         public PerPlayerLobbySettingsBuilder BeforePublish(Action callback) { beforePublish += callback; return this; }
+        /// <summary>Adds a callback when the local slot is resolved during roster finalization or publication; receives its game player slot.</summary>
         public PerPlayerLobbySettingsBuilder WhenLocalPlayerResolved(Action<int> callback) { localPlayerResolved += callback; return this; }
+        /// <summary>Adds a callback for an observed lobby snapshot, not an initial-state replay subscription.</summary>
         public PerPlayerLobbySettingsBuilder WhenLobbyChanged(Action<PerPlayerLobbySnapshot> callback) { lobbyChanged += callback; return this; }
+        /// <summary>Adds a callback after remote per-player data changes; receives the setting property name.</summary>
         public PerPlayerLobbySettingsBuilder WhenRemoteDataChanged(Action<string> callback) { remoteDataChanged += callback; return this; }
+        /// <summary>Adds a callback after publishing local per-player values.</summary>
         public PerPlayerLobbySettingsBuilder AfterPublish(Action callback) { published += callback; return this; }
+        /// <summary>Adds a callback for coordinator observations, even when no lobby-change notification is needed.</summary>
         public PerPlayerLobbySettingsBuilder OnObservation(Action callback) { observe += callback; return this; }
 
         internal PerPlayerLobbySettingsContract Build()
@@ -679,6 +688,7 @@ namespace APIShared.ModSettings
         }
     }
 
+    /// <summary>Immutable copied roster used by per-player convergence; player keys are game slots, not zero-based array indices.</summary>
     public sealed class PerPlayerLobbySnapshot
     {
         internal static readonly PerPlayerLobbySnapshot Empty = new PerPlayerLobbySnapshot(null, new Dictionary<int, ulong>(), false, 0);
@@ -691,9 +701,13 @@ namespace APIShared.ModSettings
             HasUnresolvedPlayers = unresolved;
             LocalPlayerId = localPlayerId;
         }
+        /// <summary>Observed lobby identity, or null outside a known lobby.</summary>
         public ulong? LobbyId { get; }
+        /// <summary>Copied mapping from occupied player slots to Steam identities.</summary>
         public IReadOnlyDictionary<int, ulong> Players { get; }
+        /// <summary>Whether some observed lobby members lack an authoritative player-slot mapping.</summary>
         public bool HasUnresolvedPlayers { get; }
+        /// <summary>Resolved local game slot; zero means unresolved.</summary>
         public int LocalPlayerId { get; }
     }
 

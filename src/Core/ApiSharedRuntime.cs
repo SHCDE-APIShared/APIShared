@@ -6,6 +6,9 @@ using RedBird.Core.Memory;
 
 namespace APIShared
 {
+    // Process-owned composition root: managed availability is published before native validation.
+    // One service failure must not disable independent capabilities; terminal readiness is separate.
+    // Capability facades bind owner identity while services retain registrations and permanent hooks.
     internal sealed class ApiSharedRuntime : IApiShared
     {
         internal const string SupportedHash = "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2";

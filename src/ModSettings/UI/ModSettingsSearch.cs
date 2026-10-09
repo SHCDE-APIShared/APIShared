@@ -1,6 +1,5 @@
 using APIShared.ModSettings;
 using APIShared.Internal;
-#pragma warning disable 1591 // XAML binding surface is documented by the APIShared preset guide.
 using System;
 using System.Globalization;
 using System.Linq;
@@ -18,6 +17,7 @@ namespace APIShared.ModSettings
     /// <summary>Pure matching policy shared by runtime filtering and isolated tests.</summary>
     public static class ModSettingsSearchMatcher
     {
+        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case and diacritics.</summary>
         public static bool IsMatch(
             string filterText,
             bool includeToolTips,
@@ -37,6 +37,7 @@ namespace APIShared.ModSettings
                 string.Empty);
         }
 
+        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case and diacritics.</summary>
         public static bool IsMatch(
             string filterText,
             bool includeToolTips,
@@ -64,9 +65,11 @@ namespace APIShared.ModSettings
             return includeToolTips && ContainsAllTerms(JoinSearchText(visibleText, toolTip), filter);
         }
 
+        /// <summary>Tests all free-text terms against a section title using the same case/diacritic folding as entry matching.</summary>
         public static bool IsSectionTitleMatch(string filterText, string sectionTitle) =>
             ContainsAllTerms(sectionTitle, Normalize(filterText));
 
+        /// <summary>Trims search text and maps null to empty; does not itself perform case/diacritic folding.</summary>
         public static string Normalize(string value) => (value ?? string.Empty).Trim();
 
         private static bool ContainsAllTerms(string value, string filter)
@@ -110,6 +113,7 @@ namespace APIShared.ModSettings
         private static readonly Dictionary<object, SearchSource> Sources =
             new Dictionary<object, SearchSource>(ReferenceEqualityComparer.Instance);
 
+        /// <summary>Noesis attached property for stable exact setting key; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty KeyProperty =
             DependencyProperty.RegisterAttached(
                 "Key",
@@ -117,6 +121,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new PropertyMetadata(string.Empty));
 
+        /// <summary>Noesis attached property for localized visible setting title; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty TitleProperty =
             DependencyProperty.RegisterAttached(
                 "Title",
@@ -124,6 +129,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new PropertyMetadata(string.Empty));
 
+        /// <summary>Noesis attached property for exclusion from search discovery; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty ExcludeProperty =
             DependencyProperty.RegisterAttached(
                 "Exclude",
@@ -131,6 +137,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new PropertyMetadata(false));
 
+        /// <summary>Noesis attached property for localized tooltip search text; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty ToolTipTextProperty =
             DependencyProperty.RegisterAttached(
                 "ToolTipText",
@@ -138,6 +145,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new PropertyMetadata(string.Empty));
 
+        /// <summary>Noesis attached property for stable enclosing section key; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty SectionKeyProperty =
             DependencyProperty.RegisterAttached(
                 "SectionKey",
@@ -145,6 +153,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.Inherits));
 
+        /// <summary>Noesis attached property for localized enclosing section title; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty SectionTitleProperty =
             DependencyProperty.RegisterAttached(
                 "SectionTitle",
@@ -152,6 +161,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.Inherits));
 
+        /// <summary>Noesis attached property for whether this container represents a section; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty IsSectionProperty =
             DependencyProperty.RegisterAttached(
                 "IsSection",
@@ -159,6 +169,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new PropertyMetadata(false));
 
+        /// <summary>Noesis attached property for current free-text filter; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty FilterTextProperty =
             DependencyProperty.RegisterAttached(
                 "FilterText",
@@ -166,6 +177,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.Inherits));
 
+        /// <summary>Noesis attached property for exact setting/section target overriding free-text filtering; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty ExactKeyProperty =
             DependencyProperty.RegisterAttached(
                 "ExactKey",
@@ -173,6 +185,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.Inherits));
 
+        /// <summary>Noesis attached property for whether tooltip text participates in free-text matching; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty IncludeToolTipsProperty =
             DependencyProperty.RegisterAttached(
                 "IncludeToolTips",
@@ -180,6 +193,7 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
 
+        /// <summary>Noesis attached property for incrementing token that focuses and selects the target TextBox text; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty FocusRequestProperty =
             DependencyProperty.RegisterAttached(
                 "FocusRequest",
@@ -187,69 +201,91 @@ namespace APIShared.ModSettings
                 typeof(ModSettingsSearch),
                 new PropertyMetadata(0, OnFocusRequestChanged));
 
+        /// <summary>Reads the attached stable exact setting key on the Unity thread.</summary>
         public static string GetKey(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(KeyProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached stable exact setting key on the Unity thread.</summary>
         public static void SetKey(DependencyObject value, string key) =>
             value?.SetValue(KeyProperty, key ?? string.Empty);
 
+        /// <summary>Reads the attached localized visible setting title on the Unity thread.</summary>
         public static string GetTitle(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(TitleProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached localized visible setting title on the Unity thread.</summary>
         public static void SetTitle(DependencyObject value, string title) =>
             value?.SetValue(TitleProperty, title ?? string.Empty);
 
+        /// <summary>Reads the attached exclusion from search discovery on the Unity thread.</summary>
         public static bool GetExclude(DependencyObject value) =>
             value != null && value.GetValue(ExcludeProperty) is bool excluded && excluded;
 
+        /// <summary>Sets the attached exclusion from search discovery on the Unity thread.</summary>
         public static void SetExclude(DependencyObject value, bool excluded) =>
             value?.SetValue(ExcludeProperty, excluded);
 
+        /// <summary>Reads the attached localized tooltip search text on the Unity thread.</summary>
         public static string GetToolTipText(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(ToolTipTextProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached localized tooltip search text on the Unity thread.</summary>
         public static void SetToolTipText(DependencyObject value, string text) =>
             value?.SetValue(ToolTipTextProperty, text ?? string.Empty);
 
+        /// <summary>Reads the attached stable enclosing section key on the Unity thread.</summary>
         public static string GetSectionKey(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(SectionKeyProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached stable enclosing section key on the Unity thread.</summary>
         public static void SetSectionKey(DependencyObject value, string key) =>
             value?.SetValue(SectionKeyProperty, key ?? string.Empty);
 
+        /// <summary>Reads the attached localized enclosing section title on the Unity thread.</summary>
         public static string GetSectionTitle(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(SectionTitleProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached localized enclosing section title on the Unity thread.</summary>
         public static void SetSectionTitle(DependencyObject value, string title) =>
             value?.SetValue(SectionTitleProperty, title ?? string.Empty);
 
+        /// <summary>Reads the attached whether this container represents a section on the Unity thread.</summary>
         public static bool GetIsSection(DependencyObject value) =>
             value != null && value.GetValue(IsSectionProperty) is bool isSection && isSection;
 
+        /// <summary>Sets the attached whether this container represents a section on the Unity thread.</summary>
         public static void SetIsSection(DependencyObject value, bool isSection) =>
             value?.SetValue(IsSectionProperty, isSection);
 
+        /// <summary>Reads the attached current free-text filter on the Unity thread.</summary>
         public static string GetFilterText(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(FilterTextProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached current free-text filter on the Unity thread.</summary>
         public static void SetFilterText(DependencyObject value, string text) =>
             value?.SetValue(FilterTextProperty, text ?? string.Empty);
 
+        /// <summary>Reads the attached exact setting/section target overriding free-text filtering on the Unity thread.</summary>
         public static string GetExactKey(DependencyObject value) =>
             value == null ? string.Empty : value.GetValue(ExactKeyProperty) as string ?? string.Empty;
 
+        /// <summary>Sets the attached exact setting/section target overriding free-text filtering on the Unity thread.</summary>
         public static void SetExactKey(DependencyObject value, string key) =>
             value?.SetValue(ExactKeyProperty, key ?? string.Empty);
 
+        /// <summary>Reads the attached whether tooltip text participates in free-text matching on the Unity thread.</summary>
         public static bool GetIncludeToolTips(DependencyObject value) =>
             value != null && value.GetValue(IncludeToolTipsProperty) is bool enabled && enabled;
 
+        /// <summary>Sets the attached whether tooltip text participates in free-text matching on the Unity thread.</summary>
         public static void SetIncludeToolTips(DependencyObject value, bool enabled) =>
             value?.SetValue(IncludeToolTipsProperty, enabled);
 
+        /// <summary>Reads the attached incrementing token that focuses and selects the target TextBox text on the Unity thread.</summary>
         public static int GetFocusRequest(DependencyObject value) =>
             value != null && value.GetValue(FocusRequestProperty) is int request ? request : 0;
 
+        /// <summary>Sets the attached incrementing token that focuses and selects the target TextBox text on the Unity thread.</summary>
         public static void SetFocusRequest(DependencyObject value, int request) =>
             value?.SetValue(FocusRequestProperty, request);
 
@@ -288,11 +324,12 @@ namespace APIShared.ModSettings
             Sources[viewModel] = new SearchSource(absoluteXamlPath, log, modName);
         }
 
+        /// <summary>Exports registered XAML catalog entries, falling back to a supplied realized view only without a catalog. Read on the Unity thread; a registered catalog avoids native traversal during tab transitions.</summary>
         public static IReadOnlyList<ModSettingsSearchEntry> Export(
             object viewModel,
             FrameworkElement view)
         {
-            // Registered Serps mods use the immutable XAML catalog exclusively. Traversing a
+            // Registered settings pages use the immutable XAML catalog exclusively. Traversing a
             // realized Noesis tree during or after a tab transition can crash in native code.
             if (viewModel != null && Sources.TryGetValue(viewModel, out SearchSource source))
                 return source.GetEntries(viewModel);
@@ -306,6 +343,7 @@ namespace APIShared.ModSettings
             return realizedEntries;
         }
 
+        /// <summary>Checks the registered catalog for a filter match; returns true without a catalog to avoid incorrectly hiding unknown content.</summary>
         public static bool HasMatches(
             object viewModel,
             string filterText,
@@ -546,8 +584,10 @@ namespace APIShared.ModSettings
         }
     }
 
+    /// <summary>One-way XAML converter for setting/section search visibility using the shared matching policy.</summary>
     public sealed class ModSettingsSearchVisibilityConverter : IMultiValueConverter
     {
+        /// <summary>Returns Visible or Collapsed from the search bindings; incomplete input (fewer than six values) is Collapsed. Bind filter, tooltip inclusion, exact key, then entry key/title/tooltip and optional section key/title.</summary>
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
             string filterText = ReadString(values, 0);
@@ -573,6 +613,7 @@ namespace APIShared.ModSettings
             return Visibility.Collapsed;
         }
 
+        /// <summary>Reverse conversion is unsupported and throws NotSupportedException.</summary>
         public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
             throw new NotSupportedException();
 
@@ -587,11 +628,13 @@ namespace APIShared.ModSettings
     /// </summary>
     public sealed class ModSettingsSearchEntry
     {
+        /// <summary>Creates immutable search metadata; null section fields become empty. Callers should supply non-null setting key/title/tooltip for export consumers.</summary>
         public ModSettingsSearchEntry(string key, string title, string toolTip)
             : this(key, title, toolTip, string.Empty, string.Empty, false)
         {
         }
 
+        /// <summary>Creates immutable search metadata; null section fields become empty. Callers should supply non-null setting key/title/tooltip for export consumers.</summary>
         public ModSettingsSearchEntry(
             string key,
             string title,
@@ -608,11 +651,17 @@ namespace APIShared.ModSettings
             IsSection = isSection;
         }
 
+        /// <summary>Stable exact setting key; may be empty when only visible title matching is available.</summary>
         public string Key { get; }
+        /// <summary>Localized visible setting title used for free-text search.</summary>
         public string Title { get; }
+        /// <summary>Localized explanatory text searched only when tooltip inclusion is enabled.</summary>
         public string ToolTip { get; }
+        /// <summary>Stable enclosing section identity used for exact targeting.</summary>
         public string SectionKey { get; }
+        /// <summary>Localized enclosing title included in free-text matching.</summary>
         public string SectionTitle { get; }
+        /// <summary>Whether this entry describes a whole section instead of an individual setting.</summary>
         public bool IsSection { get; }
     }
 

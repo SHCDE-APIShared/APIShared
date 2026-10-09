@@ -1,6 +1,5 @@
 // APIShared-owned implementation; independent of workspace Shared helpers.
 // Initial provenance: a7888900e, Shared/DependencyFreeJson.cs. No automatic synchronization.
-#pragma warning disable 1591 // Runtime utility surface is documented by the APIShared preset guide.
 using System;
 using System.Collections;
 using System.Collections.Generic;

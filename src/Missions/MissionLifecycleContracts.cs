@@ -162,7 +162,8 @@ namespace APIShared
     {
         /// <summary>The active ready session, or null while loading/outside a session.</summary>
         MissionContext Current { get; }
-        /// <summary>Register callbacks; replay applies only to OnStart, never initialization mutations.</summary>
+        /// <summary>Registers a nonempty owner-local ID with at least one callback; duplicate or invalid registrations return false with a diagnostic. Callbacks are retained for the process lifetime. Replay applies only to OnStart for an already ready session, never initialization mutations.</summary>
+        /// <remarks>Notifications run synchronously on the publisher thread, with per-callback exception isolation. Owner/ID sorting is not guaranteed; do not rely on registration order for coordination. Replay can occur before this method returns. Reentrant notifications are queued; observers added during a notification do not alter its captured observer list. No unregistration or implicit Unity dispatch is provided.</remarks>
         bool TryRegisterObserver(string registrationId, Action<MissionLifecycleNotification> onStart,
             Action<MissionLifecycleNotification> onEnd, Action<MissionLifecycleNotification> onInitialization,
             out NativeCapabilityDiagnostic diagnostic);

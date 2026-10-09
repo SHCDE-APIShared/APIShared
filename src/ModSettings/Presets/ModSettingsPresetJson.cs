@@ -7,18 +7,22 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-#pragma warning disable 1591 // Public schema members are documented by the APIShared preset guide.
 
 namespace APIShared.ModSettings
 {
     /// <summary>Shared JSON contract for loose <c>preset_*.json</c> files.</summary>
     public static class ModSettingsPresetJson
     {
+        /// <summary>Supported loose-preset JSON schema version; other versions are rejected.</summary>
         public const int SchemaVersion = 1;
+        /// <summary>Marker for MessagePack values encoded as base64 when a setting cannot use a plain JSON value.</summary>
         public const string EncodedMessagePackPrefix = "messagepack-base64:";
+        /// <summary>Upper bound on setting entries in one preset.</summary>
         public const int MaximumSettings = 16384;
+        /// <summary>Maximum accepted preset description length in characters.</summary>
         public const int MaximumDescriptionLength = 8192;
 
+        /// <summary>Validates a loose preset against its expected target GUID, schema, known fields and size limits; returns provider-qualified data. Invalid input throws; this does not apply values or perform discovery/version filtering.</summary>
         public static PublishedModSettingsPreset Parse(
             string json,
             string providerGuid,
@@ -94,6 +98,7 @@ namespace APIShared.ModSettings
             };
         }
 
+        /// <summary>Validates and serializes selected settings in ordinal key order using the API-owned JSON parser; invalid schema values or excessive size throw.</summary>
         public static string Serialize(
             string targetGuid,
             string id,
@@ -148,6 +153,7 @@ namespace APIShared.ModSettings
             return json;
         }
 
+        /// <summary>Converts a JSON or marked MessagePack value to the declared setting type; unsupported shapes, null or out-of-range values fail rather than silently defaulting.</summary>
         public static object ConvertValue(object value, Type targetType)
         {
             if (value == null) throw new InvalidDataException("Null cannot be assigned to [" + targetType.FullName + "].");
@@ -202,6 +208,7 @@ namespace APIShared.ModSettings
             return Convert.ChangeType(value, effectiveType, CultureInfo.InvariantCulture);
         }
 
+        /// <summary>Converts a declared setting value to a JSON-compatible value or marked MessagePack representation; does not write a file.</summary>
         public static object ToJsonValue(Type propertyType, object value)
         {
             if (value == null) throw new InvalidDataException("Preset values cannot be null.");
