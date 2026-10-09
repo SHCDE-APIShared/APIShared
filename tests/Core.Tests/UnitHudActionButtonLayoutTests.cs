@@ -7,6 +7,31 @@ namespace Core.Tests
     public class UnitHudActionButtonLayoutTests
     {
         [TestMethod]
+        public void TemplateProvidesAnOpaqueIconAndHitSurfaceAboveVanillaClickShields()
+        {
+            var patch = System.Xml.Linq.XDocument.Load(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Fixtures", "HUD_Troops.xaml"));
+            var style = patch.Descendants().Single(e => e.Name.LocalName == "Style" && (string)e.Attribute("TargetType") == "{x:Type Button}");
+            var template = style.Descendants().Single(e => e.Name.LocalName == "ControlTemplate");
+            var hitSurface = template.Elements().First();
+            Assert.AreEqual("Border", hitSurface.Name.LocalName);
+            Assert.AreEqual("{TemplateBinding Background}", (string)hitSurface.Attribute("Background"));
+            Assert.AreEqual("Transparent", (string)style.Elements().Single(e => (string)e.Attribute("Property") == "Background").Attribute("Value"));
+            var content = hitSurface.Elements().Single();
+            Assert.AreEqual("ContentPresenter", content.Name.LocalName);
+            Assert.AreEqual("1", (string)content.Attribute("Opacity"));
+            var pressed = template.Descendants().Single(e => e.Name.LocalName == "Trigger" && (string)e.Attribute("Property") == "IsPressed");
+            Assert.AreEqual("0.75", (string)pressed.Elements().Single().Attribute("Value"));
+            var layer = patch.Descendants().Single(e => (string)e.Attribute("AttributeName") == "Panel.ZIndex" &&
+                (string)e.Attribute("XPath") == "//n:Grid[@Name='TroopSelectionControls']");
+            Assert.AreEqual("//n:Grid[@Name='TroopSelectionControls']", (string)layer.Attribute("XPath"));
+            Assert.AreEqual("3", (string)layer.Attribute("Value"));
+            var vanillaButtonLayer = patch.Descendants().Single(e => (string)e.Attribute("XPath") == "//n:Button[@Name='ToggleControlGroups']");
+            Assert.AreEqual("4", (string)vanillaButtonLayer.Attribute("Value"), "Vanilla Control Groups must stay above the overlapping troop container.");
+            var hostOperation = patch.Elements().Single().Elements().Single(e => e.Descendants().Any(child =>
+                child.Name.LocalName == "Canvas" && child.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == "APISharedTroopActionButtonsHost")));
+            Assert.AreEqual("//n:Grid[@Name='TroopSelectionControls']", (string)hostOperation.Attribute("XPath"));
+        }
+        [TestMethod]
         public void FitsOnlyWholeButtonsWithGaps()
         {
             Assert.AreEqual(9, UnitHudActionButtonLayout.Capacity(377, 12));

@@ -88,6 +88,58 @@ namespace APISharedTests
             MsAssert.AreEqual(3, attempts, "A failed consumer never prevents invoking another factory or an explicit retry.");
         }
 
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void VanillaHudClickShieldsLeaveRoomForFormationButButtonsReserveSpace()
+        {
+            // Relevant direct children from the audited Vanilla HUD_Troops LayoutRoot (FBCB9319).
+            var layout = System.Xml.Linq.XElement.Parse(@"<Grid>
+                <Button Name='ToggleControlGroups' Width='35' Height='35' Margin='519,11,0,0'/>
+                <StackPanel Name='StanceTabs' Width='150' Height='64' Margin='0,5,0,0'/>
+                <Rectangle Width='560' Height='25' Fill='#00F4F4F5'/>
+                <Rectangle Width='144' Height='15' Margin='560,0,0,0' Fill='#00F4F4F5'/>
+            </Grid>");
+            Noesis.Rect Bounds(System.Xml.Linq.XElement element)
+            {
+                string[] margin = ((string)element.Attribute("Margin") ?? "0,0,0,0").Split(',');
+                float Number(string value) => float.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+                return new Noesis.Rect(Number(margin[0]), Number(margin[1]),
+                    Number((string)element.Attribute("Width")), Number((string)element.Attribute("Height")));
+            }
+            var anchor = Bounds(layout.Elements().First());
+            float left = 0;
+            foreach (var element in layout.Elements().Skip(1))
+            {
+                Type type = element.Name.LocalName == "Rectangle" ? typeof(Noesis.Rectangle) : typeof(Noesis.StackPanel);
+                left = UnitHudPresentationService.ReserveActionObstacle(type, anchor, Bounds(element), left);
+            }
+            MsAssert.AreEqual(154f, left, "Only the stance controls reserve space in Vanilla's upper row.");
+            MsAssert.AreEqual(9, UnitHudActionButtonLayout.Capacity(anchor.X, left));
+            MsAssert.AreEqual(480f, anchor.X - UnitHudActionButtonLayout.Pitch, "The first button sits immediately left of Control Groups.");
+            left = UnitHudPresentationService.ReserveActionObstacle(typeof(Noesis.Button), anchor,
+                new Noesis.Rect(470, 11, 35, 35), left);
+            MsAssert.AreEqual(509f, left, "An actual third-party button must still reserve its occupied space.");
+            MsAssert.AreEqual(0, UnitHudActionButtonLayout.Capacity(anchor.X, left));
+        }
+        [TestMethod]
+        public void ActionColourPreservesRedAndAppliesLoadedMultiplayerRemapping()
+        {
+            int[] original = SpriteMapping.mpLoadRemapping;
+            try
+            {
+                SpriteMapping.mpLoadRemapping = null;
+                int[] colours = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+                MsAssert.AreEqual(1, UnitHudPresentationService.ResolveActionColour(SpriteMapping.RemapMPLoadedColour(1), colours));
+                SpriteMapping.mpLoadRemapping = new[] { 0, 4, 2, 3, 1, 5, 6, 7, 8 };
+                MsAssert.AreEqual(4, UnitHudPresentationService.ResolveActionColour(SpriteMapping.RemapMPLoadedColour(1), colours));
+                colours[4] = 1;
+                MsAssert.AreEqual(1, UnitHudPresentationService.ResolveActionColour(SpriteMapping.RemapMPLoadedColour(1), colours));
+                MsAssert.AreEqual(-1, UnitHudPresentationService.ResolveActionColour(9, colours));
+                MsAssert.AreEqual(-1, UnitHudPresentationService.ResolveActionColour(0, colours));
+                MsAssert.AreEqual(-1, UnitHudPresentationService.ResolveActionColour(1, null));
+            }
+            finally { SpriteMapping.mpLoadRemapping = original; }
+        }
         private sealed class TestActionCommand : ICommand
         {
             public event EventHandler CanExecuteChanged { add { } remove { } }

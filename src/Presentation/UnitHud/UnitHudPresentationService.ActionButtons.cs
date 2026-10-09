@@ -64,12 +64,16 @@ namespace APIShared
                     selection.PlayerId, selection.Count)) return false;
             int colour = SpriteMapping.RemapMPLoadedColour(selection.PlayerId);
             int[] colours = SpriteMapping.remapColours;
-            if (colours == null || colour < 0 || colour >= colours.Length) return false;
-            colour = colours[colour];
-            if (colour < 1 || colour > 8) return false;
+            colour = ResolveActionColour(colour, colours);
+            if (colour < 1) return false;
+
             context = new UnitHudActionButtonContext(main.HUDTroopPanel, selection.PlayerId, colour);
             return true;
         }
+
+        internal static int ResolveActionColour(int loadedColour, int[] colours) =>
+            colours != null && loadedColour >= 0 && loadedColour < colours.Length &&
+            colours[loadedColour] >= 1 && colours[loadedColour] <= 8 ? colours[loadedColour] : -1;
 
         private void ApplyActionButtons(MainViewModel main)
         {
@@ -93,10 +97,8 @@ namespace APIShared
                 if (!(child is FrameworkElement obstacle) || ReferenceEquals(obstacle, actionControls) ||
                     ReferenceEquals(obstacle, anchor) || obstacle.Visibility != Visibility.Visible ||
                     obstacle.Opacity <= 0 || !obstacle.IsHitTestVisible || obstacle.ActualWidth <= 0 ||
-                    obstacle is TextBlock || obstacle is Image || string.Equals(obstacle.Tag as string, "Ignore", StringComparison.Ordinal)) continue;
-                Rect rect = ActionRect(obstacle);
-                if (rect.Y < anchorRect.Y + 35 && rect.Y + rect.Height > anchorRect.Y && rect.X < anchorRect.X)
-                    left = Math.Max(left, rect.X + rect.Width + 4);
+                    string.Equals(obstacle.Tag as string, "Ignore", StringComparison.Ordinal)) continue;
+                left = ReserveActionObstacle(obstacle.GetType(), anchorRect, ActionRect(obstacle), left);
             }
             actionCapacity = UnitHudActionButtonLayout.Capacity(anchorRect.X, left);
             var visible = states.Where(x => x.Visible).ToArray();
@@ -138,6 +140,14 @@ namespace APIShared
             actionNext.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        internal static float ReserveActionObstacle(Type elementType, Rect anchor, Rect obstacle, float leftBoundary)
+        {
+            // Vanilla's transparent rectangles prevent world clicks; they do not reserve button space.
+            if (typeof(TextBlock).IsAssignableFrom(elementType) || typeof(Image).IsAssignableFrom(elementType) ||
+                typeof(Rectangle).IsAssignableFrom(elementType)) return leftBoundary;
+            return obstacle.Y < anchor.Y + UnitHudActionButtonLayout.Size && obstacle.Y + obstacle.Height > anchor.Y &&
+                obstacle.X < anchor.X ? Math.Max(leftBoundary, obstacle.X + obstacle.Width + UnitHudActionButtonLayout.Gap) : leftBoundary;
+        }
         private Rect ActionRect(FrameworkElement element)
         {
             Point origin = actionControls.PointToScreen(new Point(0, 0));

@@ -12,4 +12,5 @@
     <Compile Include="../../src/ModSettings/Presets/PresetAtomicFilePublisher.cs" Link="Production/PresetAtomicFilePublisher.cs" />
     <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
   </ItemGroup>
+  <ItemGroup><Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_Troops.xaml" Link="Fixtures/HUD_Troops.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>
