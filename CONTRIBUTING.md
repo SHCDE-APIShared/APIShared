@@ -5,7 +5,7 @@ Describe the resulting behavior, affected contracts and tests you ran. Contribut
 can add services or reorganize implementation; the current folder layout is a guide,
 not a requirement. No AI tools or separate mod workspace are needed.
 Use the [feature implementation guide](ARCHITECTURE.md#finding-and-extending-a-feature)
-to locate contracts, services and hook owners. The HUD and formation services show
+to locate contracts, services and hook owners. The HUD service shows
 how larger features keep registrations, behavior and hooks in named parts.
 
 ## Setup
@@ -51,8 +51,13 @@ Core tests compile the actual dependency-free implementations. UnitAccess double
 the external SDK boundary, not native layout. Runtime tests use the real installed
 assemblies and isolated memory/backend fixtures. Preset tests compile the actual
 settings implementation with UI/session doubles; they verify persistence and convergence,
-not rendering in the game. Process-wide fixtures run serially and restore mutated state.
+not rendering in the game. Controller tests use a plain settings host to verify role
+filtering, mission isolation, reentrant setters and snapshot ownership without a UI.
+Process-wide fixtures run serially and restore mutated state.
 Temporary preset and atomic-file directories are cleaned up after each test.
+
+Savegame participation tests cover
+the generic plugin exclusion contract independently of any consumer mod.
 
 Pull-request CI runs core tests and source/metadata/XAML checks on a GitHub-hosted
 Windows runner. It does not claim to run installed-game integration or gameplay tests.
