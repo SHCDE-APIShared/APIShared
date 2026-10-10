@@ -1,6 +1,6 @@
 # API catalog
 
-Capabilities are acquired through `ModApiClient` or `IApiShared`. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
+Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event brokers also expose static registration methods. The command, presentation, recruitment and market entries below require APIShared 0.6.0 or later. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
 
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
@@ -16,6 +16,11 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`. The table desc
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |
+| `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
+| `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
+| `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
+| `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
+| `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 
 ## Source map
 
@@ -42,6 +47,10 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
+| Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 
 ## Side-HUD buttons
 
@@ -167,3 +176,81 @@ inactive; set `SupportsBuiltInOrigins` only if your mod tracks built-in trails t
 The contract uses existing game trail families and ID ranges; it supplies evidence,
 not another mod's permission policy. See the optional
 [customized launch example](../examples/ThirdPartyMod/CustomizedLaunchExample.cs).
+
+## Managed actions and HUD interception
+
+[GameActionEvents](../src/Units/Commands/GameActionEvents.cs) coordinates the exact
+`EngineInterface.GameAction(GameActionCommand, int, int, int)` overload. The
+KeyFunctions overload, direct native callers, network execution and actual unit
+creation are outside this publisher. One hook preserves the installed MonoMod /
+Script Extender chain. Register once on the Unity startup thread with owner GUID,
+owner-local ID, optional Pre/Post and optional Accepted. Callback lifetimes are the
+process lifetime; activate through your own logical settings, never hook teardown.
+
+Pre can change the three payloads or set `SkipOriginalFunction`. Command is fixed;
+payload meanings depend on it. Successful vetoes are sticky. A failing Pre rolls
+back its payload/veto changes and discards its private State. Ascending order then
+ordinal owner GUID/ID defines notification order. Registrations during notification
+start on the next invocation. Accepted sees frozen final inputs after all Pre
+callbacks, only for an unvetoed call, immediately before the original. It supports
+preparations such as recruitment tickets and pre-Stop cancellation without applying
+them to a later-vetoed command. Acceptance does not promise native success. Post
+runs on normal original return and on veto (result zero), but not on an original
+exception. Its final payload and owner-private State support reservation accounting.
+Zero is not a negative recruitment acknowledgement; native creation occurs later.
+
+[RecruitmentRequestPolicy](../src/Units/Recruitment/RecruitmentRequestPolicy.cs)
+provides pure ceiling/reservation arithmetic. For MakeTroop, the first payload is
+the amount and the second is the Vanilla unit type. An untouched Ctrl ceiling of
+1000 can use a consumer's Vanilla preview. Explicitly assigning an amount marks it
+concrete, including assigning 1000 itself. Reservations must use final Post values
+and retain the consumer's observed-unit reconciliation.
+
+[PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) owns named
+GUI-check, building-rollover, recruitment/troop-panel hover and siege-ammo button
+sites: `GuiChecks`, `BuildingRollover`, `RecruitmentEnter`, `RecruitmentLeave`,
+`TroopPanelEnter`, `TroopPanelLeave` and `RechargeSiegeAmmo`. GUI checks also run
+while paused. Pre can replace a button parameter or veto
+the complete managed call. Post reports normal completion, veto or original
+exception; the original exception is rethrown after callbacks. Use
+`OriginalCompleted` before augmenting Vanilla writes and State for cleanup even when
+it is false. Keep references invocation-local; panels are replaced across maps.
+These are presentation callbacks on their actual caller thread, not native events
+or simulation clocks. Exceptions isolate registrations and are counted; repeated
+errors are logged at exponentially spaced counts. Nested operations from a callback
+run their originals without recursive notifications. Do not issue nested GameAction
+commands. Native effects sent directly by an explicit replacement UI action remain
+the consumer's deterministic multiplayer responsibility.
+
+Presentation Pre may assign a replacement action. It runs once with the final
+parameter only after all Pre callbacks; any veto suppresses it as well as Vanilla.
+Post exposes WasReplaced and CompletionException, and OriginalCompleted remains
+false for replacements. This lets another mod cancel a replacement button action
+before native packets or other effects are issued.
+
+[RecruitmentMaterialUi](../src/Units/Recruitment/RecruitmentMaterialUi.cs) coordinates
+the complete validated European weapon-stock HUD IL patch. Predicates combine by OR;
+true bypasses only fixed stock presentation, preserving other button gates. It does
+not remove native material costs or establish affordability. Predicate exceptions
+mean false. The installed original IL must match all 26 sites or registration fails.
+No source links or private bridge are required by consumers. See the compiled
+[interception example](../examples/ThirdPartyMod/InterceptionExample.cs).
+
+## Native market price queries
+
+[MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) owns the two native market
+price queries on the audited image. Pre can supply `ReplacementTotal` and veto the
+helper; Post observes the final total and registration-private state. A veto without
+a replacement returns zero. Other Pre callbacks may intentionally compose a prior
+replacement; no participant can clear a veto. Callback failures roll back that
+participant's replacement/veto and do not escape into native callers.
+The native player/goods/amount arguments remain unchanged and unvalidated. Consumers
+must validate them before indexing tables. These queries cover AI affordability,
+trade execution and ally-transfer valuation; they are not general market transaction
+or player-trade events. Replacement policies must be consistent across those callers
+and multiplayer peers. `CalculateTradeTotal` preserves signed division before
+unchecked multiplication. Registration requires LibraryLoaded initialization and
+fails closed on unknown native images or already occupied entries. Both permanent
+hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
+validated pointer slots, entry points and trampoline continuation. Foreign consumers
+should subscribe here rather than detour CEB10/CEB90 independently.

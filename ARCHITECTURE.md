@@ -13,12 +13,16 @@ GUID without installing hooks or reserving a capability.
 | Presentation, Buildings | HUD/briefing extensions, building repair and gatehouse services |
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
-| Units, Pathfinding, Diagnostics | Queries and advanced integrations |
+| Units, Pathfinding, Diagnostics | Command interception, recruitment policies, queries and advanced integrations |
+| Economy | Shared native market price query events and validated hook ownership |
 
 Directories help navigation; public namespaces define the contracts. Capabilities
 use `APIShared`; settings and general profiles use `APIShared.ModSettings` and
 `APIShared.GameModes`. Caller-defined profiles never constrain an unrelated mod.
-Command interception, formations, work-target policy and MoatMove orchestration
+Static interception brokers use `APIShared.Commands`, `APIShared.Presentation`,
+`APIShared.Recruitment` and `APIShared.Economy`; their shared Pre base contract uses
+`APIShared.Events`. These brokers complement the capability entry points.
+The formations command engine, work-target policy and MoatMove orchestration
 belong to BugfixesAndQoL and its addon. APIShared supplies the targeted public
 route-search preference events used by that publisher and third-party observers.
 
@@ -31,12 +35,15 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
+    Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
+  Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
   Buildings/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
   Presentation/
+    Events/                     named HUD Pre/Post publishers
     UnitHud/                    HUD contracts and implementation parts
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
@@ -45,6 +52,9 @@ src/
     Lobby/                      per-player synchronization and convergence
     UI/                         search and tooltip presentation
     Internal/                   JSON parser and atomic file replacement
+  Units/
+    Commands/                   managed GameAction Pre/Accepted/Post contracts
+    Recruitment/                request arithmetic and shared material-display IL policy
   Pathfinding/
     Assassin/                   assassin route and attack integrations
     GateRoutes/                 shared gate/bridge policy bridges
@@ -65,6 +75,11 @@ protocols. A feature does not belong here merely because it needs a native hook.
 Mod-specific activation rules, localized explanations and author preferences belong
 to the consumer. Consumers configure shared services through explicit contracts;
 general services should not infer these decisions from known plugin GUIDs.
+
+Native market query ownership belongs to Economy/MarketPriceEvents; consumer AI
+settings and player classification remain in the consumer. The two native helpers
+serve both AI trade and ally valuations. Their fixed-image ABI and backend contract
+are validated before publication; their hooks remain installed for the process.
 
 Customized launch owners register typed snapshot providers in `CustomizedLaunchOrigins`.
 The registry combines evidence without naming or reflecting over consumer assemblies.

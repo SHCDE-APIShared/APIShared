@@ -26,8 +26,6 @@ namespace APIShared
         private delegate void GameActionDelegate(Enums.KeyFunctions command, int value1, int value2, int value3);
         private delegate void UpdateSpritesDelegate(MainViewModel self, int colour, bool arabic);
         private delegate void CreateTroopDelegate(MainViewModel self, object parameter);
-        private delegate void EnterCreateTroopDelegate(MainViewModel self, object parameter);
-        private delegate int RecruitmentGameActionDelegate(Enums.GameActionCommand command, int structureId, int state, int value2);
 
         internal static bool TryCreate(
             string hash,
@@ -64,6 +62,7 @@ namespace APIShared
 
                 candidate = new UnitHudPresentationService(hash, log, records, recordAccess);
                 candidate.Install(installed);
+                candidate.RegisterSharedEvents();
                 service = candidate;
                 diagnostic = new NativeCapabilityDiagnostic(
                     NativeCapabilityIds.UnitHudPresentation,
@@ -121,12 +120,6 @@ namespace APIShared
             createTroopHook = PrepareHook(RequireMethod(typeof(MainViewModel), "ButtonCreateTroop", new[] { typeof(object) }), (CreateTroopDelegate)CreateTroopHook, "APIShared.UnitHud.ButtonCreateTroop", installed);
             createTroopOriginal = createTroopHook.GenerateTrampoline<CreateTroopDelegate>();
             createTroopHook.Apply();
-            enterCreateTroopHook = PrepareHook(RequireMethod(typeof(MainViewModel), "ButtonEnterCreateTroop", new[] { typeof(object) }), (EnterCreateTroopDelegate)EnterCreateTroopHook, "APIShared.UnitHud.ButtonEnterCreateTroop", installed);
-            enterCreateTroopOriginal = enterCreateTroopHook.GenerateTrampoline<EnterCreateTroopDelegate>();
-            enterCreateTroopHook.Apply();
-            recruitmentGameActionHook = PrepareHook(RequireMethod(typeof(EngineInterface), "GameAction", new[] { typeof(Enums.GameActionCommand), typeof(int), typeof(int), typeof(int) }), (RecruitmentGameActionDelegate)RecruitmentGameActionHook, "APIShared.UnitHud.RecruitmentGameAction", installed);
-            recruitmentGameActionOriginal = recruitmentGameActionHook.GenerateTrampoline<RecruitmentGameActionDelegate>();
-            recruitmentGameActionHook.Apply();
             APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
             mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => {
                 ResetRecruitment();
@@ -232,7 +225,6 @@ namespace APIShared
 
         private void EnterCreateTroopHook(MainViewModel self, object parameter)
         {
-            enterCreateTroopOriginal(self, parameter);
             if (!activeRecruitmentHandlers) return;
             try
             {
@@ -242,13 +234,24 @@ namespace APIShared
             catch (Exception ex) { LogCallbackFailure("recruitment tooltip", ex); }
         }
 
-        private int RecruitmentGameActionHook(Enums.GameActionCommand command, int structureId, int state, int value2)
+        private void BeforeRecruitmentOriginal(APIShared.Commands.GameActionAcceptedEventArgs args)
         {
-            if (activeRecruitmentHandlers && command == Enums.GameActionCommand.MakeTroop && createTroopContextType == state)
-                TryBeginRecruitment(state, structureId);
-            return recruitmentGameActionOriginal(command, structureId, state, value2);
+            if (sharedEventsPublished && activeRecruitmentHandlers &&
+                args.Command == Enums.GameActionCommand.MakeTroop && createTroopContextType == args.ActionState)
+                TryBeginRecruitment(args.ActionState, args.StructureId);
         }
 
+        private void RegisterSharedEvents()
+        {
+            if (!APIShared.Presentation.PresentationEvents.TryRegister(
+                APIShared.Presentation.PresentationOperation.RecruitmentEnter, APISharedPlugin.PluginGuid,
+                "UnitHudRecruitment", null, args => {
+                    if (sharedEventsPublished && args.OriginalCompleted) EnterCreateTroopHook(args.ViewModel, args.Parameter);
+                }, out string reason)) throw new InvalidOperationException(reason);
+            if (!APIShared.Commands.GameActionEvents.TryRegister(APISharedPlugin.PluginGuid,
+                "UnitHudRecruitment", null, null, out reason, accepted: BeforeRecruitmentOriginal)) throw new InvalidOperationException(reason);
+            sharedEventsPublished = true;
+        }
         private void UpdateSpritesHook(MainViewModel self, int colour, bool arabic)
         {
             if (updateSpritesActive)

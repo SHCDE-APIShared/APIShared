@@ -46,6 +46,58 @@ use Vanilla rollover text; side buttons use the mod-options popup by default.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
 
+## Sharing action and HUD hooks
+
+Use [the managed action/HUD contracts](API_CATALOG.md#managed-actions-and-hud-interception)
+and [InterceptionExample](../examples/ThirdPartyMod/InterceptionExample.cs) when your
+feature needs a site owned by these publishers. Add Pre only for a deliberate policy
+or replacement; augment completed Vanilla UI in Post. Store invocation-private
+information in Pre `State` for your matching Post/Accepted. A later veto still runs
+Post; original HUD exceptions also run Post for cleanup and then propagate. Never
+infer simulation success from managed completion. Guard mutable consumer settings
+with an appropriate atomic snapshot if the original can be called on multiple
+threads. Do not register a competing detour at the same site or compile APIShared
+implementation sources into your mod.
+
+These brokers require APIShared 0.6.0. Register once with a stable owner GUID and
+owner-local ID, then activate callbacks through your own logical settings.
+Successful Pre vetoes remain sticky; notification order is ascending order followed
+by ordinal owner GUID and ID. Failed Pre changes are rolled back. State is private
+to each registration, and registrations added during a call start on the next call.
+
+Use GameAction Accepted for preparations that must happen only after every Pre has
+accepted the final inputs. GameAction Post runs on normal return or veto, but not
+when the original throws; a returned zero does not acknowledge recruitment failure.
+Keep native creation reconciliation in your mod. RecruitmentRequestPolicy supplies
+ceiling/reservation arithmetic, including the distinction between an untouched Ctrl
+sentinel and an explicitly assigned amount. RecruitmentMaterialUi combines stock
+display bypass predicates without changing native costs or other button gates.
+
+For a custom HUD button action, assign Presentation Pre Replacement rather than
+executing effects inside Pre. It runs once after all Pre callbacks with the final
+parameter; a later veto suppresses both it and Vanilla. Presentation Post also runs
+when the original or replacement throws. Check WasReplaced, CompletionException and
+OriginalCompleted before augmenting UI, and use State for cleanup. Exceptions are
+rethrown after Post; a partially executed replacement is not retried as Vanilla.
+
+## Sharing native market price queries
+
+Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded
+initialization, on the startup publisher thread. Inspect TryRegister's failure
+reason; calls before initialization can be retried, while unknown native images or
+occupied entries fail closed. Keep callbacks rooted for the process lifetime.
+See the [query contract](API_CATALOG.md#native-market-price-queries) and
+[native ownership](NATIVE_COMPATIBILITY.md#ownership-and-validation).
+
+Validate player/goods/amount arguments before indexing your own data;
+HasNativeManager only indicates a nonzero manager pointer. To replace a total,
+set ReplacementTotal and SkipOriginalFunction together. Assigning the total alone
+does not veto the helper. Post observes the final query result, not a completed
+trade. Returning zero does not cancel the surrounding transaction. Policies must
+cover AI planning, execution and ally valuations consistently on all multiplayer
+peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
+multiplication. Do not install a competing detour at either shared query entry.
+
 ## Extending APIShared
 
 Use the [catalog source map](API_CATALOG.md#source-map) to find the current contract

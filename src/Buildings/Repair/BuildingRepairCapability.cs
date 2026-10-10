@@ -1,3 +1,4 @@
+using APIShared.Presentation;
 using BepInEx.Logging;
 using CrusaderDE;
 using MonoMod.RuntimeDetour;
@@ -34,7 +35,6 @@ namespace APIShared
 
         private delegate EngineInterface.PlayState CopyStateDelegate(
             EngineInterface.PlayStateReturnData source, int[] selectedChimps);
-        private delegate void HudUpdateDelegate(FatControler self);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate ulong NativeCanRepairDelegate();
 
@@ -62,14 +62,12 @@ namespace APIShared
         private readonly ManualLogSource log;
         private readonly NativeCanRepairDelegate nativeCanRepair;
         private Hook copyHook;
-        private Hook hudHook;
         private CopyStateDelegate originalCopy;
-        private HudUpdateDelegate originalHudUpdate;
         private IDisposable repairSubscription;
         private int activeOwners;
         private string hoveredButton;
         private Button lastBigButton;
-        private bool postStartupLogged;
+        private bool postStartupLogged, published;
 
         private BuildingRepairService(long moduleBase, ManualLogSource logger, RepairTooltipViewModel tooltipViewModel)
         {
@@ -93,7 +91,6 @@ namespace APIShared
             }
 
             Hook candidateCopy = null;
-            Hook candidateHud = null;
             IDisposable candidateSubscription = null;
             try
             {
@@ -107,16 +104,15 @@ namespace APIShared
                 MethodInfo copyTarget = FindMethod(typeof(EngineInterface), "CopyPlayStateStruct",
                     BindingFlags.Public | BindingFlags.Static,
                     typeof(EngineInterface.PlayStateReturnData), typeof(int[]));
-                MethodInfo hudTarget = FindMethod(typeof(FatControler), "NoesisGUIUpdateChecksInGame",
-                    BindingFlags.Public | BindingFlags.Instance);
                 candidateCopy = new Hook(copyTarget, (CopyStateDelegate)candidate.CopyStateHook);
                 candidate.originalCopy = candidateCopy.GenerateTrampoline<CopyStateDelegate>();
-                candidateHud = new Hook(hudTarget, (HudUpdateDelegate)candidate.HudUpdateHook);
-                candidate.originalHudUpdate = candidateHud.GenerateTrampoline<HudUpdateDelegate>();
                 candidateSubscription = BuildingR3EventHooks.OnBuildingRepair.Observable.Subscribe(candidate.OnBuildingRepair);
                 candidate.copyHook = candidateCopy;
-                candidate.hudHook = candidateHud;
                 candidate.repairSubscription = candidateSubscription;
+                if (!PresentationEvents.TryRegister(PresentationOperation.GuiChecks, APISharedPlugin.PluginGuid,
+                    "BuildingRepair", null, args => { if (candidate.published && args.OriginalCompleted) candidate.HudUpdateHook(args.Controller); }, out string reason))
+                    throw new InvalidOperationException(reason);
+                candidate.published = true;
                 service = candidate;
                 diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingRepair,
                     NativeCapabilityState.Available, hash, "Verified Vanilla repair path and shared repair handlers installed.");
@@ -126,8 +122,6 @@ namespace APIShared
             {
                 // These candidates have not been published to the process-wide API.
                 try { candidateSubscription?.Dispose(); } catch { }
-                try { candidateHud?.Undo(); } catch { }
-                try { candidateHud?.Dispose(); } catch { }
                 try { candidateCopy?.Undo(); } catch { }
                 try { candidateCopy?.Dispose(); } catch { }
                 diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingRepair,
@@ -391,7 +385,6 @@ namespace APIShared
 
         private void HudUpdateHook(FatControler self)
         {
-            originalHudUpdate(self);
             try
             {
                 FlushErrors();

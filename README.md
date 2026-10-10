@@ -1,7 +1,8 @@
 # APIShared
 
 Shared services for Stronghold Crusader Definitive Edition mods: mission and lobby
-events, HUD extensions, building services, selections, and optional preset settings.
+events, cancellable command and HUD interception, recruitment helpers, native market
+price queries, building services, selections, and optional preset settings.
 Mods share one BepInEx plugin instead of installing competing hooks.
 
 **Plugin GUID:** `APIShared_Serp` · **Assembly:** `APIShared.dll` ·
@@ -38,8 +39,15 @@ Managed capabilities can be available before native initialization finishes.
 results. Late callbacks run synchronously on the registering thread. Registrations
 and hooks persist until process exit because the game destroys startup plugin components.
 
-- [API catalog](docs/API_CATALOG.md): capabilities, contracts and limitations.
-- [Mod author guide](docs/THIRD_PARTY_GUIDE.md): mode policies, settings and packaging.
-- [Compilable examples](examples/ThirdPartyMod): missions, settings, custom profiles and HUD.
+APIShared 0.6.0 adds shared [command and HUD events](docs/API_CATALOG.md#managed-actions-and-hud-interception)
+with command Pre/Accepted/Post and HUD Pre/Post phases, cancellable UI replacements
+and recruitment policies,
+plus [native market price queries](docs/API_CATALOG.md#native-market-price-queries).
+Use these registration brokers when extending their shared sites; consumers keep
+their own activation and multiplayer policies.
+
+- [API catalog](docs/API_CATALOG.md): capabilities, events, contracts and limitations.
+- [Mod author guide](docs/THIRD_PARTY_GUIDE.md): event integration, mode policies, settings and packaging.
+- [Compilable examples](examples/ThirdPartyMod): missions, settings, custom profiles, HUD and interception.
 - [Contributing](CONTRIBUTING.md): development setup, tests and pull requests.
 - [Architecture](ARCHITECTURE.md): runtime responsibilities and integration boundaries.

@@ -9,7 +9,7 @@ namespace ThirdPartyMod
 {
     [BepInPlugin(Guid, "APIShared Example", "1.0.0")]
     [BepInDependency("000shcdese", "2.14.0")]
-    [BepInDependency("APIShared_Serp", "0.5.0")]
+    [BepInDependency("APIShared_Serp", "0.6.0")]
     public sealed class ExamplePlugin : BaseUnityPlugin
     {
         public const string Guid = "Example.Author.APISharedDemo";
@@ -26,6 +26,7 @@ namespace ThirdPartyMod
             unityContext = SynchronizationContext.Current
                 ?? throw new InvalidOperationException("A Unity synchronization context is required.");
             MissionExample.Register(Api, Log);
+            InterceptionExample.Register(Log);
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);

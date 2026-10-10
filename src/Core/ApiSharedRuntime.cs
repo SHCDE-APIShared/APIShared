@@ -74,6 +74,8 @@ namespace APIShared
         {
             lock (sync)
             {
+                APIShared.Events.InterceptionDiagnostics.Error = (registration, error) =>
+                    NativeApiLog.Error(logger, "Shared event callback failed: " + registration + ": " + error);
                 MarkedUnitSelectionAPI.Initialize(logger);
                 PlayerPerspectiveAPI.Initialize(logger);
                 if (hudExtrasButtons == null)

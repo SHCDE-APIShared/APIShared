@@ -26,7 +26,7 @@
     <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)\SHCDESE.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ExamplePlugin.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" />
+    <Compile Include="ExamplePlugin.cs" /><Compile Include="InterceptionExample.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">

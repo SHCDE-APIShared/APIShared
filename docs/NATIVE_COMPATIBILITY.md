@@ -13,6 +13,7 @@ the runtime catalogs. This document explains their purpose; it does not override
 | Gatehouse distance/timing/automation | APIShared owns the coordinated intervals in the shared gatehouse functions |
 | AIV build-step observation | APIShared owns the detour at reference RVA `0x51790` |
 | HUD and recruitment | Shared managed/native presentation hooks and registration brokers |
+| Market buy/sell queries | APIShared owns reference RVAs `0xCEB10` and `0xCEB90`; fixed-image validation and NativeX64 Indirect detours |
 | Additional route preferences | Managed Pre/Post registration; native command hooks belong to the participating publisher |
 | Assassin selection | Script Extender owns its function detour; APIShared uses its audited integration points |
 
@@ -40,6 +41,14 @@ using `cdq`, because `cdq` overwrites EDX and would otherwise destroy the live r
 offset. Timing and automation share coordinated ranges; changes must preserve their
 non-overlap and the original inactive paths. Existing backend tests execute productive
 stubs on isolated buffers, never on another running game's executable pages.
+
+Market queries validate each complete 31-byte function before installation. Only
+the audited image and NativeX64 Indirect schema are accepted: six patch bytes
+displace ten instruction-aligned bytes. Validation checks the target, patch form,
+pointer slot, hook entry and trampoline continuation before publication. Unknown
+images or occupied entries fail closed. The helpers serve AI affordability, trade
+execution and ally valuations; replacements must preserve consistent policy across
+those callers. See [market query semantics](API_CATALOG.md#native-market-price-queries).
 
 ## Updating support
 

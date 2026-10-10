@@ -77,8 +77,8 @@ namespace APIShared
         private Hook gameActionHook;
         private Hook updateSpritesHook;
         private Hook createTroopHook;
-        private Hook enterCreateTroopHook;
-        private Hook recruitmentGameActionHook;
+
+
         private SetupTroopsDelegate setupTroopsOriginal;
         private TroopClickDelegate leftClickOriginal;
         private TroopClickDelegate rightClickOriginal;
@@ -86,8 +86,8 @@ namespace APIShared
         private GameActionDelegate gameActionOriginal;
         private UpdateSpritesDelegate updateSpritesOriginal;
         private CreateTroopDelegate createTroopOriginal;
-        private EnterCreateTroopDelegate enterCreateTroopOriginal;
-        private RecruitmentGameActionDelegate recruitmentGameActionOriginal;
+
+
         private IDisposable mapUnloadSubscription;
         private HUD_Troops activeTroopPanel;
         private Grid[] categoryHosts;
@@ -135,6 +135,7 @@ namespace APIShared
         [ThreadStatic]
         private static bool updateSpritesActive;
         [ThreadStatic]
+        private bool sharedEventsPublished;
         private static int createTroopContextType;
 
         private UnitHudPresentationService(string hash, ManualLogSource logger, int* records, bool recordsAvailable)

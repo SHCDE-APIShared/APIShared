@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+
+    <Compile Include="../../src/Core/Events/InterceptionEvent.cs" Link="Production/InterceptionEvent.cs" />
+    <Compile Include="../../src/Units/Recruitment/RecruitmentRequestPolicy.cs" Link="Production/RecruitmentRequestPolicy.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonLayout.cs" Link="Production/HudExtrasButtonLayout.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonContracts.cs" Link="Production/HudExtrasButtonContracts.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonsService.cs" Link="Production/HudExtrasButtonsService.cs" />
