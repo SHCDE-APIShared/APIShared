@@ -99,6 +99,7 @@ namespace APIShared.ModSettings
         /// <summary>Creates commands and local model state; call LobbyModSettingsPresetRegistration.Register on the Unity thread to initialize persistence and publish integration.</summary>
         protected PresetLobbyModSettingsViewModel()
         {
+            System_ModeAvailability.PropertyChanged += (_, __) => RaiseModeNoticeProperties();
 #if !API_SHARED_PRESET_TESTS
             System_ToggleModSettingsSearchCommand = new RelayCommand(ToggleModSettingsSearch);
             System_ClearModSettingsSearchCommand = new RelayCommand(ClearModSettingsSearch);
@@ -333,6 +334,7 @@ namespace APIShared.ModSettings
                 return english;
             switch (key)
             {
+                case "Common.InactiveModeSettingsNotice": return "Im gewählten Spielmodus inaktive Einstellungen sind farbig hinterlegt. Änderungen bleiben für spätere Partien gespeichert.";
                 case "Common.PresetLoad": return "Preset laden";
                 case "Common.PresetSave": return "Preset speichern";
                 case "Common.PresetBasedOn": return "Basiert auf";
@@ -1059,7 +1061,10 @@ namespace APIShared.ModSettings
 
             if (isLocalHost == currentIsHost && isRealMultiplayer == currentIsRealMultiplayer &&
                 settingsMenuContext == currentMenuContext)
+            {
+                RefreshModeAvailability();
                 return;
+            }
 
             isLocalHost = currentIsHost;
             isRealMultiplayer = currentIsRealMultiplayer;
@@ -1166,6 +1171,7 @@ namespace APIShared.ModSettings
 
         private void RaiseAccessProperties()
         {
+            RefreshModeAvailability();
             base.OnPropertyChanged(nameof(IsLocalSettingsHost));
             base.OnPropertyChanged(nameof(IsRealMultiplayerContext));
             base.OnPropertyChanged(nameof(HasHostSettings));

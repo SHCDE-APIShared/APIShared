@@ -5,6 +5,12 @@ namespace ThirdPartyMod
 {
     public sealed class ExampleSettings : PresetLobbyModSettingsViewModel
     {
+        public ExampleSettings()
+        {
+            System_ModeAvailability.ConfigureDefault(MissionExample.Profile);
+            System_ModeAvailability.Configure("overlay", null);
+        }
+
         private bool enableMod = true;
         private bool showOverlay = true;
 

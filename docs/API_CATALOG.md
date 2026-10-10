@@ -57,6 +57,18 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 
+## Game-mode permissions and settings presentation
+
+The optional mode evaluator also has a consumer-owned [GameplayModeGate](../src/GameModes/GameplayModeGate.cs).
+Feed lifecycle notifications before your own feature work; it has no automatic
+subscriptions, hooks or settings side effects. The additive
+[mode availability collection](../src/ModSettings/UI/ModSettingsModeAvailability.cs)
+and [Noesis background properties](../src/ModSettings/UI/ModSettingsMode.cs) let
+arbitrary mods share the same profiles with their settings UI. All presentation
+configuration and refresh calls run on the UI thread. See
+[the integration guide](THIRD_PARTY_GUIDE.md#optional-inactive-setting-backgrounds)
+and the public example for one page-level legend and editable tinted rows.
+
 ## Side-HUD buttons
 
 `ModApiClient.TryGetHudExtrasButtons` acquires `IHudExtrasButtonsCapability` independently of native Unit HUD hooks or troop selection. `TryRegisterButton` accepts `HudExtrasButtonDefinition`: owner-local ID, command, localized popup text, fresh Noesis Button factory, order (default 0), and optional ToolTip factory. Registration is process-lived; duplicate owner-local IDs are rejected. Existing `IApiShared` interfaces remain unchanged.

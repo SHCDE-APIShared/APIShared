@@ -88,6 +88,11 @@ The registry combines evidence without naming or reflecting over consumer assemb
 Each consumer owns its launch state and save protocol; APIShared owns validation and
 conflict handling when capturing the common mission context.
 
+Consumers may retain a `GameplayModeGate` and feed it their lifecycle notifications.
+The optional settings-mode presentation shares their profiles, uses stable local row
+keys and adds a background without changing editing authority or persistence.
+No author-specific mode tables or automatic lifecycle ordering are introduced.
+
 Separate components by responsibility and state, not just file length. Partial
 files can make one coherent hook owner easier to read, but do not create independent
 components. Keep implementation tests with the implementation so a contributor can

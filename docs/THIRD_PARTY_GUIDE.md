@@ -53,6 +53,45 @@ Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Us
 
 The built-in optional evaluator rejects unknown or conflicting origins. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
 
+
+For a cached runtime decision, retain a `GameplayModeGate(profile)` in your static
+runtime. Feed `gate.Update(notification)` from initialization, start and end callbacks
+**before** your own feature work in that callback. Read `gate.IsEnabled(configuredValue)`
+when applying the feature. End clears the mode; ready-session replay is supported.
+The gate installs no hooks or observers and does not change lifecycle ordering.
+`StateChanged` runs synchronously after an allowed/blocked transition and isolates
+each listener's exception. Runtime permission and settings editability are separate.
+
+### Optional inactive-setting backgrounds
+
+Use the same profile in `System_ModeAvailability.ConfigureDefault(profile)` before
+registering your settings view model. Override individual setting/group keys with
+`Configure("some.key", featureProfile)`; use `Configure("local.hotkey", null)` for
+local preferences that should stay neutral. `ConfigureNetworkVariant(key, false)`
+or `true` distinguishes separate singleplayer/multiplayer values without changing
+how the consumer selects them at runtime. No particular GUID or mod pack is required.
+
+Bind `shared:ModSettingsMode.Availability="{Binding System_ModeAvailability}"` on
+your page root. Put `shared:ModSettingsMode.Key="some.key"` on a logical `Grid` row.
+The key can also bind to that row's `ModSettingsSearch.Key`; search itself is optional.
+APIShared inserts a noninteractive `#20FFCC66` background beneath the existing row,
+leaving its search style and controls intact. Bind one heading to
+`System_ModeNoticeText` / `System_ModeNoticeVisibility`. The optional
+`System_ConsumerModeNoticeText` / `System_ConsumerModeNoticeVisibility` pair uses an
+existing direct-launch notice when one is visible; include the legend in your notice
+provider if you use that combined heading. Legacy notice properties remain unchanged.
+
+The preset view model refreshes presentation when the settings hub changes or access
+is refreshed. It uses existing menu evidence and authoritative mission snapshots.
+Menu families can be ambiguous: a row is tinted only if **every** possible target
+excludes it. No selected target and mixed decisions remain neutral. Explicit trail
+settings retain possible customized contexts. This UI status never grants runtime
+permission, changes values, disables controls or replaces host/client and trail locks.
+Independent pages can instead own a `ModSettingsModeAvailability`, use `GetState(key)`
+for observable row state, and supply `SetPreview(contexts, multiplayer)` or
+`SetMission(snapshot)` on the Unity UI thread. Consumers own policy and localization;
+the built-in compact legend has English and German fallbacks.
+
 ## Presets without SerpsModsHost
 
 Derive your settings from `APIShared.ModSettings.PresetLobbyModSettingsViewModel` and register through `LobbyModSettingsPresetRegistration.Register`. The Script Extender displays the mod tab; APIShared owns discovery, personal preset files, persistence and lobby convergence. SerpsModsHost and ExtendedData are optional consumers, not prerequisites.
