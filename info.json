@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.6.0",
+  "Version": "0.6.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.6.1",
+      "Changes": [
+        "Add optional, binary-validated Script Extender dependency fixes and protect UU-ImGUI shutdown during Alt+F4 and normal menu exit."
+      ]
+    },
     {
       "Version": "0.6.0",
       "Changes": [

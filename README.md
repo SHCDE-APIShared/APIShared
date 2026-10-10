@@ -46,6 +46,21 @@ plus [native market price queries](docs/API_CATALOG.md#native-market-price-queri
 Use these registration brokers when extending their shared sites; consumers keep
 their own activation and multiplayer policies.
 
+## Script Extender fixes
+
+Since 0.6.1, APIShared also provides targeted fixes for the Script Extender and its
+bundled dependencies in `src/ScriptExtenderFixes`. The first fix protects UU-ImGUI
+during Alt+F4 and normal menu shutdown. It activates automatically for the verified
+implementation; unknown binaries are skipped with a diagnostic log message.
+Consumer mods do not need to register the fix.
+
+The fix is enabled by default. To disable it, set `EnableImGuiShutdownFix = false`
+in the `[ScriptExtenderFixes]` section of `BepInEx/config/APIShared_Serp.cfg` and
+restart the game. See the [mod author guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes)
+for supported implementations and the policy for official upstream fixes.
+
+## Documentation
+
 - [API catalog](docs/API_CATALOG.md): capabilities, events, contracts and limitations.
 - [Mod author guide](docs/THIRD_PARTY_GUIDE.md): event integration, mode policies, settings and packaging.
 - [Compilable examples](examples/ThirdPartyMod): missions, settings, custom profiles, HUD and interception.

@@ -6,6 +6,47 @@ Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client,
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
 
+## Script Extender bugfixes
+
+Since 0.6.1, APIShared includes targeted corrections for Script Extender and bundled dependencies,
+implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consumer
+registration. They do not replace the Extender and do not change existing public
+APIShared capability contracts.
+
+The initial fix addresses an intermittent Alt+F4 crash in the audited UU-ImGUI API
+1.6.7 managed DLL and its matching `cimguiaio.dll` bundled with SHCDE-SE 2.14.1.
+Compatibility is determined by SHA-256 fingerprints and method/IL contracts, not
+by the version label alone. The implementation also validates the installed MonoMod
+compiler/hook binaries. Unity Mono needs the MethodBuilder backend for these native
+call signatures: a permanent managed compiler hook routes only copies of the eight
+audited methods, including internal original backups, through that backend. Other
+method generation and process-wide MonoMod settings keep their existing behavior.
+All fingerprints are recorded in the implementation.
+Unknown or changed binaries are skipped with a `SE_IMGUI_SHUTDOWN_FIX` log reason;
+other services remain available. Recheck this evidence after upstream updates.
+
+BepInEx writes the setting to `BepInEx/config/APIShared_Serp.cfg`:
+
+    [ScriptExtenderFixes]
+    EnableImGuiShutdownFix = true
+
+The default is enabled. Changes take effect after restarting the game. There is no
+live unpatching or network setting: the fix changes only local shutdown handling.
+
+At the first close, menu exit, or quitting notification, a terminal shutdown gate
+stops new ImGui work. Subsequent Present/Resize callbacks call the existing native
+trampolines directly. Already admitted callbacks may finish; the fix never frees
+their contexts. Window messages continue to the saved original WndProc, and its
+stored predecessor cannot be replaced with the ImGui hook itself. Context destruction,
+native hook removal, and native DLL unloading are suppressed during shutdown;
+the operating system reclaims resources at process exit. The existing managed
+`OnDestroyed` notification and context clearing in `ProcessExit` are preserved.
+Rendering, input and normal menu callbacks before shutdown retain their behavior.
+
+Fixes must be tested with controlled competing callbacks and installed-game checks.
+An official upstream correction must be inspected before updating support or
+retiring a workaround. Do not install a competing patch for the same owned methods.
+
 ## Optional game-mode permissions
 
 Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Use `GameModeHelper.Capture()` for a current snapshot where appropriate. Capture itself applies no permissions. Construct `GameplayModActivationProfile` with your own GUID, allowed contexts and `allowRealMultiplayer`, then call `GameplayModModePolicy.IsAllowed`. You can instead implement your own policy directly from the snapshot.

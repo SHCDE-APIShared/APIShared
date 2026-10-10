@@ -9,6 +9,7 @@ GUID without installing hooks or reserving a capability.
 | Area | Purpose |
 |---|---|
 | Core | Initialization, capability diagnostics, ownership and native infrastructure |
+| ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
 | Missions, Lobby, Players | Shared observations and immutable state notifications |
 | Presentation, Buildings | HUD/briefing extensions, building repair and gatehouse services |
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
@@ -35,6 +36,7 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
+    ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
   Economy/                      native market query contracts and validated owner
@@ -177,6 +179,19 @@ update checks. Native catalogs and tests express supported contracts, not a univ
 promise that an arbitrary game build is supported.
 
 ## Development
+
+APIShared also supplies narrowly scoped bugfixes for Script Extender and its bundled
+dependencies. Their implementation lives in `src/ScriptExtenderFixes`, separate from
+public capabilities and gameplay services. Fixes must validate the affected binaries
+and method contracts, preserve foreign-mod callbacks, and fail closed independently
+of other APIShared services. No consumer registration or author-specific mod is required.
+
+The initial UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with
+SHCDE-SE 2.14.1. The configuration and compatibility limits are documented in the
+[integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes). Permanent
+hooks and native resources survive until process exit. When upstream fixes a defect,
+re-audit the installed code before supporting that new binary or retiring the fix;
+a version number or changelog entry alone is not proof of equivalent behavior.
 
 The solution contains the runtime, two local integration suites, a game-independent
 core suite and public consumer examples. Test-only packages never become plugin

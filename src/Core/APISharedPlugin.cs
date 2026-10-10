@@ -19,10 +19,11 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.6.0";
+        public const string PluginVersion = "0.6.1";
 
         private void Awake()
         {
+            ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, Logger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
             UnitAccess.InitializeDiagnostics(Logger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(Logger);
