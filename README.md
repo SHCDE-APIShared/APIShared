@@ -2,7 +2,8 @@
 
 Shared services for Stronghold Crusader Definitive Edition mods: mission and lobby
 events, cancellable command and HUD interception, recruitment helpers, native market
-price queries, building services, selections, and optional preset settings.
+price queries, building services, selections, optional preset settings, and shared
+game-mode permissions with settings presentation, and multiplayer packet helpers.
 Mods share one BepInEx plugin instead of installing competing hooks.
 
 **Plugin GUID:** `APIShared_Serp` · **Assembly:** `APIShared.dll` ·
@@ -46,6 +47,42 @@ plus [native market price queries](docs/API_CATALOG.md#native-market-price-queri
 Use these registration brokers when extending their shared sites; consumers keep
 their own activation and multiplayer policies.
 
+Mods can define their own activation profiles and feed mission notifications to
+`GameplayModeGate` for cached runtime permissions. The same profiles can optionally
+mark inactive settings with a subtle amber background; settings remain editable
+under the existing host/client rules, and changes stay saved for later games.
+Without a selected target the display stays neutral; with several possible modes,
+rows are marked only when all of them exclude the setting. See
+[game-mode permissions](docs/API_CATALOG.md#game-mode-permissions-and-settings-presentation)
+and the [integration guide](docs/THIRD_PARTY_GUIDE.md#optional-game-mode-permissions)
+for lifecycle wiring, feature exceptions and XAML bindings. These helpers also work
+for third-party mods without SerpsModsHost.
+
+## Multiplayer actions and messages
+
+APIShared 0.7.0 adds `ApiShared.ForMod(yourGuid).Network` for typed multiplayer
+channels, available to SerpsMods and third-party mods alike:
+
+- `RegisterChore<T>` sends gameplay actions through the Script Extender's existing
+  Chore pipeline and executes the handler synchronously on every peer, including
+  the sender. Button and key handlers submit stable IDs and desired states.
+- `RegisterMessage<T>` copies control messages and their Steam sender, then runs
+  validation and receipt in FIFO order on the Unity thread. Send to the current
+  game, one player, the active lobby, or a Steam peer.
+- Options cover activation, validation, payload limits, isolated diagnostics and
+  message snapshots. `TryPostPresentation` posts copied UI/log work from a Chore;
+  `ChoreTransport` also supports existing Extender packet registrations.
+
+Register compatible packet types with explicit MessagePack formatters once, in the
+same order on all peers. Keep gameplay in the synchronized callback; never apply a
+button effect immediately. The consumer retains ownership/session checks and
+deduplication. A successful send is local submission, not a delivery acknowledgement.
+There is no automatic retry, payload splitting or mod negotiation.
+
+See the [networking guide](docs/THIRD_PARTY_GUIDE.md#multiplayer-actions-and-messages),
+[API catalog](docs/API_CATALOG.md#multiplayer-packets), and
+[compiled example](examples/ThirdPartyMod/NetworkingExample.cs).
+
 ## Script Extender fixes
 
 Since 0.6.1, APIShared also provides targeted fixes for the Script Extender and its
@@ -63,6 +100,6 @@ for supported implementations and the policy for official upstream fixes.
 
 - [API catalog](docs/API_CATALOG.md): capabilities, events, contracts and limitations.
 - [Mod author guide](docs/THIRD_PARTY_GUIDE.md): event integration, mode policies, settings and packaging.
-- [Compilable examples](examples/ThirdPartyMod): missions, settings, custom profiles, HUD and interception.
+- [Compilable examples](examples/ThirdPartyMod): missions, settings, custom profiles, HUD, interception and networking.
 - [Contributing](CONTRIBUTING.md): development setup, tests and pull requests.
 - [Architecture](ARCHITECTURE.md): runtime responsibilities and integration boundaries.

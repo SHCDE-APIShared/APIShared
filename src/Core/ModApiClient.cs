@@ -13,10 +13,13 @@ namespace APIShared
                 throw new ArgumentException("A non-empty BepInEx plugin GUID is required.", nameof(ownerGuid));
             OwnerGuid = ownerGuid;
             this.api = api ?? throw new ArgumentNullException(nameof(api));
+            Network = new Networking.ModNetworkClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
         public string OwnerGuid { get; }
+        /// <summary>Process-rooted Chore and control-plane packet registration for this owner; registration requires Unity-thread Extender readiness.</summary>
+        public Networking.ModNetworkClient Network { get; }
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 

@@ -27,6 +27,29 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 
+## Multiplayer packets
+
+Available since 0.7.0 through `ApiShared.ForMod(ownerGuid).Network`; no SerpsModsHost
+dependency is required. `RegisterChore<T>` retains synchronous simulation execution.
+`RegisterMessage<T>` snapshots payload and Steam identity before FIFO Unity dispatch.
+Register unconditionally on Unity after the Extender's built-in packet registration,
+in the same order on all peers. Explicit MessagePack formatters are required.
+
+Channel options accept logical activation, validation, payload limits and diagnostic
+callbacks; message options additionally accept a pure deep-copy callback. Messages
+can target the game, one 1-based player ID, active-lobby peers or a Steam ID.
+`ChoreTransport.Send/TrySend` adapts existing registered packet hooks and enforces
+the 1200-byte Chore cap including the packet ID. `TryPostPresentation` posts copied
+UI/log work without delaying simulation execution.
+
+The consumer owns current-session authority, deterministic gameplay, stable IDs,
+protocol compatibility, acknowledgements and operation deduplication. Local
+`Submitted` results do not prove execution or peer delivery. The Extender's public
+Chore API returns void and retains its own fallback; APIShared preflights known
+manager/size failures but cannot promise an atomic native queue acknowledgement.
+See the [networking guide](THIRD_PARTY_GUIDE.md#multiplayer-actions-and-messages) and
+[compiled example](../examples/ThirdPartyMod/NetworkingExample.cs).
+
 ## Source map
 
 Start at the linked contract to learn what a consumer may call. Read the service
@@ -38,6 +61,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
 | Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleCapability.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateCapability.cs) | — |
+| Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
 | Defeat notifications | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatCapability.cs) | — |
 | Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |

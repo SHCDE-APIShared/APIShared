@@ -1,5 +1,63 @@
 # Third-party integration guide
 
+## Multiplayer actions and messages
+
+Since APIShared 0.7.0, use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
+the validated Unity-thread `LibraryLoaded` entry, after Extender built-in packet
+registration. Registration must be unconditional and in identical order on every
+peer. Extender packet IDs depend on registration order; GUIDs do not negotiate IDs
+or guarantee compatibility. Every peer needs compatible mods, packet schemas and
+explicit `[MessagePackFormatter]` implementations. Duplicate owner-local IDs or
+two channels of the same transport kind for one packet type are rejected. One
+Chore channel and one message channel may deliberately share a mixed-protocol type.
+Channels and subscriptions stay rooted until process exit; use logical activation,
+never component teardown. No new mandatory member was added to `IApiShared`.
+
+`RegisterChore<T>(id, execute, options)` is for gameplay-changing button/key actions.
+Options support a smaller maximum payload, logical activation, deterministic
+validation and Unity-thread diagnostics. `channel.Send(packet)` preflights receiver
+registration, serialization, the native manager and body plus two-byte packet-ID
+size (at most 1200). Keep the packet, nested values and formatter output unchanged
+through submission: the Extender serializes the same object again. The common
+`ChoreTransport.TrySend` adapts already registered Extender packet hooks.
+Never apply the effect immediately at the button: Chore receipt executes the same
+handler synchronously on every peer, including the sender. Use global IDs and
+desired states, not local selection or a blind toggle. The consumer owns current
+session/epoch, ownership, costs, protocol compatibility and operation deduplication.
+Gameplay callbacks must not touch Unity/Noesis or log directly; publish copied
+presentation snapshots separately with `Network.TryPostPresentation`, without an
+inline fallback. Existing dedicated receivers can use `ChoreTransport.IsChoreDelivery`
+before runtime checks. A known Steam delivery is rejected. Missing
+Steam identity on this dedicated type is transport classification, not verified
+player authorization; payload PlayerId is not proof of origin.
+
+`NetworkSendResult.Submitted` means local preflight and a normal return from the
+underlying send, not native execution or peer acknowledgement. The Extender public
+API returns void and retains its internal Steam fallback. APIShared blocks its
+known missing-manager/oversize triggers before calling it, but does not claim an
+atomic native queue contract. There is no automatic retry, split, rollback or local
+fallback; acknowledgements and large synchronized batches require a consumer
+protocol. Pause does not justify replacing a Chore with a Steam packet.
+
+`RegisterMessage<T>(id, receive, options)` is for control-plane data and presentation,
+never simulation mutation. The raw callback deep-copies only the payload and
+verified transport sender. An optional pure `Snapshot` callback replaces the default
+MessagePack round trip; mutable descendants must also be copied. Enabled checks,
+validation and receipt run after FIFO Unity dispatch. Revalidate session/generation,
+roster and host authority using `message.SenderSteamId` then. Missing identity or
+dispatcher causes a drop; no foreign-thread execution or inline fallback occurs.
+Options also support a send-body limit and isolated Unity-thread diagnostics.
+`SendToGame` supports the Extender's `instantMessage` option; `SendToPlayer` uses a
+1-based game player ID. `SendToLobby` explicitly uses current active-lobby human
+peers even during the lobby/map transition. `SendToSteamPeer` sends directly on
+reliable Steam channel 2 without resolving a stale game player. Broadcast excludes
+the sender. Sends require the initialized Unity thread and remain local results;
+partial broadcast failure cannot undo messages already submitted to other peers.
+
+See the [compiled networking example](../examples/ThirdPartyMod/NetworkingExample.cs)
+for registration, an explicit formatter and a button that only submits a desired
+state. Supply your own current-session and ownership validation and execution.
+
 ## Initialization and ownership
 
 Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client, logger, settings and callbacks in a static runtime or a long-lived publisher. Register managed lifecycle services from `Awake`, after the hard APIShared dependency has initialized. Acquire native services in `WhenReady`. Never treat a native failure as proof that all managed services failed. `WhenReady` is a terminal global-state notification, not a Unity-thread dispatcher: late callbacks run synchronously on the registering thread, early callbacks on the initialization publisher thread. Call Unity/Noesis operations only from a known Unity-thread entry point.

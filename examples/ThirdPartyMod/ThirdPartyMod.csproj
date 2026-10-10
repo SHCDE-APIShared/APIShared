@@ -19,6 +19,9 @@
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="MessagePack"><HintPath>$(ExtenderDir)\MessagePack.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MessagePack.Annotations"><HintPath>$(ExtenderDir)\MessagePack.Annotations.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Memory"><HintPath>$(ExtenderDir)\System.Memory.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="APIShared"><HintPath>$(ApiSharedDir)\APIShared.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Noesis.NoesisGUI"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\Noesis.NoesisGUI.dll</HintPath><Private>false</Private></Reference>
@@ -26,7 +29,7 @@
     <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)\SHCDESE.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ExamplePlugin.cs" /><Compile Include="InterceptionExample.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" />
+    <Compile Include="ExamplePlugin.cs" /><Compile Include="InterceptionExample.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" /><Compile Include="NetworkingExample.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">

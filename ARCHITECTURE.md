@@ -41,6 +41,7 @@ src/
     Internal/Native/            pattern resolution, memory, native reservations
   Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
+  Networking/                   owner-bound Chore and control-plane packet channels
   Buildings/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
@@ -155,6 +156,16 @@ There is no implicit thread dispatch. Registration ownership, ordering, replay a
 callback contracts are described in the [API catalog](docs/API_CATALOG.md).
 
 ## Settings and dependencies
+
+Networking owns reusable packet submission and receive-context rules. Consumers
+register through `ModApiClient.Network`; process-owned registrations retain channels
+and Extender subscriptions. Chores execute synchronously in simulation context;
+control-plane packets are copied before FIFO Unity dispatch. Packet schemas,
+authority, session epochs, acknowledgements and gameplay handlers remain consumer
+contracts. `ChoreTransport` adapts existing packet registrations without changing
+wire IDs or registering an additional envelope type. It preflights the public
+Extender send; its void return and internal Steam fallback are not upgraded into
+an atomic delivery guarantee. No competing native transport hook is installed.
 
 The preset view model owns UI bindings, commands and role/context presentation.
 Its small `PresetHost` adapter implements the internal `ILobbyPresetHost` boundary:
