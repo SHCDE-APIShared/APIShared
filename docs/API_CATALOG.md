@@ -81,6 +81,15 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 
+Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
+for legacy idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
+to run Vanilla's existing objective-based target selection after a veto. The synchronous callback
+receives a one-based unit game ID on the native simulation thread and must not issue commands.
+One owner holds the permanent hook; consumers implement their own logical activation predicate.
+Native selection can fail or select another vetoed obstacle; it does not guarantee a successful route.
+The experimental `IAssassinTraversalView`/traversal-provider API was removed with maintainer approval;
+no consumer-defined alternative search or mainmod prerequisite is involved in obstacle completion.
+
 ## Game-mode permissions and settings presentation
 
 The optional mode evaluator also has a consumer-owned [GameplayModeGate](../src/GameModes/GameplayModeGate.cs).

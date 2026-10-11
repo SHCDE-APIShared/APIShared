@@ -243,3 +243,14 @@ and its implementation. The [architecture guide](../ARCHITECTURE.md#finding-and-
 explains where shared behavior, hook ownership and consumer algorithms belong.
 Follow [CONTRIBUTING](../CONTRIBUTING.md) for setup and tests. An ordinary clone of
 this repository is sufficient; no maintainer workspace or AI assistant is required.
+
+## Assassin obstacle completion
+
+Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
+for legacy idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
+to run Vanilla's existing objective-based target selection after a veto. The synchronous callback
+receives a one-based unit game ID on the native simulation thread and must not issue commands.
+One owner holds the permanent hook; consumers implement their own logical activation predicate.
+Native selection can fail or select another vetoed obstacle; it does not guarantee a successful route.
+The experimental `IAssassinTraversalView`/traversal-provider API was removed with maintainer approval;
+no consumer-defined alternative search or mainmod prerequisite is involved in obstacle completion.

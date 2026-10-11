@@ -11,15 +11,13 @@ using SHCDESE.Interop;
 
 namespace APIShared
 {
-    /// <summary>Synchronous, read-only movement view. Never publishes a native path.</summary>
-    public interface IAssassinTraversalView
+    /// <summary>How a vetoed obstacle attack is completed before the original Assassin update.</summary>
+    public enum AssassinObstacleCompletionMode
     {
-        /// <summary>Whether map, settings and route policy still match this view.</summary>
-        bool IsCurrent { get; }
-        /// <summary>Compares all movement-relevant native data with the captured snapshot.</summary>
-        bool ValidateTopology();
-        /// <summary>Checks one physical transition and returns its movement/climb cost.</summary>
-        bool TryGetEdgeCost(int x, int y, int nextX, int nextY, out int cost);
+        /// <summary>Clear the obstacle, set idle and reset the animation timer (legacy behavior).</summary>
+        IdleOnly,
+        /// <summary>Use Vanilla's existing objective-based target selection; idle only if it fails.</summary>
+        NativeRetarget
     }
 
     /// <summary>Optional process-owned Assassin update guard. No consumer owns a native hook.</summary>
@@ -32,8 +30,8 @@ namespace APIShared
         private static HookTransaction transaction;
         private static DetourHandle<AssassinAttackNativeContract.UpdateDelegate> hook;
         private static Func<int, bool> guard;
-        private static Func<int, int, IAssassinTraversalView> traversal;
-        private static Func<bool> traversalAvailable;
+        private static AssassinObstacleCompletionMode completionMode;
+        private static AssassinAttackNativeContract.RetargetDelegate retarget;
         private static string owner;
         private static readonly object Sync = new object();
         private static int errorLogged;
@@ -43,32 +41,37 @@ namespace APIShared
             supported = string.Equals(hash, AssassinPathAPI.ReferenceHash, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Registers the mainmod's rooted read-only traversal provider once.</summary>
-        public static void RegisterTraversal(Func<int, int, IAssassinTraversalView> provider, Func<bool> isAvailable)
-        {
-            if (provider == null || isAvailable == null) throw new ArgumentNullException(nameof(provider));
-            if (Interlocked.CompareExchange(ref traversal, provider, null) != null)
-                throw new InvalidOperationException("Assassin traversal provider is already registered.");
-            Volatile.Write(ref traversalAvailable,isAvailable);
-        }
+        /// <summary>Registers the sole process-lifetime guard using legacy idle-only completion.</summary>
+        /// <remarks>Runs synchronously on the native simulation thread with a one-based unit game ID.
+        /// Return true only to end a state-101/107 obstacle attack. Do not issue commands, retain native
+        /// pointers, or register another owner. Callback exceptions preserve the original update.</remarks>
+        public static void RegisterGuard(string ownerGuid, Func<int, bool> callback) =>
+            RegisterGuard(ownerGuid, callback, AssassinObstacleCompletionMode.IdleOnly);
 
-        /// <summary>Whether the registered mainmod traversal is currently enabled.</summary>
-        public static bool IsTraversalAvailable => Volatile.Read(ref traversalAvailable)?.Invoke()==true;
-
-        /// <summary>Captures a synchronous movement view, or null when unavailable.</summary>
-        public static IAssassinTraversalView CaptureTraversal(int playerId, int speedDelay) =>
-            Volatile.Read(ref traversal)?.Invoke(playerId, speedDelay);
-
-        /// <summary>Return true only to end the current obstacle attack. Callback must not issue native commands.</summary>
-        public static void RegisterGuard(string ownerGuid, Func<int, bool> callback)
+        /// <summary>Registers the sole guard with an explicit obstacle-completion mode.</summary>
+        /// <remarks>Same callback contract as the two-argument overload. NativeRetarget selects from
+        /// Vanilla's existing objectives after the callback, without a consumer route search. Failure
+        /// leaves the unit idle; a successful selection retains Vanilla's written state and context.
+        /// Registrations and hooks remain rooted until process exit; consumers toggle their predicate.
+        /// The original update always runs once. Repeated selection of a vetoed target can be vetoed again.</remarks>
+        public static void RegisterGuard(string ownerGuid, Func<int, bool> callback, AssassinObstacleCompletionMode mode)
         {
             if (string.IsNullOrEmpty(ownerGuid) || callback == null) throw new ArgumentException("Owner and callback required.");
+            if (mode != AssassinObstacleCompletionMode.IdleOnly && mode != AssassinObstacleCompletionMode.NativeRetarget)
+                throw new ArgumentOutOfRangeException(nameof(mode));
             lock (Sync)
             {
                 if (owner != null) throw new InvalidOperationException("Assassin attack guard already belongs to " + owner);
+                if (mode == AssassinObstacleCompletionMode.NativeRetarget)
+                {
+                    if (!supported || module == IntPtr.Zero) throw new InvalidOperationException("Native retarget image unavailable.");
+                    AssassinAttackNativeContract.ValidateRetargetEntry(module + 0x122800);
+                    retarget = Marshal.GetDelegateForFunctionPointer<AssassinAttackNativeContract.RetargetDelegate>(module + 0x122800);
+                }
                 EnsureInstalled();
+                completionMode = mode;
                 owner = ownerGuid;
-                Volatile.Write(ref guard, callback);
+                Volatile.Write(ref guard, callback); // Publishes mode/delegate together on the simulation thread.
             }
         }
 
@@ -81,10 +84,8 @@ namespace APIShared
                     UnitAccess.TryGetById(unitId, out GameUnit* unit, out _) &&
                     UnitAccess.IsReallyAlive(in *unit) && (unit->r_AIState == 101 || unit->r_AIState == 107))
                 {
-                    // Exact Vanilla obstacle-completion cleanup: 16D573..16D6DA.
-                    unit->r_AI_ContextTargetBuildingTileId = 0;
-                    unit->r_AIState = 0;
-                    unit->r_AnimationTimer = 0;
+                    AssassinObstacleCompletion.Complete(unit, unitId, module + 0x7CC6720,
+                        completionMode == AssassinObstacleCompletionMode.NativeRetarget, retarget);
                 }
             }
             catch (Exception ex)
