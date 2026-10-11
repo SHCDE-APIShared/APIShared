@@ -9,6 +9,7 @@
     <DefineConstants>$(DefineConstants);API_SHARED_PRESET_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(ExtenderDir)\ICSharpCode.SharpZipLib.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="Iced"><HintPath>$(ExtenderDir)\Iced.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>true</Private></Reference>

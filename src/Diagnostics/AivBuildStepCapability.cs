@@ -6,6 +6,7 @@ using RedBird.X64.Hooks.Transaction;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace APIShared
 {
@@ -28,7 +29,7 @@ namespace APIShared
             byte freeOrForced);
 
         private readonly object sync = new object();
-        private readonly List<Registration> registrations = new List<Registration>();
+        private Registration[] registrations = Array.Empty<Registration>();
         private readonly HashSet<string> loggedFailures = new HashSet<string>(StringComparer.Ordinal);
         private readonly string binaryHash;
         private readonly ManualLogSource log;
@@ -138,7 +139,7 @@ namespace APIShared
 
             lock (sync)
             {
-                Registration existing = registrations.Find(x =>
+                Registration existing = Array.Find(registrations, x =>
                     string.Equals(x.OwnerGuid, ownerGuid, StringComparison.Ordinal) &&
                     string.Equals(x.RegistrationId, registrationId, StringComparison.Ordinal));
                 if (existing != null)
@@ -153,8 +154,11 @@ namespace APIShared
                     return false;
                 }
 
-                registrations.Add(new Registration(ownerGuid, registrationId, observer));
-                registrations.Sort(Registration.Compare);
+                var next = new Registration[registrations.Length + 1];
+                Array.Copy(registrations, next, registrations.Length);
+                next[next.Length - 1] = new Registration(ownerGuid, registrationId, observer);
+                Array.Sort(next, Registration.Compare);
+                Volatile.Write(ref registrations, next);
             }
             diagnostic = Available("The AIV build-step observer was registered for the process lifetime.");
             return true;
@@ -167,32 +171,46 @@ namespace APIShared
             int restrictedMode,
             byte freeOrForced)
         {
+            // Published hooks stay installed. An unused observer must not allocate per native call.
+            Registration[] snapshot = Volatile.Read(ref registrations);
+            if (snapshot.Length == 0)
+                return hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced);
+            return ExecuteObservedBuildStep(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced, snapshot);
+        }
+
+        // Keep captured delegates in a separate method: the compiler otherwise allocates
+        // a closure before the no-observer branch, even if that branch returns immediately.
+        private int ExecuteObservedBuildStep(ulong aivStateAddress, int playerId, int frameIndex,
+            int restrictedMode, byte freeOrForced, Registration[] snapshot)
+        {
             var context = new AivBuildStepContext(
                 aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced);
             return Dispatch(context, () =>
-                hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced));
+                hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced), snapshot);
         }
 
         internal int DispatchForTest(AivBuildStepContext context, Func<int> original) =>
-            Dispatch(context, original);
+            Dispatch(context, original, Volatile.Read(ref registrations));
 
-        private int Dispatch(AivBuildStepContext context, Func<int> original)
+        private int Dispatch(AivBuildStepContext context, Func<int> original, Registration[] copy)
         {
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
             if (original == null)
                 throw new ArgumentNullException(nameof(original));
-            Registration[] copy;
-            lock (sync)
-                copy = registrations.ToArray();
-            var active = new List<ActiveInvocation>(copy.Length);
+            if (copy.Length == 0)
+                return original();
+            List<ActiveInvocation> active = null;
             foreach (Registration registration in copy)
             {
                 try
                 {
                     IAivBuildStepInvocation invocation = registration.Observer.TryBegin(context);
                     if (invocation != null)
+                    {
+                        if (active == null) active = new List<ActiveInvocation>(copy.Length);
                         active.Add(new ActiveInvocation(registration, invocation));
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -210,11 +228,14 @@ namespace APIShared
             }
             finally
             {
-                var completion = new AivBuildStepCompletion(context, completed, result);
-                for (int index = active.Count - 1; index >= 0; index--)
+                if (active != null)
                 {
-                    try { active[index].Invocation.Complete(completion); }
-                    catch (Exception ex) { LogCallbackFailure(active[index].Registration, "completion", ex); }
+                    var completion = new AivBuildStepCompletion(context, completed, result);
+                    for (int index = active.Count - 1; index >= 0; index--)
+                    {
+                        try { active[index].Invocation.Complete(completion); }
+                        catch (Exception ex) { LogCallbackFailure(active[index].Registration, "completion", ex); }
+                    }
                 }
             }
         }

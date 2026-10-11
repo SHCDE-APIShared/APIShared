@@ -62,28 +62,41 @@ public class UnitAccessTests
     manager.ReturnFalse = false;
     Check(UnitAccess.TryGetById(manager, 1, out GameUnit* reloaded, out _) && reloaded == &record, "reload uses current manager storage");
 
-    var log = new BepInEx.Logging.ManualLogSource();
-    UnitAccess.InitializeDiagnostics(log);
-    for (int i=0; i<100; i++) UnitAccess.TryGetById(manager, 0, out _, out _, "Mod/src/Worker.cs", "OnEvent", 12);
-    Check(log.Lines.Count == 1 && log.Lines[0].Contains("mod=Mod") && log.Lines[0].Contains("reason=InvalidId"), "bounded attributed debug diagnostic");
-    for (int i=0; i<300; i++) UnitAccess.TryGetById(manager, 0, out _, out _, "Mod/src/Worker.cs", "OnEvent", 100+i);
-    Check(log.Lines.Count == 128, "global diagnostic bound");
+    }
+    [TestMethod] public unsafe void RejectedLookupsAllocateNothingAndKeepCallerFailureReasons()
+    {
+        // Warm the exact measured loop, including tiered compilation/OSR bookkeeping.
+        // A different warm-up loop can leave a one-time runtime allocation in the sample.
+        for (int i = 0; i < 4; i++) RunRejectedLookups();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool allRejected = RunRejectedLookups();
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Check(allRejected, "failure reason remains available for consumer diagnostics");
+        Assert.AreEqual(0L, allocated, "no automatic site tracking, formatting or logging allocations");
+        Check(GameUnitManagerAPI.InstanceReads == 0, "sentinel rejections never instantiate the manager");
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static unsafe bool RunRejectedLookups()
+    {
+        bool allRejected = true;
+        for (int i = 0; i < 10000; i++)
+        {
+            bool found = UnitAccess.TryGetById(null, 0, out var unit, out var failure,
+                "Mod/src/Worker.cs", "OnEvent", i);
+            allRejected &= !found && unit == null && failure == UnitLookupFailure.InvalidId;
+        }
+        return allRejected;
     }
     [TestInitialize]
     public void ResetExternalBoundary()
     {
         GameUnitManagerAPI.Current = null;
         GameUnitManagerAPI.InstanceReads = 0;
-        // The diagnostic site budget is process-wide in production. Each test needs its own budget.
-        var sites = (HashSet<string>)typeof(UnitAccess).GetField("reportedFailures", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
-        sites.Clear();
-        UnitAccess.InitializeDiagnostics(null);
     }
     [TestCleanup]
     public void ReleaseExternalBoundary()
     {
         GameUnitManagerAPI.Current = null;
-        UnitAccess.InitializeDiagnostics(null);
     }
     private static void Check(bool condition, string message) => Assert.IsTrue(condition, message);
 }

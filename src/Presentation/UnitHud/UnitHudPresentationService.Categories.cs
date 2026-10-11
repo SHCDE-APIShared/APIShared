@@ -279,6 +279,11 @@ namespace APIShared
         private void OnBeforeRender()
         {
             if (activeSurfaces == UnitHudSurface.None && !hasActionButtons && !pendingPresentation && !refreshRequested && recruitmentLease == null) return;
+            OnActiveBeforeRender();
+        }
+
+        private void OnActiveBeforeRender()
+        {
             if (lastFrame == Time.frameCount) return;
             lastFrame = Time.frameCount;
             ExpireRecruitment();

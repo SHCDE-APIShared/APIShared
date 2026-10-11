@@ -101,10 +101,15 @@ namespace APIShared.Presentation
         public static bool TryRegister(PresentationOperation operation, string ownerGuid, string registrationId,
             Action<PresentationPreEventArgs> pre, Action<PresentationPostEventArgs> post,
             out string reason, int order = 0)
+            => TryRegisterWhenActive(operation, ownerGuid, registrationId, pre, post, out reason, order, null);
+
+        internal static bool TryRegisterWhenActive(PresentationOperation operation, string ownerGuid, string registrationId,
+            Action<PresentationPreEventArgs> pre, Action<PresentationPostEventArgs> post,
+            out string reason, int order, Func<bool> isActive)
         {
             int index = (int)operation;
             if (index < 0 || index >= sites.Length) { reason = "Unknown presentation operation."; return false; }
-            return sites[index].Events.TryRegister(ownerGuid, registrationId, pre, post, out reason, order);
+            return sites[index].Events.TryRegister(ownerGuid, registrationId, pre, post, out reason, order, isActive: isActive);
         }
         /// <summary>Total isolated callback errors at this named site; zero for an unknown operation.</summary>
         public static long GetCallbackFailures(PresentationOperation operation)
@@ -122,6 +127,12 @@ namespace APIShared.Presentation
         internal static void Execute(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
             PresentationPreEventArgs args, Action<object> original)
         {
+            if (!events.CanNotify) { original(args.Parameter); return; }
+            ExecuteObserved(events, args, original);
+        }
+        private static void ExecuteObserved(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
+            PresentationPreEventArgs args, Action<object> original)
+        {
             var invocation = events.Begin(args);
             Exception error = null;
             try
@@ -133,7 +144,11 @@ namespace APIShared.Presentation
                 }
             }
             catch (Exception ex) { error = ex; throw; }
-            finally { invocation.Complete(state => new PresentationPostEventArgs(args, state, error)); }
+            finally
+            {
+                if (invocation.HasPostObservers)
+                    invocation.Complete(state => new PresentationPostEventArgs(args, state, error));
+            }
         }
         private sealed class Site
         {
@@ -156,9 +171,24 @@ namespace APIShared.Presentation
                 else viewHook.Install(type, method, typeof(void), new[] { typeof(object) }, DispatchView, method);
             }
             private void DispatchView(MainViewModel self, object parameter)
-            { Dispatch(self, parameter, effective => viewHook.Original(self, effective)); }
-            private void DispatchHud(HUD_Main self) { Dispatch(self, null, _ => hudHook.Original(self)); }
-            private void DispatchGui(FatControler self) { Dispatch(self, null, _ => guiHook.Original(self)); }
+            {
+                if (!Events.CanNotify) { viewHook.Original(self, parameter); return; }
+                DispatchObservedView(self, parameter);
+            }
+            private void DispatchObservedView(MainViewModel self, object parameter) =>
+                Dispatch(self, parameter, effective => viewHook.Original(self, effective));
+            private void DispatchHud(HUD_Main self)
+            {
+                if (!Events.CanNotify) { hudHook.Original(self); return; }
+                DispatchObservedHud(self);
+            }
+            private void DispatchObservedHud(HUD_Main self) => Dispatch(self, null, _ => hudHook.Original(self));
+            private void DispatchGui(FatControler self)
+            {
+                if (!Events.CanNotify) { guiHook.Original(self); return; }
+                DispatchObservedGui(self);
+            }
+            private void DispatchObservedGui(FatControler self) => Dispatch(self, null, _ => guiHook.Original(self));
             private void Dispatch(object instance, object parameter, Action<object> original)
             {
                 Execute(Events, new PresentationPreEventArgs(operation, instance, parameter), original);

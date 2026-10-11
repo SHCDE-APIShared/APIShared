@@ -57,6 +57,8 @@ namespace APIShared
         /// <summary>
         /// Registers one process-lifetime observer under an owner-local stable ID. Either callback
         /// may be null, but at least one callback is required. Existing state is never replayed.
+        /// Observation starts with the first subscriber; its first simulation tick establishes
+        /// the baseline. Transitions before that baseline are not reported retroactively.
         /// </summary>
         bool TryRegisterObserver(
             string registrationId,

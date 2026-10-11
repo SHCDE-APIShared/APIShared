@@ -16,6 +16,7 @@ GUID without installing hooks or reserving a capability.
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
 | Units, Pathfinding, Diagnostics | Command interception, recruitment policies, queries and advanced integrations |
 | Economy | Shared native market price query events and validated hook ownership |
+| Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
 
 Directories help navigation; public namespaces define the contracts. Capabilities
 use `APIShared`; settings and general profiles use `APIShared.ModSettings` and
@@ -42,6 +43,7 @@ src/
   Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
   Networking/                   owner-bound Chore and control-plane packet channels
+  Workshop/                     package contracts, file policy, Steam callbacks and UI
   Buildings/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
@@ -133,6 +135,20 @@ by their diagnostic mod. Observation points inside BugfixesAndQoL connect to tha
 mod through a small internal sink; they do not create a public APIShared service.
 The generally useful AIV build-step observer remains here.
 
+Unused services must exit before collecting observations or constructing event
+payloads. AIV dispatch reads an immutable registration snapshot and calls Vanilla
+directly when it is empty. Lobby capture starts with the first observer; defeat
+observation starts with the first subscriber's simulation-tick baseline. Marked
+selection tracking starts with an observer or a successful cache request.
+Dormant internal HUD subscriptions do not create demand in shared event brokers.
+Keep capturing lambdas in separate active-path methods: an early source-level
+return alone does not prevent compiler-generated closure allocations.
+
+Consumers own diagnostic analysis, histories and lookup-failure logging. UnitAccess
+returns its failure reason without tracking call sites or logging automatically.
+The compatible opt-in scroll diagnostic performs no formatting while disabled.
+Readiness, validation and isolated callback error reporting remain service duties.
+
 ## Publication
 
 Additional weighted route calculations publish through `Pathfinding/Routes`.
@@ -213,3 +229,17 @@ The solution contains the runtime, two local integration suites, a game-independ
 core suite and public consumer examples. Test-only packages never become plugin
 dependencies. The standalone build uses no neighboring repositories. Additional
 mod integration tests belong in their consumer repositories.
+
+## Workshop staging integration
+
+`Workshop/WorkshopCleanupRuntime` is rooted by a static `ILHook` installed in APIShared `Awake`. It intercepts every return of `MapModManager.TryStageModUpdate`; incoming branch labels are retargeted through the callback. The audited assembly SHA-256 and exact method signature gate installation. Dry transformation/compilation occurs before publication. There is no lifecycle unpatch, dispatcher or coroutine. The Extender's Steam initialization publisher supplies the long-lived invocation path; the first staging callback logs its execution after startup cleanup.
+
+The staging callback only cleans previous APIShared releases. Foreign map packages remain exclusively Extender-owned. `WorkshopInventory` and its existing schema remain public helpers; shipping an inventory does not opt a foreign map into APIShared deployment.
+
+The additive owner-bound `ModApiClient.Workshop` capability handles a different schema, `apishared-workshop.json`, and exclusively declared loose `Payload` files. `WorkshopPackageCodec`, `WorkshopPaths`, `WorkshopInstallation`, `WorkshopTransaction` and `WorkshopPublishing` contain testable file policy without game dependencies. `WorkshopRuntime` captures Steam state on Unity and delegates file preparation to workers. `WorkshopSteamUpload` roots its own call-results and never uses Vanilla's stateful upload singleton. The view is presentation state rather than persisted lobby settings. Callbacks are retained by static fields and Extender publishers after plugin-component destruction.
+
+Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend uses the host bash through Wine's Z: mapping, requires flock/coreutils and conservatively waits for all matching game executables.
+
+Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself continues to be distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
+
+The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Renew the complete installer audit and binary allowlist when the Extender changes. These contracts concern managed Workshop staging, not native gameplay hooks.

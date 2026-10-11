@@ -24,6 +24,8 @@ namespace APIShared
         { if (TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver) TemporaryRequestReason = reason; return false; }
         private static void Report(string result)
         {
+            // TEMP_GATE_ROUTE_ACCEPTANCE: no diagnostic work without an explicit observer.
+            if (!(TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver)) return;
             // The caller supplies diagnostic provenance; the shared handoff does not own a command runtime.
             Action<string, string, string> report = current?.reportStage;
             if (report == null) return;

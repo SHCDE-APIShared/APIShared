@@ -3,13 +3,14 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.7.0",
+  "Version": "0.7.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    { "Version": "0.7.1", "Changes": ["Add opt-in Workshop inventory cleanup and explicit savegame-settings exclusion for independent plugin entry points."] },
     {
       "Version": "0.7.0",
       "Changes": [

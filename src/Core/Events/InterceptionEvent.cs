@@ -39,9 +39,18 @@ namespace APIShared.Events
         [ThreadStatic] private static int notificationDepth;
         internal InterceptionEvent(Action install = null) { this.install = install; }
         internal long CallbackFailures => Interlocked.Read(ref failures);
-        internal bool HasObservers => Volatile.Read(ref registrations).Length != 0;
+        internal bool HasObservers
+        {
+            get
+            {
+                foreach (Registration entry in Volatile.Read(ref registrations))
+                    if (entry.IsActive == null || entry.IsActive()) return true;
+                return false;
+            }
+        }
+        internal bool CanNotify => notificationDepth == 0 && HasObservers;
         internal bool TryRegister(string owner, string id, Action<TPre> pre, Action<TPost> post,
-            out string reason, int order = 0, Action<TPre, object> accepted = null)
+            out string reason, int order = 0, Action<TPre, object> accepted = null, Func<bool> isActive = null)
         {
             if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || (pre == null && post == null && accepted == null))
             { reason = "Owner GUID, registration ID and at least one callback are required."; return false; }
@@ -57,7 +66,7 @@ namespace APIShared.Events
                 }
                 var next = new Registration[registrations.Length + 1];
                 Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(owner, id, pre, post, order, accepted);
+                next[next.Length - 1] = new Registration(owner, id, pre, post, order, accepted, isActive);
                 Array.Sort(next, (a, b) => {
                     int comparison = a.Order.CompareTo(b.Order);
                     if (comparison == 0) comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
@@ -71,12 +80,33 @@ namespace APIShared.Events
         internal Invocation Begin(TPre args)
         {
             Registration[] snapshot = notificationDepth == 0 ? Volatile.Read(ref registrations) : Array.Empty<Registration>();
+            // Only internal service subscriptions can be dormant. Freeze demand with the
+            // invocation so enabling/disabling during Pre cannot mismatch Accepted/Post.
+            Registration[] filtered = null;
+            int activeCount = 0;
+            for (int index = 0; index < snapshot.Length; index++)
+            {
+                Registration entry = snapshot[index];
+                if (entry.IsActive == null || entry.IsActive())
+                {
+                    if (filtered != null) filtered[activeCount] = entry;
+                    activeCount++;
+                }
+                else if (filtered == null)
+                {
+                    filtered = new Registration[snapshot.Length];
+                    Array.Copy(snapshot, filtered, index);
+                }
+            }
+            if (activeCount == 0) snapshot = Array.Empty<Registration>();
+            else if (filtered != null) { Array.Resize(ref filtered, activeCount); snapshot = filtered; }
             var invocation = new Invocation(this, snapshot, args);
             notificationDepth++;
             try
             {
                 for (int index = 0; index < snapshot.Length; index++)
                 {
+                    if (snapshot[index].Pre == null) continue;
                     args.ResetState();
                     object before = args.Capture();
                     bool skip = args.Veto;
@@ -109,8 +139,14 @@ namespace APIShared.Events
             private bool acceptedNotified;
             internal readonly object[] States;
             internal readonly TPre Pre;
+            internal bool HasPostObservers { get; }
             internal Invocation(InterceptionEvent<TPre, TPost> owner, Registration[] snapshot, TPre pre)
-            { this.owner = owner; this.snapshot = snapshot; Pre = pre; States = new object[snapshot.Length]; }
+            {
+                this.owner = owner; this.snapshot = snapshot; Pre = pre;
+                States = snapshot.Length == 0 ? Array.Empty<object>() : new object[snapshot.Length];
+                foreach (Registration entry in snapshot)
+                    if (entry.Post != null) { HasPostObservers = true; break; }
+            }
             internal void NotifyAccepted()
             {
                 if (acceptedNotified || completed || Pre.SkipOriginalFunction) return;
@@ -155,8 +191,9 @@ namespace APIShared.Events
             internal readonly Action<TPre> Pre;
             internal readonly Action<TPost> Post;
             internal readonly Action<TPre, object> Accepted;
-            internal Registration(string owner, string id, Action<TPre> pre, Action<TPost> post, int order, Action<TPre, object> accepted)
-            { Owner = owner; Id = id; Pre = pre; Post = post; Order = order; Accepted = accepted; }
+            internal readonly Func<bool> IsActive;
+            internal Registration(string owner, string id, Action<TPre> pre, Action<TPost> post, int order, Action<TPre, object> accepted, Func<bool> isActive)
+            { Owner = owner; Id = id; Pre = pre; Post = post; Order = order; Accepted = accepted; IsActive = isActive; }
         }
     }
 

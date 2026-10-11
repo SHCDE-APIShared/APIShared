@@ -55,5 +55,9 @@ if (Test-Path -LiteralPath $fixRoot) {
     }
 }
 
+$workshop = [IO.File]::ReadAllText((Join-Path $workspace 'src/Workshop/WorkshopCleanupRuntime.cs'))
+if ($workshop -match '\bhook\??\.(Dispose|Undo|Disable|Enable)\s*\(' -or $workshop -notmatch 'private static ILHook hook;' -or $workshop -notmatch 'cursor.MoveAfterLabels\(\)' -or $workshop -match 'OnDestroy\s*\(|OnDisable\s*\(|OnApplicationQuit\s*\(|StartCoroutine\s*\(') {
+    $errors.Add('Workshop cleanup must retain its permanent hook, intercept incoming return labels and avoid component lifecycle teardown.')
+}
 if ($errors.Count -ne 0) { throw ($errors -join [Environment]::NewLine) }
 Write-Host 'PASS: APIShared has no executable-memory toggles or published transaction teardown.'

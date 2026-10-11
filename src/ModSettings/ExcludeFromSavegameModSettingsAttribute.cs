@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace APIShared.ModSettings
 {
@@ -11,7 +12,21 @@ namespace APIShared.ModSettings
 
     internal static class SavegameSettingsParticipation
     {
-        internal static bool IsExcluded(Type pluginType) => pluginType != null &&
-            Attribute.IsDefined(pluginType, typeof(ExcludeFromSavegameModSettingsAttribute), inherit: true);
+        private static readonly HashSet<Type> ExplicitExclusions = new HashSet<Type>();
+
+        internal static void Exclude(Type pluginType)
+        {
+            if (pluginType == null) throw new ArgumentNullException(nameof(pluginType));
+            lock (ExplicitExclusions) ExplicitExclusions.Add(pluginType);
+        }
+
+        internal static bool IsExcluded(Type pluginType)
+        {
+            if (pluginType == null) return false;
+            lock (ExplicitExclusions)
+                for (Type type = pluginType; type != null; type = type.BaseType)
+                    if (ExplicitExclusions.Contains(type)) return true;
+            return Attribute.IsDefined(pluginType, typeof(ExcludeFromSavegameModSettingsAttribute), inherit: true);
+        }
     }
 }

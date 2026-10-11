@@ -37,6 +37,8 @@ namespace APISharedTests
             FieldInfo pendingInput = api.GetField("pendingInput", BindingFlags.NonPublic | BindingFlags.Static);
             var candidates = (HashSet<int>)api.GetField("candidates", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
             bool wasInstalled = (bool)installed.GetValue(null);
+            FieldInfo demand = api.GetField("hasDemand", BindingFlags.NonPublic | BindingFlags.Static);
+            bool hadDemand = (bool)demand.GetValue(null);
             var fog = new Harmony("APISharedTests.FogPrefix");
             var shared = new Harmony("APISharedTests.MarkedSelectionPostfix");
             var fogPrefix = new HarmonyMethod(typeof(MarkedSelectionHarmonyTests).GetMethod(
@@ -46,6 +48,13 @@ namespace APISharedTests
             try
             {
                 installed.SetValue(null, true);
+                demand.SetValue(null, false);
+                Reset(candidates, pendingInput);
+                postfix.Invoke(null, new object[] { 1, false, false, new[] { 5 }, false, false,
+                    new[] { 7 }, new[] { 9 } });
+                assert(candidates.Count == 0 && !(bool)pendingInput.GetValue(null),
+                    "Active selection input collects nothing without observers or a requested cache.");
+                demand.SetValue(null, true);
                 TestOrder(nameof(FogFirst), true, fog, shared, fogPrefix, sharedPostfix,
                     candidates, pendingInput, assert);
                 TestOrder(nameof(SharedFirst), false, fog, shared, fogPrefix, sharedPostfix,
@@ -86,6 +95,7 @@ namespace APISharedTests
             finally
             {
                 installed.SetValue(null, wasInstalled);
+                demand.SetValue(null, hadDemand);
                 Reset(candidates, pendingInput);
             }
         }

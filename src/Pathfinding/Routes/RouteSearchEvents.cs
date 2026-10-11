@@ -86,13 +86,19 @@ namespace APIShared.Pathfinding
             private readonly RouteSearchEventRegistry owner;
             private readonly Registration[] snapshot;
             private bool completed;
+            private readonly bool hasPostObservers;
             internal RouteSearchPreEventArgs Pre { get; }
             internal Invocation(RouteSearchEventRegistry owner, Registration[] snapshot, RouteSearchPreEventArgs pre)
-            { this.owner = owner; this.snapshot = snapshot; Pre = pre; }
+            {
+                this.owner = owner; this.snapshot = snapshot; Pre = pre;
+                foreach (Registration entry in snapshot)
+                    if (entry.Post != null) { hasPostObservers = true; break; }
+            }
             internal void Complete(bool success, string reason, int routeLength, int expandedNodes)
             {
                 if (completed || Pre.SkipOriginalFunction) return;
                 completed = true;
+                if (!hasPostObservers) return;
                 var args = new RouteSearchPostEventArgs(Pre.Context, Pre.GroundEdgeCost, Pre.MoatEdgeCost,
                     success, reason, routeLength, expandedNodes);
                 notificationDepth++;

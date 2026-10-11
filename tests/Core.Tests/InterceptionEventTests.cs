@@ -8,13 +8,40 @@ public class InterceptionEventTests
 {
     private sealed class Input : InterceptionPreEventArgs
     {
+        internal int Captures;
         private int value;
         public int Value { get => value; set { CheckMutable(); this.value = value; } }
-        internal override object Capture() => value;
+        internal override object Capture() { Captures++; return value; }
         internal override void Restore(object snapshot) => value = (int)snapshot;
     }
     private record Output(int Value, bool Skipped, object State);
     private static Output Post(Input a, object state) => new(a.Value, a.SkipOriginalFunction, state);
+
+    [TestMethod]
+    public void DormantInternalSubscriptionsDoNotCreateDemandAndKeepPairedSnapshot()
+    {
+        bool active = false;
+        int pre = 0, post = 0;
+        var events = new InterceptionEvent<Input, Output>();
+        events.TryRegister("internal", "optional", a => { pre++; active = false; }, _ => post++, out _,
+            isActive: () => active);
+        Assert.IsFalse(events.HasObservers);
+        Assert.IsFalse(events.CanNotify);
+        active = true;
+        var invocation = events.Begin(new Input());
+        Assert.IsFalse(events.CanNotify);
+        Assert.IsTrue(invocation.HasPostObservers, "Disabling in Pre must not lose matching Post.");
+        invocation.Complete(s => Post(invocation.Pre, s));
+        Assert.AreEqual(1, pre);
+        Assert.AreEqual(1, post);
+        events.TryRegister("external", "always", null, _ => post++, out _);
+        Assert.IsTrue(events.CanNotify, "Dormant internal callbacks cannot suppress public consumers.");
+        var input = new Input();
+        invocation = events.Begin(input);
+        Assert.AreEqual(0, input.Captures, "Post-only observers need no rollback snapshots.");
+        invocation.Complete(s => Post(input, s));
+        Assert.AreEqual(2, post);
+    }
 
     [TestMethod]
     public void StableOrderOwnerLocalIdsAndStickyVeto()

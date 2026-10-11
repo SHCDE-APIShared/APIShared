@@ -160,6 +160,11 @@ namespace APIShared
                 if (left) leftClickOriginal(self, parameter); else rightClickOriginal(self, parameter);
                 return;
             }
+            HandleCategoryClick(self, parameter, left);
+        }
+
+        private void HandleCategoryClick(MainViewModel self, object parameter, bool left)
+        {
             int type;
             try { type = (int)self.getChimpEnum(parameter as string); }
             catch
@@ -243,13 +248,15 @@ namespace APIShared
 
         private void RegisterSharedEvents()
         {
-            if (!APIShared.Presentation.PresentationEvents.TryRegister(
+            if (!APIShared.Presentation.PresentationEvents.TryRegisterWhenActive(
                 APIShared.Presentation.PresentationOperation.RecruitmentEnter, APISharedPlugin.PluginGuid,
                 "UnitHudRecruitment", null, args => {
                     if (sharedEventsPublished && args.OriginalCompleted) EnterCreateTroopHook(args.ViewModel, args.Parameter);
-                }, out string reason)) throw new InvalidOperationException(reason);
-            if (!APIShared.Commands.GameActionEvents.TryRegister(APISharedPlugin.PluginGuid,
-                "UnitHudRecruitment", null, null, out reason, accepted: BeforeRecruitmentOriginal)) throw new InvalidOperationException(reason);
+                }, out string reason, 0, () => sharedEventsPublished && activeRecruitmentHandlers)) throw new InvalidOperationException(reason);
+            if (!APIShared.Commands.GameActionEvents.Registry.TryRegister(APISharedPlugin.PluginGuid,
+                "UnitHudRecruitment", null, null, out reason,
+                accepted: (args, state) => BeforeRecruitmentOriginal(new APIShared.Commands.GameActionAcceptedEventArgs(args, state)),
+                isActive: () => sharedEventsPublished && activeRecruitmentHandlers)) throw new InvalidOperationException(reason);
             sharedEventsPublished = true;
         }
         private void UpdateSpritesHook(MainViewModel self, int colour, bool arabic)

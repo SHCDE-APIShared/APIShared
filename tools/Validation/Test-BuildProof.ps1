@@ -9,12 +9,18 @@ function Commit-Fixture([string]$Directory,[string]$Message) {
 }
 try {
     $proofRoot=Join-Path $temp 'proof'
-    foreach($dir in @('src','Properties','Patches','tools')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
+    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'actual input'
     Write-Fixture (Join-Path $proofRoot 'APIShared.csproj') '<Project />'
     Write-Fixture (Join-Path $proofRoot 'info.json') '{}'
     Write-Fixture (Join-Path $proofRoot '.gitignore') ".local/`n"
     Write-Fixture (Join-Path $proofRoot 'tools/Build.ps1') 'build fixture'
+    foreach($name in @('WorkshopPackage.ps1','Prepare-WorkshopPackage.ps1','New-WorkshopBootstrap.ps1')) { Write-Fixture (Join-Path $proofRoot ('tools/' + $name)) 'packaging fixture' }
+    Write-Fixture (Join-Path $proofRoot 'Workshop/workshop-updater.ps1') 'updater fixture'
+    $viewSource=Join-Path $proofRoot 'Override/Workshop/Workshop.xaml'
+    $viewTarget=Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/Override/Workshop/Workshop.xaml'
+    Write-Fixture $viewSource '<Grid />'
+    Write-Fixture $viewTarget '<Grid />'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../BuildProof.ps1') -Destination (Join-Path $proofRoot 'tools/BuildProof.ps1')
     $compiler=Join-Path $temp 'compiler'; Write-Fixture $compiler 'external compiler boundary'
     $dll=Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/APIShared.dll'; Write-Fixture $dll 'external binary boundary'
@@ -34,6 +40,14 @@ try {
     Write-Fixture $crossScript 'param($Root,$Compiler) . (Join-Path $Root "tools/BuildProof.ps1"); (Get-ApiInputState $Root "" "" $Compiler).Fingerprint'
     $cross=@(& powershell.exe -NoProfile -File $crossScript $proofRoot $compiler)
     Check ($LASTEXITCODE -eq 0 -and ($cross -join '').Trim() -eq $state.Fingerprint) 'Fingerprint differs across PowerShell versions'
+    Write-Fixture $viewSource '<Grid Margin="1" />'
+    $changedViewState=Get-ApiInputState $proofRoot '' '' $compiler
+    Check ($changedViewState.Fingerprint -cne $state.Fingerprint) 'Override view change did not invalidate release evidence'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed view source accepted with old evidence'
+    Write-Fixture $viewSource '<Grid />'
+    [IO.File]::Delete($viewTarget)
+    $failed=$false; try{Assert-ApiWorkshopView $proofRoot (Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp')}catch{$failed=$true}; Check $failed 'Missing packaged Override view accepted'
+    Write-Fixture $viewTarget '<Grid />'
     Write-Fixture $dll 'tampered binary'
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Tampered package accepted'
     Write-Host 'PASS: missing/stale build evidence, package tampering, dirty release rejection and cross-shell fingerprint.'

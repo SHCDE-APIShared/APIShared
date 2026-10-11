@@ -51,8 +51,7 @@ namespace APIShared
         private static int lastMismatchCount = -1;
         private static int lastMismatchSelectionRevision = -1;
         private static int selectionRevision;
-        private static long candidateChecks;
-        private static long fullScans;
+        private static volatile bool hasDemand;
         private static int completedTick;
 
         internal static void Initialize(ManualLogSource logger)
@@ -110,6 +109,7 @@ namespace APIShared
             {
                 if (observers.ContainsKey(ownerAndId)) return false;
                 observers.Add(ownerAndId, observer);
+                hasDemand = true;
                 return true;
             }
         }
@@ -133,10 +133,11 @@ namespace APIShared
                     selectionRevision = 0;
                     lastMismatchCount = -1;
                     lastMismatchSelectionRevision = -1;
-                    FullScan("initial-session");
+                    FullScan();
                     publication = PublishIfChanged(force: true);
                 }
                 result = snapshot;
+                if (result != null) hasDemand = true;
             }
             if (publication != null) Notify(publication);
             return result != null;
@@ -149,7 +150,7 @@ namespace APIShared
             MarkedUnitSelectionSnapshot publication;
             lock (Sync)
             {
-                FullScan("consumer-invalidated-id");
+                FullScan();
                 publication = PublishIfChanged();
             }
             if (publication != null) Notify(publication);
@@ -158,16 +159,21 @@ namespace APIShared
         private static void OnTroopSelection(int __0, bool __1, bool __2,
             int[] __3, bool __4, bool __5, int[] __6, int[] __10)
         {
-            if (!installed || (__0 == 0 && !__4 && !__5 && !__1 && !__2)) return;
+            if (!hasDemand || !installed || (__0 == 0 && !__4 && !__5 && !__1 && !__2)) return;
+            CollectInput(__3, __6, __10);
+        }
+
+        private static void CollectInput(int[] selectedIds, int[] underCursorIds, int[] onScreenIds)
+        {
             try
             {
                 lock (Sync)
                 {
                     pendingInput = true;
-                    AddCandidates(__3);
-                    AddCandidates(__6);
+                    AddCandidates(selectedIds);
+                    AddCandidates(underCursorIds);
                     // Vanilla may use the visible list for same-type/double-click selection.
-                    AddCandidates(__10);
+                    AddCandidates(onScreenIds);
                 }
             }
             catch (Exception error) { log?.LogError("MARKED_SELECTION_INPUT_ERROR: " + error); }
@@ -181,6 +187,7 @@ namespace APIShared
 
         private static int OnRun(bool mpFrameSkip)
         {
+            if (!hasDemand) return originalRun(mpFrameSkip);
             Interlocked.Exchange(ref completedTick, 0);
             int result = originalRun(mpFrameSkip);
             if (Interlocked.Exchange(ref completedTick, 0) != 0)
@@ -193,6 +200,7 @@ namespace APIShared
 
         private static void OnReturnBuffer(MemoryBuffers self, MemoryBuffers.MemBuffer buffer)
         {
+            if (!hasDemand) { originalReturnBuffer(self, buffer); return; }
             bool completed = buffer != null && buffer.beingFilled;
             originalReturnBuffer(self, buffer);
             if (completed) Interlocked.Exchange(ref completedTick, 1);
@@ -221,7 +229,6 @@ namespace APIShared
                         if (!IsMarked(units, id)) membershipChanged |= selected.Remove(id);
                     foreach (int id in candidates)
                     {
-                        candidateChecks++;
                         if (IsMarked(units, id)) membershipChanged |= selected.Add(id);
                     }
                     candidates.Clear();
@@ -235,7 +242,7 @@ namespace APIShared
                     lastMismatchCount, selectionRevision, lastMismatchSelectionRevision);
                 if (rescan)
                 {
-                    FullScan("positive-count-mismatch");
+                    FullScan();
                     lastMismatchCount = nativeCount;
                     lastMismatchSelectionRevision = selectionRevision;
                 }
@@ -253,17 +260,13 @@ namespace APIShared
             nativeCount > 0 && selectedCount != nativeCount &&
             (nativeCount != checkedCount || revision != checkedRevision);
 
-        private static void FullScan(string reason)
+        private static void FullScan()
         {
             selected.Clear();
             Span<GameUnit> units = GameUnitManagerAPI.Instance.GetUnitsAsSpan();
             for (int index = 0; index < units.Length; index++)
                 if (units[index].r_UnitHover != 0) selected.Add(index + 1);
             lastNativeCount = GamePlayerManagerAPI.Instance.GetHoveredChimpsCount();
-            fullScans++;
-            APIShared.Internal.DebugLogHelper.LogDebug(log, () => "MARKED_SELECTION_SCAN: reason=" + reason + ", session=" + sessionId +
-                ", marked=" + selected.Count + ", nativeCount=" + lastNativeCount +
-                ", fullScans=" + fullScans + ", candidateChecks=" + candidateChecks);
         }
 
         private static MarkedUnitSelectionSnapshot PublishIfChanged(bool force = false)
@@ -279,8 +282,6 @@ namespace APIShared
                 if (same) return null;
             }
             snapshot = new MarkedUnitSelectionSnapshot(sessionId, ids);
-            APIShared.Internal.DebugLogHelper.LogDebug(log, () => "MARKED_SELECTION_CHANGED: session=" + sessionId + ", marked=" + ids.Length +
-                ", candidateChecks=" + candidateChecks + ", fullScans=" + fullScans);
             return snapshot;
         }
 

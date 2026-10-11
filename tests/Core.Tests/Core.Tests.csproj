@@ -1,6 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Workshop/WorkshopInventory.cs" Link="Production/WorkshopInventory.cs" />
+    <Compile Include="../../src/Workshop/WorkshopApplyCoordinator.cs" Link="Production/WorkshopApplyCoordinator.cs" />
+    <Compile Include="../../src/Workshop/WorkshopDeletionManifest.cs" Link="Production/WorkshopDeletionManifest.cs" />
+    <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Production/WorkshopContracts.cs" />
+    <Compile Include="../../src/Workshop/WorkshopPackageCodec.cs" Link="Production/WorkshopPackageCodec.cs" />
+    <Compile Include="../../src/Workshop/WorkshopPaths.cs" Link="Production/WorkshopPaths.cs" />
+    <Compile Include="../../src/Workshop/WorkshopInstallation.cs" Link="Production/WorkshopInstallation.cs" />
+    <Compile Include="../../src/Workshop/WorkshopTransaction.cs" Link="Production/WorkshopTransaction.cs" />
+    <Compile Include="../../src/Workshop/WorkshopPublishing.cs" Link="Production/WorkshopPublishing.cs" />
+    <Compile Include="../../src/Workshop/WorkshopBootstrapValidation.cs" Link="Production/WorkshopBootstrapValidation.cs" />
+    <Compile Include="../../src/Workshop/WorkshopMapArchive.cs" Link="Production/WorkshopMapArchive.cs" />
+    <Compile Include="../../src/Workshop/WorkshopMapPackage.cs" Link="Production/WorkshopMapPackage.cs" />
+    <Compile Include="../../src/Workshop/WorkshopPackageBuilder.cs" Link="Production/WorkshopPackageBuilder.cs" />
 
     <Compile Include="../../src/Networking/NetworkPacketContracts.cs" Link="Production/NetworkPacketContracts.cs" />
     <Compile Include="../../src/Networking/ChoreSendPolicy.cs" Link="Production/ChoreSendPolicy.cs" />
@@ -24,5 +37,7 @@
     <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
   </ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_Troops.xaml" Link="Fixtures/HUD_Troops.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(SHCDE_GAME_DIR)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll</HintPath></Reference></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAML/IngameUIScreens.xaml" Link="Fixtures/IngameUIScreens.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

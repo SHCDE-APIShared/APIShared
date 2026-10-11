@@ -14,12 +14,15 @@ namespace APIShared
             OwnerGuid = ownerGuid;
             this.api = api ?? throw new ArgumentNullException(nameof(api));
             Network = new Networking.ModNetworkClient(ownerGuid);
+            Workshop = new Workshop.WorkshopClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
         public string OwnerGuid { get; }
         /// <summary>Process-rooted Chore and control-plane packet registration for this owner; registration requires Unity-thread Extender readiness.</summary>
         public Networking.ModNetworkClient Network { get; }
+        /// <summary>Owner-bound Workshop upload, receipt-based installation and catalog service. Steam calls require the Unity thread; planning never installs files.</summary>
+        public Workshop.WorkshopClient Workshop { get; }
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 

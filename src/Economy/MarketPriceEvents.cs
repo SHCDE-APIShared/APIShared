@@ -74,9 +74,16 @@ namespace APIShared.Economy
         internal static int Dispatch(MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount,
             MarketPriceNativeRuntime.PriceCall original)
         {
+            if (!Registry.CanNotify) return original(manager, playerId, good, amount);
+            return DispatchObserved(direction, manager, playerId, good, amount, original);
+        }
+        private static int DispatchObserved(MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount,
+            MarketPriceNativeRuntime.PriceCall original)
+        {
             var invocation = Registry.Begin(new MarketPricePreEventArgs(direction, manager, playerId, good, amount));
             int result = invocation.Pre.SkipOriginalFunction ? invocation.Pre.ReplacementTotal : original(manager, playerId, good, amount);
-            invocation.Complete(state => new MarketPricePostEventArgs(invocation.Pre, result, state));
+            if (invocation.HasPostObservers)
+                invocation.Complete(state => new MarketPricePostEventArgs(invocation.Pre, result, state));
             return result;
         }
     }

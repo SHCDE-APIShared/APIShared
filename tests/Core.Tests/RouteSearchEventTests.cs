@@ -6,6 +6,17 @@ namespace APIShared.Core.Tests;
 [TestClass]
 public class RouteSearchEventTests
 {
+    [TestMethod]
+    public void PreOnlyCompletionAllocatesNoPostPayload()
+    {
+        var registry = new RouteSearchEventRegistry();
+        registry.TryRegister("owner", "pre", _ => { }, null, out _);
+        for (int i = 0; i < 1000; i++) registry.Begin(Context(), 10, 20).Complete(true, "ok", 1, 1);
+        var invocation = registry.Begin(Context(), 10, 20);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        invocation.Complete(true, "ok", 1, 1);
+        Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
     private static RouteSearchContext Context() => new("community.route-publisher", 1, 2, 3, 4, 5,
         RouteSearchTerrain.FriendlyMoat, 1998, 10000);
 

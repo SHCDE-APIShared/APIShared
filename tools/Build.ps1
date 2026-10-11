@@ -41,33 +41,41 @@ try {
         Invoke-Tool $msbuild @((Join-Path $root $project), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
     }
     Write-Host '[Build] Preparing package and build provenance...'
+    . (Join-Path $PSScriptRoot 'WorkshopPackage.ps1')
     $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
     $packagePatches = [IO.Path]::GetFullPath((Join-Path $package 'Patches'))
     if (-not $packagePatches.StartsWith($root + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe package patch directory.' }
     if (Test-Path -LiteralPath $packagePatches) { Remove-Item -LiteralPath $packagePatches -Recurse -Force }
     Copy-Item -LiteralPath (Join-Path $root 'info.json') -Destination $package
     Copy-Item -LiteralPath (Join-Path $root 'Patches') -Destination $package -Recurse -Force
+    Sync-ApiWorkshopAssets -Root $root
+    Assert-ApiWorkshopView $root $package
     foreach ($required in @('APIShared.dll','APIShared.xml','info.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $required))) { throw ($required + ' is missing from the prepared package.') }
     }
     $unexpected = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.dll','.exe') -and $_.Name -ne 'APIShared.dll' })
     if ($unexpected.Count) { throw 'The package contains unexpected runtime binaries.' }
+    $null = New-ApiWorkshopInventory -Directory $package
     Write-ApiBuildProof $root $game $extender $msbuild $inputState
     if ($NoInstall -ne 0) { Write-Host ('APIShared built and tested successfully in {0:N1}s; installation skipped.' -f $buildWatch.Elapsed.TotalSeconds); exit 0 }
     if (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue) { throw 'The game started during the build; close it before installing.' }
     $destination = Join-Path $game 'BepInEx\plugins\APIShared_Serp'
-    $packed = Join-Path $game 'BepInEx\plugins\SerpsMods_Serp\Infrastructure\APIShared_Serp'
-    if (Test-Path -LiteralPath (Join-Path $packed 'APIShared.dll')) { $destination = $packed }
-    # Remove only this plugin's validated destination; keep neighboring plugins intact.
+    # Always install the separate plugin. Workshop migration owns historical
+    # embedded files; this driver preserves user data and neighboring plugins.
     $pluginRoot = [IO.Path]::GetFullPath((Join-Path $game 'BepInEx\plugins')) + [IO.Path]::DirectorySeparatorChar
     $destination = [IO.Path]::GetFullPath($destination)
     if (-not $destination.StartsWith($pluginRoot, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($destination) -ne 'APIShared_Serp') { throw 'Unsafe installation destination.' }
-    if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Recurse -Force }
-    Copy-Item -LiteralPath $package -Destination $destination -Recurse
-    if ($destination -eq $packed) {
-        $standalone = [IO.Path]::GetFullPath((Join-Path $pluginRoot 'APIShared_Serp'))
-        if (-not $standalone.StartsWith($pluginRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe duplicate plugin directory.' }
-        if (Test-Path -LiteralPath $standalone) { Remove-Item -LiteralPath $standalone -Recurse -Force }
+    for ($current = $destination; $current; $current = [IO.Path]::GetDirectoryName($current)) {
+        if ((Test-Path -LiteralPath $current) -and ([IO.File]::GetAttributes($current) -band [IO.FileAttributes]::ReparsePoint)) { throw 'Linked installation destination.' }
     }
+    [void][IO.Directory]::CreateDirectory($destination)
+    Assert-ApiWorkshopView $root $package
+    Assert-ApiWorkshopUnlinkedPath (Join-Path $destination 'Override/Workshop/Workshop.xaml')
+    Remove-ApiLegacyWorkshopView $destination
+    foreach ($item in Get-ChildItem -LiteralPath $package -Force) {
+        Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force
+    }
+    if ((Get-ApiFileHash (Join-Path $destination 'Override/Workshop/Workshop.xaml')) -cne
+        (Get-ApiFileHash (Join-Path $root 'Override/Workshop/Workshop.xaml'))) { throw 'Installed Workshop view hash mismatch.' }
     Write-Host ('APIShared built, tested and installed successfully in {0:N1}s.' -f $buildWatch.Elapsed.TotalSeconds)
 } catch { Write-Error $_; exit 1 }

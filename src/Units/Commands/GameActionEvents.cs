@@ -101,6 +101,11 @@ namespace APIShared.Commands
         public static long CallbackFailures => Registry.CallbackFailures;
         private static int Dispatch(Enums.GameActionCommand command, int structure, int state, int value2)
         {
+            if (!Registry.CanNotify) return hook.Original(command, structure, state, value2);
+            return DispatchObserved(command, structure, state, value2);
+        }
+        private static int DispatchObserved(Enums.GameActionCommand command, int structure, int state, int value2)
+        {
             var invocation = Registry.Begin(new GameActionPreEventArgs(command, structure, state, value2));
             var pre = invocation.Pre;
             int result = 0;
@@ -109,7 +114,8 @@ namespace APIShared.Commands
                 invocation.NotifyAccepted();
                 result = hook.Original(command, pre.StructureId, pre.ActionState, pre.Value2);
             }
-            invocation.Complete(ownerState => new GameActionPostEventArgs(pre, result, ownerState));
+            if (invocation.HasPostObservers)
+                invocation.Complete(ownerState => new GameActionPostEventArgs(pre, result, ownerState));
             return result;
         }
     }

@@ -79,9 +79,6 @@ namespace APIShared
             this.log = log;
             unityThread = Thread.CurrentThread.ManagedThreadId;
             state = new MissionLifecycleState(ex => Report(ex));
-            state.Register("APIShared_Serp", "diagnostics", e => NativeApiLog.Debug(log,
-                $"Mission{e.Kind}: session={e.Context.SessionId}, source={e.Context.StartKind}, mode={e.Context.Mode.Kind}, " +
-                $"phase={e.Phase}, reason={e.EndReason}, started={e.HasStarted}, replay={e.IsReplay}."));
         }
 
         internal static bool TryCreate(ManualLogSource log, out MissionLifecycleService service,

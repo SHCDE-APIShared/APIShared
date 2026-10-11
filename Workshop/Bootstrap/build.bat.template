@@ -1,0 +1,6 @@
+@echo off
+setlocal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Build.ps1"
+set "result=%ERRORLEVEL%"
+if /I not "%~1"=="/nopause" pause
+exit /b %result%

@@ -16,10 +16,16 @@ namespace APIShared
         private readonly List<Registration> registrations = new List<Registration>();
         private readonly Queue<Publication> pendingPublications = new Queue<Publication>();
         private bool notificationActive;
+        private volatile bool hasObservers;
+        private readonly Func<long?> sessionProvider;
+        private readonly Func<PlayerDefeatObservation[]> observationProvider;
 
-        private PlayerDefeatService(ManualLogSource logger)
+        private PlayerDefeatService(ManualLogSource logger, Func<long?> sessionProvider = null,
+            Func<PlayerDefeatObservation[]> observationProvider = null)
         {
             log = logger;
+            this.sessionProvider = sessionProvider;
+            this.observationProvider = observationProvider;
         }
 
         internal static bool TryCreate(
@@ -75,22 +81,21 @@ namespace APIShared
 
         private void OnTick(int simulationTick)
         {
+            // The first observed tick establishes a baseline, including late registrations.
+            if (!hasObservers) return;
+            OnObservedTick(simulationTick);
+        }
+
+        private void OnObservedTick(int simulationTick)
+        {
             try
             {
-                MissionContext context = MissionLifecycleService.ActiveContext;
-                state.SynchronizeSession(context?.SessionId);
-                if (context == null)
+                long? sessionId = sessionProvider != null ? sessionProvider() : MissionLifecycleService.ActiveContext?.SessionId;
+                state.SynchronizeSession(sessionId);
+                if (!sessionId.HasValue)
                     return;
 
-                var observations = new PlayerDefeatObservation[LastPlayerId];
-                GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
-                GameUnitManagerAPI units = GameUnitManagerAPI.Instance;
-                if (players == null || units == null)
-                    return;
-
-                for (int playerId = 1; playerId <= LastPlayerId; playerId++)
-                    observations[playerId - 1] = Capture(players, units, playerId);
-
+                PlayerDefeatObservation[] observations = observationProvider != null ? observationProvider() : CaptureObservations();
                 state.Observe(simulationTick, observations, PublishLordDied, PublishDefeated);
             }
             catch (Exception ex)
@@ -98,6 +103,17 @@ namespace APIShared
                 try { NativeApiLog.Error(log, "Player-defeat observation failed closed: " + ex); }
                 catch { }
             }
+        }
+
+        private static PlayerDefeatObservation[] CaptureObservations()
+        {
+            GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
+            GameUnitManagerAPI units = GameUnitManagerAPI.Instance;
+            if (players == null || units == null) return null;
+            var observations = new PlayerDefeatObservation[LastPlayerId];
+            for (int playerId = 1; playerId <= LastPlayerId; playerId++)
+                observations[playerId - 1] = Capture(players, units, playerId);
+            return observations;
         }
 
         private static PlayerDefeatObservation Capture(
@@ -164,6 +180,7 @@ namespace APIShared
 
                 registrations.Add(new Registration(owner, id, onLordDied, onDefeated));
                 registrations.Sort(Registration.Compare);
+                hasObservers = true;
             }
             diagnostic = Available("The process-lifetime player-defeat observer was registered.");
             return true;
@@ -226,7 +243,9 @@ namespace APIShared
 
         internal void TestPublish(PlayerLordDeathNotification notification) => PublishLordDied(notification);
         internal void TestPublish(PlayerDefeatNotification notification) => PublishDefeated(notification);
-        internal static PlayerDefeatService TestCreate() => new PlayerDefeatService(null);
+        internal static PlayerDefeatService TestCreate(Func<long?> session = null,
+            Func<PlayerDefeatObservation[]> observations = null) => new PlayerDefeatService(null, session, observations);
+        internal void TestTick(int tick) => OnTick(tick);
 
         private sealed class Binding : IPlayerDefeatCapability
         {

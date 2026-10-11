@@ -1,5 +1,17 @@
 # Third-party integration guide
 
+Unused observation services do not scan or prepare events. Register player-defeat
+observers before the first simulation tick if early transitions matter: the first
+tick after the first subscriber establishes the baseline and never replays earlier
+losses. Lobby observers receive a current capture on first registration and the
+known snapshot on later registrations. Marked selection observers and successful
+`TryCapture` calls establish process-lived tracking demand.
+
+Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGetById`
+returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
+Generic observation hooks remain shared; they do not create payloads without
+interested consumers. Registering an observer is explicit demand for observation.
+
 ## Multiplayer actions and messages
 
 Since APIShared 0.7.0, use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
@@ -254,3 +266,71 @@ One owner holds the permanent hook; consumers implement their own logical activa
 Native selection can fail or select another vetoed obstacle; it does not guarantee a successful route.
 The experimental `IAssassinTraversalView`/traversal-provider API was removed with maintainer approval;
 no consumer-defined alternative search or mainmod prerequisite is involved in obstacle completion.
+
+## Workshop package cleanup
+
+APIShared automatically installs a permanent staging callback for the audited Script Extender binary, exclusively for cleaning its own previous releases. Foreign `.map` items remain entirely Extender-managed. Unsupported binaries disable this self-cleanup with a warning; other services remain available. Neither Extender sources nor its updater are replaced. The existing inventory helpers and schema described below remain available for packaging and historical evidence; foreign maps are no longer cleaned through this callback.
+
+Generate `apishared-workshop-files.json` inside `BepInEx/plugins/<GUID>` from the final package with `tools/WorkshopPackage.ps1` and `New-ApiWorkshopInventory -Directory <package>`. The existing JSON contract is schema 1, `Guid`, `Version`, `Files` and optional `LegacyFiles`; both file collections contain `{ "Path": "relative/path", "Sha256": "64 lowercase hexadecimal digits" }`. Identity and version must match the package's `info.json`. `Files` lists immutable delivered files, excluding the inventory itself. Never list user settings, captures, generated files or other mutable data. The helper excludes `config` and `LobbyModSettings`; authors must keep all other user data outside package staging.
+
+`LegacyFiles` supplies path/hash alternatives from verified historical releases for users who never had an inventory. Keep applicable historical alternatives in future releases until those installations are no longer supported. APIShared has no package-specific migration paths. Only files absent from the new `Files` collection and matching a recorded old hash are scheduled. Current, unknown, modified, missing and concurrently staged files remain untouched. Paths must be relative forward-slash paths; traversal, Windows updater wildcard characters (including square brackets), device names, alternate streams, duplicate paths and reparse points are rejected. Other subscribed package payloads are inspected even if they have no inventory; competing GUIDs disable cleanup and competing file claims preserve that file.
+
+Deletion is deferred through `_SE/.staging/delete_list.txt`; installed files are never deleted by APIShared. The existing Windows/Proton updater applies deletion after exit and before copying staged replacements. Locked-file/deployment failures are logged and reevaluated at the next startup. This extends update cleanup; the Extender's existing unsubscribe behavior is unchanged.
+
+## Plugin entry points with optional APIShared
+
+Since APIShared 0.7.1, Optional APIShared consumers may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This additive, thread-safe registration is idempotent, applies to derived types and lasts until process exit. Existing attribute behavior and other plugins remain unchanged. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
+
+## Loose Workshop packages
+
+The in-game publisher is registered in the Script Extender's **Mod Options** window as **APIShared Workshop**, with **Installed packages** and **Publish** tabs. Its XAML is shipped at `Override/Workshop/Workshop.xaml`: registration resolves `Workshop/Workshop.xaml` through the Extender's Override resource index. Keep updater scripts and bootstrap templates in the separate `Workshop` directory. APIShared's build and release checks verify the indexed view against its source before accepting a package.
+
+This capability is in development. The runtime version is intentionally unchanged during platform testing; assign the next release version before distributing new API consumers and use that release as their minimum dependency. See the compiled [Workshop example](../examples/ThirdPartyMod/WorkshopExample.cs) for explicit preview/confirmation callbacks and task-based failure handling.
+
+The workspace maintainers use `CreateSteamModPack.bat` to prepare GitHub-backed packages, then `UploadWorkshop.bat` to publish the prepared content. Both drivers offer SerpsMods, APIShared, both, or cancel. Automation selects `/modpack`, `/apishared`, or `/both`; combine with `/test`, `/validate`, and `/nopause`. Conflicting target arguments fail. `/validate` performs checks without release changes or uploads. `/nopause` only suppresses the closing pause; explicit publishing confirmations remain.
+
+Build `tools/WorkshopUploader/build.bat` with `SHCDE_GAME_DIR` set before preparing packages. Its Windows x64 executable lives separately in `.local/WorkshopUploader`, with a checked build proof. It shares APIShared's internal package validation, content fingerprint and Steam publishing state machine, using its own callback loop. No uploader dependency is added to runtime mods. Failures identify their step and retain allocated Workshop IDs for retry.
+
+Shared maintainer configuration is `Shared/Tools/Steam/WorkshopConfiguration.ps1`. Production content folders are `SerpsMods` and `APISharedWorkshop`. Preparation proofs and IDs are stored outside content in `.release-output/SteamWorkshop`, keyed by `SerpsMods` and `APIShared`. Test content, state, IDs and logs stay below its separate `test` directory. Test uploads are private and reject known production IDs; GitHub test releases remain drafts. Both targets process APIShared first and stop on its failure.
+
+Initially prepare and upload APIShared alone, then prepare SerpsMods using the saved APIShared Workshop ID. No placeholder IDs are accepted. SerpsMods preparation only consumes reviewed APIShared releases and does not publish APIShared implicitly. Reused content ZIPs are checked before replacing any existing output. Upload preparation verifies every declared file and the preparation proof; snapshots omit release/proof files. Confirmed loose uploads do not become historical map inventories or change the next package's content signature.
+
+Production requires manually reviewed `.local/workshop-platform-tests.json` schema 2 evidence tied to the hashes of the actual APIShared DLL, both updater sources and publisher executable. All six approvals (`Windows`, `Proton`, `SteamUploads`, `ModpackMigration`, `ExternalManager`, `ExtenderAndFixes`) must be true. Before Steam publication, its `Packages` array must also contain the exact prepared `PackageId` and `Fingerprint`. Evidence is never created automatically by unit tests. Use private test packages first, and retain evidence for the exact packages tested before publishing.
+
+Use one prepared upload folder:
+
+```text
+apishared-workshop.json
+preview.png
+OptionalBootstrap.map
+Payload/BepInEx/plugins/YourMod/info.json
+Payload/BepInEx/plugins/YourMod/YourMod.dll
+```
+
+Schema 1 contains `SchemaVersion: 1`, stable `PackageId`, numeric `Version`, `MinimumAPISharedVersion`, optional `MinimumScriptExtenderVersion`/`MaximumScriptExtenderVersion`, nonempty `Roots` (full `BepInEx/plugins/<folder>` paths), and complete `Files` records `{Path, Size, Sha256}` relative to the game root. `Dependencies` records use `Guid`, optional inclusive `MinimumVersion`/`MaximumVersion`, and optional decimal-string `WorkshopId`. `Bootstrap` uses `MapFile`, `Guid`, `Version`, `PluginFolder`; it is optional. `LegacyReleases` contains `{Version, Files}` records verified against historical deliveries. No Workshop identity is taken from a folder name.
+
+Generate the complete inventory using [Prepare-WorkshopPackage.ps1](../tools/Prepare-WorkshopPackage.ps1). Keep mutable settings and runtime output outside Payload. Links, traversal, duplicate paths/GUIDs, protected infrastructure and overlapping ownership are rejected. All delivered info.json identities, including nested mods, are checked. A bootstrap map must contain only its own reserved plugin folder and root info.json. Its root/plugin metadata must agree with the declared GUID/version and BepInEx manifest. The loose host and its GUIDs remain unchanged during migration.
+
+For authors without an existing manifest, `WorkshopPackageDraft` supplies identity, version, prerequisites and optional dependencies/bootstrap/history. `CreateManifestAsync` generates inventory text without changing source files. Passing the draft as `WorkshopUploadOptions.Draft` generates the manifest directly in the prepared immutable snapshot. The in-game form supports a new plain package using ID/version/minimum fields; leave ID empty to retain a prepared manifest with its dependency/bootstrap declarations. No registered mod or source-code compilation is required for plain publishing.
+
+[New-WorkshopBootstrap.ps1](../tools/New-WorkshopBootstrap.ps1) generates independent bootstrap sources and a build.bat. Supply a unique GUID/folder, retained map filename, version newer than the legacy Extender receipt, APIShared minimum and its separate Workshop ID. Compile through that build.bat with SHCDE_GAME_DIR set, then stage only `info.json` at the root and the bootstrap DLL/matching `info.json` under its plugin folder. Run the Extender's existing map packager, then dot-source `tools/WorkshopPackage.ps1` and call `Set-ApiBootstrapMapPayload -MapPath <map> -Stage <stage>`: the packager's map template otherwise retains preview/config entries. This helper retains the native map prefix and creates/verifies exactly the staged ZIP inventory. There is no APIShared assembly reference. Missing/old APIShared shows a bilingual notice with its Workshop link; no files are installed, repaired or deleted by the bootstrap.
+
+In-game APIShared Workshop offers Installed packages and Publish. Preparation displays a plan; Apply is explicit consent. For publishing, choose a prepared folder and preview, then a new item or an owned existing SHCDE item, edit metadata and prepare the snapshot before confirming Publish. A failed first upload retains the Steam-issued ID locally for retry. Snapshots contain exclusively current declared files, manifest and optional bootstrap; old archives and preview files are not included in the content tree. Changed content requires a greater package version; select metadata-only for description/preview changes. Dependencies are linked visibly but remain [soft Steam dependencies](https://partner.steamgames.com/doc/api/ISteamUGC#AddDependency), so local prerequisite checks still apply.
+
+```csharp
+// Steam entry points on Unity, after Steamworks initialization. No registered mod is needed to use the UI.
+var workshop = ApiShared.ForMod("YourModGuid").Workshop;
+var catalog = await workshop.GetCatalogAsync();
+var plan = await workshop.PrepareInstallAsync(itemId, WorkshopAction.Update);
+// Present plan.Files, plan.RemovedFiles and plan.Diagnostics, and wait for explicit user confirmation.
+var operation = await workshop.ApplyAsync(plan);
+// AwaitingRestart means handoff. The receipt, written last by the updater, proves successful installation.
+```
+
+Receipt equality suppresses automatic repair even when local DLLs differ or disappear. Updates replace delivered files with backups after consent; obsolete files are removed only when their current hash matches a receipt or verified history. Settings, unknown files and modified obsolete files survive removal and migration. Invalid/missing receipts allow explicitly chosen installation with backup, never an assertion of successful adoption. Steam failures/downloads/missing folders do not mean unsubscribe.
+
+Transactions and upload IDs live under `_APIShared/Workshop`, independently of `_SE`. The external updater checks operation-list hashes, staged bytes, targets and links; backs up before writing; journals each step; and commits the receipt last. On interruption, keep the entire transaction directory. With the game closed, run its installed `Workshop/workshop-updater.ps1` with the original `-GameRoot`, `-Transaction`, `-OperationsHash` and `-Recover`, or the host bash script with the same three positional arguments and `--recover`. Recovery restores the original files/receipt and exits with code 2. Failed recovery retains all evidence. Never manually delete backups while a transaction is unresolved. Proton requires Wine Z: paths and host bash/flock/coreutils; paths that cannot be translated are rejected before game exit.
+
+Extender staging/download restarts take precedence. Under `SCDEModManagerLaunchId`, installation remains read-only, including restart and reactivation; uploads are available. The external manager's current importer is separate. APIShared's new format does not add an importer to it. Publish APIShared's independently managed map first; test migration at the existing modpack ID using the same map filename and a separate bootstrap GUID before replacing the live release. Do not publish the new format until real Windows/Proton and Steam tests pass.
+
+The maintainer release workflow records live results in `.local/workshop-platform-tests.json` with schema 1, `APISharedSha256` of the tested DLL, and boolean `Windows`, `Proton`, `SteamUploads`, `ModpackMigration`, `ExternalManager`, `ExtenderAndFixes`. The release driver requires every result before any source edits or publishing. Automated fixture results do not populate this evidence. SerpsMods publishes a separate Workshop-content ZIP alongside its ordinary plugin ZIP; reusing a release restores the complete verified content ZIP, including manifest and Payload, rather than just its bootstrap map.

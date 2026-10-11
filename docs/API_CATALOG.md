@@ -11,7 +11,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
 | `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
-| `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions | Tick/simulation publisher; no initial-state replay; do not change UI directly; process lifetime |
+| `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions | Tick/simulation publisher starts with the first subscriber; first observed tick is baseline-only; no initial-state replay; do not change UI directly; process lifetime |
 | `TryGetUnitHudPresentation` | Categories, image overrides, interactions, recruitment tickets and control groups | Unity/Noesis presentation; owner-local IDs; ambiguity preserves Vanilla; logical activation extension; process lifetime |
 | `TryGetHudExtrasButtons` | Independent side-HUD buttons, paging and popup tooltips | Unity-thread factories/commands; owner-local IDs; logical activation; process lifetime |
 | `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
@@ -159,6 +159,8 @@ The inherited attribute excludes that plugin's lobby settings from automatic
 savegame capture and restoration. It does not disable presets. Participation does
 not depend on a particular plugin GUID or another mod's opt-out field.
 
+Since APIShared 0.7.1, Optional APIShared consumers may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This additive, thread-safe registration is idempotent, applies to derived types and lasts until process exit. Existing attribute behavior and other plugins remain unchanged.
+
 Settings view models show no mod-policy notice by default. Before registration,
 call `System_ConfigureDirectLaunchNotice(() => localizedText)` when your mod needs
 an explanation for direct campaign/Trail launches. APIShared determines the existing
@@ -304,3 +306,15 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Workshop inventory
+
+`APIShared.Workshop.WorkshopInventory.FileName` identifies the existing inventory schema. The Extender staging cleanup now applies exclusively to previous APIShared releases; foreign `.map` packages remain Extender-owned. The inventory helpers remain available with unchanged signatures/schema. See [Workshop package cleanup](THIRD_PARTY_GUIDE.md#workshop-package-cleanup).
+
+## Workshop publishing and loose packages
+
+`ApiShared.ForMod(guid).Workshop` is independent of native capability readiness. Its [public client](../src/Workshop/WorkshopClient.cs) validates packages, captures a subscription catalog, queries owned SHCDE items, prepares upload snapshots and owner-bound installation plans, and explicitly publishes or applies a plan. Calls that access Steam require initialized Steamworks on Unity; file preparation runs on workers. Failures throw with the relevant step, and submitted operations expose status, diagnostic, operation ID and Unity-thread Changed notifications. Closing a view does not cancel a submitted request.
+
+The [schema and workflow](THIRD_PARTY_GUIDE.md#loose-workshop-packages) use a top-level `apishared-workshop.json` plus `Payload/BepInEx/plugins/...`. Existing `info.json` contracts remain authoritative for individual mods. Pure maps without this manifest stay with Extender. Optional bootstrap maps have an independently validated, exclusively reserved folder. `PrepareInstallAsync` never changes installed files; `ApplyAsync` is an explicit consent boundary and exits the game only after launching a separate updater. `AwaitingRestart` describes handoff, not a successful receipt commit. External managed launches reject Apply while retaining read-only discovery and upload.
+
+Release versions are numeric, three or four parts. Only newer receipted releases offer Update; explicit Reinstall/Downgrade are separate actions. Missing, modified or disabled DLLs do not trigger automatic repair. Backups, hash-guarded obsolete-file removal and final receipt commit preserve settings and unknown files. Windows and Proton live tests and Steam account tests are required before distributing the new format; passing file-policy tests alone does not certify platform integration.

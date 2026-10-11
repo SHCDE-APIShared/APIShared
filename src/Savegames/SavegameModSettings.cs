@@ -21,6 +21,13 @@ namespace APIShared
     /// <summary>Persists compatible host settings and the mission permission context in saves.</summary>
     public static class SavegameModSettings
     {
+        /// <summary>Excludes a plugin type and its derived types from automatic savegame settings capture and restoration.</summary>
+        /// <remarks>Call before settings registration when an optional APIShared dependency prevents applying the exclusion attribute.
+        /// This thread-safe, idempotent registration remains active until process exit; it does not disable presets or other providers.</remarks>
+        /// <param name="pluginType">Plugin type owning a separate persistence protocol or non-mission settings.</param>
+        /// <exception cref="ArgumentNullException">The plugin type is null.</exception>
+        public static void ExcludePluginFromAutomaticSettings(Type pluginType) => SavegameSettingsParticipation.Exclude(pluginType);
+
         private const string Identifier = "APIShared-SavegameModSettings";
         private const string EntryName = "_SE_ModData_" + Identifier + ".msgpack";
         private const int SchemaVersion = 3;

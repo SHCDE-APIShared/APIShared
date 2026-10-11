@@ -1,0 +1,10 @@
+$ErrorActionPreference = 'Stop'
+if (-not $env:SHCDE_GAME_DIR) { throw 'Set SHCDE_GAME_DIR to the game installation.' }
+$source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Plugin.cs'))
+if ($source -match '\b(OnDestroy|OnDisable|OnApplicationQuit|Update|LateUpdate|FixedUpdate|StartCoroutine)\s*\(' -or $source -match 'Newtonsoft|System.Text.Json|JsonUtility|JavaScriptSerializer|DataContractJsonSerializer|CodePatch.Write|VirtualProtect') { throw 'Bootstrap runtime preflight failed.' }
+foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object Extension -in @('.cs','.ps1','.bat')) { if ([IO.File]::ReadAllText($file.FullName) -match '(?<!\r)\n') { throw 'Bootstrap sources require CRLF.' } }
+$references = @((Join-Path $env:SHCDE_GAME_DIR 'BepInEx/core/BepInEx.dll'), (Join-Path $env:SHCDE_GAME_DIR 'BepInEx/plugins/000shcdese/SHCDESE.dll'), (Join-Path $env:SHCDE_GAME_DIR 'Stronghold Crusader Definitive Edition_Data/Managed/UnityEngine.dll'), (Join-Path $env:SHCDE_GAME_DIR 'Stronghold Crusader Definitive Edition_Data/Managed/UnityEngine.CoreModule.dll'), 'System.dll', 'System.Core.dll')
+$output = Join-Path $PSScriptRoot '@@GUID@@.dll'
+if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output }
+Add-Type -Path (Join-Path $PSScriptRoot 'Plugin.cs') -ReferencedAssemblies $references -OutputAssembly $output -OutputType Library
+if (-not (Test-Path -LiteralPath $output)) { throw 'Bootstrap compilation failed.' }

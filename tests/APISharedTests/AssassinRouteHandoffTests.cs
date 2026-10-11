@@ -9,6 +9,41 @@ namespace APISharedTests
     [DoNotParallelize]
     public sealed class AssassinRouteHandoffTests
     {
+        private static readonly System.Reflection.FieldInfo ObserverField = typeof(TemporaryGateRouteAcceptanceBridge)
+            .GetField("observer", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        private object previousObserver;
+        [TestInitialize]
+        public void RegisterRequestedObservation()
+        { previousObserver = ObserverField.GetValue(null); ObserverField.SetValue(null, new RequestedObserver()); }
+        [TestCleanup]
+        public void RestoreObservation() => ObserverField.SetValue(null, previousObserver);
+        private sealed class RequestedObserver : ITemporaryGateRouteAcceptanceObserver, ITemporaryAssassinGateObserver
+        {
+            public object BeginRoute(int p, int t, uint tg, int u, uint ug, int type, int x, int y, int tx, int ty, string context) => null;
+            public void RouteEdge(object token, int from, int to, int direction) { }
+            public void EndRoute(object token, string status, int result) { }
+            public void Raid(int p, int role, int t, uint tg, int b, uint bg, string stage, string result, string detail) { }
+            public void ObserveAssassinDecision(object token, int p, int from, int to, int direction, bool prepared,
+                AssassinTransitionKind movement, bool allowed, int gate, uint global, string evidence) { }
+            public void ObserveAssassinStage(object token, int p, string stage, string result, string detail) { }
+        }
+        [TestMethod]
+        public void NoRegisteredObserverDoesNotInvokeReporterAndKeepsPublication()
+        {
+            ObserverField.SetValue(null, null);
+            int reports = 0, publications = 0;
+            var frame = new AssassinRouteHandoff(new IntPtr(1), 1, 2, 3, 4, 1,
+                () => true, (bytes, count) => { publications++; return count; }, 1, 0,
+                (stage, result, detail) => reports++);
+            try
+            {
+                Assert.IsTrue(Stage());
+                Assert.AreEqual(2, frame.Complete(7));
+                Assert.AreEqual(1, publications);
+                Assert.AreEqual(0, reports);
+            }
+            finally { frame.Leave(); }
+        }
         private static bool Stage() => AssassinRouteHandoff.Stage(
             new IntPtr(1), 1, 2, 3, 4, 1, new byte[] { 0x10 }, 2, () => true);
 

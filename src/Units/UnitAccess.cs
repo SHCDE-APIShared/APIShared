@@ -1,10 +1,8 @@
-using BepInEx.Logging;
 using SHCDESE.API;
 using SHCDESE.Interop;
 using SHCDESE.Interop.Enums;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace APIShared
@@ -29,12 +27,7 @@ namespace APIShared
     /// ownership and life state themselves and use the existing game-thread contracts.</remarks>
     public static unsafe class UnitAccess
     {
-        private static readonly object diagnosticLock = new object();
-        private static readonly HashSet<string> reportedFailures = new HashSet<string>(StringComparer.Ordinal);
-        private static volatile ManualLogSource diagnosticLog;
-        private const int MaximumDiagnosticSites = 128;
-
-        internal static void InitializeDiagnostics(ManualLogSource log) => diagnosticLog = log;
+        // Consumers receive the failure reason directly and own diagnostic policy/logging.
 
         /// <summary>Tests Vanilla's combat life predicate, excluding dying units and visible corpses.</summary>
         /// <remarks>AliveState can remain IsAlive throughout the death animation and corpse phase.
@@ -69,7 +62,7 @@ namespace APIShared
         /// <param name="unitId">One-based game ID, never a span index.</param>
         /// <param name="unit">The immediate pointer on success; null on any failure.</param>
         /// <param name="failure">The failure reason, or None on success.</param>
-        /// <param name="sourceFile">Compiler-supplied source path for bounded debug diagnostics.</param>
+        /// <param name="sourceFile">Retained caller metadata; consumers own diagnostics.</param>
         /// <param name="member">Compiler-supplied caller name.</param>
         /// <param name="line">Compiler-supplied call-site line.</param>
         /// <returns>True only when a non-null pointer was returned.</returns>
@@ -111,19 +104,6 @@ namespace APIShared
             string sourceFile, string member, int line)
         {
             failure = reason;
-            ManualLogSource log = diagnosticLog;
-            if (log == null) return false;
-            string key = sourceFile + ":" + line + ":" + reason;
-            lock (diagnosticLock)
-            {
-                if (reportedFailures.Count >= MaximumDiagnosticSites || !reportedFailures.Add(key)) return false;
-            }
-            // At most one debug message per site/reason, at most 128 sites per process.
-            // ID 0 is frequently a legitimate "none" sentinel: never promote it to a warning/error.
-            string directory = Path.GetDirectoryName(sourceFile) ?? "";
-            if (Path.GetFileName(directory) == "src") directory = Path.GetDirectoryName(directory) ?? "";
-            log.LogDebug($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] UNIT_LOOKUP_REJECTED mod={Path.GetFileName(directory)}, " +
-                $"source={Path.GetFileName(sourceFile)}:{line}, member={member}, unitId={unitId}, reason={reason}; repeated failures at this site are suppressed.");
             return false;
         }
     }

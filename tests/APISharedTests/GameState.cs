@@ -162,7 +162,7 @@ namespace APISharedTests
                 LobbyStateService.ShouldObserve(false, true, 25, 26),
                 "lobby polling must honor dirty, 15-frame fallback, map suppression and dirty resume");
 
-            var service = new LobbyStateService(null);
+            var service = new LobbyStateService(null, () => equal);
             var calls = new List<string>();
             ILobbyStateCapability zOwner = service.Bind("z.owner");
             ILobbyStateCapability aOwner = service.Bind("a.owner");
@@ -180,6 +180,9 @@ namespace APISharedTests
                 duplicate.State == NativeCapabilityState.ValidationFailed,
                 "duplicate lobby observer IDs must fail closed");
 
+            calls.Clear();
+            service.System_TestPublish(changed);
+            calls.Clear();
             service.System_TestPublish(first);
             Assert(string.Join(",", calls) == "a1,a2:1,z,a1,a2:2,z",
                 "lobby observers must be ordered and nested publication must unwind deterministically");
@@ -198,17 +201,19 @@ namespace APISharedTests
                 string.Join(",", calls) == "late",
                 "late lobby observers must receive the current snapshot synchronously");
 
-            var isolated = new LobbyStateService(null);
+            var isolated = new LobbyStateService(null, () => equal);
             var isolatedCalls = new List<string>();
             isolated.Bind("a").TryRegisterObserver("throws", _ =>
                 throw new InvalidOperationException("expected"), out _);
             isolated.Bind("b").TryRegisterObserver("continues", _ =>
                 isolatedCalls.Add("continues"), out _);
-            isolated.System_TestPublish(first);
+            isolatedCalls.Clear();
+            isolated.System_TestPublish(changed);
             Assert(isolatedCalls.Count == 1,
                 "one failing lobby observer must not stop later observers");
 
-            var lifecycle = new LobbyStateService(null);
+            var lifecycle = new LobbyStateService(null, () => new LobbyStateSnapshot(
+                null, null, false, 0, false, string.Empty, string.Empty));
             var lifecycleStates = new List<string>();
             lifecycle.Bind("owner").TryRegisterObserver("lifecycle", snapshot =>
                 lifecycleStates.Add(

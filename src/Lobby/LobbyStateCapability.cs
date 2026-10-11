@@ -42,10 +42,13 @@ namespace APIShared
         private bool dirty = true;
         private bool mapStarted;
         private int lastObservedFrame = -1;
+        private volatile bool hasObservers;
+        private readonly Func<LobbyStateSnapshot> capture;
 
-        internal LobbyStateService(ManualLogSource logger)
+        internal LobbyStateService(ManualLogSource logger, Func<LobbyStateSnapshot> capture = null)
         {
             log = logger;
+            this.capture = capture ?? Capture;
         }
 
         internal static bool TryCreate(
@@ -183,6 +186,7 @@ namespace APIShared
 
         private void MarkDirty()
         {
+            if (!hasObservers) return;
             lock (sync)
                 dirty = true;
             ObserveDirtyNow();
@@ -190,6 +194,7 @@ namespace APIShared
 
         private void ObserveDirtyNow()
         {
+            if (!hasObservers) return;
             lock (sync)
             {
                 if (mapStarted || !dirty || observationActive)
@@ -238,6 +243,12 @@ namespace APIShared
 
         private void OnBeforeRender()
         {
+            if (!hasObservers) return;
+            OnObservedBeforeRender();
+        }
+
+        private void OnObservedBeforeRender()
+        {
             int frame = Time.frameCount;
             lock (sync)
             {
@@ -253,7 +264,7 @@ namespace APIShared
             LobbyStateSnapshot snapshot;
             try
             {
-                snapshot = Capture();
+                snapshot = capture();
             }
             catch (Exception ex)
             {
@@ -432,6 +443,7 @@ namespace APIShared
             }
 
             LobbyStateSnapshot replay;
+            bool first;
             lock (sync)
             {
                 if (registrations.Any(item =>
@@ -445,6 +457,7 @@ namespace APIShared
                         "The owner already registered this lobby observer ID.");
                     return false;
                 }
+                first = registrations.Count == 0 && current == null;
                 registrations.Add(new Registration(owner, id, observer));
                 registrations.Sort((left, right) =>
                 {
@@ -454,9 +467,13 @@ namespace APIShared
                         : string.CompareOrdinal(left.Id, right.Id);
                 });
                 replay = current;
+                hasObservers = true;
             }
 
-            if (replay != null)
+            // First demand captures now, rather than replaying an unused stale cache.
+            if (first)
+                ObserveAndPublish();
+            else if (replay != null)
                 Notify(new[] { new Registration(owner, id, observer) }, replay);
             diagnostic = Available("Lobby observer registered for the process lifetime.");
             return true;

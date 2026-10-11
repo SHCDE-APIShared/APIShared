@@ -80,8 +80,8 @@ namespace APIShared.ModSettings
                 scrollViewer.PreviewMouseDown += OnPreviewMouseDown;
                 scrollViewer.PreviewKeyDown += OnPreviewKeyDown;
                 scrollViewer.ScrollChanged += OnScrollChanged;
-                Log(
-                    () => $"attached; horizontal={scrollViewer.HorizontalOffset:0.###}, " +
+                if (ShouldLog) Log(
+                    $"attached; horizontal={scrollViewer.HorizontalOffset:0.###}, " +
                     $"vertical={scrollViewer.VerticalOffset:0.###}, " +
                     $"extentWidth={scrollViewer.ExtentWidth:0.###}, " +
                     $"viewportWidth={scrollViewer.ViewportWidth:0.###}.");
@@ -93,8 +93,8 @@ namespace APIShared.ModSettings
             {
                 manualHorizontalScrollAuthorized =
                     IsHorizontalScrollBarInput(args.Source);
-                Log(
-                    () => $"PreviewMouseDown; source={Describe(args.Source)}, " +
+                if (ShouldLog) Log(
+                    $"PreviewMouseDown; source={Describe(args.Source)}, " +
                     $"horizontalScrollbar={manualHorizontalScrollAuthorized}, " +
                     $"acceptedHorizontal={acceptedHorizontalOffset:0.###}, " +
                     $"currentHorizontal={scrollViewer.HorizontalOffset:0.###}.");
@@ -106,8 +106,8 @@ namespace APIShared.ModSettings
             {
                 manualHorizontalScrollAuthorized =
                     IsHorizontalScrollBarInput(args.Source);
-                Log(
-                    () => $"PreviewKeyDown; source={Describe(args.Source)}, " +
+                if (ShouldLog) Log(
+                    $"PreviewKeyDown; source={Describe(args.Source)}, " +
                     $"horizontalScrollbar={manualHorizontalScrollAuthorized}.");
             }
 
@@ -134,8 +134,8 @@ namespace APIShared.ModSettings
                     return;
                 }
 
-                Log(
-                    () => $"ScrollChanged; horizontal={args.HorizontalOffset:0.###}, " +
+                if (ShouldLog) Log(
+                    $"ScrollChanged; horizontal={args.HorizontalOffset:0.###}, " +
                     $"horizontalChange={args.HorizontalChange:0.###}, " +
                     $"vertical={args.VerticalOffset:0.###}, " +
                     $"verticalChange={args.VerticalChange:0.###}.");
@@ -146,8 +146,8 @@ namespace APIShared.ModSettings
                 if (manualHorizontalScrollAuthorized)
                 {
                     acceptedHorizontalOffset = args.HorizontalOffset;
-                    Log(
-                        () => $"accepted explicit horizontal scrollbar input; horizontal=" +
+                    if (ShouldLog) Log(
+                        $"accepted explicit horizontal scrollbar input; horizontal=" +
                         $"{acceptedHorizontalOffset:0.###}.");
                     return;
                 }
@@ -170,21 +170,16 @@ namespace APIShared.ModSettings
                 {
                     restoringHorizontalOffset = false;
                 }
-                Log(
-                    () => $"rejected non-scrollbar horizontal scroll; horizontal=" +
+                if (ShouldLog) Log(
+                    $"rejected non-scrollbar horizontal scroll; horizontal=" +
                     $"{scrollViewer.HorizontalOffset:0.###}, preserved=" +
                     $"{acceptedHorizontalOffset:0.###}.");
             }
 
-            private void Log(Func<string> message)
-            {
-                if (diagnosticsEnabled)
-                {
-                    DebugLogHelper.LogDebug(
-                        log,
-                        () => $"[{modName} ModSettingsScrollDiagnostic] {message()}");
-                }
-            }
+            private bool ShouldLog => diagnosticsEnabled && log != null && DebugLogHelper.IsDebugEnabled();
+
+            private void Log(string message) =>
+                DebugLogHelper.LogDebug(log, $"[{modName} ModSettingsScrollDiagnostic] {message}");
 
             private static string Describe(object value) =>
                 value == null ? "null" : value.GetType().FullName;

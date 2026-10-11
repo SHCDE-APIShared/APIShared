@@ -19,13 +19,14 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.7.0";
+        public const string PluginVersion = "0.7.1";
 
         private void Awake()
         {
+            Workshop.WorkshopCleanupRuntime.Initialize(Logger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, Logger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
-            UnitAccess.InitializeDiagnostics(Logger);
+            Workshop.WorkshopRuntime.Initialize(this, Logger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(Logger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.

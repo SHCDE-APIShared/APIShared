@@ -1,0 +1,34 @@
+using BepInEx;
+using BepInEx.Bootstrap;
+using BepInEx.Logging;
+using SHCDESE.API.LowLevel;
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Reflection;
+using System.IO;
+
+// Generate one dedicated GUID/folder per item. No reference to the APIShared assembly is required.
+[BepInPlugin("@@GUID@@", "@@NAME@@ Workshop bootstrap", "@@VERSION@@")]
+[BepInDependency("000shcdese", "2.14.0")]
+[BepInDependency("APIShared_Serp", BepInDependency.DependencyFlags.SoftDependency)]
+public sealed class WorkshopBootstrap : BaseUnityPlugin
+{
+    private static ManualLogSource log;
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBoxW(IntPtr window, string text, string caption, uint type);
+    private void Awake()
+    {
+        log = Logger;
+        CrusaderLibrary.Instance.LibraryLoaded += context => log.LogInfo("Workshop bootstrap active after startup cleanup: @@GUID@@");
+        PluginInfo api;
+        if (Chainloader.PluginInfos.TryGetValue("APIShared_Serp", out api) && api.Metadata.Version >= new Version("@@MINIMUM@@") &&
+            Path.GetDirectoryName(Path.GetFullPath(api.Location)).Equals(Path.Combine(Paths.PluginPath, "APIShared_Serp"), StringComparison.OrdinalIgnoreCase) &&
+            Assembly.LoadFrom(api.Location).GetType("APIShared.Workshop.WorkshopClient", false) != null) return;
+        string text = "@@NAME@@ requires APIShared @@MINIMUM@@+. Subscribe to APIShared, restart, then confirm installation in APIShared Workshop.\n\n" +
+            "@@NAME@@ benötigt APIShared @@MINIMUM@@+. APIShared abonnieren, neu starten und die Installation unter APIShared Workshop bestätigen.\n\n" +
+            "Yes / Ja: open Workshop / Workshop öffnen.";
+        log.LogWarning(text);
+        if (MessageBoxW(IntPtr.Zero, text, "APIShared required / benötigt", 0x34) == 6)
+            Process.Start(new ProcessStartInfo("https://steamcommunity.com/sharedfiles/filedetails/?id=@@WORKSHOP@@") { UseShellExecute = true });
+    }
+}
