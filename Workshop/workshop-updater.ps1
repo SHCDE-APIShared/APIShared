@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$GameRoot, [Parameter(Mandatory=$true)][string]$Transaction, [Parameter(Mandatory=$true)][string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam)
 $ErrorActionPreference = 'Stop'
 if ($env:SCDEModManagerLaunchId) { throw 'Externally managed installation; no changes are allowed.' }
-# Runs in a separate process. The receipt is always the final operation and rollback restores it first.
+# Runs in a separate process. Receipts form the final phase and roll back first.
 function Assert-Unlinked([string]$Path) {
     for ($part = [IO.Path]::GetFullPath($Path); $part; $part = [IO.Path]::GetDirectoryName($part)) {
         try { if ([IO.File]::GetAttributes($part) -band [IO.FileAttributes]::ReparsePoint) { throw "Linked path: $part" } }
@@ -50,15 +50,17 @@ try {
     $operationsPath = Inside $Transaction 'operations.tsv'
     if ($OperationsHash -notmatch '^[a-f0-9]{64}$' -or (Hash $operationsPath) -ne $OperationsHash) { throw 'Operation list changed.' }
     $lines = [IO.File]::ReadAllLines($operationsPath)
-    if ($lines.Length -lt 2 -or $lines[0] -ne 'APISHARED-WORKSHOP-1') { throw 'Unknown transaction protocol.' }
+    if ($lines.Length -lt 2 -or $lines[0] -notin @('APISHARED-WORKSHOP-1','APISHARED-WORKSHOP-2')) { throw 'Unknown transaction protocol.' }
+    $batch = $lines[0] -eq 'APISHARED-WORKSHOP-2'; $receiptPhase = $false
     $rows = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     for ($index = 1; $index -lt $lines.Length; $index++) {
         $cells = $lines[$index].Split([char]9)
         if ($cells.Length -ne 5 -or $cells[2] -ne ($index-1).ToString() -or $cells[3] -notmatch '^(missing|[a-f0-9]{64})$' -or $cells[4] -notmatch '^(missing|[a-f0-9]{64})$') { throw 'Malformed operation.' }
         $kind,$relative,$ordinal,$before,$after = $cells
         $isReceipt = $kind -in @('receipt-write','receipt-delete')
-        if ($isReceipt) { if ($index -ne $lines.Length-1 -or $relative -notmatch '^_APIShared/Workshop/Receipts/[1-9][0-9]*\.json$') { throw 'Receipt must be the final operation.' } }
+        if ($isReceipt) { if ((-not $batch -and $index -ne $lines.Length-1) -or $relative -notmatch '^_APIShared/Workshop/Receipts/[1-9][0-9]*\.json$') { throw 'Receipt must be in the final phase.' }; $receiptPhase = $true }
         elseif ($kind -notin @('write','delete') -or $relative -notmatch '^BepInEx/plugins/[^/]+/.+' -or $relative -match '^BepInEx/plugins/(APIShared_Serp|000shcdese)/' -or $relative -match '/(config|LobbyModSettings)(/|$)') { throw 'Protected target.' }
+        if (-not $isReceipt -and $receiptPhase) { throw 'Payload operations cannot follow receipts.' }
         if ($index -eq $lines.Length-1 -and -not $isReceipt) { throw 'Missing final receipt.' }
         if (-not $targets.Add($relative)) { throw 'Duplicate target.' }
         $target = Inside $GameRoot $relative; $new = Inside $Transaction ('New/'+$ordinal); $backup = Inside $Transaction ('Backup/'+$ordinal)

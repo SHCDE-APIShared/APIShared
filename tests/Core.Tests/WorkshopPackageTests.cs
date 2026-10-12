@@ -57,6 +57,71 @@ public sealed class WorkshopPackageTests
         File.Delete(WorkshopPaths.Inside(Game, Root + "/Example.dll")); Write(Source, "Payload/" + Root + "/Example.dll", "different");
         Assert.ThrowsExactly<InvalidDataException>(() => WorkshopTransaction.Stage(plan));
     }
+    [TestMethod] public void RetainedDependenciesUseReceiptsAndDeferUnknownEvidenceSafely()
+    {
+        var package = Package();
+        package.Dependencies = new[] { new WorkshopDependency("Uninstalled", "2.0.0") };
+        var state = new Dictionary<string, Version> { ["Installed"] = new Version(1, 0, 0, 0) };
+        WorkshopBatch.Retained(package, null!, null!, state, true);
+        var receipt = new WorkshopReceipt { PackageId=package.PackageId, Version=package.Version, ManifestHash="a" };
+        WorkshopBatch.Retained(package, receipt, "b", state, false);
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopBatch.Retained(package, receipt, "b", state, true));
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopBatch.Retained(package, receipt, "a", state, true));
+        receipt.Dependencies = new[] { new WorkshopDependency("Installed", "1.0.0", "1.0.0") };
+        WorkshopBatch.Retained(package, receipt, "b", state, true);
+        state["Installed"] = new Version(2, 0, 0, 0);
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopBatch.Retained(package, receipt, "b", state, true));
+    }
+    [TestMethod] public void BatchStagesAllPayloadBeforeReceiptsAndKeepsDependencyEndState()
+    {
+        Package();
+        var first = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Install);
+        string secondSource = Source + "-second";
+        Directory.Move(Source, secondSource);
+        foreach (string path in Directory.EnumerateFiles(secondSource, "*", SearchOption.AllDirectories)) {
+            string relative = path.Substring(secondSource.Length + 1).Replace('\\', '/');
+            Write(Source, relative.Replace("Example", "Second"), File.ReadAllText(path).Replace("Example", "Second"));
+        }
+        Write(Source, WorkshopPackage.ManifestFileName, WorkshopPackageBuilder.Manifest(Source, new WorkshopPackageDraft("SecondPackage", "1.0.0", "0.7.1")));
+        Directory.Move(Source, Source + "-saved"); Directory.Move(secondSource, Source);
+        // The first plan retains its source; move the second snapshot to its
+        // own source before planning it again.
+        var second = WorkshopInstallation.Prepare("owner", Game, 456, Source + "-saved", WorkshopAction.Install);
+        string stage = WorkshopTransaction.StageBatch(new[] { first, second }, Guid.NewGuid().ToString("N"));
+        string[] rows = File.ReadAllLines(Path.Combine(stage, "operations.tsv"));
+        Assert.AreEqual(WorkshopTransaction.BatchProtocol, rows[0]);
+        Assert.IsTrue(rows[^1].StartsWith("receipt-write\t")); Assert.IsTrue(rows[^2].StartsWith("receipt-write\t"));
+        Assert.IsTrue(rows.Skip(1).Take(rows.Length - 3).All(r => r.StartsWith("write\t")));
+        if (OperatingSystem.IsWindows()) {
+            // Simulate a crash after all payload writes and the first receipt.
+            // Missing staged bytes must not prevent restoring the whole batch.
+            var journal = new List<string> { "applying" };
+            foreach (string row in rows.Skip(1).Take(rows.Length - 2)) {
+                string[] cells = row.Split('\t');
+                string target = WorkshopPaths.Inside(Game, cells[1]);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(Path.Combine(stage, "New", cells[2]), target);
+                journal.Add("begin\t" + cells[2]); journal.Add("done\t" + cells[2]);
+            }
+            File.WriteAllLines(Path.Combine(stage, "journal.log"), journal);
+            Directory.Delete(Path.Combine(stage, "New"), true);
+            Assert.AreEqual(2, RunUpdater(stage, recover: true));
+            Assert.IsFalse(File.Exists(WorkshopInstallation.ReceiptPath(Game, 123)));
+            Assert.IsFalse(File.Exists(WorkshopInstallation.ReceiptPath(Game, 456)));
+            Assert.IsFalse(File.Exists(WorkshopPaths.Inside(Game, Root + "/Example.dll")));
+            stage = WorkshopTransaction.StageBatch(new[] { first, second }, Guid.NewGuid().ToString("N"));
+            Assert.AreEqual(0, RunUpdater(stage));
+            Assert.AreEqual("1.0.0", WorkshopInstallation.ReadReceipt(Game, 123).Version);
+            Assert.AreEqual("1.0.0", WorkshopInstallation.ReadReceipt(Game, 456).Version);
+            Assert.IsNotNull(WorkshopInstallation.ReadReceipt(Game, 456).Dependencies);
+        }
+        var state = WorkshopBatch.EndState(new[] { first, second }, new Dictionary<string, Version>());
+        Assert.AreEqual(new Version(1, 0, 0, 0), state["SecondGuid"]);
+        var dependent = WorkshopPackageCodec.Read(File.ReadAllText(Path.Combine(Source, WorkshopPackage.ManifestFileName)));
+        dependent.Dependencies = new[] { new WorkshopDependency("SecondGuid", "1.0.0") };
+        WorkshopBatch.Dependencies(dependent, state);
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopBatch.Dependencies(dependent, new Dictionary<string, Version>()));
+    }
     [TestMethod] public void RemovalAndOwnershipUseReceiptsWithoutDeletingUnknownFiles()
     {
         var package = Package(); InstallReceipt(package); Write(Game, Root + "/Example.dll", "changed"); Write(Game, Root + "/unknown.txt", "unknown");

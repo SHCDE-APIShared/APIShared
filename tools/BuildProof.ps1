@@ -11,11 +11,18 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
         Where-Object { $_.Extension -in @('.cs','.xaml') })
     $files += @(Get-ChildItem -LiteralPath $Root -File | Where-Object { $_.Name -match '^Directory\..*\.(props|targets)$|^APIShared\.csproj$|^info\.json$' })
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Build.ps1'),(Join-Path $Root 'tools/BuildProof.ps1'),(Join-Path $Root 'tools/WorkshopPackage.ps1'))
-    $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Workshop'),(Join-Path $Root 'Override') -Recurse -File)
+    $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Workshop') -Recurse -File)
+    if ([IO.Directory]::Exists((Join-Path $Root 'Override'))) { $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Override') -Recurse -File) }
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Prepare-WorkshopPackage.ps1'),(Join-Path $Root 'tools/New-WorkshopBootstrap.ps1'))
+    $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'tools/WorkshopUploader') -File | Where-Object { $_.Extension -in @('.cs','.csproj','.ps1','.bat','.sh','.config','.manifest') })
+    $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/PublisherPackage.ps1'))
     foreach ($file in $files | Sort-Object FullName -Unique) {
         $relative = $file.FullName.Substring($Root.Length + 1).Replace('\','/')
         $rows.Add($relative + ':' + (Get-ApiFileHash $file.FullName))
+    }
+    if ([IO.File]::Exists((Join-Path $Root 'tools/WorkshopUploader/WorkshopUploader.csproj'))) {
+        . (Join-Path $Root 'tools/WorkshopUploader/PublisherBuildProof.ps1')
+        foreach ($inputFile in Get-WorkshopPublisherInputs $Root $GameDir) { $rows.Add('publisher/' + $inputFile.Path + ':' + $inputFile.Sha256) }
     }
     [xml]$project = [IO.File]::ReadAllText((Join-Path $Root 'APIShared.csproj'))
     foreach ($node in $project.SelectNodes('//*[local-name()="HintPath"]')) {
@@ -39,24 +46,12 @@ function Get-ApiPackageFiles([string]$Root) {
         [pscustomobject]@{ Path=$_.FullName.Substring($package.Length+1).Replace('\','/'); Sha256=(Get-ApiFileHash $_.FullName) }
     })
 }
-function Assert-ApiWorkshopView([string]$Root, [string]$Directory) {
-    $relative = 'Override/Workshop/Workshop.xaml'
-    $source = Join-Path $Root $relative
-    $target = Join-Path $Directory $relative
-    if (-not [IO.File]::Exists($source) -or -not [IO.File]::Exists($target) -or
-        (Get-ApiFileHash $source) -cne (Get-ApiFileHash $target)) {
-        throw 'APIShared Workshop view is missing or stale in Override/Workshop. Rebuild the complete package.'
-    }
-    if ([IO.File]::Exists((Join-Path $Directory 'Workshop/Workshop.xaml'))) {
-        throw 'Generated APIShared package contains an obsolete unindexed Workshop view.'
-    }
-}
 function Write-ApiBuildProof([string]$Root, [string]$GameDir, [string]$ExtenderDir, [string]$MSBuild, $InitialState) {
     $final = Get-ApiInputState $Root $GameDir $ExtenderDir $MSBuild
     if ($InitialState.Fingerprint -ne $final.Fingerprint) { throw 'APIShared inputs changed during the build. Build again.' }
     $commit = (& git -C $Root rev-parse HEAD 2>$null)
     if ($LASTEXITCODE -ne 0) { $commit = $null }
-    $proof = [ordered]@{ SchemaVersion=1; Commit=$commit; CreatedUtc=[DateTime]::UtcNow.ToString('o'); GameDir=$GameDir; ExtenderDir=$ExtenderDir; MSBuild=$MSBuild; Fingerprint=$final.Fingerprint; Inputs=$final.Inputs; Files=(Get-ApiPackageFiles $Root) }
+    $proof = [ordered]@{ SchemaVersion=1; Commit=$commit; CreatedUtc=[DateTime]::UtcNow.ToString('o'); GameDir=$GameDir; ExtenderDir=$ExtenderDir; MSBuild=$MSBuild; Fingerprint=$final.Fingerprint; Inputs=$final.Inputs; Files=(Get-ApiPackageFiles $Root); PublisherFiles=(Get-ApiPublisherProofFiles $Root) }
     $directory = Join-Path $Root '.local'
     [IO.Directory]::CreateDirectory($directory) | Out-Null
     [IO.File]::WriteAllText((Join-Path $directory 'build-proof.json'),(($proof | ConvertTo-Json -Depth 6).Replace("`r`n","`n").Replace("`n","`r`n") + "`r`n"),[Text.UTF8Encoding]::new($false))
@@ -68,7 +63,7 @@ function Assert-ApiBuildProof([string]$Root, [switch]$Release) {
     if ($proof.SchemaVersion -ne 1) { throw 'Unsupported APIShared build evidence. Build APIShared again.' }
     $state = Get-ApiInputState $Root $proof.GameDir $proof.ExtenderDir $proof.MSBuild
     if ($state.Fingerprint -ne $proof.Fingerprint) { throw 'APIShared package is stale. Run APIShared/build.bat /nopause first.' }
-    Assert-ApiWorkshopView $Root (Join-Path $Root 'BepInEx/plugins/APIShared_Serp')
+    Assert-ApiPublisherEvidence $Root $proof
     $actual = @(Get-ApiPackageFiles $Root)
     $expected = @($proof.Files)
     if ($actual.Count -ne $expected.Count) { throw 'APIShared package contents changed after the build. Build APIShared again.' }
@@ -83,4 +78,17 @@ function Assert-ApiBuildProof([string]$Root, [switch]$Release) {
         if ($LASTEXITCODE -ne 0 -or $status.Count) { throw 'APIShared release requires a clean checkout.' }
     }
     return $proof
+}
+function Get-ApiPublisherProofFiles([string]$Root) {
+    $directory = [IO.Path]::GetFullPath((Join-Path $Root 'BepInEx/tools/APISharedWorkshopPublisher'))
+    return @(Get-ChildItem -LiteralPath $directory -Recurse -File | Sort-Object FullName | ForEach-Object {
+        [pscustomobject]@{ Path=$_.FullName.Substring($directory.Length+1).Replace('\','/'); Sha256=(Get-ApiFileHash $_.FullName) }
+    })
+}
+function Assert-ApiPublisherEvidence([string]$Root,$Proof) {
+    $actual = @(Get-ApiPublisherProofFiles $Root)
+    if (@($Proof.PublisherFiles).Count -ne $actual.Count -or $actual.Count -eq 0) { throw 'Missing or changed publisher build evidence.' }
+    foreach ($file in $actual) {
+        if (@($Proof.PublisherFiles | Where-Object { $_.Path -ceq $file.Path -and $_.Sha256 -ceq $file.Sha256 }).Count -ne 1) { throw "Publisher build hash mismatch: $($file.Path)" }
+    }
 }

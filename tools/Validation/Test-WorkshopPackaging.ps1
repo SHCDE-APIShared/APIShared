@@ -10,10 +10,6 @@ try {
     $assetRoot = Join-Path $fixture 'asset-project'
     $assetSource = Join-Path $assetRoot 'Workshop'
     $assetOutput = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Workshop'
-    $viewSource = Join-Path $assetRoot 'Override/Workshop/Workshop.xaml'
-    $viewTarget = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override/Workshop/Workshop.xaml'
-    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($viewSource))
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../Override/Workshop/Workshop.xaml') -Destination $viewSource
     $neighbor = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/config/user.json'
     [void][IO.Directory]::CreateDirectory((Join-Path $assetSource 'nested'))
     [void][IO.Directory]::CreateDirectory((Join-Path $assetOutput 'obsolete'))
@@ -22,9 +18,9 @@ try {
     [IO.File]::WriteAllText((Join-Path $assetSource 'nested/current.ps1'), 'current asset')
     [IO.File]::WriteAllText((Join-Path $assetOutput 'obsolete/old.ps1'), 'stale asset')
     [IO.File]::WriteAllText((Join-Path $assetOutput 'old.txt'), 'stale file')
-    Copy-Item -LiteralPath $viewSource -Destination (Join-Path $assetOutput 'Workshop.xaml')
+    [IO.File]::WriteAllText((Join-Path $assetOutput 'Workshop.xaml'), 'obsolete generated view')
     Sync-ApiWorkshopAssets -Root $assetRoot
-    Assert-ApiWorkshopView $assetRoot (Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp')
+    [void][IO.Directory]::CreateDirectory((Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override'))
     $overrideNeighbor = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override/other.txt'
     [IO.File]::WriteAllText($overrideNeighbor, 'keep unrelated override')
     if ([IO.File]::Exists((Join-Path $assetOutput 'Workshop.xaml'))) { throw 'Obsolete unindexed view survived generated packaging.' }
@@ -35,25 +31,13 @@ try {
     Sync-ApiWorkshopAssets -Root $assetRoot
     if (($firstAssets -join '|') -cne (@(Get-ApiWorkshopAssetRows $assetOutput) -join '|')) { throw 'Asset packaging is not repeatable.' }
     if ([IO.File]::ReadAllText($overrideNeighbor) -cne 'keep unrelated override') { throw 'Packaging replaced neighboring Override data.' }
-    $savedView = [IO.File]::ReadAllBytes($viewSource)
-    [IO.File]::Delete($viewSource)
-    $rejected = $false
-    try { Sync-ApiWorkshopAssets -Root $assetRoot } catch { $rejected = $true }
-    if (-not $rejected -or -not [IO.File]::Exists($viewTarget) -or (@(Get-ApiWorkshopAssetRows $assetOutput) -join '|') -cne ($firstAssets -join '|')) { throw 'Missing view source changed the previous package.' }
-    [IO.File]::WriteAllBytes($viewSource, $savedView)
-    if ([IO.File]::ReadAllText($neighbor) -cne 'preserve user data') { throw 'Packaging modified neighboring data.' }
-    [IO.File]::WriteAllText($viewTarget, 'damaged view')
-    $rejected = $false
-    try { Assert-ApiWorkshopView $assetRoot (Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp') } catch { $rejected = $true }
-    if (-not $rejected) { throw 'Damaged packaged view passed validation.' }
-    Sync-ApiWorkshopAssets -Root $assetRoot
     $installed = Join-Path $fixture 'installed'
     [void][IO.Directory]::CreateDirectory((Join-Path $installed 'Workshop'))
     $oldView = Join-Path $installed 'Workshop/Workshop.xaml'
-    Copy-Item -LiteralPath $viewSource -Destination $oldView
+    [IO.File]::WriteAllText($oldView, 'user edited')
     [IO.File]::WriteAllText((Join-Path $installed 'Workshop/user.txt'), 'keep')
     Remove-ApiLegacyWorkshopView $installed
-    if ([IO.File]::Exists($oldView)) { throw 'Known obsolete installed view was not removed.' }
+    if (-not [IO.File]::Exists($oldView)) { throw 'Unknown installed view was removed.' }
     [IO.File]::WriteAllText($oldView, 'user edited')
     Remove-ApiLegacyWorkshopView $installed
     if ([IO.File]::ReadAllText($oldView) -cne 'user edited' -or [IO.File]::ReadAllText((Join-Path $installed 'Workshop/user.txt')) -cne 'keep') { throw 'Installed view cleanup changed user data.' }

@@ -15,10 +15,10 @@ try {
     Write-Fixture (Join-Path $proofRoot 'info.json') '{}'
     Write-Fixture (Join-Path $proofRoot '.gitignore') ".local/`n"
     Write-Fixture (Join-Path $proofRoot 'tools/Build.ps1') 'build fixture'
-    foreach($name in @('WorkshopPackage.ps1','Prepare-WorkshopPackage.ps1','New-WorkshopBootstrap.ps1')) { Write-Fixture (Join-Path $proofRoot ('tools/' + $name)) 'packaging fixture' }
+    foreach($name in @('WorkshopPackage.ps1','Prepare-WorkshopPackage.ps1','New-WorkshopBootstrap.ps1','PublisherPackage.ps1')) { Write-Fixture (Join-Path $proofRoot ('tools/' + $name)) 'packaging fixture' }
     Write-Fixture (Join-Path $proofRoot 'Workshop/workshop-updater.ps1') 'updater fixture'
-    $viewSource=Join-Path $proofRoot 'Override/Workshop/Workshop.xaml'
-    $viewTarget=Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/Override/Workshop/Workshop.xaml'
+    $viewSource=Join-Path $proofRoot 'tools/WorkshopUploader/UploadMod-linux.sh'
+    $viewTarget=Join-Path $proofRoot 'BepInEx/tools/APISharedWorkshopPublisher/UploadMod-linux.sh'
     Write-Fixture $viewSource '<Grid />'
     Write-Fixture $viewTarget '<Grid />'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../BuildProof.ps1') -Destination (Join-Path $proofRoot 'tools/BuildProof.ps1')
@@ -42,11 +42,11 @@ try {
     Check ($LASTEXITCODE -eq 0 -and ($cross -join '').Trim() -eq $state.Fingerprint) 'Fingerprint differs across PowerShell versions'
     Write-Fixture $viewSource '<Grid Margin="1" />'
     $changedViewState=Get-ApiInputState $proofRoot '' '' $compiler
-    Check ($changedViewState.Fingerprint -cne $state.Fingerprint) 'Override view change did not invalidate release evidence'
-    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed view source accepted with old evidence'
+    Check ($changedViewState.Fingerprint -cne $state.Fingerprint) 'Publisher launcher change did not invalidate release evidence'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed launcher source accepted with old evidence'
     Write-Fixture $viewSource '<Grid />'
     [IO.File]::Delete($viewTarget)
-    $failed=$false; try{Assert-ApiWorkshopView $proofRoot (Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp')}catch{$failed=$true}; Check $failed 'Missing packaged Override view accepted'
+    $failed=$false; try{Assert-ApiPublisherEvidence $proofRoot ([IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json')) | ConvertFrom-Json)}catch{$failed=$true}; Check $failed 'Missing packaged Publisher launcher accepted'
     Write-Fixture $viewTarget '<Grid />'
     Write-Fixture $dll 'tampered binary'
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Tampered package accepted'

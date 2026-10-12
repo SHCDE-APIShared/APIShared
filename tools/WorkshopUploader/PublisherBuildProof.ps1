@@ -7,6 +7,7 @@ function Get-WorkshopPublisherInputs([string]$ApiRoot,[string]$GameDir){
     [xml]$xml=[IO.File]::ReadAllText($project)
     $paths=@($project,(Join-Path $ApiRoot 'tools/WorkshopUploader/Build.ps1'),(Join-Path $ApiRoot 'tools/WorkshopUploader/PublisherBuildProof.ps1'))
     $paths+=@((Join-Path $ApiRoot 'tools/WorkshopUploader/App.config'),(Join-Path $ApiRoot 'tools/WorkshopUploader/app.manifest'))
+    $paths+=@((Join-Path $ApiRoot 'tools/WorkshopUploader/UploadMod.bat'),(Join-Path $ApiRoot 'tools/WorkshopUploader/UploadMod-linux.sh'))
     $paths+=(Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/steam_api64.dll')
     $paths+=@(Get-ChildItem -LiteralPath $ApiRoot -File|Where-Object {$_.Name -match '^Directory\..*\.(props|targets)$'}|ForEach-Object {$_.FullName})
     foreach($entry in $xml.Project.ItemGroup.Compile){if($entry.Include){$paths+=[IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $project) $entry.Include))}}

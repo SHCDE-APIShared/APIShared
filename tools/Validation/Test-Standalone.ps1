@@ -40,6 +40,7 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $apiRoot 'Patches') -Rec
 & (Join-Path $PSScriptRoot 'Test-PermanentHooks.ps1')
 & (Join-Path $PSScriptRoot 'Test-Documentation.ps1')
 & (Join-Path $PSScriptRoot 'Test-WorkshopPackaging.ps1')
+& (Join-Path $PSScriptRoot 'Test-PublisherPackage.ps1')
 & (Join-Path $PSScriptRoot 'Test-BuildProof.ps1')
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-Interop.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }

@@ -12,6 +12,7 @@
     <Reference Include="com.rlabrecque.steamworks.net"><HintPath>$(GameDir)/Stronghold Crusader Definitive Edition_Data/Managed/com.rlabrecque.steamworks.net.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(GameDir)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll</HintPath><Private>true</Private></Reference>
     <Compile Include="Program.cs" />
+    <Compile Include="InteractivePublisher.cs" />
     <Compile Include="../../src/Workshop/WorkshopSteamBackend.cs" Link="Shared/WorkshopSteamBackend.cs" />
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Shared/WorkshopContracts.cs" />
     <Compile Include="../../src/Workshop/WorkshopPackageCodec.cs" Link="Shared/WorkshopPackageCodec.cs" />

@@ -8,6 +8,7 @@
     <Compile Include="../../src/Workshop/WorkshopPackageCodec.cs" Link="Production/WorkshopPackageCodec.cs" />
     <Compile Include="../../src/Workshop/WorkshopPaths.cs" Link="Production/WorkshopPaths.cs" />
     <Compile Include="../../src/Workshop/WorkshopInstallation.cs" Link="Production/WorkshopInstallation.cs" />
+    <Compile Include="../../src/Workshop/WorkshopBatch.cs" Link="Production/WorkshopBatch.cs" />
     <Compile Include="../../src/Workshop/WorkshopTransaction.cs" Link="Production/WorkshopTransaction.cs" />
     <Compile Include="../../src/Workshop/WorkshopPublishing.cs" Link="Production/WorkshopPublishing.cs" />
     <Compile Include="../../src/Workshop/WorkshopBootstrapValidation.cs" Link="Production/WorkshopBootstrapValidation.cs" />

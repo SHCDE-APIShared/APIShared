@@ -44,7 +44,13 @@ Copy-Item -Path (Join-Path $package '*') -Destination $pluginTarget -Recurse
 $asset = Join-Path $output "APIShared-v$version.zip"
  . (Join-Path $root 'tools/WorkshopPackage.ps1')
 Assert-ApiWorkshopInventory -Directory $pluginTarget
-Assert-ApiWorkshopView $root $pluginTarget
+. (Join-Path $root 'tools/PublisherPackage.ps1')
+$publisherSource=Join-Path $root 'BepInEx/tools/APISharedWorkshopPublisher'
+Assert-ApiPublisherPackage $publisherSource (Join-Path $root '.local/WorkshopUploader')
+$publisherTarget=Join-Path $staging 'BepInEx/tools/APISharedWorkshopPublisher'
+[void][IO.Directory]::CreateDirectory($publisherTarget)
+Copy-Item -Path (Join-Path $publisherSource '*') -Destination $publisherTarget -Recurse
+Assert-ApiPublisherPackage $publisherTarget $publisherSource
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path -LiteralPath $asset) { Assert-ApiWorkshopMap -MapPath $asset -Stage $staging }
 else { [IO.Compression.ZipFile]::CreateFromDirectory($staging, $asset) }

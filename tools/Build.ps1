@@ -48,8 +48,12 @@ try {
     if (Test-Path -LiteralPath $packagePatches) { Remove-Item -LiteralPath $packagePatches -Recurse -Force }
     Copy-Item -LiteralPath (Join-Path $root 'info.json') -Destination $package
     Copy-Item -LiteralPath (Join-Path $root 'Patches') -Destination $package -Recurse -Force
+    & (Join-Path $root 'tools/WorkshopUploader/build.bat') /nopause
+    if ($LASTEXITCODE -ne 0) { throw 'Publisher build failed.' }
+    . (Join-Path $PSScriptRoot 'PublisherPackage.ps1')
+    Sync-ApiPublisherPackage $root
     Sync-ApiWorkshopAssets -Root $root
-    Assert-ApiWorkshopView $root $package
+    Remove-ApiLegacyWorkshopView $package
     foreach ($required in @('APIShared.dll','APIShared.xml','info.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $required))) { throw ($required + ' is missing from the prepared package.') }
     }
@@ -69,13 +73,18 @@ try {
         if ((Test-Path -LiteralPath $current) -and ([IO.File]::GetAttributes($current) -band [IO.FileAttributes]::ReparsePoint)) { throw 'Linked installation destination.' }
     }
     [void][IO.Directory]::CreateDirectory($destination)
-    Assert-ApiWorkshopView $root $package
     Assert-ApiWorkshopUnlinkedPath (Join-Path $destination 'Override/Workshop/Workshop.xaml')
     Remove-ApiLegacyWorkshopView $destination
     foreach ($item in Get-ChildItem -LiteralPath $package -Force) {
         Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force
     }
-    if ((Get-ApiFileHash (Join-Path $destination 'Override/Workshop/Workshop.xaml')) -cne
-        (Get-ApiFileHash (Join-Path $root 'Override/Workshop/Workshop.xaml'))) { throw 'Installed Workshop view hash mismatch.' }
+    $toolSource = Join-Path $root 'BepInEx/tools/APISharedWorkshopPublisher'
+    $toolTarget = Join-Path $game 'BepInEx/tools/APISharedWorkshopPublisher'
+    Assert-ApiPublisherPackage $toolSource (Join-Path $root '.local/WorkshopUploader')
+    Assert-ApiWorkshopUnlinkedPath $toolTarget
+    [void][IO.Directory]::CreateDirectory($toolTarget)
+    Assert-ApiWorkshopUnlinkedTree $toolTarget
+    foreach ($file in Get-ChildItem -LiteralPath $toolSource -File) { Copy-Item -LiteralPath $file.FullName -Destination $toolTarget -Force }
+    Assert-ApiPublisherPackage $toolTarget $toolSource
     Write-Host ('APIShared built, tested and installed successfully in {0:N1}s.' -f $buildWatch.Elapsed.TotalSeconds)
 } catch { Write-Error $_; exit 1 }

@@ -11,7 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly ConcurrentQueue<Action> Queue = new ConcurrentQueue<Action>();
     private static readonly List<object> Queries = new List<object>();
@@ -25,6 +25,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         try {
+            if (args.Length > 0 && args[0] == "--interactive") return Interactive(args.Skip(1).ToArray());
             if (args.Length != 3 || !new[] { "--validate", "--inspect", "--publish" }.Contains(args[0])) throw new ArgumentException("Usage: WorkshopUploader --validate|--inspect|--publish request.json result.json");
             resultPath = Path.GetFullPath(args[2]);
             request = WorkshopPackageCodec.Object(DependencyFreeJson.Parse(File.ReadAllText(args[1])));
@@ -39,14 +40,34 @@ internal static class Program
                     if (WorkshopPackageCodec.Id(raw as string) == plan.WorkshopId) throw new InvalidDataException("Production item ID is forbidden in tests.");
             }
             if (args[0] == "--validate") { Result("Validated", "Package", "Complete package snapshot checked.", plan); return 0; }
+            InitializeSteam();
+            WorkshopPublisherContext.StateRoot = Text("StateRoot");
+            InspectPlan(plan);
+            if (args[0] == "--inspect") { Result("Inspected", "SteamOwnership", "Item and prerequisites checked.", plan); return 0; }
+            return PublishPlan(plan);
+        } catch (Exception ex) {
+            if (resultPath != null) {
+                if (activePlan != null) Result("Failed", "Publisher", ex.Message, activePlan, allocatedId);
+                else WriteResult(new { SchemaVersion = 1, Status = "Failed", Step = "Package", Diagnostic = ex.Message, OperationId = InvocationId, WorkshopId = "" });
+            }
+            Console.Error.WriteLine(ex); return 1;
+        } finally { if (steamInitialized) SteamAPI.Shutdown(); }
+    }
+    private static void InitializeSteam()
+    {
+        if (steamInitialized) return;
             Environment.SetEnvironmentVariable("SteamAppId", "3024040");
             if (!SteamAPI.Init()) throw new IOException("SteamAPI.Init failed; start Steam and sign in.");
             steamInitialized = true;
             int thread = Thread.CurrentThread.ManagedThreadId;
-            WorkshopPublisherContext.StateRoot = Text("StateRoot");
             WorkshopPublisherContext.RequireSteam = () => { if (Thread.CurrentThread.ManagedThreadId != thread) throw new InvalidOperationException("Steam call escaped its owning thread."); };
             WorkshopPublisherContext.Enqueue = action => { Queue.Enqueue(action); return true; };
             WorkshopPublisherContext.Log = message => Console.Error.WriteLine(message);
+        if (!SteamUser.BLoggedOn()) throw new IOException("Steam is offline; connect the signed-in account first.");
+        WorkshopSteamUpload.Backend = new ConsoleSteamBackend();
+    }
+    private static void InspectPlan(WorkshopUploadPlan plan)
+    {
             if (plan.WorkshopId != 0) {
                 var details = Pump(Inspect(plan.WorkshopId));
                 if (details.Owner != SteamUser.GetSteamID().m_SteamID) throw new InvalidOperationException("The selected Workshop item belongs to another Steam account.");
@@ -62,7 +83,9 @@ internal static class Program
                 var metadata = WorkshopPackageCodec.Object(DependencyFreeJson.Parse(api.Metadata));
                 if (WorkshopPackageCodec.Text(metadata, "PackageId") != "APIShared_Serp" || WorkshopPackageCodec.Version(WorkshopPackageCodec.Text(metadata, "Version")) < WorkshopPackageCodec.Version(dependency.MinimumVersion)) throw new InvalidOperationException("Upload the required APIShared version first.");
             }
-            if (args[0] == "--inspect") { Result("Inspected", "SteamOwnership", "Item and prerequisites checked.", plan); return 0; }
+    }
+    private static int PublishPlan(WorkshopUploadPlan plan)
+    {
             var operation = WorkshopSteamUpload.Publish("offline-publisher", plan);
             operation.Changed += current => { allocatedId = current.WorkshopId; Result(current.State.ToString(), current.Step, current.Diagnostic, plan, current.WorkshopId); };
             DateTime started = DateTime.UtcNow;
@@ -74,13 +97,6 @@ internal static class Program
             }
             Result(operation.State.ToString(), operation.Step, operation.Diagnostic, plan, operation.WorkshopId);
             return operation.State == WorkshopOperationState.Succeeded ? 0 : 1;
-        } catch (Exception ex) {
-            if (resultPath != null) {
-                if (activePlan != null) Result("Failed", "Publisher", ex.Message, activePlan, allocatedId);
-                else WriteResult(new { SchemaVersion = 1, Status = "Failed", Step = "Package", Diagnostic = ex.Message, OperationId = InvocationId, WorkshopId = "" });
-            }
-            Console.Error.WriteLine(ex); return 1;
-        } finally { if (steamInitialized) SteamAPI.Shutdown(); }
     }
     private static WorkshopUploadPlan Prepare()
     {

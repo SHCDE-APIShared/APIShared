@@ -42,13 +42,6 @@ function Sync-ApiWorkshopAssets {
     }
     $expected = @(Get-ApiWorkshopAssetRows $source)
     if ($expected.Count -eq 0) { throw 'Workshop source assets are empty.' }
-    $viewSource = Join-Path $Root 'Override/Workshop/Workshop.xaml'
-    $viewTarget = Join-Path $package 'Override/Workshop/Workshop.xaml'
-    Assert-ApiWorkshopUnlinkedPath $viewSource
-    Assert-ApiWorkshopUnlinkedPath $viewTarget
-    if (-not [IO.File]::Exists($viewSource)) { throw 'Workshop Override view source is missing.' }
-    if ([IO.Directory]::Exists($viewTarget)) { throw 'Workshop Override view destination is a directory.' }
-    $viewHash = Get-WorkshopFileHash $viewSource
     Assert-ApiWorkshopUnlinkedPath $destination
     if ([IO.File]::Exists($destination)) { throw 'Generated Workshop destination is a file.' }
     if ([IO.Directory]::Exists($destination)) {
@@ -57,11 +50,6 @@ function Sync-ApiWorkshopAssets {
     }
     [void][IO.Directory]::CreateDirectory($package)
     Copy-Item -LiteralPath $source -Destination $package -Recurse -Force
-    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($viewTarget))
-    Copy-Item -LiteralPath $viewSource -Destination $viewTarget -Force
-    if ((Get-WorkshopFileHash $viewSource) -cne $viewHash -or (Get-WorkshopFileHash $viewTarget) -cne $viewHash) {
-        throw 'Workshop Override view differs from its checked source.'
-    }
     $actual = @(Get-ApiWorkshopAssetRows $destination)
     $currentSource = @(Get-ApiWorkshopAssetRows $source)
     if (($expected -join "`n") -cne ($actual -join "`n") -or ($expected -join "`n") -cne ($currentSource -join "`n")) {
@@ -72,14 +60,17 @@ function Sync-ApiWorkshopAssets {
 # Only this previously shipped immutable view is obsolete. Never remove an
 # edited copy or other files from the installed updater/template directory.
 function Remove-ApiLegacyWorkshopView([string]$Directory) {
-    $path = Join-Path $Directory 'Workshop/Workshop.xaml'
+    foreach ($relative in @('Workshop/Workshop.xaml','Override/Workshop/Workshop.xaml')) {
+    $path = Join-Path $Directory $relative
     Assert-ApiWorkshopUnlinkedPath $path
-    if (-not [IO.File]::Exists($path)) { return }
+    if (-not [IO.File]::Exists($path)) { continue }
     if ((Get-WorkshopFileHash $path) -ceq '19ad493dddf6831f5cfe06f788ed4b7fb2c30af020bd159c304fd8ca2315e877') {
         Remove-Item -LiteralPath $path -Force
     } else {
-        Write-Warning 'Preserved a locally modified obsolete Workshop/Workshop.xaml; the active view is under Override/Workshop.'
+        Write-Warning 'Preserved a locally modified obsolete Workshop/Workshop.xaml; Workshop UI registration has been removed.'
     }
+}
+
 }
 
 function Get-WorkshopFileHash([string]$Path) {
@@ -186,16 +177,38 @@ function Assert-ApiWorkshopZipLayout {
     $zip = [IO.Compression.ZipFile]::OpenRead($ZipPath)
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $prefix = "BepInEx/plugins/$Guid/"
+    $toolPrefix = 'BepInEx/tools/APISharedWorkshopPublisher/'
+    $toolEntries = @{}
     try {
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName.Replace('\','/')
             if ($name.Contains(':') -or $name -match '(^|/)\.\.?(/|$)' -or $name.Contains('//') -or
-                ($entry.Name -and (-not $name.StartsWith($prefix, [StringComparison]::Ordinal) -or -not $seen.Add($name)))) {
+                (($entry.ExternalAttributes -shr 16 -band 0xF000) -eq 0xA000) -or
+                -not $seen.Add($name.TrimEnd('/')) -or
+                ($entry.Name -and (-not $name.StartsWith($prefix, [StringComparison]::Ordinal) -and
+                    -not ($Guid -ceq 'APIShared_Serp' -and $name.StartsWith($toolPrefix, [StringComparison]::Ordinal))))) {
                 throw "Unsafe or unexpected APIShared ZIP entry: $name"
             }
             if (-not $entry.Name -and $name -notin @('BepInEx/','BepInEx/plugins/',$prefix) -and
+                -not ($Guid -ceq 'APIShared_Serp' -and $name -cin @('BepInEx/tools/',$toolPrefix)) -and
                 -not $name.StartsWith($prefix, [StringComparison]::Ordinal)) { throw "Unexpected APIShared ZIP directory: $name" }
+            if ($entry.Name -and $name.StartsWith($toolPrefix, [StringComparison]::Ordinal)) { $toolEntries.Add($name.Substring($toolPrefix.Length),$entry) }
         }
         if ($seen.Count -eq 0) { throw 'APIShared ZIP has no files.' }
+        if ($Guid -ceq 'APIShared_Serp') {
+            . (Join-Path $PSScriptRoot 'PublisherPackage.ps1')
+            $allowed=@(Get-ApiPublisherNames)+@('publisher-files.json')
+            if ($toolEntries.Count -ne $allowed.Count -or @($toolEntries.Keys | Where-Object { $_ -cnotin $allowed }).Count) { throw 'Incomplete or unexpected ZIP publisher.' }
+            $reader=[IO.StreamReader]::new($toolEntries['publisher-files.json'].Open())
+            try { $record=$reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+            if ($record.SchemaVersion -ne 1 -or $record.Guid -cne 'APISharedWorkshopPublisher' -or @($record.Files).Count -ne $allowed.Count-1) { throw 'Invalid ZIP publisher inventory.' }
+            foreach ($name in Get-ApiPublisherNames) {
+                $matches=@($record.Files | Where-Object Path -CEQ $name)
+                if ($matches.Count -ne 1) { throw 'Ambiguous ZIP publisher inventory.' }
+                $input=$toolEntries[$name].Open(); $sha=[Security.Cryptography.SHA256]::Create()
+                try { $hash=[BitConverter]::ToString($sha.ComputeHash($input)).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose(); $input.Dispose() }
+                if ($hash -cne $matches[0].Sha256) { throw "ZIP publisher hash mismatch: $name" }
+            }
+        }
     } finally { $zip.Dispose() }
 }

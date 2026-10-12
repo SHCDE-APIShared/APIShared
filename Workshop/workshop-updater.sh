@@ -26,15 +26,18 @@ record() { printf '%s\n' "$1" >> "$journal"; sync -f "$journal"; }
 operations=$(inside "$transaction" operations.tsv)
 [[ $expected =~ ^[a-f0-9]{64}$ && $(hash "$operations") == "$expected" ]] || exit 1
 mapfile -t lines < "$operations"
-[[ ${lines[0]%$'\r'} == APISHARED-WORKSHOP-1 && ${#lines[@]} -gt 1 ]] || exit 1
+protocol=${lines[0]%$'\r'}
+[[ ( $protocol == APISHARED-WORKSHOP-1 || $protocol == APISHARED-WORKSHOP-2 ) && ${#lines[@]} -gt 1 ]] || exit 1
+receipt_phase=0
 declare -a kinds=() targets=() ordinals=() befores=() afters=(); declare -A seen=() begun=()
 for ((index=1; index<${#lines[@]}; index++)); do
     line=${lines[$index]%$'\r'}; IFS=$'\t' read -r kind target ordinal before after extra <<< "$line"
     [[ -z ${extra:-} && $ordinal == $((index-1)) && $before =~ ^(missing|[a-f0-9]{64})$ && $after =~ ^(missing|[a-f0-9]{64})$ ]] || exit 1
     if [[ $kind == receipt-write || $kind == receipt-delete ]]; then
-        [[ $index == $((${#lines[@]}-1)) && $target =~ ^_APIShared/Workshop/Receipts/[1-9][0-9]*\.json$ ]] || exit 1
+        [[ ( $protocol == APISHARED-WORKSHOP-2 || $index == $((${#lines[@]}-1)) ) && $target =~ ^_APIShared/Workshop/Receipts/[1-9][0-9]*\.json$ ]] || exit 1
+        receipt_phase=1
     else
-        [[ $index != $((${#lines[@]}-1)) && ( $kind == write || $kind == delete ) && $target =~ ^BepInEx/plugins/[^/]+/.+ ]] || exit 1
+        [[ $receipt_phase == 0 && $index != $((${#lines[@]}-1)) && ( $kind == write || $kind == delete ) && $target =~ ^BepInEx/plugins/[^/]+/.+ ]] || exit 1
         lower=${target,,}; [[ ! $lower =~ ^bepinex/plugins/(apishared_serp|000shcdese)/ && ! $lower =~ /(config|lobbymodsettings)(/|$) ]] || exit 1
     fi
     [[ -z ${seen[${target,,}]:-} ]] || exit 1; seen[${target,,}]=1
@@ -42,6 +45,7 @@ for ((index=1; index<${#lines[@]}; index++)); do
     if [[ $kind == *write ]]; then [[ $after != missing ]] || exit 1; if [[ $recover != --recover ]]; then [[ $(hash "$(inside "$transaction" "New/$ordinal")") == "$after" ]] || exit 1; fi; else [[ $after == missing ]] || exit 1; fi
     kinds+=("$kind"); targets+=("$target"); ordinals+=("$ordinal"); befores+=("$before"); afters+=("$after")
 done
+[[ $receipt_phase == 1 ]] || exit 1
 running() {
     local command
     for command in /proc/[0-9]*/cmdline; do

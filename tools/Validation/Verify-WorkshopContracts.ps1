@@ -44,6 +44,8 @@ try {
     foreach ($contract in @(@('Init','System.Boolean'),@('RunCallbacks','System.Void'),@('Shutdown','System.Void'))) {
         Assert-WorkshopMethod $steam 'Steamworks.SteamAPI' $contract[0] $contract[1] @() $true $true
     }
+    Assert-WorkshopMethod $steam 'Steamworks.SteamUser' 'BLoggedOn' 'System.Boolean' @() $true $true
+    Assert-WorkshopMethod $steam 'Steamworks.SteamFriends' 'GetPersonaName' 'System.String' @() $true $true
     $valid = $extender.MainModule.GetType($map).Fields | Where-Object Name -eq 'IsValid'
     if (-not $valid.IsPublic -or $valid.FieldType.FullName -cne 'System.Boolean') { throw 'MapArchive.IsValid contract changed.' }
     Assert-WorkshopMethod $extender 'SHCDESE.API.LowLevel.CrusaderLibrary' 'add_LibraryLoaded' 'System.Void' @('SHCDESE.API.LowLevel.CrusaderLibrary/OnLibraryLoadedDelegate') $true $false
@@ -76,7 +78,7 @@ try {
         Write-Host ('Verified encapsulated SteamManager reflection: '+$field[0])
     }
     $sourceRoot = Join-Path $PSScriptRoot '../../src/Workshop'
-    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot -File -Filter '*.cs') {
+    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot,(Join-Path $PSScriptRoot '../WorkshopUploader') -File -Filter '*.cs') {
         $source = [IO.File]::ReadAllText($file.FullName)
         foreach ($call in [regex]::Matches($source,'\b(SteamUGC|SteamUser|SteamFriends)\.(\w+)\(')) {
             $type=$steam.MainModule.GetType('Steamworks.'+$call.Groups[1].Value)

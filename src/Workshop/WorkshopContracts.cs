@@ -111,6 +111,8 @@ namespace APIShared.Workshop
     /// <summary>One Steam subscription or installed receipt. WorkshopId comes from Steam, not the directory name. Status explains unavailable content and external ownership.</summary>
     public sealed class WorkshopCatalogItem
     {
+        internal WorkshopReceipt Receipt;
+        internal string ManifestHash;
         /// <summary>Steam-issued item identity; zero or empty means unavailable.</summary>
         public ulong WorkshopId { get; internal set; }
         /// <summary>Human-readable item or upload title.</summary>
@@ -278,5 +280,7 @@ namespace APIShared.Workshop
         /// <summary>Complete immutable delivered file inventory; settings and unknown local files are excluded.</summary>
         public IReadOnlyList<WorkshopFile> Files { get; set; }
         public IReadOnlyList<string> ModGuids { get; set; }
+        // Null denotes an older private receipt without dependency evidence.
+        public IReadOnlyList<WorkshopDependency> Dependencies { get; set; }
     }
 }

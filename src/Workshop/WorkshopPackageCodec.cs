@@ -82,19 +82,7 @@ namespace APIShared.Workshop
                 if (!package.Bootstrap.MapFile.EndsWith(".map", StringComparison.OrdinalIgnoreCase) || folders.Contains(package.Bootstrap.PluginFolder, StringComparer.OrdinalIgnoreCase))
                     throw new InvalidDataException("Invalid or overlapping bootstrap.");
             }
-            var dependencies = new List<WorkshopDependency>();
-            foreach (var d in Rows(row, "Dependencies", true))
-            {
-                var dependency = new WorkshopDependency { Guid = Text(d, "Guid"), MinimumVersion = Text(d, "MinimumVersion", true), MaximumVersion = Text(d, "MaximumVersion", true), WorkshopId = Text(d, "WorkshopId", true) };
-                WorkshopInventory.CheckGuid(dependency.Guid);
-                if (dependencies.Any(x => x.Guid.Equals(dependency.Guid, StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("Duplicate dependency.");
-                if (dependency.MinimumVersion.Length > 0) Version(dependency.MinimumVersion);
-                if (dependency.MaximumVersion.Length > 0) Version(dependency.MaximumVersion);
-                if (dependency.MinimumVersion.Length > 0 && dependency.MaximumVersion.Length > 0 && Version(dependency.MinimumVersion) > Version(dependency.MaximumVersion)) throw new InvalidDataException("Inverted dependency range.");
-                if (dependency.WorkshopId.Length > 0) Id(dependency.WorkshopId);
-                dependencies.Add(dependency);
-            }
-            package.Dependencies = dependencies.AsReadOnly();
+            package.Dependencies = Dependencies(row);
             var legacy = new List<WorkshopLegacyRelease>();
             foreach (var release in Rows(row, "LegacyReleases", true))
             {
@@ -109,6 +97,22 @@ namespace APIShared.Workshop
                 if (!package.Files.Any(f => f.Path.Equals(root + "/info.json", StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("Root lacks info.json: " + root);
             return package;
         }
+        private static IReadOnlyList<WorkshopDependency> Dependencies(Dictionary<string, object> row)
+        {
+            var dependencies = new List<WorkshopDependency>();
+            foreach (var d in Rows(row, "Dependencies", true))
+            {
+                var dependency = new WorkshopDependency { Guid = Text(d, "Guid"), MinimumVersion = Text(d, "MinimumVersion", true), MaximumVersion = Text(d, "MaximumVersion", true), WorkshopId = Text(d, "WorkshopId", true) };
+                WorkshopInventory.CheckGuid(dependency.Guid);
+                if (dependencies.Any(x => x.Guid.Equals(dependency.Guid, StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("Duplicate dependency.");
+                if (dependency.MinimumVersion.Length > 0) Version(dependency.MinimumVersion);
+                if (dependency.MaximumVersion.Length > 0) Version(dependency.MaximumVersion);
+                if (dependency.MinimumVersion.Length > 0 && dependency.MaximumVersion.Length > 0 && Version(dependency.MinimumVersion) > Version(dependency.MaximumVersion)) throw new InvalidDataException("Inverted dependency range.");
+                if (dependency.WorkshopId.Length > 0) Id(dependency.WorkshopId);
+                dependencies.Add(dependency);
+            }
+            return dependencies.AsReadOnly();
+        }
         internal static ulong Id(string value) => ulong.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out ulong id) && id != 0 ? id : throw new InvalidDataException("Invalid Workshop ID.");
         internal static WorkshopReceipt Receipt(string json)
         {
@@ -120,6 +124,7 @@ namespace APIShared.Workshop
             var guids = new List<string>();
             foreach (var id in list) { string guid = id as string ?? throw new InvalidDataException("Invalid receipt GUID."); WorkshopInventory.CheckGuid(guid); if (guids.Contains(guid, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException("Duplicate receipt GUID."); guids.Add(guid); }
             receipt.ModGuids = guids.AsReadOnly();
+            if (row.TryGetValue("Dependencies", out var declared) && declared != null) receipt.Dependencies = Dependencies(row);
             return receipt;
         }
         internal static string Write(object value) => DependencyFreeJson.Serialize(value);

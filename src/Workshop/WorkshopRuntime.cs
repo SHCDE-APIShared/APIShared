@@ -15,13 +15,13 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using Version = System.Version;
 
 namespace APIShared.Workshop
 {
     internal static class WorkshopRuntime
     {
         private static IDisposable steamSubscription;
-        private static BaseUnityPlugin plugin;
         private static ManualLogSource logger;
         private static bool startupDownloadPending;
         private static readonly WorkshopApplyCoordinator ApplyCoordinator = new WorkshopApplyCoordinator();
@@ -29,7 +29,7 @@ namespace APIShared.Workshop
         internal static bool IsExternallyManaged => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCDEModManagerLaunchId"));
         internal static void Initialize(BaseUnityPlugin host, ManualLogSource log)
         {
-            plugin = host; logger = log;
+            logger = log;
             WorkshopPublisherContext.RequireSteam = RequireSteam;
             WorkshopPublisherContext.Enqueue = UnityMainThreadDispatch.TryEnqueue;
             WorkshopPublisherContext.Log = Log;
@@ -40,24 +40,10 @@ namespace APIShared.Workshop
                     startupDownloadPending = Subscriptions().Any(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0);
                     UnityMainThreadDispatch.TryEnqueue(() => {
                         Log("Workshop runtime active after startup cleanup; external management=" + IsExternallyManaged + ".");
-                        WorkshopViewModel.Instance.Refresh();
+                        WorkshopStartup.Run();
                     });
                 } catch (Exception ex) { Log("Steam catalog unavailable: " + ex.Message); }
             });
-            CrusaderLibrary.Instance.LibraryLoaded += context => {
-                try {
-                    const string viewPath = "Workshop/Workshop.xaml";
-                    // Settings views are resolved through the Extender's Override index,
-                    // not relative to the plugin DLL or the updater/template directory.
-                    if (!GameAssetManagerAPI.Instance.GetModifiedFilePath(viewPath, out string absoluteViewPath) || !File.Exists(absoluteViewPath)) {
-                        Log("Workshop view unavailable: expected indexed Override/" + viewPath + "; reinstall the complete APIShared package.");
-                        return;
-                    }
-                    Log("Workshop view resource resolved: " + absoluteViewPath);
-                    GameXAMLManagerAPI.Instance.RegisterLobbyModSettings(plugin, "APIShared Workshop", WorkshopViewModel.Instance, viewPath, useBuiltInPersistence: false);
-                }
-                catch (Exception ex) { Log("Workshop view unavailable: " + ex.Message); }
-            };
         }
         internal static void Log(string text) => logger?.LogInfo(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text);
         internal static void RequireSteam()
@@ -97,10 +83,14 @@ namespace APIShared.Workshop
                     string manifest = item.Root == null ? null : WorkshopPaths.Inside(item.Root, WorkshopPackage.ManifestFileName);
                     if (manifest != null && Stable(item) && !File.Exists(manifest) && receipt == null) continue; // SE-only maps stay outside our catalog.
                     var entry = new WorkshopCatalogItem { WorkshopId = item.Id, Title = receipt?.PackageId ?? item.Id.ToString(), ContentRoot = item.Root,
-                        InstalledVersion = receipt?.Version, IsSubscribed = true, Status = "Download or installation information unavailable" };
+                        InstalledVersion = receipt?.Version, Receipt = receipt, IsSubscribed = true, Status = "Download or installation information unavailable" };
                     try {
                         if (Stable(item) && manifest != null && File.Exists(manifest)) {
-                            entry.Package = WorkshopPackageCodec.Read(File.ReadAllText(manifest)); entry.Title = entry.Package.PackageId;
+                            byte[] bytes = File.ReadAllBytes(manifest);
+                            using (var sha = System.Security.Cryptography.SHA256.Create())
+                                entry.ManifestHash = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+                            using (var reader = new StreamReader(new MemoryStream(bytes))) entry.Package = WorkshopPackageCodec.Read(reader.ReadToEnd());
+                            entry.Title = entry.Package.PackageId;
                             entry.CanInstall = !IsExternallyManaged;
                             entry.Status = IsExternallyManaged ? WorkshopText.External : receipt == null ? "Installation / adoption available" :
                                 WorkshopPackageCodec.Version(entry.Package.Version) > WorkshopPackageCodec.Version(receipt.Version) ? "Update available" : "Receipt current; local files are not inspected";
@@ -113,7 +103,9 @@ namespace APIShared.Workshop
                 return catalog.AsReadOnly();
             });
         }
-        internal static async Task<WorkshopInstallPlan> PrepareAsync(string owner, ulong id, WorkshopAction action)
+        internal static Task<WorkshopInstallPlan> PrepareAsync(string owner, ulong id, WorkshopAction action) => PrepareCoreAsync(owner, id, action, false);
+        internal static Task<WorkshopInstallPlan> PrepareStartupAsync(ulong id, WorkshopAction action) => PrepareCoreAsync(APISharedPlugin.PluginGuid, id, action, true);
+        private static async Task<WorkshopInstallPlan> PrepareCoreAsync(string owner, ulong id, WorkshopAction action, bool startup)
         {
             var snapshot = Subscriptions(); var subscription = snapshot.FirstOrDefault(x => x.Id == id);
             if (action == WorkshopAction.Remove ? subscription != null : subscription == null || !Stable(subscription))
@@ -129,11 +121,11 @@ namespace APIShared.Workshop
             });
             var completion = new TaskCompletionSource<WorkshopInstallPlan>();
             if (!UnityMainThreadDispatch.TryEnqueue(() => {
-                try { Prerequisites(plan.Package); completion.SetResult(plan); } catch (Exception ex) { completion.SetException(ex); }
+                try { Prerequisites(plan.Package, null, startup); completion.SetResult(plan); } catch (Exception ex) { completion.SetException(ex); }
             })) throw new InvalidOperationException("Unity dispatcher unavailable; plan prerequisites could not be checked.");
             return await completion.Task;
         }
-        private static void Prerequisites(WorkshopPackage package)
+        private static void Prerequisites(WorkshopPackage package, IReadOnlyDictionary<string, Version> endState = null, bool skipDependencies = false)
         {
             if (package == null) return;
             foreach (string guid in package.ModGuids) {
@@ -153,9 +145,12 @@ namespace APIShared.Workshop
             System.Version actual = WorkshopPackageCodec.Version(extender.Metadata.Version.ToString());
             if (package.MinimumScriptExtenderVersion.Length > 0 && actual < WorkshopPackageCodec.Version(package.MinimumScriptExtenderVersion) ||
                 package.MaximumScriptExtenderVersion.Length > 0 && actual > WorkshopPackageCodec.Version(package.MaximumScriptExtenderVersion)) throw new InvalidOperationException("Script Extender version is outside this package's range.");
-            foreach (var dep in package.Dependencies)
+            if (!skipDependencies) foreach (var dep in package.Dependencies)
             {
-                if (package.ModVersions.TryGetValue(dep.Guid, out var supplied)) actual = supplied;
+                if (endState != null) {
+                    if (!endState.TryGetValue(dep.Guid, out actual)) throw new InvalidOperationException("Missing dependency: " + dep.Guid);
+                }
+                else if (package.ModVersions.TryGetValue(dep.Guid, out var supplied)) actual = supplied;
                 else if (Chainloader.PluginInfos.TryGetValue(dep.Guid, out var installed)) actual = WorkshopPackageCodec.Version(installed.Metadata.Version.ToString());
                 else {
                     var asset = GameAssetModManager.Instance.GetRegisteredAssetDirectories().FirstOrDefault(a => a.Key.GUID.Equals(dep.Guid, StringComparison.OrdinalIgnoreCase));
@@ -172,6 +167,74 @@ namespace APIShared.Workshop
                 if (WorkshopPackageCodec.Text(row, "GUID") != package.Bootstrap.Guid || WorkshopPackageCodec.Version(WorkshopPackageCodec.Text(row, "Version")) < WorkshopPackageCodec.Version(package.Bootstrap.Version))
                     throw new InvalidOperationException("Let Script Extender install the bootstrap and restart first.");
             }
+        }
+        internal static void CheckStartupConditions()
+        {
+            RequireSteam();
+            if (IsExternallyManaged || startupDownloadPending || MissionLifecycleService.HasContext || Directory.Exists(WorkshopPaths.Inside(Paths.GameRootPath, "_SE/.staging")))
+                throw new InvalidOperationException("External management, an active mission or Extender startup work takes precedence.");
+            if (Subscriptions().Any(s => (s.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0))
+                throw new InvalidOperationException("Workshop downloads require another startup.");
+        }
+        internal static Dictionary<string, Version> InstalledVersions()
+        {
+            var versions = new Dictionary<string, Version>(StringComparer.OrdinalIgnoreCase);
+            foreach (var info in Chainloader.PluginInfos) versions[info.Key] = WorkshopPackageCodec.Version(info.Value.Metadata.Version.ToString());
+            foreach (var asset in GameAssetModManager.Instance.GetRegisteredAssetDirectories()) versions[asset.Key.GUID] = WorkshopPackageCodec.Version(asset.Key.Version);
+            return versions;
+        }
+        internal static void CheckBatch(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog)
+        {
+            var installed = InstalledVersions();
+            var endState = WorkshopBatch.EndState(plans, installed);
+            foreach (var plan in plans) Prerequisites(plan.Package, endState);
+            var changed = new HashSet<ulong>(plans.Select(p => p.WorkshopId));
+            bool changesInstalledVersions = installed.Any(p => !endState.TryGetValue(p.Key, out var next) || next != p.Value);
+            foreach (var retained in catalog.Where(c => !changed.Contains(c.WorkshopId)))
+                WorkshopBatch.Retained(retained.Package, retained.Receipt, retained.ManifestHash, endState, changesInstalledVersions);
+        }
+        private static void CheckBatchSubscriptions(IReadOnlyList<WorkshopInstallPlan> plans, Subscription[] original)
+        {
+            CheckStartupConditions();
+            var latest = Subscriptions();
+            if (!latest.Select(s => s.Id).OrderBy(id => id).SequenceEqual(original.Select(s => s.Id).OrderBy(id => id)))
+                throw new InvalidOperationException("Steam subscriptions changed during batch preparation.");
+            foreach (var plan in plans) {
+                var item = latest.FirstOrDefault(s => s.Id == plan.WorkshopId);
+                if (plan.Action == WorkshopAction.Remove ? item != null : item == null || !Stable(item) || Path.GetFullPath(item.Root) != plan.Source)
+                    throw new InvalidOperationException("Workshop download state changed: " + plan.PackageId);
+                if (plan.Package != null) WorkshopSubscriptionOwnership.Verify(latest, plan.WorkshopId, plan.Package);
+            }
+        }
+        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog)
+        {
+            CheckStartupConditions(); CheckBatch(plans, catalog);
+            var snapshot = Subscriptions();
+            CheckBatchSubscriptions(plans, snapshot);
+            string id = Guid.NewGuid().ToString("N");
+            return await ApplyCoordinator.ExecuteAsync(id, async operation => {
+                string transaction = await Task.Run(() => {
+                    foreach (var plan in plans.Where(p => p.Package != null)) {
+                        WorkshopBootstrapValidation.Verify(plan.Package, plan.Source);
+                        WorkshopSubscriptionOwnership.Verify(snapshot, plan.WorkshopId, plan.Package);
+                    }
+                    return WorkshopTransaction.StageBatch(plans, id);
+                });
+                var completion = new TaskCompletionSource<WorkshopOperation>();
+                if (!UnityMainThreadDispatch.TryEnqueue(async () => {
+                    try {
+                        CheckBatchSubscriptions(plans, snapshot); CheckBatch(plans, catalog);
+                        await WorkshopUpdaterLauncher.Launch(transaction, Paths.GameRootPath);
+                        CheckBatchSubscriptions(plans, snapshot); CheckBatch(plans, catalog);
+                        operation.Set(WorkshopOperationState.AwaitingRestart, "Confirmed startup batch; receipts commit after game exit.");
+                        UnityEngine.Application.Quit(); completion.TrySetResult(operation);
+                    } catch (Exception ex) {
+                        try { WorkshopUpdaterLauncher.Cancel(transaction); } catch (Exception cancel) { Log("Batch cancellation failed: " + cancel.Message); }
+                        operation.Set(WorkshopOperationState.Failed, ex.Message); completion.TrySetResult(operation);
+                    }
+                })) throw new InvalidOperationException("Unity dispatcher unavailable; batch was not applied.");
+                return await completion.Task;
+            });
         }
         internal static async Task<WorkshopOperation> ApplyAsync(string owner, WorkshopInstallPlan plan)
         {
