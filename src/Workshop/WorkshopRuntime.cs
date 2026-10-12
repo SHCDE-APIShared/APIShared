@@ -38,10 +38,9 @@ namespace APIShared.Workshop
                 if (e.Phase != EventHookPhase.Post) return;
                 try {
                     startupDownloadPending = Subscriptions().Any(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0);
-                    UnityMainThreadDispatch.TryEnqueue(() => {
-                        Log("Workshop runtime active after startup cleanup; external management=" + IsExternallyManaged + ".");
-                        WorkshopStartup.Run();
-                    });
+                    Log("Workshop startup gate active on Steam initialization; external management=" + IsExternallyManaged + ".");
+                    WorkshopStartup.Run();
+                    UnityMainThreadDispatch.TryEnqueue(() => Log("Workshop runtime active after startup cleanup; external management=" + IsExternallyManaged + "."));
                 } catch (Exception ex) { Log("Steam catalog unavailable: " + ex.Message); }
             });
         }
@@ -120,7 +119,7 @@ namespace APIShared.Workshop
                 return candidate;
             });
             var completion = new TaskCompletionSource<WorkshopInstallPlan>();
-            if (!UnityMainThreadDispatch.TryEnqueue(() => {
+            if (!UnityMainThreadDispatch.TryRunInlineOrEnqueue(() => {
                 try { Prerequisites(plan.Package, null, startup); completion.SetResult(plan); } catch (Exception ex) { completion.SetException(ex); }
             })) throw new InvalidOperationException("Unity dispatcher unavailable; plan prerequisites could not be checked.");
             return await completion.Task;
@@ -145,20 +144,13 @@ namespace APIShared.Workshop
             System.Version actual = WorkshopPackageCodec.Version(extender.Metadata.Version.ToString());
             if (package.MinimumScriptExtenderVersion.Length > 0 && actual < WorkshopPackageCodec.Version(package.MinimumScriptExtenderVersion) ||
                 package.MaximumScriptExtenderVersion.Length > 0 && actual > WorkshopPackageCodec.Version(package.MaximumScriptExtenderVersion)) throw new InvalidOperationException("Script Extender version is outside this package's range.");
-            if (!skipDependencies) foreach (var dep in package.Dependencies)
-            {
-                if (endState != null) {
-                    if (!endState.TryGetValue(dep.Guid, out actual)) throw new InvalidOperationException("Missing dependency: " + dep.Guid);
+            if (!skipDependencies) {
+                if (endState == null) {
+                    var suppliedState = InstalledVersions();
+                    foreach (var supplied in package.ModVersions) suppliedState[supplied.Key] = supplied.Value;
+                    endState = suppliedState;
                 }
-                else if (package.ModVersions.TryGetValue(dep.Guid, out var supplied)) actual = supplied;
-                else if (Chainloader.PluginInfos.TryGetValue(dep.Guid, out var installed)) actual = WorkshopPackageCodec.Version(installed.Metadata.Version.ToString());
-                else {
-                    var asset = GameAssetModManager.Instance.GetRegisteredAssetDirectories().FirstOrDefault(a => a.Key.GUID.Equals(dep.Guid, StringComparison.OrdinalIgnoreCase));
-                    if (asset.Key == null) throw new InvalidOperationException("Missing dependency: " + dep.Guid);
-                    actual = WorkshopPackageCodec.Version(asset.Key.Version);
-                }
-                if (dep.MinimumVersion.Length > 0 && actual < WorkshopPackageCodec.Version(dep.MinimumVersion) || dep.MaximumVersion.Length > 0 && actual > WorkshopPackageCodec.Version(dep.MaximumVersion))
-                    throw new InvalidOperationException("Dependency version mismatch: " + dep.Guid);
+                WorkshopBatch.Dependencies(package, endState);
             }
             if (package.Bootstrap != null)
             {
@@ -178,10 +170,9 @@ namespace APIShared.Workshop
         }
         internal static Dictionary<string, Version> InstalledVersions()
         {
-            var versions = new Dictionary<string, Version>(StringComparer.OrdinalIgnoreCase);
-            foreach (var info in Chainloader.PluginInfos) versions[info.Key] = WorkshopPackageCodec.Version(info.Value.Metadata.Version.ToString());
-            foreach (var asset in GameAssetModManager.Instance.GetRegisteredAssetDirectories()) versions[asset.Key.GUID] = WorkshopPackageCodec.Version(asset.Key.Version);
-            return versions;
+            return WorkshopInstalledVersions.Collect(
+                Chainloader.PluginInfos.Select(info => new KeyValuePair<string, string>(info.Key, info.Value.Metadata.Version.ToString())),
+                GameAssetModManager.Instance.GetRegisteredAssetDirectories().Select(asset => new KeyValuePair<string, string>(asset.Key.GUID, asset.Key.Version)));
         }
         internal static void CheckBatch(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog)
         {
@@ -221,7 +212,7 @@ namespace APIShared.Workshop
                     return WorkshopTransaction.StageBatch(plans, id);
                 });
                 var completion = new TaskCompletionSource<WorkshopOperation>();
-                if (!UnityMainThreadDispatch.TryEnqueue(async () => {
+                if (!UnityMainThreadDispatch.TryRunInlineOrEnqueue(async () => {
                     try {
                         CheckBatchSubscriptions(plans, snapshot); CheckBatch(plans, catalog);
                         await WorkshopUpdaterLauncher.Launch(transaction, Paths.GameRootPath);

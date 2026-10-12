@@ -50,6 +50,8 @@ namespace APIShared.Workshop
         {
             foreach (var dependency in dependencies) {
                 if (!state.TryGetValue(dependency.Guid, out var version)) throw new InvalidOperationException("Missing dependency: " + dependency.Guid);
+                if (version == null && (dependency.MinimumVersion.Length > 0 || dependency.MaximumVersion.Length > 0))
+                    throw new InvalidOperationException("Dependency has no comparable numeric version: " + dependency.Guid);
                 if (dependency.MinimumVersion.Length > 0 && version < WorkshopPackageCodec.Version(dependency.MinimumVersion) ||
                     dependency.MaximumVersion.Length > 0 && version > WorkshopPackageCodec.Version(dependency.MaximumVersion))
                     throw new InvalidOperationException("Dependency version mismatch: " + dependency.Guid);

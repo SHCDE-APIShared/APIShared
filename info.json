@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.7.1",
+  "Version": "0.7.2",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.7.2",
+      "Changes": [
+        "Allow asset mods with nonnumeric version strings during Workshop discovery; require comparable versions only for bounded dependencies and prefer loaded plugin versions over asset metadata.",
+        "Distinguish first installation, updates and migration of existing Workshop files in the German and English startup confirmation, without treating the bootstrap as an installed payload.",
+        "Wait for the Workshop decision during Steam initialization before continuing startup, while validating and staging files in the background."
+      ]
+    },
     { "Version": "0.7.1", "Changes": ["Add opt-in Workshop inventory cleanup and explicit savegame-settings exclusion for independent plugin entry points."] },
     {
       "Version": "0.7.0",

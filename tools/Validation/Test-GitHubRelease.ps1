@@ -127,6 +127,7 @@ exit $LASTEXITCODE
     # Exercise the actual upload driver with an inert publisher and isolated preparation state.
     $upload = Join-Path $driverDirectory 'Upload-Workshop.ps1'
     Write-Fixture $upload ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'Upload-Workshop.ps1')))
+    Write-Fixture (Join-Path $driverDirectory 'WorkshopChangelog.ps1') ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'WorkshopChangelog.ps1')))
     Write-Fixture (Join-Path $driverDirectory 'SteamWorkshopHistory.ps1') ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'SteamWorkshopHistory.ps1')))
     Write-Fixture (Join-Path $driverDirectory 'WorkshopConfiguration.ps1') @'
 function Get-WorkshopConfiguration {

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace APIShared.Workshop
 {
@@ -19,7 +20,8 @@ namespace APIShared.Workshop
         private static int attempted;
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int MessageBoxW(IntPtr window, string text, string caption, uint flags);
-        internal static async void Run()
+        internal static void Run() => WorkshopStartupGate.Run(RunAsync);
+        private static async Task RunAsync()
         {
             if (Interlocked.Exchange(ref attempted, 1) != 0) return;
             try {
@@ -70,14 +72,15 @@ namespace APIShared.Workshop
                 if (plans.Count == 0) return;
                 WorkshopRuntime.CheckBatch(plans, retained);
                 WorkshopRuntime.CheckStartupConditions();
-                string body = string.Join("\n", plans.Select(p => p.Action + ": " + p.PackageId + " " + p.Version +
+                string body = string.Join("\n", plans.Select(p => WorkshopStartupSummary.Describe(p, CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de") +
                     (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
                 body += "\n\n" + WorkshopText.Pick("Yes: apply these changes and restart.\nNo: continue playing without applying them.",
                     "Ja: Diese Änderungen anwenden und neu starten.\nNein: Ohne diese Änderungen weiterspielen.");
                 if (MessageBoxW(IntPtr.Zero, body, "APIShared Workshop", 0x4 | 0x30 | 0x100) != 6) {
                     WorkshopRuntime.Log("Workshop startup changes declined; installed files are untouched."); return;
                 }
-                await WorkshopRuntime.ApplyStartupAsync(plans, retained);
+                var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained);
+                WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + ": " + operation.State + "; " + operation.Diagnostic);
             } catch (Exception ex) { WorkshopRuntime.Log("Workshop startup deferred: " + ex.Message); }
         }
     }
