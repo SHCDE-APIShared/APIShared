@@ -142,7 +142,11 @@ namespace APIShared
             {
                 bool previous = OwnerActive(owner);
                 ownerActivation[owner] = active;
-                if (previous != active) RebuildActiveViews();
+                if (previous != active)
+                {
+                    actionButtonSnapshot = null;
+                    RebuildActiveViews();
+                }
             }
         }
 

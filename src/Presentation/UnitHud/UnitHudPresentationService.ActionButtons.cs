@@ -13,6 +13,7 @@ namespace APIShared
         private readonly Dictionary<ActionButtonRegistration, ActionButtonVisual> actionVisuals =
             new Dictionary<ActionButtonRegistration, ActionButtonVisual>();
         private volatile bool hasActionButtons;
+        private ActionButtonSnapshot actionButtonSnapshot;
         private HUD_Troops actionPanel;
         private Canvas actionHost;
         private FrameworkElement actionControls;
@@ -42,6 +43,7 @@ namespace APIShared
                     return order != 0 ? order : Compare(a.Owner, a.Definition.ButtonId, b.Owner, b.Definition.ButtonId);
                 });
                 registration = item;
+                actionButtonSnapshot = null;
                 hasActionButtons = true;
                 pendingPresentation = true;
             }
@@ -51,8 +53,33 @@ namespace APIShared
 
         private ActionButtonState[] CaptureActionButtons()
         {
+            return CaptureActionButtonSnapshot().States;
+        }
+
+        private ActionButtonSnapshot CaptureActionButtonSnapshot()
+        {
             lock (sync)
-                return actionButtons.Select(x => new ActionButtonState(x, OwnerActive(x.Owner))).ToArray();
+            {
+                if (actionButtonSnapshot != null) return actionButtonSnapshot;
+                var states = new ActionButtonState[actionButtons.Count];
+                int visibleCount = 0;
+                for (int index = 0; index < states.Length; index++)
+                {
+                    ActionButtonRegistration item = actionButtons[index];
+                    states[index] = new ActionButtonState(item, OwnerActive(item.Owner));
+                    if (states[index].Visible) visibleCount++;
+                }
+                var visible = visibleCount == states.Length ? states : new ActionButtonState[visibleCount];
+                if (!ReferenceEquals(visible, states))
+                {
+                    int index = 0;
+                    foreach (ActionButtonState state in states)
+                        if (state.Visible) visible[index++] = state;
+                }
+                // Retain immutable invocation views: reentrant consumer changes invalidate
+                // the next capture without rewriting a render already in progress.
+                return actionButtonSnapshot = new ActionButtonSnapshot(states, visible);
+            }
         }
 
         private bool TryGetActionContext(MainViewModel main, out UnitHudActionButtonContext context)
@@ -81,7 +108,8 @@ namespace APIShared
         private void ApplyActionButtons(MainViewModel main)
         {
             if (!hasActionButtons) { if (!TryGetActionContext(main, out _)) troopHover.Close(); return; }
-            ActionButtonState[] states = CaptureActionButtons();
+            ActionButtonSnapshot snapshot = CaptureActionButtonSnapshot();
+            ActionButtonState[] states = snapshot.States;
             bool ownContext = TryGetActionContext(main, out UnitHudActionButtonContext context);
             foreach (ActionButtonState state in states)
                 NotifyActionContext(state.Registration, ownContext && state.Visible);
@@ -104,7 +132,7 @@ namespace APIShared
                 left = ReserveActionObstacle(obstacle.GetType(), anchorRect, ActionRect(obstacle), left);
             }
             actionCapacity = UnitHudActionButtonLayout.Capacity(anchorRect.X, left);
-            var visible = states.Where(x => x.Visible).ToArray();
+            ActionButtonState[] visible = snapshot.Visible;
             actionVisibleCount = visible.Length;
             actionPage = UnitHudActionButtonLayout.ClampPage(actionPage, visible.Length, actionCapacity);
             if (actionCapacity == 0 || visible.Length == 0) { HideActionButtons(); return; }
@@ -332,6 +360,13 @@ namespace APIShared
             internal ActionButtonVisual(Button button) { Button = button; }
         }
 
+        private sealed class ActionButtonSnapshot
+        {
+            internal readonly ActionButtonState[] States, Visible;
+            internal ActionButtonSnapshot(ActionButtonState[] states, ActionButtonState[] visible)
+            { States = states; Visible = visible; }
+        }
+
         private sealed class ActionButtonState
         {
             internal readonly ActionButtonRegistration Registration;
@@ -353,14 +388,35 @@ namespace APIShared
             internal int Version;
             internal ActionButtonRegistration(UnitHudPresentationService service, string owner, UnitHudActionButtonDefinition definition)
             { this.service = service; Owner = owner; Definition = definition; Key = owner + ":" + definition.ButtonId; Tooltip = definition.Tooltip; }
-            public void SetVisible(bool visible) { lock (service.sync) { Visible = visible; service.pendingPresentation = true; } }
-            public void SetEnabled(bool enabled) { lock (service.sync) { Enabled = enabled; service.pendingPresentation = true; } }
+            public void SetVisible(bool visible)
+            {
+                lock (service.sync)
+                {
+                    if (Visible != visible) service.actionButtonSnapshot = null;
+                    Visible = visible; service.pendingPresentation = true;
+                }
+            }
+            public void SetEnabled(bool enabled)
+            {
+                lock (service.sync)
+                {
+                    if (Enabled != enabled) service.actionButtonSnapshot = null;
+                    Enabled = enabled; service.pendingPresentation = true;
+                }
+            }
             public void SetTooltip(string tooltip)
             {
                 if (string.IsNullOrWhiteSpace(tooltip)) throw new ArgumentException("A nonempty tooltip is required.", nameof(tooltip));
-                lock (service.sync) { Tooltip = tooltip; service.pendingPresentation = true; }
+                lock (service.sync)
+                {
+                    if (!string.Equals(Tooltip, tooltip, StringComparison.Ordinal)) service.actionButtonSnapshot = null;
+                    Tooltip = tooltip; service.pendingPresentation = true;
+                }
             }
-            public void RequestContentRefresh() { lock (service.sync) { Version++; service.pendingPresentation = true; } }
+            public void RequestContentRefresh()
+            {
+                lock (service.sync) { Version++; service.actionButtonSnapshot = null; service.pendingPresentation = true; }
+            }
         }
     }
 }

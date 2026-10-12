@@ -13,6 +13,89 @@ namespace APISharedTests
     {
         [TestMethod]
         [TestCategory("Presentation")]
+        public void ActionButtonSnapshotsReuseUnchangedStateAndFreezeReentrantMutations()
+        {
+            Type type = typeof(UnitHudPresentationService);
+            var service = (UnitHudPresentationService)type.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Single().Invoke(new object[] { "test", null, null, false });
+            var binding = service.Bind("observer");
+            var buttons = (IUnitHudActionButtonsCapability)binding;
+            MethodInfo capture = type.GetMethod("CaptureActionButtonSnapshot", BindingFlags.Instance | BindingFlags.NonPublic);
+            object Snapshot() => capture.Invoke(service, null);
+            object Field(object instance, string name) => instance.GetType()
+                .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(instance);
+            Array States(object snapshot) => (Array)Field(snapshot, "States");
+            Array Visible(object snapshot) => (Array)Field(snapshot, "Visible");
+
+            object empty = Snapshot();
+            MsAssert.AreEqual(0, States(empty).Length);
+            MsAssert.AreSame(empty, Snapshot());
+            buttons.TryRegisterActionButton(new UnitHudActionButtonDefinition("button", new TestActionCommand(), "Original", _ => null),
+                out var handle, out _);
+            object initial = Snapshot();
+            MsAssert.AreNotSame(empty, initial);
+            MsAssert.AreSame(States(initial), Visible(initial));
+            for (int index = 0; index < 10000; index++) MsAssert.AreSame(initial, Snapshot());
+            handle.SetVisible(true); handle.SetEnabled(true); handle.SetTooltip("Original");
+            MsAssert.AreSame(initial, Snapshot(), "Equal setters still request presentation but need no new registry view.");
+
+            handle.SetVisible(false); handle.SetEnabled(false); handle.SetTooltip("Changed"); handle.RequestContentRefresh();
+            object changed = Snapshot();
+            MsAssert.AreNotSame(initial, changed);
+            MsAssert.AreEqual(0, Visible(changed).Length);
+            object oldState = States(initial).GetValue(0), newState = States(changed).GetValue(0);
+            MsAssert.IsTrue((bool)Field(oldState, "Visible"));
+            MsAssert.IsTrue((bool)Field(oldState, "Enabled"));
+            MsAssert.AreEqual("Original", Field(oldState, "Tooltip"));
+            MsAssert.AreEqual(0, Field(oldState, "Version"));
+            MsAssert.IsFalse((bool)Field(newState, "Visible"));
+            MsAssert.IsFalse((bool)Field(newState, "Enabled"));
+            MsAssert.AreEqual("Changed", Field(newState, "Tooltip"));
+            MsAssert.AreEqual(1, Field(newState, "Version"));
+
+            handle.SetVisible(true);
+            object shown = Snapshot();
+            ((IUnitHudActivationCapability)binding).SetOwnerActive(false);
+            object inactive = Snapshot();
+            MsAssert.AreEqual(0, Visible(inactive).Length);
+            MsAssert.AreEqual(1, Visible(shown).Length, "Deactivation cannot mutate an earlier invocation view.");
+            ((IUnitHudActivationCapability)binding).SetOwnerActive(false);
+            MsAssert.AreSame(inactive, Snapshot());
+            ((IUnitHudActivationCapability)binding).SetOwnerActive(true);
+            MsAssert.AreEqual(1, Visible(Snapshot()).Length);
+
+            object beforeRegistration = Snapshot();
+            buttons.TryRegisterActionButton(new UnitHudActionButtonDefinition("late", new TestActionCommand(), "Late", _ => null), out _, out _);
+            MsAssert.AreEqual(1, States(beforeRegistration).Length);
+            MsAssert.AreEqual(2, States(Snapshot()).Length);
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void ActionButtonCallbackChangesOnlyTheNextCapturedRegistryView()
+        {
+            Type type = typeof(UnitHudPresentationService);
+            var service = (UnitHudPresentationService)type.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Single().Invoke(new object[] { "test", null, null, false });
+            var buttons = (IUnitHudActionButtonsCapability)service.Bind("test");
+            IUnitHudActionButtonRegistration later = null;
+            buttons.TryRegisterActionButton(new UnitHudActionButtonDefinition("first", new TestActionCommand(), "First", _ => null,
+                contextChanged: available => { if (available) { later.SetVisible(false); later.SetTooltip("Next frame"); } }), out _, out _);
+            buttons.TryRegisterActionButton(new UnitHudActionButtonDefinition("later", new TestActionCommand(), "Original", _ => null), out later, out _);
+            MethodInfo capture = type.GetMethod("CaptureActionButtons", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo notify = type.GetMethod("NotifyActionContext", BindingFlags.Instance | BindingFlags.NonPublic);
+            object Field(object instance, string name) => instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(instance);
+            var original = (Array)capture.Invoke(service, null);
+            notify.Invoke(service, new[] { Field(original.GetValue(0), "Registration"), (object)true });
+            var next = (Array)capture.Invoke(service, null);
+            MsAssert.IsTrue((bool)Field(original.GetValue(1), "Visible"));
+            MsAssert.AreEqual("Original", Field(original.GetValue(1), "Tooltip"));
+            MsAssert.IsFalse((bool)Field(next.GetValue(1), "Visible"));
+            MsAssert.AreEqual("Next frame", Field(next.GetValue(1), "Tooltip"));
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
         public void ActionButtonRegistrationsAreOwnerBoundAndDeterministic()
         {
             Type type = typeof(UnitHudPresentationService);
