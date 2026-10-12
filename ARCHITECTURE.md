@@ -15,6 +15,7 @@ GUID without installing hooks or reserving a capability.
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
 | Units, Pathfinding, Diagnostics | Command interception, recruitment policies, queries and advanced integrations |
+| Audio | Native-record sound presentation, audited source contexts and shared rule events |
 | Economy | Shared native market price query events and validated hook ownership |
 | Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
 
@@ -40,6 +41,7 @@ src/
     ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
+  Audio/                        shared playback events, context capture and binary contracts
   Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
   Networking/                   owner-bound Chore and control-plane packet channels
@@ -243,3 +245,31 @@ Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Disc
 Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself continues to be distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
 
 The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Renew the complete installer audit and binary allowlist when the Extender changes. These contracts concern managed Workshop staging, not native gameplay hooks.
+
+Audio owns one permanent GameMap IL hook, two NativeX64/Absolute wrapper
+intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes).
+The old Arabian-handler detour is removed. Original native return addresses
+select a hash-bound 91-entry soldier catalog; a negative marker carries only
+source/effect provenance through the 21-short records and existing buffers.
+No native pointer or late unit lookup crosses into Unity playback. UnitAccess
+validates the emitting unit's snapshot type/position before marking; state
+changes before a call do not defeat source attribution. Unrelated sources stay
+Unknown. Evidence is per source/type; generic playback remains available when
+native attribution fails. Hooks, bridges, delegates and publishers are permanent
+roots with logical activation only.
+
+SoundClips queues owner-private resources, map archives and borrowed Extender
+clip captures on the permanent Extender dispatcher. API handles are independent
+of integer effect/play-list IDs. Preloaded custom targets call public playSFX,
+preserving global/channel behavior and Extender overrides. No file loading
+occurs in the playback path. Map generation changes invalidate handles before
+later playback; old owned clip references are detached before deferred Unity
+destruction. Mod clips persist and imported clips remain foreign-owned.
+
+Map clip lifetime also observes load/save-load/start Pre, because the installed
+Extender suppresses unload notifications inside map startup. Register map clips
+or imports after OnPostLoad Post; registrations during earlier loading phases
+may correctly become invalid at a subsequent startup boundary. All publisher
+callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
+Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
+process clips and generic events remain independent.

@@ -341,3 +341,98 @@ Transactions and upload IDs live under `_APIShared/Workshop`, independently of `
 Extender staging/download restarts take precedence. Under `SCDEModManagerLaunchId`, installation remains read-only, including restart and reactivation; uploads are available. The external manager's current importer is separate. APIShared's new format does not add an importer to it. Publish APIShared's independently managed map first; test migration at the existing modpack ID using the same map filename and a separate bootstrap GUID before replacing the live release. Do not publish the new format until real Windows/Proton and Steam tests pass.
 
 Platform-test records are optional and are not read by the maintainer release/upload drivers. Missing, outdated or malformed records do not block manual publication. SerpsMods publishes a separate Workshop-content ZIP alongside its ordinary plugin ZIP; reusing a release restores the complete verified content ZIP, including manifest and Payload, rather than just its bootstrap map.
+
+## Situational sound rules
+
+Available since APIShared **0.8.0**; declare this minimum version in both plugin
+and manifest dependencies when using these audio contracts.
+
+Register a stable owner/ID pair through `APIShared.Audio.SoundEvents` after
+APIShared managed startup. Keep the returned `SoundRegistration` rooted and
+change `SetEnabled` when your setting changes. Filter `args.Context` before
+mutating it; use `MultiplyVolume(0.25f)` for a quarter of the spatially computed
+gain. `SoundSituation.Unknown` is an explicit absence of audited attribution.
+Do not install competing native sound or GameMap hooks.
+
+See the [audio contract](API_CATALOG.md#situational-audio) and
+[example](../examples/ThirdPartyMod/SoundExample.cs). For custom audio, preload
+through `SoundClips`, retain the handle, and use `TryReplaceClip` in Pre. Keep files
+in the mod's private resource root (for example `Sounds/chime.wav`); loading is
+deferred and requires the Extender's resource index. Never pass an Extender clip
+ID to `ReplaceSound`. A map handle can be rebound on a later map; load it only
+after the desired archive is available.
+
+A named situation may now be provisional. Filter `Context.SituationEvidence` or
+`SituationConfirmed` if your rule requires accepted gameplay evidence. Use
+`SourceKey` plus `UnitType` when acceptance is specific to one source/type.
+The Arabian default rule continues to match its confirmed source. Military
+support units are included; worker/animal contexts remain outside this catalog.
+
+Map clip lifetime also observes load/save-load/start Pre, because the installed
+Extender suppresses unload notifications inside map startup. Register map clips
+or imports after OnPostLoad Post; registrations during earlier loading phases
+may correctly become invalid at a subsequent startup boundary. All publisher
+callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
+Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
+process clips and generic events remain independent.
+
+### Consumer filters, repeat limits and other sound policies
+
+These are consumer rules built with the existing Audio contracts, not extra
+native hooks or hard-coded APIShared settings. Keep their state process-rooted;
+use mission start/end/initialization notifications to reset session-local state.
+Local presentation preferences do not require synchronized gameplay messages.
+
+| Policy | Inputs and action | Boundary |
+| --- | --- | --- |
+| Unit-type-specific sounds | Filter nullable `Context.UnitType` together with `Situation`; then change gain, target, pan or suppression. | A type is not a live unit ID or player owner. Reject missing types for a specific-type rule. |
+| One exact animation/source | Match `SourceKey`, `UnitType`, original effect ID and, if needed, evidence. | The same situation name can describe several sources with different evidence. |
+| Confirmed-only rules | Require `SituationConfirmed`, or select an explicit evidence threshold. | An inferred action name does not prove its gameplay meaning; confidence applies to the individual source/type. |
+| Repeat/burst reduction | Use a monotonic consumer clock and a shared or keyed interval; veto too-frequent requests with `SkipOriginalFunction`. | Original native creation/RNG remain unchanged. Admission is not audible output. |
+| Quiet modes and accessibility | Multiply spatial gain by a user factor, including zero; suppress selected noisy situations or substitute a clearer cue. | Zero still submits playback; suppression skips it. Do not promise dialogue/music coverage. |
+| Situation-specific themes | Preload a mod/map clip, retain its handle and select it in Pre; alternatively replace a validated Vanilla effect. | Clip handles and effect IDs are separate namespaces. An unavailable clip leaves the valid Vanilla path available. |
+| Alternative clip variants | Select among already loaded handles by an owner-local cycle or RNG. | Avoid changing native/gameplay RNG; no decoding, asset lookup or file IO in Pre/Post. |
+| Tile/region policies | Filter available `TileX`/`TileY`, calculate a bounded regional factor, or choose a cue by area. | Coordinates are tiles, not durable unit identity. Missing spatial coordinates must be handled explicitly. |
+| Panorama/accessibility overrides | Set finite panorama in [-1,1], for example centered presentation. | Default is Vanilla panorama. This changes balance, not unit position or navigation. |
+| Several independent mods | Use stable owner/registration IDs and explicit order; factors multiply and the last valid target/pan replacement wins. | Veto is sticky; each failed callback's argument mutations roll back. |
+| Statistics and diagnostics | Observe Post, preserve owner-private `State`, count suppression/submission, original/final targets and evidence. | Post proves submission or suppression, not that channels, throttling or hardware produced an audible sound. |
+| Profiles and live controls | Atomically publish validated settings and use registration `SetEnabled`; reset local timers on policy/session changes. | Keep callbacks and subscriptions rooted. Do not toggle/dispose shared hooks. |
+
+For example, the following part of a Pre callback restricts a rule to the
+Arabian swordsman's confirmed idle sword draw:
+
+```csharp
+if (args.Context.Situation != SoundSituation.ArabianIdleSwordDraw ||
+    args.Context.UnitType != 75 || !args.Context.SituationConfirmed)
+    return;
+args.MultiplyVolume(0.25f);
+```
+
+A global repeat window is useful for groups of noisy idle soldiers: the first
+matching request is admitted, subsequent requests within the interval are
+suppressed, and suppressed requests do not extend the window. A per-type or
+per-source window can preserve more variation, but requires bounded consumer
+storage. Do not call a tile/source key a per-unit limiter: the context exposes
+no durable unit ID. If an earlier contributor has already vetoed a request,
+leave its veto and avoid consuming your window. A later contributor can still
+veto an admitted request. Pre admission therefore measures attempts, not sound
+actually heard. Post-based accounting may be used for submitted requests; even
+that cannot observe downstream Vanilla throttling/channel rejection.
+
+Use `Stopwatch.GetTimestamp()` and `Stopwatch.Frequency` for real elapsed time.
+Document whether pauses count and when changing settings resets the window.
+The current test consumer uses one window for all matching situation/type
+requests, 0–60000 ms (0 disables it), elapsed time including pauses, and resets
+on settings changes and mission start/end/initialization. All unit types and no
+repeat limit are the defaults, preserving the Arabian 25% rule. Its filters and
+limit operate locally through the same permanent sound-event registration.
+
+Consumer dictionaries, counters, RNG and timers are external side effects;
+APIShared's callback rollback restores event arguments, not arbitrary consumer
+state. Avoid throwing after reserving a window, isolate diagnostic logging and
+bound any state accumulated from coordinates or arbitrary keys. Do not use this
+API to schedule new gameplay, replace arbitrary UI/speech/music calls, change
+pitch/seek/clip duration, or infer player ownership and live unit state from the
+context. Such features need their own audited contracts. Workers and animals
+remain outside the named-source catalog; generic effect/volume rules can still
+handle Unknown requests intercepted by the audited GameMap playback path.

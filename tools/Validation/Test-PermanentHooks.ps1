@@ -59,5 +59,26 @@ $workshop = [IO.File]::ReadAllText((Join-Path $workspace 'src/Workshop/WorkshopC
 if ($workshop -match '\bhook\??\.(Dispose|Undo|Disable|Enable)\s*\(' -or $workshop -notmatch 'private static ILHook hook;' -or $workshop -notmatch 'cursor.MoveAfterLabels\(\)' -or $workshop -match 'OnDestroy\s*\(|OnDisable\s*\(|OnApplicationQuit\s*\(|StartCoroutine\s*\(') {
     $errors.Add('Workshop cleanup must retain its permanent hook, intercept incoming return labels and avoid component lifecycle teardown.')
 }
+# Audio owns permanent roots; only nonpublished native candidates can be disposed.
+$audioPath = Join-Path $workspace 'src\Audio\SoundRuntime.cs'
+$audio = [IO.File]::ReadAllText($audioPath)
+$rollbackStart = $audio.IndexOf('private void RollbackUnpublished()')
+$rollbackEnd = $audio.IndexOf('private void OnWrapper(', $rollbackStart)
+if ($rollbackStart -lt 0 -or $rollbackEnd -lt 0) { throw 'Missing audio rollback boundary.' }
+$rollback = $audio.Substring($rollbackStart, $rollbackEnd - $rollbackStart)
+if ($rollback -notmatch 'if \(publicationStarted\) throw' -or $rollback -notmatch 'wrapperHook.IsInstalled' -or $rollback -notmatch 'emitHook.IsInstalled') { throw 'Audio unpublished rollback guards changed.' }
+$outsideRollback = $audio.Remove($rollbackStart, $rollbackEnd - $rollbackStart)
+if ($outsideRollback -match '\.(?:Dispose|Undo|Disable)\s*\(' -or
+    [regex]::Matches($audio, 'RollbackUnpublished\(\);').Count -ne 1 -or
+    $audio -notmatch 'catch \{ RollbackUnpublished\(\); throw; \}' -or
+    [regex]::Matches($audio, '\.Enable\s*\(').Count -ne 3 -or
+    [regex]::Matches($audio, '\.Apply\s*\(').Count -ne 1 -or
+    $audio.IndexOf('publicationStarted = true;') -gt $audio.IndexOf('wrapperHook.Enable();') -or
+    $audio.IndexOf('SoundContextPolicy.SetReady(true);') -lt $audio.IndexOf('emitHook.Enable();') -or
+    $audio.IndexOf('playbackHook = new ILHook') -gt $audio.IndexOf('playbackHook.Apply();')) { throw 'Audio permanent publication contract changed.' }
+foreach ($file in Get-ChildItem -LiteralPath (Split-Path $audioPath) -File -Filter '*.cs') {
+    if ($file.FullName -eq $audioPath) { continue }
+    if ([IO.File]::ReadAllText($file.FullName) -match '\.(?:Dispose|Undo|Disable|Enable|Apply)\s*\(') { throw "Unexpected audio hook mutation: $($file.Name)" }
+}
 if ($errors.Count -ne 0) { throw ($errors -join [Environment]::NewLine) }
 Write-Host 'PASS: APIShared has no executable-memory toggles or published transaction teardown.'

@@ -48,6 +48,7 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
 }
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
 & (Join-Path $PSScriptRoot 'Test-WorkshopMigration.ps1')
+if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-AudioContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-Interop.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-WorkshopContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-HudExtrasContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }

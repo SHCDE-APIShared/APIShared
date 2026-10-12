@@ -3,13 +3,22 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.7.2",
+  "Version": "0.8.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.8.0",
+      "Changes": [
+        "Add owner-bound situational sound Pre/Post events with composable volume factors, Vanilla effect replacement, suppression, panorama and isolated callback rollback.",
+        "Add preloaded custom OGG/PCM16 WAV clip handles from private mod resources, map archives and imported Extender clip IDs, with typed playback targets and map-lifetime invalidation.",
+        "Catalog 91 soldier and military-support sound sources with stable situation names, source/unit-type attribution and explicit Unknown, Inferred, NativeAudited or InGameConfirmed evidence. Unknown contexts remain usable for generic rules.",
+        "Approved audio contract change: named situations can be provisional; inspect SituationEvidence or SituationConfirmed. Custom playback targets expose SoundId=-1 rather than an effect ID."
+      ]
+    },
     {
       "Version": "0.7.2",
       "Changes": [

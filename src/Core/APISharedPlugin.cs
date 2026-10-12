@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.7.2";
+        public const string PluginVersion = "0.8.0";
 
         private void Awake()
         {
@@ -52,6 +52,7 @@ namespace APIShared
             AssassinPathAPI.Initialize(context.ModuleHandle, context.Memory, context.Region, hash, Logger);
             AssassinAttackControlAPI.Initialize(context.ModuleHandle, context.Region, hash, Logger);
             Economy.MarketPriceNativeRuntime.Initialize(context.ModuleHandle, context.Region, hash, Logger);
+            Audio.SoundRuntime.InitializeNative(context, Logger, ApiSharedRuntime.ProcessInstance.NativeOwnership);
             ApiSharedRuntime.ProcessInstance.Initialize(
                 context.ModuleHandle.ToInt64(),
                 context.Memory,

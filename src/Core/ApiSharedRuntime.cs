@@ -40,6 +40,8 @@ namespace APIShared
         private NativeCapabilityDiagnostic briefingGoldDiagnostic = Pending(NativeCapabilityIds.BriefingGoldPresentation);
         private ManualLogSource log;
 
+        internal NativeOwnershipRegistry NativeOwnership { get; } = new NativeOwnershipRegistry();
+
         internal static ApiSharedRuntime ProcessInstance { get; } = new ApiSharedRuntime();
 
         public NativeApiState State { get { lock (sync) return state; } }
@@ -76,6 +78,7 @@ namespace APIShared
             {
                 APIShared.Events.InterceptionDiagnostics.Error = (registration, error) =>
                     NativeApiLog.Error(logger, "Shared event callback failed: " + registration + ": " + error);
+                Audio.SoundRuntime.InitializeManaged(logger);
                 MarkedUnitSelectionAPI.Initialize(logger);
                 PlayerPerspectiveAPI.Initialize(logger);
                 if (hudExtrasButtons == null)
@@ -153,7 +156,7 @@ namespace APIShared
                         binaryHash,
                         "Managed HUD hooks are intentionally disabled in the isolated native test harness.");
                 }
-                var gatehouseOwnership = new NativeOwnershipRegistry();
+                var gatehouseOwnership = NativeOwnership;
                 var gatehouseMutationSync = new object();
                 GatehouseCapabilityResolver.Resolve(
                     binaryHash,

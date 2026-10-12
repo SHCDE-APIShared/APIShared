@@ -322,3 +322,117 @@ The [schema and workflow](THIRD_PARTY_GUIDE.md#loose-workshop-packages) use a to
 Release versions are numeric, three or four parts. Only newer receipted releases offer Update; explicit Reinstall/Downgrade are separate actions. Missing, modified or disabled DLLs do not trigger automatic repair. Backups, hash-guarded obsolete-file removal and final receipt commit preserve settings and unknown files. Windows and Proton live tests and Steam account tests are recommended before distributing the new format; passing file-policy tests alone does not certify platform integration. Manual release and upload drivers do not require a platform-approval file.
 
 When migrating an embedded APIShared copy, subscribing to the separate map item does not remove the old copy. The Extender installs the central manager first; the subsequent confirmed payload migration removes only historical, hash-matching files inside the old payload root. Modified or unproven files remain. Bootstrap readiness checks both the selected plugin path and the actual loaded assembly path, and preparation requires the central version to exceed every verified embedded release.
+
+## Situational audio
+
+Available since APIShared **0.8.0**; declare this minimum version in both plugin
+and manifest dependencies when using these audio contracts.
+
+`APIShared.Audio.SoundEvents.TryRegister(ownerGuid, registrationId, pre, post,
+out SoundRegistration handle, out string reason, int order = 0)` registers a
+process-owned native-record playback observer. Register after APIShared managed
+startup on Unity. Callback order is numeric order, ordinal owner GUID, then ID;
+callbacks execute synchronously on the Unity playback thread without replay.
+The handle's `SetEnabled` is atomic and affects the next invocation snapshot;
+in-flight Pre/Post ownership remains paired. No published hook is disposed.
+
+Pre provides an immutable `SoundContext` and owner-private `State`.
+`MultiplyVolume` composes finite nonnegative factors after Vanilla spatial
+calculation, without clamping ordinary gain to one. `ReplaceSound` accepts only
+validated Vanilla effect-table IDs, **not** Extender registered clip/play-list
+IDs. Last valid sound and panorama replacements win. `SetPan` accepts [-1,1].
+`SkipOriginalFunction` suppresses only this presentation call and is sticky.
+An invalid mutation or callback exception rolls back that callback's mutations,
+veto and State; other contributors continue. Arguments freeze after Pre.
+Recursion inside Pre/Post bypasses notifications. Original exceptions propagate
+and have no Post. Post reports submission or suppression; it cannot prove
+actual audible output, since Vanilla throttling, variants and channel policy
+still run downstream. Gain zero still submits a call; suppression does not.
+
+Coverage is the two audited `SFXManager.playSound` sites in
+`GameMap.processTestMap` record kind16. UI, speech, music, ambient and arbitrary
+direct sound calls are outside this contract. Explicit records expose no source
+tile; spatial records expose tile coordinates. No live unit or player ID is
+invented. `ArabianIdleSwordDraw` identifies type75/state1/sound180/spatial flag0
+through the audited native scope and transported negative marker. The source catalog additionally covers 91 direct soldier calls (military support
+included). Attribution uses original native return addresses, not the unit's state
+after emission. `UnitType` and `SourceKey` identify the snapshot provenance;
+there are no unit/player IDs. Unknown or unsafe origins remain `Unknown`.
+`SituationEvidence` is source-specific: `Unknown`, `Inferred`, `NativeAudited`,
+`InGameConfirmed`. `SituationConfirmed` is true only for the last value.
+The existing Arabian draw entry is confirmed; new interpretations are inferred,
+including currently unconfirmed Arabian sheathing reachability. Enum values stay
+stable when an individual source is confirmed. This is an explicitly approved
+breaking change: named contexts no longer imply in-game confirmation.
+
+`PlaybackAvailable`/`PlaybackDiagnostic` report managed availability;
+`ArabianIdleContextAvailable`/`ContextDiagnostic` independently report native
+context support. Missing native context leaves generic sound rules usable.
+Unsupported binaries, occupied entries and changed IL fail closed. Only the
+current audited managed/native/backend identities are supported. Callback
+failures are counted and logged at bounded intervals. Settings and consumer
+policies remain with consumers; no global sound defaults change.
+
+See [audio contracts](../src/Audio/SoundContracts.cs),
+[event broker](../src/Audio/SoundEvents.cs) and
+[consumer example](../examples/ThirdPartyMod/SoundExample.cs).
+
+`SupportedSituations` reports the currently available contexts, including
+Unknown. Native unit-layout checks are separate from managed playback checks.
+The shared contract tests live in APISharedTests (`SoundEventsTests` and
+`AudioNativeContractTests`).
+
+### Preloaded custom clips
+
+`SoundClips.TryLoadModClip(owner, id, path, completed, out handle, out reason,
+baseVolume)` reads the owner's indexed resource through the Extender;
+`TryLoadMapClip` reads the current archive without mod fallback.
+`TryImportExtenderClip` captures a borrowed `play_list` clip reference once on
+Unity. Integer IDs can shift afterward without retargeting that handle. Import
+while the intended ID still exists. All operations are deferred through the
+Extender's permanent dispatcher. Success means queued, not decoded; check
+`IsReady`/`Diagnostic` or the completion callback. Resources must be indexed first.
+
+Handles use ordinal owner/registration identity, separate from native effect IDs.
+`TryReplaceClip(handle)` returns false without changes for unavailable handles.
+`Target.Kind` and `Target.Clip`/`EffectId` distinguish the final namespace;
+Pre/Post `SoundId` is -1 for custom targets. Last valid target wins. Factors,
+panorama, suppression and callback rollback compose as before. Destroyed clips
+fall back to the last valid Vanilla effect (initially the original effect).
+
+OGG and the Extender decoder's PCM16, 44100 Hz mono/stereo WAV are supported.
+Custom playback uses computed gain × explicit `BaseVolume`, then the existing
+MyAudioManager global SFX/master gains and channel selection. It traverses the
+Extender's downstream clip override hook; Vanilla variants and effect throttles
+apply only to Vanilla effect targets. Post proves submission, not audibility.
+No files or decoder calls occur in sound callbacks.
+
+Owned mod clips remain until process exit. Map clips invalidate synchronously
+at unload Pre; destruction is deferred on Unity. An invalid map handle can be
+registered again on a later map under the same identity and base volume.
+Imported clips are conservatively map-scoped and never destroyed by APIShared.
+Load-completion callback failures are isolated and counted separately through
+`SoundClips.CallbackFailures`. No per-sound detailed logging is enabled in APIShared.
+
+Map clip lifetime also observes load/save-load/start Pre, because the installed
+Extender suppresses unload notifications inside map startup. Register map clips
+or imports after OnPostLoad Post; registrations during earlier loading phases
+may correctly become invalid at a subsequent startup boundary. All publisher
+callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
+Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
+process clips and generic events remain independent.
+
+`ContextRejections` counts known sources whose unit lookup/type/coordinate/state
+checks did not match. The first rejection logs bounded native diagnostics; that
+record remains Unknown without disabling other catalog entries. Custom clip
+playback passes force=false; Vanilla-specific forced effect channels remain part
+of the effect path, while global gains/channel selection remain shared.
+
+### Consumer-defined audio policies
+
+Unit-type and source filters, evidence thresholds, repeat limits, quiet modes,
+regional gain, alternative preloaded cues, panorama overrides, diagnostics and
+live local profiles can be implemented with the same Pre/Post events. These
+policies remain consumer-owned; APIShared adds no global cooldown and no unit
+identity to the context. See [sound policy recipes](THIRD_PARTY_GUIDE.md#consumer-filters-repeat-limits-and-other-sound-policies)
+for inputs, examples, ordering, state-rollback boundaries and unsupported uses.
