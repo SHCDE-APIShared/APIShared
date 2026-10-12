@@ -59,6 +59,9 @@ Successful builds also write `.local/build-proof.json`: source/reference fingerp
 the source commit and package hashes. `tools/BuildProof.ps1` validates this local evidence;
 it does not attest provenance independently. Game-free build-evidence tests run with
 `./tools/Validation/Test-BuildProof.ps1` and in CI.
+Release checks accept a clean subsequent commit when every recorded build input
+and package hash still matches. The recorded build commit is retained; changing
+compiled sources, packaging inputs or delivered files still invalidates evidence.
 
 Core tests compile the actual dependency-free implementations. UnitAccess doubles model
 the external SDK boundary, not native layout. Runtime tests use the real installed

@@ -105,9 +105,15 @@ function Assert-ApiBuildProof([string]$Root, [switch]$Release) {
     }
     if ($Release) {
         $commit = (& git -C $Root rev-parse HEAD).Trim()
-        if ($LASTEXITCODE -ne 0 -or $commit -ne $proof.Commit) { throw 'APIShared release evidence belongs to another commit. Rebuild the committed source.' }
+        if ($LASTEXITCODE -ne 0 -or -not $commit) { throw 'Cannot determine the reviewed APIShared source commit.' }
         $status = @(& git -C $Root status --porcelain --untracked-files=normal)
         if ($LASTEXITCODE -ne 0 -or $status.Count) { throw 'APIShared release requires a clean checkout.' }
+        # A commit made after a tested build does not change its bytes. The input
+        # fingerprint and complete package hashes were checked above; retain the
+        # original provenance instead of demanding an identical commit identifier.
+        if ($commit -cne $proof.Commit) {
+            Write-Verbose "APIShared build inputs and package hashes match the clean checkout; build commit $($proof.Commit), current commit $commit."
+        }
     }
     return $proof
 }

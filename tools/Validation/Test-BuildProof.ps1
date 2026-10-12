@@ -31,8 +31,16 @@ try {
     Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $null=Assert-ApiBuildProof $proofRoot -Release
+    $recordedCommit=([IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json'))|ConvertFrom-Json).Commit
+    Write-Fixture (Join-Path $proofRoot 'tests/internal-notes.txt') 'test-only change'
+    Commit-Fixture $proofRoot 'test-only commit after build'
+    $accepted=Assert-ApiBuildProof $proofRoot -Release
+    Check ($accepted.Commit -ceq $recordedCommit) 'Content-identical commit changed original build provenance'
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'changed input'
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Stale package accepted'
+    Commit-Fixture $proofRoot 'runtime change after build'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot -Release}catch{$failed=$true}; Check $failed 'Committed runtime change accepted with old evidence'
+    Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'uncommitted runtime input'
     $state=Get-ApiInputState $proofRoot '' '' $compiler; Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot -Release}catch{$failed=$true}; Check $failed 'Uncommitted source accepted for release'
@@ -82,5 +90,5 @@ try {
     } finally {
         $env:SHCDE_GAME_DIR=$previousGame;$env:SHCDESE_EXTENDER_DIR=$previousExtender;$env:SHCDE_MSBUILD=$previousCompiler
     }
-    Write-Host 'PASS: build evidence, package tampering, dirty release rejection, cross-shell fingerprint, local path recovery, child inheritance and explicit environment precedence.'
+    Write-Host 'PASS: content-identical commits, retained provenance, changed runtime rejection, package tampering, dirty release rejection, cross-shell fingerprint, local path recovery and child inheritance.'
 } finally { Write-Host ("Build proof fixtures: " + $temp) }
