@@ -11,6 +11,8 @@ Mods share one BepInEx plugin instead of installing competing hooks.
 
 ## Install
 
+Simply via steam is best: https://steamcommunity.com/workshop/filedetails/?id=3818609220  
+
 Install [Script Extender](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender)
 and one central APIShared copy under `BepInEx/plugins/APIShared_Serp`.
 Download from [releases](https://github.com/SHCDE-APIShared/APIShared/releases).
