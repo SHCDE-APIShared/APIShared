@@ -59,18 +59,19 @@ function Sync-ApiWorkshopAssets {
 
 # Only this previously shipped immutable view is obsolete. Never remove an
 # edited copy or other files from the installed updater/template directory.
-function Remove-ApiLegacyWorkshopView([string]$Directory) {
+function Remove-ApiLegacyWorkshopView {
+    [CmdletBinding()]
+    param([string]$Directory)
     foreach ($relative in @('Workshop/Workshop.xaml','Override/Workshop/Workshop.xaml')) {
-    $path = Join-Path $Directory $relative
-    Assert-ApiWorkshopUnlinkedPath $path
-    if (-not [IO.File]::Exists($path)) { continue }
-    if ((Get-WorkshopFileHash $path) -ceq '19ad493dddf6831f5cfe06f788ed4b7fb2c30af020bd159c304fd8ca2315e877') {
-        Remove-Item -LiteralPath $path -Force
-    } else {
-        Write-Warning 'Preserved a locally modified obsolete Workshop/Workshop.xaml; Workshop UI registration has been removed.'
+        $path = Join-Path $Directory $relative
+        Assert-ApiWorkshopUnlinkedPath $path
+        if (-not [IO.File]::Exists($path)) { continue }
+        if ((Get-WorkshopFileHash $path) -ceq '19ad493dddf6831f5cfe06f788ed4b7fb2c30af020bd159c304fd8ca2315e877') {
+            Remove-Item -LiteralPath $path -Force
+        } else {
+            Write-Verbose ("Preserved unrecognized legacy Workshop view: $path")
+        }
     }
-}
-
 }
 
 function Get-WorkshopFileHash([string]$Path) {

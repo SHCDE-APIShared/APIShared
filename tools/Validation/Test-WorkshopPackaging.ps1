@@ -31,16 +31,33 @@ try {
     Sync-ApiWorkshopAssets -Root $assetRoot
     if (($firstAssets -join '|') -cne (@(Get-ApiWorkshopAssetRows $assetOutput) -join '|')) { throw 'Asset packaging is not repeatable.' }
     if ([IO.File]::ReadAllText($overrideNeighbor) -cne 'keep unrelated override') { throw 'Packaging replaced neighboring Override data.' }
-    $installed = Join-Path $fixture 'installed'
-    [void][IO.Directory]::CreateDirectory((Join-Path $installed 'Workshop'))
-    $oldView = Join-Path $installed 'Workshop/Workshop.xaml'
-    [IO.File]::WriteAllText($oldView, 'user edited')
-    [IO.File]::WriteAllText((Join-Path $installed 'Workshop/user.txt'), 'keep')
-    Remove-ApiLegacyWorkshopView $installed
-    if (-not [IO.File]::Exists($oldView)) { throw 'Unknown installed view was removed.' }
-    [IO.File]::WriteAllText($oldView, 'user edited')
-    Remove-ApiLegacyWorkshopView $installed
-    if ([IO.File]::ReadAllText($oldView) -cne 'user edited' -or [IO.File]::ReadAllText((Join-Path $installed 'Workshop/user.txt')) -cne 'keep') { throw 'Installed view cleanup changed user data.' }
+    foreach ($relative in @('Workshop/Workshop.xaml','Override/Workshop/Workshop.xaml')) {
+        $installed = Join-Path $fixture ('installed-' + $relative.Replace('/','-'))
+        $oldView = Join-Path $installed $relative
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $oldView))
+        $neighborFile = Join-Path (Split-Path -Parent $oldView) 'user.txt'
+        [IO.File]::WriteAllText($oldView, 'user edited')
+        [IO.File]::WriteAllText($neighborFile, 'keep')
+        $warnings = @()
+        Remove-ApiLegacyWorkshopView $installed -WarningVariable warnings
+        if ($warnings.Count) { throw 'Expected preservation emitted a warning.' }
+        $messages = @(Remove-ApiLegacyWorkshopView $installed -Verbose 4>&1 3>&1)
+        if ($messages.Count -ne 1 -or $messages[0] -isnot [Management.Automation.VerboseRecord] -or
+            $messages[0].Message -cne ("Preserved unrecognized legacy Workshop view: $oldView")) { throw 'Verbose preservation diagnostic has the wrong path or stream.' }
+        if ([IO.File]::ReadAllText($oldView) -cne 'user edited' -or [IO.File]::ReadAllText($neighborFile) -cne 'keep') { throw 'Installed view cleanup changed user data.' }
+        # Inject only the historic digest to exercise the removal branch without
+        # distributing an obsolete UI. Real hashing is tested by package audits.
+        & {
+            $realHash = (Get-Command Get-WorkshopFileHash).ScriptBlock
+            function Get-WorkshopFileHash([string]$Path) {
+                if ($Path -ceq $oldView) { return '19ad493dddf6831f5cfe06f788ed4b7fb2c30af020bd159c304fd8ca2315e877' }
+                & $realHash $Path
+            }
+            Remove-ApiLegacyWorkshopView $installed
+            Remove-ApiLegacyWorkshopView $installed
+        }
+        if ([IO.File]::Exists($oldView) -or [IO.File]::ReadAllText($neighborFile) -cne 'keep') { throw 'Historic view cleanup is not narrow and repeatable.' }
+    }
     [IO.File]::Delete((Join-Path $assetSource 'nested/current.ps1'))
     [IO.File]::WriteAllText((Join-Path $assetSource 'replacement.txt'), 'replacement asset')
     Sync-ApiWorkshopAssets -Root $assetRoot
