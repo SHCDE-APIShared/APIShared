@@ -19,8 +19,21 @@ running commands. `GameDir` is the equivalent MSBuild property.
 `SHCDESE_EXTENDER_DIR` / `ExtenderDir` override the usual extender directory.
 The build driver detects MSBuild using Visual Studio Installer; `SHCDE_MSBUILD` is
 an optional override. Paths are not tied to the maintainer's machine.
+After a successful build, the APIShared and publisher BAT drivers can reuse these
+local machine paths from `.local/build-proof.json` when the environment is unset.
+Explicit environment settings take precedence; missing or invalid references still
+produce an error before compilation. Direct IDE/MSBuild commands require their own
+environment or properties.
 
 ## Tests
+
+GitHub Actions runs source validation and the game-independent Core.Tests suite
+without a game installation or the maintainer's surrounding workspace. Core.Tests
+uses the public SharpZipLib 1.4.2 package in that environment; local runs with a
+configured installation keep using the installed Extender library. Release-helper
+tests always cover APIShared's own publishing decisions with simulated GitHub;
+additional surrounding workspace-driver tests run when those drivers are present.
+Real game/Extender integration remains part of the local build driver.
 
 Tests use MSTest and appear in Visual Studio Test Explorer. Run the same commands
 from PowerShell. The core suite needs no game installation:

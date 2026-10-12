@@ -72,10 +72,15 @@ public static class FakeReleaseCli {
     $result = Invoke-ApiReleaseGitHub $arguments $fake
     Check ($result.Output -ceq (($arguments -join "`r`n") + "`r`n")) 'Windows argument quoting changed arguments.'
 
+    # Maintainer workspace drivers are not part of the standalone APIShared checkout.
+    # Always test APIShared's own release probe and publication decision; exercise
+    # the extra drivers only when the surrounding maintainer workspace is present.
+    $env:PATH = $fixture + ';' + $previousPath
+    $driverSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../Shared/Tools/Steam/Prepare-APISharedWorkshop.ps1'))
+    if (Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($driverSource))) {
     # Run the actual preparation driver in an isolated workspace with inert dependencies.
     $workspace = Join-Path $fixture 'workspace with spaces'
     $driverDirectory = Join-Path $workspace 'Shared/Tools/Steam'
-    $driverSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../Shared/Tools/Steam/Prepare-APISharedWorkshop.ps1'))
     $driver = Join-Path $driverDirectory 'Prepare-APISharedWorkshop.ps1'
     Write-Fixture $driver ([IO.File]::ReadAllText($driverSource))
     $configuration = @'
@@ -177,6 +182,10 @@ function Write-SteamWorkshopJson($Path,$Value) { [IO.File]::WriteAllText($Path,(
     }
     $calls = [IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
     Check ($calls -notmatch 'release\|(create|upload|edit|download)') 'Read-only test attempted a release mutation.'
+    Write-Host 'PASS: maintainer preparation/upload drivers and production confirmations.'
+    } else {
+        Write-Host 'INFO: maintainer workspace drivers are unavailable in this standalone checkout; their extra integration tests run locally.'
+    }
     $releaseDriver = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../Release/Release.ps1'))
     Check ($releaseDriver -match 'Get-ApiGitHubRelease \$repository \$tag' -and $releaseDriver -notmatch 'gh release view') 'Standalone release driver bypasses the shared probe.'
     # Execute the actual publication decision with mutation commands replaced by an inert function.
@@ -202,7 +211,7 @@ function Write-SteamWorkshopJson($Path,$Value) { [IO.File]::WriteAllText($Path,(
         elseif ($case -eq 'mode') { Check (-not $rejected -and ($script:mutations -join ',') -ceq 'upload,edit') 'Matching draft did not resume.' }
         else { Check ($rejected -and $script:mutations.Count -eq 0) ('Standalone release mutated after failure: ' + $case) }
     }
-    Write-Host ('PASS: PS 5.1 missing/existing releases, authentication/access/network failures, strict missing detection, pipe capture, argument quoting, real preparation validation, commit/mode conflicts, manual production confirmations without approval records, upload validation and package/owner failures. Fixtures: ' + $fixture)
+    Write-Host ('PASS: PS 5.1 standalone release probe/publication decision, missing/existing releases, authentication/access/network failures, strict missing detection, pipe capture, argument quoting and commit/mode conflicts. Fixtures: ' + $fixture)
 } finally {
     if (Test-Path Function:gh) { Remove-Item Function:gh }
     $env:PATH = $previousPath

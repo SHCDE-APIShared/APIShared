@@ -1,4 +1,36 @@
 # Local build evidence only; no game or mod-workspace dependency is introduced.
+function Initialize-ApiBuildEnvironment([string]$Root) {
+    # Reuse local machine paths, not the old build's integrity decision. The build
+    # still validates references and creates fresh evidence for its current inputs.
+    $proofPath = Join-Path $Root '.local/build-proof.json'
+    $proof = $null
+    if (-not $env:SHCDE_GAME_DIR -and (Test-Path -LiteralPath $proofPath)) {
+        try { $proof = [IO.File]::ReadAllText($proofPath) | ConvertFrom-Json }
+        catch { throw 'Local build paths are unreadable. Set SHCDE_GAME_DIR explicitly or correct .local/build-proof.json.' }
+        if ($proof.SchemaVersion -ne 1) { throw 'Unsupported local build paths. Set SHCDE_GAME_DIR explicitly.' }
+    }
+    $game = if ($env:SHCDE_GAME_DIR) { $env:SHCDE_GAME_DIR }
+        elseif ($proof -and $proof.PSObject.Properties['GameDir']) { [string]$proof.GameDir }
+        else { '' }
+    if (-not $game) { throw 'Set SHCDE_GAME_DIR to your Stronghold Crusader Definitive Edition installation before the first build.' }
+    $game = [IO.Path]::GetFullPath($game)
+    if (-not (Test-Path -LiteralPath (Join-Path $game 'Stronghold Crusader Definitive Edition_Data/Managed/Assembly-CSharp.dll') -PathType Leaf)) {
+        throw "The real installed Assembly-CSharp.dll was not found in SHCDE_GAME_DIR: $game"
+    }
+    $extender = if ($env:SHCDESE_EXTENDER_DIR) { $env:SHCDESE_EXTENDER_DIR }
+        elseif ($proof -and $proof.PSObject.Properties['ExtenderDir'] -and $proof.ExtenderDir) { [string]$proof.ExtenderDir }
+        else { Join-Path $game 'BepInEx/plugins/000shcdese' }
+    $extender = [IO.Path]::GetFullPath($extender)
+    if (-not (Test-Path -LiteralPath (Join-Path $extender 'SHCDESE.dll') -PathType Leaf)) {
+        throw "Install Script Extender or set SHCDESE_EXTENDER_DIR. Missing SHCDESE.dll in: $extender"
+    }
+    # Process-local only: children inherit this without requiring Windows-wide settings.
+    $env:SHCDE_GAME_DIR = $game
+    $env:SHCDESE_EXTENDER_DIR = $extender
+    if (-not $env:SHCDE_MSBUILD -and $proof -and $proof.PSObject.Properties['MSBuild'] -and $proof.MSBuild -and (Test-Path -LiteralPath $proof.MSBuild -PathType Leaf)) {
+        $env:SHCDE_MSBUILD = [string]$proof.MSBuild
+    }
+}
 function Get-ApiFileHash([string]$Path) {
     $stream=[IO.File]::OpenRead($Path); $sha=[Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-','').ToLowerInvariant() }

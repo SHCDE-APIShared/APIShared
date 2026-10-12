@@ -11,6 +11,7 @@ function Invoke-Tool([string]$Executable, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed with exit code $LASTEXITCODE." }
 }
 try {
+    Initialize-ApiBuildEnvironment $root
     $game = $env:SHCDE_GAME_DIR
     if (-not $game) { throw 'Set SHCDE_GAME_DIR to your Stronghold Crusader Definitive Edition installation.' }
     $game = [IO.Path]::GetFullPath($game)

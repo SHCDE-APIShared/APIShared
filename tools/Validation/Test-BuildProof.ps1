@@ -50,5 +50,37 @@ try {
     Write-Fixture $viewTarget '<Grid />'
     Write-Fixture $dll 'tampered binary'
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Tampered package accepted'
-    Write-Host 'PASS: missing/stale build evidence, package tampering, dirty release rejection and cross-shell fingerprint.'
+    $previousGame=$env:SHCDE_GAME_DIR; $previousExtender=$env:SHCDESE_EXTENDER_DIR; $previousCompiler=$env:SHCDE_MSBUILD
+    try {
+        $localRoot=Join-Path $temp 'local paths with spaces'
+        $game=Join-Path $localRoot ('Spiel mit Umlauten ' + [char]0x00e4)
+        $extender=Join-Path $game 'BepInEx/plugins/000shcdese'
+        Write-Fixture (Join-Path $game 'Stronghold Crusader Definitive Edition_Data/Managed/Assembly-CSharp.dll') 'fixture'
+        Write-Fixture (Join-Path $extender 'SHCDESE.dll') 'fixture'
+        $path=Join-Path $localRoot '.local/build-proof.json'
+        Write-Fixture $path (@{SchemaVersion=1;GameDir=$game;ExtenderDir=$extender;MSBuild=$compiler}|ConvertTo-Json)
+        $env:SHCDE_GAME_DIR='';$env:SHCDESE_EXTENDER_DIR='';$env:SHCDE_MSBUILD=''
+        Initialize-ApiBuildEnvironment $localRoot
+        Check ($env:SHCDE_GAME_DIR -ceq $game -and $env:SHCDESE_EXTENDER_DIR -ceq $extender -and $env:SHCDE_MSBUILD -ceq $compiler) 'Local paths were not restored for child builds'
+        $childOutput=& powershell.exe -NoProfile -Command '[Console]::Write($env:SHCDE_GAME_DIR)'
+        Check (($childOutput -join '') -ceq $game) 'Child process did not inherit game path'
+        Write-Fixture $path 'invalid json'
+        Initialize-ApiBuildEnvironment $localRoot
+        Check ($env:SHCDE_GAME_DIR -ceq $game) 'Explicit environment must take precedence over unreadable evidence'
+        $env:SHCDE_GAME_DIR=Join-Path $temp 'missing game'
+        $failed=$false;try{Initialize-ApiBuildEnvironment $localRoot}catch{$failed=$_.Exception.Message -match 'Assembly-CSharp.dll'}
+        Check $failed 'Explicit invalid game path silently fell back'
+        $env:SHCDE_GAME_DIR='';$env:SHCDESE_EXTENDER_DIR=''
+        $failed=$false;try{Initialize-ApiBuildEnvironment $localRoot}catch{$failed=$_.Exception.Message -match 'unreadable'}
+        Check $failed 'Unreadable path evidence accepted without explicit environment'
+        Remove-Item -LiteralPath $path
+        $failed=$false;try{Initialize-ApiBuildEnvironment $localRoot}catch{$failed=$_.Exception.Message -match 'first build'}
+        Check $failed 'Missing first-build configuration accepted'
+        $env:SHCDE_GAME_DIR=$game;$env:SHCDESE_EXTENDER_DIR=Join-Path $temp 'missing extender'
+        $failed=$false;try{Initialize-ApiBuildEnvironment $localRoot}catch{$failed=$_.Exception.Message -match 'Missing SHCDESE.dll'}
+        Check $failed 'Invalid explicit Extender path accepted'
+    } finally {
+        $env:SHCDE_GAME_DIR=$previousGame;$env:SHCDESE_EXTENDER_DIR=$previousExtender;$env:SHCDE_MSBUILD=$previousCompiler
+    }
+    Write-Host 'PASS: build evidence, package tampering, dirty release rejection, cross-shell fingerprint, local path recovery, child inheritance and explicit environment precedence.'
 } finally { Write-Host ("Build proof fixtures: " + $temp) }
