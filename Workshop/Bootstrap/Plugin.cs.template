@@ -20,15 +20,28 @@ public sealed class WorkshopBootstrap : BaseUnityPlugin
     {
         log = Logger;
         CrusaderLibrary.Instance.LibraryLoaded += context => log.LogInfo("Workshop bootstrap active after startup cleanup: @@GUID@@");
-        PluginInfo api;
-        if (Chainloader.PluginInfos.TryGetValue("APIShared_Serp", out api) && api.Metadata.Version >= new Version("@@MINIMUM@@") &&
-            Path.GetDirectoryName(Path.GetFullPath(api.Location)).Equals(Path.Combine(Paths.PluginPath, "APIShared_Serp"), StringComparison.OrdinalIgnoreCase) &&
-            Assembly.LoadFrom(api.Location).GetType("APIShared.Workshop.WorkshopClient", false) != null) return;
-        string text = "@@NAME@@ requires APIShared @@MINIMUM@@+. Subscribe to APIShared, restart, then confirm installation in APIShared Workshop.\n\n" +
-            "@@NAME@@ benötigt APIShared @@MINIMUM@@+. APIShared abonnieren, neu starten und die Installation unter APIShared Workshop bestätigen.\n\n" +
+        if (CentralAPISharedReady()) return;
+        string text = "@@NAME@@ requires the separate APIShared @@MINIMUM@@+ item. Subscribe to APIShared, restart and accept the automatic installation prompts. Existing modpack files remain until migration is confirmed.\n\n" +
+            "@@NAME@@ benötigt das separate APIShared-Item @@MINIMUM@@+. APIShared abonnieren, neu starten und die automatischen Installationsabfragen bestätigen. Bestehende Modpackdateien bleiben bis zur bestätigten Übernahme erhalten.\n\n" +
             "Yes / Ja: open Workshop / Workshop öffnen.";
         log.LogWarning(text);
         if (MessageBoxW(IntPtr.Zero, text, "APIShared required / benötigt", 0x34) == 6)
             Process.Start(new ProcessStartInfo("https://steamcommunity.com/sharedfiles/filedetails/?id=@@WORKSHOP@@") { UseShellExecute = true });
+    }
+
+    private static bool CentralAPISharedReady()
+    {
+        try {
+            PluginInfo api;
+            if (!Chainloader.PluginInfos.TryGetValue("APIShared_Serp", out api) || api.Metadata.Version < new Version("@@MINIMUM@@")) return false;
+            string central = Path.GetFullPath(Path.Combine(Paths.PluginPath, "APIShared_Serp", "APIShared.dll"));
+            if (!Path.GetFullPath(api.Location).Equals(central, StringComparison.OrdinalIgnoreCase)) return false;
+            // LoadFrom may return an already loaded assembly with the same identity.
+            // Its actual location, rather than the requested path, decides readiness.
+            Assembly loaded = Assembly.LoadFrom(api.Location);
+            return Path.GetFullPath(loaded.Location).Equals(central, StringComparison.OrdinalIgnoreCase) &&
+                loaded.GetName().Version >= new Version("@@MINIMUM@@") &&
+                loaded.GetType("APIShared.Workshop.WorkshopClient", false) != null;
+        } catch (Exception ex) { log.LogWarning("Central APIShared could not be verified: " + ex.Message); return false; }
     }
 }

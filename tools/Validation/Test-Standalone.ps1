@@ -42,7 +42,12 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $apiRoot 'Patches') -Rec
 & (Join-Path $PSScriptRoot 'Test-WorkshopPackaging.ps1')
 & (Join-Path $PSScriptRoot 'Test-PublisherPackage.ps1')
 & (Join-Path $PSScriptRoot 'Test-BuildProof.ps1')
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-GitHubRelease.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell release regression failed.' }
+}
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
+& (Join-Path $PSScriptRoot 'Test-WorkshopMigration.ps1')
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-Interop.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-WorkshopContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-HudExtrasContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }

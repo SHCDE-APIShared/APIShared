@@ -3,6 +3,7 @@ param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [sw
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $repository = 'SHCDE-APIShared/APIShared'
+. (Join-Path $PSScriptRoot 'GitHubRelease.ps1')
 $identity = (& gh api user --jq .login).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $identity) { throw 'Sign in with gh auth login first.' }
 $top = (& git -C $root rev-parse --show-toplevel).Trim()
@@ -95,9 +96,8 @@ $text = "APIShared $version`r`n`r`nSource commit: $commit`r`nZIP SHA-256: $hash`
 $arguments = @('release', 'create', $tag) + $assets + @('--repo', $repository, '--target', $commit, '--title', "APIShared $version", '--notes-file', $notes)
 if (-not $Publish) { $arguments += '--draft' }
 if ($PSCmdlet.ShouldProcess("$repository / $tag", 'Create release with the validated APIShared asset')) {
-    $existingText = & gh release view $tag --repo $repository --json isDraft,targetCommitish 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $existing = ($existingText -join "`n") | ConvertFrom-Json
+    $existing = Get-ApiGitHubRelease $repository $tag
+    if ($null -ne $existing) {
         if (-not $existing.isDraft -or $existing.targetCommitish -ne $commit) { throw 'An existing published or different-source release must never be replaced.' }
         & gh release upload $tag @assets --repo $repository --clobber
         if ($LASTEXITCODE -ne 0) { throw 'Could not resume the matching draft assets.' }
