@@ -21,11 +21,11 @@ namespace APIShared
         // TEMP_GATE_ROUTE_ACCEPTANCE: guard outcome of the existing call, not an extra probe.
         [ThreadStatic] internal static string TemporaryRequestReason;
         private static bool Decline(string reason)
-        { if (TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver) TemporaryRequestReason = reason; return false; }
+        { if (TemporaryGateRouteAcceptanceBridge.CurrentRequested is ITemporaryAssassinGateObserver) TemporaryRequestReason = reason; return false; }
         private static void Report(string result)
         {
             // TEMP_GATE_ROUTE_ACCEPTANCE: no diagnostic work without an explicit observer.
-            if (!(TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver)) return;
+            if (!(TemporaryGateRouteAcceptanceBridge.CurrentRequested is ITemporaryAssassinGateObserver)) return;
             // The caller supplies diagnostic provenance; the shared handoff does not own a command runtime.
             Action<string, string, string> report = current?.reportStage;
             if (report == null) return;
@@ -59,7 +59,7 @@ namespace APIShared
                 frame.targetX != targetX || frame.targetY != targetY) return Decline("request-mismatch");
             if (frame.controlPlayer < 0 || frame.speedDelay < 0) return Decline("invalid-control-or-speed");
             if (!frame.identityValid()) return Decline("invalid-identity");
-            if (TemporaryGateRouteAcceptanceBridge.Current is ITemporaryAssassinGateObserver) TemporaryRequestReason = "matched";
+            if (TemporaryGateRouteAcceptanceBridge.CurrentRequested is ITemporaryAssassinGateObserver) TemporaryRequestReason = "matched";
             controlPlayer = frame.controlPlayer; speedDelay = frame.speedDelay;
             return true;
         }

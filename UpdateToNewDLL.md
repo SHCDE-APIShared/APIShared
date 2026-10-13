@@ -52,3 +52,40 @@ three native entries. Run standalone validations, all suites and consumer checks
 then game acceptance for new clip audibility, inferred actions and map transitions.
 Errors deactivate the affected optional context or map-clip capability while
 Vanilla, generic sound events and independent API services remain available.
+
+## Explicit gate-routing backend
+
+Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+Consumer/lifetime contracts: [Gate routing](docs/GATE_ROUTING.md).
+Exact bytes and continuations: `src/Pathfinding/GateRoutes/Native/EnemyGatePathfindingNativeDefinition.cs`.
+
+- Capturer comparisons: 0xE2705 and 0xE3024, 20 bytes each. Execute the displaced
+  MOVSXD/IMUL/CMP once, transport secured inequality via saved R11b, TEST only
+  after callback stack cleanup, restore scratch flag-neutrally before native JE.
+  Never use Context Rflags as the decision transport. Recordstride 0x204;
+  current R9 record PCL offsets +0x1C/+0x20/+0x1D0, not the previous record.
+- Cursor: 0x8F251/29 bytes (DB650 call at 0x8F269), 0x8F1BF/14 bytes
+  (E2610 result followed by TEST/LEA). Preserve player/unit context and original
+  instructions. Consumer owns reference/policy validation and cache policy.
+- Direction filters: 0xD9EA6/14, 0xDA783/18, 0xDACB2/18, 0xDB242/17,
+  0xF31A8/15, 0xF33F5/14, 0xDB857/17, 0xDB947/17, 0xDBA36/17,
+  0xDBB26/17, 0xDC536/16. Validate live tile/direction/register roles and all
+  native branches against complete containing functions on any update.
+- Tactical filters: 0xF1910/17 -> reject 0xF1A17; 0xEF1F0/17 -> 0xEF2D4;
+  0xEEAD0/18 -> 0xEEC1B. Scope layouts/masks are permanent data only.
+- Function detours: 0x1232E0/6, 0xDC3C0/6, 0x113BC0/10. NativeX64 Indirect
+  only, no following jumps/calls, chaining refused. Probe the same backend and
+  validate scheme, actual displacement, FF25/padding, pointer slot and hook entry
+  before publication. Do not substitute an X64InlineHook probe.
+- Closed-gate descent: 0x185D55/20, allowed continuation 0x185934 begins TEST R9w.
+  Consumer must validate the consumed direction (index is already incremented),
+  identity, enabled climbing and roof-to-ground transition. Complete original
+  clear remains the default; all downstream native step checks are retained.
+
+Recheck full search/build/reconstruction/step/clear chains, simulations with
+restoration, incoming edges, all live GPR/SIMD/flags and stack alignment. Existing
+builder/attack/building/command/Assassin function detours remain their current
+owners; do not install competing entries. The byte checks permit no unknown
+native layout. Execute generated stubs with the installed RedBird backend after
+updates. Acquisition and legacy policy registration do not install hooks; explicit
+installation is permanent, setting/map changes only change logical data.

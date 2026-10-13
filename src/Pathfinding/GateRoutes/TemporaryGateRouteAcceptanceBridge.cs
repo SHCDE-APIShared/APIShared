@@ -30,10 +30,20 @@ namespace APIShared
     public static class TemporaryGateRouteAcceptanceBridge
     {
         private static ITemporaryGateRouteAcceptanceObserver observer;
+        private static int observationEnabled=1;
         private static long failures;
         private static string lastFailureCause = "none";
         /// <summary>Gets the permanently rooted optional observer; null requires no game inspection.</summary>
         public static ITemporaryGateRouteAcceptanceObserver Current => Volatile.Read(ref observer);
+        /// <summary>Gets the observer only while its owner requests work. Unlike Current, this guards optional data preparation.</summary>
+        public static ITemporaryGateRouteAcceptanceObserver CurrentRequested => Volatile.Read(ref observationEnabled)!=0 ? Current : null;
+        /// <summary>Changes diagnostic demand for the registered owner only, without unregistering it.
+        /// Existing registrations default to enabled. Disable at a safe lifecycle boundary; finish existing tokens with their captured observer.</summary>
+        public static bool SetObservationEnabled(ITemporaryGateRouteAcceptanceObserver owner,bool enabled)
+        {
+            if(owner==null||!ReferenceEquals(Current,owner))return false;
+            Volatile.Write(ref observationEnabled,enabled?1:0);return true;
+        }
         /// <summary>Gets the full process-wide diagnostic failure count.</summary>
         public static long Failures => Interlocked.Read(ref failures);
         /// <summary>Gets the most recently observed diagnostic source and exception type.</summary>
@@ -49,7 +59,7 @@ namespace APIShared
         public static void ReportRaid(int player, int role, int tribe, uint tribeGlobal, int building,
             uint buildingGlobal, string stage, string result, string detail)
         {
-            var target = Current;
+            var target = CurrentRequested;
             if (target == null) return;
             try { target.Raid(player, role, tribe, tribeGlobal, building, buildingGlobal, stage, result, detail); }
             catch (Exception error) { ReportFailure("raid-observer", error); }

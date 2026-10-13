@@ -193,7 +193,8 @@ namespace APISharedTests
                 expected.Remove(type.FullName);
                 foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                 {
-                    AssertSafePublicType(method.ReturnType, $"{type.FullName}.{method.Name} return type");
+                    if (!IsAuditedGateNativeType(type, method, null))
+                        AssertSafePublicType(method.ReturnType, $"{type.FullName}.{method.Name} return type");
                     foreach (ParameterInfo parameter in method.GetParameters())
                     {
                         // Explicit native bridges expose only their audited immediate views.
@@ -214,7 +215,8 @@ namespace APISharedTests
                                 method.Name == "TryStageWeightedRoute" || method.Name == "TryGetCurrentWeightedRequest")) &&
                             parameter.Name == "context" && parameter.ParameterType == typeof(IntPtr))
                             continue;
-                        AssertSafePublicType(parameter.ParameterType, $"{type.FullName}.{method.Name} parameter {parameter.Name}");
+                        if (!IsAuditedGateNativeType(type, method, parameter))
+                            AssertSafePublicType(parameter.ParameterType, $"{type.FullName}.{method.Name} parameter {parameter.Name}");
                     }
                 }
                 if (!typeof(Delegate).IsAssignableFrom(type))
@@ -264,6 +266,55 @@ namespace APISharedTests
             Assert(NativeCapabilityIds.BuildingRepair == "building-repair",
                 "building-repair capability ID must remain stable");
         }
+        // Explicitly audited advanced native API. No namespace-wide pointer exemption.
+        private static bool IsAuditedGateNativeType(Type owner, MethodInfo method, ParameterInfo parameter)
+        {
+            Type actual=parameter==null?method.ReturnType:parameter.ParameterType;
+            string name=parameter==null?"return":parameter.Name;
+            Type hooks=typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks);
+            Type scopes=typeof(APIShared.GateRouting.Native.GateNativeSearchScopes);
+            var delegates=new Dictionary<Type,int> {
+                {typeof(APIShared.GateRouting.Native.CapturerComparisonCallback),1},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.PathBuilderDelegate),3},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.AttackApproachDelegate),8},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.BuildingApproachDelegate),6},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.BuildingConsumerDelegate),3},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.CursorMoveDelegate),6},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.CandidateSearchDelegate),7},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.DirectTileSearchDelegate),6},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.PclReachabilityDelegate),5},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.CursorPclDecisionDelegate),6},
+                {typeof(APIShared.GateRouting.Native.GateRoutingNativeHooks.AiTacticalTargetDelegate),2}
+            };
+            if(delegates.TryGetValue(owner,out int count) && parameter!=null && parameter.Position==0 &&
+                (method.Name=="Invoke"||method.Name=="BeginInvoke"))
+            {
+                var invoke=owner.GetMethod("Invoke");
+                Assert(invoke.GetParameters().Length==count,"audited gate delegate argument count");
+                var abi=owner.GetCustomAttribute<System.Runtime.InteropServices.UnmanagedFunctionPointerAttribute>();
+                var expected=owner==typeof(APIShared.GateRouting.Native.CapturerComparisonCallback)
+                    ?System.Runtime.InteropServices.CallingConvention.Cdecl:System.Runtime.InteropServices.CallingConvention.Winapi;
+                Assert(abi!=null&&abi.CallingConvention==expected,"audited gate delegate ABI");
+                Assert(actual==typeof(IntPtr),"gate immediate pointer parameter");return true;
+            }
+            if(owner==hooks && ((method.Name=="InstallMovement"&&(name=="slots"||name=="tactical"))||
+                (method.Name=="InstallDescent"&&(name=="activation"||name=="diagnosticActivation"))))
+            {Assert(actual==typeof(IntPtr),"permanent gate activation/scope data pointer");return true;}
+            if(owner==scopes)
+            {
+                string key=method.Name+"/"+name;
+                var types=new Dictionary<string,Type>{
+                    {"Allocate/return",typeof(IntPtr)}, {"Enter/return",typeof(byte).MakePointerType()},
+                    {"Enter/slots",typeof(IntPtr)}, {"Enter/mask",typeof(IntPtr)}, {"Enter/previous",typeof(IntPtr).MakeByRefType()},
+                    {"Leave/slot",typeof(byte).MakePointerType()}, {"Leave/previous",typeof(IntPtr)},
+                    {"EnterTactical/return",typeof(byte).MakePointerType()}, {"EnterTactical/slots",typeof(IntPtr)},
+                    {"EnterTactical/mask",typeof(IntPtr)}, {"LeaveTactical/slot",typeof(byte).MakePointerType()}
+                };
+                if(types.TryGetValue(key,out Type expected)) {Assert(actual==expected,"audited immediate scope signature: "+key);return true;}
+            }
+            return false;
+        }
+
         [TestMethod]
         [TestCategory("Contracts")]
         public void VerifyOwnerBoundClient() => TestOwnerBoundClient();

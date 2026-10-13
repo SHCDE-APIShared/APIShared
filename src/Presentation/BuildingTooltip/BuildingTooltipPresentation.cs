@@ -89,7 +89,7 @@ namespace APIShared.Presentation
             if (building == 0) { Clear(); return; } // Providers can retire selection state, but no lines render outside building tooltips.
             (full ? detailed : compact).Set(lines);
             (full ? compact : detailed).Set(Array.Empty<BuildingTooltipLine>());
-            if (!confirmed) { confirmed = true; log?.LogInfo($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] BUILDING_TOOLTIP_RUNTIME_CONFIRMED Unity post publisher after startup cleanup."); }
+            if (!confirmed) { confirmed = true; log?.LogDebug($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] BUILDING_TOOLTIP_RUNTIME_CONFIRMED Unity post publisher after startup cleanup."); }
         }
         private static void Clear() { compact.Set(Array.Empty<BuildingTooltipLine>()); detailed.Set(Array.Empty<BuildingTooltipLine>()); }
         private static void Report(string owner, Exception error) => log?.LogError("Building tooltip contribution " + owner + ": " + error);

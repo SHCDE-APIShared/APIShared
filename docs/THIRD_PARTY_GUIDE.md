@@ -340,3 +340,9 @@ Unity post publication. The pure Core.Tests fixtures measure zero steady-state
 collection allocations with empty or cached immutable providers after warm-up on
 .NET 10. They do not include Mono/Noesis rendering, consumer callbacks or native
 reads, and are not an FPS benchmark.
+
+## Gate access contributions
+
+Use `GateAccessRules.TryRegister` for additional gate access exceptions and
+`Invalidate` after synchronized data changes. Registration performs no world work.
+Follow the [gate routing guide](GATE_ROUTING.md); a routing provider is required.

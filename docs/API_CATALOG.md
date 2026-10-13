@@ -358,3 +358,9 @@ hide without reserving layout space; provider failures are isolated. Existing
 Vanilla costs, repair extras and backgrounds are preserved. See the
 [integration guide](THIRD_PARTY_GUIDE.md#building-tooltip-text) and
 [standalone example](../examples/ThirdPartyMod/BuildingTooltipExample.cs).
+
+## Gate routing extensions
+
+`GateAccessRules` supplies passive, ordered access contributions. The explicitly requested
+`GateRoutingNativeHooks` backend coordinates the permanent native routing adapters.
+See [gate routing contracts](GATE_ROUTING.md) for scope, ownership and limitations.
