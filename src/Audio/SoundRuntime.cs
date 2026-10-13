@@ -85,7 +85,7 @@ namespace APIShared.Audio
         { Error(processLog, "AUDIO_MAP_CLIPS_DISABLED: lifetime publisher failed; process clips and generic sound events remain independent: " + error); }
         internal static void ConfirmPlayback()
         {
-            if (Interlocked.Exchange(ref playbackConfirmed, 1) == 0)
+            if (Volatile.Read(ref playbackConfirmed) == 0 && Interlocked.Exchange(ref playbackConfirmed, 1) == 0)
                 try { Info(processLog, "AUDIO_PLAYBACK_CONFIRMED: shared sound dispatch executed after startup cleanup."); } catch { }
         }
         // fx_list indexes are effect IDs; play_list indexes (including Extender custom clips)
@@ -218,7 +218,7 @@ namespace APIShared.Audio
                             (short)unit->r_CurrentTilePositionX, (short)unit->r_CurrentTilePositionY, (short)x, (short)y, sound, flagged ? 1 : 0))
                         {
                             scope = source; scopeSound = sound; scopeX = (short)x; scopeY = (short)y;
-                            if (Interlocked.Exchange(ref confirmed, 1) == 0) Info(log, "AUDIO_SOURCE_CONFIRMED: native callback executed after startup cleanup; source=" + source.Key + ",unitId=" + id + ",unitType=" + source.UnitType + ",state=" + unit->r_AIState + ",tiles=" + x + "," + y + "; action evidence=" + source.Evidence(sound));
+                            if (Volatile.Read(ref confirmed) == 0 && Interlocked.Exchange(ref confirmed, 1) == 0) Info(log, "AUDIO_SOURCE_CONFIRMED: native callback executed after startup cleanup; source=" + source.Key + ",unitId=" + id + ",unitType=" + source.UnitType + ",state=" + unit->r_AIState + ",tiles=" + x + "," + y + "; action evidence=" + source.Evidence(sound));
                         }
                         else {
                             Interlocked.Increment(ref rejections);
@@ -239,7 +239,7 @@ namespace APIShared.Audio
             var source = scope; bool eligible = false; short* buffer = null; int before = -1;
             try
             {
-                eligible = SoundContextPolicy.Active && SoundEvents.Registry.HasObservers && source != null && !scopeConsumed &&
+                eligible = source != null && !scopeConsumed && SoundContextPolicy.Active && SoundEvents.Registry.HasObservers &&
                     scopeSound == sound && scopeX == x && scopeY == y && source.Flag == flag;
                 if (eligible)
                 {

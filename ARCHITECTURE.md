@@ -38,7 +38,7 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
-    ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
+  ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
   Audio/                        shared playback events, context capture and binary contracts
@@ -232,44 +232,12 @@ core suite and public consumer examples. Test-only packages never become plugin
 dependencies. The standalone build uses no neighboring repositories. Additional
 mod integration tests belong in their consumer repositories.
 
-## Workshop staging integration
+## Feature-specific guides
 
-`Workshop/WorkshopCleanupRuntime` is rooted by a static `ILHook` installed in APIShared `Awake`. It intercepts every return of `MapModManager.TryStageModUpdate`; incoming branch labels are retargeted through the callback. The audited assembly SHA-256 and exact method signature gate installation. Dry transformation/compilation occurs before publication. There is no lifecycle unpatch, dispatcher or coroutine. The Extender's Steam initialization publisher supplies the long-lived invocation path; the first staging callback logs its execution after startup cleanup.
+Audio owns shared playback interception, source attribution and clip lifetimes.
+Consumers own their sound policies; native-context availability is independent of
+managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and measurements.
 
-The staging callback only cleans previous APIShared releases. Foreign map packages remain exclusively Extender-owned. `WorkshopInventory` and its existing schema remain public helpers; shipping an inventory does not opt a foreign map into APIShared deployment.
-
-The additive owner-bound `ModApiClient.Workshop` capability handles a different schema, `apishared-workshop.json`, and exclusively declared loose `Payload` files. `WorkshopPackageCodec`, `WorkshopPaths`, `WorkshopInstallation`, `WorkshopTransaction` and `WorkshopPublishing` contain testable file policy without game dependencies. `WorkshopRuntime` captures Steam state on Unity and delegates file preparation to workers. `WorkshopSteamUpload` roots its own call-results and never uses Vanilla's stateful upload singleton. The view is presentation state rather than persisted lobby settings. Callbacks are retained by static fields and Extender publishers after plugin-component destruction.
-
-Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend uses the host bash through Wine's Z: mapping, requires flock/coreutils and conservatively waits for all matching game executables.
-
-Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself continues to be distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
-
-The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Renew the complete installer audit and binary allowlist when the Extender changes. These contracts concern managed Workshop staging, not native gameplay hooks.
-
-Audio owns one permanent GameMap IL hook, two NativeX64/Absolute wrapper
-intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes).
-The old Arabian-handler detour is removed. Original native return addresses
-select a hash-bound 91-entry soldier catalog; a negative marker carries only
-source/effect provenance through the 21-short records and existing buffers.
-No native pointer or late unit lookup crosses into Unity playback. UnitAccess
-validates the emitting unit's snapshot type/position before marking; state
-changes before a call do not defeat source attribution. Unrelated sources stay
-Unknown. Evidence is per source/type; generic playback remains available when
-native attribution fails. Hooks, bridges, delegates and publishers are permanent
-roots with logical activation only.
-
-SoundClips queues owner-private resources, map archives and borrowed Extender
-clip captures on the permanent Extender dispatcher. API handles are independent
-of integer effect/play-list IDs. Preloaded custom targets call public playSFX,
-preserving global/channel behavior and Extender overrides. No file loading
-occurs in the playback path. Map generation changes invalidate handles before
-later playback; old owned clip references are detached before deferred Unity
-destruction. Mod clips persist and imported clips remain foreign-owned.
-
-Map clip lifetime also observes load/save-load/start Pre, because the installed
-Extender suppresses unload notifications inside map startup. Register map clips
-or imports after OnPostLoad Post; registrations during earlier loading phases
-may correctly become invalid at a subsequent startup boundary. All publisher
-callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
-Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
-process clips and generic events remain independent.
+Workshop owns publishing, receipt-based plans and post-exit transactions. Its
+persistent staging integration cleans previous APIShared releases; foreign maps
+remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.

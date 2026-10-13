@@ -14,9 +14,7 @@ namespace APIShared.Audio
         private static void Play(SFXManager manager, int sound, float volume, float pan, bool unstoppable, short[] buffer, int index)
         {
             SoundRuntime.ConfirmPlayback();
-            if (!SoundEvents.Registry.CanNotify) { manager.playSound(sound, volume, pan, unstoppable); return; }
-            SoundEvents.Dispatch(SoundContextPolicy.Read(buffer, index, sound, volume, pan), unstoppable,
-                SoundRuntime.IsVanillaEffect, (id, gain, position) => manager.playSound(id, gain, position, unstoppable));
+            SoundEvents.Play(manager, sound, volume, pan, unstoppable, buffer, index);
         }
 
         internal static void Validate(MethodInfo method)

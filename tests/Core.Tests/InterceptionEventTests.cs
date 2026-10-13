@@ -18,6 +18,25 @@ public class InterceptionEventTests
     private static Output Post(Input a, object state) => new(a.Value, a.SkipOriginalFunction, state);
 
     [TestMethod]
+    public void StateStorageIsAbsentForPreOnlyButAcceptedAndExplicitFactoryStayPaired()
+    {
+        var events = new InterceptionEvent<Input, Output>();
+        events.TryRegister("a","pre",a=>a.State="not needed",null,out _);
+        var invocation=events.Begin(new Input());
+        Assert.AreEqual(0,invocation.States.Length);
+        var postOnly=new InterceptionEvent<Input,Output>();int nullStates=0;
+        postOnly.TryRegister("a","observe",null,p=>{Assert.IsNull(p.State);nullStates++;},out _,accepted:(a,state)=>{Assert.IsNull(state);nullStates++;});
+        var postInvocation=postOnly.Begin(new Input());Assert.AreEqual(0,postInvocation.States.Length);
+        postInvocation.NotifyAccepted();postInvocation.Complete(postInvocation.Pre,(pre,state)=>Post(pre,state));Assert.AreEqual(2,nullStates);
+        int accepted=0,posts=0;
+        events.TryRegister("b","accepted",a=>a.State="accepted",null,out _,accepted:(a,state)=>{Assert.AreEqual("accepted",state);accepted++;});
+        events.TryRegister("c","post",null,p=>{Assert.IsNull(p.State);posts++;},out _);
+        invocation=events.Begin(new Input());Assert.AreEqual(3,invocation.States.Length);invocation.NotifyAccepted();
+        invocation.Complete(invocation.Pre,(pre,state)=>Post(pre,state));invocation.Complete(invocation.Pre,(pre,state)=>Post(pre,state));
+        Assert.AreEqual(1,accepted);Assert.AreEqual(1,posts);
+    }
+
+    [TestMethod]
     public void DormantInternalSubscriptionsDoNotCreateDemandAndKeepPairedSnapshot()
     {
         bool active = false;

@@ -137,6 +137,10 @@ namespace APIShared.Audio
         private float factor = 1f, pan;
         private int sound;
         private SoundClipHandle clip;
+        private float savedFactor, savedPan;
+        private int savedSound;
+        private SoundClipHandle savedClip;
+        internal SoundClipHandle SelectedClip => clip;
         internal SoundPreEventArgs(SoundContext context, bool unstoppable, Func<int, bool> validEffect)
         { Context = context; Unstoppable = unstoppable; this.validEffect = validEffect; sound = context.OriginalSoundId; pan = context.OriginalPan; }
         /// <summary>Immutable original input and audited source context.</summary>
@@ -173,10 +177,16 @@ namespace APIShared.Audio
         public void SetPan(float value)
         { CheckMutable(); if (!Finite(value) || value < -1 || value > 1) throw new ArgumentOutOfRangeException(nameof(value)); pan = value; }
         internal static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
-        internal override object Capture() => new Snapshot(factor, pan, sound, clip);
-        internal override void Restore(object snapshot) { var s = (Snapshot)snapshot; factor = s.Factor; pan = s.Pan; sound = s.Sound; clip = s.Clip; }
-        private readonly struct Snapshot
-        { internal readonly float Factor, Pan; internal readonly int Sound; internal readonly SoundClipHandle Clip; internal Snapshot(float factor, float pan, int sound, SoundClipHandle clip) { Factor = factor; Pan = pan; Sound = sound; Clip = clip; } }
+        // The broker has one live checkpoint per args object, consumed before the next Pre.
+        // Nested notifications have separate args and never reuse these slots.
+        internal override object Capture()
+        { savedFactor = factor; savedPan = pan; savedSound = sound; savedClip = clip; return this; }
+        internal override void Restore(object snapshot)
+        {
+            if (!ReferenceEquals(snapshot, this)) throw new InvalidOperationException("Foreign audio rollback checkpoint.");
+            factor = savedFactor; pan = savedPan; sound = savedSound; clip = savedClip;
+        }
+        internal override void ClearCapture() { savedClip = null; }
     }
 
     /// <summary>Completed presentation dispatch, including suppression. Submission is not proof of audible playback: Vanilla may cull/throttle it.</summary>
@@ -207,11 +217,20 @@ namespace APIShared.Audio
 
     public sealed class SoundRegistration
     {
-        private int enabled = 1;
+        internal readonly object ActivationSync = new object();
+        internal int EnabledValue = 1;
+        internal SoundDemand Demand;
         internal SoundRegistration() { }
         /// <summary>Logical activation. In-flight invocations keep their captured observers through Post.</summary>
-        public bool Enabled => Volatile.Read(ref enabled) != 0;
+        public bool Enabled => Volatile.Read(ref EnabledValue) != 0;
         /// <summary>May be called from any thread; affects subsequent notification snapshots.</summary>
-        public void SetEnabled(bool value) => Volatile.Write(ref enabled, value ? 1 : 0);
+        public void SetEnabled(bool value)
+        {
+            lock (ActivationSync) {
+                if (Enabled == value) return;
+                if (Demand == null) Volatile.Write(ref EnabledValue, value ? 1 : 0);
+                else Demand.SetEnabled(this, value);
+            }
+        }
     }
 }

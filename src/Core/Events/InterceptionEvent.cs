@@ -19,7 +19,8 @@ namespace APIShared.Events
             if (frozen || thread != Thread.CurrentThread.ManagedThreadId)
                 throw new InvalidOperationException("Pre arguments are mutable only inside their synchronous notification.");
         }
-        internal void Freeze() { frozen = true; state = null; }
+        internal void Freeze() { frozen = true; state = null; ClearCapture(); }
+        internal virtual void ClearCapture() { }
         internal void ResetState() { state = null; }
         internal bool Veto => skip;
         internal abstract object Capture();
@@ -34,15 +35,18 @@ namespace APIShared.Events
         private readonly object sync = new object();
         private Registration[] registrations = Array.Empty<Registration>();
         private readonly Action install;
+        private readonly Func<bool> hasDemand;
         private bool installed;
         private long failures;
         [ThreadStatic] private static int notificationDepth;
-        internal InterceptionEvent(Action install = null) { this.install = install; }
+        // Cached demand is opt-in and requires ownership of every activation transition.
+        internal InterceptionEvent(Action install = null, Func<bool> hasDemand = null) { this.install = install; this.hasDemand = hasDemand; }
         internal long CallbackFailures => Interlocked.Read(ref failures);
         internal bool HasObservers
         {
             get
             {
+                if (hasDemand != null) return hasDemand();
                 foreach (Registration entry in Volatile.Read(ref registrations))
                     if (entry.IsActive == null || entry.IsActive()) return true;
                 return false;
@@ -110,7 +114,7 @@ namespace APIShared.Events
                     args.ResetState();
                     object before = args.Capture();
                     bool skip = args.Veto;
-                    try { snapshot[index].Pre?.Invoke(args); invocation.States[index] = args.State; }
+                    try { snapshot[index].Pre?.Invoke(args); if (invocation.States.Length != 0) invocation.States[index] = args.State; }
                     catch (Exception ex)
                     {
                         args.Restore(before); args.RestoreVeto(skip);
@@ -143,9 +147,12 @@ namespace APIShared.Events
             internal Invocation(InterceptionEvent<TPre, TPost> owner, Registration[] snapshot, TPre pre)
             {
                 this.owner = owner; this.snapshot = snapshot; Pre = pre;
-                States = snapshot.Length == 0 ? Array.Empty<object>() : new object[snapshot.Length];
-                foreach (Registration entry in snapshot)
-                    if (entry.Post != null) { HasPostObservers = true; break; }
+                bool needsStates = false;
+                foreach (Registration entry in snapshot) {
+                    if (entry.Post != null) HasPostObservers = true;
+                    if (entry.Pre != null && (entry.Post != null || entry.Accepted != null)) needsStates = true;
+                }
+                States = needsStates ? new object[snapshot.Length] : Array.Empty<object>();
             }
             internal void NotifyAccepted()
             {
@@ -156,13 +163,16 @@ namespace APIShared.Events
                 {
                     for (int index = 0; index < snapshot.Length; index++)
                     {
-                        try { snapshot[index].Accepted?.Invoke(Pre, States[index]); }
+                        try { snapshot[index].Accepted?.Invoke(Pre, States.Length == 0 ? null : States[index]); }
                         catch (Exception ex) { Interlocked.Increment(ref owner.failures); LogFailure(snapshot[index], "Accepted", ex); }
                     }
                 }
                 finally { notificationDepth--; }
             }
-            internal void Complete(Func<object, TPost> createPost)
+            private static readonly Func<Func<object, TPost>, object, TPost> LegacyPostFactory = (factory, state) => factory(state);
+            internal void Complete(Func<object, TPost> createPost) => Complete(createPost, LegacyPostFactory);
+            // Explicit factory context avoids a closure at the caller. Both entrypoints use this loop.
+            internal void Complete<TContext>(TContext context, Func<TContext, object, TPost> createPost)
             {
                 if (completed) return;
                 completed = true;
@@ -172,7 +182,7 @@ namespace APIShared.Events
                     for (int index = 0; index < snapshot.Length; index++)
                     {
                         if (snapshot[index].Post == null) continue;
-                        try { snapshot[index].Post(createPost(States[index])); }
+                        try { snapshot[index].Post(createPost(context, States.Length == 0 ? null : States[index])); }
                         catch (Exception ex)
                         {
                             Interlocked.Increment(ref owner.failures);

@@ -69,11 +69,7 @@ fixtures. UI/session doubles and synthetic memory are not gameplay acceptance.
 Relevant gameplay checks include startup cleanup, map transitions, save/load,
 host/client synchronization, gatehouse orientations and cooperating route-search publishers.
 
-Audio source capture now owns wrapper ranges 0x2960..0x296F and
-0x2990..0x299F plus emitter 0x1A41E0..0x1A41EE. Absolute patch validation
-checks displaced bytes, target, entry and trampoline continuation before and
-after publication. A permanently rooted Win64 bridge captures [entry RSP] as
-argument five, reserves 0x38 aligned stack bytes, and retains the four original
-arguments. Copied-code tests execute the bridge and original displaced prologue;
-production functions/random choices still run exactly once. Catalog sites verify
-CALL rel32 targets. The former 0x16F590 detour is no longer installed.
+Audio owns coordinated native source-capture entries and managed playback
+interception. See [bridge validation](AUDIO.md#native-bridge-validation) for the
+specific backend contract and [UpdateToNewDLL](../UpdateToNewDLL.md) for hashes,
+addresses and the feature update checklist.

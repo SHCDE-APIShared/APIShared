@@ -105,9 +105,17 @@ thread, lifetime, ordering, replay, failure and cancellation behavior where appl
 Explain the responsibility and persistent call path at complex implementation entries.
 Useful comments describe decisions and constraints rather than repeating names.
 
-Keep the catalog's source map, integration guide and affected examples consistent with
-API changes. Link to existing explanations instead of duplicating every feature in
-several documents. Additional feature documents are useful only when inline contracts
-and these guides cannot adequately explain usage. Preserve the README as a short entry;
-propose a README addition after a new feature is complete. These expectations apply
-equally to human and AI-assisted contributions.
+Keep the catalog, integration guide and affected examples consistent with API changes.
+README is a short entry point; ARCHITECTURE explains common structure, ownership
+and lifetime. The catalog helps readers find APIs and the integration guide explains
+common consumer workflows. Substantial topic details belong in focused guides such
+as [Audio](docs/AUDIO.md) and [Workshop](docs/WORKSHOP.md), with usage, public limits
+and internal implementation clearly separated. Small features need no separate file.
+Give detailed explanations one documentation home and link rather than duplicate.
+
+When moving content, preserve contracts and evidence, update relative links and
+anchors, and remove stale copies. Keep concrete native-update contracts in
+[UpdateToNewDLL](UpdateToNewDLL.md). Run `tools/Validation/Test-Documentation.ps1`
+in fresh Windows PowerShell and check affected text files for CRLF. Preserve the
+README as a short entry; propose an addition after a new feature is complete.
+These expectations apply equally to human and AI-assisted contributions.

@@ -1,4 +1,10 @@
-# Audio binary update contract
+# Native binary update contracts
+
+Concrete native reference and resolution contracts belong here. General update
+policy is in [native compatibility](docs/NATIVE_COMPATIBILITY.md); consumer and
+implementation details are in the relevant feature guide.
+
+## Audio
 
 The audio implementation lives under src/Audio; this is a native-update checklist,
 not a consumer setting. Native provenance and fixed catalog/field offsets remain

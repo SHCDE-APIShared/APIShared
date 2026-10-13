@@ -269,13 +269,9 @@ no consumer-defined alternative search or mainmod prerequisite is involved in ob
 
 ## Workshop package cleanup
 
-APIShared automatically installs a permanent staging callback for the audited Script Extender binary, exclusively for cleaning its own previous releases. Foreign `.map` items remain entirely Extender-managed. Unsupported binaries disable this self-cleanup with a warning; other services remain available. Neither Extender sources nor its updater are replaced. The existing inventory helpers and schema described below remain available for packaging and historical evidence; foreign maps are no longer cleaned through this callback.
-
-Generate `apishared-workshop-files.json` inside `BepInEx/plugins/<GUID>` from the final package with `tools/WorkshopPackage.ps1` and `New-ApiWorkshopInventory -Directory <package>`. The existing JSON contract is schema 1, `Guid`, `Version`, `Files` and optional `LegacyFiles`; both file collections contain `{ "Path": "relative/path", "Sha256": "64 lowercase hexadecimal digits" }`. Identity and version must match the package's `info.json`. `Files` lists immutable delivered files, excluding the inventory itself. Never list user settings, captures, generated files or other mutable data. The helper excludes `config` and `LobbyModSettings`; authors must keep all other user data outside package staging.
-
-`LegacyFiles` supplies path/hash alternatives from verified historical releases for users who never had an inventory. Keep applicable historical alternatives in future releases until those installations are no longer supported. APIShared has no package-specific migration paths. Only files absent from the new `Files` collection and matching a recorded old hash are scheduled. Current, unknown, modified, missing and concurrently staged files remain untouched. Paths must be relative forward-slash paths; traversal, Windows updater wildcard characters (including square brackets), device names, alternate streams, duplicate paths and reparse points are rejected. Other subscribed package payloads are inspected even if they have no inventory; competing GUIDs disable cleanup and competing file claims preserve that file.
-
-Deletion is deferred through `_SE/.staging/delete_list.txt`; installed files are never deleted by APIShared. The existing Windows/Proton updater applies deletion after exit and before copying staged replacements. Locked-file/deployment failures are logged and reevaluated at the next startup. This extends update cleanup; the Extender's existing unsubscribe behavior is unchanged.
+APIShared cleans its own previous releases through the audited Extender staging
+path. Foreign maps remain Extender-managed. Inventory schema, historical hashes
+and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cleanup).
 
 ## Plugin entry points with optional APIShared
 
@@ -283,156 +279,18 @@ Since APIShared 0.7.1, Optional APIShared consumers may call `SavegameModSetting
 
 ## Loose Workshop packages
 
-APIShared has no Workshop page in Mod Options. A statically rooted Steam-initialization subscriber discovers first installations, newer receipt versions and confirmed unsubscribes at startup. One bilingual confirmation lists all changes: Yes stages one batch and restarts; No leaves installed files unchanged and suppresses another prompt during that start. Extender work and bootstrap installation take priority. The updater backs up every affected file and commits all receipts after file changes, with recovery for the complete batch. Invalid dependencies or ownership conflicts defer changes safely.
-
-Authors use `BepInEx/tools/APISharedWorkshopPublisher/UploadMod.bat`, shipped by APIShared outside the plugin scan. No running game or separate Steam password is needed; Steam must be running, signed in and online. The wizard accepts a prepared manifest or generates one from Payload, collects prerequisites/dependencies, offers owned SHCDE items and publishing metadata, validates a private snapshot and requires typing `UPLOAD` before submission. `/validate` skips Steam initialization and publishing, `/test` uses private visibility and account-scoped separate IDs, `/nopause` only suppresses the BAT closing pause; `/cancel` cancels a prompt. Saved settings and immediately persisted item IDs live in LocalApplicationData/APIShared/WorkshopPublisher, scoped by app/account/mode/package. Never add this state to uploaded content.
-
-Linux users can run `bash UploadMod-linux.sh`. It uses the existing SHCDE Proton prefix, not a separate uploader. With custom Steam/Proton locations set `STEAM_COMPAT_CLIENT_INSTALL_PATH`, `STEAM_COMPAT_DATA_PATH` (directory containing pfx), and `APISHARED_PROTON` (the selected Proton script). Python 3 is required by Proton; host paths such as `/home/user/My Mod` are accepted by the wizard through Wine Z:. This launcher has automated syntax/argument tests; successful real Proton publishing is still required before claiming Linux support.
-
-Build, ZIP and map contain the same complete tool with a separate `publisher-files.json` inventory. Only the fixed tool filenames are accepted; plugin inventory contracts and runtime binary restrictions remain unchanged. Publisher sources, build and shared Steam state machine belong to APIShared. Existing maintainer drivers continue using the same helper.
-This capability is in development. The runtime version is intentionally unchanged during platform testing; assign the next release version before distributing new API consumers and use that release as their minimum dependency. See the compiled [Workshop example](../examples/ThirdPartyMod/WorkshopExample.cs) for explicit preview/confirmation callbacks and task-based failure handling.
-
-The workspace maintainers use `CreateSteamModPack.bat` to prepare GitHub-backed packages, then `UploadWorkshop.bat` to publish the prepared content. Both drivers offer SerpsMods, APIShared, both, or cancel. Automation selects `/modpack`, `/apishared`, or `/both`; combine with `/test`, `/validate`, and `/nopause`. Conflicting target arguments fail. `/validate` performs checks without release changes or uploads. `/nopause` only suppresses the closing pause; explicit publishing confirmations remain.
-
-Build `tools/WorkshopUploader/build.bat` before preparing packages. Set `SHCDE_GAME_DIR` for the first build; subsequent APIShared and publisher builds can reuse local installation paths from `.local/build-proof.json`. Explicit environment settings take precedence, and paths are checked before compilation. Its Windows x64 executable lives separately in `.local/WorkshopUploader`, with a checked build proof. It shares APIShared's internal package validation, content fingerprint and Steam publishing state machine, using its own callback loop. No uploader dependency is added to runtime mods. Failures identify their step and retain allocated Workshop IDs for retry.
-
-Shared maintainer configuration is `Shared/Tools/Steam/WorkshopConfiguration.ps1`. Production content folders are `SerpsMods` and `APISharedWorkshop`. Preparation proofs and IDs are stored outside content in `.release-output/SteamWorkshop`, keyed by `SerpsMods` and `APIShared`. Test content, state, IDs and logs stay below its separate `test` directory. Test uploads are private and reject known production IDs; GitHub test releases remain drafts. Both targets process APIShared first and stop on its failure.
-
-Initially prepare and upload APIShared alone, then prepare SerpsMods using the saved APIShared Workshop ID. No placeholder IDs are accepted. SerpsMods preparation only consumes reviewed APIShared releases and does not publish APIShared implicitly. Reused content ZIPs are checked before replacing any existing output. Upload preparation verifies every declared file and the preparation proof; snapshots omit release/proof files. Confirmed loose uploads do not become historical map inventories or change the next package's content signature.
-
-Manual production preparation and uploads do not require a platform-approval file. The drivers still validate packages, hashes, release identity and Steam ownership, and retain explicit release/upload confirmations. Private Windows/Proton, Steam, migration, external-manager and Extender/Fixes tests are recommended; automated fixture results alone do not certify live platform integration.
-
-Use one prepared upload folder:
-
-```text
-apishared-workshop.json
-preview.png
-OptionalBootstrap.map
-Payload/BepInEx/plugins/YourMod/info.json
-Payload/BepInEx/plugins/YourMod/YourMod.dll
-```
-
-Schema 1 contains `SchemaVersion: 1`, stable `PackageId`, numeric `Version`, `MinimumAPISharedVersion`, optional `MinimumScriptExtenderVersion`/`MaximumScriptExtenderVersion`, nonempty `Roots` (full `BepInEx/plugins/<folder>` paths), and complete `Files` records `{Path, Size, Sha256}` relative to the game root. `Dependencies` records use `Guid`, optional inclusive `MinimumVersion`/`MaximumVersion`, and optional decimal-string `WorkshopId`. `Bootstrap` uses `MapFile`, `Guid`, `Version`, `PluginFolder`; it is optional. `LegacyReleases` contains `{Version, Files}` records verified against historical deliveries. No Workshop identity is taken from a folder name.
-
-Generate the complete inventory using [Prepare-WorkshopPackage.ps1](../tools/Prepare-WorkshopPackage.ps1). Keep mutable settings and runtime output outside Payload. Links, traversal, duplicate paths/GUIDs, protected infrastructure and overlapping ownership are rejected. All delivered info.json identities, including nested mods, are checked. A bootstrap map must contain only its own reserved plugin folder and root info.json. Its root/plugin metadata must agree with the declared GUID/version and BepInEx manifest. The loose host and its GUIDs remain unchanged during migration.
-
-For authors without an existing manifest, `WorkshopPackageDraft` supplies identity, version, prerequisites and optional dependencies/bootstrap/history. `CreateManifestAsync` generates inventory text without changing source files. Passing the draft as `WorkshopUploadOptions.Draft` generates the manifest directly in the prepared immutable snapshot. The external wizard supports a new plain package using ID/version/minimum fields and dependency prompts; prepared manifests retain their dependency/bootstrap declarations. No registered mod or source-code compilation is required for plain publishing.
-
-[New-WorkshopBootstrap.ps1](../tools/New-WorkshopBootstrap.ps1) generates independent bootstrap sources and a build.bat. Supply a unique GUID/folder, retained map filename, version newer than the legacy Extender receipt, APIShared minimum and its separate Workshop ID. Compile through that build.bat with SHCDE_GAME_DIR set, then stage only `info.json` at the root and the bootstrap DLL/matching `info.json` under its plugin folder. Run the Extender's existing map packager, then dot-source `tools/WorkshopPackage.ps1` and call `Set-ApiBootstrapMapPayload -MapPath <map> -Stage <stage>`: the packager's map template otherwise retains preview/config entries. This helper retains the native map prefix and creates/verifies exactly the staged ZIP inventory. There is no APIShared assembly reference. Missing/old APIShared shows a bilingual notice with its Workshop link; no files are installed, repaired or deleted by the bootstrap.
-
-Automatic startup discovery waits inside the Script Extender Steam-initialization event until the player decides. File validation and staging run in the background; only APIShared continuations return to the blocked game thread. The Extender handles its maps first. An installed bootstrap is not a payload receipt: existing plugin files without a receipt are offered for migration with backup. Declining preserves files and offers the pending change again on the next start. Asset GUIDs with author-defined, nonnumeric versions satisfy dependencies without version bounds; bounded dependencies require a comparable numeric version. Loaded plugin versions take precedence over asset metadata.
-
-The public Workshop capability remains available for consumer mods with their own explicitly confirmed workflows. Upload snapshots include only declared content and optional bootstrap; changed content requires a greater package version. Steam dependencies are soft links and do not replace local prerequisite checks.
-
-```csharp
-// Steam entry points on Unity, after Steamworks initialization. The built-in publisher is an external console wizard.
-var workshop = ApiShared.ForMod("YourModGuid").Workshop;
-var catalog = await workshop.GetCatalogAsync();
-var plan = await workshop.PrepareInstallAsync(itemId, WorkshopAction.Update);
-// Present plan.Files, plan.RemovedFiles and plan.Diagnostics, and wait for explicit user confirmation.
-var operation = await workshop.ApplyAsync(plan);
-// AwaitingRestart means handoff. The receipt, written last by the updater, proves successful installation.
-```
-
-Receipt equality suppresses automatic repair even when local DLLs differ or disappear. Updates replace delivered files with backups after consent; obsolete files are removed only when their current hash matches a receipt or verified history. Settings, unknown files and modified obsolete files survive removal and migration. Invalid/missing receipts allow explicitly chosen installation with backup, never an assertion of successful adoption. Steam failures/downloads/missing folders do not mean unsubscribe.
-
-Transactions and upload IDs live under `_APIShared/Workshop`, independently of `_SE`. The external updater checks operation-list hashes, staged bytes, targets and links; backs up before writing; journals each step; and commits the receipt last. On interruption, keep the entire transaction directory. With the game closed, run its installed `Workshop/workshop-updater.ps1` with the original `-GameRoot`, `-Transaction`, `-OperationsHash` and `-Recover`, or the host bash script with the same three positional arguments and `--recover`. Recovery restores the original files/receipt and exits with code 2. Failed recovery retains all evidence. Never manually delete backups while a transaction is unresolved. Proton requires Wine Z: paths and host bash/flock/coreutils; paths that cannot be translated are rejected before game exit.
-
-Extender staging/download restarts take precedence. Under `SCDEModManagerLaunchId`, installation remains read-only, including restart and reactivation; uploads are available. The external manager's current importer is separate. APIShared's new format does not add an importer to it. Publish APIShared's independently managed map first; test migration at the existing modpack ID using the same map filename and a separate bootstrap GUID before replacing the live release. Do not publish the new format until real Windows/Proton and Steam tests pass.
-
-Platform-test records are optional and are not read by the maintainer release/upload drivers. Missing, outdated or malformed records do not block manual publication. SerpsMods publishes a separate Workshop-content ZIP alongside its ordinary plugin ZIP; reusing a release restores the complete verified content ZIP, including manifest and Payload, rather than just its bootstrap map.
+Use the shipped external publisher for explicitly declared Payload packages.
+The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
+bootstrap maps, consent, migration, recovery and Windows/Proton limits.
 
 ## Situational sound rules
 
-Available since APIShared **0.8.0**; declare this minimum version in both plugin
-and manifest dependencies when using these audio contracts.
-
-Register a stable owner/ID pair through `APIShared.Audio.SoundEvents` after
-APIShared managed startup. Keep the returned `SoundRegistration` rooted and
-change `SetEnabled` when your setting changes. Filter `args.Context` before
-mutating it; use `MultiplyVolume(0.25f)` for a quarter of the spatially computed
-gain. `SoundSituation.Unknown` is an explicit absence of audited attribution.
-Do not install competing native sound or GameMap hooks.
-
-See the [audio contract](API_CATALOG.md#situational-audio) and
-[example](../examples/ThirdPartyMod/SoundExample.cs). For custom audio, preload
-through `SoundClips`, retain the handle, and use `TryReplaceClip` in Pre. Keep files
-in the mod's private resource root (for example `Sounds/chime.wav`); loading is
-deferred and requires the Extender's resource index. Never pass an Extender clip
-ID to `ReplaceSound`. A map handle can be rebound on a later map; load it only
-after the desired archive is available.
-
-A named situation may now be provisional. Filter `Context.SituationEvidence` or
-`SituationConfirmed` if your rule requires accepted gameplay evidence. Use
-`SourceKey` plus `UnitType` when acceptance is specific to one source/type.
-The Arabian default rule continues to match its confirmed source. Military
-support units are included; worker/animal contexts remain outside this catalog.
-
-Map clip lifetime also observes load/save-load/start Pre, because the installed
-Extender suppresses unload notifications inside map startup. Register map clips
-or imports after OnPostLoad Post; registrations during earlier loading phases
-may correctly become invalid at a subsequent startup boundary. All publisher
-callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
-Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
-process clips and generic events remain independent.
+Declare APIShared **0.8.0** or newer. Register through `SoundEvents` after managed
+startup, retain the handle and use `SetEnabled` for live settings. Filter context
+before changing a request; preload clips outside playback callbacks.
+See the [audio integration guide](AUDIO.md#situational-sound-rules).
 
 ### Consumer filters, repeat limits and other sound policies
 
-These are consumer rules built with the existing Audio contracts, not extra
-native hooks or hard-coded APIShared settings. Keep their state process-rooted;
-use mission start/end/initialization notifications to reset session-local state.
-Local presentation preferences do not require synchronized gameplay messages.
-
-| Policy | Inputs and action | Boundary |
-| --- | --- | --- |
-| Unit-type-specific sounds | Filter nullable `Context.UnitType` together with `Situation`; then change gain, target, pan or suppression. | A type is not a live unit ID or player owner. Reject missing types for a specific-type rule. |
-| One exact animation/source | Match `SourceKey`, `UnitType`, original effect ID and, if needed, evidence. | The same situation name can describe several sources with different evidence. |
-| Confirmed-only rules | Require `SituationConfirmed`, or select an explicit evidence threshold. | An inferred action name does not prove its gameplay meaning; confidence applies to the individual source/type. |
-| Repeat/burst reduction | Use a monotonic consumer clock and a shared or keyed interval; veto too-frequent requests with `SkipOriginalFunction`. | Original native creation/RNG remain unchanged. Admission is not audible output. |
-| Quiet modes and accessibility | Multiply spatial gain by a user factor, including zero; suppress selected noisy situations or substitute a clearer cue. | Zero still submits playback; suppression skips it. Do not promise dialogue/music coverage. |
-| Situation-specific themes | Preload a mod/map clip, retain its handle and select it in Pre; alternatively replace a validated Vanilla effect. | Clip handles and effect IDs are separate namespaces. An unavailable clip leaves the valid Vanilla path available. |
-| Alternative clip variants | Select among already loaded handles by an owner-local cycle or RNG. | Avoid changing native/gameplay RNG; no decoding, asset lookup or file IO in Pre/Post. |
-| Tile/region policies | Filter available `TileX`/`TileY`, calculate a bounded regional factor, or choose a cue by area. | Coordinates are tiles, not durable unit identity. Missing spatial coordinates must be handled explicitly. |
-| Panorama/accessibility overrides | Set finite panorama in [-1,1], for example centered presentation. | Default is Vanilla panorama. This changes balance, not unit position or navigation. |
-| Several independent mods | Use stable owner/registration IDs and explicit order; factors multiply and the last valid target/pan replacement wins. | Veto is sticky; each failed callback's argument mutations roll back. |
-| Statistics and diagnostics | Observe Post, preserve owner-private `State`, count suppression/submission, original/final targets and evidence. | Post proves submission or suppression, not that channels, throttling or hardware produced an audible sound. |
-| Profiles and live controls | Atomically publish validated settings and use registration `SetEnabled`; reset local timers on policy/session changes. | Keep callbacks and subscriptions rooted. Do not toggle/dispose shared hooks. |
-
-For example, the following part of a Pre callback restricts a rule to the
-Arabian swordsman's confirmed idle sword draw:
-
-```csharp
-if (args.Context.Situation != SoundSituation.ArabianIdleSwordDraw ||
-    args.Context.UnitType != 75 || !args.Context.SituationConfirmed)
-    return;
-args.MultiplyVolume(0.25f);
-```
-
-A global repeat window is useful for groups of noisy idle soldiers: the first
-matching request is admitted, subsequent requests within the interval are
-suppressed, and suppressed requests do not extend the window. A per-type or
-per-source window can preserve more variation, but requires bounded consumer
-storage. Do not call a tile/source key a per-unit limiter: the context exposes
-no durable unit ID. If an earlier contributor has already vetoed a request,
-leave its veto and avoid consuming your window. A later contributor can still
-veto an admitted request. Pre admission therefore measures attempts, not sound
-actually heard. Post-based accounting may be used for submitted requests; even
-that cannot observe downstream Vanilla throttling/channel rejection.
-
-Use `Stopwatch.GetTimestamp()` and `Stopwatch.Frequency` for real elapsed time.
-Document whether pauses count and when changing settings resets the window.
-The current test consumer uses one window for all matching situation/type
-requests, 0–60000 ms (0 disables it), elapsed time including pauses, and resets
-on settings changes and mission start/end/initialization. All unit types and no
-repeat limit are the defaults, preserving the Arabian 25% rule. Its filters and
-limit operate locally through the same permanent sound-event registration.
-
-Consumer dictionaries, counters, RNG and timers are external side effects;
-APIShared's callback rollback restores event arguments, not arbitrary consumer
-state. Avoid throwing after reserving a window, isolate diagnostic logging and
-bound any state accumulated from coordinates or arbitrary keys. Do not use this
-API to schedule new gameplay, replace arbitrary UI/speech/music calls, change
-pitch/seek/clip duration, or infer player ownership and live unit state from the
-context. Such features need their own audited contracts. Workers and animals
-remain outside the named-source catalog; generic effect/volume rules can still
-handle Unknown requests intercepted by the audited GameMap playback path.
+Unit-type/source filters, evidence checks, repeat limits and local profiles use the
+same Pre/Post events. See [policy examples and boundaries](AUDIO.md#consumer-filters-repeat-limits-and-other-sound-policies).
