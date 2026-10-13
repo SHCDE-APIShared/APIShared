@@ -347,3 +347,14 @@ and the [compiled example](../examples/ThirdPartyMod/SoundExample.cs).
 Inactive registrations do not create audio demand. Permanent hooks remain rooted;
 managed dormant playback avoids context allocation and native attribution skips
 UnitAccess. See [implementation and measurements](AUDIO.md#audio-demand-and-dispatch-cost).
+
+## Building tooltip contributions
+
+[`BuildingTooltipPresentation`](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs)
+adds immutable plain-text lines above the existing costs in both Vanilla building
+tooltip variants. Registration is owner-bound, ordered and process-lived; providers
+run on Unity's main thread after the existing presentation publishers. Empty lines
+hide without reserving layout space; provider failures are isolated. Existing
+Vanilla costs, repair extras and backgrounds are preserved. See the
+[integration guide](THIRD_PARTY_GUIDE.md#building-tooltip-text) and
+[standalone example](../examples/ThirdPartyMod/BuildingTooltipExample.cs).

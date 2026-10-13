@@ -241,3 +241,8 @@ managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and m
 Workshop owns publishing, receipt-based plans and post-exit transactions. Its
 persistent staging integration cleans previous APIShared releases; foreign maps
 remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
+
+Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
+owns shared presentation and registration; consumers own localized text,
+activation and gameplay decisions. See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
+for the public entry point and integration documentation.

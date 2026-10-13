@@ -19,13 +19,14 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.8.0";
+        public const string PluginVersion = "0.9.0";
 
         private void Awake()
         {
             Workshop.WorkshopCleanupRuntime.Initialize(Logger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, Logger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
+            Presentation.BuildingTooltipPresentation.Initialize(Logger);
             Workshop.WorkshopRuntime.Initialize(this, Logger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(Logger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
@@ -38,6 +39,7 @@ namespace APIShared
             // MainHUD loads before a consumer may request the on-demand repair capability.
             GameXAMLManagerAPI.Instance.RegisterBinding(
                 "APISharedRepairExtrasHost", ApiSharedRuntime.ProcessInstance.RepairTooltip);
+            Presentation.BuildingTooltipPresentation.Bind();
             SavegameModSettings.Initialize(Logger);
             string hash;
             try

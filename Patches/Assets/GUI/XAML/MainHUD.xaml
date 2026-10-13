@@ -23,4 +23,44 @@
       </InlineUIContainer>
     </Content>
   </Operation>
+  <Operation Type="InsertBefore" XPath="//n:DockPanel[@Visibility='{Binding RolloverBuilding_TooltipVis, Converter={StaticResource booleanToVisibilityConverter}}']/n:Grid/n:StackPanel/*[1]">
+    <Content>
+      <ItemsControl x:Name="APISharedBuildingTooltipDetailed" ItemsSource="{Binding Lines}" Visibility="{Binding Visibility}" MaxWidth="{Binding MaxWidth}" HorizontalAlignment="Left" IsHitTestVisible="False" Tag="Ignore"
+          FlowDirection="{Binding Path=DataContext.GlobalTextFlowAL2R, RelativeSource={RelativeSource FindAncestor, AncestorLevel=1, AncestorType={x:Type UserControl}}}">
+        
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <ItemsControl ItemsSource="{Binding Segments}" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipDetailed}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate><DataTemplate>
+                <TextBlock Text="{Binding Text}" Foreground="{Binding Foreground}" FontSize="16" TextWrapping="Wrap" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipDetailed}" Tag="Ignore">
+                  <TextBlock.Effect><DropShadowEffect ShadowDepth="2" Direction="315" Color="#CC000000" BlurRadius="0"/></TextBlock.Effect>
+                </TextBlock>
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Content>
+  </Operation>
+  <Operation Type="InsertBefore" XPath="//n:StackPanel[@Visibility='{Binding RolloverBuilding_TooltipVisNot, Converter={StaticResource booleanToVisibilityConverter}}']/*[1]">
+    <Content>
+      <ItemsControl x:Name="APISharedBuildingTooltipCompact" ItemsSource="{Binding Lines}" Visibility="{Binding Visibility}" MaxWidth="{Binding MaxWidth}" HorizontalAlignment="Left" IsHitTestVisible="False" Tag="Ignore"
+          FlowDirection="{Binding Path=DataContext.GlobalTextFlowAL2R, RelativeSource={RelativeSource FindAncestor, AncestorLevel=1, AncestorType={x:Type UserControl}}}">
+        <ItemsControl.RenderTransform><TranslateTransform X="-250"/></ItemsControl.RenderTransform>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <ItemsControl ItemsSource="{Binding Segments}" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipCompact}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate><DataTemplate>
+                <TextBlock Text="{Binding Text}" Foreground="{Binding Foreground}" FontSize="16" TextWrapping="Wrap" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipCompact}" Tag="Ignore">
+                  <TextBlock.Effect><DropShadowEffect ShadowDepth="2" Direction="315" Color="#CC000000" BlurRadius="0"/></TextBlock.Effect>
+                </TextBlock>
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Content>
+  </Operation>
 </Patch>

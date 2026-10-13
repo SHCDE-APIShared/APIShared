@@ -294,3 +294,49 @@ See the [audio integration guide](AUDIO.md#situational-sound-rules).
 
 Unit-type/source filters, evidence checks, repeat limits and local profiles use the
 same Pre/Post events. See [policy examples and boundaries](AUDIO.md#consumer-filters-repeat-limits-and-other-sound-policies).
+
+## Building tooltip text
+
+APIShared 0.9.0 provides `APIShared.Presentation.BuildingTooltipPresentation`.
+On the Unity startup thread, register your own plugin GUID, a stable contribution
+ID and a provider returning `IReadOnlyList<BuildingTooltipLine>`. Check the returned
+boolean and diagnostic. A line contains immutable `BuildingTooltipText` segments
+with independently selectable ARGB foreground colours; localize text in your mod.
+The service owns wrapping, inherited game text direction and the two shared hosts.
+Do not patch their layout or replace Vanilla hover controls.
+
+The provider receives the Vanilla structure identifier (not mapper ID), Compact
+or Detailed variant and `IsSymbolHover`. Identifier zero means that no building
+tooltip is active: retire selection state if necessary; returned rows are not
+displayed in that case. It runs synchronously after completed
+BuildingRollover/GuiChecks operations on the confirmed Unity main thread. Return
+null or an empty collection when inactive or irrelevant. State, counters, native
+reads and gameplay authorization remain yours. Empty text consumes no space.
+Providers are retained until process exit; there is no unregister or hook teardown.
+Callbacks run outside registry locks; registrations made from a callback take
+effect on the next update. Failures discard that provider's entire current result
+and report once; other providers continue, and subsequent calls can recover.
+
+Rows are ordered top-to-bottom by ascending optional `order` (default 0), then
+ordinal owner GUID and contribution ID. Higher values sit closer to Vanilla's
+cost line. Identical owner/ID pairs are rejected. Cache immutable results when
+possible. Never call the HUD update recursively or retain a HUD instance.
+Numeric fragments in RTL languages should use directional isolates when needed.
+Vanilla's compact cost anchor is preserved as contributions grow upwards; the
+detailed tooltip expands its existing background. Additional text has no custom
+background, buttons or markup. This does not arbitrate arbitrary third-party XAML
+replacements of the original tooltip.
+
+See [BuildingTooltipExample](../examples/ThirdPartyMod/BuildingTooltipExample.cs)
+for a foreign-plugin registration independent of the maintainer's mod pack.
+
+### Implementation and measurement limits
+
+The dormant publisher guard is allocation-free; unchanged
+contexts and collected row snapshots are reused. Provider callbacks still run
+when registered so dynamic activation is not incorrectly cached. Layout size
+notifications invalidate cached width; geometry and VM work resume on the next
+Unity post publication. The pure Core.Tests fixtures measure zero steady-state
+collection allocations with empty or cached immutable providers after warm-up on
+.NET 10. They do not include Mono/Noesis rendering, consumer callbacks or native
+reads, and are not an FPS benchmark.
