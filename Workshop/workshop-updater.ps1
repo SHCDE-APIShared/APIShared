@@ -118,7 +118,7 @@ function Restore-Rows($Rows) {
 function Completed-Maintenance {
     # Cleanup failure is deliberately outside the installation failure contract.
     try { Maintenance-Completed $Transaction } catch { Write-Output ('Workshop maintenance completion warning: '+$_.Exception.Message) }
-    Invoke-WorkshopMaintenance
+    try { Invoke-WorkshopMaintenance } catch { Write-Output ('Workshop maintenance warning after completion: '+$_.Exception.Message) }
 }
 $lock = $null
 $script:step = 'validation'
@@ -244,6 +244,7 @@ try {
         }
         Journal 'applying'
         $script:step = 'installation writes and receipt commit'
+        $committed = $false
         try {
             foreach ($row in $rows) {
                 if (Game-Running) { throw 'Game restarted during application.' }
@@ -262,6 +263,11 @@ try {
             }
             if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { throw 'Replacement references changed before commit.' }
             Journal 'committed'
+            $committed = $true
+        } catch { Journal ('failure '+$_.Exception.Message); $Recover = $true }
+        # Commit is the irreversible success boundary. Maintenance, empty-folder
+        # cleanup and Steam restart can never enter the installation rollback.
+        if ($committed) {
             Completed-Maintenance
             try {
             foreach ($row in $rows | Where-Object { $_.Kind -eq 'delete' }) {
@@ -278,7 +284,7 @@ try {
                 catch { Journal ('restart-warning '+$_.Exception.Message) }
             }
             exit 0
-        } catch { Journal ('failure '+$_.Exception.Message); $Recover = $true }
+        }
     }
     if ($Recover) {
         $script:step = 'rollback preflight and restore'
