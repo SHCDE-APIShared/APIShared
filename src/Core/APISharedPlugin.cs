@@ -36,36 +36,40 @@ namespace APIShared
             CrusaderLibrary.Instance.LibraryLoaded += OnLibraryLoaded;
         }
 
+        // Each step is an independent error boundary (ApiSharedRuntime.RunNativeInitialization): a
+        // throw is logged and the next step still runs, so one failing service cannot keep the API
+        // Pending. The last step publishes the terminal state; if it cannot, the boundary publishes
+        // Unavailable. WhenReady callbacks therefore always complete.
         private void OnLibraryLoaded(CrusaderLibraryLoadContext context)
         {
-            // MainHUD loads before a consumer may request the on-demand repair capability.
-            GameXAMLManagerAPI.Instance.RegisterBinding(
-                "APISharedRepairExtrasHost", ApiSharedRuntime.ProcessInstance.RepairTooltip);
-            Presentation.BuildingTooltipPresentation.Bind();
-            SavegameModSettings.Initialize(Logger);
-            string hash;
-            try
-            {
-                hash = ComputeInstalledHash();
-            }
-            catch (Exception ex)
-            {
-                NativeApiLog.Error(Logger, $"Could not hash the installed CrusaderDE.dll: {ex}");
-                hash = string.Empty;
-            }
-            ScriptExtenderReplacements.PathfindingTables.Initialize(context.ModuleHandle, context.Memory.Length, hash, Logger);
-            AssassinPathAPI.Initialize(context.ModuleHandle, context.Memory, context.Region, hash, Logger);
-            AssassinAttackControlAPI.Initialize(context.ModuleHandle, context.Region, hash, Logger);
-            Economy.MarketPriceNativeRuntime.Initialize(context.ModuleHandle, context.Region, hash, Logger);
-            Audio.SoundRuntime.InitializeNative(context, Logger, ApiSharedRuntime.ProcessInstance.NativeOwnership);
-            ApiSharedRuntime.ProcessInstance.Initialize(
-                context.ModuleHandle.ToInt64(),
-                context.Memory,
-                hash,
-                new ProcessNativeMemory(),
-                Logger,
-                nativeRegion: context.Region,
-                installAivBuildStep: true);
+            ApiSharedRuntime runtime = ApiSharedRuntime.ProcessInstance;
+            string hash = string.Empty;
+            runtime.RunNativeInitialization(Logger,
+                // MainHUD loads before a consumer may request the on-demand repair capability.
+                new NativeInitializationStep("repair tooltip binding", () => GameXAMLManagerAPI.Instance.RegisterBinding(
+                    "APISharedRepairExtrasHost", runtime.RepairTooltip), runtime.FaultBuildingRepair),
+                new NativeInitializationStep("building tooltip bindings", Presentation.BuildingTooltipPresentation.Bind),
+                new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(Logger)),
+                // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
+                new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
+                    context.ModuleHandle, context.Memory.Length, hash, Logger)),
+                new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(
+                    context.ModuleHandle, context.Memory, context.Region, hash, Logger)),
+                new NativeInitializationStep("Assassin attack control", () => AssassinAttackControlAPI.Initialize(
+                    context.ModuleHandle, context.Region, hash, Logger)),
+                new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
+                    context.ModuleHandle, context.Region, hash, Logger)),
+                new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
+                    context, Logger, runtime.NativeOwnership)),
+                new NativeInitializationStep("native API publication", () => runtime.Initialize(
+                    context.ModuleHandle.ToInt64(),
+                    context.Memory,
+                    hash,
+                    new ProcessNativeMemory(),
+                    Logger,
+                    nativeRegion: context.Region,
+                    installAivBuildStep: true)));
         }
 
         private static string ComputeInstalledHash()

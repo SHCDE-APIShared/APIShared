@@ -399,6 +399,81 @@ namespace APISharedTests
         }
         [TestMethod]
         [TestCategory("Contracts")]
+        public void VerifyFailedInitializationStepsStillCompleteReadiness() => TestFailedInitializationSteps();
+
+        // Issue #5: a throwing LibraryLoaded step must not leave the API Pending or skip later steps.
+        private static void TestFailedInitializationSteps()
+        {
+            byte[] image = CreatePeImage(0x4000, true);
+            var runtime = new ApiSharedRuntime();
+            int early = 0, later = 0, failedCallbacks = 0;
+            runtime.WhenReady(_ => early++);
+            runtime.RunNativeInitialization(null,
+                new NativeInitializationStep("repair tooltip binding",
+                    () => throw new InvalidOperationException("binding failed"), runtime.FaultBuildingRepair),
+                new NativeInitializationStep("savegame settings handler",
+                    () => throw new InvalidOperationException("handler already exists"),
+                    _ => { failedCallbacks++; throw new InvalidOperationException("failure handler"); }),
+                new NativeInitializationStep("later step", () => later++),
+                new NativeInitializationStep("native API publication",
+                    () => runtime.Initialize(ModuleBase, image, "UNKNOWN", new FakeMemory(), null, null, false)));
+            Assert(later == 1 && failedCallbacks == 1, "a failed step skipped a later independent step");
+            Assert(runtime.State == NativeApiState.Ready && early == 1,
+                "a failed step before publication left WhenReady pending");
+            Assert(!runtime.TryGetBuildingRepair("owner", out _, out NativeCapabilityDiagnostic repair) &&
+                repair.State == NativeCapabilityState.Faulted && repair.Reason.Contains("repair tooltip binding") &&
+                repair.Reason.Contains("binding failed"), "the failed step's capability did not report Faulted with its reason");
+            Assert(!runtime.TryGetGatehouseTiming("owner", out _, out NativeCapabilityDiagnostic gate) &&
+                gate.State == NativeCapabilityState.UnsupportedBuild, "a failed step changed an independent capability");
+            runtime.RunNativeInitialization(null,
+                new NativeInitializationStep("native API publication", () => throw new InvalidOperationException("again")));
+            Assert(runtime.State == NativeApiState.Ready && early == 1, "a repeated run replaced the terminal state");
+
+            runtime = new ApiSharedRuntime();
+            NativeApiState observed = NativeApiState.Pending;
+            runtime.WhenReady(api => observed = api.State);
+            var failingLogger = new BepInEx.Logging.ManualLogSource("InitializationBoundaryFixture");
+            failingLogger.LogEvent += (_, __) => throw new InvalidOperationException("test log listener");
+            runtime.RunNativeInitialization(failingLogger,
+                new NativeInitializationStep("native API publication", () => throw new InvalidOperationException("publication failed")));
+            Assert(runtime.State == NativeApiState.Unavailable && observed == NativeApiState.Unavailable,
+                "a throwing publication did not complete WhenReady with Unavailable");
+            Assert(!runtime.TryGetGatehouseTiming("owner", out _, out NativeCapabilityDiagnostic faulted) &&
+                faulted.State == NativeCapabilityState.Faulted && faulted.Reason.Contains("publication failed"),
+                "native capabilities did not report the publication failure");
+            Assert(!runtime.TryGetBuildingRepair("owner", out _, out NativeCapabilityDiagnostic unavailableRepair) &&
+                unavailableRepair.State == NativeCapabilityState.Faulted, "on-demand capability ignored Unavailable");
+            int late = 0;
+            runtime.WhenReady(_ => late++);
+            Assert(late == 1, "late callback after a failed initialization was not synchronous");
+
+            runtime = new ApiSharedRuntime();
+            runtime.RunNativeInitialization(null, new NativeInitializationStep("no publication", () => { }));
+            Assert(runtime.State == NativeApiState.Unavailable, "initialization without publication stayed Pending");
+        }
+        [TestMethod]
+        [TestCategory("Contracts")]
+        public void VerifyLibraryLoadedStepsRunInsideTheErrorBoundary()
+        {
+            // Every initialization call of OnLibraryLoaded must sit in a step lambda; a direct call
+            // would run outside RunNativeInitialization's error boundary again (issue #5).
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
+            {
+                var plugin = assembly.MainModule.GetType("APIShared.APISharedPlugin");
+                var handler = plugin.Methods.Single(m => m.Name == "OnLibraryLoaded");
+                // ldftn of a step delegate is not a call; only call and callvirt run code here.
+                var calls = handler.Body.Instructions
+                    .Where(i => i.OpCode.Code == Mono.Cecil.Cil.Code.Call || i.OpCode.Code == Mono.Cecil.Cil.Code.Callvirt)
+                    .Select(i => (Mono.Cecil.MethodReference)i.Operand).ToArray();
+                Assert(calls.Count(m => m.Name == "RunNativeInitialization") == 1,
+                    "OnLibraryLoaded must run its steps through RunNativeInitialization");
+                Assert(!calls.Any(m => m.Name == "Initialize" || m.Name == "InitializeNative" ||
+                    m.Name == "Bind" || m.Name == "RegisterBinding" || m.Name == "ComputeInstalledHash"),
+                    "an OnLibraryLoaded initialization step runs outside the error boundary");
+            }
+        }
+        [TestMethod]
+        [TestCategory("Contracts")]
         public void VerifyOwnership() => TestOwnership();
 
         private static void TestOwnership()
