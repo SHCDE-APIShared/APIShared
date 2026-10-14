@@ -106,6 +106,49 @@ public class NetworkPacketTests
     }
 
     [TestMethod]
+    public void DisabledChoreDropIsReportedOncePerChannel()
+    {
+        bool enabled = false;
+        int calls = 0, firstReports = 0, secondReports = 0;
+        var first = new PacketReceivePolicy<Packet>(() => enabled, (_, error) => { Assert.IsNull(error); firstReports++; });
+        var second = new PacketReceivePolicy<Packet>(() => enabled, (_, _) => secondReports++);
+        first.Chore(new Packet(), null, _ => throw new AssertFailedException("validated"), _ => calls++);
+        first.Chore(new Packet(), null, null, _ => calls++);
+        enabled = true;
+        first.Chore(new Packet(), null, _ => false, _ => calls++);
+        enabled = false;
+        first.Chore(new Packet(), null, null, _ => calls++);
+        Assert.AreEqual(1, firstReports);
+        Assert.AreEqual(0, secondReports);
+        second.Chore(new Packet(), null, null, _ => calls++);
+        second.Chore(new Packet(), null, null, _ => calls++);
+        Assert.AreEqual(1, secondReports);
+        Assert.AreEqual(1, firstReports);
+        Assert.AreEqual(0, calls);
+    }
+
+    [TestMethod]
+    public void ChoreReceiveAllocatesNothingAfterTheDropReport()
+    {
+        bool enabled = false;
+        int calls = 0, reports = 0;
+        var receiver = new PacketReceivePolicy<Packet>(() => enabled, (_, _) => reports++);
+        var packet = new Packet();
+        Func<Packet, bool> validate = _ => true;
+        Action<Packet> execute = _ => calls++;
+        receiver.Chore(packet, null, validate, execute);
+        enabled = true;
+        receiver.Chore(packet, null, validate, execute);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) receiver.Chore(packet, null, validate, execute);
+        enabled = false;
+        for (int i = 0; i < 1000; i++) receiver.Chore(packet, null, validate, execute);
+        Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.AreEqual(1001, calls);
+        Assert.AreEqual(1, reports);
+    }
+
+    [TestMethod]
     public void MessagesCopyPayloadBeforeDispatchAndValidateOnlyAfterDispatch()
     {
         var queue = new Queue<Action>();

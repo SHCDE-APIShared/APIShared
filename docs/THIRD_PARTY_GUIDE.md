@@ -43,6 +43,18 @@ before runtime checks. A known Steam delivery is rejected. Missing
 Steam identity on this dedicated type is transport classification, not verified
 player authorization; payload PlayerId is not proof of origin.
 
+Chore `IsEnabled` and `Validate` must return the same result on every peer for the
+same packet. Every peer, including the sender, evaluates both synchronously when
+the Chore is received, so read synchronized game or lobby state there, never a
+per-machine setting, local selection or UI state. A peer whose `IsEnabled` returns
+false drops the packet before `Validate` and execution while the other peers
+execute it, so the simulation diverges; APIShared performs no retry or
+resynchronization ([receive policy](../src/Networking/PacketReceivePolicy.cs)).
+The first such drop on each channel is reported once through the channel's
+`Diagnostic` callback; later drops on that channel and `Validate` rejections are
+not reported. `Send` checks `IsEnabled` on the caller and returns `Disabled`
+without submitting.
+
 `NetworkSendResult.Submitted` means local preflight and a normal return from the
 underlying send, not native execution or peer acknowledgement. The Extender public
 API returns void and retains its internal Steam fallback. APIShared blocks its
