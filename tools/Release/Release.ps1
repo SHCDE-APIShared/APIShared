@@ -25,8 +25,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not determine the reviewed source commit
 if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShared repository before preparing its release.' }
 $tag = "APIShared/v$version"
 if ($TestRelease) { if ($Publish) { throw 'Test releases must remain drafts.' }; $tag = "APIShared/test/v$version-$($commit.Substring(0,12))" }
-& (Join-Path $root 'build.bat') /nopause /noinstall
-if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
+if (-not $PrepareOnly) {
+    & (Join-Path $root 'build.bat') /nopause /noinstall
+    if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
+}
 . (Join-Path $root 'tools/BuildProof.ps1')
 $null = Assert-ApiBuildProof $root -Release
 $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
