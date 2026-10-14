@@ -29,6 +29,7 @@ namespace ThirdPartyMod
             InterceptionExample.Register(Log);
             BuildingTooltipExample.Register(Log);
             SaveDataExample.Register(Guid, Log);
+            PaintExample.Register(Guid, (int)Enums.GM.GM_BODY_PIKEMAN, Log);
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);

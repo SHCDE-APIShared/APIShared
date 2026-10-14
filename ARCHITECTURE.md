@@ -59,6 +59,7 @@ src/
     UnitHud/                    HUD contracts and implementation parts
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
+    Paint/                      shared managed draw sites: body sprites, tiles, chevrons, tile colour, map layers
   ModSettings/
     Presets/                    contracts, host adapter, controller, catalog and storage
     Lobby/                      per-player synchronization and convergence
@@ -260,6 +261,10 @@ remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implem
 Versioned save data belongs to Savegames. APIShared owns the record format, the migration
 order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
 migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
+
+Shared paint sites belong to Presentation. APIShared owns one MonoMod hook per managed draw
+method, installed at the first registration, the dispatch order and the claim protocol; consumers
+own their art, renderer bindings and unit identity. See [Shared paint sites](docs/PAINT.md).
 
 Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
 owns shared presentation and registration; consumers own localized text,

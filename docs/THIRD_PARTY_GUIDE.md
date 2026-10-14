@@ -335,6 +335,20 @@ Timing is indicative and not asserted; the host also ran unrelated work (21 to 5
 CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
 
+## Sharing draw hooks
+
+When your mod changes how units, animals, tiles, chevrons, tile colours or map draw-list
+entries look, register with `APIShared.Presentation.PaintEvents` instead of hooking
+`SpriteMapping.SetBodySprite` or the other draw methods yourself. Several mods then share
+one hook per method, run in a declared order and resolve competing replacements through
+claims instead of load order. Register once at startup; pass a sprite-file filter when you
+only care about some files, and `null` when you must see every paint of the renderers you
+track. Claim before replacing a result and give exact-identity art a lower order than theme
+art. Keep your own hook only as the fallback when registration returns false (an older
+APIShared, or a refused installation). Use `CallOriginalBodySprite` to restore a pooled
+renderer's native frame. The broker is presentation only and does not resolve unit identity.
+See [Shared paint sites](PAINT.md) and the [example](../examples/ThirdPartyMod/PaintExample.cs).
+
 ## Sharing native market price queries
 
 Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded

@@ -73,6 +73,34 @@ then game acceptance for new clip audibility, inferred actions and map transitio
 Errors deactivate the affected optional context or map-clip capability while
 Vanilla, generic sound events and independent API services remain available.
 
+## Paint sites
+
+The [paint broker](docs/PAINT.md) hooks managed Assembly-CSharp methods only; no native
+address or hash is involved, and an unchanged signature keeps it installable on a new game
+build. At installation it checks each method's declaring type, name, static or instance form,
+return type and parameter types (`PaintCalls` signatures in
+[PaintSites.cs](src/Presentation/Paint/PaintSites.cs)):
+
+| Site | Method | Parameters after the receiver |
+|---|---|---|
+| BodySprite | static `SpriteMapping.SetBodySprite` | SpriteRenderer, int file, int image, int colour, bool altFrame, int chopFeet, int transparency |
+| TileGraphic | static `SpriteMapping.setGenericBuildingTileGraphic` | GameMapTile, int file, int image, int light |
+| Chevron | static `SpriteMapping.getChevronImage` returning Sprite | GameMapTile, int file, int image |
+| TileColour | private instance `gameTile.setTileColour` | GameMapTile, Vector3Int location, int light |
+| PixieLayer | instance `GameMap.addUpdatePixie` | 12 parameters: id, x, y, tile x, tile y, float height, file, image, bool hiMode, transparency, delay, colour |
+| FlyLayer | instance `GameMap.addUpdateFly` | 14 parameters: id, x, y, tile x, tile y, float height, file, image, colour, transparency, delay, object type, info type, info data |
+| OrgLayer | instance `GameMap.addUpdateOrg` | 8 parameters: id, x, y, float height, file, image, colour, transparency |
+| BuildingAnimLayer | instance `GameMap.addUpdateBuildingAnim` | 14 parameters: id, x, y, tile x, tile y, anim layer, file, image, colour, transparency, delay, bool hasSubSpecial, half-pixel x, half-pixel y |
+
+A changed signature refuses that site only (`PAINT_SITE_REFUSED`) and consumers keep their
+own hooks. After a game update also re-check the documented effects consumers rely on: that
+`SetBodySprite` still sets the renderer's sprite, shared material and colour, that
+`setGenericBuildingTileGraphic` sets `tileImage`, that `setTileColour` writes the cell colour
+to `tilemapRef`, and that body paints still happen inside the `addUpdate*` calls. Re-check the
+Script Extender hooks beneath the broker on `SetBodySprite` and `setTileColour` after an
+Extender update. A BepInEx update that changes MonoMod.RuntimeDetour's private `Detour._DetourMap`
+makes the detour count unknown: on Mono every site whose entry is already hooked (`SetBodySprite`
+and `setTileColour` under Script Extender) is then refused until the guard is updated.
 ## Explicit gate-routing backend
 
 Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
