@@ -114,4 +114,18 @@ $outside=Join-Path (Split-Path $game -Parent) 'outside';[void][IO.Directory]::Cr
 $link=Join-Path $old 'RecoveryBackup';$null=New-Item -ItemType Junction -Path $link -Target $outside
 Run;Assert-Exists $old $true;if([IO.File]::ReadAllText((Join-Path $outside '0')) -cne 'outside bytes'){throw 'Cleanup followed a junction.'}
 Write-Host 'PASS: linked content is retained without touching its target.'
+
+# The fixture substitutes only the maintenance callback. Production updater code
+# must keep both the new payload and final receipt even if that callback throws.
+New-Case 'post-commit-failure';$staged=New-Transaction 1 -Open
+[IO.File]::Delete((Join-Path $staged 'journal.log'));[IO.File]::Delete((Join-Path $staged 'completed.utc'))
+Write-Text (Join-Path $game 'BepInEx/plugins/Example/Example.dll') 'old 1'
+$scripts=Join-Path (Split-Path $game -Parent) 'scripts';[void][IO.Directory]::CreateDirectory($scripts)
+Copy-Item -LiteralPath (Join-Path $root 'Workshop/workshop-updater.ps1'),(Join-Path $root 'Workshop/workshop-maintenance.ps1') -Destination $scripts
+[IO.File]::AppendAllText((Join-Path $scripts 'workshop-maintenance.ps1'),"`r`nfunction Invoke-WorkshopMaintenance { throw 'isolated unexpected maintenance failure' }`r`n")
+& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $scripts 'workshop-updater.ps1') -GameRoot $game -Transaction $staged -OperationsHash (Hash (Join-Path $staged 'operations.tsv'))
+if($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText((Join-Path $game 'BepInEx/plugins/Example/Example.dll')) -cne 'new 1' -or [IO.File]::ReadAllText((Join-Path $game '_APIShared/Workshop/Receipts/123.json')) -cne 'receipt 1'){throw 'Post-commit maintenance error rolled back a successful installation.'}
+$history=[IO.File]::ReadAllLines((Join-Path $staged 'journal.log'))
+if($history -cnotcontains 'committed' -or $history -ccontains 'restored'){throw 'Post-commit maintenance error changed the terminal outcome.'}
+Write-Host 'PASS: an unexpected post-commit maintenance exception cannot roll back payload or receipt.'
 Write-Host "Maintenance fixture evidence retained: $fixture"
