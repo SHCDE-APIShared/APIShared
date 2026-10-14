@@ -13,15 +13,15 @@ Install [Script Extender](https://gitlab.com/rawra-stronghold-crusader/shcde-scr
 and one central APIShared copy under `BepInEx/plugins/APIShared_Serp`.
 The recommended installation is through the
 [Steam Workshop](https://steamcommunity.com/workshop/filedetails/?id=3818609220).
-Downloads are also available from [releases](https://github.com/SHCDE-APIShared/APIShared/releases);
-until the first release here, use the
-[previous repository](https://github.com/Serpens66/Stronghold-Crusader-DE-Mods/releases?q=APIShared).
+Downloads are also available from [releases](https://github.com/SHCDE-APIShared/APIShared/releases).
 If your mod pack already includes APIShared, use that copy. SerpsModsHost is not required.
 
 ## Use
 
 Reference APIShared with `Private=false` and declare the minimum APIShared and
 Script Extender versions your mod needs. Consumer mods must not bundle the DLL.
+Documentation describes this source checkout. Confirm that the installed release
+contains each API you use; source-checkout features can precede a published package.
 See the [mod author guide](docs/THIRD_PARTY_GUIDE.md) for registration, lifetime,
 settings and packaging contracts.
 

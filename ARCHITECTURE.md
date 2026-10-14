@@ -14,6 +14,7 @@ GUID without installing hooks or reserving a capability.
 | Presentation, Buildings | HUD/briefing extensions, building repair and gatehouse services |
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
+| Networking | Owner-bound Chore channels, control-plane messages and presentation dispatch |
 | Units, Pathfinding, Diagnostics | Command interception, recruitment policies, queries and advanced integrations |
 | Audio | Native-record sound presentation, audited source contexts and shared rule events |
 | Economy | Shared native market price query events and validated hook ownership |
@@ -38,9 +39,9 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
-  ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
+  ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
   Audio/                        shared playback events, context capture and binary contracts
   Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
@@ -51,6 +52,7 @@ src/
     Gatehouse/                  timing, origin and drawbridge coordination
   Presentation/
     Events/                     named HUD Pre/Post publishers
+    BuildingTooltip/            supplementary building-tooltip text and shared rendering
     UnitHud/                    HUD contracts and implementation parts
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
@@ -198,7 +200,7 @@ replacement independently of lobby convergence; its tests run without the game.
 The controller composes the existing envelope and determines which values
 may be saved; storage receives the completed payload. Tests can exercise this protocol
 through a plain settings host without constructing a Noesis page or subclassing the ViewModel.
-Published presets keep their contracts, JSON schema, file discovery and dialog row models
+Published preset contracts, JSON schema, file discovery and dialog row models live
 in separate files. `ModSettingsWorkingSources` owns the optional source-provider
 registry. Schema changes belong in `ModSettingsPresetJson`; provider discovery and
 filesystem boundaries belong in `ModSettingsPresetCatalog`. Dialog models adapt
@@ -220,7 +222,7 @@ public capabilities and gameplay services. Fixes must validate the affected bina
 and method contracts, preserve foreign-mod callbacks, and fail closed independently
 of other APIShared services. No consumer registration or author-specific mod is required.
 
-The initial UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with
+The UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with
 SHCDE-SE 2.14.1. The configuration and compatibility limits are documented in the
 [integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes). Permanent
 hooks and native resources survive until process exit. When upstream fixes a defect,

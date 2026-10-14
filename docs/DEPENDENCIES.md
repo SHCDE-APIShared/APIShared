@@ -4,11 +4,13 @@ BepInEx's versioned `BepInDependency` constructor declares an inclusive **minimu
 version. It accepts newer installed plugins and enforces startup order. It is not
 an exact-version pin. Keep this hard dependency for APIs needed by the plugin.
 
-The installed Script Extender also supports arbitrary GUIDs in `info.json`:
+The Script Extender supports arbitrary GUIDs in `info.json`. This example targets
+the checked workspace APIShared 0.9.0 assembly; select a published release containing
+your required APIs before distributing a consumer:
 
 ```json
 "Dependencies": [
-  { "GUID": "APIShared_Serp", "MinimumVersion": "0.6.0" },
+  { "GUID": "APIShared_Serp", "MinimumVersion": "0.9.0" },
   { "GUID": "Another.Author.Plugin" }
 ]
 ```

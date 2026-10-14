@@ -27,9 +27,13 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 
+The catalog describes this source checkout. Check the selected package and its
+public declarations before assigning a consumer minimum version; source features
+may not yet be present in published downloads.
+
 ## Multiplayer packets
 
-Available since 0.7.0 through `ApiShared.ForMod(ownerGuid).Network`; no SerpsModsHost
+Requires APIShared 0.7.0 or newer; register through `ApiShared.ForMod(ownerGuid).Network`; no SerpsModsHost
 dependency is required. `RegisterChore<T>` retains synchronous simulation execution.
 `RegisterMessage<T>` snapshots payload and Steam identity before FIFO Unity dispatch.
 Register unconditionally on Unity after the Extender's built-in packet registration,
@@ -79,22 +83,26 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
+| Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
+| Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
+| Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
-for legacy idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
+for idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
 to run Vanilla's existing objective-based target selection after a veto. The synchronous callback
 receives a one-based unit game ID on the native simulation thread and must not issue commands.
 One owner holds the permanent hook; consumers implement their own logical activation predicate.
 Native selection can fail or select another vetoed obstacle; it does not guarantee a successful route.
-The experimental `IAssassinTraversalView`/traversal-provider API was removed with maintainer approval;
-no consumer-defined alternative search or mainmod prerequisite is involved in obstacle completion.
+Obstacle completion does not expose consumer-defined alternative traversal search
+and requires no command-engine mod.
 
 ## Game-mode permissions and settings presentation
 
 The optional mode evaluator also has a consumer-owned [GameplayModeGate](../src/GameModes/GameplayModeGate.cs).
 Feed lifecycle notifications before your own feature work; it has no automatic
-subscriptions, hooks or settings side effects. The additive
+subscriptions, hooks or settings side effects. The
 [mode availability collection](../src/ModSettings/UI/ModSettingsModeAvailability.cs)
 and [Noesis background properties](../src/ModSettings/UI/ModSettingsMode.cs) let
 arbitrary mods share the same profiles with their settings UI. All presentation
@@ -104,7 +112,7 @@ and the public example for one page-level legend and editable tinted rows.
 
 ## Side-HUD buttons
 
-`ModApiClient.TryGetHudExtrasButtons` acquires `IHudExtrasButtonsCapability` independently of native Unit HUD hooks or troop selection. `TryRegisterButton` accepts `HudExtrasButtonDefinition`: owner-local ID, command, localized popup text, fresh Noesis Button factory, order (default 0), and optional ToolTip factory. Registration is process-lived; duplicate owner-local IDs are rejected. Existing `IApiShared` interfaces remain unchanged.
+`ModApiClient.TryGetHudExtrasButtons` acquires `IHudExtrasButtonsCapability` independently of native Unit HUD hooks or troop selection. `TryRegisterButton` accepts `HudExtrasButtonDefinition`: owner-local ID, command, localized popup text, fresh Noesis Button factory, order (default 0), and optional ToolTip factory. Registration is process-lived; duplicate owner-local IDs are rejected.
 
 APIShared places 36 x 34 buttons bottom to top inside Vanilla's `HUD_ObjectivesPanel`, reserving its Objectives/Freebuild slot. Visible active entries sort by ascending order, then ordinal owner GUID and ID. Five entries fit each page; an arrow above them cycles pages. Hidden and failed entries occupy no slots. Parent containers gate pages and activation because Vanilla's button style animates Button.Visibility.
 
@@ -159,7 +167,7 @@ The inherited attribute excludes that plugin's lobby settings from automatic
 savegame capture and restoration. It does not disable presets. Participation does
 not depend on a particular plugin GUID or another mod's opt-out field.
 
-Since APIShared 0.7.1, Optional APIShared consumers may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This additive, thread-safe registration is idempotent, applies to derived types and lasts until process exit. Existing attribute behavior and other plugins remain unchanged.
+Optional consumers requiring APIShared 0.7.1 or newer may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This thread-safe registration is idempotent, applies to derived types and lasts until process exit. The exclusion applies only to the registered type and its derived types.
 
 Settings view models show no mod-policy notice by default. Before registration,
 call `System_ConfigureDirectLaunchNotice(() => localizedText)` when your mod needs
@@ -309,7 +317,7 @@ should subscribe here rather than detour CEB10/CEB90 independently.
 
 ## Workshop inventory
 
-`APIShared.Workshop.WorkshopInventory` retains the historical inventory schema.
+`APIShared.Workshop.WorkshopInventory` exposes the schema-1 file inventory.
 The permanent staging callback cleans only previous APIShared releases; foreign
 map packages remain Extender-owned. See [inventory and cleanup](WORKSHOP.md#workshop-package-cleanup).
 
@@ -323,7 +331,7 @@ See [Workshop contracts and workflows](WORKSHOP.md).
 
 ## Situational audio
 
-Available since **0.8.0**. `APIShared.Audio.SoundEvents` provides owner-bound
+Requires APIShared **0.8.0** or newer. `APIShared.Audio.SoundEvents` provides owner-bound
 Pre/Post registrations for the audited GameMap playback path. Rules can compose
 volume factors, replace a Vanilla effect or preloaded clip, set panorama and
 suppress a request. Context exposes source/type evidence where safely attributed;

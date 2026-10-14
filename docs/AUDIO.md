@@ -11,7 +11,7 @@ Audio. Consumer settings remain outside APIShared.
 
 ## Public audio contracts
 
-Available since APIShared **0.8.0**; declare this minimum version in both plugin
+Requires APIShared **0.8.0** or newer; declare this minimum version in both plugin
 and manifest dependencies when using these audio contracts.
 
 `APIShared.Audio.SoundEvents.TryRegister(ownerGuid, registrationId, pre, post,
@@ -48,10 +48,10 @@ after emission. `UnitType` and `SourceKey` identify the snapshot provenance;
 there are no unit/player IDs. Unknown or unsafe origins remain `Unknown`.
 `SituationEvidence` is source-specific: `Unknown`, `Inferred`, `NativeAudited`,
 `InGameConfirmed`. `SituationConfirmed` is true only for the last value.
-The existing Arabian draw entry is confirmed; new interpretations are inferred,
+The Arabian draw entry is confirmed; the other interpretations are inferred,
 including currently unconfirmed Arabian sheathing reachability. Enum values stay
-stable when an individual source is confirmed. This is an explicitly approved
-breaking change: named contexts no longer imply in-game confirmation.
+stable when an individual source is confirmed. A named context alone does not
+imply in-game confirmation.
 
 ### Availability and diagnostics
 
@@ -87,7 +87,7 @@ Handles use ordinal owner/registration identity, separate from native effect IDs
 `TryReplaceClip(handle)` returns false without changes for unavailable handles.
 `Target.Kind` and `Target.Clip`/`EffectId` distinguish the final namespace;
 Pre/Post `SoundId` is -1 for custom targets. Last valid target wins. Factors,
-panorama, suppression and callback rollback compose as before. Destroyed clips
+panorama, suppression and callback rollback compose under the same callback contract. Destroyed clips
 fall back to the last valid Vanilla effect (initially the original effect).
 
 OGG and the Extender decoder's PCM16, 44100 Hz mono/stereo WAV are supported.
@@ -135,10 +135,10 @@ deferred and requires the Extender's resource index. Never pass an Extender clip
 ID to `ReplaceSound`. A map handle can be rebound on a later map; load it only
 after the desired archive is available.
 
-A named situation may now be provisional. Filter `Context.SituationEvidence` or
+A named situation may be provisional. Filter `Context.SituationEvidence` or
 `SituationConfirmed` if your rule requires accepted gameplay evidence. Use
 `SourceKey` plus `UnitType` when acceptance is specific to one source/type.
-The Arabian default rule continues to match its confirmed source. Military
+The Arabian example rule matches its confirmed source. Military
 support units are included; worker/animal contexts remain outside this catalog.
 
 ### Consumer filters, repeat limits and other sound policies
@@ -206,7 +206,7 @@ handle Unknown requests intercepted by the audited GameMap playback path.
 
 Audio owns one permanent GameMap IL hook, two NativeX64/Absolute wrapper
 intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes).
-The old Arabian-handler detour is removed. Original native return addresses
+Original native return addresses
 select a hash-bound 91-entry soldier catalog; a negative marker carries only
 source/effect provenance through the 21-short records and existing buffers.
 No native pointer or late unit lookup crosses into Unity playback. UnitAccess
@@ -226,14 +226,14 @@ destruction. Mod clips persist and imported clips remain foreign-owned.
 
 ### Native bridge validation
 
-Audio source capture now owns wrapper ranges 0x2960..0x296F and
+Audio source capture owns wrapper ranges 0x2960..0x296F and
 0x2990..0x299F plus emitter 0x1A41E0..0x1A41EE. Absolute patch validation
 checks displaced bytes, target, entry and trampoline continuation before and
 after publication. A permanently rooted Win64 bridge captures [entry RSP] as
 argument five, reserves 0x38 aligned stack bytes, and retains the four original
 arguments. Copied-code tests execute the bridge and original displaced prologue;
 production functions/random choices still run exactly once. Catalog sites verify
-CALL rel32 targets. The former 0x16F590 detour is no longer installed.
+CALL rel32 targets.
 
 The concrete hashes, addresses, resolution policy and binary-update checklist
 remain in [UpdateToNewDLL](../UpdateToNewDLL.md). General ownership and update
@@ -265,31 +265,30 @@ Permanent native bridges and their managed transitions remain installed without
 audio demand. Their wrapper skips attribution/UnitAccess when demand is zero;
 the emitter checks missing/consumed scope before demand. One-time confirmation
 markers first read their state and only the first contender needs an atomic write.
-No native bytes, marker meanings, lookup identities or clip lifetimes changed.
 
 ### Audio dispatch measurements
 
 Measured on the local 64-bit .NET Framework 4.8.1 test host, Release compilation,
 with 2000 warm-up calls and 20000 measured calls per sample. Context construction
 is outside the matrix; the original playback is a static no-op, callbacks only
-multiply by one or observe. Timing is indicative: baseline is one sample and the
-optimized timing is the median of five; scheduling/GC vary. Allocation assertions
+multiply by one or observe. Timing is indicative and uses the median of five
+samples; scheduling/GC vary. Allocation assertions
 are strict for dormant paths; timing has no pass/fail threshold or FPS implication.
 
-| Registrations / callbacks | Bytes before | Bytes after | ns before | ns after |
-| --- | ---: | ---: | ---: | ---: |
-| 0 | 24 | 0 | 59.8 | 27.3 |
-| 1 / Pre | 256 | 144 | 404.1 | 184.0 |
-| 1 / Post | 368 | 232 | 375.1 | 216.1 |
-| 1 / Pre + Post | 408 | 264 | 496.9 | 257.6 |
-| 16 / Pre | 976 | 144 | 1825.1 | 721.0 |
-| 16 / Post | 1808 | 1552 | 1599.5 | 857.4 |
-| 16 / Pre + Post | 2448 | 1704 | 3157.9 | 1447.7 |
-| 16 / all disabled | 24 | 0 | 140.9 | 66.2 |
+| Registrations / callbacks | Bytes per call | ns per call |
+| --- | ---: | ---: |
+| 0 | 0 | 27.3 |
+| 1 / Pre | 144 | 184.0 |
+| 1 / Post | 232 | 216.1 |
+| 1 / Pre + Post | 264 | 257.6 |
+| 16 / Pre | 144 | 721.0 |
+| 16 / Post | 1552 | 857.4 |
+| 16 / Pre + Post | 1704 | 1447.7 |
+| 16 / all disabled | 0 | 66.2 |
 
-The matrix uses the same general registry scenarios on both versions to compare
-allocation changes. Separate tests clone the actual compiled IL entry and
-production guard, replace only Unity's original sound call with a recorder, and
+The matrix measures the general registry scenarios. Separate tests clone the
+actual compiled IL entry and production guard, replace only Unity's original
+sound call with a recorder, and
 retain the confirmation path and real audio demand cache. Both no active demand
 and 16 disabled handles allocate 0 bytes per call after warm-up (about 39/44 ns
 in this run). The production guard has no allocation opcode before its original

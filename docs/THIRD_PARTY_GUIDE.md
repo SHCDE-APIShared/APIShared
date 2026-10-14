@@ -14,7 +14,7 @@ interested consumers. Registering an observer is explicit demand for observation
 
 ## Multiplayer actions and messages
 
-Since APIShared 0.7.0, use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
+Declare APIShared 0.7.0 or newer and use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
 the validated Unity-thread `LibraryLoaded` entry, after Extender built-in packet
 registration. Registration must be unconditional and in identical order on every
 peer. Extender packet IDs depend on registration order; GUIDs do not negotiate IDs
@@ -23,7 +23,7 @@ explicit `[MessagePackFormatter]` implementations. Duplicate owner-local IDs or
 two channels of the same transport kind for one packet type are rejected. One
 Chore channel and one message channel may deliberately share a mixed-protocol type.
 Channels and subscriptions stay rooted until process exit; use logical activation,
-never component teardown. No new mandatory member was added to `IApiShared`.
+never component teardown.
 
 `RegisterChore<T>(id, execute, options)` is for gameplay-changing button/key actions.
 Options support a smaller maximum payload, logical activation, deterministic
@@ -78,12 +78,12 @@ The example library compiles against ordinary public assemblies and has no `Inte
 
 ## Script Extender bugfixes
 
-Since 0.6.1, APIShared includes targeted corrections for Script Extender and bundled dependencies,
+APIShared includes targeted corrections for Script Extender and bundled dependencies,
 implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consumer
 registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
 
-The initial fix addresses an intermittent Alt+F4 crash in the audited UU-ImGUI API
+The shutdown fix addresses an intermittent Alt+F4 crash in the audited UU-ImGUI API
 1.6.7 managed DLL and its matching `cimguiaio.dll` bundled with SHCDE-SE 2.14.1.
 Compatibility is determined by SHA-256 fingerprints and method/IL contracts, not
 by the version label alone. The implementation also validates the installed MonoMod
@@ -149,7 +149,8 @@ leaving its search style and controls intact. Bind one heading to
 `System_ModeNoticeText` / `System_ModeNoticeVisibility`. The optional
 `System_ConsumerModeNoticeText` / `System_ConsumerModeNoticeVisibility` pair uses an
 existing direct-launch notice when one is visible; include the legend in your notice
-provider if you use that combined heading. Legacy notice properties remain unchanged.
+provider if you use that combined heading. The direct-launch and Trail-source notice
+bindings are also available separately.
 
 The preset view model refreshes presentation when the settings hub changes or access
 is refreshed. It uses existing menu evidence and authoritative mission snapshots.
@@ -170,11 +171,31 @@ Classify saved properties with Script Extender `[SyncHostOnly]` or `[SyncPerPlay
 
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 
-The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Shared file formats and legacy `__Serp*` persistence keys are retained for existing saves; they do not restrict mod GUIDs or require the Serps pack.
+The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
 
-## Migration and packaging
+### External settings and application backends
 
-Older APIShared releases exposed settings and mode types under `Shared`. When updating such a consumer, use `APIShared.ModSettings` and `APIShared.GameModes`, update its XAML namespace imports, and rebuild against the selected APIShared release. Author-specific permission tables belong in consumers, rather than APIShared; construct profiles for your own rules. Command/formation implementations belong to their consuming mods; use the public route-search events for the documented preference extension.
+Settings adapters can override `DynamicSettingsProvider` with an
+`IDynamicPresetSettingsProvider` when settings are described at runtime. Descriptors
+use stable keys, exact CLR types and non-null code defaults; dynamic scopes are
+Host or Local. The provider validates and replaces complete working snapshots.
+An optional `IModSettingsApplicationBackend` separates desired values from applied
+values and identifies settings requiring restart. Use the public
+[dynamic/provider contracts](../src/ModSettings/Presets/DynamicPresetSettings.cs)
+and [application coordinator](../src/ModSettings/ModSettingsApplication.cs);
+do not treat every edited working value as an already applied runtime setting.
+
+For a separately registered foreign page, use
+`LobbyModSettingsPresetRegistration.AttachExternalWorkingCopy` to attach presets
+without a second network registration, or `RegisterExternalWorkingCopy` for a
+participant without a page. `PrepareExternalWorkingCopy` creates an unpublished
+candidate; activate it only when the surrounding integration is ready. These
+entry points are Unity-thread operations. Optional consumer adapters and their
+activation rules belong to the integrating mod; presets do not require ExtendedData.
+
+## Namespaces and packaging
+
+Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode contracts. Settings XAML imports `clr-namespace:APIShared.ModSettings;assembly=APIShared`. Compile against the selected APIShared package and check that it contains every API used by your mod; this guide describes the source checkout. Author-specific permission tables belong in consumers, rather than APIShared; construct profiles for your own rules. Command/formation implementations belong to their consuming mods; use the public route-search events for the documented preference extension.
 
 Release consumers with hard minimum APIShared/Script Extender versions and `<Private>false</Private>` for runtime references. Never include APIShared.dll, Script Extender DLLs or game DLLs in the consumer package. Put your XAML under the usual mod Override directory. Keep one centrally installed APIShared instance.
 
@@ -259,13 +280,13 @@ this repository is sufficient; no maintainer workspace or AI assistant is requir
 ## Assassin obstacle completion
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
-for legacy idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
+for idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
 to run Vanilla's existing objective-based target selection after a veto. The synchronous callback
 receives a one-based unit game ID on the native simulation thread and must not issue commands.
 One owner holds the permanent hook; consumers implement their own logical activation predicate.
 Native selection can fail or select another vetoed obstacle; it does not guarantee a successful route.
-The experimental `IAssassinTraversalView`/traversal-provider API was removed with maintainer approval;
-no consumer-defined alternative search or mainmod prerequisite is involved in obstacle completion.
+Obstacle completion does not expose consumer-defined alternative traversal search
+and requires no command-engine mod.
 
 ## Workshop package cleanup
 
@@ -275,13 +296,13 @@ and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cl
 
 ## Plugin entry points with optional APIShared
 
-Since APIShared 0.7.1, Optional APIShared consumers may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This additive, thread-safe registration is idempotent, applies to derived types and lasts until process exit. Existing attribute behavior and other plugins remain unchanged. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
+Optional consumers requiring APIShared 0.7.1 or newer may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This thread-safe registration is idempotent, applies to derived types and lasts until process exit. The exclusion applies only to the registered type and its derived types. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
 
 ## Loose Workshop packages
 
 Use the shipped external publisher for explicitly declared Payload packages.
 The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
-bootstrap maps, consent, migration, recovery and Windows/Proton limits.
+bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton limits.
 
 ## Situational sound rules
 

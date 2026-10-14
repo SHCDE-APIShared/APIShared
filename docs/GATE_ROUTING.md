@@ -39,8 +39,7 @@ both an allowance and a restriction without depending on BugfixesAndQoL types.
 `APIShared.GateRouting.Native.GateRoutingNativeHooks.TryRequest` validates the
 installed native contracts and reserves one owner GUID/registration ID. It does
 not install hooks. This low-level backend is for a routing provider, not ordinary
-rule contributors. Existing `EnemyGatePathPolicyBridge.TryRegister` remains
-passive and keeps its old contract.
+rule contributors. `EnemyGatePathPolicyBridge.TryRegister` is passive.
 
 The explicitly invoked `InstallComparisons`, `InstallMovement` and `InstallDescent`
 methods own their audited native spans permanently. They retain delegates and
@@ -66,21 +65,18 @@ are available only after successful movement installation.
 
 ## Compatibility and validation
 
-The temporary route-observer bridge retains its existing `Current` identity.
-`CurrentRequested` is an additive demand-aware accessor; existing registrations
-start enabled. Only the registered observer can use `SetObservationEnabled`.
+The temporary route-observer bridge exposes `Current` and the demand-aware
+`CurrentRequested` accessor. Registrations start enabled. Only the registered observer can use `SetObservationEnabled`.
 Consumers retain captured observers for paired completion and check demand before
 creating diagnostic contexts, strings or route copies.
 
-All additions are additive; existing gate-policy and observer interfaces are
-unchanged. No existing registration implicitly installs these hooks. Native
+Passive policy and observer registrations do not implicitly install these hooks. Native
 byte/layout contracts, actual RedBird displacement and permanent publication
 remain authoritative. Unknown builds fail acquisition.
 
 Independent registry tests cover ordering, duplicate keys, passive registration,
 invalid identities, per-contributor failures and invalidation. Consumer fixtures
 cover immutable masks, cache identities, inline register/flag preservation and
-native execution. Local migration builds retain the current test version; the
-release minimum must be raised to the eventual API release containing this API
-before distribution. Do not infer availability from an older package sharing a
-local development version.
+native execution. These APIs are present in the checked workspace assembly 0.9.0.
+Before distribution, declare the minimum published release containing them;
+a matching local development version alone does not establish package availability.
