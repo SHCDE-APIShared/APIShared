@@ -4,6 +4,7 @@ This guide is for mod authors using shared sound rules and contributors maintain
 Audio. Consumer settings remain outside APIShared.
 
 - [Public contracts](#public-audio-contracts): registration, context and custom clips.
+- [Native source events](#native-source-events): exact-unit attribution and sound replacement before the native record.
 - [Integration](#situational-sound-rules): initialization and live controls.
 - [Consumer policies](#consumer-filters-repeat-limits-and-other-sound-policies): filters, repeat limits and examples.
 - [Internal implementation](#internal-implementation): permanent hooks and clip lifetime.
@@ -112,6 +113,63 @@ callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
 Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
 process clips and generic events remain independent.
 
+### Native source events
+
+Not in packages up to 0.9.1; check the package you require.
+`APIShared.Audio.SoundSourceEvents.TryRegister(ownerGuid, registrationId, pre,
+out SoundRegistration handle, out string reason, int order = 0)` registers a
+process-owned observer `void SoundSourceHandler(ref SoundSourceArgs args)` on the
+positional wrappers Audio already owns. Registration works from any thread and
+before the native context is ready; calls begin once it is. Callbacks run
+synchronously on the thread executing the native game tick, inside the wrapper
+and before its original, ordered by order, ordinal owner GUID, then ID, without
+replay. Do not call Unity APIs or block there. `SetEnabled` affects subsequent
+calls. Sound calls made from inside a callback are not published again. A throwing
+callback's replacement is rolled back and counted in `CallbackFailures`; later
+callbacks still run.
+
+Only validated sources are published; every other wrapper call passes unchanged.
+
+| Sources | Acting unit (`UnitId`, `UnitGlobalId`, `UnitType`) | `TargetUnitId` / `TargetGlobalId` | Validation | Evidence |
+| --- | --- | --- | --- | --- |
+| The 91 soldier catalog entries (`UnitNN.SourceNN`) | Native current unit | null | Unit type, tile and (0x1700D2) state, as for playback context | Per source, as in the catalog |
+| `MeleeKill.Source01`..`04`, situation `MeleeKill` | Attacker argument of the melee damage routine | Victim argument | Attacker type selects this cue in the routine's jump tables; victim health 0; sound at the victim tile (Source04: attacker tile) | `NativeAudited`; needs in-game confirmation |
+
+`SoundSourceArgs` is a value type passed by reference; dispatch allocates nothing.
+It exposes `OriginalSoundId`, the current `SoundId`, `TileX`/`TileY`, `Kind`,
+`Situation`, `SituationEvidence`, `SituationConfirmed`, `SourceKey` and the identity
+members above. Game IDs are one-based UnitAccess IDs and global IDs are
+`GameUnit.r_GlobalId`, read at the call: immediate values, not lifetime guarantees.
+No player ownership is inferred. `TryReplaceSound(effectId)` selects a Vanilla
+effect-table ID in 0..`MaxEffectId` (10000) and returns false otherwise; the last
+successful replacement wins. Vanilla checks the table downstream (`playSound`
+ignores IDs outside it). Never pass an Extender clip/play-list ID.
+
+The replacement is written into the native record, so Vanilla plays it and
+`SoundEvents` sees it with Unknown context: the replaced effect is no longer the
+audited source. `MeleeKill` is reported only here; Unity playback records of kill
+cues stay Unknown and `SoundContext` still carries no unit ID. `Available` and
+`Diagnostic` report the native context; `MeleeKillAvailable` and
+`MeleeKillDiagnostic` report kill attribution, which fails independently.
+
+Kill cues per attacker type, from the jump tables at 0x199652 and 0x1992E2:
+
+| Attacker types | Victim-tile cue (Source01; Source02/03 for swords) | After a victim cry | Special victim (Source04, attacker tile) |
+| --- | --- | --- | --- |
+| 3, 84 | 240 | 242 | 242 |
+| 55 | 240 or 241 | 242 | 242 |
+| 22, 24, 70, 72, 74, 76, 82 | 118 or 153 | 187 | 187 (not 22) |
+| 25, 78 | 240 or 241 | 186 | 186 |
+| 26, 85 | 116 or 151 | 185 | 185 |
+| 27, 28, 73, 75, 80, 81, 83 | 119 (Source02) or 154 (Source03) | 188 | 188 |
+
+The variant follows bit 0 of the victim's word at GameUnit+0x380. A victim cry is a
+cue the routine already played for victim types 17, 21, 55, 56, 57, 63 or
+(conditionally) 64. A special victim has the native byte at GameUnit+0x328 set and
+gets only the attacker-tile cue; its meaning is not audited. Other attacker types
+and every death voice reaching the same CALLs stay unpublished. Hurt and order cues
+are not attributed: their native call paths were not audited for this catalog.
+
 `ContextRejections` counts known sources whose unit lookup/type/coordinate/state
 checks did not match. The first rejection logs bounded native diagnostics; that
 record remains Unknown without disabling other catalog entries. Custom clip
@@ -135,6 +193,17 @@ deferred and requires the Extender's resource index. Never pass an Extender clip
 ID to `ReplaceSound`. A map handle can be rebound on a later map; load it only
 after the desired archive is available.
 
+### Exact-unit cue replacement
+
+To change a cue for specific units, register `SoundSourceEvents` once at startup,
+keep the handle rooted and match `Situation`, `UnitType` and your own identity set
+(for example `UnitGlobalId`, plus `TargetGlobalId` for kill cues), then call
+`TryReplaceSound`. Keep the callback short and thread-safe; it runs on the native
+game-tick thread. Do not detour the wrappers 0x2960/0x2990 yourself: Audio owns
+them exclusively and a second detour makes one of the two refuse to install. See
+the [contract](#native-source-events) and the `OnSource` part of the
+[example](../examples/ThirdPartyMod/SoundExample.cs).
+
 A named situation may be provisional. Filter `Context.SituationEvidence` or
 `SituationConfirmed` if your rule requires accepted gameplay evidence. Use
 `SourceKey` plus `UnitType` when acceptance is specific to one source/type.
@@ -151,6 +220,7 @@ Local presentation preferences do not require synchronized gameplay messages.
 | Policy | Inputs and action | Boundary |
 | --- | --- | --- |
 | Unit-type-specific sounds | Filter nullable `Context.UnitType` together with `Situation`; then change gain, target, pan or suppression. | A type is not a live unit ID or player owner. Reject missing types for a specific-type rule. |
+| Exact-unit cues | Register `SoundSourceEvents`; match `Situation`, `UnitType` and a consumer-owned `UnitGlobalId` set; `TryReplaceSound`. | Native thread, attributed sources only; effect IDs, not clips. The Unity-stage context of a replaced call is Unknown. |
 | One exact animation/source | Match `SourceKey`, `UnitType`, original effect ID and, if needed, evidence. | The same situation name can describe several sources with different evidence. |
 | Confirmed-only rules | Require `SituationConfirmed`, or select an explicit evidence threshold. | An inferred action name does not prove its gameplay meaning; confidence applies to the individual source/type. |
 | Repeat/burst reduction | Use a monotonic consumer clock and a shared or keyed interval; veto too-frequent requests with `SkipOriginalFunction`. | Original native creation/RNG remain unchanged. Admission is not audible output. |
@@ -178,7 +248,8 @@ matching request is admitted, subsequent requests within the interval are
 suppressed, and suppressed requests do not extend the window. A per-type or
 per-source window can preserve more variation, but requires bounded consumer
 storage. Do not call a tile/source key a per-unit limiter: the context exposes
-no durable unit ID. If an earlier contributor has already vetoed a request,
+no durable unit ID (native source events expose identity only for their attributed
+sources, before the record exists). If an earlier contributor has already vetoed a request,
 leave its veto and avoid consuming your window. A later contributor can still
 veto an admitted request. Pre admission therefore measures attempts, not sound
 actually heard. Post-based accounting may be used for submitted requests; even
@@ -205,7 +276,8 @@ handle Unknown requests intercepted by the audited GameMap playback path.
 ## Internal implementation
 
 Audio owns one permanent GameMap IL hook, two NativeX64/Absolute wrapper
-intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes).
+intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes) with its
+own intermediary. Every intermediary first tests a native demand byte.
 Original native return addresses
 select a hash-bound 91-entry soldier catalog; a negative marker carries only
 source/effect provenance through the 21-short records and existing buffers.
@@ -215,6 +287,29 @@ changes before a call do not defeat source attribution. Unrelated sources stay
 Unknown. Evidence is per source/type; generic playback remains available when
 native attribution fails. Hooks, bridges, delegates and publishers are permanent
 roots with logical activation only.
+
+Native source events reuse the wrapper path: attribution runs before the original,
+callbacks see a stack-only `SoundSourceArgs`, and the final sound ID is forwarded.
+With source demand alone the scope ThreadStatics stay untouched; a replaced call
+is never marked.
+
+### Melee kill attribution
+
+Kill cues are CALLs to wrapper 0x2960 at return addresses 0x199957, 0x199823,
+0x199837 and 0x199319 inside the melee damage routine 0x199110 (rcx unit base,
+edx attacker, r8d victim, r9d damage). They are reached only after the victim's
+health was written as zero (0x19925C, branch 0x19931E). The current-unit global is
+not used: instant-kill callers (0x1AD64, 0x1ADD4, 0x198F84) pass units that need
+not be the one whose update runs. Instead the bridge passes the caller's RBP and
+entry RSP: the routine writes RBP only by `movsxd rbp,r8d` (0x199124), so RBP is the
+victim, and the attacker offset `attacker*0x490` sits in the caller-home slot
+[RSP+0x70] written only at 0x1991D5, which is [entry RSP+0x78] at the wrapper.
+Script Extender detours the routine's 20-byte prologue for its melee-damage event;
+the trampoline keeps the frame layout, so only the body after the prologue
+(0x199124..0x19999D) is hash-checked live. A mismatch disables kill attribution and
+leaves the soldier catalog running. Attacker and victim are then validated through
+UnitAccess, the attacker type against the effect's jump-table group, the victim's
+zero health and the sound tile.
 
 SoundClips queues owner-private resources, map archives and borrowed Extender
 clip captures on the permanent Extender dispatcher. API handles are independent
@@ -229,11 +324,16 @@ destruction. Mod clips persist and imported clips remain foreign-owned.
 Audio source capture owns wrapper ranges 0x2960..0x296F and
 0x2990..0x299F plus emitter 0x1A41E0..0x1A41EE. Absolute patch validation
 checks displaced bytes, target, entry and trampoline continuation before and
-after publication. A permanently rooted Win64 bridge captures [entry RSP] as
-argument five, reserves 0x38 aligned stack bytes, and retains the four original
-arguments. Copied-code tests execute the bridge and original displaced prologue;
-production functions/random choices still run exactly once. Catalog sites verify
-CALL rel32 targets.
+after publication. Each permanently rooted Win64 bridge starts with
+`mov rax,demand; cmp byte [rax],0; jne active; mov rax,trampoline; jmp rax`, so a
+zero byte reaches the original with untouched argument registers, RSP and return
+address (RAX is scratch: neither displaced prologue reads it first). The wrapper's
+active path reserves 0x38 aligned stack bytes and passes the original return
+address, the entry RSP and the caller's RBP as arguments five to seven; the
+emitter's active path tail-jumps into its rooted managed thunk. Validation decodes
+both bridges. Copied-code tests execute the bridges and original displaced
+prologues with the byte at zero and one; production functions/random choices still
+run exactly once. Catalog and kill sites verify CALL rel32 targets.
 
 The concrete hashes, addresses, resolution policy and binary-update checklist
 remain in [UpdateToNewDLL](../UpdateToNewDLL.md). General ownership and update
@@ -242,7 +342,8 @@ rules are in [native compatibility](NATIVE_COMPATIBILITY.md).
 ## Audio demand and dispatch cost
 
 Audio alone supplies a cached demand provider to the shared interception broker.
-Successful registration attaches its handle to SoundDemand. Rare activation and
+Successful registration attaches its handle to a SoundDemand: one for playback
+(`SoundEvents`) and one for native source events. Rare activation and
 attachment writes acquire handle -> demand locks in a fixed order. Enabling
 publishes the count before the enabled flag; disabling clears the flag before
 reducing the count. Readers use a volatile count and never enumerate handles.
@@ -261,10 +362,17 @@ when a Pre has a matching Accepted/Post receiver. Static factories receive
 explicit context rather than capturing invocation objects. Public args and
 results are not pooled and can still be retained by observers.
 
-Permanent native bridges and their managed transitions remain installed without
-audio demand. Their wrapper skips attribution/UnitAccess when demand is zero;
-the emitter checks missing/consumed scope before demand. One-time confirmation
-markers first read their state and only the first contender needs an atomic write.
+Permanent native bridges remain installed without audio demand, but a dormant call
+no longer enters managed code. SoundNativeDemand keeps two bytes in process-lifetime
+unmanaged memory: the wrapper byte is native context ready AND (playback OR source
+demand); the emitter byte is ready AND playback demand. Every transition that can
+change them is owned and republishes both under one lock: a count change in either
+SoundDemand (registration attach, `SetEnabled`) and `SoundContextPolicy.SetReady`.
+Enabling raises the byte before the handle's enabled flag; disabling clears the flag
+first, so no enabled handle meets a zero byte. Behind the guard the managed
+callbacks still check demand before touching ThreadStatic scope state. One-time
+confirmation markers first read their state and only the first contender needs an
+atomic write.
 
 ### Audio dispatch measurements
 
@@ -294,3 +402,35 @@ and 16 disabled handles allocate 0 bytes per call after warm-up (about 39/44 ns
 in this run). The production guard has no allocation opcode before its original
 return; the outer IL callback has none either. Unity/Mono rendering, real native
 transition cost, asset decoding and hardware output are outside these measurements.
+
+### Native bridge measurements
+
+Production hooks (`SoundRuntime.CreateHooks`: real bridges, demand bytes,
+OnWrapper/OnEmit, RedBird trampolines) on private executable copies of the real
+wrapper 0x2960 and emitter 0x1A41E0, with the manager LEA and emitter CALL
+relocated. A native loop calls the copied wrapper 20000 times per sample, one
+managed transition per sample; each call appends exactly one record. 21 samples per
+mode, modes alternated within a run, three runs alternated with the develop
+baseline 49e60dc (same harness with a test-only hook-construction seam). The value
+is the minimum over all samples; medians were within 20 % of it. Both sides allocate
+0 bytes per call in every mode. 64-bit .NET Framework 4.8.1, not Unity Mono.
+
+| Wrapper call (wrapper + emitter) | develop ns | branch ns |
+| --- | ---: | ---: |
+| Unhooked copy (reference) | 2.96 | 2.88 |
+| No active registration | 144.65 | 4.39 |
+| Source events only, unattributed origin | n/a | 128.95 |
+| Playback events, unattributed origin | 206.22 | 226.23 |
+
+Dormant cost drops from two managed transitions per call to one byte test and two
+jumps (+1.5 ns over the unhooked copy). With playback demand the branch is about
+20 ns slower per call: two more bridge arguments, the source-demand read and the
+emitter guard. Source dispatch itself, measured separately with stack-only args and
+a replacing callback, is 0 bytes and about 67 ns for one and 177 ns for 16
+registrations. Attributed calls (UnitAccess lookups, catalog checks) need live
+units and are not measured off-game; nor is Mono's transition cost.
+
+RedBird's thread-suspending patch destabilises the desktop CLR test host (a later
+GC fails with an internal runtime error, reproduced with one private detour), so
+private-copy tests pass `suspendThreads: false` to `NativeContract.Backend`. No
+other thread can execute those copies. Production hooks keep the default.

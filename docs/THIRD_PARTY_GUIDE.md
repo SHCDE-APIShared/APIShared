@@ -468,6 +468,13 @@ See the [audio integration guide](AUDIO.md#situational-sound-rules).
 Unit-type/source filters, evidence checks, repeat limits and local profiles use the
 same Pre/Post events. See [policy examples and boundaries](AUDIO.md#consumer-filters-repeat-limits-and-other-sound-policies).
 
+### Exact-unit sound cues
+
+For a cue that depends on one unit (for example a converted unit's kill sound), use
+`SoundSourceEvents` rather than a detour of the positional wrapper: its args carry the
+acting unit's game ID and GlobalId, the killed victim for melee kill cues, and
+`TryReplaceSound`. See [exact-unit cue replacement](AUDIO.md#exact-unit-cue-replacement).
+
 ## Building tooltip text
 
 APIShared 0.9.0 provides `APIShared.Presentation.BuildingTooltipPresentation`.
