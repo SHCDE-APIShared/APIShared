@@ -16,11 +16,18 @@ namespace APIShared.Workshop
         // updater owns the platform file lock; this gate prevents new managed
         // staging while that maintenance child is scanning transaction files.
         internal static readonly System.Threading.SemaphoreSlim StateGate = new System.Threading.SemaphoreSlim(1, 1);
+        // Bounded entry for staging: a maintenance child that survived its kill
+        // keeps the gate until it exits, and staging is deferred meanwhile.
+        internal static void EnterState()
+        {
+            if (!StateGate.Wait(WorkshopMaintenanceRunner.GateWait))
+                throw WorkshopDiagnostics.Blocked("Workshop maintenance still owns the transaction directory; installation is deferred until it has exited.");
+        }
         internal static string Stage(WorkshopInstallPlan plan) => StageCore(new[] { plan }, plan.OperationId, Protocol);
         internal static string StageBatch(IReadOnlyList<WorkshopInstallPlan> plans, string operationId, IReadOnlyList<WorkshopInterruptedTransaction> repair = null) => StageCore(plans, operationId, BatchProtocol, repair);
         private static string StageCore(IReadOnlyList<WorkshopInstallPlan> plans, string operationId, string protocol, IReadOnlyList<WorkshopInterruptedTransaction> repair = null)
         {
-            StateGate.Wait();
+            EnterState();
             try { return StageCoreLocked(plans, operationId, protocol, repair); }
             finally { StateGate.Release(); }
         }

@@ -20,6 +20,7 @@
     <Compile Include="../../src/Workshop/WorkshopStartupGate.cs" Link="Production/WorkshopStartupGate.cs" />
     <Compile Include="../../src/Workshop/WorkshopTransaction.cs" Link="Production/WorkshopTransaction.cs" />
     <Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" />
+    <Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" />
     <Compile Include="../../src/Workshop/WorkshopPublishing.cs" Link="Production/WorkshopPublishing.cs" />
     <Compile Include="../../src/Workshop/WorkshopBootstrapValidation.cs" Link="Production/WorkshopBootstrapValidation.cs" />
     <Compile Include="../../src/Workshop/WorkshopMapArchive.cs" Link="Production/WorkshopMapArchive.cs" />
@@ -65,5 +66,6 @@
   </ItemGroup>
   <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../Workshop/workshop-maintenance.ps1" Link="Fixtures/workshop-maintenance.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-updater.sh;../../Workshop/workshop-maintenance.sh" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAML/IngameUIScreens.xaml" Link="Fixtures/IngameUIScreens.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

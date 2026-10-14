@@ -144,7 +144,9 @@ if [[ $protocol == APISHARED-WORKSHOP-RECOVERY-1 ]]; then
     declare -A recovery_targets=()
     for ((j=2;j<${#lines[@]};j++)); do
         reference "${lines[$j]}"; assert_reference
-        dir=$(inside "$state/Transactions" "$ref_id"); journal_has "$dir" applying; ! finished "$dir"
+        dir=$(inside "$state/Transactions" "$ref_id"); journal_has "$dir" applying
+        # Explicit test: a negated command never triggers set -e or the ERR trap.
+        if finished "$dir"; then record 'failure Recovery target is no longer interrupted'; exit 1; fi
         read_old "$dir"
         for target in "${old_targets[@]}"; do [[ -z ${recovery_targets[${target,,}]:-} ]]; recovery_targets[${target,,}]=1; done
         restore_preflight "$dir"; recovery_dirs+=("$dir")
@@ -246,7 +248,8 @@ record applying
 step='installation writes and receipt commit'
 trap 'record "failure Application interrupted"; rollback || record "failure Recovery required"; exit 1' ERR
 for ((index=0; index<${#targets[@]}; index++)); do
-    ! running
+    # Explicit test: a bare negated command would never reach the ERR trap above.
+    if running; then record 'failure Game restarted during application'; false; fi
     target=$(inside "$game" "${targets[$index]}"); [[ $(hash "$target") == "${befores[$index]}" ]]
     record $'begin\t'"$index"; begun[$index]=1
     if [[ ${kinds[$index]} == *write ]]; then
