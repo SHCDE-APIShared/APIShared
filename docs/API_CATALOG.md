@@ -30,6 +30,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
+| `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 
 The catalog describes this source checkout. Check the selected package and its
 public declarations before assigning a consumer minimum version; source features
@@ -92,6 +93,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
+| Unit settlement | [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs), [notification contracts](../src/Units/Settled/UnitSettledContracts.cs) | [Settle tracker](../src/Units/Settled/UnitSettledTracker.cs), [SE subscriptions](../src/Units/Settled/UnitSettledScriptExtenderSource.cs) | [Unit settled](../examples/ThirdPartyMod/UnitSettledExample.cs) |
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
 for idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
@@ -324,6 +326,25 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Unit settlement events
+
+Not in packages up to 0.9.1; check the package you require. [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs)
+reports each unit that Script Extender saw being created (`OnUnitCreate` Post) or
+changing type (`OnUnitTransition`: mercenary post and European barracks recruitment,
+worker assignment, disband) once the native work has finished: the slot is alive,
+has a GlobalId, kept its owner and identity, and a transition has changed its type.
+Recruitment reuses the peasant's slot and changes its type many ticks after the
+purchase event, so that event alone is too early for per-unit writes.
+
+`UnitSettledNotification` values arrive on the SE simulation-tick thread in trigger
+order; each unit reaches registrations by ascending order, ordinal owner GUID and ID.
+The first registration subscribes to SE. Nothing is replayed and existing units are
+not rescanned after a save load. Units that die, change owner or identity, or wait
+more than 3000 ticks are dropped and counted. Callbacks are exception-isolated and
+may change the settled unit's simulation state deterministically. The declaration
+holds the exact rules; see the [integration guide](THIRD_PARTY_GUIDE.md#reacting-to-created-and-recruited-units)
+and the [example](../examples/ThirdPartyMod/UnitSettledExample.cs).
 
 ## Workshop inventory
 
