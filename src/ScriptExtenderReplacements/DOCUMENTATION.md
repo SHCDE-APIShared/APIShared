@@ -105,6 +105,13 @@ They do not prove in-game path-search outcomes. Runtime acceptance additionally
 requires the availability marker and a complete consumer comparison after
 startup cleanup.
 
+Successful initialization and canonical comparisons are Debug diagnostics, each
+emitted at most once per process when enabled. The consumer's success message
+additionally requires its existing `DetailedDiagnostics` switch. Unavailable
+access, incomplete coverage, changed values and comparison failures retain their
+Warning level and do not require Debug logging. The comparison still runs when
+its success message is suppressed; other gate diagnostics are unchanged.
+
 ## Manual acceptance in the game
 
 1. Close the game. Run APIShared's `build.bat /nopause`, then the consumer's
@@ -114,7 +121,11 @@ startup cleanup.
    restart, choose **No** for this test. The installed 2.14.1 dialog explicitly
    discards staged changes and continues playing on this branch. Choosing Yes
    may replace these development files with the subscribed Workshop release.
-3. Enable Bugfixes and QoL and its enemy-gate pathfinding correction. Its config
+3. Enable BepInEx Debug logging for the destination used for this test. For
+   `LogOutput.log`, include `Debug` in `[Logging.Disk]` / `LogLevels` in
+   `BepInEx/config/BepInEx.cfg` before starting the game. Success markers are
+   intentionally absent from logs that do not include Debug.
+   Enable Bugfixes and QoL and its enemy-gate pathfinding correction. Its config
    section `[GateMigrationDiagnostics]` must have `DetailedDiagnostics = true`
    before startup to log a successful comparison (it currently defaults to true).
    Load an ordinary skirmish or save and let it run for a few seconds.

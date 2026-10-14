@@ -139,7 +139,7 @@ namespace APIShared
                 Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomTrail, Name = name, MissionIndex = id - 1, Difficulty = difficulty }, () => customTrail(self, name, id, difficulty)));
             save = Hook<Save>(typeof(EditorDirector), nameof(EditorDirector.loadSaveGame), (self, file, name, header) =>
             {
-                SavegameModSettings.BeginLoad();
+                SavegameModSettings.BeginLoad(file, false);
                 Run(Seed(MissionStartKind.LoadedSave, GameModeKind.Unknown, file, name), () => save(self, file, name, header));
             });
             standalone = Hook<Standalone>(typeof(FRONT_StandaloneMission), nameof(FRONT_StandaloneMission.StartMap), info =>
@@ -155,7 +155,7 @@ namespace APIShared
                     () => multiplayerNew(self, setup, map, coop, mission)));
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
-                SavegameModSettings.BeginLoad();
+                SavegameModSettings.BeginLoad(map?.filePath, true);
                 Run(new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true },
                     () => multiplayerSave(self, setup, map));
             });
@@ -271,7 +271,11 @@ namespace APIShared
             waiting = null;
             bool normal = false;
             Safe(() => op.Id = state.Begin(Capture(op)));
-            try { T result = original(); normal = true; return result; }
+            try
+            {
+                if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
+                T result = original(); normal = true; return result;
+            }
             finally
             {
                 executing = null;

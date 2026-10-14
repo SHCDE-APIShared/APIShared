@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.9.0",
+  "Version": "0.9.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.9.1",
+      "Changes": [
+        "Prepare and verify savegame host settings before loading, including Solo Multiplayer and Coop provenance, with authenticated peer readiness and isolated personal presets.",
+        "Use a distinct network-compatible version for the new save-readiness control packet registration."
+      ]
+    },
     {
       "Version": "0.9.0",
       "Changes": [

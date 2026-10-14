@@ -175,6 +175,18 @@ Derive your settings from `APIShared.ModSettings.PresetLobbyModSettingsViewModel
 
 Classify saved properties with Script Extender `[SyncHostOnly]` or `[SyncPerPlayer]`, or APIShared `[PresetLocal]`. Each per-player property needs a public compatible `<Name>Data` array for slots 0..8. Keep setters behind `CanMutateSetting()` and call `OnPropertyChanged` after actual changes. Configure additional per-player rules through `ConfigurePerPlayerLobbySettings`; do not implement another roster poller.
 
+Automatic save restoration prepares host settings before loading. Multiplayer saves
+are identified by their actual load entry, including a host playing alone. Existing
+Extender property sync and application-backend transports carry the values; APIShared
+checks current human peers' fingerprints before releasing the host load request.
+The save provenance comes from the authenticated host, so client save copies need
+not contain APIShared metadata. Personal properties and presets remain local.
+Coop content does not imply multiplayer: the mission entry determines transport,
+and the central mode reconciliation validates saved provenance against native data.
+Load preparation times out after 60 seconds; missing or changed participants cannot
+silently release a stale request. Setters still notify runtimes normally. Do not
+interpret a submitted packet as an acknowledgement of a complete settings snapshot.
+
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 
 The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.

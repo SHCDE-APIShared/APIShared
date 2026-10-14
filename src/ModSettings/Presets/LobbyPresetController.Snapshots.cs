@@ -197,6 +197,7 @@ namespace APIShared.ModSettings
             int selected,
             bool writeLocalStorage)
         {
+            bool previousApplying = applying;
             applying = true;
             try
             {
@@ -240,7 +241,7 @@ namespace APIShared.ModSettings
             }
             finally
             {
-                applying = false;
+                applying = previousApplying;
             }
 
             owner.OnSettingsSnapshotApplied();

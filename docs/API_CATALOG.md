@@ -163,6 +163,12 @@ thread, outside locks, with exception isolation. Registrations have no hook tear
 
 Native addresses, scanners, memory writers and concrete services are not supported public extension points. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
 
+`SavegameModSettings` prepares save settings before initialization and coordinates
+authenticated multiplayer load readiness using the existing settings transports.
+Solo multiplayer needs only local readiness; Coop detection remains in the central
+mission mode service. See [settings integration](THIRD_PARTY_GUIDE.md#external-settings-and-application-backends)
+and the adjacent save-restoration notes for personal-storage and timeout behavior.
+
 `APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread.
 
 Apply `[APIShared.ModSettings.ExcludeFromSavegameModSettings]` to a plugin class

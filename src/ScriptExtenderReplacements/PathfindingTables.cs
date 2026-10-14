@@ -97,7 +97,7 @@ namespace APIShared.ScriptExtenderReplacements
             }
             GamePathingManagerAPI.Instance.Publish(state);
             if (state.IsAvailable)
-                NativeApiLog.Info(log, "SE_PATHFINDING_REPLACEMENT available: profiles=90, permissions=540, rowStride=90, validUnitTypes=0..88; no hooks installed.");
+                NativeApiLog.Debug(log, "SE_PATHFINDING_REPLACEMENT available: profiles=90, permissions=540, rowStride=90, validUnitTypes=0..88; no hooks installed.");
             else
                 NativeApiLog.Warning(log, "SE_PATHFINDING_REPLACEMENT unavailable: " + state.Reason + " Other APIShared services remain independent.");
         }

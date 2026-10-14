@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $apiRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 . (Join-Path $PSScriptRoot 'RuntimePreflight.Common.ps1')
 Assert-SERuntimeModPreflight ([pscustomobject]@{ Name = 'APIShared'; Plugin = 'APIShared_Serp'; Project = 'APIShared.csproj' }) $apiRoot
+if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-SavegameLoadContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 . (Join-Path $PSScriptRoot 'DependencyMetadata.Common.ps1')
 $source = (Get-ChildItem -LiteralPath (Join-Path $apiRoot 'src') -Recurse -File -Filter '*.cs' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join [Environment]::NewLine
 Assert-PluginDependencyMetadata $source ([IO.File]::ReadAllText((Join-Path $apiRoot 'info.json')) | ConvertFrom-Json) 'APIShared'
