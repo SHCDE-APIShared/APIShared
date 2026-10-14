@@ -1,6 +1,7 @@
 [CmdletBinding(SupportsShouldProcess)]
-param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [switch]$TestRelease)
+param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [switch]$TestRelease, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
+if ($PrepareOnly -and $Publish) { throw 'PrepareOnly cannot publish a release.' }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $repository = 'SHCDE-APIShared/APIShared'
 . (Join-Path $PSScriptRoot 'GitHubRelease.ps1')
@@ -52,6 +53,7 @@ $publisherTarget=Join-Path $staging 'BepInEx/tools/APISharedWorkshopPublisher'
 [void][IO.Directory]::CreateDirectory($publisherTarget)
 Copy-Item -Path (Join-Path $publisherSource '*') -Destination $publisherTarget -Recurse
 Assert-ApiPublisherPackage $publisherTarget $publisherSource
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path -LiteralPath $asset) { Assert-ApiWorkshopMap -MapPath $asset -Stage $staging }
 else { [IO.Compression.ZipFile]::CreateFromDirectory($staging, $asset) }
@@ -95,6 +97,10 @@ $text = "APIShared $version`r`n`r`nSource commit: $commit`r`nZIP SHA-256: $hash`
 [IO.File]::WriteAllText($notes, $text, [Text.UTF8Encoding]::new($false))
 $arguments = @('release', 'create', $tag) + $assets + @('--repo', $repository, '--target', $commit, '--title', "APIShared $version", '--notes-file', $notes)
 if (-not $Publish) { $arguments += '--draft' }
+if ($PrepareOnly) {
+    Write-Host ('Validated local release assets: ' + $output + '; source=' + $commit + '; no GitHub release or tag created.')
+    return
+}
 if ($PSCmdlet.ShouldProcess("$repository / $tag", 'Create release with the validated APIShared asset')) {
     $existing = Get-ApiGitHubRelease $repository $tag
     if ($null -ne $existing) {
