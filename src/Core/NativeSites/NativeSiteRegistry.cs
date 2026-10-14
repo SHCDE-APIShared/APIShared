@@ -6,12 +6,18 @@ using BepInEx.Logging;
 namespace APIShared.NativeSites
 {
     /// <summary>
+    /// Prefer a shared APIShared service; use this registry for hooks APIShared doesn't cover yet.
     /// Process-wide, cooperative registry of native sites in CrusaderDE.dll: which mod writes, chains,
     /// calls or observes which bytes. Register a span before installing a hook there; a refusal names
     /// the existing owner, mode and span instead of a silent double detour. Query to learn who owns a
     /// site. APIShared registers its own sites when it installs them.
     /// </summary>
     /// <remarks>
+    /// <para>Role: a supplementary safeguard and diagnostic, not an alternative to shared services. A
+    /// refusal identifies a conflict and does not resolve it: the refused feature stays off, and which
+    /// side is refused can depend on registration order. A recurring conflict is fixed by a shared
+    /// service with ordering, veto and replacement rules. An accepted overlap only means the spans do
+    /// not overlap in a way that corrupts bytes; it is not a compatibility guarantee.</para>
     /// <para>Address space: RVAs relative to the loaded CrusaderDE.dll, half-open spans. Rules between
     /// owners: <see cref="GetOverlapRule"/>. An owner's own registrations never conflict with each other.</para>
     /// <para>Thread and timing: every member may be called from any thread. Register at startup or
@@ -47,7 +53,10 @@ namespace APIShared.NativeSites
         /// overlap with other owners' sites (Conflict, naming the first conflicting registration in
         /// registration order), expected original bytes against live memory (UnexpectedBytes). Conflicts and
         /// unexpected bytes are also recorded in <see cref="Refusals"/>; APIShared logs them once in its
-        /// startup report and individually afterwards. Never throws for invalid input.
+        /// startup report and individually afterwards. Never throws for invalid input. On a refusal, keep
+        /// Vanilla behavior: the result identifies the conflict but does not resolve it. Acceptance with
+        /// <see cref="NativeSiteRegistrationResult.SharedWith"/> entries only means no corrupting byte
+        /// overlap, not that the hooks are compatible.
         /// </remarks>
         public static NativeSiteRegistrationResult Register(string ownerGuid, string name, IReadOnlyList<NativeSiteSpan> spans) =>
             Store.RegisterSites(ownerGuid, name, spans);
@@ -91,6 +100,8 @@ namespace APIShared.NativeSites
         /// CallOnly is compatible with everything; Observe is compatible with Observe and CallOnly;
         /// ChainableEntry pairs share only one entry (<see cref="NativeSiteOverlapRule.SameEntryChain"/>);
         /// every other pair (anything with Exclusive except CallOnly, ChainableEntry with Observe) conflicts.
+        /// The rules describe byte overlap only; a compatible or chainable result is not a guarantee
+        /// that the hooks behave correctly together.
         /// </summary>
         public static NativeSiteOverlapRule GetOverlapRule(NativeSiteMode first, NativeSiteMode second) =>
             NativeSiteRules.Rule(first, second);

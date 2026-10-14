@@ -3,9 +3,11 @@ using APIShared.NativeSites;
 
 namespace ThirdPartyMod
 {
-    // Declare a native hook site before installing it, so co-installed mods get a named refusal
-    // instead of a silent double detour. Call from a LibraryLoaded handler of a plugin that declares
-    // a (soft) BepInDependency on APIShared_Serp. Registration is never done on a hooked path.
+    // Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet.
+    // Declare such a native hook site before installing it, so co-installed mods get a named refusal
+    // instead of a silent double detour. A refusal identifies the conflict; it does not resolve it.
+    // Call from a LibraryLoaded handler of a plugin that declares a (soft) BepInDependency on
+    // APIShared_Serp. Registration is never done on a hooked path.
     internal static class NativeSiteExample
     {
         private const string SiteName = "ExampleEntryDetour";

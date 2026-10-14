@@ -90,12 +90,15 @@ The example library compiles against ordinary public assemblies and has no `Inte
 
 ## Declaring native hook sites
 
-If your mod detours, patches or validates bytes of CrusaderDE.dll, register those
-spans in `APIShared.NativeSites.NativeSiteRegistry` from your `LibraryLoaded` handler
-before installing anything, and keep Vanilla behavior when the result is a refusal.
-Ask `TryGetWriter` before hooking a function another mod may already own; prefer an
-APIShared broker where one exists (for example market price queries). Modes, overlap
-rules and limits: [Native sites](NATIVE_SITES.md); workflow:
+Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover
+yet. Where a service exists (for example market price queries), subscribe to it instead
+of hooking. If your mod detours, patches or validates bytes of CrusaderDE.dll that no
+service covers, register those spans in `APIShared.NativeSites.NativeSiteRegistry` from
+your `LibraryLoaded` handler before installing anything, and keep Vanilla behavior when
+the result is a refusal. A refusal identifies the conflict; it does not resolve it. If
+another mod really needs the same point, propose a shared service with ordering, veto
+and replacement rules. An accepted overlap is not a compatibility guarantee. Modes,
+overlap rules, when to use which, and limits: [Native sites](NATIVE_SITES.md); workflow:
 [compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
 
 ## Script Extender bugfixes

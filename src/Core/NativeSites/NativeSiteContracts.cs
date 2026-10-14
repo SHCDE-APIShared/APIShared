@@ -21,7 +21,8 @@ namespace APIShared.NativeSites
         /// A function-entry detour installed through a backend that layers over another detour at
         /// the same entry and always calls through to the next one. Register the entry patch span,
         /// starting at the function entry. Shares the span only with another ChainableEntry at the
-        /// same start RVA and with <see cref="CallOnly"/> callers.
+        /// same start RVA and with <see cref="CallOnly"/> callers. An allowed chain only means the
+        /// entry patches do not corrupt each other; it is not a compatibility guarantee.
         /// </summary>
         ChainableEntry = 1,
         /// <summary>
@@ -40,11 +41,12 @@ namespace APIShared.NativeSites
     /// <summary>Outcome of two overlapping registrations of different owners.</summary>
     public enum NativeSiteOverlapRule
     {
-        /// <summary>Both registrations may coexist.</summary>
+        /// <summary>Both registrations may coexist: no byte overlap that corrupts either. Not a compatibility guarantee.</summary>
         Compatible = 0,
-        /// <summary>Both are chainable entry detours: they coexist only when both spans start at the same RVA.</summary>
+        /// <summary>Both are chainable entry detours: they coexist only when both spans start at the same RVA.
+        /// Not a compatibility guarantee.</summary>
         SameEntryChain = 1,
-        /// <summary>The later registration is refused.</summary>
+        /// <summary>The later registration is refused. The refusal identifies the conflict; it does not resolve it.</summary>
         Conflict = 2
     }
 
@@ -55,7 +57,8 @@ namespace APIShared.NativeSites
         Accepted = 0,
         /// <summary>The same owner already registered the same name with identical spans; nothing changed.</summary>
         AlreadyRegistered = 1,
-        /// <summary>A span overlaps another owner's registration under a conflicting rule. Nothing was recorded.</summary>
+        /// <summary>A span overlaps another owner's registration under a conflicting rule. Nothing was recorded.
+        /// Keep Vanilla behavior; a recurring conflict needs a shared service, not a retry.</summary>
         Conflict = 2,
         /// <summary>The live bytes of a span do not match its expected original SHA-256. Nothing was recorded.</summary>
         UnexpectedBytes = 3,
@@ -182,7 +185,8 @@ namespace APIShared.NativeSites
         public NativeSiteRegistration Conflict { get; }
         /// <summary>Index of the refused or invalid span in the request, or -1.</summary>
         public int FailedSpanIndex { get; }
-        /// <summary>Other owners' registrations that overlap the accepted spans under a compatible rule, in registration order.</summary>
+        /// <summary>Other owners' registrations that overlap the accepted spans under a compatible rule, in registration order.
+        /// Sharing a span means no corrupting byte overlap, not that the hooks are compatible.</summary>
         public IReadOnlyList<NativeSiteRegistration> SharedWith { get; }
         /// <summary>Human-readable explanation; empty for a plain acceptance.</summary>
         public string Reason { get; }

@@ -261,10 +261,13 @@ Versioned save data belongs to Savegames. APIShared owns the record format, the 
 order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
 migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
 
-Native-site registration belongs to Core. APIShared owns the registry, its overlap
-rules and the registration of its own native sites at installation; consumers own
-their spans, modes and their reaction to a refusal. The registry is cooperative and
-adds nothing to hooked paths. See [Native sites](docs/NATIVE_SITES.md).
+Native-site registration belongs to Core. Shared services remain the way to avoid
+hook conflicts; the registry supplements them as a safeguard and diagnostic for hooks
+APIShared does not cover yet. APIShared owns the registry, its overlap rules and the
+registration of its own native sites at installation; consumers own their spans,
+modes and their reaction to a refusal. A refusal identifies a conflict without
+resolving it, and a recurring conflict becomes a shared service. The registry is
+cooperative and adds nothing to hooked paths. See [Native sites](docs/NATIVE_SITES.md).
 
 Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
 owns shared presentation and registration; consumers own localized text,

@@ -1,11 +1,36 @@
 # Native sites
 
+Prefer a shared APIShared service; use the registry for hooks APIShared doesn't
+cover yet. When several mods need the same native interception point, the way to
+avoid the conflict is a shared service that owns the one hook and publishes events or
+extension points with ordering, veto and replacement rules. The registry is a
+supplementary safeguard and diagnostic, not an alternative to such a service.
+
 `APIShared.NativeSites.NativeSiteRegistry` is a process-wide, cooperative registry of
 native sites in CrusaderDE.dll: which mod writes, chains, calls or observes which
 bytes. A mod registers a span before it installs a hook there and gets either an
 acceptance or a refusal that names the existing owner, mode and span, instead of a
 silent double detour. Any mod can ask who owns a site. APIShared registers its own
 sites when it installs them.
+
+A refusal identifies a conflict; it does not resolve it. The refused feature stays
+unavailable, and which side is refused can depend on registration order. A conflict
+that keeps recurring is fixed by a shared service with ordering, veto and replacement
+rules, not by the registry. An accepted overlap (`Compatible`, `SameEntryChain`) is not
+a compatibility guarantee either: it only means the spans do not overlap in a way that
+corrupts bytes. Whether two hooks behave correctly together is still untested.
+
+## When to use which
+
+| Situation | Use | Examples |
+|---|---|---|
+| APIShared already serves the point | The shared service; never a competing hook | Market price queries (`MarketPriceEvents`), gatehouse timing, audio, AIV build step, gate routing |
+| A second real owner needs the same point | Add or extend a shared APIShared service with explicit ordering, veto, replacement or exclusive-ownership rules | 0xE2610, detoured by both a naval mod and BugfixesAndQoL; 0x18E9A0, detoured by one mod, called by another and hooked by the Script Extender; 0xDB650, whose body holds APIShared's gate-routing spans |
+| A unit-specific AI or FSM route with exactly one consumer | Registry; the algorithm stays in the consumer mod | A custom unit's update, selection or controller detour (for example 0x174100, 0x1969B0, 0x16E440) |
+| A mid-function patch with a private register contract | Registry; a broker would need a one-off contract for one mod | CALL-site patches feeding one controller, a formation context hook (0xC0942), a terrain inline patch (0x182EE6) |
+
+A private site stops being private as soon as the registry shows a second real owner
+on it. That is the signal to propose a shared service for it.
 
 Audience: authors of mods that hook native code, and maintainers changing an
 APIShared native service. Contracts are on the declarations in
@@ -44,6 +69,8 @@ different span set under a name you already used is `Invalid`; unregister first.
 
 ## Overlap rules
 
+The rules only describe byte overlap. A compatible result is not a compatibility
+guarantee, and a conflict result does not choose a winner that keeps both features.
 The rules apply between registrations of different owners whose spans overlap.
 Adjacent spans never overlap. An owner's own registrations never conflict with each
 other. `NativeSiteRegistry.GetOverlapRule` returns the same table.
@@ -85,7 +112,10 @@ call order of layered detours is decided by the hooking backend, not by the
 registry. Hooks installed from `Awake` or `LibraryLoaded` register and install in
 BepInEx plugin order (GUID order, then dependency edges); lazily installed hooks
 follow runtime order. A chain member must therefore call through and must not
-depend on its position. Adding a dependency edge can change the order.
+depend on its position. Adding a dependency edge can change the order. An allowed
+chain says only that the entry patches do not corrupt each other; whether the layered
+detours agree on arguments, results and side effects is not checked. Two mods that
+both need to change one entry's behavior belong in a shared service.
 
 ## Expected original bytes
 
@@ -157,6 +187,10 @@ is registered by APIShared.
 
 ## Limits
 
+- **Diagnostic, not resolution.** A refusal leaves the refused feature off and can
+  depend on registration order. Recurring conflicts need a shared service.
+- **No behavioral check.** Accepted overlaps mean no byte overlap that corrupts code,
+  nothing more.
 - **Cooperative.** The registry sees only what is registered. It does not see
   Script Extender's own native hooks, hooks of plugins that do not use it, other
   backends or managed hooks. It does not verify that a registrant installed
