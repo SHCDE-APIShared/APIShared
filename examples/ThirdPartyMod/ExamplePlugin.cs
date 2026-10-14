@@ -28,6 +28,7 @@ namespace ThirdPartyMod
             MissionExample.Register(Api, Log);
             InterceptionExample.Register(Log);
             BuildingTooltipExample.Register(Log);
+            SaveDataExample.Register(Guid, Log);
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);

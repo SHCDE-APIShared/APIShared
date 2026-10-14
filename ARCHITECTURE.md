@@ -16,7 +16,7 @@ GUID without installing hooks or reserving a capability.
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
 | Networking | Owner-bound Chore channels, control-plane messages and presentation dispatch |
-| Units, Pathfinding, Diagnostics | Command interception, recruitment policies, queries and advanced integrations |
+| Units, Pathfinding, Diagnostics | Command interception, recruitment policies, unit settlement, queries and advanced integrations |
 | Audio | Native-record sound presentation, audited source contexts and shared rule events |
 | Economy | Shared native market price query events and validated hook ownership |
 | Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
@@ -27,6 +27,7 @@ use `APIShared`; settings and general profiles use `APIShared.ModSettings` and
 Static interception brokers use `APIShared.Commands`, `APIShared.Presentation`,
 `APIShared.Recruitment` and `APIShared.Economy`; their shared Pre base contract uses
 `APIShared.Events`. These brokers complement the capability entry points.
+The unit-settled observation broker uses `APIShared.Units`.
 The formations command engine, work-target policy and MoatMove orchestration
 belong to BugfixesAndQoL and its addon. APIShared supplies the targeted public
 route-search preference events used by that publisher and third-party observers.
@@ -66,6 +67,7 @@ src/
   Units/
     Commands/                   managed GameAction Pre/Accepted/Post contracts
     Recruitment/                request arithmetic and shared material-display IL policy
+    Settled/                    unit-settled contracts, settle tracker and SE subscription owner
   Pathfinding/
     Assassin/                   assassin route and attack integrations
     GateRoutes/                 shared gate/bridge policy bridges
@@ -146,6 +148,7 @@ payloads. AIV dispatch reads an immutable registration snapshot and calls Vanill
 directly when it is empty. Lobby capture starts with the first observer; defeat
 observation starts with the first subscriber's simulation-tick baseline. Marked
 selection tracking starts with an observer or a successful cache request.
+Unit settlement subscribes to Script Extender events at its first registration.
 Dormant internal HUD subscriptions do not create demand in shared event brokers.
 Keep capturing lambdas in separate active-path methods: an early source-level
 return alone does not prevent compiler-generated closure allocations.
@@ -171,7 +174,9 @@ installing another hook. See the API catalog for skip, exception and thread rule
 initializes native services. `ApiSharedRuntime.ProcessInstance`, static registries
 and persistent publishers retain services after startup cleanup. Global completion
 and individual capability availability are separate; one native failure must not
-disable independent managed services.
+disable independent managed services. Each `LibraryLoaded` step runs inside the error
+boundary `ApiSharedRuntime.RunNativeInitialization`, so a throwing step cannot skip
+later steps or leave the global state `Pending`.
 
 Readiness callbacks run outside the initialization lock with exception isolation.
 There is no implicit thread dispatch. Registration ownership, ordering, replay and
@@ -251,6 +256,10 @@ managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and m
 Workshop owns publishing, receipt-based plans and post-exit transactions. Its
 persistent staging integration cleans previous APIShared releases; foreign maps
 remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
+
+Versioned save data belongs to Savegames. APIShared owns the record format, the migration
+order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
+migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
 
 Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
 owns shared presentation and registration; consumers own localized text,

@@ -41,7 +41,12 @@
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchEvents.cs" Link="Production/RouteSearchEvents.cs" />
     <Compile Include="../../src/GameModes/CustomizedLaunchOrigins.cs" Link="Production/CustomizedLaunchOrigins.cs" />
     <Compile Include="../../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs" Link="Production/ExcludeFromSavegameModSettingsAttribute.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveDataContracts.cs" Link="Production/VersionedSaveDataContracts.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Units/UnitAccess.cs" Link="Production/UnitAccess.cs" />
+    <Compile Include="../../src/Units/Settled/UnitSettledContracts.cs" Link="Production/UnitSettledContracts.cs" />
+    <Compile Include="../../src/Units/Settled/UnitSettledTracker.cs" Link="Production/UnitSettledTracker.cs" />
     <Compile Include="../../src/ModSettings/Internal/DependencyFreeJson.cs" Link="Production/DependencyFreeJson.cs" />
     <Compile Include="../../src/ModSettings/Internal/AtomicFileReplacement.cs" Link="Production/AtomicFileReplacement.cs" />
     <Compile Include="../../src/ModSettings/Presets/PresetAtomicFilePublisher.cs" Link="Production/PresetAtomicFilePublisher.cs" />

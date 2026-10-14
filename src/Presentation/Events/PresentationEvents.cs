@@ -96,6 +96,10 @@ namespace APIShared.Presentation
         private delegate void ViewCall(MainViewModel self, object parameter);
         private delegate void HudCall(HUD_Main self);
         private delegate void GuiCall(FatControler self);
+        // Static factories with explicit context: observed calls create no closure or delegate.
+        private static readonly Func<Completion, object, PresentationPostEventArgs> PostFactory =
+            (completion, state) => new PresentationPostEventArgs(completion.Pre, state, completion.Error);
+        private static readonly Action<Action<object>, object> InvokeAction = (original, parameter) => original(parameter);
         private static readonly Site[] sites = CreateSites();
         /// <summary>Registers during Unity startup for the process lifetime. Callbacks run synchronously on the HUD caller thread, outside locks, ordered by order then ordinal owner/ID. No replay or automatic dispatch. Pre may veto the whole operation; vetoes are sticky. Failed Pre changes roll back. Post also reports vetoes and original exceptions; it cannot cancel completed writes. Added registrations join the next invocation. Nested operations from notifications run their originals without recursive notification. Observe in Post when augmenting Vanilla UI, and leave other mods' controls untouched. Duplicate identities or unsupported signatures return false with a reason.</summary>
         public static bool TryRegister(PresentationOperation operation, string ownerGuid, string registrationId,
@@ -123,15 +127,19 @@ namespace APIShared.Presentation
             new Site(PresentationOperation.TroopPanelLeave, typeof(MainViewModel), "ButtonTroopPanelMouseLeave"),
             new Site(PresentationOperation.RechargeSiegeAmmo, typeof(MainViewModel), "ButtonUnitRechargeRock")
         };
-        // Shared production path, also exercised without installing game hooks in contract tests.
+        // Contract-test entry; production sites use the receiver overload below.
         internal static void Execute(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
-            PresentationPreEventArgs args, Action<object> original)
+            PresentationPreEventArgs args, Action<object> original) => Execute(events, args, original, InvokeAction);
+        // Shared production path. Sites pass the receiver and a delegate created once per site,
+        // so an observed call allocates no closure for the original or for Post.
+        internal static void Execute<TReceiver>(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
+            PresentationPreEventArgs args, TReceiver receiver, Action<TReceiver, object> original)
         {
-            if (!events.CanNotify) { original(args.Parameter); return; }
-            ExecuteObserved(events, args, original);
+            if (!events.CanNotify) { original(receiver, args.Parameter); return; }
+            ExecuteObserved(events, args, receiver, original);
         }
-        private static void ExecuteObserved(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
-            PresentationPreEventArgs args, Action<object> original)
+        private static void ExecuteObserved<TReceiver>(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
+            PresentationPreEventArgs args, TReceiver receiver, Action<TReceiver, object> original)
         {
             var invocation = events.Begin(args);
             Exception error = null;
@@ -140,15 +148,21 @@ namespace APIShared.Presentation
                 if (!args.SkipOriginalFunction)
                 {
                     if (args.Replacement != null) args.Replacement(args.Parameter);
-                    else original(args.Parameter);
+                    else original(receiver, args.Parameter);
                 }
             }
             catch (Exception ex) { error = ex; throw; }
             finally
             {
                 if (invocation.HasPostObservers)
-                    invocation.Complete(state => new PresentationPostEventArgs(args, state, error));
+                    invocation.Complete(new Completion(args, error), PostFactory);
             }
+        }
+        private readonly struct Completion
+        {
+            internal readonly PresentationPreEventArgs Pre;
+            internal readonly Exception Error;
+            internal Completion(PresentationPreEventArgs pre, Exception error) { Pre = pre; Error = error; }
         }
         private sealed class Site
         {
@@ -159,9 +173,16 @@ namespace APIShared.Presentation
             private readonly ManagedInterceptionHook<ViewCall> viewHook = new ManagedInterceptionHook<ViewCall>();
             private readonly ManagedInterceptionHook<HudCall> hudHook = new ManagedInterceptionHook<HudCall>();
             private readonly ManagedInterceptionHook<GuiCall> guiHook = new ManagedInterceptionHook<GuiCall>();
+            // Created once per site; observed dispatch passes the receiver instead of capturing it.
+            private readonly Action<MainViewModel, object> viewOriginal;
+            private readonly Action<HUD_Main, object> hudOriginal;
+            private readonly Action<FatControler, object> guiOriginal;
             internal Site(PresentationOperation operation, Type type, string method)
             { this.operation = operation; this.type = type; this.method = method;
-                Events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>(Install); }
+                Events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>(Install);
+                viewOriginal = (self, parameter) => viewHook.Original(self, parameter);
+                hudOriginal = (self, _) => hudHook.Original(self);
+                guiOriginal = (self, _) => guiHook.Original(self); }
             private void Install()
             {
                 if (type == typeof(FatControler))
@@ -176,23 +197,21 @@ namespace APIShared.Presentation
                 DispatchObservedView(self, parameter);
             }
             private void DispatchObservedView(MainViewModel self, object parameter) =>
-                Dispatch(self, parameter, effective => viewHook.Original(self, effective));
+                Execute(Events, new PresentationPreEventArgs(operation, self, parameter), self, viewOriginal);
             private void DispatchHud(HUD_Main self)
             {
                 if (!Events.CanNotify) { hudHook.Original(self); return; }
                 DispatchObservedHud(self);
             }
-            private void DispatchObservedHud(HUD_Main self) => Dispatch(self, null, _ => hudHook.Original(self));
+            private void DispatchObservedHud(HUD_Main self) =>
+                Execute(Events, new PresentationPreEventArgs(operation, self, null), self, hudOriginal);
             private void DispatchGui(FatControler self)
             {
                 if (!Events.CanNotify) { guiHook.Original(self); return; }
                 DispatchObservedGui(self);
             }
-            private void DispatchObservedGui(FatControler self) => Dispatch(self, null, _ => guiHook.Original(self));
-            private void Dispatch(object instance, object parameter, Action<object> original)
-            {
-                Execute(Events, new PresentationPreEventArgs(operation, instance, parameter), original);
-            }
+            private void DispatchObservedGui(FatControler self) =>
+                Execute(Events, new PresentationPreEventArgs(operation, self, null), self, guiOriginal);
         }
     }
 }

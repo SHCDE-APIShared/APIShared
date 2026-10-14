@@ -74,10 +74,19 @@ namespace APIShared
                     if (main != null) main.PropertyChanged += OnHudPropertyChanged;
                     ResetHost(); dirty = true;
                 }
-                Grid current = main == null ? null : GameXAMLManagerAPI.Instance.FindGlobalElement(HostName) as Grid;
-                if (!ReferenceEquals(host, current)) { ResetHost(); host = current; dirty = true; }
+                if (main == null) return;
+                bool shown = main.Show_HUD_Extras;
+                // The host sits in IngameUIScreens, a fixed child of the MasterController root whose constructor
+                // creates the MainViewModel instance, so a rebuilt HUD arrives with a new MainViewModel (above).
+                // Otherwise the tree search only answers differently after the cached host leaves its view, which
+                // Noesis reports through IsLoaded. Nothing announces a missing host, so shown frames search for it.
+                if (host == null ? shown : !host.IsLoaded)
+                {
+                    Grid current = GameXAMLManagerAPI.Instance.FindGlobalElement(HostName) as Grid;
+                    if (!ReferenceEquals(host, current)) { ResetHost(); host = current; dirty = true; }
+                }
                 if (host == null) return;
-                if (!main.Show_HUD_Extras) { Hide(); dirty = true; return; }
+                if (!shown) { Hide(); dirty = true; return; }
                 if (dirty) Render(main);
             }
             catch (Exception ex) { Hide(); dirty = true; LogFailure("presentation", ex); }

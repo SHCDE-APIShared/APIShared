@@ -65,7 +65,13 @@ namespace APIShared.Networking
     {
         /// <summary>Maximum body plus packet-ID bytes, from 2 through 1200. Oversized sends are rejected, never split.</summary>
         public int MaximumPayloadBytes { get; set; } = 1200;
-        /// <summary>Optional logical enable check, evaluated on the caller for sends and synchronously for Chore receives.</summary>
+        /// <summary>Optional logical enable check, evaluated on the caller for sends and synchronously for Chore receives. Must return the same value on every peer in receive context.</summary>
+        /// <remarks>
+        /// Every peer, including the sender, evaluates it again when the Chore is received. A peer that returns
+        /// false drops the packet without Validate or execution while peers that return true execute it, so the
+        /// simulation diverges; nothing retries or resynchronizes. Read synchronized game or lobby state, never a
+        /// per-machine setting or local UI state. The first such drop per channel is reported through Diagnostic.
+        /// </remarks>
         public Func<bool> IsEnabled { get; set; }
         /// <summary>Optional payload validation on send and receive. Must be deterministic on all peers in receive context.</summary>
         public Func<T, bool> Validate { get; set; }

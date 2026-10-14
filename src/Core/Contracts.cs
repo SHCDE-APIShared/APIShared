@@ -7,9 +7,11 @@ namespace APIShared
     {
         /// <summary>Initialization has not reached a terminal state.</summary>
         Pending,
-        /// <summary>The API is published; individual capabilities may still be unavailable.</summary>
+        /// <summary>The API is published; individual capabilities may still be unavailable, including
+        /// capabilities whose initialization step failed (they report Faulted).</summary>
         Ready,
-        /// <summary>The API could not be published safely.</summary>
+        /// <summary>The API could not be published safely, or native publication threw; native
+        /// capabilities report Faulted with the reason.</summary>
         Unavailable
     }
 
@@ -152,6 +154,13 @@ namespace APIShared
         /// Registers a callback that runs when initialization reaches a terminal state. Late
         /// registrations run synchronously on the registering thread. Early callbacks run on the initialization publisher thread. Callback exceptions are logged and isolated in both cases; no thread dispatch is performed.
         /// </summary>
+        /// <remarks>Callbacks run exactly once, also after failures, once the Script Extender has loaded
+        /// CrusaderDE.dll. Every native initialization step is isolated: a step that throws is logged, the
+        /// remaining steps still run, and a capability backed by that step reports
+        /// <see cref="NativeCapabilityState.Faulted"/> with the step's reason (services without a capability
+        /// diagnostic report the failure only in the BepInEx log). If native publication itself
+        /// throws, <see cref="IApiShared.State"/> becomes <see cref="NativeApiState.Unavailable"/> and the
+        /// native capabilities report Faulted.</remarks>
         public static void WhenReady(Action<IApiShared> callback) =>
             ApiSharedRuntime.ProcessInstance.WhenReady(callback);
     }

@@ -30,6 +30,8 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
+| `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
+| `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 
 The catalog describes this source checkout. Check the selected package and its
 public declarations before assigning a consumer minimum version; source features
@@ -81,6 +83,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettings.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings search / tooltips | [Search and attached properties](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Implementation in those files; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | — |
+| Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
@@ -92,6 +95,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
+| Unit settlement | [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs), [notification contracts](../src/Units/Settled/UnitSettledContracts.cs) | [Settle tracker](../src/Units/Settled/UnitSettledTracker.cs), [SE subscriptions](../src/Units/Settled/UnitSettledScriptExtenderSource.cs) | [Unit settled](../examples/ThirdPartyMod/UnitSettledExample.cs) |
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
 for idle-only completion, or its overload with `AssassinObstacleCompletionMode.NativeRetarget`
@@ -226,7 +230,7 @@ See the [public example](../examples/ThirdPartyMod/RouteSearchExample.cs).
 
 ## Failure and registration rules
 
-`NativeApiState.Ready` means the global API is published. Capability diagnostics may still report `Pending`, `UnsupportedBuild`, `PatternMissing`, `Ambiguous`, `ValidationFailed`, `Conflict` or `Faulted`. Capability acquisitions and diagnostic-bearing registrations report reasons; boolean queries may instead return false as documented. `ConflictOwnerGuid` identifies an owner where applicable. Native hash fields may be empty for managed services or before native initialization.
+`NativeApiState.Ready` means the global API is published. Capability diagnostics may still report `Pending`, `UnsupportedBuild`, `PatternMissing`, `Ambiguous`, `ValidationFailed`, `Conflict` or `Faulted`. `WhenReady` callbacks run once initialization ends, also after failures: each native initialization step is isolated, a failing step leaves its capability `Faulted` with the reason, and a failed native publication makes the state `Unavailable` (see `ApiShared.WhenReady`). Capability acquisitions and diagnostic-bearing registrations report reasons; boolean queries may instead return false as documented. `ConflictOwnerGuid` identifies an owner where applicable. Native hash fields may be empty for managed services or before native initialization.
 
 Registration IDs are unique within an owner and service; stable IDs identify contributors, while ordering follows each service contract. Registrations do not imply replacement or unsubscription. Callback exceptions are isolated where the service explicitly documents that contract; native Vanilla exceptions retain the original propagation rules. No API-wide promise of Unity-thread dispatch exists. Use logical activation to suspend supported presentation features; never dispose a published process-wide hook.
 
@@ -324,6 +328,34 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Unit settlement events
+
+Not in packages up to 0.9.1; check the package you require. [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs)
+reports each unit that Script Extender saw being created (`OnUnitCreate` Post) or
+changing type (`OnUnitTransition`: mercenary post and European barracks recruitment,
+worker assignment, disband) once the native work has finished: the slot is alive,
+has a GlobalId, kept its owner and identity, and a transition has changed its type.
+Recruitment reuses the peasant's slot and changes its type many ticks after the
+purchase event, so that event alone is too early for per-unit writes.
+
+`UnitSettledNotification` values arrive on the SE simulation-tick thread in trigger
+order; each unit reaches registrations by ascending order, ordinal owner GUID and ID.
+The first registration subscribes to SE. Nothing is replayed and existing units are
+not rescanned after a save load. Units that die, change owner or identity, or wait
+more than 3000 ticks are dropped and counted. Callbacks are exception-isolated and
+may change the settled unit's simulation state deterministically. The declaration
+holds the exact rules; see the [integration guide](THIRD_PARTY_GUIDE.md#reacting-to-created-and-recruited-units)
+and the [example](../examples/ThirdPartyMod/UnitSettledExample.cs).
+
+## Versioned save data
+
+`APIShared.Savegames.VersionedSaveData.TryRegister` stores one record per mod in saves through
+Script Extender `ModSaveDataAPI`. A record carries an explicit version; consumer-owned
+migration steps upgrade older records, entries the current version does not know are written
+back unchanged, and too-new, unrecognized or unmigratable data is kept byte for byte. The load
+callback runs once per archive load with a documented status, including `NoRecord`. Usage,
+the record-version migration policy, limits and implementation are in [Save data](SAVE_DATA.md).
 
 ## Workshop inventory
 

@@ -43,6 +43,18 @@ before runtime checks. A known Steam delivery is rejected. Missing
 Steam identity on this dedicated type is transport classification, not verified
 player authorization; payload PlayerId is not proof of origin.
 
+Chore `IsEnabled` and `Validate` must return the same result on every peer for the
+same packet. Every peer, including the sender, evaluates both synchronously when
+the Chore is received, so read synchronized game or lobby state there, never a
+per-machine setting, local selection or UI state. A peer whose `IsEnabled` returns
+false drops the packet before `Validate` and execution while the other peers
+execute it, so the simulation diverges; APIShared performs no retry or
+resynchronization ([receive policy](../src/Networking/PacketReceivePolicy.cs)).
+The first such drop on each channel is reported once through the channel's
+`Diagnostic` callback; later drops on that channel and `Validate` rejections are
+not reported. `Send` checks `IsEnabled` on the caller and returns `Disabled`
+without submitting.
+
 `NetworkSendResult.Submitted` means local preflight and a normal return from the
 underlying send, not native execution or peer acknowledgement. The Extender public
 API returns void and retains its internal Steam fallback. APIShared blocks its
@@ -269,6 +281,60 @@ when the original or replacement throws. Check WasReplaced, CompletionException 
 OriginalCompleted before augmenting UI, and use State for cleanup. Exceptions are
 rethrown after Post; a partially executed replacement is not retried as Vanilla.
 
+### Broker implementation and measurements
+
+GameAction, Presentation, market query and sound brokers share one
+[registry](../src/Core/Events/InterceptionEvent.cs). Without active registrations a
+site calls its original before creating args. An observed call creates its public
+Pre args, one Post args per Post registration, a rollback checkpoint per Pre callback
+and owner-State storage only when a Pre has a matching Post or Accepted. Post
+factories are static and receive an explicit value-type context. Presentation sites
+pass their receiver to an original delegate created once per site, so no caller
+creates a closure or delegate per call. Public args are not pooled; observers may
+retain them.
+
+Bytes per observed call, measured by `BrokerAllocationTests` on the local 64-bit
+.NET Framework 4.8.1 test host in Release: one registration, no-op callbacks and
+original, 2000 warm-up calls, minimum of five samples of 20000 calls. Presentation
+is the GuiChecks site shape; its 07089d1 value reproduces that site's original
+closure in the fixture. "Public args" allocates only the objects listed above.
+
+| Path, registration | 07089d1 | Closure-free callers | Public args |
+| --- | ---: | ---: | ---: |
+| GameAction, Post | 264 | 168 | 112 |
+| GameAction, Pre | 176 | 144 | 88 |
+| GameAction, Pre + Post | 328 | 232 | 176 |
+| Market query, Post | 256 | 160 | 104 |
+| Market query, Pre | 168 | 136 | 80 |
+| Market query, Pre + Post | 312 | 216 | 160 |
+| Presentation GuiChecks, Post | 376 | 184 | 128 |
+| Presentation GuiChecks, Pre | 288 | 160 | 104 |
+| Presentation GuiChecks, Pre + Post | 440 | 248 | 192 |
+
+The remaining 56 bytes are the registry's per-call invocation object. An IL test
+rejects closures, delegates, arrays and boxing in the observed caller paths. Each
+additional Post registration adds its Post args; mixed active and dormant internal
+registrations add a filtered snapshot array.
+
+Execution time was compared A/B on the same host against 07089d1, with the same
+test entry points in both builds and the GuiChecks site closure reproduced in the
+07089d1 probe: one registration, no-op callbacks, 5000 warm-up calls, the minimum of 41
+samples of 10000 calls, eight alternating runs at raised process priority. Values are
+the best run in ns per call; every run was faster after the change.
+
+| Path, registration | 07089d1 | Closure-free callers |
+| --- | ---: | ---: |
+| GameAction, Post | 208.9 | 194.1 |
+| GameAction, Pre + Post | 250.3 | 230.8 |
+| Market query, Post | 173.0 | 156.6 |
+| Market query, Pre + Post | 199.5 | 186.4 |
+| Presentation GuiChecks, Post | 223.0 | 197.0 |
+| Presentation GuiChecks, Pre + Post | 272.6 | 248.8 |
+
+Timing is indicative and not asserted; the host also ran unrelated work (21 to 51%
+CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
+these measurements; no FPS change is implied.
+
 ## Sharing native market price queries
 
 Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded
@@ -286,6 +352,63 @@ trade. Returning zero does not cancel the surrounding transaction. Policies must
 cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
+
+## Reacting to created and recruited units
+
+Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it
+exists in its final type: health or speed multipliers, upkeep registration, stable
+links. It is not in APIShared packages up to 0.9.1; check the package you require.
+Register once during startup with your plugin GUID, a stable ID and an optional
+order, on every multiplayer peer and before a mission starts. Keep the callback
+registered for the process lifetime and return early while your feature is off.
+
+Filter on `Cause`, `PlayerId` and `UnitType` in the callback. Recruits arrive as
+`MercenaryOutpost` or `EuropeanBarracks` with the peasant in `PreviousUnitType`;
+units made by the game's spawn function arrive as `Created`. A unit with two
+triggers can be reported twice, so key state that must not double by `GlobalId`
+together with the unit ID. Callbacks run inside the simulation tick: change only
+simulation state, deterministically, and do not log per unit, touch Unity/Noesis or
+decide by local player there. Post presentation work with `Network.TryPostPresentation`
+or your own queue.
+
+Only triggers raised after the first registration in the process are observed.
+Recruits whose purchase preceded a save are not reported after loading it, and restored
+units only if the game recreates them through its spawn function (not verified). Scan
+existing units at mission start and after a save load (for example from the
+mission lifecycle Start notification) and make that scan and the settled path
+idempotent. `DroppedUnits` and `CallbackFailures` are diagnostic counters. The exact
+settle and drop rules are documented at the
+[declaration](../src/Units/Settled/UnitSettledEvents.cs); the
+[example](../examples/ThirdPartyMod/UnitSettledExample.cs) scales recruited troops' health.
+
+### Settlement implementation and measurements
+
+One tracker owns a queue of triggers in raise order. SE unit events read the slot
+once (owner, GlobalId, type) and queue a value under a short lock. SE `OnTick` reads
+one volatile count and returns while nothing waits; otherwise each waiting slot is read
+again and settled values are delivered after the lock is released, against an
+immutable registration snapshot. SE map unload, map load and save load (Pre) discard
+the queue because its unit IDs belong to the previous world. A Vanilla recruit keeps
+its peasant slot, owner and GlobalId: the native recruitment state runs for about 33
+unit updates, passes a transient non-alive state and then initializes the requested
+type in the same slot (native audit of the supported CrusaderDE image).
+
+An installed-game self-test of a consumer mod (game 2.8.2, SE 2.14.1, four runs) used
+the same rule: barracks and mercenary recruits changed type 35 simulation ticks after
+`OnUnitTransition`, and units made by the spawn function were alive with a GlobalId
+after 1 or 2 ticks. That run exercised the consumer's implementation, not this
+service; in-game checks of this service, worker and disband transitions, save loads
+and multiplayer are still pending.
+
+Core.Tests (.NET 10) and the installed-assembly suite (.NET Framework 4.8.1) measure
+zero allocated bytes after warm-up for idle ticks with registrations, for ticks with
+32 or 64 waiting units, and for queueing, settling and delivering 32 units to three or
+four registrations. On the local .NET Framework Release test build, an idle tick took
+3 to 6 ns including the measurement delegate, a waiting unit 30 to 36 ns per tick, and
+a queued, settled and delivered unit 108 to 114 ns with four registrations. IL tests
+check the compiled SE entry points and the tick guard for heap allocation. The
+fixtures use a fake slot reader, not Mono, the native unit array or consumer
+callbacks; they are not an FPS measurement.
 
 ## Extending APIShared
 
@@ -315,6 +438,17 @@ and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cl
 ## Plugin entry points with optional APIShared
 
 Optional consumers requiring APIShared 0.7.1 or newer may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This thread-safe registration is idempotent, applies to derived types and lasts until process exit. The exclusion applies only to the registered type and its derived types. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
+
+## Versioned save data
+
+Store per-mission mod state in saves with `APIShared.Savegames.VersionedSaveData` instead of a
+raw `ModSaveDataAPI` handler when the data must survive mod updates and downgrades. Register
+once at startup with your own identifier, record version, minimum reader version, known entry
+names, a capture callback and a load callback. Apply delivered entries when your mission state
+is ready, and treat `NoRecord` as a new mission. Follow the
+[record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
+format changes, and add a legacy reader when you keep an identifier that already holds data.
+See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
 
 ## Loose Workshop packages
 
@@ -379,6 +513,15 @@ Unity post publication. The pure Core.Tests fixtures measure zero steady-state
 collection allocations with empty or cached immutable providers after warm-up on
 .NET 10. They do not include Mono/Noesis rendering, consumer callbacks or native
 reads, and are not an FPS benchmark.
+
+Initialization validates the six HUD_Main selection fields as before and compiles
+one typed field read for each, so the GuiChecks and BuildingRollover Post reads them
+without reflection or boxing: 96 bytes per update at 07089d1, 0 after, measured by
+`BuildingTooltipHudFieldTests` on the .NET Framework 4.8.1 test host against the
+installed game assembly. In the broker A/B timing run the six reads and selection rule
+took 29.5 ns instead of 284.8 ns per update (best of eight runs; every run faster).
+Providers are still collected before the no-building return, since they may retire
+selection state there.
 
 ## Gate access contributions
 

@@ -4,6 +4,7 @@ namespace APISharedTests
     public partial class RuntimeTests
     {
         [TestMethod] public void SavegameSettingsRoundTrip() => SavegameModSettingsTests.Run(Assert);
+        [TestMethod] public void SavegameSettingsReaderAcceptsTheCapturedPerModLimit() => SavegameModSettingsTests.RunPerModLimit(Assert);
         [TestMethod] public void SaveReadinessPacketRoundTrip()
         {
             var packet = new APIShared.SavegameLoadPacket { Operation = 0, Lobby = 123,

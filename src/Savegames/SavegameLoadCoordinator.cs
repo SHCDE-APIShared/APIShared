@@ -211,6 +211,13 @@ namespace APIShared
             catch (Exception error) { Abort(error.Message); }
         }
 
+        // A confirmed multiplayer save load is running: from ValidateStart until FinishLoad or Abort.
+        // Written on Unity's main thread (Tick, readiness messages after Unity dispatch, the
+        // HostLoadGame hook) and by the mission lifecycle's save entries (ValidateStart, FinishLoad).
+        // VersionedSaveData reads it on the Extender's OnLoadMap thread, which is not proven to be
+        // the same thread, so the read is volatile.
+        internal static bool IsLoadingMultiplayerSave => System.Threading.Volatile.Read(ref loading);
+
         internal static void ValidateStart(string path, bool multiplayer)
         {
             if (!multiplayer) return;

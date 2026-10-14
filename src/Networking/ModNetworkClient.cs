@@ -11,6 +11,7 @@ namespace APIShared.Networking
     /// order, not GUID-derived. All peers need compatible packet types, explicit MessagePack formatters
     /// and payload semantics. APIShared does not negotiate missing mods or change the wire format.
     /// Channels and subscriptions are rooted until process exit; toggle features with IsEnabled.
+    /// A Chore channel's IsEnabled must return the same value on every peer, like its Validate.
     /// </remarks>
     public sealed class ModNetworkClient
     {
