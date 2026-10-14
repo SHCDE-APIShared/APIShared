@@ -133,6 +133,9 @@ namespace APIShared
                 nativeModuleBase = moduleBase;
                 log = logger;
             }
+            // Idempotent; the process plugin binds earlier in its own LibraryLoaded step.
+            if (nativeMemory != null && memory.Length > 0)
+                NativeOwnership.BindModule(moduleBase, memory.Length, nativeMemory.ReadByte);
 
             NativeApiState terminalState = NativeApiState.Ready;
             try
@@ -180,6 +183,7 @@ namespace APIShared
                         memory,
                         nativeRegion,
                         log,
+                        NativeOwnership,
                         out aivBuildStep,
                         out aivBuildStepDiagnostic);
                 }
@@ -498,7 +502,7 @@ namespace APIShared
                     if (state != NativeApiState.Ready)
                         buildingRepairDiagnostic = Faulted(NativeCapabilityIds.BuildingRepair, "APIShared is unavailable.");
                     else
-                        BuildingRepairService.TryCreate(binaryHash, nativeModuleBase, log, RepairTooltip,
+                        BuildingRepairService.TryCreate(binaryHash, nativeModuleBase, log, RepairTooltip, NativeOwnership,
                             out buildingRepair, out buildingRepairDiagnostic);
                 }
                 diagnostic = buildingRepairDiagnostic;

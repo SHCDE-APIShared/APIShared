@@ -88,6 +88,16 @@ Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client,
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
 
+## Declaring native hook sites
+
+If your mod detours, patches or validates bytes of CrusaderDE.dll, register those
+spans in `APIShared.NativeSites.NativeSiteRegistry` from your `LibraryLoaded` handler
+before installing anything, and keep Vanilla behavior when the result is a refusal.
+Ask `TryGetWriter` before hooking a function another mod may already own; prefer an
+APIShared broker where one exists (for example market price queries). Modes, overlap
+rules and limits: [Native sites](NATIVE_SITES.md); workflow:
+[compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
+
 ## Script Extender bugfixes
 
 For explicitly called alternatives, see

@@ -220,18 +220,34 @@ namespace APIShared
                 bool installTiming = timingLiveFailure == null;
                 GatehouseAutomationNativeState automation = nativeRegion != null && installTiming
                     ? GatehouseAutomationNativeState.Prepare(unchecked((ulong)moduleBase),
-                        nativeRegion, memory, nativeMemory, log)
+                        nativeRegion, memory, nativeMemory, log, ownership)
                     : null;
-                runtimeState = nativeRegion == null
-                    ? GatehousePermanentRuntimeState.CreateTestState(installDistance, installTiming)
-                    : installDistance || installTiming
-                        ? new GatehousePermanentRuntimeState(
+                if (nativeRegion != null && (installDistance || installTiming))
+                {
+                    // Claimed before the permanent transaction; released only if it was not published.
+                    ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.GatehousePermanent,
+                        ApiSharedNativeSites.GatehousePermanentSpans(installDistance, installTiming, target),
+                        reason => new NativeResolutionException(NativeCapabilityState.Conflict, reason));
+                    try
+                    {
+                        runtimeState = new GatehousePermanentRuntimeState(
                             nativeRegion,
                             unchecked((ulong)moduleBase),
                             installDistance,
                             installTiming,
-                            automation)
-                        : GatehousePermanentRuntimeState.CreateTestState(false, false);
+                            automation);
+                    }
+                    catch
+                    {
+                        ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehousePermanent);
+                        throw;
+                    }
+                }
+                else
+                {
+                    runtimeState = GatehousePermanentRuntimeState.CreateTestState(
+                        nativeRegion == null && installDistance, nativeRegion == null && installTiming);
+                }
             }
             catch (NativeResolutionException ex)
             {

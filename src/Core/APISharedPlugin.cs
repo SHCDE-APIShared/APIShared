@@ -38,13 +38,16 @@ namespace APIShared
 
         // Each step is an independent error boundary (ApiSharedRuntime.RunNativeInitialization): a
         // throw is logged and the next step still runs, so one failing service cannot keep the API
-        // Pending. The last step publishes the terminal state; if it cannot, the boundary publishes
-        // Unavailable. WhenReady callbacks therefore always complete.
+        // Pending. The "native API publication" step publishes the terminal state; if it cannot, the
+        // boundary publishes Unavailable. WhenReady callbacks therefore always complete.
         private void OnLibraryLoaded(CrusaderLibraryLoadContext context)
         {
             ApiSharedRuntime runtime = ApiSharedRuntime.ProcessInstance;
             string hash = string.Empty;
             runtime.RunNativeInitialization(Logger,
+                // Binds the image for site registrations before any APIShared or consumer hook claims it.
+                new NativeInitializationStep("native site registry", () => runtime.NativeOwnership.BindModule(
+                    context.ModuleHandle.ToInt64(), context.Memory.Length, new ProcessNativeMemory().ReadByte)),
                 // MainHUD loads before a consumer may request the on-demand repair capability.
                 new NativeInitializationStep("repair tooltip binding", () => GameXAMLManagerAPI.Instance.RegisterBinding(
                     "APISharedRepairExtrasHost", runtime.RepairTooltip), runtime.FaultBuildingRepair),
@@ -69,7 +72,10 @@ namespace APIShared
                     new ProcessNativeMemory(),
                     Logger,
                     nativeRegion: context.Region,
-                    installAivBuildStep: true)));
+                    installAivBuildStep: true)),
+                // One summary of registrations and refusals after this frame's startup handlers.
+                new NativeInitializationStep("native site report", () =>
+                    NativeSites.NativeSiteRegistry.ScheduleStartupReport(Logger)));
         }
 
         private static string ComputeInstalledHash()

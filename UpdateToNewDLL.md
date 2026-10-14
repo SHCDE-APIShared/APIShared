@@ -110,6 +110,16 @@ native layout. Execute generated stubs with the installed RedBird backend after
 updates. Acquisition and legacy policy registration do not install hooks; explicit
 installation is permanent, setting/map changes only change logical data.
 
+## Registered native sites
+
+Every APIShared native site above and in the other services is registered in the
+[native-site registry](docs/NATIVE_SITES.md#apishareds-own-sites) from the same
+constants (`src/Core/NativeSites/ApiSharedNativeSites.cs`). When an RVA, displaced
+length or validated range changes, the registered span follows the constant; update
+the expected spans in `tests/APISharedTests/NativeSiteRegistryTests.cs` and the table
+in the guide. The AIV detour claims 0x51790/17, the instruction-aligned prologue any
+patch of up to 14 bytes displaces; re-derive it if that prologue changes.
+
 ## Workshop staging cleanup
 
 Managed contract, not native: Script Extender

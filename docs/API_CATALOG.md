@@ -31,6 +31,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
+| `APIShared.NativeSites.NativeSiteRegistry` | Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 
 The catalog describes this source checkout. Check the selected package and its
@@ -95,6 +96,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
+| Native sites | [Contracts](../src/Core/NativeSites/NativeSiteContracts.cs), [registry](../src/Core/NativeSites/NativeSiteRegistry.cs) | [Owner registry](../src/Core/Internal/Native/NativeOwnershipRegistry.cs), [APIShared site catalog](../src/Core/NativeSites/ApiSharedNativeSites.cs), [guide](NATIVE_SITES.md) | [Native sites](../examples/ThirdPartyMod/NativeSiteExample.cs) |
 | Unit settlement | [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs), [notification contracts](../src/Units/Settled/UnitSettledContracts.cs) | [Settle tracker](../src/Units/Settled/UnitSettledTracker.cs), [SE subscriptions](../src/Units/Settled/UnitSettledScriptExtenderSource.cs) | [Unit settled](../examples/ThirdPartyMod/UnitSettledExample.cs) |
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
@@ -165,7 +167,7 @@ thread, outside locks, with exception isolation. Registrations have no hook tear
 
 `AssassinPathAPI`, `AssassinAttackControlAPI`, `EnemyGatePathPolicyBridge`, `EnemyBridgeDiagnosticBridge` and `TemporaryGateRouteAcceptanceBridge` expose specialized path integration/diagnostics. They are not a general-purpose movement-command API. Use their documented immediate context and ownership contracts; do not retain transient native contexts. `SavegameModSettings` supplies typed save/trail settings integration. `LobbyPreparationOverride` is advanced shared lobby-preparation integration, not an alternative general lifecycle service.
 
-Native addresses, scanners, memory writers and concrete services are not supported public extension points. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
+Scanners, memory writers and concrete services are not supported public extension points. Native addresses are public only as coordination data in the [native-site registry](NATIVE_SITES.md): it records and reports who uses which span of CrusaderDE.dll and installs, scans or writes nothing itself. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
 
 `SavegameModSettings` prepares save settings before initialization and coordinates
 authenticated multiplayer load readiness using the existing settings transports.

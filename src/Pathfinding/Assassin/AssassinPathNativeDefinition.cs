@@ -10,6 +10,7 @@ namespace APIShared
 {
     internal static class AssassinPathNativeDefinition
     {
+        internal const int BuilderRva = 0xD9C40, BuilderDisplacedLength = 10;
         internal static readonly int[] Sites = { 0xD9F0C, 0xD9F1C, 0xE19D8, 0xE19F9 };
         internal static readonly int[] Lengths = { 16, 15, 18, 23 };
         internal static readonly string[] Patterns = {

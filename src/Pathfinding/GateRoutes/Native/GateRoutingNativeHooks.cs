@@ -58,6 +58,9 @@ namespace APIShared.GateRouting.Native
         public delegate void AiTacticalTargetDelegate(IntPtr tribeManager, int tribeId);
 
 
+        internal const int DescentSiteRva = 0x185D55, DescentLength = 20;
+        internal const int DescentContinuationRva = 0x185934, DescentContinuationLength = 4;
+        private static NativeOwnershipRegistry Sites => ApiSharedRuntime.ProcessInstance.NativeOwnership;
         private static GateRoutingNativeHooks instance;
         private static string owner, registration;
         private readonly CrusaderLibraryLoadContext context;
@@ -129,7 +132,12 @@ namespace APIShared.GateRouting.Native
             movementAttempted=true;
             threadSlots=slots;tacticalThreadSlots=tactical;rootedAlternateConsumer=alternate;rootedCandidateSearch=candidates;
             rootedAiTacticalTarget=ai;rootedDirectCursorSearch=direct;rootedCursorPclDecision=cursor;
-            InstallMovementHooks(); roots.Add(transaction);
+            // Claimed for APIShared before the transaction; released when it was not published.
+            ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.GateMovement, ApiSharedNativeSites.GateMovementSpans(),
+                reason => new InvalidOperationException(reason));
+            try { InstallMovementHooks(); }
+            catch { ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateMovement); throw; }
+            roots.Add(transaction);
         }
         private sealed class DetourCandidate<T> where T : Delegate
         {
@@ -325,6 +333,14 @@ namespace APIShared.GateRouting.Native
             CapturerComparisonAdapterEmitter.AssembleAndValidate(
                 memory.Slice(builderPrecheckFilterRva, 20).ToArray(), libraryBase + (ulong)builderPrecheckFilterRva,
                 builderCallback, libraryBase + 0x02200000UL);
+            ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.GateComparisons, ApiSharedNativeSites.GateComparisonSpans(),
+                reason => new InvalidOperationException(reason));
+            try { InstallComparisonHooks(pclGraphFilterRva, builderPrecheckFilterRva, pclCallback, builderCallback); }
+            catch { ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateComparisons); throw; }
+        }
+
+        private void InstallComparisonHooks(int pclGraphFilterRva, int builderPrecheckFilterRva, ulong pclCallback, ulong builderCallback)
+        {
             var transaction = new HookTransaction(
                 context.Region,
                 SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
@@ -372,7 +388,7 @@ namespace APIShared.GateRouting.Native
             if (decision==null||beforeCallback==null||afterCallback==null||activation==IntPtr.Zero||diagnosticActivation==IntPtr.Zero)throw new ArgumentException("Callbacks and activation data required");
             if (descentAttempted) throw new InvalidOperationException("Gate descent installation already attempted");
             descentAttempted=true;
-            const int Site=0x185D55,Length=20,Continuation=0x185934;
+            const int Site=DescentSiteRva,Length=DescentLength,Continuation=DescentContinuationRva;
             ulong module=libraryBase;
             var hook=new HookHandle<X64InlineHook>();
             byte[] expected = { 0x8b, 0xd3, 0x48, 0x8b, 0xcf, 0xe8, 0x71, 0x31, 0x01, 0x00, 0x8b, 0xd3, 0x48, 0x8b, 0xcf, 0xe8, 0xe7, 0x1b, 0x01, 0x00 };
@@ -382,15 +398,22 @@ namespace APIShared.GateRouting.Native
             for (int i = 0; i < next.Length; i++) if (context.Memory[Continuation + i] != next[i]) throw new InvalidOperationException("Gate descent continuation changed");
             using (var probe = new X64InlineHook(module + Site, Length))
                 if (probe.DisplacedByteCount != Length) throw new InvalidOperationException("Gate descent displacement changed");
-            var transaction = new HookTransaction(context.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = false });
-            transaction.AddInline(hook, HookTarget.FromAddress(module + Site), (a, original, ret) =>
-                AssassinGateDescentAdapter.Emit(a, original, Address(decision), (ulong)activation.ToInt64(), module + Continuation,
-                    Address(beforeCallback), Address(afterCallback), (ulong)diagnosticActivation.ToInt64(), module), Length);
-            var result = transaction.Commit();
-            if (!result.IsCompleteSuccess || !hook.Success) throw new InvalidOperationException("Gate descent hook failed");
-            if (hook.Hook.DisplacedByteCount != Length)
-            { transaction.DisableAll(); throw new InvalidOperationException("Unpublished gate descent hook mismatch"); }
+            ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.GateDescent, ApiSharedNativeSites.GateDescentSpans(),
+                reason => new InvalidOperationException(reason));
+            HookTransaction transaction;
+            try
+            {
+                transaction = new HookTransaction(context.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
+                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = false });
+                transaction.AddInline(hook, HookTarget.FromAddress(module + Site), (a, original, ret) =>
+                    AssassinGateDescentAdapter.Emit(a, original, Address(decision), (ulong)activation.ToInt64(), module + Continuation,
+                        Address(beforeCallback), Address(afterCallback), (ulong)diagnosticActivation.ToInt64(), module), Length);
+                var result = transaction.Commit();
+                if (!result.IsCompleteSuccess || !hook.Success) throw new InvalidOperationException("Gate descent hook failed");
+                if (hook.Hook.DisplacedByteCount != Length)
+                { transaction.DisableAll(); throw new InvalidOperationException("Unpublished gate descent hook mismatch"); }
+            }
+            catch { ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateDescent); throw; }
             roots.Add(transaction);roots.Add(decision);roots.Add(beforeCallback);roots.Add(afterCallback);
         }
         private static ulong Address(Delegate d) => (ulong)Marshal.GetFunctionPointerForDelegate(d).ToInt64();
