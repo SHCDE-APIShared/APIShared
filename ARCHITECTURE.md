@@ -10,6 +10,7 @@ GUID without installing hooks or reserving a capability.
 |---|---|
 | Core | Initialization, capability diagnostics, ownership and native infrastructure |
 | ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
+| ScriptExtenderReplacements | Opt-in public alternatives to specific SE methods; no interception of existing callers |
 | Missions, Lobby, Players | Shared observations and immutable state notifications |
 | Presentation, Buildings | HUD/briefing extensions, building repair and gatehouse services |
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
@@ -42,6 +43,7 @@ src/
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
   ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
+  ScriptExtenderReplacements/    explicit public replacements and their migration documentation
   Audio/                        shared playback events, context capture and binary contracts
   Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
@@ -215,6 +217,12 @@ update checks. Native catalogs and tests express supported contracts, not a univ
 promise that an arbitrary game build is supported.
 
 ## Development
+
+Explicit public SE replacements live in `src/ScriptExtenderReplacements`, with
+[contracts and migration guidance](src/ScriptExtenderReplacements/DOCUMENTATION.md).
+Their pathfinding-table state is validated during native initialization and
+published before readiness. They do not belong to the automatic hook-based fixes
+below and do not change existing SE callers.
 
 APIShared also supplies narrowly scoped bugfixes for Script Extender and its bundled
 dependencies. Their implementation lives in `src/ScriptExtenderFixes`, separate from

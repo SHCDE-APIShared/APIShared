@@ -24,6 +24,8 @@ namespace APIShared.Workshop
         private static IDisposable steamSubscription;
         private static ManualLogSource logger;
         private static bool startupDownloadPending;
+        private static string startupPendingItems;
+        private static int steamFailureReported;
         private static readonly WorkshopApplyCoordinator ApplyCoordinator = new WorkshopApplyCoordinator();
         internal static string StateRoot => WorkshopInstallation.StateRoot(Paths.GameRootPath);
         internal static bool IsExternallyManaged => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCDEModManagerLaunchId"));
@@ -37,14 +39,27 @@ namespace APIShared.Workshop
             steamSubscription = SteamworksR3EventHooks.OnSteamworksInitialized.Observable.Subscribe(e => {
                 if (e.Phase != EventHookPhase.Post) return;
                 try {
-                    startupDownloadPending = Subscriptions().Any(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0);
+                    var pending = Subscriptions().Where(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0).ToArray();
+                    startupDownloadPending = pending.Length != 0;
+                    startupPendingItems = string.Join(", ", pending.Select(x => x.Id + " (" + x.State + ")"));
                     Log("Workshop startup gate active on Steam initialization; external management=" + IsExternallyManaged + ".");
                     WorkshopStartup.Run();
                     UnityMainThreadDispatch.TryEnqueue(() => Log("Workshop runtime active after startup cleanup; external management=" + IsExternallyManaged + "."));
-                } catch (Exception ex) { Log("Steam catalog unavailable: " + ex.Message); }
+                } catch (Exception ex) {
+                    if (System.Threading.Interlocked.Exchange(ref steamFailureReported, 1) != 0) return;
+                    WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=Steam initialization", ex);
+                    WorkshopDiagnostics.Outcome(WriteDiagnostic, "failed", false, 1);
+                }
             });
         }
         internal static void Log(string text) => logger?.LogInfo(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text);
+        internal static void WriteDiagnostic(WorkshopDiagnosticLevel level, string text)
+        {
+            text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text;
+            if (level == WorkshopDiagnosticLevel.Error) logger?.LogError(text);
+            else if (level == WorkshopDiagnosticLevel.Warning) logger?.LogWarning(text);
+            else logger?.LogInfo(text);
+        }
         internal static void RequireSteam()
         {
             if (!UnityMainThreadDispatch.IsMainThread) throw new InvalidOperationException("Workshop Steam calls require the Unity thread.");
@@ -75,7 +90,7 @@ namespace APIShared.Workshop
                 var catalog = new List<WorkshopCatalogItem>();
                 var receipts = new Dictionary<ulong, WorkshopReceipt>();
                 try { foreach (var receipt in WorkshopInstallation.Receipts(game)) receipts.Add(WorkshopPackageCodec.Id(receipt.WorkshopId), receipt); }
-                catch (Exception ex) { catalog.Add(new WorkshopCatalogItem { Status = "Receipt diagnostic: " + ex.Message, Title = "Installation state" }); }
+                catch (Exception ex) { catalog.Add(new WorkshopCatalogItem { Status = "Receipt diagnostic: " + ex.Message, Title = "Installation state", DiagnosticError = ex }); }
                 foreach (var item in snapshot)
                 {
                     receipts.TryGetValue(item.Id, out var receipt);
@@ -94,7 +109,7 @@ namespace APIShared.Workshop
                             entry.Status = IsExternallyManaged ? WorkshopText.External : receipt == null ? "Installation / adoption available" :
                                 WorkshopPackageCodec.Version(entry.Package.Version) > WorkshopPackageCodec.Version(receipt.Version) ? "Update available" : "Receipt current; local files are not inspected";
                         }
-                    } catch (Exception ex) { entry.Status = ex.Message; }
+                    } catch (Exception ex) { entry.Status = ex.Message; entry.DiagnosticError = ex; }
                     catalog.Add(entry); receipts.Remove(item.Id);
                 }
                 foreach (var receipt in receipts.Values) catalog.Add(new WorkshopCatalogItem { WorkshopId = WorkshopPackageCodec.Id(receipt.WorkshopId), Title = receipt.PackageId,
@@ -108,7 +123,7 @@ namespace APIShared.Workshop
         {
             var snapshot = Subscriptions(); var subscription = snapshot.FirstOrDefault(x => x.Id == id);
             if (action == WorkshopAction.Remove ? subscription != null : subscription == null || !Stable(subscription))
-                throw new InvalidOperationException("Subscription/download state does not allow this action.");
+                throw WorkshopDiagnostics.Blocked("Subscription/download state does not allow this action.");
             string game = Paths.GameRootPath, source = subscription?.Root;
             var plan = await Task.Run(() => {
                 var candidate = WorkshopInstallation.Prepare(owner, game, id, source, action);
@@ -127,23 +142,23 @@ namespace APIShared.Workshop
         private static void Prerequisites(WorkshopPackage package, IReadOnlyDictionary<string, Version> endState = null, bool skipDependencies = false)
         {
             if (package == null) return;
+            var conflicts = new List<WorkshopOwnershipConflict>();
             foreach (string guid in package.ModGuids) {
                 if (Chainloader.PluginInfos.TryGetValue(guid, out var current)) {
-                    string path = Path.GetFullPath(current.Location);
-                    if (!package.Roots.Any(root => path.StartsWith(WorkshopPaths.Inside(Paths.GameRootPath, root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
-                        throw new InvalidOperationException("An installed plugin outside this payload already owns GUID: " + guid);
+                    var conflict = WorkshopDiagnostics.Conflict(Paths.GameRootPath, package.Roots, guid, current.Location, false);
+                    if (conflict != null) conflicts.Add(conflict);
                 }
                 if (GameAssetModManager.Instance.TryGetRegisteredDirectory(guid, out string assetDirectory)) {
-                    string path = Path.GetFullPath(assetDirectory).TrimEnd(Path.DirectorySeparatorChar);
-                    if (!package.Roots.Any(root => path.Equals(WorkshopPaths.Inside(Paths.GameRootPath, root), StringComparison.OrdinalIgnoreCase) || path.StartsWith(WorkshopPaths.Inside(Paths.GameRootPath, root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
-                        throw new InvalidOperationException("An installed asset mod outside this payload already owns GUID: " + guid);
+                    var conflict = WorkshopDiagnostics.Conflict(Paths.GameRootPath, package.Roots, guid, assetDirectory, true);
+                    if (conflict != null) conflicts.Add(conflict);
                 }
             }
-            if (WorkshopPackageCodec.Version(APISharedPlugin.PluginVersion) < WorkshopPackageCodec.Version(package.MinimumAPISharedVersion)) throw new InvalidOperationException("A newer APIShared is required.");
-            if (!Chainloader.PluginInfos.TryGetValue("000shcdese", out var extender)) throw new InvalidOperationException("Script Extender is unavailable.");
+            WorkshopDiagnostics.RejectConflicts(conflicts);
+            if (WorkshopPackageCodec.Version(APISharedPlugin.PluginVersion) < WorkshopPackageCodec.Version(package.MinimumAPISharedVersion)) throw WorkshopDiagnostics.Blocked("A newer APIShared is required.");
+            if (!Chainloader.PluginInfos.TryGetValue("000shcdese", out var extender)) throw WorkshopDiagnostics.Blocked("Script Extender is unavailable.");
             System.Version actual = WorkshopPackageCodec.Version(extender.Metadata.Version.ToString());
             if (package.MinimumScriptExtenderVersion.Length > 0 && actual < WorkshopPackageCodec.Version(package.MinimumScriptExtenderVersion) ||
-                package.MaximumScriptExtenderVersion.Length > 0 && actual > WorkshopPackageCodec.Version(package.MaximumScriptExtenderVersion)) throw new InvalidOperationException("Script Extender version is outside this package's range.");
+                package.MaximumScriptExtenderVersion.Length > 0 && actual > WorkshopPackageCodec.Version(package.MaximumScriptExtenderVersion)) throw WorkshopDiagnostics.Blocked("Script Extender version is outside this package's range.");
             if (!skipDependencies) {
                 if (endState == null) {
                     var suppliedState = InstalledVersions();
@@ -155,18 +170,28 @@ namespace APIShared.Workshop
             if (package.Bootstrap != null)
             {
                 string info = WorkshopPaths.Inside(Paths.GameRootPath, "_SE/" + Path.GetFileNameWithoutExtension(package.Bootstrap.MapFile) + ".json");
+                if (!File.Exists(info)) {
+                    // Preserve FileNotFoundException for callers while classifying the missing bootstrap as a startup blocker.
+                    var missing = new FileNotFoundException("Let Script Extender install the bootstrap and restart first.", info);
+                    missing.Data["APIShared.Workshop.Blocked"] = true;
+                    throw missing;
+                }
                 var row = WorkshopPackageCodec.Object(DependencyFreeJson.Parse(File.ReadAllText(info)));
                 if (WorkshopPackageCodec.Text(row, "GUID") != package.Bootstrap.Guid || WorkshopPackageCodec.Version(WorkshopPackageCodec.Text(row, "Version")) < WorkshopPackageCodec.Version(package.Bootstrap.Version))
-                    throw new InvalidOperationException("Let Script Extender install the bootstrap and restart first.");
+                    throw WorkshopDiagnostics.Blocked("Let Script Extender install the bootstrap and restart first.");
             }
         }
         internal static void CheckStartupConditions()
         {
             RequireSteam();
-            if (IsExternallyManaged || startupDownloadPending || MissionLifecycleService.HasContext || Directory.Exists(WorkshopPaths.Inside(Paths.GameRootPath, "_SE/.staging")))
-                throw new InvalidOperationException("External management, an active mission or Extender startup work takes precedence.");
-            if (Subscriptions().Any(s => (s.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0))
-                throw new InvalidOperationException("Workshop downloads require another startup.");
+            var reasons = new List<string>();
+            if (IsExternallyManaged) reasons.Add("external management (SCDEModManagerLaunchId)");
+            if (startupDownloadPending) reasons.Add("downloads were pending at Steam initialization; another startup is required: " + startupPendingItems);
+            if (MissionLifecycleService.HasContext) reasons.Add("active mission");
+            if (Directory.Exists(WorkshopPaths.Inside(Paths.GameRootPath, "_SE/.staging"))) reasons.Add("Script Extender staging directory exists");
+            if (reasons.Count != 0) throw WorkshopDiagnostics.Blocked(string.Join("; ", reasons));
+            var pending = Subscriptions().Where(s => (s.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0).ToArray();
+            if (pending.Length != 0) throw WorkshopDiagnostics.Blocked("Workshop downloads require another startup: " + string.Join(", ", pending.Select(s => s.Id + " (" + s.State + ")")));
         }
         internal static Dictionary<string, Version> InstalledVersions()
         {
@@ -189,11 +214,11 @@ namespace APIShared.Workshop
             CheckStartupConditions();
             var latest = Subscriptions();
             if (!latest.Select(s => s.Id).OrderBy(id => id).SequenceEqual(original.Select(s => s.Id).OrderBy(id => id)))
-                throw new InvalidOperationException("Steam subscriptions changed during batch preparation.");
+                throw WorkshopDiagnostics.Blocked("Steam subscriptions changed during batch preparation.");
             foreach (var plan in plans) {
                 var item = latest.FirstOrDefault(s => s.Id == plan.WorkshopId);
                 if (plan.Action == WorkshopAction.Remove ? item != null : item == null || !Stable(item) || Path.GetFullPath(item.Root) != plan.Source)
-                    throw new InvalidOperationException("Workshop download state changed: " + plan.PackageId);
+                    throw WorkshopDiagnostics.Blocked("Workshop download state changed: " + plan.PackageId);
                 if (plan.Package != null) WorkshopSubscriptionOwnership.Verify(latest, plan.WorkshopId, plan.Package);
             }
         }
@@ -220,7 +245,9 @@ namespace APIShared.Workshop
                         operation.Set(WorkshopOperationState.AwaitingRestart, "Confirmed startup batch; receipts commit after game exit.");
                         UnityEngine.Application.Quit(); completion.TrySetResult(operation);
                     } catch (Exception ex) {
-                        try { WorkshopUpdaterLauncher.Cancel(transaction); } catch (Exception cancel) { Log("Batch cancellation failed: " + cancel.Message); }
+                        operation.Failure = ex;
+                        WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=batch updater handoff; operation=" + operation.OperationId, ex);
+                        try { WorkshopUpdaterLauncher.Cancel(transaction); } catch (Exception cancel) { operation.Failure = new AggregateException(ex, cancel); WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=batch handoff cancellation; operation=" + operation.OperationId, cancel); }
                         operation.Set(WorkshopOperationState.Failed, ex.Message); completion.TrySetResult(operation);
                     }
                 })) throw new InvalidOperationException("Unity dispatcher unavailable; batch was not applied.");
@@ -270,7 +297,8 @@ namespace APIShared.Workshop
                         UnityEngine.Application.Quit();
                         completion.TrySetResult(operation);
                     } catch (Exception ex) {
-                        try { WorkshopUpdaterLauncher.Cancel(transaction); } catch (Exception cancelFailure) { Log("Updater handoff cancellation failed: " + cancelFailure.Message); }
+                        WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=updater handoff; operation=" + operation.OperationId, ex);
+                        try { WorkshopUpdaterLauncher.Cancel(transaction); } catch (Exception cancelFailure) { WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=handoff cancellation; operation=" + operation.OperationId, cancelFailure); }
                         operation.Set(WorkshopOperationState.Failed, ex.Message); completion.TrySetResult(operation);
                     }
                 })) throw new InvalidOperationException("Unity dispatcher unavailable; staged transaction was not applied.");

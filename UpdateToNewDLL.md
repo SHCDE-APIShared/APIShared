@@ -1,5 +1,25 @@
 # Native binary update contracts
 
+## Pathfinding table replacements
+
+Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+Profiles: RVA 0x322540, 90 Int32 entries. Permissions: classes 1..6 start at
+RVA 0x32BDB0 and occupy 540 Int32 entries; each row is 0x168 bytes / 90 entries.
+Class-zero table base is 0x32BC48. Native reader 0x181E00 loads the unit's signed
+16-bit type at manager + gameId*0x490 + 0x6E6 and uses `(class*0x5A + type)*4`.
+Direct profile readers 0x18E1E0, 0x196280 and 0x198ED0 use type-indexed Int32s.
+Their symbol names remain candidate-level; these address calculations were
+confirmed in the complete native bodies and disassembly. The former two feed
+movement eligibility/search; the latter branches on the active unit's profile.
+
+SE 2.14.1 commit 5908e1f12437deb7ef5f5b1dc2d64e301178fba3 uses enum count 89
+as storage length and row stride. Keep the 89-value enum contract distinct from
+90-slot native storage. Re-audit complete readers, table extents, SE public
+address resolution and enum values on updates. No mutable canonical-value test
+may reject legitimate changes from foreign mods during initialization.
+The replacement installs no hook and performs no initialization writes.
+See [replacement contracts and migration](src/ScriptExtenderReplacements/DOCUMENTATION.md).
+
 Concrete native reference and resolution contracts belong here. General update
 policy is in [native compatibility](docs/NATIVE_COMPATIBILITY.md); consumer and
 implementation details are in the relevant feature guide.

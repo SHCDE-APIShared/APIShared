@@ -78,6 +78,12 @@ The example library compiles against ordinary public assemblies and has no `Inte
 
 ## Script Extender bugfixes
 
+For explicitly called alternatives, see
+[Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md).
+That separate public area provides corrected pathfinding-table access with the
+SE method signatures; migrate those calls explicitly rather than expecting an
+automatic correction of existing SE calls.
+
 APIShared includes targeted corrections for Script Extender and bundled dependencies,
 implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consumer
 registration. They do not replace the Extender and do not change existing public

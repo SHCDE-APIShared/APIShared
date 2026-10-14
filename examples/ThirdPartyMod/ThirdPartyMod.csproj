@@ -33,6 +33,7 @@
     <Compile Include="WorkshopExample.cs" />
     <Compile Include="SoundExample.cs" />
     <Compile Include="BuildingTooltipExample.cs" />
+    <Compile Include="PathfindingReplacementExample.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">

@@ -18,11 +18,11 @@ namespace APIShared.Workshop
             foreach (var plan in plans) {
                 foreach (string guid in plan.Previous?.ModGuids ?? new string[0]) state.Remove(guid);
                 if (plan.Package == null) continue;
-                if (!packages.Add(plan.PackageId)) throw new InvalidOperationException("Duplicate batch package: " + plan.PackageId);
+                if (!packages.Add(plan.PackageId)) throw WorkshopDiagnostics.Blocked("Duplicate batch package: " + plan.PackageId);
                 foreach (string root in plan.Package.Roots)
-                    if (!roots.Add(root)) throw new InvalidOperationException("Overlapping batch plugin folder: " + root);
+                    if (!roots.Add(root)) throw WorkshopDiagnostics.Blocked("Overlapping batch plugin folder: " + root);
                 foreach (var pair in plan.Package.ModVersions) {
-                    if (!delivered.Add(pair.Key)) throw new InvalidOperationException("Duplicate batch GUID: " + pair.Key);
+                    if (!delivered.Add(pair.Key)) throw WorkshopDiagnostics.Blocked("Duplicate batch GUID: " + pair.Key);
                 }
             }
             foreach (var plan in plans.Where(p => p.Package != null))
@@ -41,7 +41,7 @@ namespace APIShared.Workshop
             if (dependencies == null && receipt.ManifestHash == manifestHash && receipt.PackageId == package.PackageId && receipt.Version == package.Version)
                 dependencies = package.Dependencies;
             if (dependencies == null) {
-                if (changesInstalledVersions) throw new InvalidOperationException("Installed dependency evidence unavailable for " + receipt.PackageId + "; include its update before changing installed GUID versions.");
+                if (changesInstalledVersions) throw WorkshopDiagnostics.Blocked("Installed dependency evidence unavailable for " + receipt.PackageId + "; include its update before changing installed GUID versions.");
                 return; // Adding unrelated GUIDs cannot break unknown old requirements.
             }
             DependencyList(dependencies, state);
@@ -49,12 +49,12 @@ namespace APIShared.Workshop
         private static void DependencyList(IEnumerable<WorkshopDependency> dependencies, IReadOnlyDictionary<string, Version> state)
         {
             foreach (var dependency in dependencies) {
-                if (!state.TryGetValue(dependency.Guid, out var version)) throw new InvalidOperationException("Missing dependency: " + dependency.Guid);
+                if (!state.TryGetValue(dependency.Guid, out var version)) throw WorkshopDiagnostics.Blocked("Missing dependency: " + dependency.Guid);
                 if (version == null && (dependency.MinimumVersion.Length > 0 || dependency.MaximumVersion.Length > 0))
-                    throw new InvalidOperationException("Dependency has no comparable numeric version: " + dependency.Guid);
+                    throw WorkshopDiagnostics.Blocked("Dependency has no comparable numeric version: " + dependency.Guid);
                 if (dependency.MinimumVersion.Length > 0 && version < WorkshopPackageCodec.Version(dependency.MinimumVersion) ||
                     dependency.MaximumVersion.Length > 0 && version > WorkshopPackageCodec.Version(dependency.MaximumVersion))
-                    throw new InvalidOperationException("Dependency version mismatch: " + dependency.Guid);
+                    throw WorkshopDiagnostics.Blocked("Dependency version mismatch: " + dependency.Guid);
             }
         }
     }

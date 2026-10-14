@@ -51,6 +51,7 @@ namespace APIShared
                 NativeApiLog.Error(Logger, $"Could not hash the installed CrusaderDE.dll: {ex}");
                 hash = string.Empty;
             }
+            ScriptExtenderReplacements.PathfindingTables.Initialize(context.ModuleHandle, context.Memory.Length, hash, Logger);
             AssassinPathAPI.Initialize(context.ModuleHandle, context.Memory, context.Region, hash, Logger);
             AssassinAttackControlAPI.Initialize(context.ModuleHandle, context.Region, hash, Logger);
             Economy.MarketPriceNativeRuntime.Initialize(context.ModuleHandle, context.Region, hash, Logger);

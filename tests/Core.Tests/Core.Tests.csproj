@@ -6,6 +6,7 @@
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipSelection.cs" Link="Production/BuildingTooltipSelection.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipRegistry.cs" Link="Production/BuildingTooltipRegistry.cs" />
     <Compile Include="../../src/Workshop/WorkshopInventory.cs" Link="Production/WorkshopInventory.cs" />
+    <Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" />
     <Compile Include="../../src/Workshop/WorkshopApplyCoordinator.cs" Link="Production/WorkshopApplyCoordinator.cs" />
     <Compile Include="../../src/Workshop/WorkshopDeletionManifest.cs" Link="Production/WorkshopDeletionManifest.cs" />
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Production/WorkshopContracts.cs" />

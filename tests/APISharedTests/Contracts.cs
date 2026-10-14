@@ -37,6 +37,7 @@ namespace APISharedTests
                 "existing unit-HUD image slots retain their ordinal prefix; additional slots are allowed");
             var expected = new HashSet<string>(StringComparer.Ordinal)
             {
+                "APIShared.ScriptExtenderReplacements.GamePathingManagerAPI",
                 "APIShared.UnitLookupFailure",
                 "APIShared.UnitAccess",
                 "APIShared.AssassinPathBuilder",

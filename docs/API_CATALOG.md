@@ -1,5 +1,9 @@
 # API catalog
 
+Opt-in [Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md)
+provide the corrected `APIShared.ScriptExtenderReplacements.GamePathingManagerAPI`
+table methods. These require explicit caller migration and do not hook SE methods.
+
 APIShared also provides internal, binary-validated [Script Extender bugfixes](THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
 They require no capability acquisition or consumer registration and are implemented
 separately in `src/ScriptExtenderFixes`. Unsupported dependency implementations are

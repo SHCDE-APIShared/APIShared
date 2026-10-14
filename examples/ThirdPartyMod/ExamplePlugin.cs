@@ -43,6 +43,7 @@ namespace ThirdPartyMod
                 // WhenReady isolates its callback, not work posted by that callback.
                 try
                 {
+                    PathfindingReplacementExample.Inspect(Log);
                     if (client.TryGetUnitHudPresentation(out var hud, out var diagnostic))
                         HudExample.Register(hud, Log);
                     else Log(diagnostic.Reason);
