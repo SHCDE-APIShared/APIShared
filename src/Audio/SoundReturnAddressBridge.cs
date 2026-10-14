@@ -9,10 +9,12 @@ using static Iced.Intel.AssemblerRegisters;
 namespace APIShared.Audio
 {
     // A void four-argument Win64 wrapper needs no incoming flags or volatile SIMD.
-    // Dormant: the demand guard tail-jumps to the trampoline. Active: copy the original return
-    // address, the entry RSP and the caller's RBP as arguments five to seven, then transition.
+    // Dormant: the demand guard tail-jumps to the trampoline. Active: pass the entry RSP as
+    // argument five ([entry RSP] is the original return address) and spill the caller's RBP
+    // into this bridge's own frame at entry RSP-0x10, which a five-argument callee never owns.
     internal sealed class SoundReturnAddressBridge : IDetourIntermediaryFactory
     {
+        internal const int CallerRbpBelowFrame = 0x10;
         private readonly ulong callback, demand;
         internal SoundReturnAddressBridge(Delegate value, IntPtr demand)
         {
@@ -29,11 +31,9 @@ namespace APIShared.Audio
                 var active = SoundBridgeCode.EmitGuard(asm, demand, trampoline);
                 asm.Label(ref active);
                 asm.sub(rsp, 0x38);
-                asm.mov(rax, __qword_ptr[rsp + 0x38]);
-                asm.mov(__qword_ptr[rsp + 0x20], rax);
                 asm.lea(rax, __qword_ptr[rsp + 0x38]);
-                asm.mov(__qword_ptr[rsp + 0x28], rax);
-                asm.mov(__qword_ptr[rsp + 0x30], rbp);
+                asm.mov(__qword_ptr[rsp + 0x20], rax);
+                asm.mov(__qword_ptr[rsp + 0x38 - CallerRbpBelowFrame], rbp);
                 asm.mov(rax, callback);
                 asm.call(rax);
                 asm.add(rsp, 0x38);
@@ -47,17 +47,15 @@ namespace APIShared.Audio
                 throw new InvalidOperationException("Audio intermediary/trampoline identity changed.");
             var decoder = SoundBridgeCode.Open(hook.HookEntryPointAddress);
             SoundBridgeCode.ValidateGuard(decoder, demand, unchecked((ulong)hook.TrampolineAddress.ToInt64()));
-            var a = decoder.Decode(); var b = decoder.Decode(); var c = decoder.Decode(); var d = decoder.Decode(); var e = decoder.Decode();
-            var f = decoder.Decode(); var g = decoder.Decode(); var h = decoder.Decode(); var i = decoder.Decode(); var j = decoder.Decode();
+            var a = decoder.Decode(); var b = decoder.Decode(); var c = decoder.Decode(); var d = decoder.Decode();
+            var e = decoder.Decode(); var f = decoder.Decode(); var g = decoder.Decode(); var h = decoder.Decode();
             if (a.Mnemonic != Mnemonic.Sub || a.Op0Register != Register.RSP || a.Immediate8 != 0x38 ||
-                b.Mnemonic != Mnemonic.Mov || b.Op0Register != Register.RAX || b.MemoryBase != Register.RSP || b.MemoryDisplacement64 != 0x38 ||
+                b.Mnemonic != Mnemonic.Lea || b.Op0Register != Register.RAX || b.MemoryBase != Register.RSP || b.MemoryDisplacement64 != 0x38 ||
                 c.Mnemonic != Mnemonic.Mov || c.MemoryBase != Register.RSP || c.MemoryDisplacement64 != 0x20 || c.Op1Register != Register.RAX ||
-                d.Mnemonic != Mnemonic.Lea || d.Op0Register != Register.RAX || d.MemoryBase != Register.RSP || d.MemoryDisplacement64 != 0x38 ||
-                e.Mnemonic != Mnemonic.Mov || e.MemoryBase != Register.RSP || e.MemoryDisplacement64 != 0x28 || e.Op1Register != Register.RAX ||
-                f.Mnemonic != Mnemonic.Mov || f.MemoryBase != Register.RSP || f.MemoryDisplacement64 != 0x30 || f.Op1Register != Register.RBP ||
-                g.Mnemonic != Mnemonic.Mov || g.Op0Register != Register.RAX || g.Immediate64 != callback ||
-                h.Mnemonic != Mnemonic.Call || h.Op0Register != Register.RAX ||
-                i.Mnemonic != Mnemonic.Add || i.Op0Register != Register.RSP || i.Immediate8 != 0x38 || j.Mnemonic != Mnemonic.Ret)
+                d.Mnemonic != Mnemonic.Mov || d.MemoryBase != Register.RSP || d.MemoryDisplacement64 != 0x38 - CallerRbpBelowFrame || d.Op1Register != Register.RBP ||
+                e.Mnemonic != Mnemonic.Mov || e.Op0Register != Register.RAX || e.Immediate64 != callback ||
+                f.Mnemonic != Mnemonic.Call || f.Op0Register != Register.RAX ||
+                g.Mnemonic != Mnemonic.Add || g.Op0Register != Register.RSP || g.Immediate8 != 0x38 || h.Mnemonic != Mnemonic.Ret)
                 throw new InvalidOperationException("Audio return-address bridge ABI changed.");
         }
     }

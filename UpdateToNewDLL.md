@@ -49,8 +49,9 @@ FF25 absolute patch, padding, copied prologue and trampoline continuation before
 and after publication. Each rooted intermediary first tests its native demand byte
 and tail-jumps to the trampoline when it is zero; RAX must stay unread by both
 displaced prologues. The wrapper intermediary then reserves 0x38 aligned Win64
-stack bytes and forwards the original return PC, entry RSP and caller RBP as
-arguments five to seven; the emitter intermediary tail-jumps to its managed thunk.
+stack bytes, forwards the entry RSP (pointing at the original return PC) as
+argument five and spills the caller RBP at entry RSP-0x10; the emitter
+intermediary tail-jumps to its managed thunk.
 Execute both on copied full wrappers/emitter with the byte at zero and one after
 every backend change. No published hook may be reverted.
 

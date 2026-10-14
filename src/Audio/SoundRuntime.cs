@@ -14,8 +14,9 @@ namespace APIShared.Audio
     internal sealed unsafe class SoundRuntime
     {
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] internal delegate void Wrapper(IntPtr unused, int x, int y, int sound);
-        // origin: original return address; frame: entry RSP (points at origin); callerRbp: RBP at entry.
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)] internal delegate void OriginWrapper(IntPtr unused, int x, int y, int sound, ulong origin, ulong frame, ulong callerRbp);
+        // frame: the wrapper's entry RSP. [frame] is the original return address; the bridge
+        // spilled the caller's RBP at [frame-0x10] (SoundReturnAddressBridge.CallerRbpBelowFrame).
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)] internal delegate void OriginWrapper(IntPtr unused, int x, int y, int sound, ulong frame);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] internal delegate void Emit(IntPtr manager, short sound, short x, short y, short flag);
         [ThreadStatic] private static SoundSource scope;
         [ThreadStatic] private static int scopeSound, scopeX, scopeY;
@@ -186,10 +187,10 @@ namespace APIShared.Audio
         // copied-code tests pass private copies, so they execute the production bridges and callbacks.
         internal void CreateHooks(ulong wrapper, ulong flagWrapper, ulong emit, bool suspendThreads = true)
         {
-            wrapperCallback = (unused, x, y, sound, origin, frame, rbp) => OnWrapper(false, unused, x, y, sound, origin, frame, rbp);
-            flagWrapperCallback = (unused, x, y, sound, origin, frame, rbp) => OnWrapper(true, unused, x, y, sound, origin, frame, rbp);
-            wrapperFallback = (unused, x, y, sound) => OnWrapper(false, unused, x, y, sound, 0, 0, 0);
-            flagWrapperFallback = (unused, x, y, sound) => OnWrapper(true, unused, x, y, sound, 0, 0, 0);
+            wrapperCallback = (unused, x, y, sound, frame) => OnWrapper(false, unused, x, y, sound, frame);
+            flagWrapperCallback = (unused, x, y, sound, frame) => OnWrapper(true, unused, x, y, sound, frame);
+            wrapperFallback = (unused, x, y, sound) => OnWrapper(false, unused, x, y, sound, 0);
+            flagWrapperFallback = (unused, x, y, sound) => OnWrapper(true, unused, x, y, sound, 0);
             // The bridges test native demand bytes first; zero demand never enters managed code.
             wrapperBridge = new SoundReturnAddressBridge(wrapperCallback, SoundNativeDemand.Wrapper);
             flagWrapperBridge = new SoundReturnAddressBridge(flagWrapperCallback, SoundNativeDemand.Wrapper);
@@ -244,36 +245,32 @@ namespace APIShared.Audio
         }
         // Persistent path for every positional wrapper call with native demand: the bridge
         // (native byte nonzero) -> here -> attribution/source events -> trampoline -> emitter.
-        private void OnWrapper(bool flagged, IntPtr unused, int x, int y, int sound, ulong origin, ulong frame, ulong callerRbp)
+        // The ThreadStatic scope is touched only around a matched soldier source with playback
+        // demand: it is null outside that window, because the emitter is a leaf of the wrapper.
+        private void OnWrapper(bool flagged, IntPtr unused, int x, int y, int sound, ulong frame)
         {
             var hook = flagged ? flagWrapperHook : wrapperHook;
-            // Managed minimum behind the native guard: no ThreadStatic access without demand.
-            // Outside this method the scope is always null, so skipping its save/reset is exact.
             bool playback = SoundEvents.Demand.HasObservers, sources = SoundSourceEvents.Demand.HasObservers;
-            if (!(playback || sources) || !SoundContextPolicy.Active) { hook.Original(unused, x, y, sound); return; }
-            // Source events alone never mark records, so they leave the ThreadStatic scope untouched.
-            if (!playback) { hook.Original(unused, x, y, Attribute(flagged, x, y, sound, origin, frame, callerRbp, false, true)); return; }
-            var saved = scope; int oldSound = scopeSound, oldX = scopeX, oldY = scopeY; bool oldConsumed = scopeConsumed;
-            scope = null; scopeConsumed = false;
-            try { hook.Original(unused, x, y, Attribute(flagged, x, y, sound, origin, frame, callerRbp, true, sources)); }
-            finally { scope = saved; scopeSound = oldSound; scopeX = oldX; scopeY = oldY; scopeConsumed = oldConsumed; }
-        }
-        // Returns the effect to forward. Origins outside the catalogs are forwarded unchanged.
-        private int Attribute(bool flagged, int x, int y, int sound, ulong origin, ulong frame, ulong callerRbp, bool playback, bool sources)
-        {
-            if (origin < moduleBase || origin - moduleBase > int.MaxValue) return sound;
+            // frame is zero only for the fallback delegates, which the bridges never call.
+            ulong origin = frame == 0 ? 0 : *(ulong*)frame;
+            if (!(playback || sources) || !SoundContextPolicy.Active || origin < moduleBase || origin - moduleBase > int.MaxValue)
+            { hook.Original(unused, x, y, sound); return; }
             int rva = (int)(origin - moduleBase);
             if (SoundSources.TryGet(rva, out var source))
-                return source.Flag == (flagged ? 1 : 0) && source.Situation(sound) != SoundSituation.Unknown
-                    ? AttributeSoldier(source, flagged, x, y, sound, playback, sources) : sound;
-            return sources && !flagged && killReady && SoundSources.TryGetKill(rva, out var kill) && kill.Accepts(sound)
-                ? AttributeKill(kill, x, y, sound, frame, callerRbp) : sound;
+            {
+                if (source.Flag == (flagged ? 1 : 0) && source.Situation(sound) != SoundSituation.Unknown)
+                    AttributeSoldier(hook, source, flagged, unused, x, y, sound, playback, sources);
+                else hook.Original(unused, x, y, sound);
+                return;
+            }
+            hook.Original(unused, x, y, sources && !flagged && killReady && SoundSources.TryGetKill(rva, out var kill) && kill.Accepts(sound)
+                ? AttributeKill(kill, x, y, sound, frame) : sound);
         }
         // Current-unit global attribution, validated by type, coordinates and (for 0x1700D2) state.
         // A source-event replacement leaves the record unmarked: its effect is no longer the audited one.
-        private int AttributeSoldier(SoundSource source, bool flagged, int x, int y, int sound, bool playback, bool sources)
+        private void AttributeSoldier(NativeDetour<Wrapper> hook, SoundSource source, bool flagged, IntPtr unused, int x, int y, int sound, bool playback, bool sources)
         {
-            int final = sound;
+            int final = sound; bool mark = false;
             try
             {
                 int id = *currentUnit;
@@ -289,7 +286,7 @@ namespace APIShared.Audio
                         SoundSourceEvents.Dispatch(ref args);
                         final = args.SoundId;
                     }
-                    if (playback && final == sound) { scope = source; scopeSound = sound; scopeX = (short)x; scopeY = (short)y; }
+                    mark = playback && final == sound;
                 }
                 else {
                     Interlocked.Increment(ref rejections);
@@ -300,16 +297,22 @@ namespace APIShared.Audio
                 }
             }
             catch (Exception ex) { Fail(ex); }
-            return final;
+            if (!mark) { hook.Original(unused, x, y, final); return; }
+            // The emitter consumes this scope inside the original; restore it even if the original throws.
+            var saved = scope; int oldSound = scopeSound, oldX = scopeX, oldY = scopeY; bool oldConsumed = scopeConsumed;
+            scope = source; scopeSound = sound; scopeX = (short)x; scopeY = (short)y; scopeConsumed = false;
+            try { hook.Original(unused, x, y, sound); }
+            finally { scope = saved; scopeSound = oldSound; scopeX = oldX; scopeY = oldY; scopeConsumed = oldConsumed; }
         }
         // The melee damage routine's own arguments: victim = RBP (movsxd rbp,r8d at 0x199124),
         // attacker = [frame+0x78]/0x490 (spilled at 0x1991D5). Not the current-unit global.
-        private int AttributeKill(SoundKillSource kill, int x, int y, int sound, ulong frame, ulong callerRbp)
+        private int AttributeKill(SoundKillSource kill, int x, int y, int sound, ulong frame)
         {
             int final = sound;
             try
             {
-                long offset = frame == 0 ? 0 : *(long*)(frame + NativeContract.MeleeAttackerFrameOffset), victimValue = unchecked((long)callerRbp);
+                long offset = *(long*)(frame + NativeContract.MeleeAttackerFrameOffset);
+                long victimValue = *(long*)(frame - SoundReturnAddressBridge.CallerRbpBelowFrame);
                 int attackerId = offset > 0 && offset % 0x490 == 0 && offset / 0x490 <= int.MaxValue ? (int)(offset / 0x490) : 0;
                 int victimId = victimValue > 0 && victimValue <= int.MaxValue ? (int)victimValue : 0;
                 bool attackerFound = APIShared.UnitAccess.TryGetById(attackerId, out GameUnit* attacker, out var attackerFailure);

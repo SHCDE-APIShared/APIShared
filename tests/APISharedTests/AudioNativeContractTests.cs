@@ -243,9 +243,10 @@ public sealed unsafe class AudioNativeContractTests
         IntPtr demand = Marshal.AllocHGlobal(8); Marshal.WriteInt64(demand, 0); roots.Add(demand);
         NativeDetour<SoundRuntime.Wrapper> hook = null;
         int callbacks = 0; ulong captured = 0, frame = 0, rbp = 0; long slot = 0;
-        SoundRuntime.OriginWrapper callback = (unused,x,y,sound,origin,entry,callerRbp) => {
+        SoundRuntime.OriginWrapper callback = (unused,x,y,sound,entry) => {
             Check(unused == new IntPtr(123) && x == -17 && y == 300 && sound == 180, "bridge preserves four Win64 arguments");
-            captured = origin; frame = entry; rbp = callerRbp; slot = *(long*)(entry + NativeContract.MeleeAttackerFrameOffset);
+            captured = *(ulong*)entry; frame = entry; rbp = *(ulong*)(entry - SoundReturnAddressBridge.CallerRbpBelowFrame);
+            slot = *(long*)(entry + NativeContract.MeleeAttackerFrameOffset);
             callbacks++; hook.Original(unused,x,y,sound);
         };
         SoundRuntime.Wrapper fallback = (unused,x,y,sound) => { throw new InvalidOperationException("bridge must capture origin"); };
@@ -281,7 +282,7 @@ public sealed unsafe class AudioNativeContractTests
         invoke(new IntPtr(123), -17, 300, 180);
         Check(callbacks == 1 && emissions == 2 && captured == call.NextIP, "executed intermediary captures original native return address and resumes displaced prologue");
         Check((ulong)Marshal.ReadInt64(new IntPtr(unchecked((long)frame))) == captured && rbp == RbpSentinel && slot == SlotSentinel,
-            "entry RSP points at the return address; caller RBP and caller RSP+0x70 reach the managed callback unchanged");
+            "entry RSP points at the return address; spilled caller RBP and caller RSP+0x70 reach the managed callback unchanged");
         Marshal.WriteByte(demand, 0);
         invoke(new IntPtr(123), -17, 300, 180);
         Check(callbacks == 1 && emissions == 3, "guard returns to the dormant path");

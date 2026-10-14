@@ -290,8 +290,9 @@ roots with logical activation only.
 
 Native source events reuse the wrapper path: attribution runs before the original,
 callbacks see a stack-only `SoundSourceArgs`, and the final sound ID is forwarded.
-With source demand alone the scope ThreadStatics stay untouched; a replaced call
-is never marked.
+The scope ThreadStatics are written only around a matched soldier source with
+playback demand; every other call leaves them untouched (the emitter is a leaf of the
+wrapper, so the scope is null outside that window). A replaced call is never marked.
 
 ### Melee kill attribution
 
@@ -300,10 +301,11 @@ Kill cues are CALLs to wrapper 0x2960 at return addresses 0x199957, 0x199823,
 edx attacker, r8d victim, r9d damage). They are reached only after the victim's
 health was written as zero (0x19925C, branch 0x19931E). The current-unit global is
 not used: instant-kill callers (0x1AD64, 0x1ADD4, 0x198F84) pass units that need
-not be the one whose update runs. Instead the bridge passes the caller's RBP and
-entry RSP: the routine writes RBP only by `movsxd rbp,r8d` (0x199124), so RBP is the
-victim, and the attacker offset `attacker*0x490` sits in the caller-home slot
-[RSP+0x70] written only at 0x1991D5, which is [entry RSP+0x78] at the wrapper.
+not be the one whose update runs. Instead the bridge passes the entry RSP and spills
+the caller's RBP at entry RSP-0x10: the routine writes RBP only by `movsxd rbp,r8d`
+(0x199124), so RBP is the victim, and the attacker offset `attacker*0x490` sits in
+the caller-home slot [RSP+0x70] written only at 0x1991D5, which is [entry RSP+0x78]
+at the wrapper.
 Script Extender detours the routine's 20-byte prologue for its melee-damage event;
 the trampoline keeps the frame layout, so only the body after the prologue
 (0x199124..0x19999D) is hash-checked live. A mismatch disables kill attribution and
@@ -328,8 +330,9 @@ after publication. Each permanently rooted Win64 bridge starts with
 `mov rax,demand; cmp byte [rax],0; jne active; mov rax,trampoline; jmp rax`, so a
 zero byte reaches the original with untouched argument registers, RSP and return
 address (RAX is scratch: neither displaced prologue reads it first). The wrapper's
-active path reserves 0x38 aligned stack bytes and passes the original return
-address, the entry RSP and the caller's RBP as arguments five to seven; the
+active path reserves 0x38 aligned stack bytes, passes the entry RSP as argument
+five ([entry RSP] is the original return address) and spills the caller's RBP into
+its own frame at entry RSP-0x10, a slot a five-argument callee never owns; the
 emitter's active path tail-jumps into its rooted managed thunk. Validation decodes
 both bridges. Copied-code tests execute the bridges and original displaced
 prologues with the byte at zero and one; production functions/random choices still
@@ -409,26 +412,35 @@ Production hooks (`SoundRuntime.CreateHooks`: real bridges, demand bytes,
 OnWrapper/OnEmit, RedBird trampolines) on private executable copies of the real
 wrapper 0x2960 and emitter 0x1A41E0, with the manager LEA and emitter CALL
 relocated. A native loop calls the copied wrapper 20000 times per sample, one
-managed transition per sample; each call appends exactly one record. 21 samples per
-mode, modes alternated within a run, three runs alternated with the develop
-baseline 49e60dc (same harness with a test-only hook-construction seam). The value
-is the minimum over all samples; medians were within 20 % of it. Both sides allocate
-0 bytes per call in every mode. 64-bit .NET Framework 4.8.1, not Unity Mono.
+managed transition per sample; each call appends exactly one record. 31 samples per
+mode at raised process priority, modes alternated within a run, four runs
+alternated with the develop baseline 49e60dc (same harness with a test-only
+hook-construction seam). The value is the minimum over all samples; in every run
+pair the branch was faster in every hooked mode. Both sides allocate 0 bytes per
+call in every mode. 64-bit .NET Framework 4.8.1, not Unity Mono.
 
 | Wrapper call (wrapper + emitter) | develop ns | branch ns |
 | --- | ---: | ---: |
-| Unhooked copy (reference) | 2.96 | 2.88 |
-| No active registration | 144.65 | 4.39 |
-| Source events only, unattributed origin | n/a | 128.95 |
-| Playback events, unattributed origin | 206.22 | 226.23 |
+| Unhooked copy (reference) | 3.05 | 3.00 |
+| No active registration | 147.11 | 4.53 |
+| Source events only, unattributed origin | n/a | 111.89 |
+| Playback events, unattributed origin | 231.12 | 164.29 |
+| Playback events, catalog origin, attribution rejected | 270.62 | 226.77 |
 
 Dormant cost drops from two managed transitions per call to one byte test and two
-jumps (+1.5 ns over the unhooked copy). With playback demand the branch is about
-20 ns slower per call: two more bridge arguments, the source-demand read and the
-emitter guard. Source dispatch itself, measured separately with stack-only args and
-a replacing callback, is 0 bytes and about 67 ns for one and 177 ns for 16
-registrations. Attributed calls (UnitAccess lookups, catalog checks) need live
-units and are not measured off-game; nor is Mono's transition cost.
+jumps (+1.5 ns over the unhooked copy). With playback demand the branch saves the
+ThreadStatic save/reset/restore that develop performed on every wrapper call; only a
+matched soldier source still writes the scope. The catalog-origin row runs the
+rejected attribution (current unit 0), i.e. the catalog path without UnitAccess
+work. Bridge layouts alone, with a trivial managed callback, differ by less than
+2 ns (develop wrapper bridge 26.8 to 28.2 ns, branch 26.2 to 29.0 ns; emitter
+RedBird default 27.4 to 28.6 ns, branch guard 28.2 to 30.5 ns). Source dispatch,
+measured separately with stack-only args and a replacing callback, is 0 bytes and
+about 67 ns for one and 177 ns for 16 registrations. A successful attribution needs
+live units and is not measured off-game; per call it does the work of develop's
+matched path minus one ThreadStatic write and three demand-delegate calls, plus one
+source-demand read, one extra call frame and the emitter guard. Mono's transition and
+ThreadStatic costs are not measured.
 
 RedBird's thread-suspending patch destabilises the desktop CLR test host (a later
 GC fails with an internal runtime error, reproduced with one private detour), so
