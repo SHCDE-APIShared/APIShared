@@ -133,7 +133,7 @@ namespace APIShared.Workshop
         }
         internal static string StageRollback(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart)
         {
-            WorkshopTransaction.StateGate.Wait();
+            WorkshopTransaction.EnterState();
             try { return StageRollbackLocked(game, entries, restart); }
             finally { WorkshopTransaction.StateGate.Release(); }
         }

@@ -58,31 +58,52 @@ namespace APIShared.Workshop
             }
         }
         internal static void Cancel(string transaction) => File.WriteAllText(WorkshopPaths.Inside(transaction, "cancel.flag"), "Cancelled before game exit.");
-        internal static async Task Maintain(string game)
+        // Startup history maintenance. The read-only plan check decides whether the
+        // external pass could change anything; only then a hidden child runs, bounded
+        // by WorkshopMaintenanceRunner.Timeout. Returns false when a child survived
+        // its kill and still owns the transaction directory: recovery and staging
+        // must then wait for a later start.
+        internal static async Task<bool> Maintain(string game)
         {
-            if (WorkshopRuntime.IsExternallyManaged) return;
-            await WorkshopTransaction.StateGate.WaitAsync();
+            if (WorkshopRuntime.IsExternallyManaged) return true;
             try {
-                string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
-                bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
-                ProcessStartInfo start;
-                if (wine) {
-                    string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
-                    start = new ProcessStartInfo(shell, Quote(HostPath(WorkshopPaths.Inside(assets, "workshop-updater.sh"))) + " " + Quote(HostPath(game)) + " --maintain");
-                } else start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(WorkshopPaths.Inside(assets, "workshop-updater.ps1")) + " -GameRoot " + Quote(game) + " -Maintain");
-                start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
-                start.RedirectStandardOutput = true; start.RedirectStandardError = true;
-                using (var process = Process.Start(start)) {
-                    if (process == null) throw new IOException("Maintenance process could not be started.");
-                    var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
-                    await Task.Run(() => process.WaitForExit());
-                    string text = (await output).Trim(), error = (await errors).Trim();
-                    if (text.Length != 0) WorkshopRuntime.Log(text);
-                    if (process.ExitCode != 0) WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance deferred; " + error);
+                var result = await WorkshopMaintenanceRunner.RunAsync(WorkshopTransaction.StateGate, () => MaintenanceNeeded(game), () => MaintenanceStart(game),
+                    WorkshopMaintenanceRunner.Timeout, WorkshopMaintenanceRunner.KillWait);
+                switch (result.Exit) {
+                    case WorkshopMaintenanceExit.Skipped: WorkshopRuntime.Log("Workshop maintenance: nothing to do; no process started."); return true;
+                    case WorkshopMaintenanceExit.StillRunning:
+                        WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance did not exit after its timeout and kill; recovery and installation are deferred until it has exited. " + result.Error);
+                        return false;
+                    case WorkshopMaintenanceExit.Stopped:
+                        WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance exceeded " + WorkshopMaintenanceRunner.Timeout.TotalSeconds + " s and was stopped; its resumable cleanup continues on a later start or after the next installation.");
+                        return true;
                 }
+                if (result.Output.Length != 0) WorkshopRuntime.Log(result.Output);
+                if (result.ExitCode != 0) WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance deferred; " + result.Error);
             } catch (Exception ex) {
                 WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance deferred; " + ex.Message);
-            } finally { WorkshopTransaction.StateGate.Release(); }
+            }
+            return true;
+        }
+        private static bool MaintenanceNeeded(string game)
+        {
+            try { return WorkshopMaintenancePlan.MayChange(game); }
+            catch (Exception ex) {
+                WorkshopRuntime.Log("Workshop maintenance pre-check inconclusive; running the external pass: " + ex.Message);
+                return true;
+            }
+        }
+        private static ProcessStartInfo MaintenanceStart(string game)
+        {
+            string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
+            bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
+            ProcessStartInfo start;
+            if (wine) {
+                string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
+                start = new ProcessStartInfo(shell, Quote(HostPath(WorkshopPaths.Inside(assets, "workshop-updater.sh"))) + " " + Quote(HostPath(game)) + " --maintain");
+            } else start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(WorkshopPaths.Inside(assets, "workshop-updater.ps1")) + " -GameRoot " + Quote(game) + " -Maintain");
+            start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
+            return start;
         }
         private static string FirstExisting(this string[] paths)
         {
