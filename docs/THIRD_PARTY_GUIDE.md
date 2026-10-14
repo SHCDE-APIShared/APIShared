@@ -269,6 +269,60 @@ when the original or replacement throws. Check WasReplaced, CompletionException 
 OriginalCompleted before augmenting UI, and use State for cleanup. Exceptions are
 rethrown after Post; a partially executed replacement is not retried as Vanilla.
 
+### Broker implementation and measurements
+
+GameAction, Presentation, market query and sound brokers share one
+[registry](../src/Core/Events/InterceptionEvent.cs). Without active registrations a
+site calls its original before creating args. An observed call creates its public
+Pre args, one Post args per Post registration, a rollback checkpoint per Pre callback
+and owner-State storage only when a Pre has a matching Post or Accepted. Post
+factories are static and receive an explicit value-type context. Presentation sites
+pass their receiver to an original delegate created once per site, so no caller
+creates a closure or delegate per call. Public args are not pooled; observers may
+retain them.
+
+Bytes per observed call, measured by `BrokerAllocationTests` on the local 64-bit
+.NET Framework 4.8.1 test host in Release: one registration, no-op callbacks and
+original, 2000 warm-up calls, minimum of five samples of 20000 calls. Presentation
+is the GuiChecks site shape; its 07089d1 value reproduces that site's original
+closure in the fixture. "Public args" allocates only the objects listed above.
+
+| Path, registration | 07089d1 | Closure-free callers | Public args |
+| --- | ---: | ---: | ---: |
+| GameAction, Post | 264 | 168 | 112 |
+| GameAction, Pre | 176 | 144 | 88 |
+| GameAction, Pre + Post | 328 | 232 | 176 |
+| Market query, Post | 256 | 160 | 104 |
+| Market query, Pre | 168 | 136 | 80 |
+| Market query, Pre + Post | 312 | 216 | 160 |
+| Presentation GuiChecks, Post | 376 | 184 | 128 |
+| Presentation GuiChecks, Pre | 288 | 160 | 104 |
+| Presentation GuiChecks, Pre + Post | 440 | 248 | 192 |
+
+The remaining 56 bytes are the registry's per-call invocation object. An IL test
+rejects closures, delegates, arrays and boxing in the observed caller paths. Each
+additional Post registration adds its Post args; mixed active and dormant internal
+registrations add a filtered snapshot array.
+
+Execution time was compared A/B on the same host against 07089d1, with the same
+test entry points in both builds and the GuiChecks site closure reproduced in the
+07089d1 probe: one registration, no-op callbacks, 5000 warm-up calls, the minimum of 41
+samples of 10000 calls, eight alternating runs at raised process priority. Values are
+the best run in ns per call; every run was faster after the change.
+
+| Path, registration | 07089d1 | Closure-free callers |
+| --- | ---: | ---: |
+| GameAction, Post | 208.9 | 194.1 |
+| GameAction, Pre + Post | 250.3 | 230.8 |
+| Market query, Post | 173.0 | 156.6 |
+| Market query, Pre + Post | 199.5 | 186.4 |
+| Presentation GuiChecks, Post | 223.0 | 197.0 |
+| Presentation GuiChecks, Pre + Post | 272.6 | 248.8 |
+
+Timing is indicative and not asserted; the host also ran unrelated work (21 to 51%
+CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
+these measurements; no FPS change is implied.
+
 ## Sharing native market price queries
 
 Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded
@@ -379,6 +433,15 @@ Unity post publication. The pure Core.Tests fixtures measure zero steady-state
 collection allocations with empty or cached immutable providers after warm-up on
 .NET 10. They do not include Mono/Noesis rendering, consumer callbacks or native
 reads, and are not an FPS benchmark.
+
+Initialization validates the six HUD_Main selection fields as before and compiles
+one typed field read for each, so the GuiChecks and BuildingRollover Post reads them
+without reflection or boxing: 96 bytes per update at 07089d1, 0 after, measured by
+`BuildingTooltipHudFieldTests` on the .NET Framework 4.8.1 test host against the
+installed game assembly. In the broker A/B timing run the six reads and selection rule
+took 29.5 ns instead of 284.8 ns per update (best of eight runs; every run faster).
+Providers are still collected before the no-building return, since they may retire
+selection state there.
 
 ## Gate access contributions
 

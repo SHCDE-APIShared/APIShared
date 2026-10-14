@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
+using System.Reflection.Emit;
 
 namespace APIShared.Presentation
 {
@@ -18,7 +19,7 @@ namespace APIShared.Presentation
         private static readonly TooltipView compact = new TooltipView(), detailed = new TooltipView();
         private static readonly Action<string, Exception> report = Report;
         private static ManualLogSource log;
-        private static FieldInfo hoverStruct, selectedStruct, hoverString, selectedString, otherVisible, otherPriority;
+        private static HudSelection selection;
         private static bool initialized, subscribed, confirmed;
         private static string failure;
         private static BuildingTooltipContext lastContext;
@@ -52,9 +53,7 @@ namespace APIShared.Presentation
             try
             {
                 if (!UnityMainThreadDispatch.IsMainThread) throw new InvalidOperationException("Tooltip initialization requires Unity's main thread.");
-                hoverStruct = Field("HoverStruct", typeof(int), false); selectedStruct = Field("SelectedStruct", typeof(int), false);
-                hoverString = Field("HoverString", typeof(string), true); selectedString = Field("SelectedString", typeof(string), false);
-                otherVisible = Field("OtherVisible", typeof(bool), false); otherPriority = Field("OtherHighestPri", typeof(bool), false);
+                selection = new HudSelection();
                 initialized = true;
             }
             catch (Exception error) { failure = error.Message; Report("initialization", error); }
@@ -70,6 +69,32 @@ namespace APIShared.Presentation
             if (field == null || field.FieldType != type || field.IsPublic != isPublic) throw new MissingFieldException("Real HUD_Main contract differs: " + name);
             return field;
         }
+        // GuiChecks and BuildingRollover Post read the six selection fields on every update once a
+        // provider is registered. Validate them at startup as before, then compile one typed read
+        // per field so the update path performs no reflection or boxing.
+        internal sealed class HudSelection
+        {
+            private readonly Func<HUD_Main, int> hoverStruct, selectedStruct;
+            private readonly Func<HUD_Main, string> hoverString, selectedString;
+            private readonly Func<HUD_Main, bool> otherVisible, otherPriority;
+            internal HudSelection()
+            {
+                hoverStruct = Read<int>(Field("HoverStruct", typeof(int), false)); selectedStruct = Read<int>(Field("SelectedStruct", typeof(int), false));
+                hoverString = Read<string>(Field("HoverString", typeof(string), true)); selectedString = Read<string>(Field("SelectedString", typeof(string), false));
+                otherVisible = Read<bool>(Field("OtherVisible", typeof(bool), false)); otherPriority = Read<bool>(Field("OtherHighestPri", typeof(bool), false));
+            }
+            internal int Resolve(HUD_Main hud, bool detailed, out bool hovering) =>
+                BuildingTooltipSelection.Resolve(hoverStruct(hud), hoverString(hud), selectedStruct(hud), selectedString(hud),
+                    otherVisible(hud), otherPriority(hud), detailed, out hovering);
+            private static Func<HUD_Main, T> Read<T>(FieldInfo field)
+            {
+                // ldarg.0; ldfld; ret. Owner-associated and visibility-skipping, as the fields are private.
+                var method = new DynamicMethod("APIShared.BuildingTooltip.Read" + field.Name, typeof(T), new[] { typeof(HUD_Main) }, typeof(HUD_Main), true);
+                ILGenerator il = method.GetILGenerator();
+                il.Emit(OpCodes.Ldarg_0); il.Emit(OpCodes.Ldfld, field); il.Emit(OpCodes.Ret);
+                return (Func<HUD_Main, T>)method.CreateDelegate(typeof(Func<HUD_Main, T>));
+            }
+        }
         private static void Presented(PresentationPostEventArgs args)
         {
             if (!registry.HasDemand || !UnityMainThreadDispatch.IsMainThread) return;
@@ -78,9 +103,7 @@ namespace APIShared.Presentation
             var hud = args.BuildingHud ?? main?.HUDmain;
             if (hud == null || main == null || GameData.Instance.lastGameState == null) { Clear(); return; }
             bool full = main.RolloverBuilding_TooltipVis;
-            int building = BuildingTooltipSelection.Resolve((int)hoverStruct.GetValue(hud), (string)hoverString.GetValue(hud),
-                (int)selectedStruct.GetValue(hud), (string)selectedString.GetValue(hud), (bool)otherVisible.GetValue(hud),
-                (bool)otherPriority.GetValue(hud), full, out bool hovering);
+            int building = selection.Resolve(hud, full, out bool hovering);
             var variant = full ? BuildingTooltipVariant.Detailed : BuildingTooltipVariant.Compact;
             var context = lastContext;
             if (context == null || context.BuildingType != building || context.Variant != variant || context.IsSymbolHover != hovering)
