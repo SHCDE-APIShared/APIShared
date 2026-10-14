@@ -174,7 +174,9 @@ installing another hook. See the API catalog for skip, exception and thread rule
 initializes native services. `ApiSharedRuntime.ProcessInstance`, static registries
 and persistent publishers retain services after startup cleanup. Global completion
 and individual capability availability are separate; one native failure must not
-disable independent managed services.
+disable independent managed services. Each `LibraryLoaded` step runs inside the error
+boundary `ApiSharedRuntime.RunNativeInitialization`, so a throwing step cannot skip
+later steps or leave the global state `Pending`.
 
 Readiness callbacks run outside the initialization lock with exception isolation.
 There is no implicit thread dispatch. Registration ownership, ordering, replay and

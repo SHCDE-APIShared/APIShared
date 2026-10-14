@@ -223,6 +223,72 @@ namespace APIShared
             }
         }
 
+        // Error boundary of the LibraryLoaded initialization (issue #5). Steps run in order on the
+        // caller's thread and are independent: a throw is logged, handed to that step's Failed callback
+        // and never stops a later step. One step is expected to call Initialize. If no step published
+        // a terminal state, the API publishes Unavailable here, so WhenReady callbacks always complete.
+        // Nothing is rethrown to the Script Extender's LibraryLoaded publisher or to Awake.
+        internal void RunNativeInitialization(ManualLogSource logger, params NativeInitializationStep[] steps)
+        {
+            string lastFailure = null;
+            foreach (NativeInitializationStep step in steps)
+            {
+                try { step.Run(); }
+                catch (Exception ex)
+                {
+                    lastFailure = $"Initialization step '{step.Name}' failed: {ex.GetType().Name}: {ex.Message}";
+                    try { NativeApiLog.Error(logger, $"{lastFailure}; independent steps continue. {ex}"); }
+                    catch { }
+                    try { step.Failed?.Invoke(lastFailure); }
+                    catch { }
+                }
+            }
+            if (State == NativeApiState.Pending)
+                PublishInitializationFailure(lastFailure ?? "Native initialization did not publish a terminal state.", logger);
+        }
+
+        // A failed repair-tooltip binding leaves the on-demand repair capability Faulted with that reason
+        // instead of creating it later without its HUD tooltip.
+        internal void FaultBuildingRepair(string reason)
+        {
+            lock (sync)
+            {
+                if (buildingRepair == null && buildingRepairDiagnostic.State == NativeCapabilityState.Pending)
+                    buildingRepairDiagnostic = Faulted(NativeCapabilityIds.BuildingRepair, reason);
+            }
+        }
+
+        // Terminal fallback when Initialize was not reached or threw before publishing: the same
+        // Unavailable outcome as Initialize's own global failure, with the step's reason.
+        private void PublishInitializationFailure(string reason, ManualLogSource logger)
+        {
+            Action<IApiShared>[] callbacks;
+            lock (sync)
+            {
+                if (state != NativeApiState.Pending)
+                    return;
+                if (log == null)
+                    log = logger;
+                gatehouseDistanceOrigin = null;
+                gatehouse = null;
+                unitHudPresentation = null;
+                aivBuildStep = null;
+                gatehouseDistanceOriginDiagnostic = Faulted(NativeCapabilityIds.GatehouseDistanceOrigin, reason);
+                gatehouseDiagnostic = Faulted(NativeCapabilityIds.GatehouseTiming, reason);
+                unitHudDiagnostic = Faulted(NativeCapabilityIds.UnitHudPresentation, reason);
+                aivBuildStepDiagnostic = Faulted(NativeCapabilityIds.AivBuildStep, reason);
+                state = NativeApiState.Unavailable;
+                callbacks = readyCallbacks.ToArray();
+                readyCallbacks.Clear();
+            }
+            try { NativeApiLog.Error(log, $"APIShared initialization failed globally: build={binaryHash}, error={reason}"); }
+            catch { }
+            foreach (Action<IApiShared> callback in callbacks)
+            {
+                InvokeReadyCallback(callback);
+            }
+        }
+
         public bool TryGetGatehouseDistanceOrigin(
             string ownerGuid,
             out IGatehouseDistanceOriginCapability capability,
@@ -471,5 +537,21 @@ namespace APIShared
             new NativeCapabilityDiagnostic(capabilityId, NativeCapabilityState.Faulted, binaryHash, reason);
         private static NativeCapabilityDiagnostic Pending(string capabilityId) =>
             new NativeCapabilityDiagnostic(capabilityId, NativeCapabilityState.Pending, string.Empty, "APIShared has not completed native initialization.");
+    }
+
+    // One independent step of ApiSharedRuntime.RunNativeInitialization. Failed receives the logged
+    // reason when Run throws; its own exceptions are ignored.
+    internal sealed class NativeInitializationStep
+    {
+        internal NativeInitializationStep(string name, Action run, Action<string> failed = null)
+        {
+            Name = name;
+            Run = run ?? throw new ArgumentNullException(nameof(run));
+            Failed = failed;
+        }
+
+        internal string Name { get; }
+        internal Action Run { get; }
+        internal Action<string> Failed { get; }
     }
 }
