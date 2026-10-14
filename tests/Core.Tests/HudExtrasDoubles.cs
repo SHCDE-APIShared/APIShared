@@ -25,6 +25,7 @@ namespace Noesis
         public bool IsEnabled { get => enabled && (Parent?.IsEnabled ?? true); set => enabled = value; }
         public bool IsVisible => Visibility == Visibility.Visible && (Parent?.IsVisible ?? true);
         public bool IsHitTestVisible = true;
+        public bool IsLoaded { get; internal set; }
         public HorizontalAlignment HorizontalAlignment; public VerticalAlignment VerticalAlignment;
         public Style? Style;
         public readonly Dictionary<string, object> Resources = new();
@@ -75,8 +76,20 @@ namespace SHCDESE.API
     public class GameXAMLManagerAPI
     {
         public static readonly GameXAMLManagerAPI Instance = new();
-        public Noesis.FrameworkElement? Element;
-        public Noesis.FrameworkElement? FindGlobalElement(string name) => Element;
+        private Noesis.FrameworkElement? element;
+        internal int Searches;
+        // The element the view currently holds: replacing it unloads the previous one, as leaving a Noesis view does.
+        public Noesis.FrameworkElement? Element
+        {
+            get => element;
+            set
+            {
+                if (element != null && !ReferenceEquals(element, value)) element.IsLoaded = false;
+                element = value;
+                if (value != null) value.IsLoaded = true;
+            }
+        }
+        public Noesis.FrameworkElement? FindGlobalElement(string name) { Searches++; return element; }
     }
 }
 namespace UnityEngine
