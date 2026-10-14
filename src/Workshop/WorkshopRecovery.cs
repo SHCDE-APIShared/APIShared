@@ -15,13 +15,80 @@ namespace APIShared.Workshop
         internal string Directory, OperationsHash, JournalHash, Failure, RollbackError;
         internal string[] Targets = new string[0];
         internal ulong[] Items = new ulong[0];
+        internal WorkshopRecoveryProgress Progress = new WorkshopRecoveryProgress();
         internal bool CanRollback => RollbackError == null;
         internal string Reference => Path.GetFileName(Directory) + "\t" + OperationsHash + "\t" + JournalHash;
     }
 
+    // Presentation only: malformed progress must never alter recovery eligibility.
+    internal sealed class WorkshopRecoveryProgress
+    {
+        internal bool Reliable;
+        internal int Completed, Total;
+        internal string LastCompleted, Pending;
+
+        internal string Describe(bool german)
+        {
+            if (!Reliable) return german ? "Fortschritt nicht zuverlässig bestimmbar." : "Progress cannot be determined reliably.";
+            string text = german ? Completed + " von " + Total + " Operationen als abgeschlossen protokolliert."
+                : Completed + " of " + Total + " operations recorded as completed.";
+            if (LastCompleted != null) text += "\n" + (german ? "Zuletzt abgeschlossen: " : "Last completed: ") + LastCompleted;
+            if (Pending != null) text += "\n" + (german ? "Begonnen, ohne protokollierten Abschluss: " : "Started without a recorded completion: ") + Pending;
+            return text;
+        }
+    }
+
     internal static class WorkshopRecovery
     {
+        internal enum Choice { Later, Repair, Rollback, CompleteRepair }
+        internal static Choice Decide(bool rollback, int answer) => rollback
+            ? answer == 6 ? Choice.Repair : answer == 7 ? Choice.Rollback : Choice.Later
+            : answer == 6 ? Choice.CompleteRepair : Choice.Later;
+
+        internal static string[] PreservedAssemblies(string game, WorkshopPackage package)
+        {
+            string full = Path.GetFullPath(game).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var delivered = new HashSet<string>(package.Files.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string root in package.Roots) {
+                string directory = WorkshopPaths.Inside(game, root);
+                if (!System.IO.Directory.Exists(directory)) continue;
+                foreach (string file in WorkshopPaths.Enumerate(directory)) {
+                    string relative = file.Substring(full.Length).Replace('\\', '/');
+                    if (Path.GetExtension(file).Equals(".dll", StringComparison.OrdinalIgnoreCase) && !delivered.Contains(relative) &&
+                        !relative.Split('/').Any(p => p.Equals("config", StringComparison.OrdinalIgnoreCase) || p.Equals("LobbyModSettings", StringComparison.OrdinalIgnoreCase)))
+                        result.Add(relative);
+                }
+            }
+            return result.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        }
         internal const string Protocol = "APISHARED-WORKSHOP-RECOVERY-1";
+        internal static string Describe(WorkshopInterruptedTransaction entry, bool german)
+        {
+            return (entry.Failure ?? (german ? "Unterbrochen ohne protokollierten Fehler." : "Interrupted without a recorded error."))
+                + "\n" + entry.Progress.Describe(german);
+        }
+
+        internal static WorkshopRecoveryProgress Progress(string[] journal, string[][] rows)
+        {
+            var progress = new WorkshopRecoveryProgress { Total = rows.Length };
+            int next = 0;
+            bool pending = false;
+            foreach (string line in journal) {
+                // These markers record the sequential application, not rollback.
+                if (!Regex.IsMatch(line, "^(begin|done)(\\s|$)")) continue;
+                string[] marker = line.Split('\t');
+                if (marker.Length != 2 || !int.TryParse(marker[1], NumberStyles.None, CultureInfo.InvariantCulture, out int ordinal) ||
+                    ordinal != next || ordinal < 0 || ordinal >= rows.Length || marker[1] != ordinal.ToString(CultureInfo.InvariantCulture)) return progress;
+                if (marker[0] == "begin" && !pending) { pending = true; progress.Pending = rows[ordinal][1]; }
+                else if (marker[0] == "done" && pending) {
+                    pending = false; next++; progress.Completed = next;
+                    progress.LastCompleted = rows[ordinal][1]; progress.Pending = null;
+                } else return progress;
+            }
+            progress.Reliable = true;
+            return progress;
+        }
         internal static string[] Journal(string directory) => File.Exists(WorkshopPaths.Inside(directory, "journal.log"))
             ? File.ReadAllLines(WorkshopPaths.Inside(directory, "journal.log")) : new string[0];
         internal static bool Finished(string directory) => Journal(directory).Any(x => x == "committed" || x == "restored");
@@ -63,10 +130,11 @@ namespace APIShared.Workshop
                     Directory = directory,
                     OperationsHash = WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(directory, "operations.tsv")),
                     JournalHash = WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(directory, "journal.log")),
-                    Failure = journal.LastOrDefault(x => x.StartsWith("failure ", StringComparison.Ordinal)) ?? "Installation interrupted; no terminal journal entry."
+                    Failure = journal.LastOrDefault(x => x.StartsWith("failure ", StringComparison.Ordinal))
                 };
                 try {
                     var rows = ReadOperations(game, directory);
+                    entry.Progress = Progress(journal, rows);
                     entry.Targets = rows.Select(r => r[1]).ToArray();
                     entry.Items = rows.Where(r => r[0].StartsWith("receipt-", StringComparison.Ordinal))
                         .Select(r => ulong.Parse(Path.GetFileNameWithoutExtension(r[1]), CultureInfo.InvariantCulture)).ToArray();

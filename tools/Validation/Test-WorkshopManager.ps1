@@ -7,6 +7,9 @@ if ($runtime -match 'RegisterLobbyModSettings|WorkshopViewModel|LibraryLoaded \+
     [IO.File]::Exists((Join-Path $root 'Override/Workshop/Workshop.xaml'))) { throw 'Removed Workshop UI is still registered or shipped.' }
 if ($runtime -notmatch 'private static IDisposable steamSubscription;' -or $runtime -notmatch 'WorkshopStartup.Run\(\)' -or
     $startup -notmatch 'Interlocked.Exchange\(ref attempted, 1\)' -or $startup -notmatch 'MessageBoxW') { throw 'Startup work must have one process-owned confirmation.' }
+if($startup -match 'async\s+void\s+Run' -or $startup -notmatch 'Run\(\)\s*=>\s*WorkshopStartupGate.Run' -or
+   $runtime -notmatch 'authorization.Quit' -or $runtime -notmatch 'authorization.Validate\(\)' -or
+   @([regex]::Matches($runtime,'UnityEngine\.Application\.Quit\(\)')).Count -ne 1){throw 'Automatic updates must keep the startup scope and use confirmed handoff authority; only the public consumer workflow may quit directly.'}
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'src/Workshop') -File -Filter '*.cs') {
     $source=[IO.File]::ReadAllText($file.FullName)
     if ($source -match '(?<!\r)\n') { throw "Workshop CRLF check failed: $($file.Name)" }
