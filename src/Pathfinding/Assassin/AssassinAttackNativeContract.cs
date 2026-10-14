@@ -11,6 +11,8 @@ namespace APIShared
         // 122800 takes tribe-manager base, one-based unit ID and signed objective role (+2FE).
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         internal delegate int RetargetDelegate(IntPtr tribeManager, int unitId, int objectiveRole);
+        internal const int UpdateRva = 0x16CD70, UpdateDisplacedLength = 10;
+        internal const int RetargetEntryRva = 0x122800, RetargetEntryLength = 24;
         internal static void ValidateRetargetEntry(IntPtr target)
         {
             byte[] expected = { 0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,0x48,0x89,0x74,0x24,0x18,

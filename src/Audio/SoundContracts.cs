@@ -46,7 +46,10 @@ namespace APIShared.Audio
         /// <summary>Soldier wall demolition.</summary>
         WallDemolition,
         /// <summary>Tunneler collapse sequence.</summary>
-        TunnelCollapse
+        TunnelCollapse,
+        /// <summary>Weapon cue chosen by the attacker type after a melee hit reduced the victim's health to zero.
+        /// Reported by <see cref="SoundSourceEvents"/> only; Unity playback records of these calls stay Unknown.</summary>
+        MeleeKill
     }
     /// <summary>Evidence for this particular source and unit type, not every use of the situation enum.</summary>
     public enum SituationEvidence

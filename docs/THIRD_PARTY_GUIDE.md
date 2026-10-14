@@ -88,6 +88,19 @@ Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client,
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
 
+## Declaring native hook sites
+
+Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover
+yet. Where a service exists (for example market price queries), subscribe to it instead
+of hooking. If your mod detours, patches or validates bytes of CrusaderDE.dll that no
+service covers, register those spans in `APIShared.NativeSites.NativeSiteRegistry` from
+your `LibraryLoaded` handler before installing anything, and keep Vanilla behavior when
+the result is a refusal. A refusal identifies the conflict; it does not resolve it. If
+another mod really needs the same point, propose a shared service with ordering, veto
+and replacement rules. An accepted overlap is not a compatibility guarantee. Modes,
+overlap rules, when to use which, and limits: [Native sites](NATIVE_SITES.md); workflow:
+[compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
+
 ## Script Extender bugfixes
 
 For explicitly called alternatives, see
@@ -467,6 +480,13 @@ See the [audio integration guide](AUDIO.md#situational-sound-rules).
 
 Unit-type/source filters, evidence checks, repeat limits and local profiles use the
 same Pre/Post events. See [policy examples and boundaries](AUDIO.md#consumer-filters-repeat-limits-and-other-sound-policies).
+
+### Exact-unit sound cues
+
+For a cue that depends on one unit (for example a converted unit's kill sound), use
+`SoundSourceEvents` rather than a detour of the positional wrapper: its args carry the
+acting unit's game ID and GlobalId, the killed victim for melee kill cues, and
+`TryReplaceSound`. See [exact-unit cue replacement](AUDIO.md#exact-unit-cue-replacement).
 
 ## Building tooltip text
 

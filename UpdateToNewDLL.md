@@ -46,9 +46,25 @@ Wrappers displace 15 bytes (4+3+8); continuation moves R8D to R9D. Emitter
 displaces 14 (4+3+4+3); continuation writes X. Only NativeX64 Absolute is allowed.
 Validate actual backend Scheme, target, displacement, zero PointerSlot, hook entry,
 FF25 absolute patch, padding, copied prologue and trampoline continuation before
-and after publication. The rooted intermediary reserves 0x38 aligned Win64 stack
-bytes and forwards the original return PC as argument five. Execute it on copied
-full wrappers after every backend change. No published hook may be reverted.
+and after publication. Each rooted intermediary first tests its native demand byte
+and tail-jumps to the trampoline when it is zero; RAX must stay unread by both
+displaced prologues. The wrapper intermediary then reserves 0x38 aligned Win64
+stack bytes, forwards the entry RSP (pointing at the original return PC) as
+argument five and spills the caller RBP at entry RSP-0x10; the emitter
+intermediary tail-jumps to its managed thunk.
+Execute both on copied full wrappers/emitter with the byte at zero and one after
+every backend change. No published hook may be reverted.
+
+Melee kill cues are bound to the melee damage routine 0x199110: re-derive the
+frame-setup hash 0x199124..0x1991D9 (from the end of the 20-byte prologue through the
+attacker spill), the victim RBP write (`movsxd rbp,r8d`, 0x199124) and the only
+attacker spill (`mov [rsp+0x70],r10`, 0x1991D5, read as entry RSP+0x78 at the
+wrapper), the four CALL sites (returns 0x199957, 0x199823, 0x199837, 0x199319), the
+zero-health branch and the attacker-type jump tables at 0x199AD4/0x199AF0 and
+0x1999A0/0x1999B8 against SoundSources.Kills. Recheck that Script Extender's melee
+patches (entry detour, context hook at 0x199444) and other installed hooks stay
+outside the pinned range and the CALL sites, and that their trampolines keep RBP,
+RSP and [rsp+0x70]. A mismatch disables kill attribution only.
 
 Audit all 91 source calls, allowed dynamic effect selections, type and coordinate
 origin, pre-emission state changes, incoming edges, pending copies, all six pools
@@ -109,6 +125,16 @@ owners; do not install competing entries. The byte checks permit no unknown
 native layout. Execute generated stubs with the installed RedBird backend after
 updates. Acquisition and legacy policy registration do not install hooks; explicit
 installation is permanent, setting/map changes only change logical data.
+
+## Registered native sites
+
+Every APIShared native site above and in the other services is registered in the
+[native-site registry](docs/NATIVE_SITES.md#apishareds-own-sites) from the same
+constants (`src/Core/NativeSites/ApiSharedNativeSites.cs`). When an RVA, displaced
+length or validated range changes, the registered span follows the constant; update
+the expected spans in `tests/APISharedTests/NativeSiteRegistryTests.cs` and the table
+in the guide. The AIV detour claims 0x51790/17, the instruction-aligned prologue any
+patch of up to 14 bytes displaces; re-derive it if that prologue changes.
 
 ## Workshop staging cleanup
 

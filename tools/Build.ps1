@@ -10,6 +10,23 @@ function Invoke-Tool([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Executable failed with exit code $LASTEXITCODE." }
 }
+# csc /optimize- marks the assembly DebuggableAttribute(DisableOptimizations), which also
+# turns off JIT optimization on .NET Framework. The shipped Release DLL must not carry it.
+function Assert-ApiOptimizedAssembly([string]$Path, [string]$GameDir) {
+    if (-not ('Mono.Cecil.AssemblyDefinition' -as [type])) {
+        [void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $GameDir 'BepInEx\core\Mono.Cecil.dll')))
+    }
+    $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($Path)
+    try {
+        $debuggable = @($assembly.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'System.Diagnostics.DebuggableAttribute' })
+        if ($debuggable.Count -ne 1 -or $debuggable[0].ConstructorArguments.Count -ne 1) { throw "$Path has no single DebuggableAttribute(DebuggingModes)." }
+        $modes = [int]$debuggable[0].ConstructorArguments[0].Value
+        if ($modes -band [int][Diagnostics.DebuggableAttribute+DebuggingModes]::DisableOptimizations) {
+            throw "$Path was compiled without optimization (DebuggableAttribute $modes); Release must set Optimize."
+        }
+        Write-Host ('[Build] Optimized Release assembly verified: DebuggableAttribute({0}).' -f $modes)
+    } finally { $assembly.Dispose() }
+}
 try {
     Initialize-ApiBuildEnvironment $root
     $game = $env:SHCDE_GAME_DIR
@@ -58,6 +75,7 @@ try {
     foreach ($required in @('APIShared.dll','APIShared.xml','info.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $required))) { throw ($required + ' is missing from the prepared package.') }
     }
+    Assert-ApiOptimizedAssembly (Join-Path $package 'APIShared.dll') $game
     $unexpected = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.dll','.exe') -and $_.Name -ne 'APIShared.dll' })
     if ($unexpected.Count) { throw 'The package contains unexpected runtime binaries.' }
     $null = New-ApiWorkshopInventory -Directory $package

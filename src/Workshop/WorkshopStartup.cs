@@ -60,7 +60,11 @@ namespace APIShared.Workshop
                 }
                 WorkshopRuntime.CheckStartupConditions();
                 step = "history maintenance";
-                await WorkshopUpdaterLauncher.Maintain(BepInEx.Paths.GameRootPath);
+                if (!await WorkshopUpdaterLauncher.Maintain(BepInEx.Paths.GameRootPath)) {
+                    // A maintenance child survived its kill and still owns the
+                    // transaction directory; recovery and staging wait for a later start.
+                    blocked = true; result = "blocked"; return;
+                }
                 step = "recovery inspection";
                 if (await RecoverAsync()) { result = "recovery offered"; return; }
                 step = "catalog";
@@ -142,11 +146,11 @@ namespace APIShared.Workshop
                 WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + ": " + operation.State + "; " + operation.Diagnostic);
                 result = operation.State == WorkshopOperationState.AwaitingRestart ? "awaiting restart" : "failed";
                 if (operation.State != WorkshopOperationState.AwaitingRestart) {
-                    Notice(WorkshopText.Pick("Workshop update could not be started.\n", "Workshop-Update konnte nicht gestartet werden.\n") + operation.Diagnostic);
                     if (operation.Failure != null && WorkshopDiagnostics.Level(operation.Failure) == WorkshopDiagnosticLevel.Warning) { blocked = true; result = "blocked"; }
                     else {
                         failures++;
                         WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Error, "Workshop step=" + step + "; operation=" + operation.OperationId + "; " + operation.Diagnostic);
+                        Notice(WorkshopText.Pick("Workshop update could not be started.\n", "Workshop-Update konnte nicht gestartet werden.\n") + operation.Diagnostic);
                     }
                 }
             } catch (Exception ex) {
@@ -154,7 +158,8 @@ namespace APIShared.Workshop
                 if (WorkshopDiagnostics.Level(ex) == WorkshopDiagnosticLevel.Error) failures++;
                 result = blocked && failures == 0 ? "blocked" : "failed";
                 WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=" + step, ex);
-                Notice(WorkshopText.Pick("Workshop operation failed. No successful installation was recorded.\n", "Workshop-Vorgang fehlgeschlagen. Es wurde keine erfolgreiche Installation bestätigt.\n") + ex.Message);
+                if (WorkshopDiagnostics.UserVisible(ex))
+                    Notice(WorkshopText.Pick("Workshop operation failed. No successful installation was recorded.\n", "Workshop-Vorgang fehlgeschlagen. Es wurde keine erfolgreiche Installation bestätigt.\n") + ex.Message);
             } finally { WorkshopDiagnostics.Outcome(WorkshopRuntime.WriteDiagnostic, result, blocked, failures); }
         }
 

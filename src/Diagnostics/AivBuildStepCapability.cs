@@ -49,6 +49,18 @@ namespace APIShared
             ScanRegion region,
             ManualLogSource log,
             out AivBuildStepService service,
+            out NativeCapabilityDiagnostic diagnostic) =>
+            TryCreate(hash, moduleBase, memory, region, log, null, out service, out diagnostic);
+
+        // ownership receives the detour site before installation (null: not registered).
+        internal static bool TryCreate(
+            string hash,
+            long moduleBase,
+            ReadOnlySpan<byte> memory,
+            ScanRegion region,
+            ManualLogSource log,
+            NativeOwnershipRegistry ownership,
+            out AivBuildStepService service,
             out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
@@ -80,6 +92,8 @@ namespace APIShared
                     throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
                         $"The AIV ExecuteBuildStep function hash changed: expected={FunctionHash}, actual={actualHash}.");
 
+                ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.AivBuildStep, ApiSharedNativeSites.AivBuildStepSpans(),
+                    reason => new NativeResolutionException(NativeCapabilityState.Conflict, reason));
                 var candidate = new AivBuildStepService(hash, log);
                 pending = new HookTransaction(
                     region,
@@ -109,6 +123,7 @@ namespace APIShared
             catch (NativeResolutionException ex)
             {
                 pending?.Dispose();
+                ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.AivBuildStep);
                 diagnostic = Diagnostic(hash, ex.State, ex.Message);
                 NativeApiLog.Error(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, status=unavailable, error={ex.Message}");
                 return false;
@@ -116,6 +131,7 @@ namespace APIShared
             catch (Exception ex)
             {
                 pending?.Dispose();
+                ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.AivBuildStep);
                 diagnostic = Diagnostic(hash, NativeCapabilityState.Faulted, ex.Message);
                 NativeApiLog.Error(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, status=faulted, error={ex}");
                 return false;

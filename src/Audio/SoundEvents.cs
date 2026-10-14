@@ -6,7 +6,7 @@ namespace APIShared.Audio
     /// <summary>Single owner for native-record playback interception; does not intercept UI, speech, music or every direct SFXManager call.</summary>
     public static class SoundEvents
     {
-        internal static readonly SoundDemand Demand = new SoundDemand();
+        internal static readonly SoundDemand Demand = SoundNativeDemand.Playback;
         private static readonly Func<int, bool> ValidEffect = SoundRuntime.IsVanillaEffect;
         private static readonly Func<SoundClipHandle, float, float, bool, bool> PlayClip = SoundClips.TryPlay;
         private static readonly Func<SoundPreEventArgs, object, SoundPostEventArgs> PostFactory = (pre, state) => new SoundPostEventArgs(pre, state);

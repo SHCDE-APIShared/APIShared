@@ -79,6 +79,9 @@ namespace APIShared.Economy
                 throw new InvalidOperationException("Native market events require the audited CrusaderDE image and LibraryLoaded initialization.");
             VerifyBytes(module + BuyRva, BuyBytes);
             VerifyBytes(module + SellRva, SellBytes);
+            NativeOwnershipRegistry sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.MarketPrices, ApiSharedNativeSites.MarketPriceSpans(),
+                reason => new InvalidOperationException(reason));
             buy = new DetourHandle<PriceCall>(); sell = new DetourHandle<PriceCall>();
             HookTransaction pending = null;
             try
@@ -96,7 +99,7 @@ namespace APIShared.Economy
             }
             catch
             {
-                if (!published) { pending?.Dispose(); buy = null; sell = null; }
+                if (!published) { pending?.Dispose(); buy = null; sell = null; ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.MarketPrices); }
                 throw;
             }
             try { log?.LogInfo("Shared native market price events installed: CEB10/CEB90, Indirect/10; process lifetime."); } catch { }

@@ -222,6 +222,9 @@ namespace APIShared
                 throw new InvalidOperationException("Shared Assassin hooks require the audited native hash and loaded library.");
             var memory = new ReadOnlySpan<byte>(module.ToPointer(), memoryLength);
             AssassinPathNativeDefinition.Validate(memory, unchecked((ulong)module.ToInt64()), log);
+            NativeOwnershipRegistry sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.AssassinPath, ApiSharedNativeSites.AssassinPathSpans(),
+                reason => new InvalidOperationException(reason));
             var pendingBuilder = new DetourHandle<AssassinPathBuilder>();
             var pendingEndpoints = new HookHandle<X64InlineHook>[4];
             HookTransaction pending = null;
@@ -260,6 +263,7 @@ namespace APIShared
             {
                 if (builderHook == pendingBuilder) throw; // Published hooks must never be rolled back.
                 pending?.Dispose(); // Unpublished installation candidate only.
+                ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.AssassinPath);
                 NativeApiLog.Error(log, "Shared Assassin hooks unavailable; Vanilla retained: " + ex);
                 throw;
             }

@@ -6,7 +6,10 @@ game=${1:?game root required}; transaction=${2:?transaction or --maintain requir
 [[ -z ${SCDEModManagerLaunchId:-} ]] || { echo 'Externally managed installation.' >&2; exit 1; }
 unlinked() {
     local part=$1
-    while [[ $part != / && -n $part ]]; do [[ ! -L $part ]] || { echo "Linked path: $part" >&2; return 1; }; part=$(dirname -- "$part"); done
+    while [[ $part != / && -n $part ]]; do
+        [[ ! -L $part ]] || { echo "Linked path: $part" >&2; return 1; }
+        part=${part%/*}; [[ -n $part ]] || part=/
+    done
 }
 inside() {
     local root=$1 relative=$2 part
@@ -199,10 +202,15 @@ restore_rows() {
     done
 }
 running() {
-    local command
+    local command argument executable='stronghold crusader definitive edition.exe'
     for command in /proc/[0-9]*/cmdline; do
         [[ -r $command ]] || continue
-        if tr '\0' '\n' < "$command" 2>/dev/null | grep -qiE '(^|[/\\])Stronghold Crusader Definitive Edition\.exe$'; then return 0; fi
+        # Bash builtins avoid spawning tr/grep for every host process before
+        # every file operation. Preserve case-insensitive Unix/Wine path matching.
+        while IFS= read -r -d '' argument; do
+            argument=${argument//\\//}; argument=${argument,,}
+            if [[ $argument == "$executable" || $argument == */"$executable" ]]; then return 0; fi
+        done 2>/dev/null < "$command"
     done
     return 1
 }
@@ -225,7 +233,8 @@ if [[ $protocol == APISHARED-WORKSHOP-RECOVERY-1 ]]; then
     declare -A recovery_targets=()
     for ((j=2;j<${#lines[@]};j++)); do
         reference "${lines[$j]}"; assert_reference
-        dir=$(inside "$state/Transactions" "$ref_id"); journal_has "$dir" applying; ! finished "$dir"
+        dir=$(inside "$state/Transactions" "$ref_id"); journal_has "$dir" applying
+        if finished "$dir"; then record 'failure Recovery target is no longer interrupted'; exit 1; fi
         read_old "$dir"
         for target in "${old_targets[@]}"; do [[ -z ${recovery_targets[${target,,}]:-} ]]; recovery_targets[${target,,}]=1; done
         restore_preflight "$dir"; recovery_dirs+=("$dir")

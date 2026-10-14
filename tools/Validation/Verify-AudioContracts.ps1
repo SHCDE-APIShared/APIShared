@@ -31,7 +31,7 @@ try {
         if ($null -eq $type -or @($type.Methods | Where-Object { $_.Name -eq $spec[1] -and $_.IsPublic -and (($_.Parameters | ForEach-Object { $_.ParameterType.FullName }) -join ',') -eq $spec[2] }).Count -ne 1) { throw "Public Extender audio contract changed: $($spec[0]).$($spec[1])" }
     }
     $unit = $se.MainModule.GetType('SHCDESE.Interop.GameUnit')
-    foreach ($name in @('r_UnitChimp','r_AIState','r_CurrentTilePositionX','r_CurrentTilePositionY')) {
+    foreach ($name in @('r_UnitChimp','r_AIState','r_CurrentTilePositionX','r_CurrentTilePositionY','r_GlobalId','r_CurrentHealth')) {
         $field = @($unit.Fields | Where-Object { $_.Name -eq $name -and $_.IsPublic -and -not $_.IsStatic })
         if ($field.Count -ne 1) { throw "Public unit field changed: $name" }
         Write-Host "Audio public field: $($field[0].FullName)"

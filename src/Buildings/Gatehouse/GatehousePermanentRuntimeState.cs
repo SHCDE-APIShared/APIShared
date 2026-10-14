@@ -27,6 +27,11 @@ namespace APIShared
         private const int BuildingEndXOffset = 0x64CCD0A;
         private const int BuildingEndYOffset = 0x64CCD0C;
 
+        // Committed hooks stay installed until process exit, and the decision hook calls
+        // Automation.QueryAddress from native code. The capability services are created after the
+        // commit and may fail, so this list, not the services, roots the hooks and that delegate.
+        private static readonly List<GatehousePermanentRuntimeState> Committed = new List<GatehousePermanentRuntimeState>();
+
         private readonly IntPtr originFlag = Marshal.AllocHGlobal(sizeof(int));
         private readonly IntPtr publishedTiming = Marshal.AllocHGlobal(IntPtr.Size);
         private readonly object publicationSync = new object();
@@ -107,6 +112,7 @@ namespace APIShared
                         $"Gatehouse permanent hooks failed validation: result={result}, " +
                         $"distance={distanceHook.Hook?.DisplacedByteCount}, decision={decisionHook.Hook?.DisplacedByteCount}.");
                 }
+                lock (Committed) Committed.Add(this);
             }
             catch
             {

@@ -35,6 +35,7 @@ namespace APIShared
         private static string owner;
         private static readonly object Sync = new object();
         private static int errorLogged;
+        private static NativeOwnershipRegistry Sites => ApiSharedRuntime.ProcessInstance.NativeOwnership;
         internal static void Initialize(IntPtr nativeModule, ScanRegion nativeRegion, string hash, ManualLogSource logger)
         {
             module = nativeModule; region = nativeRegion; log = logger;
@@ -62,13 +63,26 @@ namespace APIShared
             lock (Sync)
             {
                 if (owner != null) throw new InvalidOperationException("Assassin attack guard already belongs to " + owner);
-                if (mode == AssassinObstacleCompletionMode.NativeRetarget)
+                bool retargetClaimed = false;
+                try
                 {
-                    if (!supported || module == IntPtr.Zero) throw new InvalidOperationException("Native retarget image unavailable.");
-                    AssassinAttackNativeContract.ValidateRetargetEntry(module + 0x122800);
-                    retarget = Marshal.GetDelegateForFunctionPointer<AssassinAttackNativeContract.RetargetDelegate>(module + 0x122800);
+                    if (mode == AssassinObstacleCompletionMode.NativeRetarget)
+                    {
+                        if (!supported || module == IntPtr.Zero) throw new InvalidOperationException("Native retarget image unavailable.");
+                        AssassinAttackNativeContract.ValidateRetargetEntry(module + 0x122800);
+                        // The retarget call relies on the validated pristine entry.
+                        ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.AssassinRetarget,
+                            ApiSharedNativeSites.AssassinRetargetSpans(), reason => new InvalidOperationException(reason));
+                        retargetClaimed = true;
+                        retarget = Marshal.GetDelegateForFunctionPointer<AssassinAttackNativeContract.RetargetDelegate>(module + 0x122800);
+                    }
+                    EnsureInstalled();
                 }
-                EnsureInstalled();
+                catch
+                {
+                    if (retargetClaimed) ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinRetarget);
+                    throw;
+                }
                 completionMode = mode;
                 owner = ownerGuid;
                 Volatile.Write(ref guard, callback); // Publishes mode/delegate together on the simulation thread.
@@ -105,6 +119,8 @@ namespace APIShared
             IntPtr target = module + 0x16CD70;
             for (int i=0;i<expected.Length;i++)
                 if (Marshal.ReadByte(target,i) != expected[i]) throw new InvalidOperationException("Assassin update prologue changed or occupied.");
+            ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.AssassinAttack, ApiSharedNativeSites.AssassinAttackSpans(),
+                reason => new InvalidOperationException(reason));
             var candidate = new DetourHandle<AssassinAttackNativeContract.UpdateDelegate>();
             HookTransaction pending = null;
             try
@@ -123,6 +139,7 @@ namespace APIShared
             {
                 if (hook == candidate) throw;
                 pending?.Dispose(); // Unpublished failed candidate only.
+                ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinAttack);
                 throw;
             }
         }

@@ -48,6 +48,7 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell release regression failed.' }
 }
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
+& (Join-Path $PSScriptRoot 'Test-ShellScripts.ps1')
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WorkshopRecovery.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Workshop updater recovery regression failed.' }
@@ -60,6 +61,8 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 77) { throw 'Linux Workshop updater coordination regression failed.' }
     & bash (Join-Path $PSScriptRoot 'test-workshop-maintenance.sh')
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 77) { throw 'Linux Workshop updater maintenance regression failed.' }
+    & bash (Join-Path $PSScriptRoot 'test-workshop-updater.sh')
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 77) { throw 'Linux Workshop updater control-flow regression failed.' }
 }
 & (Join-Path $PSScriptRoot 'Test-WorkshopMigration.ps1')
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-AudioContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
