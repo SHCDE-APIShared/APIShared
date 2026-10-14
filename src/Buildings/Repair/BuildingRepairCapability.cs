@@ -23,11 +23,11 @@ namespace APIShared
 {
     internal sealed unsafe class BuildingRepairService
     {
-        private const int CanRepairRva = 0xD51A0;
+        internal const int CanRepairRva = 0xD51A0;
         private const int WoodCostOffset = 0x31B824;
         private const int StoneCostOffset = 0x31B828;
         private const string BigButtonId = "APIShared.VanillaRepairButton";
-        private static readonly byte[] CanRepairEntry =
+        internal static readonly byte[] CanRepairEntry =
         {
             0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30,
             0x48, 0x63, 0x1D, 0xE3, 0x31, 0x71, 0x06
@@ -79,6 +79,12 @@ namespace APIShared
 
         internal static bool TryCreate(string hash, long moduleBase, ManualLogSource log,
             RepairTooltipViewModel tooltipViewModel,
+            out BuildingRepairService service, out NativeCapabilityDiagnostic diagnostic) =>
+            TryCreate(hash, moduleBase, log, tooltipViewModel, null, out service, out diagnostic);
+
+        // ownership receives the validated, called entry (null: not registered).
+        internal static bool TryCreate(string hash, long moduleBase, ManualLogSource log,
+            RepairTooltipViewModel tooltipViewModel, NativeOwnershipRegistry ownership,
             out BuildingRepairService service, out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
@@ -99,6 +105,8 @@ namespace APIShared
                 for (int index = 0; index < actual.Length; index++)
                     if (actual[index] != CanRepairEntry[index])
                         throw new InvalidOperationException("Native repair entry does not match the audited function.");
+                ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.BuildingRepair, ApiSharedNativeSites.BuildingRepairSpans(),
+                    reason => new InvalidOperationException(reason));
 
                 BuildingRepairService candidate = new BuildingRepairService(moduleBase, log, tooltipViewModel);
                 MethodInfo copyTarget = FindMethod(typeof(EngineInterface), "CopyPlayStateStruct",
@@ -124,6 +132,7 @@ namespace APIShared
                 try { candidateSubscription?.Dispose(); } catch { }
                 try { candidateCopy?.Undo(); } catch { }
                 try { candidateCopy?.Dispose(); } catch { }
+                ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.BuildingRepair);
                 diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingRepair,
                     NativeCapabilityState.ValidationFailed, hash, ex.Message);
                 NativeApiLog.Error(log, $"Building repair capability unavailable: {ex}");

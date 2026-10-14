@@ -17,6 +17,12 @@ the runtime catalogs. This document explains their purpose; it does not override
 | Additional route preferences | Managed Pre/Post registration; native command hooks belong to the participating publisher |
 | Assassin selection | Script Extender owns its function detour; APIShared uses its audited integration points |
 
+Every native site APIShared installs or validates for these services is registered
+under `APIShared_Serp` in the public [native-site registry](NATIVE_SITES.md) when the
+service installs it; the spans are listed there and built in
+`src/Core/NativeSites/ApiSharedNativeSites.cs`. A conflict with another owner's earlier
+registration fails that service closed like an occupied entry.
+
 Capability failures remain independent. Hash-bound catalogs, live-byte validation
 and the existing unique-pattern resolution policy determine support. A pattern
 match is not permission to bypass function, layout, overlap or backend validation.
@@ -60,7 +66,8 @@ those callers. See [market query semantics](API_CATALOG.md#native-market-price-q
 4. Check overlapping hooks, particularly Script Extender and
    [Fixes](https://gitlab.com/rawra-stronghold-crusader/shcde-fixes).
 5. Update catalogs and behavior/byte/backend tests together; retain fail-closed
-   behavior for unsupported contracts.
+   behavior for unsupported contracts. Registered site spans follow the service
+   constants; update the expected spans in `VerifyApiSharedSiteCatalog` with them.
 6. Run local integration tests and game acceptance for the affected service.
 
 `tools/Validation/Verify-Interop.ps1` verifies consumed installed layouts;

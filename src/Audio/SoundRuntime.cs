@@ -151,11 +151,9 @@ namespace APIShared.Audio
             }
             if (NativeContract.CurrentUnitRva > live.Length - sizeof(int)) throw new InvalidOperationException("Current-unit global is outside the loaded module.");
             currentUnit = (int*)((byte*)context.ModuleHandle.ToPointer() + NativeContract.CurrentUnitRva);
-            if (!ownership.TryReserve(APISharedPlugin.PluginGuid, "Audio.UnitContext", NativeReservationMode.Exclusive,
-                new[] { new NativeInterval((long)Address(context, NativeContract.WrapperRva), (long)Address(context, NativeContract.WrapperRva) + 15),
-                        new NativeInterval((long)Address(context, NativeContract.FlagWrapperRva), (long)Address(context, NativeContract.FlagWrapperRva) + 15),
-                        new NativeInterval((long)Address(context, NativeContract.EmitRva), (long)Address(context, NativeContract.EmitRva) + 14) }, out var conflict))
-                throw new InvalidOperationException("Audio hook conflict: " + conflict);
+            // The three entries plus the decoded catalog CALL sites; refused when another owner registered them.
+            ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.Audio, ApiSharedNativeSites.AudioSpans(),
+                reason => new InvalidOperationException("Audio hook conflict: " + reason));
             try
             {
                 wrapperCallback = (unused, x, y, sound, origin) => OnWrapper(false, unused, x, y, sound, origin);
@@ -200,6 +198,7 @@ namespace APIShared.Audio
             if ((wrapperHook != null && wrapperHook.IsInstalled) || (flagWrapperHook != null && flagWrapperHook.IsInstalled) || (emitHook != null && emitHook.IsInstalled))
                 throw new InvalidOperationException("Installed hook rollback forbidden.");
             emitHook?.Dispose(); flagWrapperHook?.Dispose(); wrapperHook?.Dispose();
+            ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.Audio); // The claim follows the unpublished candidate.
         }
         private void OnWrapper(bool flagged, IntPtr unused, int x, int y, int sound, ulong origin)
         {

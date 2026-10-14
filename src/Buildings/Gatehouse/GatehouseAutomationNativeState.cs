@@ -46,7 +46,7 @@ namespace APIShared
             Hex("66 41 89 84 0A 1C 03 00 00 41 83 F8 0A 75 09"),
             Hex("66 89 84 2B CC CE 4C 06 44 39 B4 29 58 CE 79 03 75 11")
         };
-        private static readonly byte[] CouplingEntry = Hex("48 89 6C 24 08 48 89 74 24 10 48 89 7C 24 18");
+        internal static readonly byte[] CouplingEntry = Hex("48 89 6C 24 08 48 89 74 24 10 48 89 7C 24 18");
         private static readonly List<GatehouseAutomationNativeState> Published = new List<GatehouseAutomationNativeState>();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int ManualQuery(int buildingId);
@@ -56,6 +56,7 @@ namespace APIShared
         private readonly INativeMemory memory;
         private readonly ManualLogSource log;
         private readonly NativeSection section;
+        private readonly NativeOwnershipRegistry ownership;
         private readonly HookHandle<X64InlineHook>[] hooks =
         {
             new HookHandle<X64InlineHook>(), new HookHandle<X64InlineHook>(),
@@ -79,24 +80,26 @@ namespace APIShared
         }
 
         private GatehouseAutomationNativeState(ulong moduleBase, ScanRegion region,
-            INativeMemory memory, ManualLogSource log, NativeSection section)
+            INativeMemory memory, ManualLogSource log, NativeSection section, NativeOwnershipRegistry ownership)
         {
             this.moduleBase = moduleBase;
             this.region = region;
             this.memory = memory;
             this.log = log;
             this.section = section;
+            this.ownership = ownership;
             query = QueryManual;
             QueryAddress = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(query).ToInt64());
         }
 
+        // ownership receives the automation spans when they are installed (null: not registered).
         internal static GatehouseAutomationNativeState Prepare(ulong moduleBase, ScanRegion region,
-            ReadOnlySpan<byte> image, INativeMemory memory, ManualLogSource log)
+            ReadOnlySpan<byte> image, INativeMemory memory, ManualLogSource log, NativeOwnershipRegistry ownership = null)
         {
             try
             {
                 NativeSection section = ValidateImage(image, moduleBase);
-                return new GatehouseAutomationNativeState(moduleBase, region, memory, log, section);
+                return new GatehouseAutomationNativeState(moduleBase, region, memory, log, section, ownership);
             }
             catch (Exception ex)
             {
@@ -166,6 +169,8 @@ namespace APIShared
                     // All targets are checked before the first patch. A foreign hook is never overwritten.
                     for (int site = 0; site < HookRvas.Length; site++) RequireLive(HookRvas[site], HookBytes[site]);
                     RequireLive(CouplingRva, CouplingEntry);
+                    ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.GatehouseAutomation,
+                        ApiSharedNativeSites.GatehouseAutomationSpans(), reason => new InvalidOperationException(reason));
                     transaction = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                         new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
                     for (int site = 0; site < HookRvas.Length; site++)
@@ -188,6 +193,7 @@ namespace APIShared
                 {
                     // Only the unpublished initialization candidate can be rolled back.
                     transaction?.Dispose();
+                    ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehouseAutomation);
                     installationFailure = failure = ex.ToString();
                     NativeApiLog.Error(log, $"capability=gatehouse-automation, status=installation-failed, error={ex}");
                     return false;
