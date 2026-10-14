@@ -255,6 +255,10 @@ Workshop owns publishing, receipt-based plans and post-exit transactions. Its
 persistent staging integration cleans previous APIShared releases; foreign maps
 remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
 
+Versioned save data belongs to Savegames. APIShared owns the record format, the migration
+order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
+migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
+
 Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
 owns shared presentation and registration; consumers own localized text,
 activation and gameplay decisions. See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)

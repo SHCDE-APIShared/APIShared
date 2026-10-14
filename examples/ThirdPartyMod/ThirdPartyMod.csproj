@@ -34,6 +34,7 @@
     <Compile Include="SoundExample.cs" />
     <Compile Include="BuildingTooltipExample.cs" />
     <Compile Include="PathfindingReplacementExample.cs" />
+    <Compile Include="SaveDataExample.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">

@@ -439,6 +439,17 @@ and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cl
 
 Optional consumers requiring APIShared 0.7.1 or newer may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This thread-safe registration is idempotent, applies to derived types and lasts until process exit. The exclusion applies only to the registered type and its derived types. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
 
+## Versioned save data
+
+Store per-mission mod state in saves with `APIShared.Savegames.VersionedSaveData` instead of a
+raw `ModSaveDataAPI` handler when the data must survive mod updates and downgrades. Register
+once at startup with your own identifier, record version, minimum reader version, known entry
+names, a capture callback and a load callback. Apply delivered entries when your mission state
+is ready, and treat `NoRecord` as a new mission. Follow the
+[record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
+format changes, and add a legacy reader when you keep an identifier that already holds data.
+See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
+
 ## Loose Workshop packages
 
 Use the shipped external publisher for explicitly declared Payload packages.
