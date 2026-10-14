@@ -1,12 +1,47 @@
 # Contributing
 
-Open an issue with a reproducible problem or submit a pull request against `main`.
+Open an issue with a reproducible problem or submit a development pull request against `develop`.
 Describe the resulting behavior, affected contracts and tests you ran. Contributions
 can add services or reorganize implementation; the current folder layout is a guide,
 not a requirement. No AI tools or separate mod workspace are needed.
 Use the [feature implementation guide](ARCHITECTURE.md#finding-and-extending-a-feature)
 to locate contracts, services and hook owners. The HUD service shows
 how larger features keep registrations, behavior and hooks in named parts.
+
+## Branches and maintainer rights
+
+Serpens66 and Ensrick are equal maintainers. Either may integrate a ready change or
+publish a release without approval from the other. Pull requests provide visibility
+and discussion; an approving review from the other maintainer is not required.
+CODEOWNERS, if added, should route advisory reviews rather than assign exclusive rights.
+
+- `dev/Serpens66` and `dev/Ensrick` are personal development branches. Experiments
+  and unfinished work are allowed; passing tests are not a prerequisite for pushing.
+- `develop` contains completed features and fixes ready for integration and gameplay
+  testing. Automated source validation and the game-independent CLI tests must pass
+  before integration. It is not automatically ready for release.
+- `main` contains tested, release-ready changes. Automated CLI checks must pass;
+  runtime changes also need the relevant local build, integration and gameplay checks.
+  Passing CI alone does not establish gameplay compatibility.
+
+Use personal or feature branches for development, integrate ready work into `develop`,
+then promote release-ready work to `main`. Use merge commits between persistent
+branches; do not squash or rebase those branch pairs. Disposable feature branches
+may use squash merges. A PR includes all changes not yet integrated: separate
+unfinished experiments before promoting a branch.
+
+Either maintainer may commit straightforward documentation corrections directly to
+`main` without a separate approval. Applicable automated checks must still pass;
+documentation-only changes do not require gameplay tests. Merge such corrections
+back into `develop`, then into personal branches. Coordinate changes to a personal
+branch with its owner; do not move a branch currently used by another working checkout.
+Target substantive development contributions at `develop`; use `main` for release
+promotion and the documentation exception above.
+
+The intended protection policy requires automated CI checks on `main`, without
+mandatory approving reviews, while permitting maintainer documentation corrections.
+This describes the policy, not confirmation that GitHub protection is configured.
+Personal branches have no mandatory test or review gate.
 
 ## Setup
 
@@ -93,10 +128,21 @@ use logical activation. The runtime's dependency-free JSON parser avoids loading
 serializer assemblies. See [native compatibility](docs/NATIVE_COMPATIBILITY.md) before
 changing native behavior and the [API catalog](docs/API_CATALOG.md) for threading rules.
 
-Releases are prepared from a reviewed, committed and pushed standalone checkout:
+Consultation with the other maintainer before a breaking change is recommended,
+not mandatory. Either maintainer may decide independently. Assess binary, source
+and behavioral compatibility, document affected contracts and consumer impact, and
+provide appropriate tests and migration guidance where needed. A second maintainer's
+approval is not a prerequisite for implementation or merging.
+
+Either maintainer may prepare releases from a tested, release-ready `main` revision
+in a committed and pushed standalone checkout:
 `release.bat` builds and creates a GitHub draft. Version bumps belong to release preparation,
-not test iterations. The maintainer's mod workspace pins a reviewed commit using a Git submodule;
+not test iterations. The Serpens66 mod workspace pins a tested commit using a Git submodule;
 contributors work in this repository with ordinary branches and pull requests.
+The release driver creates build evidence, checksums and provenance; it does not
+automatically test both maintainers' consumer mods in the game. For changes affecting
+shared runtime behavior or compatibility, test the relevant consumer sets against
+the same pinned APIShared revision and record the checks performed and remaining gaps.
 
 ## Documentation with a change
 
