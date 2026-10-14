@@ -17,10 +17,11 @@ namespace APIShared.Workshop
     {
         private const string BlockKey = "APIShared.Workshop.Blocked";
         private const string ConflictKey = "APIShared.Workshop.Conflicts";
+        internal static void MarkBlocked(Exception exception) => exception.Data[BlockKey] = true;
         internal static InvalidOperationException Blocked(string message)
         {
             var exception = new InvalidOperationException(message);
-            exception.Data[BlockKey] = true;
+            MarkBlocked(exception);
             return exception;
         }
         internal static WorkshopDiagnosticLevel Level(Exception exception) => exception.Data.Contains(BlockKey) ? WorkshopDiagnosticLevel.Warning : WorkshopDiagnosticLevel.Error;

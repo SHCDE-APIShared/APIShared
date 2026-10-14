@@ -43,14 +43,6 @@ stage() {
 stage control
 code=$(run "$game" "$dir" "$(hash_file "$dir/operations.tsv")" --fixture "")
 [[ $code == 0 ]] && grep -qx committed "$dir/journal.log" || fail "control installation exited $code"
-stage restarted
-bash "$updater" "$game" "$dir" "$(hash_file "$dir/operations.tsv")" --fixture "" > "$fixture/restarted.log" 2>&1 & updater_pid=$!
-until grep -q $'^begin\t0$' "$dir/journal.log" 2>/dev/null; do kill -0 "$updater_pid" 2>/dev/null || break; sleep 0.01; done
-bash -c 'exec -a "/fixture/Stronghold Crusader Definitive Edition.exe" sleep 120' & game_pid=$!
-code=0; wait "$updater_pid" || code=$?
-kill "$game_pid" 2>/dev/null || true; wait "$game_pid" 2>/dev/null || true
-[[ $code == 1 ]] || fail "installation during a game restart exited $code"
-if grep -qx committed "$dir/journal.log"; then fail 'installation committed while the game was running'; fi
-grep -q 'Game restarted during application' "$dir/journal.log" || fail 'restart abort was not journaled'
-[[ ! -f $game/BepInEx/plugins/Example/Small.dll ]] || fail 'a row after the restart was written'
-printf 'PASS: Linux installation stops at the next row after a game start and journals it.\nEvidence retained: %s\n' "$fixture"
+# M3 pause/resume and game-process ownership are exercised by test-workshop-coordination.sh.
+printf 'PASS: Linux finished-target refusal and ordinary installation control.
+Evidence retained: %s\n' "$fixture"

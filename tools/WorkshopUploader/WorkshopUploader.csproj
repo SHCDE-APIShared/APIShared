@@ -17,6 +17,7 @@
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Shared/WorkshopContracts.cs" />
     <Compile Include="../../src/Workshop/WorkshopPackageCodec.cs" Link="Shared/WorkshopPackageCodec.cs" />
     <Compile Include="../../src/Workshop/WorkshopPaths.cs" Link="Shared/WorkshopPaths.cs" />
+    <Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Shared/WorkshopDiagnostics.cs" />
     <Compile Include="../../src/Workshop/WorkshopInventory.cs" Link="Shared/WorkshopInventory.cs" />
     <Compile Include="../../src/Workshop/WorkshopPackageBuilder.cs" Link="Shared/WorkshopPackageBuilder.cs" />
     <Compile Include="../../src/Workshop/WorkshopPublishing.cs" Link="Shared/WorkshopPublishing.cs" />

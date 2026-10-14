@@ -1,4 +1,4 @@
-param([string]$Bash = '', [switch]$RequireBash)
+param([string]$Bash = '', [switch]$RequireBash, [ValidateSet('auto','windows','bash')][string]$BackendSelection = 'auto')
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $fixture = Join-Path $root ('.local/recovery-tests/' + [guid]::NewGuid().ToString('N'))
@@ -51,7 +51,38 @@ function New-Repair([string[]]$Old) {
     Write-Text (Join-Path $dir 'supersedes.sha256') (Hash (Join-Path $dir 'supersedes.tsv'))
     return $dir
 }
-function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement,[switch]$External,[switch]$WrongHash) {
+function New-UserCase {
+    $dir = Join-Path $state ([guid]::NewGuid().ToString('N'))
+    $operations = [Collections.Generic.List[string]]::new(); $operations.Add('APISHARED-WORKSHOP-2')
+    $journal = [Collections.Generic.List[string]]::new(); $journal.Add('applying')
+    $script:userRows = [Collections.Generic.List[string[]]]::new()
+    $changes = 0
+    for ($i=0; $i -lt 882; $i++) {
+        $kind = if($i -lt 874){'write'}elseif($i -lt 881){'delete'}else{'receipt-write'}
+        $relative = if($i -eq 881){$receipt}elseif($i -eq 778){'BepInEx/plugins/Example/Locales/zh-CN.txt'}else{'BepInEx/plugins/Example/file'+$i}
+        $path = Join-Path $game $relative; $missing = $i -in @(54,865,871,881)
+        $original = 'original '+$i
+        if(-not $missing){Write-Text (Join-Path $dir ('Backup/'+$i)) $original}
+        $before = Hash (Join-Path $dir ('Backup/'+$i))
+        $current = if($i -lt 84 -or $i -ge 779){'updated '+$i}else{$original}
+        Write-Text $path $current
+        $after = if($kind -eq 'delete'){'missing'}else{Hash $path}
+        if($i -le 778){
+            $journal.Add("begin`t"+$i); $journal.Add("done`t"+$i)
+            if($before -cne $after){$changes++}
+        }elseif($missing){[IO.File]::Delete($path)}else{Write-Text $path $original}
+        $row = [string[]]@($kind,$relative,$i.ToString(),$before,$after)
+        $script:userRows.Add($row); $operations.Add(($row -join "`t"))
+    }
+    if($changes -ne 84){throw 'User fixture must contain exactly 84 applied changes.'}
+    Write-Text (Join-Path $dir 'operations.tsv') (($operations -join "`r`n")+"`r`n")
+    Write-Text (Join-Path $dir 'operations.sha256') (Hash (Join-Path $dir 'operations.tsv'))
+    Write-Text (Join-Path $dir 'ready.flag') (Hash (Join-Path $dir 'operations.tsv'))
+    Write-Text (Join-Path $dir 'journal.log') (($journal -join "`r`n")+"`r`n")
+    Write-Text (Join-Path $dir 'cancel.flag') 'stale original handoff'
+    return $dir
+}
+function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement,[switch]$External,[switch]$WrongHash,[int]$TimeoutMilliseconds=30000) {
     $hash = Hash (Join-Path $Dir 'operations.tsv')
     if ($script:backend -eq 'windows') {
         $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File '+(Quote (Join-Path $root 'Workshop/workshop-updater.ps1'))+' -GameRoot '+(Quote $game)+' -Transaction '+(Quote $Dir)+' -OperationsHash '+$hash
@@ -61,7 +92,10 @@ function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement
     } else {
         # Git Bash is useful for these file/protocol fixtures. Full Proton process
         # detection, Wine Z: mapping and Steam restart still need a live Linux test.
-        $hostGame = '/'+$game.Substring(0,1).ToLowerInvariant()+$game.Substring(2).Replace('\','/'); $hostDir = '/'+$Dir.Substring(0,1).ToLowerInvariant()+$Dir.Substring(2).Replace('\','/')
+        $hostGame=$game; $hostDir=$Dir
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            $hostGame = '/'+$game.Substring(0,1).ToLowerInvariant()+$game.Substring(2).Replace('\','/'); $hostDir = '/'+$Dir.Substring(0,1).ToLowerInvariant()+$Dir.Substring(2).Replace('\','/')
+        }
         $arguments = (Quote ((Join-Path $root 'Workshop/workshop-updater.sh').Replace('\','/')))+' '+(Quote $hostGame)+' '+(Quote $hostDir)+' '+$hash+' '+$(if ($Recover) { '--recover' } else { '--fixture' })
         if ($Replacement) { $arguments += ' '+$(if ($WrongHash) { 'a'*64 } else { Hash (Join-Path $Dir 'supersedes.tsv') }) }
         $start = [Diagnostics.ProcessStartInfo]::new($Bash,$arguments)
@@ -71,18 +105,41 @@ function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement
     $p = [Diagnostics.Process]::Start($start)
     try {
         $stdout=$p.StandardOutput.ReadToEndAsync(); $stderr=$p.StandardError.ReadToEndAsync()
-        if (-not $p.WaitForExit(30000)) { $p.Kill(); throw "Updater fixture timeout: $Dir" }
+        if (-not $p.WaitForExit($TimeoutMilliseconds)) { $p.Kill(); throw "Updater fixture timeout: $Dir" }
         if ($p.ExitCode -ne $Expected) { throw "Updater $script:backend expected $Expected, got $($p.ExitCode): $($stdout.Result) $($stderr.Result); evidence=$Dir" }
     } finally { $p.Dispose() }
 }
 function Assert-Text([string]$Path,[string]$Expected) { if ([IO.File]::ReadAllText($Path) -cne $Expected) { throw "Unexpected fixture bytes: $Path" } }
-if ($RequireBash -and -not $Bash) { throw 'Bash backend required but unavailable.' }
+if (-not $Bash -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { $Bash=(Get-Command bash -ErrorAction Stop).Source }
+if (($RequireBash -or $BackendSelection -eq 'bash') -and -not $Bash) { throw 'Bash backend required but unavailable.' }
 if ($Bash) {
     & $Bash -c 'command -v flock >/dev/null && command -v sync >/dev/null'
     if ($LASTEXITCODE -ne 0) { throw 'Bash backend requires real flock and coreutils; Git Bash alone is insufficient.' }
 } else { Write-Host 'SKIP: host Bash runtime fixtures require an explicitly supplied environment with flock/coreutils. Windows fixtures still run.' }
-$backends = @('windows'); if ($Bash) { $backends += 'bash' }
+$backends=@()
+if ($BackendSelection -ne 'bash' -and [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { $backends+='windows' }
+if ($BackendSelection -eq 'windows' -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows backend requires Windows PowerShell.' }
+if ($Bash -and $BackendSelection -ne 'windows') { $backends+='bash' }
+if (-not $backends.Count) { throw 'No requested production updater backend is available.' }
 foreach ($backend in $backends) {
+    Write-Host "Checking $backend user-pattern recovery: 882 operations, 779 completed, 84 applied changes..."
+    New-Case "$backend-user-pattern"; $old=New-UserCase
+    if([IO.Directory]::Exists((Join-Path $old 'New')) -or [IO.File]::Exists((Join-Path $game $receipt))){throw 'User fixture unexpectedly has staging copies or a receipt.'}
+    $request=New-Request @($old); Run $request -TimeoutMilliseconds 120000
+    foreach($row in $script:userRows){
+        if((Hash (Join-Path $game $row[1])) -cne $row[3]){throw ('User-pattern rollback mismatch: '+$row[1])}
+        if([int]$row[2] -le 778 -and $row[3] -cne $row[4]){
+            $saved=Join-Path $request ('RecoveryBackup/'+[IO.Path]::GetFileName($old)+'/'+$row[2])
+            if((Hash $saved) -cne $row[4]){throw ('User-pattern intermediate backup mismatch: '+$row[1])}
+        }
+    }
+    if([IO.File]::ReadAllLines((Join-Path $old 'journal.log')) -cnotcontains 'restored' -or [IO.File]::ReadAllLines((Join-Path $request 'journal.log')) -cnotcontains 'committed'){throw 'User-pattern recovery did not resolve both journals.'}
+    Assert-Text (Join-Path $old 'cancel.flag') 'stale original handoff'
+    $script:target=$script:userRows[0][1]
+    $next=New-Repair @(); [IO.File]::Delete((Join-Path $next 'supersedes.tsv')); [IO.File]::Delete((Join-Path $next 'supersedes.sha256'))
+    Run $next; Assert-Text (Join-Path $game $target) 'complete latest package'; Assert-Text (Join-Path $game $receipt) 'latest receipt'
+    Write-Host "PASS: $backend user-pattern recovery restores all 882 original states, saves 84 changed targets, ignores stale cancellation and permits the next update without New copies."
+
     New-Case "$backend-single"; $old=New-Old; $request=New-Request @($old)
     Run $request; Assert-Text (Join-Path $game $target) 'original'
     if ([IO.File]::ReadAllLines((Join-Path $old 'journal.log')) -notcontains 'restored') { throw 'Rollback did not finish.' }

@@ -18,6 +18,7 @@
     <Compile Include="../../src/Workshop/WorkshopInstalledVersions.cs" Link="Production/WorkshopInstalledVersions.cs" />
     <Compile Include="../../src/Workshop/WorkshopStartupSummary.cs" Link="Production/WorkshopStartupSummary.cs" />
     <Compile Include="../../src/Workshop/WorkshopStartupGate.cs" Link="Production/WorkshopStartupGate.cs" />
+    <Compile Include="../../src/Workshop/WorkshopUpdaterActivity.cs" Link="Production/WorkshopUpdaterActivity.cs" />
     <Compile Include="../../src/Workshop/WorkshopTransaction.cs" Link="Production/WorkshopTransaction.cs" />
     <Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" />
     <Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" />

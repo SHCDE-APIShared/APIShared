@@ -128,17 +128,25 @@ namespace APIShared.Workshop
             // Complete repair preserves all obsolete/unknown files. Only the
             // current publisher's full inventory is replaced, with new backups.
             plan.RemovedFiles = new string[0];
+            string game = Paths.GameRootPath;
+            var preserved = await Task.Run(() => WorkshopRecovery.PreservedAssemblies(game, plan.Package));
+            plan.Diagnostics = plan.Diagnostics.Concat(preserved.Select(path => WorkshopText.Pick(
+                "Preserved DLL outside the current package inventory (not removed by repair): ",
+                "Erhaltene DLL außerhalb des aktuellen Paketinventars (wird durch die Reparatur nicht entfernt): ") + path)).ToArray();
             return plan;
         }
-        internal static async Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart)
+        internal static async Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart, WorkshopStartupAuthorization authorization)
         {
+            authorization.Validate();
             CheckStartupConditions();
             string transaction = await Task.Run(() => WorkshopRecovery.StageRollback(Paths.GameRootPath, entries, restart));
             try {
+                authorization.Validate();
                 CheckStartupConditions();
                 await WorkshopUpdaterLauncher.Launch(transaction, Paths.GameRootPath);
                 CheckStartupConditions();
-                UnityEngine.Application.Quit();
+                authorization.ConfirmHandoff(transaction);
+                authorization.Quit(Log, UnityEngine.Application.Quit, restart ? "confirmed recovery with restart" : "confirmed rollback and stop");
             } catch { WorkshopUpdaterLauncher.Cancel(transaction); throw; }
         }
         private static async Task<WorkshopInstallPlan> PrepareCoreAsync(string owner, ulong id, WorkshopAction action, bool startup)
@@ -244,8 +252,9 @@ namespace APIShared.Workshop
                 if (plan.Package != null) WorkshopSubscriptionOwnership.Verify(latest, plan.WorkshopId, plan.Package);
             }
         }
-        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog, IReadOnlyList<WorkshopInterruptedTransaction> repair = null)
+        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog, WorkshopStartupAuthorization authorization, IReadOnlyList<WorkshopInterruptedTransaction> repair = null)
         {
+            authorization.Validate();
             CheckStartupConditions(); CheckBatch(plans, catalog);
             var snapshot = Subscriptions();
             CheckBatchSubscriptions(plans, snapshot);
@@ -258,14 +267,17 @@ namespace APIShared.Workshop
                     }
                     return WorkshopTransaction.StageBatch(plans, id, repair);
                 });
+                authorization.Validate();
                 var completion = new TaskCompletionSource<WorkshopOperation>();
                 if (!UnityMainThreadDispatch.TryRunInlineOrEnqueue(async () => {
                     try {
+                        authorization.Validate();
                         CheckBatchSubscriptions(plans, snapshot); CheckBatch(plans, catalog);
                         await WorkshopUpdaterLauncher.Launch(transaction, Paths.GameRootPath);
                         CheckBatchSubscriptions(plans, snapshot); CheckBatch(plans, catalog);
                         operation.Set(WorkshopOperationState.AwaitingRestart, "Confirmed startup batch; receipts commit after game exit.");
-                        UnityEngine.Application.Quit(); completion.TrySetResult(operation);
+                        authorization.ConfirmHandoff(transaction);
+                        authorization.Quit(Log, UnityEngine.Application.Quit, repair == null ? "confirmed startup update" : "confirmed complete repair"); completion.TrySetResult(operation);
                     } catch (Exception ex) {
                         operation.Failure = ex;
                         WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=batch updater handoff; operation=" + operation.OperationId, ex);
@@ -316,6 +328,7 @@ namespace APIShared.Workshop
                             WorkshopUpdaterLauncher.Cancel(transaction); throw new InvalidOperationException("Installation conditions changed before game exit.");
                         }
                         operation.Set(WorkshopOperationState.AwaitingRestart, "Updater started; installation is committed only after game exit.", plan.WorkshopId);
+                        Log("Workshop quit reason=confirmed consumer update; transaction=" + transaction + "; handoff=confirmed.");
                         UnityEngine.Application.Quit();
                         completion.TrySetResult(operation);
                     } catch (Exception ex) {

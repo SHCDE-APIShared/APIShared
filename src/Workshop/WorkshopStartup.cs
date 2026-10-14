@@ -34,6 +34,30 @@ namespace APIShared.Workshop
                     WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop step=startup conditions; " + WorkshopText.External);
                     return;
                 }
+                try { WorkshopPaths.CheckLinks(BepInEx.Paths.GameRootPath); }
+                catch (System.IO.InvalidDataException ex) {
+                    blocked = true; result = "blocked";
+                    WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop startup blocked by linked installation path; use the canonical installation path or update manually. " + ex.Message);
+                    return;
+                }
+                step = "active updater check";
+                var activity = await WorkshopUpdaterLauncher.Activity(BepInEx.Paths.GameRootPath);
+                if (activity.Busy) {
+                    blocked = true; result = "blocked";
+                    if (activity.Active) {
+                        Notice(WorkshopText.Pick("A previously confirmed Workshop update is still running. This game start will close when you press OK. Wait for the updater to restart the game; do not start it again manually.",
+                            "Ein zuvor bestätigtes Workshop-Update läuft noch. Dieser Spielstart wird mit OK beendet. Bitte den Neustart durch den Updater abwarten und das Spiel nicht erneut manuell starten."));
+                        var currentActivity = await WorkshopUpdaterLauncher.Activity(BepInEx.Paths.GameRootPath);
+                        if (!currentActivity.Active || currentActivity.Transaction != activity.Transaction || currentActivity.OperationsHash != activity.OperationsHash) {
+                            WorkshopRuntime.Log("Workshop updater activity changed while the notice was open; no game exit requested and no startup changes planned.");
+                            return;
+                        }
+                        var authorization = WorkshopStartupGate.AuthorizeConfirmedUpdate();
+                        authorization.ConfirmHandoff(activity.Transaction);
+                        authorization.Quit(WorkshopRuntime.Log, UnityEngine.Application.Quit, "previous confirmed updater still active; phase=" + activity.Phase);
+                    } else WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop updater lock is busy or its status is unverified; startup planning and recovery deferred. Close the game and inspect _APIShared/Workshop/apply.lock if this persists.");
+                    return;
+                }
                 WorkshopRuntime.CheckStartupConditions();
                 step = "history maintenance";
                 if (!await WorkshopUpdaterLauncher.Maintain(BepInEx.Paths.GameRootPath)) {
@@ -118,7 +142,7 @@ namespace APIShared.Workshop
                     WorkshopRuntime.Log("Workshop startup changes declined; installed files are untouched."); return;
                 }
                 step = "updater handoff";
-                var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained);
+                var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, WorkshopStartupGate.AuthorizeConfirmedUpdate());
                 WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + ": " + operation.State + "; " + operation.Diagnostic);
                 result = operation.State == WorkshopOperationState.AwaitingRestart ? "awaiting restart" : "failed";
                 if (operation.State != WorkshopOperationState.AwaitingRestart) {
@@ -156,11 +180,14 @@ namespace APIShared.Workshop
             if (Directory.Exists(root)) foreach (string directory in Directory.EnumerateDirectories(root)) {
                 var journal = WorkshopRecovery.Journal(directory);
                 if (journal.Length == 0) continue;
-                WorkshopRuntime.Log("Workshop previous transaction=" + directory + "; outcome=" + (WorkshopRecovery.Finished(directory) ? journal.Last(x => x == "committed" || x == "restored") : journal.Last()));
+                var interrupted = entries.FirstOrDefault(x => x.Directory == directory);
+                WorkshopRuntime.Log("Workshop previous transaction=" + directory + "; outcome=" + (interrupted != null
+                    ? WorkshopRecovery.Describe(interrupted, CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de")
+                    : WorkshopRecovery.Finished(directory) ? journal.Last(x => x == "committed" || x == "restored") : journal.Last()));
             }
             if (entries.Count == 0) return false;
             bool rollback = entries.All(x => x.CanRollback);
-            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\nWorkshop: " + string.Join(", ", x.Items) + "\n" + x.Failure +
+            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\nWorkshop: " + string.Join(", ", x.Items) + "\n" + WorkshopRecovery.Describe(x, CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de") +
                 (x.CanRollback ? "" : "\nRollback: " + x.RollbackError)));
             // Show a failed external recovery/replacement attempt too: its
             // failure belongs to the request journal, not the original journal.
@@ -180,9 +207,10 @@ namespace APIShared.Workshop
                 "Rollback is unavailable for the reasons above.\nYes: prepare a complete repair.\nNo: later.",
                 "Rollback ist aus den oben genannten Gründen nicht verfügbar.\nJa: Vollständige Reparatur vorbereiten.\nNein: Später.");
             int decision = Ask(WorkshopText.Pick("An interrupted Workshop installation needs attention.\n\n", "Eine unterbrochene Workshop-Installation benötigt eine Reparatur.\n\n") + details + "\n\n" + choices, rollback ? 0x3u : 0x4u);
-            if (decision == 2 || (!rollback && decision != 6)) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
+            var choice = WorkshopRecovery.Decide(rollback, decision);
+            if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
             if (rollback) {
-                await WorkshopRuntime.RollbackAsync(entries, decision == 6);
+                await WorkshopRuntime.RollbackAsync(entries, choice == WorkshopRecovery.Choice.Repair, WorkshopStartupGate.AuthorizeConfirmedUpdate());
                 return true;
             }
             // No backup is trusted implicitly. A full package repair is a second,
@@ -196,9 +224,10 @@ namespace APIShared.Workshop
             WorkshopRuntime.CheckBatch(plans, retained);
             string body = WorkshopText.Pick("Rollback is unavailable. Install the complete current packages after closing the game? Existing affected files will be backed up; settings and unknown files remain.\n\n",
                 "Rollback ist nicht möglich. Nach dem Schließen des Spiels die vollständigen aktuellen Pakete installieren? Vorhandene betroffene Dateien werden zusätzlich gesichert; Einstellungen und unbekannte Dateien bleiben erhalten.\n\n") +
-                string.Join("\n", plans.Select(p => p.PackageId + " " + p.Version)) + "\n\n" + details;
+                string.Join("\n", plans.Select(p => p.PackageId + " " + p.Version + (p.Diagnostics.Count == 0 ? "" : "\n" + string.Join("\n", p.Diagnostics)))) + "\n\n" + details;
+            foreach (var plan in plans) foreach (string diagnostic in plan.Diagnostics) WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop complete repair; " + diagnostic);
             if (Ask(body, 0x4) != 6) return true;
-            var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, entries);
+            var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, WorkshopStartupGate.AuthorizeConfirmedUpdate(), entries);
             if (operation.State != WorkshopOperationState.AwaitingRestart) throw operation.Failure ?? new IOException(operation.Diagnostic);
             return true;
         }

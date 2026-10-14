@@ -35,6 +35,51 @@ function Game-Running {
     }
     return $false
 }
+function Publish-Activity([string]$Phase) {
+    $script:activityPhase = $Phase
+    if (-not $lock) { return }
+    $id = if ($Transaction) { [IO.Path]::GetFileName($Transaction) } else { '-' }
+    $record = @('APISHARED-WORKSHOP-ACTIVE-1','windows',$PID.ToString(),$script:ownerStart,$script:activityMode,$Phase,$id,$OperationsHash) -join "`t"
+    $bytes = [Text.Encoding]::UTF8.GetBytes($record)
+    $lock.Position=0; $lock.SetLength(0); $lock.Write($bytes,0,$bytes.Length); $lock.Flush($true)
+}
+function Wait-GameExit {
+    if (-not (Game-Running)) { return }
+    $phase = $script:activityPhase; Publish-Activity 'paused'
+    Journal ('pause '+[DateTime]::UtcNow.ToString('o')+'; step='+$script:step+'; waiting for game exit')
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    while (Game-Running) {
+        if (($script:pauseMilliseconds+$watch.Elapsed.TotalMilliseconds) -ge 120000) {
+            $script:keepInterrupted=$true; throw 'Game exit wait exceeded 120 seconds; keep transaction backups and confirm recovery on the next start.'
+        }
+        if ($cancelPath -and [IO.File]::Exists($cancelPath)) { $script:keepInterrupted=$true; throw 'Updater handoff cancelled while waiting for game exit.' }
+        Start-Sleep -Milliseconds 200
+    }
+    $script:pauseMilliseconds += $watch.Elapsed.TotalMilliseconds
+    $script:keepInterrupted=$true
+    if ($cancelPath -and [IO.File]::Exists($cancelPath)) { throw 'Updater handoff cancelled before resuming.' }
+    if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence after the pause; restart and confirm recovery.' }
+    if ((Hash $operationsPath) -cne $OperationsHash) { $script:keepInterrupted=$true; throw 'Operations changed during game-exit pause.' }
+    if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { $script:keepInterrupted=$true; throw 'Replacement references changed during game-exit pause.' }
+    foreach ($reference in $script:recoveryReferences) { $null=Assert-Reference $reference }
+    if ($script:activityMode -eq 'install' -and $phase -ne 'restore') {
+        foreach ($row in $rows) {
+            $expected=if($phase -eq 'apply' -and $started -contains $row.Ordinal){$row.After}else{$row.Before}
+            if((Hash $row.Target) -cne $expected){throw ('Target changed during game-exit pause: '+$row.Relative)}
+            if($row.Kind -like '*write' -and (Hash $row.New) -cne $row.After){throw ('Staged source changed during game-exit pause: '+$row.Relative)}
+            if($row.Before -ne 'missing' -and ($phase -eq 'apply' -or [IO.File]::Exists($row.Backup)) -and (Hash $row.Backup) -cne $row.Before){throw ('Backup changed during game-exit pause: '+$row.Relative)}
+        }
+    } elseif ($phase -eq 'restore') {
+        foreach($row in $script:restoreSnapshot){
+            $current=Hash $row.Target
+            if($current -cne $row.Before -and $current -cne $row.Current){throw ('Recovery target changed during game-exit pause: '+$row.Relative)}
+            if($current -cne $row.Before -and $row.Before -ne 'missing' -and (Hash $row.Backup) -cne $row.Before){throw ('Recovery backup changed during game-exit pause: '+$row.Relative)}
+        }
+    }
+    $script:keepInterrupted=$false
+    Journal ('resumed '+[DateTime]::UtcNow.ToString('o')+'; step='+$script:step)
+    Publish-Activity $phase
+}
 function Read-Journal([string]$Directory) {
     $path = Inside $Directory 'journal.log'
     if ([IO.File]::Exists($path)) { [IO.File]::ReadAllLines($path) }
@@ -98,10 +143,11 @@ function Get-RestoreRows([string]$Directory) {
     }
 }
 function Restore-Rows($Rows) {
+    $script:restoreSnapshot=$Rows
     # Full validation is performed by Get-RestoreRows before the first write.
     for ($i=$Rows.Count-1; $i -ge 0; $i--) {
         $r = $Rows[$i]
-        if (Game-Running) { throw 'Game must remain closed for recovery.' }
+        Wait-GameExit
         $null = Inside $GameRoot $r.Relative
         if ((Hash $r.Target) -eq $r.Before) { continue }
         if ((Hash $r.Target) -ne $r.Current) { throw 'Recovery target changed after validation.' }
@@ -116,11 +162,15 @@ function Restore-Rows($Rows) {
 }
 . (Join-Path $PSScriptRoot 'workshop-maintenance.ps1')
 function Completed-Maintenance {
+    Publish-Activity 'completed'
     # Cleanup failure is deliberately outside the installation failure contract.
     try { Maintenance-Completed $Transaction } catch { Write-Output ('Workshop maintenance completion warning: '+$_.Exception.Message) }
     try { Invoke-WorkshopMaintenance } catch { Write-Output ('Workshop maintenance warning after completion: '+$_.Exception.Message) }
 }
 $lock = $null
+$script:activityMode='maintenance'; $script:pauseMilliseconds=0; $script:keepInterrupted=$false; $script:recoveryReferences=@()
+$ownerProcess=[Diagnostics.Process]::GetCurrentProcess()
+try { $script:ownerStart=$ownerProcess.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) } finally { $ownerProcess.Dispose() }
 $script:step = 'validation'
 try {
     if ($env:SCDEModManagerLaunchId) { throw 'Externally managed installation.' }
@@ -129,7 +179,8 @@ try {
     $state = Inside $GameRoot '_APIShared/Workshop'
     $transactionRoot = Inside $state 'Transactions'
     if($Maintain -and -not [IO.Directory]::Exists($transactionRoot)){Write-Output 'Workshop maintenance: removed=0; freedBytes=0; deferred=0'; exit 0}
-    $lock = [IO.File]::Open((Inside $state 'apply.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    $lock = [IO.File]::Open((Inside $state 'apply.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read)
+    Publish-Activity 'waiting'
     if($Maintain){Invoke-WorkshopMaintenance; exit 0}
     $Transaction = [IO.Path]::GetFullPath($Transaction)
     if (-not $Transaction.StartsWith($transactionRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetDirectoryName($Transaction) -ne $transactionRoot -or [IO.Path]::GetFileName($Transaction) -notmatch '^[a-f0-9]{32}$') { throw 'Invalid transaction directory.' }
@@ -140,10 +191,12 @@ try {
     if ($OperationsHash -notmatch '^[a-f0-9]{64}$' -or (Hash $operationsPath) -ne $OperationsHash) { throw 'Operation list changed.' }
     $lines = [IO.File]::ReadAllLines($operationsPath)
     if ($lines.Length -ge 3 -and $lines[0] -ceq 'APISHARED-WORKSHOP-RECOVERY-1') {
+        $script:activityMode='recover'
         $script:step = 'recovery preflight'
         if ($lines[1] -cnotin @('restart','stop')) { throw 'Invalid recovery request.' }
         $directories = @(); $restore = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         $references = @($lines | Select-Object -Skip 2 | ForEach-Object { Read-Reference $_ })
+        $script:recoveryReferences=$references
         foreach ($reference in $references) {
             $directory = Assert-Reference $reference
             if (@(Read-Journal $directory) -notcontains 'applying' -or @(Read-Journal $directory) -contains 'committed' -or @(Read-Journal $directory) -contains 'restored') { throw 'Recovery target is no longer interrupted.' }
@@ -151,9 +204,10 @@ try {
             $restore += @(Get-RestoreRows $directory); $directories += $directory
         }
         [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
+        Publish-Activity 'waiting'
         $script:step = 'recovery waiting for game exit'
         $cancelPath = Inside $Transaction 'cancel.flag'
-        while (Game-Running) { if ([IO.File]::Exists($cancelPath)) { throw 'Recovery handoff cancelled.' }; Start-Sleep -Seconds 1 }
+        Wait-GameExit
         if ([IO.File]::Exists($cancelPath)) { throw 'Recovery handoff cancelled.' }
         if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence; restart and retry recovery.' }
         $restore = @()
@@ -161,14 +215,17 @@ try {
         foreach ($reference in $references) { $directory = Assert-Reference $reference; $restore += @(Get-RestoreRows $directory) }
         # Preserve the interrupted bytes too. A failed recovery never consumes backups.
         foreach ($r in $restore) {
+            Wait-GameExit
             if ($r.Current -eq 'missing' -or $r.Current -eq $r.Before) { continue }
             $saved = Inside $Transaction ('RecoveryBackup/'+[IO.Path]::GetFileName($r.Directory)+'/'+$r.Ordinal)
             [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($saved)); [IO.File]::Copy($r.Target,$saved,$false)
             if ((Hash $saved) -ne $r.Current) { throw 'Interrupted-file backup verification failed.' }
         }
         Journal 'recovering'
+        Publish-Activity 'restore'
         $script:step = 'restore original files and receipts'
         Restore-Rows $restore
+        Publish-Activity 'committing'
         foreach ($directory in $directories) {
             $requestJournal = $journalPath; $journalPath = Inside $directory 'journal.log'
             try { Journal 'restored' } finally { $journalPath = $requestJournal }
@@ -179,6 +236,7 @@ try {
         exit 0
     }
     if ($lines.Length -lt 2 -or $lines[0] -notin @('APISHARED-WORKSHOP-1','APISHARED-WORKSHOP-2')) { throw 'Unknown transaction protocol.' }
+    $script:activityMode=if($Recover){'recover'}else{'install'}
     $batch = $lines[0] -eq 'APISHARED-WORKSHOP-2'; $receiptPhase = $false
     $rows = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     for ($index = 1; $index -lt $lines.Length; $index++) {
@@ -227,27 +285,31 @@ try {
     $started = @($prior | Where-Object { $_ -match '^begin\t[0-9]+$' } | ForEach-Object { $_.Split([char]9)[1] })
     if ($started.Count -and -not $Recover) { throw 'Interrupted transaction: run with -Recover to restore its backup.' }
     [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
+    Publish-Activity 'waiting'
     # Legacy manual -Recover is an explicit new recovery consent, not the old
     # cancelled installation. Dialog recovery uses a fresh request directory.
     $cancelPath=Inside $Transaction $(if ($Recover) { 'recovery-cancel.flag' } else { 'cancel.flag' })
-    while (Game-Running) { if ([IO.File]::Exists($cancelPath)) { throw 'Handoff cancelled; no installation started.' }; Start-Sleep -Seconds 1 }
+    Wait-GameExit
     if ([IO.File]::Exists($cancelPath)) { throw 'Handoff cancelled; no installation started.' }
     if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence.' }
     if (-not $Recover) {
+        Publish-Activity 'backup'
         $script:step = 'installation validation and backup'
         if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { throw 'Replacement references changed before application.' }
         foreach ($line in $(if ($SupersedesHash) { [IO.File]::ReadAllLines($supersedesPath) })) { $null = Assert-Reference (Read-Reference $line) }
         # Full validation and backup precede any change to installed files.
         foreach ($row in $rows) {
+            Wait-GameExit
             if ((Hash $row.Target) -ne $row.Before -or [IO.Directory]::Exists($row.Target)) { throw "Target changed: $($row.Relative)" }
             if ($row.Before -ne 'missing') { [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($row.Backup)); [IO.File]::Copy($row.Target,$row.Backup,$true); if ((Hash $row.Backup) -ne $row.Before) { throw 'Backup verification failed.' } }
         }
         Journal 'applying'
+        Publish-Activity 'apply'
         $script:step = 'installation writes and receipt commit'
         $committed = $false
         try {
             foreach ($row in $rows) {
-                if (Game-Running) { throw 'Game restarted during application.' }
+                Wait-GameExit
                 $null = Inside $GameRoot $row.Relative
                 if ((Hash $row.Target) -ne $row.Before) { throw "Target changed: $($row.Relative)" }
                 Journal ("begin`t"+$row.Ordinal); $started += $row.Ordinal
@@ -262,9 +324,13 @@ try {
                 Journal ("done`t"+$row.Ordinal)
             }
             if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { throw 'Replacement references changed before commit.' }
+            Publish-Activity 'committing'
             Journal 'committed'
             $committed = $true
-        } catch { Journal ('failure '+$_.Exception.Message); $Recover = $true }
+        } catch {
+            if ($script:keepInterrupted -or (Game-Running)) { throw }
+            Journal ('failure '+$_.Exception.Message); $Recover = $true
+        }
         # Commit is the irreversible success boundary. Maintenance, empty-folder
         # cleanup and Steam restart can never enter the installation rollback.
         if ($committed) {
@@ -287,10 +353,12 @@ try {
         }
     }
     if ($Recover) {
+        Publish-Activity 'restore'
         $script:step = 'rollback preflight and restore'
         $restore = @(Get-RestoreRows $Transaction)
         Restore-Rows $restore
+        Publish-Activity 'committing'
         Journal 'restored'; Completed-Maintenance; exit 2
     }
 } catch { if ($journalPath) { Journal ('failure '+$_.Exception.Message) }; Write-Error $_; exit 1 }
-finally { if ($lock) { $lock.Dispose() } }
+finally { if ($lock) { try { $lock.SetLength(0); $lock.Flush($true) } finally { $lock.Dispose() } } }

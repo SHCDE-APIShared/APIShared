@@ -24,6 +24,96 @@ public sealed class WorkshopRecoveryTests
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, text);
     }
+    [TestMethod] public void RepairReportsExtraAssembliesWithoutDeletingSettingsOrFiles()
+    {
+        Write(game, Target, "current payload");
+        Write(game, "BepInEx/plugins/Example/obsolete.dll", "old dll");
+        Write(game, "BepInEx/plugins/Example/unknown.DLL", "unknown dll");
+        Write(game, "BepInEx/plugins/Example/config/helper.dll", "user data");
+        Write(game, "BepInEx/plugins/Other/other.dll", "other mod");
+        var package = new WorkshopPackage { Roots = new[] { "BepInEx/plugins/Example" }, Files = new[] { new WorkshopFile(Target, 0, new string('a', 64)) } };
+        CollectionAssert.AreEqual(new[] { "BepInEx/plugins/Example/obsolete.dll", "BepInEx/plugins/Example/unknown.DLL" }, WorkshopRecovery.PreservedAssemblies(game, package));
+        Assert.AreEqual("user data", File.ReadAllText(Path.Combine(game, "BepInEx/plugins/Example/config/helper.dll")));
+        Assert.AreEqual("old dll", File.ReadAllText(Path.Combine(game, "BepInEx/plugins/Example/obsolete.dll")));
+    }
+    [TestMethod] public void RecoveryButtonsKeepTheirExplicitActionsAndCancelIsSafe()
+    {
+        Assert.AreEqual(WorkshopRecovery.Choice.Repair, WorkshopRecovery.Decide(true, 6));
+        Assert.AreEqual(WorkshopRecovery.Choice.Rollback, WorkshopRecovery.Decide(true, 7));
+        foreach (int answer in new[] { 0, 1, 2, -1, 99 }) Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(true, answer));
+        Assert.AreEqual(WorkshopRecovery.Choice.CompleteRepair, WorkshopRecovery.Decide(false, 6));
+        Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(false, 7));
+    }
+    [TestMethod] public void LargeUserCaseWithoutFailureOrReceiptHasReadableProgressAndFreshConsent()
+    {
+        var operations = new List<string> { WorkshopTransaction.BatchProtocol };
+        var journal = new List<string> { "applying" };
+        int changes = 0;
+        for (int i = 0; i < 882; i++) {
+            string kind = i < 874 ? "write" : i < 881 ? "delete" : "receipt-write";
+            string relative = i == 881 ? Receipt : i == 778 ? "BepInEx/plugins/Example/Locales/zh-CN.txt" : "BepInEx/plugins/Example/file" + i;
+            bool missing = i == 54 || i == 865 || i == 871 || i == 881;
+            string original = "original " + i;
+            if (!missing) Write(old, "Backup/" + i, original);
+            string before = missing ? "missing" : WorkshopInventory.Hash(Path.Combine(old, "Backup/" + i));
+            string current = i < 84 || i >= 779 ? "updated " + i : original;
+            Write(game, relative, current);
+            string after = kind == "delete" ? "missing" : WorkshopInventory.Hash(Path.Combine(game, relative));
+            if (i <= 778) {
+                journal.Add("begin\t" + i); journal.Add("done\t" + i);
+                if (before != after) changes++;
+            } else if (missing) File.Delete(Path.Combine(game, relative));
+            else Write(game, relative, original);
+            operations.Add(kind + "\t" + relative + "\t" + i + "\t" + before + "\t" + after);
+        }
+        File.WriteAllLines(Path.Combine(old, "operations.tsv"), operations);
+        File.WriteAllLines(Path.Combine(old, "journal.log"), journal);
+        Write(old, "cancel.flag", "stale handoff");
+        var entry = WorkshopRecovery.Inspect(game).Single();
+        Assert.AreEqual(84, changes); Assert.IsTrue(entry.CanRollback); Assert.IsNull(entry.Failure);
+        Assert.IsTrue(entry.Progress.Reliable); Assert.AreEqual(779, entry.Progress.Completed); Assert.AreEqual(882, entry.Progress.Total);
+        StringAssert.Contains(WorkshopRecovery.Describe(entry, true), "779 von 882");
+        StringAssert.Contains(WorkshopRecovery.Describe(entry, true), "Unterbrochen ohne protokollierten Fehler.");
+        StringAssert.Contains(WorkshopRecovery.Describe(entry, false), "779 of 882");
+        StringAssert.Contains(WorkshopRecovery.Describe(entry, false), "Locales/zh-CN.txt");
+        Assert.IsNull(entry.Progress.Pending); Assert.IsFalse(File.Exists(Path.Combine(game, Receipt)));
+        Assert.IsFalse(Directory.Exists(Path.Combine(old, "New")));
+        string request = WorkshopRecovery.StageRollback(game, new[] { entry }, false);
+        Assert.AreNotEqual(old, request); Assert.IsFalse(File.Exists(Path.Combine(request, "cancel.flag")));
+        CollectionAssert.AreEqual(journal.ToArray(), File.ReadAllLines(Path.Combine(old, "journal.log")));
+        File.Delete(Path.Combine(old, "Backup/0"));
+        entry = WorkshopRecovery.Inspect(game).Single();
+        Assert.IsFalse(entry.CanRollback); Assert.IsTrue(entry.Progress.Reliable);
+        CollectionAssert.AreEqual(new ulong[] { 123 }, entry.Items);
+    }
+    [TestMethod] public void ProgressCoversNoWritesPartialWriteAndPendingReceipt()
+    {
+        var rows = new[] { new[] { "write", Target }, new[] { "receipt-write", Receipt } };
+        var progress = WorkshopRecovery.Progress(new[] { "applying" }, rows);
+        Assert.IsTrue(progress.Reliable); Assert.AreEqual(0, progress.Completed); Assert.IsNull(progress.LastCompleted);
+        progress = WorkshopRecovery.Progress(new[] { "applying", "begin\t0" }, rows);
+        Assert.IsTrue(progress.Reliable); Assert.AreEqual(Target, progress.Pending);
+        StringAssert.Contains(progress.Describe(true), "Begonnen, ohne protokollierten Abschluss: " + Target);
+        StringAssert.Contains(progress.Describe(false), "Started without a recorded completion: " + Target);
+        progress = WorkshopRecovery.Progress(new[] { "applying", "begin\t0", "done\t0" }, rows);
+        Assert.IsTrue(progress.Reliable); Assert.AreEqual(1, progress.Completed); Assert.AreEqual(Target, progress.LastCompleted);
+        Assert.IsNull(progress.Pending);
+        progress = WorkshopRecovery.Progress(new[] { "applying", "begin\t0", "done\t0", "begin\t1" }, rows);
+        Assert.AreEqual(Receipt, progress.Pending); Assert.AreEqual(1, progress.Completed);
+        foreach (string invalid in new[] { "begin\t-1", "begin\t00", "begin\t2", "begin\tno", "begin", "begin 0", "done\t0", "begin\t1" })
+            Assert.IsFalse(WorkshopRecovery.Progress(new[] { "applying", invalid }, rows).Reliable, invalid);
+    }
+    [TestMethod] public void UnreliableProgressDoesNotChangeRollbackEligibilityOrHideErrors()
+    {
+        foreach (string suffix in new[] { "done\t0\ndone\t0", "begin\t0", "done\t1", "done\t-1", "done\t00", "done\tno", "done", "done 0", "done\t999", "done\t0\textra" }) {
+            Write(old, "journal.log", "applying\nbegin\t0\n" + suffix + "\nfailure original diagnostic\n");
+            var entry = WorkshopRecovery.Inspect(game).Single();
+            Assert.IsTrue(entry.CanRollback, suffix); Assert.IsFalse(entry.Progress.Reliable, suffix);
+            StringAssert.Contains(WorkshopRecovery.Describe(entry, true), "Fortschritt nicht zuverlässig bestimmbar.");
+            StringAssert.Contains(WorkshopRecovery.Describe(entry, false), "Progress cannot be determined reliably.");
+            StringAssert.Contains(WorkshopRecovery.Describe(entry, false), "failure original diagnostic");
+        }
+    }
     [TestMethod] public void InspectionAndDialogRollbackAreReadOnlyUntilConfirmedHandoff()
     {
         var interrupted = WorkshopRecovery.Inspect(game);

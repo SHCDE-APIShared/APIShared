@@ -58,6 +58,37 @@ namespace APIShared.Workshop
             }
         }
         internal static void Cancel(string transaction) => File.WriteAllText(WorkshopPaths.Inside(transaction, "cancel.flag"), "Cancelled before game exit.");
+        internal static async Task<WorkshopUpdaterActivity> Activity(string game)
+        {
+            bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
+            if (!wine) {
+                var read = Task.Run(() => WorkshopUpdaterActivity.ReadWindows(game));
+                if (await Task.WhenAny(read, Task.Delay(2000)) != read) return new WorkshopUpdaterActivity { Busy = true };
+                return await read;
+            }
+            string state = WorkshopInstallation.StateRoot(game);
+            if (!File.Exists(WorkshopPaths.Inside(state, "apply.lock"))) return new WorkshopUpdaterActivity();
+            string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
+            string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
+            var start = new ProcessStartInfo(shell, Quote(HostPath(WorkshopPaths.Inside(assets, "workshop-updater.sh"))) + " " + Quote(HostPath(game)) + " --status") {
+                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardOutput = true, RedirectStandardError = true
+            };
+            using (var process = Process.Start(start)) {
+                if (process == null) return new WorkshopUpdaterActivity { Busy = true };
+                var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
+                var exited = Task.Run(() => process.WaitForExit(1750));
+                if (!await exited) {
+                    try { process.Kill(); process.WaitForExit(150); } catch { }
+                    return new WorkshopUpdaterActivity { Busy = true };
+                }
+                string text = (await output).Trim(); await error;
+                if (process.ExitCode != 0) return new WorkshopUpdaterActivity { Busy = true };
+                if (text == "idle") return new WorkshopUpdaterActivity();
+                // The host query has validated flock, /proc identity and pins.
+                return WorkshopUpdaterActivity.Parse(text, "linux", (pid, stamp) => true);
+            }
+        }
         // Startup history maintenance. The read-only plan check decides whether the
         // external pass could change anything; only then a hidden child runs, bounded
         // by WorkshopMaintenanceRunner.Timeout. Returns false when a child survived

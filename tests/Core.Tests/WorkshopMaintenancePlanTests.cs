@@ -131,6 +131,7 @@ public sealed class WorkshopMaintenancePlanTests
 
     private static void Junction(string link, string target)
     {
+        if (!OperatingSystem.IsWindows()) { Directory.CreateSymbolicLink(link, target); return; }
         var start = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
         foreach (string a in new[] { "/c", "mklink", "/J", link, target }) start.ArgumentList.Add(a);
         using var p = Process.Start(start)!; p.WaitForExit();
@@ -216,6 +217,15 @@ public sealed class WorkshopMaintenancePlanTests
         })));
         foreach (string line in report.OrderBy(x => x, StringComparer.Ordinal)) Console.WriteLine(line);
         Assert.IsEmpty(failures, string.Join("\n", failures));
+    }
+
+    [TestMethod] public void M3JournalMarkersPreserveTheMaintenanceDecision()
+    {
+        var b = new Builder(Path.Combine(fixture, "m3-markers", "game"));
+        string dir = b.Transaction(1, journal: "applying\r\npause 2026-10-14T21:37:28Z; waiting for game exit\r\nresumed 2026-10-14T21:37:54Z\r\nbegin\t0\r\ndone\t0\r\nbegin\t1\r\ndone\t1\r\ncommitted\r\n", keepNew: false);
+        Assert.IsFalse(WorkshopMaintenancePlan.MayChange(b.Game));
+        b.Write(Path.Combine(dir, "New", "0"), "remaining staging");
+        Assert.IsTrue(WorkshopMaintenancePlan.MayChange(b.Game));
     }
 
     [TestMethod] public void SteadyHistoryNeedsNoProcess()
