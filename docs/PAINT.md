@@ -166,7 +166,7 @@ Paints use a file nobody covers, so the consumer work is the common early return
 .NET Framework 4.8.1 test host, 20000 warm-up calls, eleven rounds of 200000 calls with the
 variants alternating in rotating order; values are medians in ns per call across three runs.
 
-| Variant | APIShared optimized | APIShared as built today |
+| Variant | APIShared optimized | APIShared without Optimize |
 |---|---:|---:|
 | Plain call, no hook | 1.2 to 1.5 | 2.0 |
 | Site bound, no registration (dormant) | 1.3 to 1.7 | 2.0 |
@@ -186,10 +186,38 @@ delegates and boxing in the compiled dispatch methods.
 
 On this host the broker costs about 15 ns more than one direct hook for a paint a
 registration receives, about 5 ns less for a paint it does not, and about 40 percent less than
-eight hooks. "As built today": `APIShared.csproj` sets no `Optimize` property, so builds mark
-the assembly with `DebuggableAttribute(DisableOptimizations)` and the .NET Framework JIT
-compiles all of APIShared unoptimized; the column shows that effect on the same code.
-Whether Unity's Mono honours that attribute was not verified. Mono, the real game methods,
-Unity's renderer property costs and real consumer callbacks are outside these measurements;
-they are not an FPS measurement. Timing bounds are asserted only for an optimized build
-(`-p:Optimize=true`), as regression guards.
+eight hooks. The first column is the build these numbers are meant for. The second shows the
+same code when `APIShared.csproj` sets no `Optimize` property: such builds mark the assembly
+with `DebuggableAttribute(DisableOptimizations)` and the .NET Framework JIT then compiles all
+of APIShared unoptimized. Whether Unity's Mono honours that attribute was not verified. Mono,
+the real game methods, Unity's renderer property costs and real consumer callbacks are outside
+these measurements; they are not an FPS measurement. Timing bounds are asserted only for an
+optimized build (`-p:Optimize=true`), as regression guards.
+
+### Cost of one receiving registration
+
+`PaintCostBreakdownTests` adds the elements of the observed body-paint path one at a time,
+each as a static hook on its own stand-in doing the same consumer work as above (same host,
+optimized build, fifteen alternating rounds of 200000 calls, medians of two runs):
+
+| Path | ns per call | Step |
+|---|---:|---:|
+| One consumer hook | 12.2 to 12.8 | |
+| + out-of-line call with the paint's arguments | 14.9 to 15.5 | +2 to +3 |
+| + a 16-byte value passed by reference | 15.1 to 15.3 | 0 |
+| + the 56-byte `BodySpritePaint` passed by reference | 24.7 to 25.2 | +10 |
+| + delegate call with failure isolation (a one-registration path) | 26.3 to 26.4 | +1 to +2 |
+| Production site: table lookup, dispatch loop, claim marking | 29.4 to 29.5 | +3 |
+
+Most of the difference is the paint value itself, independent of what the callback does. In
+separate probes on the same host, by-reference values of 24 to 56 bytes all cost 10 to 13 ns
+while 16 bytes cost nothing, which matches the .NET Framework x64 JIT zero-filling such locals
+in the method prologue with a block fill above 16 bytes (not checked in disassembly). A dedicated
+path for a site with exactly one registration (direct delegate, no table, no loop) removes
+only the last 3 ns; it was measured against the table path, did not reach parity with a hook
+and was not kept. Keeping the by-reference value at 16 bytes needs the request held elsewhere:
+in a per-site static frame it measured 17 to 19 ns, but that is correct only if every paint of
+a site happens on one thread, which the broker does not assume; a thread-static frame measured
+23 to 28 ns, because the thread-static lookup costs what the block fill saves. The remaining
+floor of any delegate-based dispatch is the out-of-line call and the delegate, about 3 to 5 ns
+over a hook. How Mono initializes these locals was not measured.
