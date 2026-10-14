@@ -16,6 +16,7 @@
     <OutputPath>BepInEx\plugins\APIShared_Serp\</OutputPath>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>portable</DebugType>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
     <WarningLevel>4</WarningLevel>
     <DocumentationFile>$(OutputPath)APIShared.xml</DocumentationFile>
     <WarningsAsErrors>1591;2002</WarningsAsErrors>
