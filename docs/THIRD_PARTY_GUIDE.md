@@ -422,6 +422,15 @@ collection allocations with empty or cached immutable providers after warm-up on
 .NET 10. They do not include Mono/Noesis rendering, consumer callbacks or native
 reads, and are not an FPS benchmark.
 
+Initialization validates the six HUD_Main selection fields as before and compiles
+one typed field read for each, so the GuiChecks and BuildingRollover Post reads them
+without reflection or boxing: 96 bytes per update at 07089d1, 0 after, measured by
+`BuildingTooltipHudFieldTests` on the .NET Framework 4.8.1 test host against the
+installed game assembly. In the broker A/B timing run the six reads and selection rule
+took 29.5 ns instead of 284.8 ns per update (best of eight runs; every run faster).
+Providers are still collected before the no-building return, since they may retire
+selection state there.
+
 ## Gate access contributions
 
 Use `GateAccessRules.TryRegister` for additional gate access exceptions and
