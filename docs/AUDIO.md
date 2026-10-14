@@ -306,12 +306,18 @@ the caller's RBP at entry RSP-0x10: the routine writes RBP only by `movsxd rbp,r
 (0x199124), so RBP is the victim, and the attacker offset `attacker*0x490` sits in
 the caller-home slot [RSP+0x70] written only at 0x1991D5, which is [entry RSP+0x78]
 at the wrapper.
-Script Extender detours the routine's 20-byte prologue for its melee-damage event;
-the trampoline keeps the frame layout, so only the body after the prologue
-(0x199124..0x19999D) is hash-checked live. A mismatch disables kill attribution and
-leaves the soldier catalog running. Attacker and victim are then validated through
-UnitAccess, the attacker type against the effect's jump-table group, the victim's
-zero health and the sound tile.
+Script Extender 2.14.1 patches this routine twice: an Indirect entry detour for its
+melee-damage event (0x199110..0x199115; the trampoline replays `mov [rsp+18h],rbx;
+push rbp` and resumes at 0x199116) and a 14-byte context hook for its melee-kill
+event (0x199444..0x199455) whose stub saves and restores every register. Both keep
+RBP, RSP and [rsp+0x70], which the routine itself reads again when it picks the cue
+(0x19964D, 0x199742). Live validation therefore pins only what attribution reads:
+the frame setup 0x199124..0x1991D9 (hash) and the four kill CALLs. The file hash pins
+the rest, and the tests prove on the file that nothing else writes RBP or the spill
+slot or moves RSP before the epilogue. A changed pinned byte, or an entry patch longer
+than the 20-byte prologue, disables kill attribution and leaves the soldier catalog
+running. Attacker and victim are then validated through UnitAccess, the attacker type
+against the effect's jump-table group, the victim's zero health and the sound tile.
 
 SoundClips queues owner-private resources, map archives and borrowed Extender
 clip captures on the permanent Extender dispatcher. API handles are independent

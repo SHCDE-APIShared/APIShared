@@ -287,12 +287,14 @@ public sealed unsafe class AudioNativeContractTests
         invoke(new IntPtr(123), -17, 300, 180);
         Check(callbacks == 1 && emissions == 3, "guard returns to the dormant path");
     }
-    // Melee kill catalog against the real image: pinned body, frame instructions, CALL targets,
-    // and the attacker-type groups decoded from the routine's own jump tables.
+    // Melee kill catalog against the real image: pinned frame setup, frame instructions, CALL targets,
+    // the attacker-type groups decoded from the routine's own jump tables, and the file-level proof
+    // that nothing else in the body changes RBP, RSP or the attacker spill slot.
     private static void KillSites(byte[] image)
     {
         using (var sha = System.Security.Cryptography.SHA256.Create())
-            Check(BitConverter.ToString(sha.ComputeHash(image, Offset(image, NativeContract.MeleeBodyRva), NativeContract.MeleeBodyLength)).Replace("-", "") == NativeContract.MeleeBodyHash, "melee body hash");
+            Check(BitConverter.ToString(sha.ComputeHash(image, Offset(image, NativeContract.MeleeFrameRva), NativeContract.MeleeFrameLength)).Replace("-", "") == NativeContract.MeleeFrameHash, "melee frame setup hash");
+        MeleeFrameInvariants(image);
         bool Bytes(int rva, byte[] expected) { int at = Offset(image, rva); for (int i = 0; i < expected.Length; i++) if (image[at + i] != expected[i]) return false; return true; }
         Check(Bytes(NativeContract.MeleeDamageRva, NativeContract.MeleePrologueBytes), "melee prologue: rbx home, seven pushes, sub rsp,30h");
         Check(Bytes(NativeContract.MeleeVictimRbpRva, NativeContract.MeleeVictimRbpBytes) && Bytes(NativeContract.MeleeAttackerSlotRva, NativeContract.MeleeAttackerSlotBytes), "victim RBP and attacker spill");
@@ -350,6 +352,103 @@ public sealed unsafe class AudioNativeContractTests
             !SoundSources.Kills[0].Matches(240, 25, 5, 6, 1, 1, 0, 5, 6) && !SoundSources.Kills[0].Matches(240, 24, 1, 1, 5, 6, 0, 5, 6), "victim-tile kill matching");
         Check(SoundSources.Kills[3].Matches(186, 25, 5, 6, 1, 1, 0, 5, 6) && !SoundSources.Kills[3].Matches(186, 25, 1, 1, 5, 6, 0, 5, 6), "attacker-tile special-victim matching");
     }
+    // Decodes the hash-pinned file body after the prologue. RBP is written only by movsxd rbp,r8d (and
+    // the epilogue pop), [rsp+0x70] only by the attacker spill, and RSP changes only in the epilogue,
+    // so both values hold at every kill CALL. The routine itself reads them again after the cue choice.
+    private static void MeleeFrameInvariants(byte[] image)
+    {
+        int start = NativeContract.MeleeFrameRva, end = NativeContract.MeleeDamageEndRva;
+        var decoder = Iced.Intel.Decoder.Create(64, new Iced.Intel.ByteArrayCodeReader(image, Offset(image, start), end - start));
+        decoder.IP = (ulong)start;
+        var factory = new Iced.Intel.InstructionInfoFactory();
+        var rbpWriters = new List<ulong>(); var slotWriters = new List<ulong>(); var rspWriters = new List<ulong>();
+        while (decoder.IP < (ulong)end)
+        {
+            var instruction = decoder.Decode();
+            Check(instruction.Code != Iced.Intel.Code.INVALID, "melee body decodes linearly at 0x" + instruction.IP.ToString("X"));
+            var info = factory.GetInfo(instruction);
+            foreach (var used in info.GetUsedRegisters())
+            {
+                bool write = used.Access == Iced.Intel.OpAccess.Write || used.Access == Iced.Intel.OpAccess.CondWrite ||
+                    used.Access == Iced.Intel.OpAccess.ReadWrite || used.Access == Iced.Intel.OpAccess.ReadCondWrite;
+                if (write && Iced.Intel.RegisterExtensions.GetFullRegister(used.Register) == Iced.Intel.Register.RBP) rbpWriters.Add(instruction.IP);
+                if (write && Iced.Intel.RegisterExtensions.GetFullRegister(used.Register) == Iced.Intel.Register.RSP && instruction.FlowControl != Iced.Intel.FlowControl.Call) rspWriters.Add(instruction.IP);
+            }
+            foreach (var memory in info.GetUsedMemory())
+                if (memory.Base == Iced.Intel.Register.RSP && memory.Displacement == 0x70 &&
+                    (memory.Access == Iced.Intel.OpAccess.Write || memory.Access == Iced.Intel.OpAccess.CondWrite || memory.Access == Iced.Intel.OpAccess.ReadWrite))
+                    slotWriters.Add(instruction.IP);
+        }
+        Check(rbpWriters.SequenceEqual(new ulong[] { 0x199124, 0x19999B }), "RBP written only by movsxd rbp,r8d and the epilogue pop: " + string.Join(",", rbpWriters.Select(ip => ip.ToString("X"))));
+        Check(slotWriters.SequenceEqual(new ulong[] { 0x1991D5 }), "[rsp+0x70] written only by the attacker spill: " + string.Join(",", slotWriters.Select(ip => ip.ToString("X"))));
+        Check(rspWriters.All(ip => ip >= 0x19998D), "RSP changes only in the epilogue: " + string.Join(",", rspWriters.Select(ip => ip.ToString("X"))));
+        bool Bytes(int rva, params byte[] expected) { int at = Offset(image, rva); for (int i = 0; i < expected.Length; i++) if (image[at + i] != expected[i]) return false; return true; }
+        Check(Bytes(0x19964D, 0x4C, 0x8B, 0x54, 0x24, 0x70) && Bytes(0x199742, 0x48, 0x69, 0xC5, 0x90, 0x04, 0x00, 0x00),
+            "the routine itself reads [rsp+0x70] (0x19964D) and RBP (0x199742) when it chooses the kill cue");
+    }
+
+    // Script Extender detours the routine entry for its melee-damage event and context-hooks
+    // 0x199444 for its melee-kill event. Reproduce both on a private copy with SE 2.14.1's backend
+    // options (BulkUnitDetours.cs:42-44, :86-96; DetourManager.cs:35): kill attribution must stay
+    // valid, while a change to anything it reads must still fail.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate long MeleeDamage(IntPtr manager, int attacker, int victim, int damage);
+    [TestMethod]
+    public void ScriptExtenderMeleeHooksKeepKillAttributionButPinnedChangesFail()
+    {
+        game = Environment.GetEnvironmentVariable("SHCDE_GAME_DIR") ?? @"E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition";
+        byte[] file = File.ReadAllBytes(new InstalledAudioFiles(game).Native);
+        const int start = NativeContract.MeleeDamageRva, length = 0x199B43 - NativeContract.MeleeDamageRva;
+        byte[] Mapped(byte[] code) { var mapped = new byte[start + length + 0x100]; Array.Copy(code, 0, mapped, start, length); return mapped; }
+        byte[] pristine = new byte[length]; Array.Copy(file, Offset(file, start), pristine, 0, length);
+        SoundRuntime.ValidateKillSites(Mapped(pristine));
+
+        IntPtr page = VirtualAlloc(IntPtr.Zero, new UIntPtr(0x2000), 0x3000, 0x40); roots.Add(page);
+        Marshal.Copy(pristine, 0, page, length);
+        var backend = new NativeDetourBackend(new NativeDetourOptions { SuspendThreadsDuringPatch = false });
+        var transaction = new RedBird.X64.Hooks.Transaction.HookTransaction(RedBird.Core.Memory.ScanRegion.FromPointer(page, length, "melee copy"),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            new RedBird.X64.Hooks.Transaction.HookTransactionOptions { FailureMode = RedBird.Abstractions.Hooks.Transaction.TransactionFailureMode.ContinueOnError, Backend = backend });
+        var detour = new RedBird.Abstractions.Hooks.Transaction.DetourHandle<MeleeDamage>();
+        MeleeDamage impl = (manager, attacker, victim, damage) => detour.Original(manager, attacker, victim, damage);
+        transaction.AddDetour(detour, "48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 30 49", impl);
+        // SE's context hook is an X64InlineHook of ContextHookOptions.HookSize (14). The desktop CLR cannot
+        // marshal its NativePointer<T> callback, so an inline hook of the same size and site stands in.
+        var context = new RedBird.Abstractions.Hooks.Transaction.HookHandle<RedBird.X64.Hooks.X64InlineHook>();
+        RedBird.X64.Hooks.InlineHookGenerator stub = (asm, displaced, address) => asm.nop();
+        transaction.AddInline(context, "66 41 89 84 34 ?? ?? ?? ?? 66 45 89 B4 34", stub, new RedBird.X64.Hooks.Context.ContextHookOptions().HookSize);
+        var result = transaction.Commit();
+        roots.Add(transaction); roots.Add(detour); roots.Add(impl); roots.Add(context); roots.Add(stub); roots.Add(backend); roots.Add(result);
+        Check(result.IsCompleteSuccess && result.Installed.Count == 2, "SE-equivalent entry detour and context-size hook installed on the copy");
+
+        byte[] patchedCode = new byte[length]; Marshal.Copy(page, patchedCode, 0, length);
+        var changed = Enumerable.Range(0, length).Where(i => patchedCode[i] != pristine[i]).Select(i => start + i).ToArray();
+        Check(changed.Length > 0 && changed.All(rva => rva >= 0x199110 && rva < 0x199116 || rva >= 0x199444 && rva < 0x199456),
+            "SE patches only the entry (0x199110..0x199115) and the context site (0x199444..0x199455): " + string.Join(",", changed.Select(rva => rva.ToString("X"))));
+        Check(changed.Any(rva => rva >= 0x199444), "the context hook lies inside the body that the old full-body hash covered");
+        var entry = (NativeDetour<MeleeDamage>)result.Installed.First(hook => hook is NativeDetour<MeleeDamage>);
+        var trampoline = Iced.Intel.Decoder.Create(64, new Iced.Intel.ByteArrayCodeReader(Read(entry.TrampolineAddress, 32)));
+        trampoline.IP = unchecked((ulong)entry.TrampolineAddress.ToInt64());
+        var first = trampoline.Decode(); var second = trampoline.Decode(); var back = trampoline.Decode();
+        Check(first.Code == Iced.Intel.Code.Mov_rm64_r64 && first.MemoryBase == Iced.Intel.Register.RSP && first.MemoryDisplacement64 == 0x18 && first.Op1Register == Iced.Intel.Register.RBX &&
+            second.Code == Iced.Intel.Code.Push_r64 && second.Op0Register == Iced.Intel.Register.RBP && back.Mnemonic == Iced.Intel.Mnemonic.Jmp &&
+            back.NearBranchTarget == unchecked((ulong)page.ToInt64()) + (ulong)entry.DisplacedByteCount,
+            "SE's trampoline replays the displaced prologue verbatim and resumes in the body, so the frame layout is unchanged");
+
+        byte[] patched = Mapped(patchedCode);
+        SoundRuntime.ValidateKillSites(patched);
+        foreach (int rva in new[] { 0x199126, 0x199133, 0x19913E, 0x1991D1, 0x1991D9, 0x199953, 0x199315, 0x19981F, 0x199833, 0x199124 + 0x50 })
+        {
+            var mutated = (byte[])patched.Clone(); mutated[rva] ^= 0x08;
+            bool rejected = false;
+            try { SoundRuntime.ValidateKillSites(mutated); } catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "pinned frame setup or kill CALL change rejected at 0x" + rva.ToString("X"));
+        }
+        var longEntry = (byte[])patched.Clone(); for (int rva = 0x199110; rva < 0x199127; rva++) longEntry[rva] = 0x90;
+        bool entryRejected = false;
+        try { SoundRuntime.ValidateKillSites(longEntry); } catch (InvalidOperationException) { entryRejected = true; }
+        Check(entryRejected, "an entry patch longer than the 20-byte prologue reaches the pinned frame setup and fails closed");
+    }
+
     private static byte[] Read(IntPtr pointer, int length) { var bytes = new byte[length]; Marshal.Copy(pointer, bytes, 0, length); return bytes; }
     [DllImport("kernel32.dll",SetLastError=true)] private static extern IntPtr VirtualAlloc(IntPtr address,UIntPtr size,uint allocationType,uint protection);
 }

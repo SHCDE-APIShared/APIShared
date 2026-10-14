@@ -205,22 +205,22 @@ namespace APIShared.Audio
         }
         private static void ValidatePrologue(ReadOnlySpan<byte> image, int rva, byte[] expected)
         { if (rva < 0 || rva > image.Length - expected.Length || !image.Slice(rva, expected.Length).SequenceEqual(expected)) throw new InvalidOperationException("Audio prologue changed: 0x" + rva.ToString("X")); }
-        // Kill sites are CALLs to the spatial wrapper inside the pinned melee damage body.
-        private static void ValidateKillSites(ReadOnlySpan<byte> image)
+        // Live pins for kill attribution only: the frame setup that leaves the victim in RBP and the
+        // attacker offset in [rsp+0x70], and the four kill CALLs. Entry detours and frame-preserving
+        // hooks elsewhere in the body are tolerated (see NativeContract); the file hash pins the rest.
+        internal static void ValidateKillSites(ReadOnlySpan<byte> image)
         {
-            if (NativeContract.MeleeBodyRva < 0 || NativeContract.MeleeBodyRva > image.Length - NativeContract.MeleeBodyLength)
+            if (NativeContract.MeleeFrameRva < 0 || NativeContract.MeleeDamageEndRva > image.Length)
                 throw new InvalidOperationException("Melee damage routine is outside the loaded module.");
             using (var sha = System.Security.Cryptography.SHA256.Create())
-                if (BitConverter.ToString(sha.ComputeHash(image.Slice(NativeContract.MeleeBodyRva, NativeContract.MeleeBodyLength).ToArray())).Replace("-", "") != NativeContract.MeleeBodyHash)
-                    throw new InvalidOperationException("Melee damage body changed or is patched.");
-            ValidatePrologue(image, NativeContract.MeleeVictimRbpRva, NativeContract.MeleeVictimRbpBytes);
-            ValidatePrologue(image, NativeContract.MeleeAttackerSlotRva, NativeContract.MeleeAttackerSlotBytes);
+                if (BitConverter.ToString(sha.ComputeHash(image.Slice(NativeContract.MeleeFrameRva, NativeContract.MeleeFrameLength).ToArray())).Replace("-", "") != NativeContract.MeleeFrameHash)
+                    throw new InvalidOperationException("Melee damage frame setup changed or is patched (0x199124..0x1991D9).");
             foreach (var kill in SoundSources.Kills)
             {
                 int call = kill.ReturnRva - 5;
-                if (call < NativeContract.MeleeBodyRva || kill.ReturnRva > NativeContract.MeleeBodyRva + NativeContract.MeleeBodyLength || image[call] != 0xE8 ||
+                if (call < NativeContract.MeleeFrameRva + NativeContract.MeleeFrameLength || kill.ReturnRva > NativeContract.MeleeDamageEndRva || image[call] != 0xE8 ||
                     APIShared.Internal.NativePatternResolver.ResolveRelativeTarget(image, call + 1, kill.ReturnRva) != NativeContract.WrapperRva)
-                    throw new InvalidOperationException("Melee kill callsite changed: " + kill.Key);
+                    throw new InvalidOperationException("Melee kill callsite changed or is patched: " + kill.Key);
             }
         }
         private void ValidateHooks(CrusaderLibraryLoadContext context) =>

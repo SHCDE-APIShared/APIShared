@@ -22,13 +22,17 @@ namespace APIShared.Audio
         internal static readonly byte[] FlagWrapperBytes = { 0x48,0x83,0xEC,0x38,0x41,0x8B,0xC1,0xC7,0x44,0x24,0x20,1,0,0,0 };
         internal static readonly byte[] EmitBytes = { 0x48,0x63,0x41,0x08,0x4C,0x8B,0xD9,0x4C,0x6B,0xD0,0x2A,0x48,0x8B,0x01 };
         // Melee damage routine (rcx=unit base, edx=attacker ID, r8d=victim ID, r9d=damage).
-        // Kill cues read their attacker and victim from this routine's frame. Its 20-byte
-        // prologue (mov [rsp+18h],rbx; seven pushes; sub rsp,30h) is the Script Extender's
-        // melee-damage detour site, so only the body after it is pinned live, up to the jump
-        // tables: rbp is written only by `movsxd rbp,r8d`, and the caller-home slot [rsp+0x70]
-        // only by `mov [rsp+0x70],r10` with r10=attacker*0x490.
-        internal const int MeleeDamageRva = 0x199110, MeleeBodyRva = 0x199124, MeleeBodyLength = 0x879;
-        internal const string MeleeBodyHash = "56F8FEA69A4B3BA3778F50C58DCD5C55BB59818C7324C48680D5A78DBE1A6498";
+        // Kill cues read their attacker and victim from this routine's frame. In the hash-pinned
+        // file, rbp is written only by `movsxd rbp,r8d` and the caller-home slot [rsp+0x70] only by
+        // `mov [rsp+0x70],r10` with r10=attacker*0x490; the routine itself reads both again after
+        // the cue choice. Live, only what attribution reads is pinned: the frame setup from the end
+        // of the 20-byte prologue through that spill (0x199124..0x1991D9) and the four kill CALLs.
+        // Entry detours (Script Extender's melee-damage event: Indirect, 0x199110..0x199115) and
+        // frame-preserving mid-body hooks (its melee-kill context hook, 0x199444..0x199455) stay
+        // outside the pins, because their trampolines replay the displaced instructions unchanged.
+        internal const int MeleeDamageRva = 0x199110, MeleeDamageEndRva = 0x19999D;
+        internal const int MeleeFrameRva = 0x199124, MeleeFrameLength = 0xB6;
+        internal const string MeleeFrameHash = "6BC17563B008BD6123FFB6FA7C3C9FB308D66AD4B96C61B2EC422A23E9500295";
         internal static readonly byte[] MeleePrologueBytes = { 0x48,0x89,0x5C,0x24,0x18,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x83,0xEC,0x30 };
         internal const int MeleeVictimRbpRva = 0x199124, MeleeAttackerSlotRva = 0x1991D5;
         internal static readonly byte[] MeleeVictimRbpBytes = { 0x49, 0x63, 0xE8 };
