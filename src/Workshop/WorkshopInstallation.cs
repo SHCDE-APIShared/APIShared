@@ -78,7 +78,7 @@ namespace APIShared.Workshop
             {
                 if (WorkshopPackageCodec.Id(other.WorkshopId) == id) continue;
                 if (other.PackageId.Equals(package.PackageId, StringComparison.OrdinalIgnoreCase) || other.ModGuids.Intersect(package.ModGuids, StringComparer.OrdinalIgnoreCase).Any() || other.Files.Any(f => package.Roots.Any(root => f.Path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase))))
-                    throw new InvalidOperationException("Another installed Workshop item owns this package or plugin folder.");
+                    throw WorkshopDiagnostics.Blocked("Another installed Workshop item owns this package or plugin folder.");
             }
         }
         internal static IEnumerable<string> Obsolete(WorkshopInstallPlan plan, Action<string> warn, IDictionary<string, string> targets = null)

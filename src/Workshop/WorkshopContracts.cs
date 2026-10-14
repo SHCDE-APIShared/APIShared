@@ -111,6 +111,7 @@ namespace APIShared.Workshop
     /// <summary>One Steam subscription or installed receipt. WorkshopId comes from Steam, not the directory name. Status explains unavailable content and external ownership.</summary>
     public sealed class WorkshopCatalogItem
     {
+        internal Exception DiagnosticError;
         internal WorkshopReceipt Receipt;
         internal string ManifestHash;
         /// <summary>Steam-issued item identity; zero or empty means unavailable.</summary>
@@ -160,6 +161,7 @@ namespace APIShared.Workshop
     /// <summary>Observable process-lifetime operation. Changed notifications are dispatched on the Unity thread; callbacks are isolated and are not replayed.</summary>
     public sealed class WorkshopOperation
     {
+        internal Exception Failure;
         private readonly object gate = new object();
         private WorkshopOperationState state;
         private string diagnostic;

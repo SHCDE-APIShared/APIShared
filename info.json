@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.9.0",
+  "Version": "0.9.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.9.1",
+      "Changes": [
+        "Recover interrupted Workshop installations with explicit repair or rollback and preserved backups.",
+        "Protect updates against premature game restarts, report interrupted progress, and retain only two completed updates per package.",
+        "Avoid routine failure dialogs and unnecessary maintenance processes; bound maintenance and fix Bash recovery checks."
+      ]
+    },
     {
       "Version": "0.9.0",
       "Changes": [

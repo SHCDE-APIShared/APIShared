@@ -97,4 +97,54 @@ public sealed class WorkshopStartupTests
         Assert.ThrowsExactly<IOException>(() => WorkshopStartupGate.Run(async () => { await Task.Delay(10); throw new IOException("staging failed"); }));
         Assert.AreSame(previous, SynchronizationContext.Current);
     }
+
+    [TestMethod]
+    public void StartupConsentRequiresAnOpenScopeAndConfirmedHandoffAndIsConsumedOnce()
+    {
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopStartupGate.AuthorizeConfirmedUpdate());
+        var order = new List<string>();
+        WorkshopStartupGate.Run(async () => {
+            var consent = WorkshopStartupGate.AuthorizeConfirmedUpdate();
+            Assert.ThrowsExactly<InvalidOperationException>(() => consent.Quit(order.Add, () => order.Add("quit"), "update"));
+            await Task.Delay(10);
+            consent.Validate(); consent.ConfirmHandoff("confirmed-transaction");
+            Assert.ThrowsExactly<InvalidOperationException>(() => consent.ConfirmHandoff("other-transaction"));
+            consent.Quit(order.Add, () => order.Add("quit"), "update");
+            Assert.ThrowsExactly<InvalidOperationException>(() => consent.Quit(order.Add, () => order.Add("duplicate quit"), "update"));
+        });
+        Assert.HasCount(2, order);
+        StringAssert.Contains(order[0], "transaction=confirmed-transaction; handoff=confirmed");
+        Assert.AreEqual("quit", order[1]);
+    }
+
+    [TestMethod]
+    public void StartupConsentCannotEscapeToWorkersOrOutliveThePublisher()
+    {
+        WorkshopStartupAuthorization? escaped = null;
+        int quits = 0;
+        WorkshopStartupGate.Run(async () => {
+            escaped = WorkshopStartupGate.AuthorizeConfirmedUpdate();
+            escaped.ConfirmHandoff("confirmed-transaction");
+            await Task.Run(() => Assert.ThrowsExactly<InvalidOperationException>(() => escaped.Validate()));
+            escaped.Validate();
+        });
+        Assert.ThrowsExactly<InvalidOperationException>(() => escaped!.Quit(_ => { }, () => quits++, "late callback"));
+        WorkshopStartupGate.Run(() => {
+            Assert.ThrowsExactly<InvalidOperationException>(() => escaped!.Validate());
+            return Task.CompletedTask;
+        });
+        Assert.AreEqual(0, quits);
+    }
+
+    [TestMethod]
+    public void StartupFailureRevokesConsentAndCannotQuitAfterReturn()
+    {
+        WorkshopStartupAuthorization? escaped = null;
+        Assert.ThrowsExactly<IOException>(() => WorkshopStartupGate.Run(async () => {
+            escaped = WorkshopStartupGate.AuthorizeConfirmedUpdate();
+            await Task.Delay(10);
+            throw new IOException("handoff failed");
+        }));
+        Assert.ThrowsExactly<InvalidOperationException>(() => escaped!.Validate());
+    }
 }

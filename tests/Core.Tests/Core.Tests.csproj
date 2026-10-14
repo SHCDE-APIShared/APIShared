@@ -53,6 +53,13 @@
   <ItemGroup Condition="!Exists('$(SHCDE_GAME_DIR)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll')">
     <PackageReference Include="SharpZipLib" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopUpdaterActivity.cs" Link="Production/WorkshopUpdaterActivity.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" /></ItemGroup>
   <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAML/IngameUIScreens.xaml" Link="Fixtures/IngameUIScreens.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-maintenance.ps1" Link="Fixtures/workshop-maintenance.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-updater.sh" Link="Fixtures/workshop-updater.sh" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-maintenance.sh" Link="Fixtures/workshop-maintenance.sh" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

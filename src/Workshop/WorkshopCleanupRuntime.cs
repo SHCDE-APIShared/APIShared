@@ -18,7 +18,15 @@ namespace APIShared.Workshop
     // shutdown, deletion and deployment. Installed files are never changed here.
     internal static class WorkshopCleanupRuntime
     {
-        private const string ExtenderHash = "e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3";
+        // Lowercase SHA-256 of each audited SHCDESE.dll. An unlisted binary never gets the hook,
+        // whatever its version. Add entries only through the audit in UpdateToNewDLL.md;
+        // tools/Validation/Verify-WorkshopContracts.ps1 reads this list from here.
+        private static readonly string[] AuditedExtenderHashes =
+        {
+            "e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3", // local build of tag v2.14.1 (5908e1f)
+            "b170f163e69f7e8f64bda5874d282f4eb5ae5d9d1852e985ed6bef194c80d780", // official 2.14.1+db7415d5
+            "ef943914b24cf1eec313ff427e9f34f7cbe8711d1437bc106ab853e4638dea9b", // official 2.14.0+6ff6b7f4
+        };
         private static ILHook hook;
         private static ManualLogSource logger;
         private static bool reported;
@@ -29,26 +37,35 @@ namespace APIShared.Workshop
             logger = log;
             try
             {
-                Assembly assembly = typeof(MapArchive).Assembly;
-                if (WorkshopInventory.Hash(assembly.Location) != ExtenderHash)
-                    throw new InvalidOperationException("unsupported Script Extender binary; automatic cleanup was not installed");
-                Type type = assembly.GetType("SHCDESE.API.Components.Archive.MapModManager", true);
-                MethodInfo method = type.GetMethod("TryStageModUpdate", BindingFlags.NonPublic | BindingFlags.Instance,
-                    null, new[] { typeof(string), typeof(MapArchive) }, null);
-                if (method == null || method.ReturnType != typeof(bool)) throw new MissingMethodException(type.FullName, "TryStageModUpdate");
-                // Validate and compile the transformation before publishing a permanent hook.
-                using (var definition = new DynamicMethodDefinition(method))
-                {
-                    using (var context = new ILContext(definition.Definition))
-                    {
-                        Modify(context);
-                        GC.KeepAlive(CompileCopy(definition, method));
-                    }
-                }
+                MethodInfo method = ValidateExtender(typeof(MapArchive).Assembly);
                 hook = new ILHook(method, Modify);
                 logger.LogInfo("Workshop cleanup installed; process-lifetime staging callback, no plugin lifecycle scheduling.");
             }
             catch (Exception ex) { logger.LogWarning("Workshop cleanup unavailable: " + ex.Message); }
+        }
+
+        internal static bool IsAuditedExtender(string sha256) => Array.IndexOf(AuditedExtenderHashes, sha256) >= 0;
+
+        // Everything Initialize checks before publishing the hook: audited hash, exact
+        // signature, then a dry transformation and compilation of the loaded method.
+        // Throws when any check fails; publishes nothing.
+        internal static MethodInfo ValidateExtender(Assembly assembly)
+        {
+            if (!IsAuditedExtender(WorkshopInventory.Hash(assembly.Location)))
+                throw new InvalidOperationException("unsupported Script Extender binary; automatic cleanup was not installed");
+            Type type = assembly.GetType("SHCDESE.API.Components.Archive.MapModManager", true);
+            MethodInfo method = type.GetMethod("TryStageModUpdate", BindingFlags.NonPublic | BindingFlags.Instance,
+                null, new[] { typeof(string), typeof(MapArchive) }, null);
+            if (method == null || method.ReturnType != typeof(bool)) throw new MissingMethodException(type.FullName, "TryStageModUpdate");
+            using (var definition = new DynamicMethodDefinition(method))
+            {
+                using (var context = new ILContext(definition.Definition))
+                {
+                    Modify(context);
+                    GC.KeepAlive(CompileCopy(definition, method));
+                }
+            }
+            return method;
         }
 
         internal static Delegate CompileCopy(DynamicMethodDefinition definition, MethodInfo source)
