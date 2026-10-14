@@ -11,9 +11,16 @@ ARCHITECTURE.md for responsibilities, and docs/API_CATALOG.md for existing featu
   Prefer links and inline contracts; use a topic guide when substantial detail warrants it.
 - Make every new feature discoverable in the catalog and document it in the appropriate guide.
   Keep README.md a short entry point with links where useful; this documentation
-  maintenance is authorized by the maintainer.
+  maintenance is authorized by the maintainers.
 - Preserve user changes. Do not commit or publish unless requested. Changes to runtime
   behavior need appropriate tests; documentation changes must not conceal behavior fixes.
+
+Serpens66 and Ensrick are equal maintainers. Either may integrate changes and publish
+releases without approval from the other. Pull-request reviews are advisory. Follow
+the branch readiness and test requirements in [CONTRIBUTING.md](CONTRIBUTING.md#branches-and-maintainer-rights).
+Straightforward documentation corrections may go directly to main; applicable
+automated checks still need to pass. This authority does not instruct an automated
+agent to commit or publish without a request from the user.
 
 These notes add no prescribed folder layout or AI-specific workflow.
 
@@ -36,16 +43,15 @@ These notes add no prescribed folder layout or AI-specific workflow.
   namespaces, identities or interface requirements, as well as changing defaults,
   payload/ID meanings, ordering, thread, timing, availability, lifetime,
   cancellation, exceptions, side effects or persisted data contracts.
-- If a planned change breaks an existing public contract or could make a foreign
-  mod using it stop working as intended, ask the maintainer explicitly BEFORE
-  implementing it and wait for the answer. Explain the affected API, old and new
-  behavior, consumer impact and a compatible alternative where possible. Ask also
-  when a material compatibility risk cannot be resolved; independent compatible
-  work may continue. General permission to edit APIShared, a version bump or
-  passing tests of the maintainer's own mods does not authorize a breaking change.
-  Unknown external consumers are not evidence of compatibility. Without approval,
-  retain the existing contract; do not silently break it or introduce an unsolicited
-  parallel fallback. This rule applies independently of Steam publication.
+- For a planned breaking change or material compatibility risk, consultation with
+  the other maintainer before implementation is recommended, not mandatory. Either
+  maintainer may decide independently. Document the affected API, old and new
+  behavior, consumer impact and a compatible alternative where possible; provide
+  appropriate tests and migration guidance where needed. A version bump or passing
+  tests of one consumer set alone is not evidence of compatibility. Unknown external
+  consumers are not evidence of compatibility either. Do not hide breaking behavior
+  in a documentation change or introduce an unsolicited parallel fallback. These
+  assessment and documentation duties apply independently of Steam publication.
 
 ## Hot paths and event design
 
