@@ -48,7 +48,9 @@ eval "$(declare -f wait_game_exit | sed '1s/wait_game_exit/original_wait_game_ex
 wait_game_exit() {
     if [[ ${fixture_injected:-0} == 0 && $activity_phase == "$FIXTURE_PHASE" && ( $activity_phase == restore || ${index:-0} == "$FIXTURE_ORDINAL" ) ]]; then
         fixture_injected=1
-        bash -c 'exec -a "$1" sleep 60' fixture "$game/Stronghold Crusader Definitive Edition.exe" &
+        fixture_command="$game/Stronghold Crusader Definitive Edition.exe"
+        if [[ $FIXTURE_PHASE == apply && $FIXTURE_ORDINAL == 0 ]]; then fixture_command='Z:\fixture\STRONGHOLD CRUSADER DEFINITIVE EDITION.EXE'; fi
+        bash -c 'exec -a "$1" sleep 60' fixture "$fixture_command" &
         fixture_pid=$!
         printf '%s %s\n' "$fixture_pid" "$(process_start "$fixture_pid")" > "$game/fixture.pid"
     fi
