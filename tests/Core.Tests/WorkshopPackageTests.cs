@@ -206,6 +206,9 @@ public sealed class WorkshopPackageTests
         if (externalManager) start.Environment["SCDEModManagerLaunchId"] = "fixture";
         foreach (string arg in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-GameRoot", Game, "-Transaction", transaction, "-OperationsHash", WorkshopInventory.Hash(Path.Combine(transaction, "operations.tsv")) }) start.ArgumentList.Add(arg);
         if (recover) start.ArgumentList.Add("-Recover");
+        if (File.Exists(Path.Combine(transaction, "supersedes.tsv"))) {
+            start.ArgumentList.Add("-SupersedesHash"); start.ArgumentList.Add(WorkshopInventory.Hash(Path.Combine(transaction, "supersedes.tsv")));
+        }
         using var process = Process.Start(start)!;
         var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
         Assert.IsTrue(process.WaitForExit(30000), "Updater fixture did not finish.");
@@ -219,6 +222,56 @@ public sealed class WorkshopPackageTests
         Assert.IsTrue(File.ReadAllText(Path.Combine(first, "journal.log")).Contains("committed"));
         Package("1.1.0"); Write(Game, Root + "/Example.dll", "local customization"); string second = WorkshopTransaction.Stage(WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Update));
         Assert.AreEqual(0, RunUpdater(second)); Assert.IsTrue(Directory.EnumerateFiles(Path.Combine(second, "Backup")).Any(f => File.ReadAllText(f) == "local customization"));
+    }
+    [TestMethod]
+    [DataRow("1.0.23", true)][DataRow("1.0.2", true)][DataRow("1.0.23", false)]
+    public void DirectVersionJumpNeedsNoIntermediateRelease(string version, bool receipted)
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Windows updater fixture requires Windows."); return; }
+        var old = Package(version);
+        if (receipted) InstallReceipt(old);
+        else foreach (var file in old.Files) Write(Game, file.Path, File.ReadAllText(WorkshopPaths.Inside(Source, "Payload/" + file.Path)));
+        Write(Game, Root + "/config/settings.json", "user settings"); Write(Game, Root + "/unknown.txt", "unknown");
+        Package("1.0.27");
+        var plan = WorkshopInstallation.Prepare("owner", Game, 123, Source, receipted ? WorkshopAction.Update : WorkshopAction.Install);
+        Assert.AreEqual(0, RunUpdater(WorkshopTransaction.Stage(plan)));
+        Assert.AreEqual("1.0.27", WorkshopInstallation.ReadReceipt(Game, 123).Version);
+        Assert.AreEqual("payload 1.0.27", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/Example.dll")));
+        Assert.AreEqual("user settings", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/config/settings.json")));
+        Assert.AreEqual("unknown", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/unknown.txt")));
+    }
+    [TestMethod] public void ConfirmedCompleteRepairStagesAcrossUnrecoverableOldTransaction()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Windows updater fixture requires Windows."); return; }
+        InstallReceipt(Package("1.0.23")); Package("1.0.27");
+        var update = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Update);
+        string interrupted = WorkshopTransaction.Stage(update);
+        Write(Game, update.Files[0].Path, "interrupted partial copy");
+        Write(interrupted, "journal.log", "applying\r\nbegin\t0\r\n");
+        var entries = WorkshopRecovery.Inspect(Game);
+        Assert.IsFalse(entries[0].CanRollback);
+        var repair = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Reinstall);
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopTransaction.Stage(repair));
+        string replacement = WorkshopTransaction.StageBatch(new[] { repair }, Guid.NewGuid().ToString("N"), entries);
+        Assert.HasCount(1, WorkshopRecovery.Inspect(Game));
+        Assert.AreEqual(0, RunUpdater(replacement));
+        Assert.HasCount(0, WorkshopRecovery.Inspect(Game));
+        Assert.AreEqual("1.0.27", WorkshopInstallation.ReadReceipt(Game, 123).Version);
+        Assert.IsTrue(!Directory.Exists(interrupted) || File.ReadAllLines(Path.Combine(interrupted, "journal.log")).Contains("applying"));
+    }
+    [TestMethod] public void StagingWaitsForTheStartupMaintenanceGate()
+    {
+        Package();
+        var plan = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Install);
+        using var entered = new System.Threading.ManualResetEventSlim();
+        WorkshopTransaction.StateGate.Wait();
+        Task<string>? staging = null;
+        try {
+            staging = Task.Run(() => { entered.Set(); return WorkshopTransaction.Stage(plan); });
+            Assert.IsTrue(entered.Wait(TimeSpan.FromSeconds(5)));
+            Assert.IsFalse(staging.Wait(TimeSpan.FromMilliseconds(100)), "Staging must not race the maintenance child.");
+        } finally { WorkshopTransaction.StateGate.Release(); }
+        Assert.IsTrue(Directory.Exists(staging!.GetAwaiter().GetResult()));
     }
     [TestMethod] public void LockedFilePreventsAllWritesAndLeavesOldReceipt()
     {
