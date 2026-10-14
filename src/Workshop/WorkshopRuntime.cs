@@ -119,6 +119,28 @@ namespace APIShared.Workshop
         }
         internal static Task<WorkshopInstallPlan> PrepareAsync(string owner, ulong id, WorkshopAction action) => PrepareCoreAsync(owner, id, action, false);
         internal static Task<WorkshopInstallPlan> PrepareStartupAsync(ulong id, WorkshopAction action) => PrepareCoreAsync(APISharedPlugin.PluginGuid, id, action, true);
+        internal static async Task<WorkshopInstallPlan> PrepareRepairAsync(ulong id)
+        {
+            WorkshopReceipt receipt = null;
+            try { receipt = WorkshopInstallation.ReadReceipt(Paths.GameRootPath, id); }
+            catch (System.IO.InvalidDataException) { }
+            var plan = await PrepareStartupAsync(id, receipt == null ? WorkshopAction.Install : WorkshopAction.Reinstall);
+            // Complete repair preserves all obsolete/unknown files. Only the
+            // current publisher's full inventory is replaced, with new backups.
+            plan.RemovedFiles = new string[0];
+            return plan;
+        }
+        internal static async Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart)
+        {
+            CheckStartupConditions();
+            string transaction = await Task.Run(() => WorkshopRecovery.StageRollback(Paths.GameRootPath, entries, restart));
+            try {
+                CheckStartupConditions();
+                await WorkshopUpdaterLauncher.Launch(transaction, Paths.GameRootPath);
+                CheckStartupConditions();
+                UnityEngine.Application.Quit();
+            } catch { WorkshopUpdaterLauncher.Cancel(transaction); throw; }
+        }
         private static async Task<WorkshopInstallPlan> PrepareCoreAsync(string owner, ulong id, WorkshopAction action, bool startup)
         {
             var snapshot = Subscriptions(); var subscription = snapshot.FirstOrDefault(x => x.Id == id);
@@ -222,7 +244,7 @@ namespace APIShared.Workshop
                 if (plan.Package != null) WorkshopSubscriptionOwnership.Verify(latest, plan.WorkshopId, plan.Package);
             }
         }
-        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog)
+        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog, IReadOnlyList<WorkshopInterruptedTransaction> repair = null)
         {
             CheckStartupConditions(); CheckBatch(plans, catalog);
             var snapshot = Subscriptions();
@@ -234,7 +256,7 @@ namespace APIShared.Workshop
                         WorkshopBootstrapValidation.Verify(plan.Package, plan.Source);
                         WorkshopSubscriptionOwnership.Verify(snapshot, plan.WorkshopId, plan.Package);
                     }
-                    return WorkshopTransaction.StageBatch(plans, id);
+                    return WorkshopTransaction.StageBatch(plans, id, repair);
                 });
                 var completion = new TaskCompletionSource<WorkshopOperation>();
                 if (!UnityMainThreadDispatch.TryRunInlineOrEnqueue(async () => {

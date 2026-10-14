@@ -90,6 +90,14 @@ function Get-WorkshopConfiguration {
 }
 '@
     Write-Fixture (Join-Path $driverDirectory 'WorkshopConfiguration.ps1') $configuration
+    # Workspace driver policy is tested independently with real isolated worktrees.
+    # These fixtures isolate only the existing release/publication confirmation paths.
+    Write-Fixture (Join-Path $workspace 'Shared/Tools/ApiSharedRepository/MainSource.Common.ps1') @'
+function Resolve-ApiMainSelection($Workspace) { return 'fixture-main-selection' }
+function Get-WorkshopApiRoot($Workspace) { return (Join-Path $Workspace 'APIShared') }
+function Ensure-ApiMainBuild {}
+function Assert-ApiMainDeliveryIdentity($Workspace,$Identity) { return 'fixture-main-selection' }
+'@
     Write-Fixture (Join-Path $driverDirectory 'WorkshopWorkflow.Common.ps1') '# No platform-approval dependency.'
     Write-Fixture (Join-Path $workspace 'APIShared/info.json') '{"GUID":"APIShared_Serp","Version":"0.7.1"}'
     Write-Fixture (Join-Path $workspace 'APIShared/tools/BuildProof.ps1') 'function Assert-ApiBuildProof {}'
@@ -150,6 +158,7 @@ function Write-SteamWorkshopJson($Path,$Value) { [IO.File]::WriteAllText($Path,(
     [void][IO.Directory]::CreateDirectory((Split-Path -Parent $publisher))
     Copy-Item -LiteralPath $fake -Destination $publisher
     Write-Fixture (Join-Path $workspace 'content/APIShared.map') 'inert map'
+    Write-Fixture (Join-Path $workspace '.release-output/SteamWorkshop/prepared/APIShared.json') '{"MainSource":{}}'
     foreach ($record in @('absent','outdated','malformed')) {
         if ($record -eq 'absent') { Remove-Item -LiteralPath $platformPath }
         elseif ($record -eq 'outdated') { Write-Fixture $platformPath '{"SchemaVersion":1,"Windows":false}' }

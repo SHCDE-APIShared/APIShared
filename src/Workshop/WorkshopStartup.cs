@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -34,6 +35,10 @@ namespace APIShared.Workshop
                     return;
                 }
                 WorkshopRuntime.CheckStartupConditions();
+                step = "history maintenance";
+                await WorkshopUpdaterLauncher.Maintain(BepInEx.Paths.GameRootPath);
+                step = "recovery inspection";
+                if (await RecoverAsync()) { result = "recovery offered"; return; }
                 step = "catalog";
                 var catalog = await WorkshopRuntime.GetCatalogAsync();
                 var plans = new List<WorkshopInstallPlan>();
@@ -113,6 +118,7 @@ namespace APIShared.Workshop
                 WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + ": " + operation.State + "; " + operation.Diagnostic);
                 result = operation.State == WorkshopOperationState.AwaitingRestart ? "awaiting restart" : "failed";
                 if (operation.State != WorkshopOperationState.AwaitingRestart) {
+                    Notice(WorkshopText.Pick("Workshop update could not be started.\n", "Workshop-Update konnte nicht gestartet werden.\n") + operation.Diagnostic);
                     if (operation.Failure != null && WorkshopDiagnostics.Level(operation.Failure) == WorkshopDiagnosticLevel.Warning) { blocked = true; result = "blocked"; }
                     else {
                         failures++;
@@ -124,7 +130,72 @@ namespace APIShared.Workshop
                 if (WorkshopDiagnostics.Level(ex) == WorkshopDiagnosticLevel.Error) failures++;
                 result = blocked && failures == 0 ? "blocked" : "failed";
                 WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=" + step, ex);
+                Notice(WorkshopText.Pick("Workshop operation failed. No successful installation was recorded.\n", "Workshop-Vorgang fehlgeschlagen. Es wurde keine erfolgreiche Installation bestätigt.\n") + ex.Message);
             } finally { WorkshopDiagnostics.Outcome(WorkshopRuntime.WriteDiagnostic, result, blocked, failures); }
+        }
+
+        private static int Ask(string text, uint flags) {
+            int answer = MessageBoxW(IntPtr.Zero, text, "APIShared Workshop", flags | 0x30 | (flags == 0x3 ? 0x200u : flags == 0x4 ? 0x100u : 0u));
+            if (answer == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
+            return answer;
+        }
+        private static void Notice(string text) => Ask(text, 0);
+
+        // Recovery is separate from public ApplyAsync: neither discovery nor a
+        // third-party caller silently consents to installation or rollback.
+        private static async Task<bool> RecoverAsync()
+        {
+            string game = BepInEx.Paths.GameRootPath;
+            var entries = await Task.Run(() => WorkshopRecovery.Inspect(game));
+            string root = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions");
+            if (Directory.Exists(root)) foreach (string directory in Directory.EnumerateDirectories(root)) {
+                var journal = WorkshopRecovery.Journal(directory);
+                if (journal.Length == 0) continue;
+                WorkshopRuntime.Log("Workshop previous transaction=" + directory + "; outcome=" + (WorkshopRecovery.Finished(directory) ? journal.Last(x => x == "committed" || x == "restored") : journal.Last()));
+            }
+            if (entries.Count == 0) return false;
+            bool rollback = entries.All(x => x.CanRollback);
+            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\nWorkshop: " + string.Join(", ", x.Items) + "\n" + x.Failure +
+                (x.CanRollback ? "" : "\nRollback: " + x.RollbackError)));
+            // Show a failed external recovery/replacement attempt too: its
+            // failure belongs to the request journal, not the original journal.
+            foreach (string directory in Directory.EnumerateDirectories(root).OrderByDescending(Directory.GetLastWriteTimeUtc)) {
+                if (WorkshopRecovery.Finished(directory)) continue;
+                string references = WorkshopPaths.Inside(directory, "supersedes.tsv");
+                if (!File.Exists(references)) references = WorkshopPaths.Inside(directory, "operations.tsv");
+                if (!File.Exists(references) || !File.ReadAllLines(references).Any(line => entries.Any(e => line.StartsWith(Path.GetFileName(e.Directory) + "\t", StringComparison.Ordinal)))) continue;
+                string failure = WorkshopRecovery.Journal(directory).LastOrDefault(line => line.StartsWith("failure ", StringComparison.Ordinal));
+                if (failure == null) continue;
+                details += "\n\n" + WorkshopText.Pick("Previous attempt: ", "Vorheriger Versuch: ") + directory + "\n" + failure;
+                break;
+            }
+            string choices = rollback ? WorkshopText.Pick(
+                "Yes: repair (restore first, restart and offer the current update).\nNo: rollback to the previous state and close the game. The next start offers updates again.\nCancel: later.",
+                "Ja: Reparieren (zuerst wiederherstellen, neu starten und aktuelles Update anbieten).\nNein: Rollback auf den vorherigen Zustand und Spiel schließen. Beim nächsten Start werden Updates wieder angeboten.\nAbbrechen: Später.") : WorkshopText.Pick(
+                "Rollback is unavailable for the reasons above.\nYes: prepare a complete repair.\nNo: later.",
+                "Rollback ist aus den oben genannten Gründen nicht verfügbar.\nJa: Vollständige Reparatur vorbereiten.\nNein: Später.");
+            int decision = Ask(WorkshopText.Pick("An interrupted Workshop installation needs attention.\n\n", "Eine unterbrochene Workshop-Installation benötigt eine Reparatur.\n\n") + details + "\n\n" + choices, rollback ? 0x3u : 0x4u);
+            if (decision == 2 || (!rollback && decision != 6)) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
+            if (rollback) {
+                await WorkshopRuntime.RollbackAsync(entries, decision == 6);
+                return true;
+            }
+            // No backup is trusted implicitly. A full package repair is a second,
+            // explicit consent boundary and preserves unrelated/obsolete files.
+            var plans = new List<WorkshopInstallPlan>();
+            foreach (ulong id in entries.SelectMany(x => x.Items).Distinct()) plans.Add(await WorkshopRuntime.PrepareRepairAsync(id));
+            if (plans.Count == 0) throw new InvalidOperationException("Cannot identify affected Workshop packages. Keep the transaction directory for manual repair: " + details);
+            await Task.Run(() => WorkshopRecovery.AssertRepairCoverage(game, entries, plans));
+            var catalog = await WorkshopRuntime.GetCatalogAsync();
+            var retained = catalog.Where(x => x.IsSubscribed && x.Package != null).ToArray();
+            WorkshopRuntime.CheckBatch(plans, retained);
+            string body = WorkshopText.Pick("Rollback is unavailable. Install the complete current packages after closing the game? Existing affected files will be backed up; settings and unknown files remain.\n\n",
+                "Rollback ist nicht möglich. Nach dem Schließen des Spiels die vollständigen aktuellen Pakete installieren? Vorhandene betroffene Dateien werden zusätzlich gesichert; Einstellungen und unbekannte Dateien bleiben erhalten.\n\n") +
+                string.Join("\n", plans.Select(p => p.PackageId + " " + p.Version)) + "\n\n" + details;
+            if (Ask(body, 0x4) != 6) return true;
+            var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, entries);
+            if (operation.State != WorkshopOperationState.AwaitingRestart) throw operation.Failure ?? new IOException(operation.Diagnostic);
+            return true;
         }
     }
 }

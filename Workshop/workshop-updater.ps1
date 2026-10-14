@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$GameRoot, [Parameter(Mandatory=$true)][string]$Transaction, [Parameter(Mandatory=$true)][string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam)
+param([Parameter(Mandatory=$true)][string]$GameRoot, [string]$Transaction, [string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam, [string]$SupersedesHash = '', [switch]$Maintain)
 $ErrorActionPreference = 'Stop'
 if ($env:SCDEModManagerLaunchId) { throw 'Externally managed installation; no changes are allowed.' }
 # Runs in a separate process. Receipts form the final phase and roll back first.
@@ -22,6 +22,7 @@ function Hash([string]$Path) {
     try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose(); $stream.Dispose() }
 }
 function Journal([string]$Text) {
+    if ($Text.StartsWith('failure ',[StringComparison]::Ordinal)) { $Text = 'failure '+[DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss.fff')+'; step='+$script:step+'; '+$Text.Substring(8) }
     $bytes = [Text.Encoding]::UTF8.GetBytes($Text + [Environment]::NewLine)
     $stream = [IO.FileStream]::new($journalPath,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::Read)
     try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
@@ -34,22 +35,149 @@ function Game-Running {
     }
     return $false
 }
+function Read-Journal([string]$Directory) {
+    $path = Inside $Directory 'journal.log'
+    if ([IO.File]::Exists($path)) { [IO.File]::ReadAllLines($path) }
+}
+function Read-Reference([string]$Line) {
+    $cells = $Line.Split([char]9)
+    if ($cells.Length -ne 3 -or $cells[0] -notmatch '^[a-f0-9]{32}$' -or $cells[1] -notmatch '^[a-f0-9]{64}$' -or $cells[2] -notmatch '^[a-f0-9]{64}$') { throw 'Invalid recovery reference.' }
+    return ,$cells
+}
+function Assert-Reference([string[]]$Cells) {
+    $directory = Inside $transactionRoot $Cells[0]
+    if ((Hash (Inside $directory 'operations.tsv')) -ne $Cells[1] -or (Hash (Inside $directory 'journal.log')) -ne $Cells[2]) { throw "Recovery transaction changed: $directory" }
+    return $directory
+}
+function Superseded([string]$Directory) {
+    foreach ($candidate in [IO.Directory]::EnumerateDirectories($transactionRoot)) {
+        $file = Inside $candidate 'supersedes.tsv'
+        if (@(Read-Journal $candidate) -notcontains 'committed' -or -not [IO.File]::Exists($file)) { continue }
+        $pin = Inside $candidate 'supersedes.sha256'
+        if (-not [IO.File]::Exists($pin) -or [IO.File]::ReadAllText($pin) -cne (Hash $file)) { throw 'Committed replacement references changed.' }
+        foreach ($line in [IO.File]::ReadAllLines($file)) {
+            $cells = Read-Reference $line
+            if ($cells[0] -eq [IO.Path]::GetFileName($Directory) -and $cells[1] -eq (Hash (Inside $Directory 'operations.tsv')) -and $cells[2] -eq (Hash (Inside $Directory 'journal.log'))) { return $true }
+        }
+    }
+    return $false
+}
+function Read-RecoveryRows([string]$Directory) {
+    $data = [IO.File]::ReadAllLines((Inside $Directory 'operations.tsv'))
+    if ($data.Length -lt 2 -or $data[0] -notin @('APISHARED-WORKSHOP-1','APISHARED-WORKSHOP-2')) { throw 'Unknown recovery protocol.' }
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $receipt = $false
+    for ($i=1; $i -lt $data.Length; $i++) {
+        $r = $data[$i].Split([char]9)
+        if ($r.Length -ne 5 -or $r[2] -cne ($i-1).ToString() -or $r[3] -notmatch '^(missing|[a-f0-9]{64})$' -or $r[4] -notmatch '^(missing|[a-f0-9]{64})$' -or -not $seen.Add($r[1])) { throw 'Malformed recovery operation.' }
+        if ($r[0] -cin @('receipt-write','receipt-delete')) {
+            if ($r[1] -cnotmatch '^_APIShared/Workshop/Receipts/[1-9][0-9]*\.json$' -or ($data[0] -eq 'APISHARED-WORKSHOP-1' -and $i -ne $data.Length-1)) { throw 'Invalid recovery receipt.' }
+            $receipt = $true
+        } elseif ($receipt -or $r[0] -cnotin @('write','delete') -or $r[1] -cnotmatch '^BepInEx/plugins/[^/]+/.+' -or $r[1] -match '^BepInEx/plugins/(APIShared_Serp|000shcdese)/|/(config|LobbyModSettings)(/|$)') { throw 'Protected recovery target.' }
+        if (($r[0] -clike '*write' -and $r[4] -eq 'missing') -or ($r[0] -cnotlike '*write' -and $r[4] -ne 'missing')) { throw 'Invalid recovery after hash.' }
+        $null = Inside $GameRoot $r[1]
+        Write-Output -NoEnumerate $r
+    }
+    if (-not $receipt) { throw 'Missing recovery receipt.' }
+}
+function Get-RestoreRows([string]$Directory) {
+    $all = @(Read-RecoveryRows $Directory)
+    $begun = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($line in @(Read-Journal $Directory)) {
+        if (-not $line.StartsWith("begin`t",[StringComparison]::Ordinal)) { continue }
+        $ordinal = $line.Substring(6)
+        if ($ordinal -notmatch '^(0|[1-9][0-9]*)$' -or [long]$ordinal -ge $all.Count) { throw 'Invalid recovery journal ordinal.' }
+        [void]$begun.Add($ordinal)
+    }
+    foreach ($r in $all) {
+        if (-not $begun.Contains($r[2])) { continue }
+        $target = Inside $GameRoot $r[1]; $backup = Inside $Directory ('Backup/'+$r[2]); $current = Hash $target
+        if ([IO.Directory]::Exists($target)) { throw 'Recovery target is a directory.' }
+        if ($current -ne $r[3] -and $r[3] -ne 'missing' -and (Hash $backup) -ne $r[3]) { throw "Recovery backup invalid: $($r[1])" }
+        [pscustomobject]@{Target=$target;Backup=$backup;Before=$r[3];Current=$current;Relative=$r[1];Ordinal=$r[2];Directory=$Directory}
+    }
+}
+function Restore-Rows($Rows) {
+    # Full validation is performed by Get-RestoreRows before the first write.
+    for ($i=$Rows.Count-1; $i -ge 0; $i--) {
+        $r = $Rows[$i]
+        if (Game-Running) { throw 'Game must remain closed for recovery.' }
+        $null = Inside $GameRoot $r.Relative
+        if ((Hash $r.Target) -eq $r.Before) { continue }
+        if ((Hash $r.Target) -ne $r.Current) { throw 'Recovery target changed after validation.' }
+        if ($r.Before -eq 'missing') { if ([IO.File]::Exists($r.Target)) { [IO.File]::Delete($r.Target) } }
+        else {
+            Assert-Unlinked $r.Backup
+            if ((Hash $r.Backup) -ne $r.Before) { throw 'Recovery backup changed.' }
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($r.Target)); [IO.File]::Copy($r.Backup,$r.Target,$true)
+        }
+        if ((Hash $r.Target) -ne $r.Before) { throw 'Recovery verification failed.' }
+    }
+}
+. (Join-Path $PSScriptRoot 'workshop-maintenance.ps1')
+function Completed-Maintenance {
+    # Cleanup failure is deliberately outside the installation failure contract.
+    try { Maintenance-Completed $Transaction } catch { Write-Output ('Workshop maintenance completion warning: '+$_.Exception.Message) }
+    Invoke-WorkshopMaintenance
+}
 $lock = $null
+$script:step = 'validation'
 try {
     if ($env:SCDEModManagerLaunchId) { throw 'Externally managed installation.' }
     $GameRoot = [IO.Path]::GetFullPath($GameRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
     Assert-Unlinked $GameRoot
     $state = Inside $GameRoot '_APIShared/Workshop'
     $transactionRoot = Inside $state 'Transactions'
+    if($Maintain -and -not [IO.Directory]::Exists($transactionRoot)){Write-Output 'Workshop maintenance: removed=0; freedBytes=0; deferred=0'; exit 0}
+    $lock = [IO.File]::Open((Inside $state 'apply.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    if($Maintain){Invoke-WorkshopMaintenance; exit 0}
     $Transaction = [IO.Path]::GetFullPath($Transaction)
     if (-not $Transaction.StartsWith($transactionRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetDirectoryName($Transaction) -ne $transactionRoot -or [IO.Path]::GetFileName($Transaction) -notmatch '^[a-f0-9]{32}$') { throw 'Invalid transaction directory.' }
     Assert-Unlinked $Transaction
     $gameExecutable = Inside $GameRoot 'Stronghold Crusader Definitive Edition.exe'
-    $lock = [IO.File]::Open((Inside $state 'apply.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     $journalPath = Inside $Transaction 'journal.log'
     $operationsPath = Inside $Transaction 'operations.tsv'
     if ($OperationsHash -notmatch '^[a-f0-9]{64}$' -or (Hash $operationsPath) -ne $OperationsHash) { throw 'Operation list changed.' }
     $lines = [IO.File]::ReadAllLines($operationsPath)
+    if ($lines.Length -ge 3 -and $lines[0] -ceq 'APISHARED-WORKSHOP-RECOVERY-1') {
+        $script:step = 'recovery preflight'
+        if ($lines[1] -cnotin @('restart','stop')) { throw 'Invalid recovery request.' }
+        $directories = @(); $restore = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $references = @($lines | Select-Object -Skip 2 | ForEach-Object { Read-Reference $_ })
+        foreach ($reference in $references) {
+            $directory = Assert-Reference $reference
+            if (@(Read-Journal $directory) -notcontains 'applying' -or @(Read-Journal $directory) -contains 'committed' -or @(Read-Journal $directory) -contains 'restored') { throw 'Recovery target is no longer interrupted.' }
+            foreach ($row in @(Read-RecoveryRows $directory)) { if (-not $targets.Add($row[1])) { throw 'Overlapping transactions require complete repair.' } }
+            $restore += @(Get-RestoreRows $directory); $directories += $directory
+        }
+        [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
+        $script:step = 'recovery waiting for game exit'
+        $cancelPath = Inside $Transaction 'cancel.flag'
+        while (Game-Running) { if ([IO.File]::Exists($cancelPath)) { throw 'Recovery handoff cancelled.' }; Start-Sleep -Seconds 1 }
+        if ([IO.File]::Exists($cancelPath)) { throw 'Recovery handoff cancelled.' }
+        if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence; restart and retry recovery.' }
+        $restore = @()
+        $script:step = 'recovery final validation and interrupted-file backup'
+        foreach ($reference in $references) { $directory = Assert-Reference $reference; $restore += @(Get-RestoreRows $directory) }
+        # Preserve the interrupted bytes too. A failed recovery never consumes backups.
+        foreach ($r in $restore) {
+            if ($r.Current -eq 'missing' -or $r.Current -eq $r.Before) { continue }
+            $saved = Inside $Transaction ('RecoveryBackup/'+[IO.Path]::GetFileName($r.Directory)+'/'+$r.Ordinal)
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($saved)); [IO.File]::Copy($r.Target,$saved,$false)
+            if ((Hash $saved) -ne $r.Current) { throw 'Interrupted-file backup verification failed.' }
+        }
+        Journal 'recovering'
+        $script:step = 'restore original files and receipts'
+        Restore-Rows $restore
+        foreach ($directory in $directories) {
+            $requestJournal = $journalPath; $journalPath = Inside $directory 'journal.log'
+            try { Journal 'restored' } finally { $journalPath = $requestJournal }
+        }
+        Journal 'committed'
+        Completed-Maintenance
+        if ($lines[1] -eq 'restart') { $launch=[Diagnostics.ProcessStartInfo]::new('steam://rungameid/3024040'); $launch.UseShellExecute=$true; [void][Diagnostics.Process]::Start($launch) }
+        exit 0
+    }
     if ($lines.Length -lt 2 -or $lines[0] -notin @('APISHARED-WORKSHOP-1','APISHARED-WORKSHOP-2')) { throw 'Unknown transaction protocol.' }
     $batch = $lines[0] -eq 'APISHARED-WORKSHOP-2'; $receiptPhase = $false
     $rows = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -70,26 +198,52 @@ try {
     }
     $prior = if ([IO.File]::Exists($journalPath)) { [IO.File]::ReadAllLines($journalPath) } else { @() }
     if ($prior -contains 'committed' -or $prior -contains 'restored') { throw 'Transaction already finished.' }
+    $superseding = @{}
+    $supersedesPath = Inside $Transaction 'supersedes.tsv'
+    if ([IO.File]::Exists($supersedesPath)) {
+        if ($SupersedesHash -notmatch '^[a-f0-9]{64}$' -or (Hash $supersedesPath) -ne $SupersedesHash) { throw 'Unconfirmed or changed replacement references.' }
+        if ([IO.File]::ReadAllText((Inside $Transaction 'supersedes.sha256')) -cne $SupersedesHash) { throw 'Replacement pin changed.' }
+        foreach ($line in [IO.File]::ReadAllLines($supersedesPath)) {
+            $ref = Read-Reference $line; $old = Assert-Reference $ref
+            foreach ($r in @(Read-RecoveryRows $old)) {
+                if ($r[0] -like 'receipt-*') { if ($rows.Relative -notcontains $r[1]) { throw 'Replacement does not cover interrupted receipt.' } }
+                else { $prefix = ($r[1].Split('/')[0..2] -join '/')+'/'; if (-not @($rows | Where-Object { $_.Relative.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) }).Count) { throw 'Replacement does not cover interrupted plugin root.' } }
+            }
+            $superseding[$old] = $true
+        }
+    } elseif ($SupersedesHash) { throw 'Missing replacement references.' }
     foreach ($other in [IO.Directory]::EnumerateDirectories($transactionRoot)) {
         if ($other -eq $Transaction) { continue }
         Assert-Unlinked $other
         $otherJournal = Inside $other 'journal.log'
-        if ([IO.File]::Exists($otherJournal)) { $otherLines = [IO.File]::ReadAllLines($otherJournal); if ($otherLines -contains 'applying' -and $otherLines -notcontains 'committed' -and $otherLines -notcontains 'restored') { throw "Recover the unfinished transaction first: $other" } }
+        if ([IO.File]::Exists($otherJournal)) {
+            $otherLines = [IO.File]::ReadAllLines($otherJournal)
+            if ($otherLines -contains 'applying' -and $otherLines -notcontains 'committed' -and $otherLines -notcontains 'restored' -and -not $superseding.ContainsKey($other) -and -not (Superseded $other)) {
+                if (-not $Recover) { throw "Recover the unfinished transaction first: $other" }
+                foreach ($r in @(Read-RecoveryRows $other)) { if ($targets.Contains($r[1])) { throw 'Overlapping transactions require complete repair.' } }
+            }
+        }
     }
     $started = @($prior | Where-Object { $_ -match '^begin\t[0-9]+$' } | ForEach-Object { $_.Split([char]9)[1] })
     if ($started.Count -and -not $Recover) { throw 'Interrupted transaction: run with -Recover to restore its backup.' }
     [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
-    $cancelPath=Inside $Transaction 'cancel.flag'
+    # Legacy manual -Recover is an explicit new recovery consent, not the old
+    # cancelled installation. Dialog recovery uses a fresh request directory.
+    $cancelPath=Inside $Transaction $(if ($Recover) { 'recovery-cancel.flag' } else { 'cancel.flag' })
     while (Game-Running) { if ([IO.File]::Exists($cancelPath)) { throw 'Handoff cancelled; no installation started.' }; Start-Sleep -Seconds 1 }
     if ([IO.File]::Exists($cancelPath)) { throw 'Handoff cancelled; no installation started.' }
     if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence.' }
     if (-not $Recover) {
+        $script:step = 'installation validation and backup'
+        if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { throw 'Replacement references changed before application.' }
+        foreach ($line in $(if ($SupersedesHash) { [IO.File]::ReadAllLines($supersedesPath) })) { $null = Assert-Reference (Read-Reference $line) }
         # Full validation and backup precede any change to installed files.
         foreach ($row in $rows) {
             if ((Hash $row.Target) -ne $row.Before -or [IO.Directory]::Exists($row.Target)) { throw "Target changed: $($row.Relative)" }
             if ($row.Before -ne 'missing') { [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($row.Backup)); [IO.File]::Copy($row.Target,$row.Backup,$true); if ((Hash $row.Backup) -ne $row.Before) { throw 'Backup verification failed.' } }
         }
         Journal 'applying'
+        $script:step = 'installation writes and receipt commit'
         try {
             foreach ($row in $rows) {
                 if (Game-Running) { throw 'Game restarted during application.' }
@@ -106,7 +260,9 @@ try {
                 if ((Hash $row.Target) -ne $row.After) { throw 'Write verification failed.' }
                 Journal ("done`t"+$row.Ordinal)
             }
+            if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { throw 'Replacement references changed before commit.' }
             Journal 'committed'
+            Completed-Maintenance
             try {
             foreach ($row in $rows | Where-Object { $_.Kind -eq 'delete' }) {
                 $directory = [IO.Path]::GetDirectoryName($row.Target)
@@ -125,15 +281,10 @@ try {
         } catch { Journal ('failure '+$_.Exception.Message); $Recover = $true }
     }
     if ($Recover) {
-        for ($index=$rows.Count-1; $index -ge 0; $index--) {
-            $row=$rows[$index]; if ($started -notcontains $row.Ordinal) { continue }
-            if (Game-Running) { throw 'Game must remain closed for recovery.' }
-            $null = Inside $GameRoot $row.Relative
-            if ($row.Before -eq 'missing') { if ([IO.File]::Exists($row.Target)) { [IO.File]::Delete($row.Target) } }
-            else { Assert-Unlinked $row.Backup; if ((Hash $row.Backup) -ne $row.Before) { throw 'Recovery backup invalid.' }; [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($row.Target)); $null = Inside $GameRoot $row.Relative; [IO.File]::Copy($row.Backup,$row.Target,$true) }
-            if ((Hash $row.Target) -ne $row.Before) { throw 'Recovery verification failed.' }
-        }
-        Journal 'restored'; exit 2
+        $script:step = 'rollback preflight and restore'
+        $restore = @(Get-RestoreRows $Transaction)
+        Restore-Rows $restore
+        Journal 'restored'; Completed-Maintenance; exit 2
     }
 } catch { if ($journalPath) { Journal ('failure '+$_.Exception.Message) }; Write-Error $_; exit 1 }
 finally { if ($lock) { $lock.Dispose() } }

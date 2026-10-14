@@ -24,6 +24,7 @@ namespace APIShared.Workshop
         {
             string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
             string hash = WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "operations.tsv"));
+            string repairHash = File.Exists(WorkshopPaths.Inside(transaction, "supersedes.tsv")) ? WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "supersedes.tsv")) : "";
             bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
             ProcessStartInfo start;
             if (wine)
@@ -31,13 +32,13 @@ namespace APIShared.Workshop
                 string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
                 string script = WorkshopPaths.Inside(assets, "workshop-updater.sh");
                 if (!File.Exists(script)) throw new FileNotFoundException("Proton updater script is missing.", script);
-                start = new ProcessStartInfo(shell, Quote(HostPath(script)) + " " + Quote(HostPath(game)) + " " + Quote(HostPath(transaction)) + " " + hash + " --restart");
+                start = new ProcessStartInfo(shell, Quote(HostPath(script)) + " " + Quote(HostPath(game)) + " " + Quote(HostPath(transaction)) + " " + hash + " --restart " + Quote(repairHash));
             }
             else
             {
                 string script = WorkshopPaths.Inside(assets, "workshop-updater.ps1");
                 if (!File.Exists(script)) throw new FileNotFoundException("Windows updater script is missing.", script);
-                start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(script) + " -GameRoot " + Quote(game) + " -Transaction " + Quote(transaction) + " -OperationsHash " + hash + " -RestartSteam");
+                start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(script) + " -GameRoot " + Quote(game) + " -Transaction " + Quote(transaction) + " -OperationsHash " + hash + " -RestartSteam" + (repairHash.Length == 0 ? "" : " -SupersedesHash " + repairHash));
             }
             start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
             string ready = WorkshopPaths.Inside(transaction, "ready.flag");
@@ -49,14 +50,40 @@ namespace APIShared.Workshop
                 while (watch.Elapsed < TimeSpan.FromSeconds(20))
                 {
                     if (File.Exists(ready) && File.ReadAllText(ready) == hash) return;
-                    if (process.HasExited) throw new IOException("Updater rejected the transaction before game exit; inspect its journal. Exit code: " + process.ExitCode);
+                    if (process.HasExited) throw new IOException("Updater rejected the transaction before game exit; inspect " + transaction + "/journal.log. Exit code: " + process.ExitCode);
                     await Task.Delay(100);
                 }
                 Cancel(transaction);
-                throw new IOException("Updater readiness was not confirmed; the game remains running. Inspect the transaction before retrying.");
+                throw new IOException("Updater readiness was not confirmed; the game remains running. Inspect " + transaction + " before retrying.");
             }
         }
         internal static void Cancel(string transaction) => File.WriteAllText(WorkshopPaths.Inside(transaction, "cancel.flag"), "Cancelled before game exit.");
+        internal static async Task Maintain(string game)
+        {
+            if (WorkshopRuntime.IsExternallyManaged) return;
+            await WorkshopTransaction.StateGate.WaitAsync();
+            try {
+                string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
+                bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
+                ProcessStartInfo start;
+                if (wine) {
+                    string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
+                    start = new ProcessStartInfo(shell, Quote(HostPath(WorkshopPaths.Inside(assets, "workshop-updater.sh"))) + " " + Quote(HostPath(game)) + " --maintain");
+                } else start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(WorkshopPaths.Inside(assets, "workshop-updater.ps1")) + " -GameRoot " + Quote(game) + " -Maintain");
+                start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
+                start.RedirectStandardOutput = true; start.RedirectStandardError = true;
+                using (var process = Process.Start(start)) {
+                    if (process == null) throw new IOException("Maintenance process could not be started.");
+                    var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+                    await Task.Run(() => process.WaitForExit());
+                    string text = (await output).Trim(), error = (await errors).Trim();
+                    if (text.Length != 0) WorkshopRuntime.Log(text);
+                    if (process.ExitCode != 0) WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance deferred; " + error);
+                }
+            } catch (Exception ex) {
+                WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop maintenance deferred; " + ex.Message);
+            } finally { WorkshopTransaction.StateGate.Release(); }
+        }
         private static string FirstExisting(this string[] paths)
         {
             foreach (string path in paths) if (File.Exists(path)) return path;
