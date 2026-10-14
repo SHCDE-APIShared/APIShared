@@ -32,9 +32,11 @@ namespace APIShared
         private const string EntryName = "_SE_ModData_" + Identifier + ".msgpack";
         private const int SchemaVersion = 3;
         private const int MaximumBytes = 8 * 1024 * 1024;
-        private const int MaximumMods = 1024;
-        private const int MaximumPropertiesPerMod = 16384;
-        private const int MaximumPropertyBytes = 1024 * 1024;
+        // One set of limits for capture, TryDeserialize and SavegameModSettingsRecordFormatter, so every
+        // record the writer produces is readable. Lowering one changes which existing saves load.
+        internal const int MaximumMods = 1024;
+        internal const int MaximumPropertiesPerMod = 16384;
+        internal const int MaximumPropertyBytes = 1024 * 1024;
         private static readonly object Sync = new object();
         private static ManualLogSource log;
         private static SavegameModSettingsRecord loaded;

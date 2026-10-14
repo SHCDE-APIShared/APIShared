@@ -307,5 +307,62 @@ namespace APISharedTests
             catch (InvalidOperationException) { }
             check(cleaned == 2, "deferred client Ready failure skipped cleanup");
         }
+
+        // Issue #10: the reader accepts every per-mod count the writer captures (16384) and rejects
+        // one more with the same InvalidDataException reasons as the former 2048 bound.
+        internal static void RunPerModLimit(Action<bool, string> check)
+        {
+            const int limit = 16384;
+            byte[] written = SavegameModSettings.SerializeWithinLimit(LimitRecord(1, limit, limit));
+            check(SavegameModSettings.TryDeserialize(written, out SavegameModSettingsRecord restored) &&
+                restored.Mods["mod.0"].Count == limit && restored.CreatorRules["mod.0"].Count == limit &&
+                !restored.LockedByConflict &&
+                MessagePackSerializer.Deserialize<int>(restored.Mods["mod.0"]["S16383"]) == 16383,
+                "a record at the per-mod limit did not round-trip");
+            check(ReaderRejects(LimitRecord(1, limit + 1, 0), "Too many savegame properties."),
+                "a mod over the settings limit was not rejected by the reader");
+            check(ReaderRejects(LimitRecord(1, 0, limit + 1), "Too many Trail rules."),
+                "a mod over the Trail rule limit was not rejected by the reader");
+            check(SavegameModSettings.TryDeserialize(MessagePackSerializer.Serialize(LimitRecord(1024, 1, 0)), out _),
+                "a record at the mod limit was rejected");
+            check(ReaderRejects(LimitRecord(1025, 0, 0), "Too many savegame mods."),
+                "a record over the mod limit was not rejected by the reader");
+        }
+
+        private static SavegameModSettingsRecord LimitRecord(int mods, int settings, int rules)
+        {
+            var record = new SavegameModSettingsRecord
+            {
+                Version = 3,
+                Kind = (int)GameModeKind.CoopTrail,
+                Variant = (int)GameModeLaunchVariant.Customized,
+                Mods = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal),
+                CreatorRules = new Dictionary<string, Dictionary<string, TrailCreatorRule>>(StringComparer.Ordinal),
+            };
+            for (int m = 0; m < mods; m++)
+            {
+                var values = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                for (int i = 0; i < settings; i++) values["S" + i] = MessagePackSerializer.Serialize(i);
+                record.Mods["mod." + m] = values;
+                if (rules == 0) continue;
+                var modRules = new Dictionary<string, TrailCreatorRule>(StringComparer.Ordinal);
+                for (int i = 0; i < rules; i++) modRules["S" + i] = new TrailCreatorRule { Mode = 1 };
+                record.CreatorRules["mod." + m] = modRules;
+            }
+            return record;
+        }
+
+        private static bool ReaderRejects(SavegameModSettingsRecord record, string reason)
+        {
+            byte[] bytes = MessagePackSerializer.Serialize(record);
+            if (SavegameModSettings.TryDeserialize(bytes, out _)) return false;
+            try { MessagePackSerializer.Deserialize<SavegameModSettingsRecord>(bytes); }
+            catch (Exception error)
+            {
+                for (Exception inner = error; inner != null; inner = inner.InnerException)
+                    if (inner is System.IO.InvalidDataException && inner.Message == reason) return true;
+            }
+            return false;
+        }
     }
 }
