@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 
 namespace APIShared.Networking
 {
@@ -8,6 +9,8 @@ namespace APIShared.Networking
     {
         private readonly Func<bool> enabled;
         private readonly Action<string, Exception> report;
+        // Set by the first disabled Chore drop on this channel; read first so later drops write nothing.
+        private int disabledChoreReported;
         internal PacketReceivePolicy(Func<bool> enabled, Action<string, Exception> report)
         { this.enabled = enabled; this.report = report; }
 
@@ -16,8 +19,9 @@ namespace APIShared.Networking
             if (steamSender.HasValue) { Report("Steam delivery rejected by Chore-only receiver.", null); return; }
             try
             {
-                if (packet == null || (enabled != null && !enabled()) || (validate != null && !validate(packet)))
-                    return;
+                if (packet == null) return;
+                if (enabled != null && !enabled()) { ReportDisabledChore(); return; }
+                if (validate != null && !validate(packet)) return;
                 execute(packet);
             }
             catch (Exception error) { Report("Chore handler or validation failed.", error); }
@@ -45,6 +49,16 @@ namespace APIShared.Networking
                     Report("Unity dispatcher is unavailable; message was dropped.", null);
             }
             catch (Exception error) { Report("Message snapshot or dispatch failed.", error); }
+        }
+
+        // IsEnabled runs separately on each receiving peer. A peer that returns false skips a
+        // Chore the others execute, so it is reported, but only once to bound the diagnostic.
+        private void ReportDisabledChore()
+        {
+            if (Volatile.Read(ref disabledChoreReported) != 0 || Interlocked.Exchange(ref disabledChoreReported, 1) != 0)
+                return;
+            Report("Chore dropped because IsEnabled returned false on this peer. IsEnabled must match on every peer; " +
+                "later drops on this channel are not reported.", null);
         }
 
         private void Report(string reason, Exception error)

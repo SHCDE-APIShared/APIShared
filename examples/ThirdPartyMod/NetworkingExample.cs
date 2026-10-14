@@ -21,6 +21,8 @@ namespace ThirdPartyMod
                 new ChoreChannelOptions<BuildingModePacket>
                 {
                     MaximumPayloadBytes = 1200,
+                    // Every peer evaluates this on receipt: read a synchronized game or
+                    // lobby setting, never a per-machine option, or peers diverge.
                     IsEnabled = featureEnabled,
                     // Check active session, protocol, current ownership and global-ID
                     // resolution on every peer. Local selection is never consulted here.
