@@ -33,6 +33,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
+| `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
 
 The catalog describes this source checkout. Check the selected package and its
 public declarations before assigning a consumer minimum version; source features
@@ -92,7 +93,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
-| Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
+| Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
@@ -388,6 +389,15 @@ See [public audio contracts](AUDIO.md#public-audio-contracts).
 clip references. `SoundClipHandle` is distinct from an effect ID; preload before
 using `TryReplaceClip`. See [clip contracts](AUDIO.md#preloaded-custom-clips).
 
+### Native source events
+
+Not in packages up to 0.9.1; check the package you require. `APIShared.Audio.SoundSourceEvents`
+publishes attributed calls of the positional wrappers Audio already owns before the native
+record is appended: the 91 soldier catalog sources and melee kill cues. `SoundSourceArgs`
+carries the acting unit's game ID, GlobalId and type, the killed victim for kill cues, and
+`TryReplaceSound`. Use it for exact-unit cue changes instead of detouring 0x2960.
+See [native source events](AUDIO.md#native-source-events).
+
 ### Consumer-defined audio policies
 
 Filters, evidence thresholds, repeat limits, quiet modes, regional gain, alternate
@@ -396,7 +406,8 @@ and the [compiled example](../examples/ThirdPartyMod/SoundExample.cs).
 
 ### Audio runtime demand
 
-Inactive registrations do not create audio demand. Permanent hooks remain rooted;
+Inactive registrations do not create audio demand. Permanent hooks remain rooted; with no active
+registration the native bridges test a demand byte and run the original without managed code;
 managed dormant playback avoids context allocation and native attribution skips
 UnitAccess. See [implementation and measurements](AUDIO.md#audio-demand-and-dispatch-cost).
 

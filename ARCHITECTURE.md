@@ -249,9 +249,9 @@ mod integration tests belong in their consumer repositories.
 
 ## Feature-specific guides
 
-Audio owns shared playback interception, source attribution and clip lifetimes.
-Consumers own their sound policies; native-context availability is independent of
-managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and measurements.
+Audio owns shared playback interception, source attribution, native source events
+and clip lifetimes. Consumers own their sound policies; native-context availability
+is independent of managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and measurements.
 
 Workshop owns publishing, receipt-based plans and post-exit transactions. Its
 persistent staging integration cleans previous APIShared releases; foreign maps

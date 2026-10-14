@@ -21,6 +21,24 @@ namespace APIShared.Audio
         internal static readonly byte[] WrapperBytes = { 0x48,0x83,0xEC,0x38,0x41,0x8B,0xC1,0xC7,0x44,0x24,0x20,0,0,0,0 };
         internal static readonly byte[] FlagWrapperBytes = { 0x48,0x83,0xEC,0x38,0x41,0x8B,0xC1,0xC7,0x44,0x24,0x20,1,0,0,0 };
         internal static readonly byte[] EmitBytes = { 0x48,0x63,0x41,0x08,0x4C,0x8B,0xD9,0x4C,0x6B,0xD0,0x2A,0x48,0x8B,0x01 };
+        // Melee damage routine (rcx=unit base, edx=attacker ID, r8d=victim ID, r9d=damage).
+        // Kill cues read their attacker and victim from this routine's frame. In the hash-pinned
+        // file, rbp is written only by `movsxd rbp,r8d` and the caller-home slot [rsp+0x70] only by
+        // `mov [rsp+0x70],r10` with r10=attacker*0x490; the routine itself reads both again after
+        // the cue choice. Live, only what attribution reads is pinned: the frame setup from the end
+        // of the 20-byte prologue through that spill (0x199124..0x1991D9) and the four kill CALLs.
+        // Entry detours (Script Extender's melee-damage event: Indirect, 0x199110..0x199115) and
+        // frame-preserving mid-body hooks (its melee-kill context hook, 0x199444..0x199455) stay
+        // outside the pins, because their trampolines replay the displaced instructions unchanged.
+        internal const int MeleeDamageRva = 0x199110, MeleeDamageEndRva = 0x19999D;
+        internal const int MeleeFrameRva = 0x199124, MeleeFrameLength = 0xB6;
+        internal const string MeleeFrameHash = "6BC17563B008BD6123FFB6FA7C3C9FB308D66AD4B96C61B2EC422A23E9500295";
+        internal static readonly byte[] MeleePrologueBytes = { 0x48,0x89,0x5C,0x24,0x18,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x83,0xEC,0x30 };
+        internal const int MeleeVictimRbpRva = 0x199124, MeleeAttackerSlotRva = 0x1991D5;
+        internal static readonly byte[] MeleeVictimRbpBytes = { 0x49, 0x63, 0xE8 };
+        internal static readonly byte[] MeleeAttackerSlotBytes = { 0x4C, 0x89, 0x54, 0x24, 0x70 };
+        // Entry RSP + 8 is the routine's RSP after `sub rsp,0x30`; +0x70 is the spilled attacker offset.
+        internal const int MeleeAttackerFrameOffset = 0x78;
 
         internal static string HashFile(string path)
         {
@@ -28,11 +46,17 @@ namespace APIShared.Audio
             using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
         }
 
-        internal static NativeDetourBackend Backend(int size) => new NativeDetourBackend(new NativeDetourOptions
+        // suspendThreads=false is only for private test copies no other thread can execute: RedBird's
+        // thread-suspending patch destabilises the desktop CLR test host (crash at a later GC).
+        internal static NativeDetourBackend Backend(int size, bool suspendThreads = true)
         {
-            AllowedSchemes = DetourScheme.Absolute, FollowCalls = false, FollowJumps = false,
-            Chaining = HookChainingPolicy.Refuse, FunctionScanLimit = size
-        });
+            var options = new NativeDetourOptions
+            {
+                AllowedSchemes = DetourScheme.Absolute, FollowCalls = false, FollowJumps = false,
+                Chaining = HookChainingPolicy.Refuse, FunctionScanLimit = size
+            };
+            return new NativeDetourBackend(suspendThreads ? options : options with { SuspendThreadsDuringPatch = false });
+        }
 
         internal static void Validate<T>(NativeDetour<T> hook, int length, ulong address, byte[] expected = null) where T : Delegate
         {

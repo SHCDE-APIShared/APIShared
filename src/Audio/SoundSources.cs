@@ -151,5 +151,57 @@ namespace APIShared.Audio
             entry = source; return true;
         }
         internal static short MarkerFor(SoundSource source, int effect) => checked((short)(short.MinValue + source.Index * MarkerStride + effect));
+
+        // Fatal branch of the melee damage routine 0x199110 (taken once victim health is <= 0).
+        // Each cue is selected by the attacker type: the kill switch at 0x199652 (table 0x199AD4,
+        // index 0x199AF0, type-3) and the special-victim switch at 0x1992E2 (table 0x1999A0,
+        // index 0x1999B8, type-3). Type lists mirror those tables; other effects reaching these
+        // CALLs (victim death voices, siege-victim cues) are deliberately not kill cues.
+        private static readonly int[] Axes = { 3, 84 }, Lord = { 55 }, Spears = { 22, 24, 70, 72, 74, 76, 82 },
+            Pikes = { 25, 78 }, Maces = { 26, 85 }, Swords = { 27, 28, 73, 75, 80, 81, 83 };
+        internal static readonly SoundKillSource[] Kills = {
+            // CALL 0x199952 at the victim tile; ebx selects the special cue, victim+0x380 bit 0 the variant.
+            new SoundKillSource(0x199957, "MeleeKill.Source01", false,
+                Pair(240, Axes, Lord, Pikes), Pair(241, Lord, Pikes), Pair(242, Axes, Lord), Pair(186, Pikes),
+                Pair(118, Spears), Pair(153, Spears), Pair(187, Spears),
+                Pair(116, Maces), Pair(151, Maces), Pair(185, Maces), Pair(188, Swords)),
+            new SoundKillSource(0x199823, "MeleeKill.Source02", false, Pair(119, Swords)),
+            new SoundKillSource(0x199837, "MeleeKill.Source03", false, Pair(154, Swords)),
+            // CALL 0x199314 at the attacker tile, only for a victim with the native byte at +0x328 set.
+            // That victim then skips the victim-tile cue above (0x199462).
+            new SoundKillSource(0x199319, "MeleeKill.Source04", true,
+                Pair(242, Axes, Lord), Pair(187, new[] { 24, 70, 72, 74, 76, 82 }), Pair(186, Pikes), Pair(185, Maces), Pair(188, Swords)),
+        };
+        private static readonly Dictionary<int, SoundKillSource> killReturns = BuildKills();
+        private static Dictionary<int, SoundKillSource> BuildKills()
+        { var result = new Dictionary<int, SoundKillSource>(); foreach (var entry in Kills) result.Add(entry.ReturnRva, entry); return result; }
+        internal static bool TryGetKill(int returnRva, out SoundKillSource value) => killReturns.TryGetValue(returnRva, out value);
+        private static KeyValuePair<int, int[]> Pair(int effect, params int[][] groups)
+        {
+            var types = new List<int>(); foreach (var group in groups) types.AddRange(group);
+            types.Sort(); return new KeyValuePair<int, int[]>(effect, types.ToArray());
+        }
+    }
+
+    // A kill cue is attributed to the attacker and victim passed to the melee damage routine,
+    // never to the current-unit global: instant-kill callers (0x1AD64, 0x1ADD4, 0x198F84) pass
+    // units that need not be the one whose update is running.
+    internal sealed class SoundKillSource
+    {
+        internal readonly int ReturnRva;
+        internal readonly string Key;
+        internal readonly bool AttackerTile;
+        private readonly Dictionary<int, int[]> effects = new Dictionary<int, int[]>();
+        internal SoundKillSource(int returnRva, string key, bool attackerTile, params KeyValuePair<int, int[]>[] cues)
+        { ReturnRva = returnRva; Key = key; AttackerTile = attackerTile; foreach (var cue in cues) effects.Add(cue.Key, cue.Value); }
+        internal bool Accepts(int effect) => effects.ContainsKey(effect);
+        internal bool Accepts(int effect, int attackerType) => effects.TryGetValue(effect, out var types) && Array.BinarySearch(types, attackerType) >= 0;
+        internal IEnumerable<KeyValuePair<int, int[]>> Cues => effects;
+        // The routine has already written health 0 on this branch (0x19925C) and takes the
+        // tiles from the attacker (0x199314) or the victim (other CALLs) without adjustment.
+        internal bool Matches(int effect, int attackerType, short attackerX, short attackerY,
+            short victimX, short victimY, uint victimHealth, short x, short y) =>
+            Accepts(effect, attackerType) && victimHealth == 0 &&
+            (AttackerTile ? attackerX == x && attackerY == y : victimX == x && victimY == y);
     }
 }
