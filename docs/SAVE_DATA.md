@@ -86,8 +86,9 @@ This is the policy for versioned save records:
 The savegame settings record that APIShared itself writes
 ([SavegameModSettings](../src/Savegames/SavegameModSettings.cs)) is not covered by this
 policy: it accepts only schema version 3 and has no migration
-(`SavegameModSettings.TryDeserialize`). Changing that record, and its per-mod read limit
-(issue #10), changes what existing saves load and needs the maintainers' approval.
+(`SavegameModSettings.TryDeserialize`). Capture, validation and the reader share one set of
+limits (1024 mods, 16384 settings or Trail rules per mod, 1 MiB per value), so every settings
+map it captures loads. Changing that record or lowering a limit changes what existing saves load.
 
 ## Results
 
@@ -111,9 +112,9 @@ thrown into the game or the Extender.
 
 ## Public limits
 
-- One record holds at most 2048 entries (`MaximumEntries`), the per-mod limit of the existing
-  savegame settings reader. Writer and reader use the same limit, so every record written is
-  readable. Issue #10 governs raising the shared limit.
+- One record holds at most 16384 entries (`MaximumEntries`), the per-mod settings limit of the
+  savegame settings record. Writer and reader use the same limit, so every record written is
+  readable.
 - An entry holds at most 1 MiB, a record at most 8 MiB, an entry name at most 256 characters.
   Kept unknown entries count toward the limits; a record over a limit is not written.
 - Identifiers are unique ignoring case, because the Extender's archive entry names are.

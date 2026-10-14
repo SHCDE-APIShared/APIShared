@@ -20,14 +20,16 @@ namespace APIShared.Savegames
     //   name, i32 data length (0 .. MaximumEntryBytes), data.
     // A future writer that exceeds a version-1 limit or changes this layout must raise the oldest
     // envelope reader, so version-1 readers report TooNew (and keep the bytes) instead of Corrupt.
-    // The limits are shared by writer and reader so a written record is always readable here (the
-    // savegame settings record writes more than it reads: issue #10).
+    // The limits are shared by writer and reader so a written record is always readable here, and
+    // equal the per-mod limits of the savegame settings record. MaximumEntries was raised from 2048
+    // to 16384 with issue #10 while VersionedSaveData was unreleased; a later raise needs a new
+    // oldest envelope reader (see above).
     internal static class VersionedSaveRecordCodec
     {
-        internal const int MaximumEntries = 2048;               // SavegameModSettingsRecordFormatter.cs:69
-        internal const int MaximumEntryBytes = 1024 * 1024;     // SavegameModSettings.cs:37
+        internal const int MaximumEntries = 16384;              // SavegameModSettings.cs:38
+        internal const int MaximumEntryBytes = 1024 * 1024;     // SavegameModSettings.cs:39
         internal const int MaximumRecordBytes = 8 * 1024 * 1024; // SavegameModSettings.cs:34
-        internal const int MaximumNameLength = 256;             // SavegameModSettings.cs:490, :493
+        internal const int MaximumNameLength = 256;             // SavegameModSettings.cs:506, :519
         internal const int EnvelopeVersion = 1;
         internal const int HeaderSize = 32;
         private const int CrcOffset = 28;

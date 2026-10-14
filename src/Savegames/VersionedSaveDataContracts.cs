@@ -340,9 +340,9 @@ namespace APIShared.Savegames
     /// results for missing, damaged or too-new data. See docs/SAVE_DATA.md for the migration policy.</summary>
     public static partial class VersionedSaveData
     {
-        /// <summary>Most entries in one record, on write and on read. Equals the per-mod limit of the
-        /// existing savegame settings reader (SavegameModSettingsRecordFormatter); issue #10 governs
-        /// raising it.</summary>
+        /// <summary>Most entries in one record (16384), on write and on read. Equals the per-mod settings
+        /// limit of the savegame settings record. A future raise needs a new record envelope, so older
+        /// readers report TooNew and keep the record.</summary>
         public static int MaximumEntries => VersionedSaveRecordCodec.MaximumEntries;
         /// <summary>Most data bytes in one entry.</summary>
         public static int MaximumEntryBytes => VersionedSaveRecordCodec.MaximumEntryBytes;

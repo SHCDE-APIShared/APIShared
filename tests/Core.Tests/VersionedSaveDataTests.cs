@@ -321,13 +321,13 @@ public class VersionedSaveDataTests
     [TestMethod]
     public void LimitsMatchTheSavegameReaderAndApplyToWriterAndReader()
     {
-        Assert.AreEqual(2048, VersionedSaveData.MaximumEntries, "Same per-mod limit as SavegameModSettingsRecordFormatter.");
+        Assert.AreEqual(16384, VersionedSaveData.MaximumEntries, "Same per-mod limit as the savegame settings record (issue #10).");
         Assert.AreEqual(1024 * 1024, VersionedSaveData.MaximumEntryBytes);
         Assert.AreEqual(8 * 1024 * 1024, VersionedSaveData.MaximumRecordBytes);
         Assert.AreEqual(256, VersionedSaveData.MaximumNameLength);
 
         var extender = new FakeExtender();
-        int count = 2048;
+        int count = 16384;
         var many = extender.Register("Mod.Many", 1, 1, new[] { "e/" }, writer =>
         {
             for (int i = 0; i < count; i++) writer.Write("e/" + i, new byte[] { 1 });
@@ -336,13 +336,13 @@ public class VersionedSaveDataTests
         byte[] full = extender.Save(many);
         Assert.AreEqual(VersionedSaveWriteStatus.Written, many.Handle.LastWriteStatus);
         extender.LoadSave(full, many);
-        Assert.AreEqual(2048, many.Loads.Single().Entries.Count);
-        count = 2049;
+        Assert.AreEqual(16384, many.Loads.Single().Entries.Count);
+        count = 16385;
         Assert.IsNull(extender.Save(many));
         Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, many.Handle.LastWriteStatus);
 
         byte[] overCount = (byte[])full.Clone();
-        overCount[20] = 0x01; overCount[21] = 0x08; // 2049
+        overCount[20] = 0x01; overCount[21] = 0x40; // 16385
         extender.LoadSave(WithCrc(overCount, 0), many);
         Assert.AreEqual(VersionedSaveLoadStatus.Corrupt, many.Loads.Last().Status);
 
@@ -357,7 +357,7 @@ public class VersionedSaveDataTests
         byte[] withUnknown = SaveWith(1, 1, new[] { "u/" }, Enumerable.Range(0, 10).ToDictionary(i => "u/" + i, i => new byte[] { 1 }));
         var merged = extender.Register("Mod.Merged", 1, 1, new[] { "k/" }, writer =>
         {
-            for (int i = 0; i < 2040; i++) writer.Write("k/" + i, new byte[0]);
+            for (int i = 0; i < 16380; i++) writer.Write("k/" + i, new byte[0]);
             return true;
         });
         extender.LoadSave(withUnknown, merged);
@@ -503,7 +503,7 @@ public class VersionedSaveDataTests
         Assert.ThrowsExactly<ArgumentException>(() => entries.Set("", new byte[0]));
         Assert.ThrowsExactly<ArgumentNullException>(() => entries.Set("b", null));
         Assert.ThrowsExactly<ArgumentException>(() => entries.Set("b", new byte[1024 * 1024 + 1]));
-        for (int i = 1; i < 2048; i++) entries.Set("n" + i, new byte[0]);
+        for (int i = 1; i < VersionedSaveData.MaximumEntries; i++) entries.Set("n" + i, new byte[0]);
         Assert.ThrowsExactly<InvalidOperationException>(() => entries.Set("one-more", new byte[0]));
         entries.Set("a", new byte[] { 3 });
         Assert.IsTrue(entries.Remove("a"));

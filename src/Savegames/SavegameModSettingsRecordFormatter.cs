@@ -27,6 +27,10 @@ namespace APIShared
         }
 
         /// <summary>Reads the versioned record with explicit bounds before allocating entries.</summary>
+        /// <remarks>The bounds are the capture limits of <see cref="SavegameModSettings"/>: at most 1024 mods,
+        /// 16384 settings per mod and 1 MiB per setting value, so every settings map it captures reads back.
+        /// Trail rules use the same mod and per-mod bounds. A larger map throws
+        /// <see cref="InvalidDataException"/>.</remarks>
         public SavegameModSettingsRecord Deserialize(ref MessagePackReader reader,
             MessagePackSerializerOptions options)
         {
@@ -60,19 +64,21 @@ namespace APIShared
         private static Dictionary<string, Dictionary<string, byte[]>> ReadValues(ref MessagePackReader reader)
         {
             int count = reader.ReadMapHeader();
-            if (count > 1024) throw new InvalidDataException("Too many savegame mods.");
+            if (count > SavegameModSettings.MaximumMods) throw new InvalidDataException("Too many savegame mods.");
             var values = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
             for (int i = 0; i < count; i++)
             {
                 string mod = reader.ReadString();
                 int properties = reader.ReadMapHeader();
-                if (properties > 2048) throw new InvalidDataException("Too many savegame properties.");
+                if (properties > SavegameModSettings.MaximumPropertiesPerMod)
+                    throw new InvalidDataException("Too many savegame properties.");
                 var stored = new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 for (int j = 0; j < properties; j++)
                 {
                     string name = reader.ReadString();
                     byte[] data = reader.ReadBytes()?.ToArray();
-                    if (name == null || data == null || data.Length > 1024 * 1024 || stored.ContainsKey(name))
+                    if (name == null || data == null || data.Length > SavegameModSettings.MaximumPropertyBytes ||
+                        stored.ContainsKey(name))
                         throw new InvalidDataException("Invalid savegame property.");
                     stored.Add(name, data);
                 }
@@ -105,13 +111,14 @@ namespace APIShared
         private static Dictionary<string, Dictionary<string, TrailCreatorRule>> ReadRules(ref MessagePackReader reader)
         {
             int count = reader.ReadMapHeader();
-            if (count > 1024) throw new InvalidDataException("Too many Trail rule mods.");
+            if (count > SavegameModSettings.MaximumMods) throw new InvalidDataException("Too many Trail rule mods.");
             var rules = new Dictionary<string, Dictionary<string, TrailCreatorRule>>(StringComparer.Ordinal);
             for (int i = 0; i < count; i++)
             {
                 string mod = reader.ReadString();
                 int properties = reader.ReadMapHeader();
-                if (properties > 2048) throw new InvalidDataException("Too many Trail rules.");
+                if (properties > SavegameModSettings.MaximumPropertiesPerMod)
+                    throw new InvalidDataException("Too many Trail rules.");
                 var stored = new Dictionary<string, TrailCreatorRule>(StringComparer.Ordinal);
                 for (int j = 0; j < properties; j++)
                 {
