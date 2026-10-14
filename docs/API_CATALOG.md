@@ -27,6 +27,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |
 | `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
+| `APIShared.Presentation.PaintEvents` | After-paint callbacks for body sprites, tile images, chevrons, tile colours and map draw-list layers; ordered claims to replace a result | Startup registration; painting thread (Unity); order/owner/ID; optional sprite-file filter; first registration hooks that site; no replay; process lifetime |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
@@ -89,6 +90,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| Shared paint sites | [PaintEvents](../src/Presentation/Paint/PaintEvents.cs), [paint values](../src/Presentation/Paint/PaintContracts.cs) | [Sites](../src/Presentation/Paint/PaintSites.cs), [registry](../src/Presentation/Paint/PaintRegistry.cs), [installation guard](../src/Presentation/Paint/PaintSiteGuard.cs), [guide](PAINT.md) | [Paint](../examples/ThirdPartyMod/PaintExample.cs) |
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
@@ -309,6 +311,22 @@ not remove native material costs or establish affordability. Predicate exception
 mean false. The installed original IL must match all 26 sites or registration fails.
 No source links or private bridge are required by consumers. See the compiled
 [interception example](../examples/ThirdPartyMod/InterceptionExample.cs).
+
+## Shared paint sites
+
+Not in packages up to 0.9.1; check the package you require. [PaintEvents](../src/Presentation/Paint/PaintEvents.cs)
+owns one hook per managed draw method: `SpriteMapping.SetBodySprite`,
+`setGenericBuildingTileGraphic` and `getChevronImage`, `gameTile.setTileColour` and the
+`GameMap.addUpdatePixie`/`Fly`/`Org`/`BuildingAnim` draw-list updates. A site is hooked
+at its first successful registration. Callbacks run after the game's method and the hooks
+installed beneath the broker, by ascending order, ordinal owner GUID and ID, and receive a
+paint value by reference. A registration that replaces the drawn result claims it first;
+the first claim wins and `ClaimOver` layers over a named owner. Sprite-file filters keep
+unrelated paints at one table lookup. Nested body paints report the enclosing tracked layer
+update. Installation refuses a changed signature or an entry redirected outside MonoMod; the
+registration then returns false and consumers keep their own hook. Painting is local
+presentation. See [Shared paint sites](PAINT.md) for per-site composition, limitations and
+measurements, and the [example](../examples/ThirdPartyMod/PaintExample.cs).
 
 ## Native market price queries
 
