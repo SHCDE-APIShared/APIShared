@@ -27,6 +27,8 @@ namespace APIShared
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, Logger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
             Presentation.BuildingTooltipPresentation.Initialize(Logger);
+            // Logging only: unit-settled SE subscriptions start with the first consumer registration.
+            Units.UnitSettledEvents.Initialize(Logger);
             Workshop.WorkshopRuntime.Initialize(this, Logger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(Logger);
             // The Script Extender event roots this plugin's native initialization after BepInEx

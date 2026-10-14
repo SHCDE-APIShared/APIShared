@@ -353,6 +353,63 @@ cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
 
+## Reacting to created and recruited units
+
+Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it
+exists in its final type: health or speed multipliers, upkeep registration, stable
+links. It is not in APIShared packages up to 0.9.1; check the package you require.
+Register once during startup with your plugin GUID, a stable ID and an optional
+order, on every multiplayer peer and before a mission starts. Keep the callback
+registered for the process lifetime and return early while your feature is off.
+
+Filter on `Cause`, `PlayerId` and `UnitType` in the callback. Recruits arrive as
+`MercenaryOutpost` or `EuropeanBarracks` with the peasant in `PreviousUnitType`;
+units made by the game's spawn function arrive as `Created`. A unit with two
+triggers can be reported twice, so key state that must not double by `GlobalId`
+together with the unit ID. Callbacks run inside the simulation tick: change only
+simulation state, deterministically, and do not log per unit, touch Unity/Noesis or
+decide by local player there. Post presentation work with `Network.TryPostPresentation`
+or your own queue.
+
+Only triggers raised after the first registration in the process are observed.
+Recruits whose purchase preceded a save are not reported after loading it, and restored
+units only if the game recreates them through its spawn function (not verified). Scan
+existing units at mission start and after a save load (for example from the
+mission lifecycle Start notification) and make that scan and the settled path
+idempotent. `DroppedUnits` and `CallbackFailures` are diagnostic counters. The exact
+settle and drop rules are documented at the
+[declaration](../src/Units/Settled/UnitSettledEvents.cs); the
+[example](../examples/ThirdPartyMod/UnitSettledExample.cs) scales recruited troops' health.
+
+### Settlement implementation and measurements
+
+One tracker owns a queue of triggers in raise order. SE unit events read the slot
+once (owner, GlobalId, type) and queue a value under a short lock. SE `OnTick` reads
+one volatile count and returns while nothing waits; otherwise each waiting slot is read
+again and settled values are delivered after the lock is released, against an
+immutable registration snapshot. SE map unload, map load and save load (Pre) discard
+the queue because its unit IDs belong to the previous world. A Vanilla recruit keeps
+its peasant slot, owner and GlobalId: the native recruitment state runs for about 33
+unit updates, passes a transient non-alive state and then initializes the requested
+type in the same slot (native audit of the supported CrusaderDE image).
+
+An installed-game self-test of a consumer mod (game 2.8.2, SE 2.14.1, four runs) used
+the same rule: barracks and mercenary recruits changed type 35 simulation ticks after
+`OnUnitTransition`, and units made by the spawn function were alive with a GlobalId
+after 1 or 2 ticks. That run exercised the consumer's implementation, not this
+service; in-game checks of this service, worker and disband transitions, save loads
+and multiplayer are still pending.
+
+Core.Tests (.NET 10) and the installed-assembly suite (.NET Framework 4.8.1) measure
+zero allocated bytes after warm-up for idle ticks with registrations, for ticks with
+32 or 64 waiting units, and for queueing, settling and delivering 32 units to three or
+four registrations. On the local .NET Framework Release test build, an idle tick took
+3 to 6 ns including the measurement delegate, a waiting unit 30 to 36 ns per tick, and
+a queued, settled and delivered unit 108 to 114 ns with four registrations. IL tests
+check the compiled SE entry points and the tick guard for heap allocation. The
+fixtures use a fake slot reader, not Mono, the native unit array or consumer
+callbacks; they are not an FPS measurement.
+
 ## Extending APIShared
 
 Use the [catalog source map](API_CATALOG.md#source-map) to find the current contract

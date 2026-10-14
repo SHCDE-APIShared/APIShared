@@ -21,13 +21,16 @@ function Get-NativeSize($type) {
         }
     }
 }
-$sourcePaths = @((Join-Path $apiRoot 'src\Units\UnitAccess.cs')) + $AdditionalSourceFiles
+$sourcePaths = @(
+    (Join-Path $apiRoot 'src\Units\UnitAccess.cs'),
+    (Join-Path $apiRoot 'src\Units\Settled\UnitSettledScriptExtenderSource.cs')) + $AdditionalSourceFiles
 $source = (@($sourcePaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n")
 $consumed = @([regex]::Matches($source, '\br_\w+') | ForEach-Object Value | Sort-Object -Unique)
 $rows = @()
 $expected = @{
     'GameUnit.r_AliveState' = 'SHCDESE.Interop.Enums.AliveState|136|2'
     'GameUnit.r_UnitChimp' = 'SHCDESE.Interop.eChimps|138|2'
+    'GameUnit.r_ControllableForPlayerId' = 'System.UInt16|146|2'
     'GameUnit.r_GlobalId' = 'System.UInt32|148|4'
     'GameUnit.r_CurrentTilePositionX' = 'System.UInt16|192|2'
     'GameUnit.r_CurrentTilePositionY' = 'System.UInt16|194|2'
