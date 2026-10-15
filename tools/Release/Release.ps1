@@ -1,6 +1,7 @@
 [CmdletBinding(SupportsShouldProcess)]
-param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [switch]$TestRelease)
+param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [switch]$TestRelease, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
+if ($PrepareOnly -and $Publish) { throw 'PrepareOnly cannot publish a release.' }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $repository = 'SHCDE-APIShared/APIShared'
 . (Join-Path $PSScriptRoot 'GitHubRelease.ps1')
@@ -15,6 +16,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the repository Git state.' }
 if ($status.Count -ne 0) { throw 'Commit the reviewed source changes before preparing a release.' }
 $manifest = [IO.File]::ReadAllText((Join-Path $root 'info.json')) | ConvertFrom-Json
 $version = [string]$manifest.Version
+if ($version -eq '0.9.2') { & (Join-Path $root 'tools/Validation/Test-WorkshopHotfixBoundaries.ps1') }
 $parsed = $null
 if (-not [version]::TryParse($version, [ref]$parsed)) { throw 'Invalid APIShared version.' }
 $parsed = [version]::new($parsed.Major, $parsed.Minor, [Math]::Max(0, $parsed.Build), [Math]::Max(0, $parsed.Revision))
@@ -24,8 +26,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not determine the reviewed source commit
 if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShared repository before preparing its release.' }
 $tag = "APIShared/v$version"
 if ($TestRelease) { if ($Publish) { throw 'Test releases must remain drafts.' }; $tag = "APIShared/test/v$version-$($commit.Substring(0,12))" }
-& (Join-Path $root 'build.bat') /nopause /noinstall
-if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
+if (-not $PrepareOnly) {
+    & (Join-Path $root 'build.bat') /nopause /noinstall
+    if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
+}
 . (Join-Path $root 'tools/BuildProof.ps1')
 $null = Assert-ApiBuildProof $root -Release
 $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
@@ -52,6 +56,7 @@ $publisherTarget=Join-Path $staging 'BepInEx/tools/APISharedWorkshopPublisher'
 [void][IO.Directory]::CreateDirectory($publisherTarget)
 Copy-Item -Path (Join-Path $publisherSource '*') -Destination $publisherTarget -Recurse
 Assert-ApiPublisherPackage $publisherTarget $publisherSource
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path -LiteralPath $asset) { Assert-ApiWorkshopMap -MapPath $asset -Stage $staging }
 else { [IO.Compression.ZipFile]::CreateFromDirectory($staging, $asset) }
@@ -95,6 +100,10 @@ $text = "APIShared $version`r`n`r`nSource commit: $commit`r`nZIP SHA-256: $hash`
 [IO.File]::WriteAllText($notes, $text, [Text.UTF8Encoding]::new($false))
 $arguments = @('release', 'create', $tag) + $assets + @('--repo', $repository, '--target', $commit, '--title', "APIShared $version", '--notes-file', $notes)
 if (-not $Publish) { $arguments += '--draft' }
+if ($PrepareOnly) {
+    Write-Host ('Validated local release assets: ' + $output + '; source=' + $commit + '; no GitHub release or tag created.')
+    return
+}
 if ($PSCmdlet.ShouldProcess("$repository / $tag", 'Create release with the validated APIShared asset')) {
     $existing = Get-ApiGitHubRelease $repository $tag
     if ($null -ne $existing) {
