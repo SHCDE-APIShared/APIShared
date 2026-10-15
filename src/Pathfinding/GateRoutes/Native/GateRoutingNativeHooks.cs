@@ -114,12 +114,14 @@ namespace APIShared.GateRouting.Native
                 catch(Exception error){reason=error.Message;return false;}
             }
         }
+        // The three originals are set before the first movement patch is written, so a native callback
+        // can always call them, and cleared again if the installation fails (issue #28).
         /// <summary>Original alternate building consumer, available after successful movement installation.</summary>
-        public BuildingConsumerDelegate OriginalAlternateConsumer => originalAlternateConsumer;
+        public BuildingConsumerDelegate OriginalAlternateConsumer => System.Threading.Volatile.Read(ref originalAlternateConsumer);
         /// <summary>Original candidate search, available after successful movement installation.</summary>
-        public CandidateSearchDelegate OriginalCandidateSearch => originalCandidateSearch;
+        public CandidateSearchDelegate OriginalCandidateSearch => System.Threading.Volatile.Read(ref originalCandidateSearch);
         /// <summary>Original tactical search, available after successful movement installation.</summary>
-        public AiTacticalTargetDelegate OriginalAiTacticalTarget => originalAiTacticalTarget;
+        public AiTacticalTargetDelegate OriginalAiTacticalTarget => System.Threading.Volatile.Read(ref originalAiTacticalTarget);
         /// <summary>Installs the audited edge/cursor/tactical adapters once. Buffers follow
         /// GateNativeSearchScopes and must remain allocated until process exit. Each native callback
         /// owns exactly one original invocation; callbacks and transactions are retained permanently.
@@ -159,9 +161,12 @@ namespace APIShared.GateRouting.Native
 
         private void InstallMovementHooks()
         {
+            // InstallOnCommit = false: the originals are published before any patch is written, so the
+            // provider's callbacks always find them (NativeHookPublication).
             transaction = new HookTransaction(region,
                 SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = false, Backend = GateNativeDetourContract.Backend });
+                new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = false,
+                    InstallOnCommit = false, Backend = GateNativeDetourContract.Backend });
             alternateConsumer = AddDetour(
                 EnemyGatePathfindingNativeDefinition.AlternateBuildingConsumerRva,
                 rootedAlternateConsumer, libraryBase);
@@ -259,6 +264,13 @@ namespace APIShared.GateRouting.Native
                     hookSize: length);
             }
             CommitResult result = transaction.Commit();
+            if (!result.IsCompleteSuccess)
+                throw new InvalidOperationException($"Vanilla Gate-Filter was not installed atomically: {result}");
+            System.Threading.Volatile.Write(ref originalAlternateConsumer, alternateConsumer.Handle.Original);
+            System.Threading.Volatile.Write(ref originalCandidateSearch, candidateSearch.Handle.Original);
+            System.Threading.Volatile.Write(ref originalAiTacticalTarget, aiTacticalTarget.Handle.Original);
+            try { NativeHookPublication.Enable(transaction, result); }
+            catch { RollBackMovement(); throw; }
             if (!result.IsCompleteSuccess ||
                 !alternateConsumer.Committed || !candidateSearch.Committed || !aiTacticalTarget.Committed ||
                 !directCursorHook.Success || !directCursorHook.IsInstalled ||
@@ -270,7 +282,7 @@ namespace APIShared.GateRouting.Native
                 cursorPclDecisionHook.Hook.DisplacedByteCount !=
                     EnemyGatePathfindingNativeDefinition.CursorPclDecisionLength)
             {
-                transaction.DisableAll();
+                RollBackMovement();
                 throw new InvalidOperationException($"Vanilla Gate-Filter was not installed atomically: {result}");
             }
             for (int index = 0; index < edgeHooks.Length; index++)
@@ -279,7 +291,7 @@ namespace APIShared.GateRouting.Native
                     edgeHooks[index].Failure != null || edgeHooks[index].Hook.DisplacedByteCount !=
                         EnemyGatePathfindingNativeDefinition.DirectionFilterLengths[index])
                 {
-                    transaction.DisableAll();
+                    RollBackMovement();
                     throw new InvalidOperationException($"Direction-filter hook {index} failed its committed contract.");
                 }
             }
@@ -290,7 +302,7 @@ namespace APIShared.GateRouting.Native
                     tacticalEdgeHooks[index].Hook.DisplacedByteCount !=
                         EnemyGatePathfindingNativeDefinition.AiTacticalFilterLengths[index])
                 {
-                    transaction.DisableAll();
+                    RollBackMovement();
                     throw new InvalidOperationException(
                         $"AI tactical-filter hook {index} failed its committed contract.");
                 }
@@ -301,11 +313,16 @@ namespace APIShared.GateRouting.Native
                 GateNativeDetourContract.Validate(candidateSearch.Handle.Hook,candidateSearch.Address,6,true);
                 GateNativeDetourContract.Validate(aiTacticalTarget.Handle.Hook,aiTacticalTarget.Address,10,true);
             }
-            catch { transaction.DisableAll(); throw; } // Initialization candidate has not been published.
-            originalAlternateConsumer = alternateConsumer.Handle.Original;
-            originalCandidateSearch = candidateSearch.Handle.Original;
-            originalAiTacticalTarget = aiTacticalTarget.Handle.Original;
+            catch { RollBackMovement(); throw; } // Initialization candidate is not installed.
             hooksInstalled = true;
+        }
+        // Failed movement installation: removes every patch first, then unpublishes the originals.
+        private void RollBackMovement()
+        {
+            transaction.DisableAll();
+            System.Threading.Volatile.Write(ref originalAlternateConsumer, null);
+            System.Threading.Volatile.Write(ref originalCandidateSearch, null);
+            System.Threading.Volatile.Write(ref originalAiTacticalTarget, null);
         }
         private CapturerComparisonCallback rootedPclComparison,rootedBuilderComparison;
         private readonly HookHandle<X64InlineHook> pclGraphCapturedByFilterHook=new HookHandle<X64InlineHook>();

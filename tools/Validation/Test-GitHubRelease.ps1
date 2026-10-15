@@ -76,6 +76,17 @@ public static class FakeReleaseCli {
     # Always test APIShared's own release probe and publication decision; exercise
     # the extra drivers only when the surrounding maintainer workspace is present.
     $env:PATH = $fixture + ';' + $previousPath
+    $beforeGuard=[IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
+    $guardScript=Join-Path $PSScriptRoot '../Release/Release.ps1'
+    $guardInfo=[Diagnostics.ProcessStartInfo]::new('powershell.exe',('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$guardScript+'" -PrepareOnly -Publish'))
+    $guardInfo.UseShellExecute=$false;$guardInfo.CreateNoWindow=$true;$guardInfo.RedirectStandardOutput=$true;$guardInfo.RedirectStandardError=$true
+    $guard=[Diagnostics.Process]::Start($guardInfo)
+    try{
+        $guardOut=$guard.StandardOutput.ReadToEndAsync();$guardError=$guard.StandardError.ReadToEndAsync()
+        if(-not $guard.WaitForExit(10000)){$guard.Kill();throw 'PrepareOnly publication guard timed out.'}
+        Check ($guard.ExitCode -ne 0 -and ($guardOut.Result+$guardError.Result).Contains('PrepareOnly cannot publish')) 'PrepareOnly+Publish must reject before any release work.'
+        Check ([IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG) -ceq $beforeGuard) 'PrepareOnly+Publish reached the GitHub CLI.'
+    }finally{$guard.Dispose()}
     $driverSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../Shared/Tools/Steam/Prepare-APISharedWorkshop.ps1'))
     if (Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($driverSource))) {
     # Run the actual preparation driver in an isolated workspace with inert dependencies.

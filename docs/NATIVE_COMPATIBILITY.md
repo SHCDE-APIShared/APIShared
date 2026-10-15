@@ -32,7 +32,14 @@ Game or Extender version numbers alone are not evidence of native compatibility.
 
 Published hooks remain installed for the process lifetime. Activation changes are
 logical gates; inactive callbacks preserve the original behavior. Installation
-rollback is limited to a candidate that has not been published.
+rollback is limited to a candidate that has not completed installation.
+
+A native call can enter a detour as soon as its patch is written, while RedBird's
+default commit attaches the detour handles only after writing every patch. Detours
+whose callbacks read a handle or its original therefore commit with
+`InstallOnCommit = false`, publish that handle, and only then write their patches
+through `NativeHookPublication.Enable` (issue #28). A failed candidate has its
+patches removed before its handle is unpublished.
 
 RedBird inline-hook size is a minimum: actual displacement is instruction-aligned
 and can exceed the requested size. Function detours have a separate scheme-dependent

@@ -3,7 +3,7 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.9.1",
+  "Version": "0.10.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
@@ -11,10 +11,25 @@
   "NetworkMode": 1,
   "SerpChangelog": [
     {
+      "Version": "0.10.0",
+      "Changes": [
+        "Unreleased development: prepare and verify savegame host settings before loading, including Solo Multiplayer and Coop provenance, with authenticated peer readiness and isolated personal presets.",
+        "Use a distinct network-compatible version for the new save-readiness control packet registration."
+      ]
+    },
+    {
+      "Version": "0.9.2",
+      "Changes": [
+        "Fix Workshop updater handoff when ready.flag is still being written or briefly locked; never accept readiness from an updater that has already exited.",
+        "Fall back to steam -applaunch when the Proton restart through xdg-open is unavailable or fails, without undoing a completed installation."
+      ]
+    },
+    {
       "Version": "0.9.1",
       "Changes": [
-        "Prepare and verify savegame host settings before loading, including Solo Multiplayer and Coop provenance, with authenticated peer readiness and isolated personal presets.",
-        "Use a distinct network-compatible version for the new save-readiness control packet registration."
+        "Recover interrupted Workshop installations with explicit repair or rollback and preserved backups.",
+        "Protect updates against premature game restarts, report interrupted progress, and retain only two completed updates per package.",
+        "Avoid routine failure dialogs and unnecessary maintenance processes; bound maintenance and fix Bash recovery checks."
       ]
     },
     {

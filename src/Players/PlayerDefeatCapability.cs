@@ -17,6 +17,7 @@ namespace APIShared
         private readonly Queue<Publication> pendingPublications = new Queue<Publication>();
         private bool notificationActive;
         private volatile bool hasObservers;
+        private int observationFailures;
         private readonly Func<long?> sessionProvider;
         private readonly Func<PlayerDefeatObservation[]> observationProvider;
 
@@ -28,6 +29,25 @@ namespace APIShared
             this.observationProvider = observationProvider;
         }
 
+        // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
+        internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::SHCDESE.Interop.GamePlayerResources), "r_LordUnitId", typeof(uint))
+            .Field(typeof(global::SHCDESE.Interop.GamePlayerResources), "r_WinLossState", typeof(global::SHCDESE.Interop.Enums.WinLossState))
+            .Field(typeof(global::SHCDESE.Interop.GameUnit), "r_AliveState", typeof(global::SHCDESE.Interop.Enums.AliveState))
+            .Field(typeof(global::SHCDESE.Interop.GameUnit), "r_ControllableForPlayerId", typeof(ushort))
+            .Field(typeof(global::SHCDESE.Interop.GameUnit), "r_CurrentHealth", typeof(uint))
+            .Field(typeof(global::SHCDESE.Interop.GameUnit), "r_GlobalId", typeof(uint))
+            .Field(typeof(global::SHCDESE.Interop.GameUnit), "r_IsKilledByProjectile", typeof(ushort))
+            .Field(typeof(global::SHCDESE.Interop.GameUnit), "r_UnitChimp", typeof(global::SHCDESE.Interop.eChimps))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GamePlayerManagerAPI))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "TryGetPlayerResourcesById", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.GamePlayerResources*).MakeByRefType())
+            .Method(typeof(global::SHCDESE.API.GameTimeManagerAPI), "add_OnTick", typeof(void), typeof(global::System.Action<int>))
+            .Method(typeof(global::SHCDESE.API.GameTimeManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GameTimeManagerAPI))
+            .Method(typeof(global::SHCDESE.API.GameTimeManagerAPI), "remove_OnTick", typeof(void), typeof(global::System.Action<int>))
+            .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GameUnitManagerAPI))
+            .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "IsValidId", typeof(bool), typeof(int))
+            .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "TryGetUnitById", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.GameUnit*).MakeByRefType());
+
         internal static bool TryCreate(
             ManualLogSource log,
             MissionLifecycleService missionLifecycle,
@@ -35,6 +55,8 @@ namespace APIShared
             out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.PlayerDefeat, log, out diagnostic))
+                return false;
             PlayerDefeatService candidate = null;
             bool subscribed = false;
             try
@@ -100,8 +122,13 @@ namespace APIShared
             }
             catch (Exception ex)
             {
-                try { NativeApiLog.Error(log, "Player-defeat observation failed closed: " + ex); }
-                catch { }
+                // Throttled: the first failure and every 1024th repeat are logged, with the count.
+                int failures = System.Threading.Interlocked.Increment(ref observationFailures);
+                if (failures == 1 || (failures & 1023) == 0)
+                {
+                    try { NativeApiLog.Error(log, "Player-defeat observation failed closed (" + failures + " failures): " + ex); }
+                    catch { }
+                }
             }
         }
 
@@ -244,7 +271,8 @@ namespace APIShared
         internal void TestPublish(PlayerLordDeathNotification notification) => PublishLordDied(notification);
         internal void TestPublish(PlayerDefeatNotification notification) => PublishDefeated(notification);
         internal static PlayerDefeatService TestCreate(Func<long?> session = null,
-            Func<PlayerDefeatObservation[]> observations = null) => new PlayerDefeatService(null, session, observations);
+            Func<PlayerDefeatObservation[]> observations = null, ManualLogSource log = null) =>
+            new PlayerDefeatService(log, session, observations);
         internal void TestTick(int tick) => OnTick(tick);
 
         private sealed class Binding : IPlayerDefeatCapability

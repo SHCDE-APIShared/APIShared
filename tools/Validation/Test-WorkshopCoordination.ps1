@@ -1,7 +1,14 @@
 param([string]$ApiAssembly='')
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$fixture=Join-Path $root ('.local/coordination-tests/'+[guid]::NewGuid().ToString('N'))
+$cases=@('backup','first-write','receipt','restore','timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','killed','completed')
+# The fixture game is a .NET Framework executable, and its runtime exits with -1 at startup when the
+# executable path plus ".config" reaches MAX_PATH (260). With a 32-character run ID, a checkout path
+# of about 115 characters already killed the longer cases' games right after start, which then looked
+# like a premature write (#34). Keep the run ID short and fail clearly on a checkout still too deep.
+do{$fixture=Join-Path $root ('.local/coordination-tests/'+[guid]::NewGuid().ToString('N').Substring(0,8))}while([IO.Directory]::Exists($fixture))
+$longest=[IO.Path]::GetFullPath((Join-Path $fixture (($cases|Sort-Object Length -Descending)[0]+'/game/Stronghold Crusader Definitive Edition.exe')))
+if($longest.Length+'.config'.Length -ge 260){throw "Fixture game path has $($longest.Length) characters; a .NET Framework executable needs fewer than $(260-'.config'.Length). Use a shorter checkout path."}
 [void][IO.Directory]::CreateDirectory($fixture)
 $utf8=[Text.UTF8Encoding]::new($false)
 $activityType=if($ApiAssembly){([Reflection.Assembly]::LoadFrom($ApiAssembly)).GetType('APIShared.Workshop.WorkshopUpdaterActivity',$true)}else{$null}
@@ -52,7 +59,7 @@ function Invoke-WorkshopMaintenance {
     & $script:originalMaintenance
 }
 '@
-foreach($case in @('backup','first-write','receipt','restore','timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','killed','completed')){
+foreach($case in $cases){
     Write-Host "Checking Windows updater coordination: $case"
     $game=Join-Path $fixture ($case+'/game');$scripts=Join-Path $fixture ($case+'/scripts')
     [void][IO.Directory]::CreateDirectory($scripts)
