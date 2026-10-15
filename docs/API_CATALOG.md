@@ -31,6 +31,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
+| `APIShared.Units.UnitStatModifiers` | Ordered per-unit maximum-health modifiers (Base, Additive, Multiplier, Override, Clamp) composed into one wound-preserving write when a unit settles, with an applied marker kept in the save so a reload never scales twice | Any-thread registration before missions; simulation thread at UnitSettled; layer, then order/owner/ID; already-settled units are not re-applied; 0 B per settlement ([guide](UNIT_STATS.md)) |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
@@ -98,6 +99,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 | Native sites | [Contracts](../src/Core/NativeSites/NativeSiteContracts.cs), [registry](../src/Core/NativeSites/NativeSiteRegistry.cs) | [Owner registry](../src/Core/Internal/Native/NativeOwnershipRegistry.cs), [APIShared site catalog](../src/Core/NativeSites/ApiSharedNativeSites.cs), [guide](NATIVE_SITES.md) | [Native sites](../examples/ThirdPartyMod/NativeSiteExample.cs) |
+| Unit stat modifiers | [UnitStatModifiers](../src/Units/Stats/UnitStatModifiers.cs), [contracts](../src/Units/Stats/UnitStatContracts.cs) | [Composer and marker table](../src/Units/Stats/UnitStatComposer.cs), [guide](UNIT_STATS.md) | [Unit stats](../examples/ThirdPartyMod/UnitStatExample.cs) |
 | Unit settlement | [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs), [notification contracts](../src/Units/Settled/UnitSettledContracts.cs) | [Settle tracker](../src/Units/Settled/UnitSettledTracker.cs), [SE subscriptions](../src/Units/Settled/UnitSettledScriptExtenderSource.cs) | [Unit settled](../examples/ThirdPartyMod/UnitSettledExample.cs) |
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
@@ -350,6 +352,19 @@ more than 3000 ticks are dropped and counted. Callbacks are exception-isolated a
 may change the settled unit's simulation state deterministically. The declaration
 holds the exact rules; see the [integration guide](THIRD_PARTY_GUIDE.md#reacting-to-created-and-recruited-units)
 and the [example](../examples/ThirdPartyMod/UnitSettledExample.cs).
+
+## Unit stat modifiers
+
+[UnitStatModifiers](../src/Units/Stats/UnitStatModifiers.cs) composes every registered
+maximum-health modifier for a settled unit in layer order (Base, Additive, Multiplier,
+Override, Clamp), then by order, owner GUID and ID, with integer arithmetic, and writes the
+result once: maximum health, current health keeping the unit's share, health percentage and
+health-bar blocks. It runs in APIShared's UnitSettled callback on the simulation thread.
+Per unit it records the native maximum and the written one in the save record
+`APIShared.UnitStats`, so a reload or a second report composes from the native value instead
+of scaling again. Registration changes affect units that settle afterwards; units already in
+the world are not re-applied. Speed is not covered: the game recalculates it while a unit
+moves. Contract, consumer notes and measurements: [Unit stats](UNIT_STATS.md).
 
 ## Versioned save data
 
