@@ -46,6 +46,7 @@ namespace APIShared
         private static string gateOwner;
         private static int flags;
         private static int callbackLogged;
+        private static int builderFailureLogged;
         internal static readonly NativeDetourBackend Backend = new NativeDetourBackend(
             new NativeDetourOptions { AllowedSchemes = DetourScheme.Indirect, FollowJumps = false });
 
@@ -74,6 +75,11 @@ namespace APIShared
         /// once before any optional replacement, and handle its own correction/diagnostic errors.
         /// The delegate remains rooted until process exit.
         /// </summary>
+        /// <remarks>The handler runs synchronously inside the native Assassin builder. An exception it
+        /// throws never reaches native code: APIShared catches it, logs the first such failure of the
+        /// process once, and answers that call with a fresh RunVanillaBuilder result for the same
+        /// arguments. If the handler had already run Vanilla, Vanilla therefore runs a second time and
+        /// any partial replacement of the field is discarded.</remarks>
         public static void RegisterWeightedBuilder(string ownerGuid, AssassinPathBuilder handler)
         {
             if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));
@@ -210,13 +216,45 @@ namespace APIShared
         private static int Build(IntPtr context, int startX, int startY, int targetX,
             int targetY, int maximumNodes, int continuation)
         {
-            if (Interlocked.Exchange(ref callbackLogged, 1) == 0)
-                NativeApiLog.Debug(log, "Assassin shared runtime hook confirmed after startup; " +
-                    $"source=({startX},{startY}), target=({targetX},{targetY}), limit={maximumNodes}, continuation={continuation}.");
-            AssassinPathBuilder handler = Volatile.Read(ref weightedBuilder);
-            return handler == null
-                ? RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, continuation)
-                : handler(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            // Native boundary (issue #11): no managed exception may unwind into the native pathfinder, from
+            // the handler or from the first-call log. The success path adds only this protected region; all
+            // failure work is in BuilderFailed.
+            try
+            {
+                if (Interlocked.Exchange(ref callbackLogged, 1) == 0)
+                    NativeApiLog.Debug(log, "Assassin shared runtime hook confirmed after startup; " +
+                        $"source=({startX},{startY}), target=({targetX},{targetY}), limit={maximumNodes}, continuation={continuation}.");
+                AssassinPathBuilder handler = Volatile.Read(ref weightedBuilder);
+                return handler == null
+                    ? RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, continuation)
+                    : handler(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            }
+            catch (Exception error)
+            {
+                return BuilderFailed(error, context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            }
+        }
+
+        // Cold path of Build. Logs the first failure of the process, then answers this native call with a
+        // fresh Vanilla build of the same arguments. The handler may have run Vanilla already and replaced
+        // part of its field before throwing; rebuilding is the only fallback that never returns a partially
+        // replaced field, at the cost of a second Vanilla run in that case.
+        private static int BuilderFailed(Exception error, IntPtr context, int startX, int startY, int targetX,
+            int targetY, int maximumNodes, int continuation)
+        {
+            if (Volatile.Read(ref builderFailureLogged) == 0 && Interlocked.Exchange(ref builderFailureLogged, 1) == 0)
+            {
+                try { NativeApiLog.Error(log, "Assassin path callback failed; Vanilla result returned. Later failures are not logged: " + error); }
+                catch { }
+            }
+            try
+            {
+                return RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            }
+            catch
+            {
+                return 0; // Last resort: Vanilla itself failed, and nothing may unwind into native code.
+            }
         }
 
         private static void EnsureInstalled()
