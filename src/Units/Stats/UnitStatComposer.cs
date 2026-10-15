@@ -7,19 +7,12 @@ using SHCDESE.Interop;
 
 namespace APIShared.Units
 {
-    // Health fields of one unit slot. A default value means the ID did not resolve.
-    internal struct UnitHealthState
-    {
-        internal bool Found;
-        internal int GlobalId;
-        internal eChimps UnitType;
-        internal uint Current, Max;
-    }
-
-    // Must not throw; the production store reads and writes GameUnit through UnitAccess.
+    // Must not throw; the production store reads and writes GameUnit through UnitAccess. Values travel as
+    // primitives: a struct local in a method with .locals init makes the .NET Framework JIT zero the
+    // frame with rep stos, up to about 20 ns per call in a probe.
     internal interface IUnitHealthStore
     {
-        UnitHealthState Read(int unitId);
+        bool TryRead(int unitId, out int globalId, out eChimps unitType, out uint current, out uint max);
         void Write(int unitId, uint current, uint max, ushort percent, uint healthBarBlocks);
     }
 
@@ -159,30 +152,30 @@ namespace APIShared.Units
         {
             int unitId = notification.UnitId;
             if (unitId <= 0 || unitId >= MaximumUnitId) return;
-            UnitHealthState unit = store.Read(unitId);
             // The callback runs inside the settling tick, so a mismatch means the slot is not that unit.
-            if (!unit.Found || unit.GlobalId != notification.GlobalId || unit.Max == 0) return;
-            uint native = unit.Max;
+            if (!store.TryRead(unitId, out int globalId, out eChimps unitType, out uint liveCurrent, out uint liveMax) ||
+                globalId != notification.GlobalId || liveMax == 0) return;
+            uint native = liveMax;
             Record[] table = Volatile.Read(ref records);
-            if (unitId < table.Length)
-            {
-                Record known = table[unitId];
-                if (known.GlobalId == unit.GlobalId && known.UnitType == unit.UnitType && known.AppliedMax == unit.Max)
-                    native = known.NativeMax;
-            }
-            var subject = new UnitStatSubject(UnitStat.MaxHealth, unitId, unit.GlobalId, notification.PlayerId,
-                unit.UnitType, notification.Cause, notification.SimulationTick, (int)Math.Min(native, (uint)int.MaxValue));
+            if (unitId < table.Length && table[unitId].GlobalId == globalId && table[unitId].UnitType == unitType &&
+                table[unitId].AppliedMax == liveMax)
+                native = table[unitId].NativeMax;
+            var subject = new UnitStatSubject(UnitStat.MaxHealth, unitId, globalId, notification.PlayerId,
+                unitType, notification.Cause, notification.SimulationTick, (int)Math.Min(native, (uint)int.MaxValue));
             uint target = (uint)Math.Max(1L, Compose(modifiers, subject));
-            if (target != unit.Max)
+            if (target != liveMax)
             {
-                uint current = RescaleCurrent(unit.Current, unit.Max, target);
+                uint current = RescaleCurrent(liveCurrent, liveMax, target);
                 ushort percent = HealthPercent(current, target);
                 store.Write(unitId, current, target, percent, (uint)(percent / 10));
                 Volatile.Write(ref applications, applications + 1);
             }
             if (unitId >= table.Length) table = Grow(table, unitId);
             int writing = Interlocked.Increment(ref recordVersion);
-            table[unitId] = new Record { GlobalId = unit.GlobalId, UnitType = unit.UnitType, NativeMax = native, AppliedMax = target };
+            table[unitId].GlobalId = globalId;
+            table[unitId].UnitType = unitType;
+            table[unitId].NativeMax = native;
+            table[unitId].AppliedMax = target;
             Volatile.Write(ref recordVersion, writing + 1);
         }
 

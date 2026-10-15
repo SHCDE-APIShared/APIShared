@@ -12,13 +12,27 @@ namespace APIShared.Core.Tests;
 [DoNotParallelize]
 public class UnitStatModifierTests
 {
+    private struct UnitHealthState
+    {
+        internal bool Found;
+        internal int GlobalId;
+        internal eChimps UnitType;
+        internal uint Current, Max;
+    }
+
     private sealed class FakeUnits : IUnitHealthStore
     {
         internal readonly UnitHealthState[] Slots = new UnitHealthState[64];
         internal readonly ushort[] Percent = new ushort[64];
         internal readonly uint[] Blocks = new uint[64];
         internal int Reads, Writes;
-        public UnitHealthState Read(int unitId) { Reads++; return unitId > 0 && unitId < Slots.Length ? Slots[unitId] : default; }
+        public bool TryRead(int unitId, out int globalId, out eChimps unitType, out uint current, out uint max)
+        {
+            Reads++;
+            UnitHealthState unit = unitId > 0 && unitId < Slots.Length ? Slots[unitId] : default;
+            globalId = unit.GlobalId; unitType = unit.UnitType; current = unit.Current; max = unit.Max;
+            return unit.Found;
+        }
         public void Write(int unitId, uint current, uint max, ushort percent, uint healthBarBlocks)
         {
             Writes++;

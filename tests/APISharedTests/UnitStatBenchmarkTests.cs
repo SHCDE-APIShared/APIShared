@@ -26,11 +26,12 @@ namespace APISharedTests
         {
             internal readonly GameUnit* Units;
             internal RecordStore(GameUnit* units) { this.Units = units; }
-            public UnitHealthState Read(int unitId)
+            public bool TryRead(int unitId, out int globalId, out eChimps unitType, out uint current, out uint max)
             {
                 GameUnit* unit = Units + (unitId - 1);
-                return new UnitHealthState { Found = unit->r_GlobalId != 0, GlobalId = unchecked((int)unit->r_GlobalId), UnitType = unit->r_UnitChimp,
-                    Current = unit->r_CurrentHealth, Max = unit->r_MaxHealth };
+                globalId = unchecked((int)unit->r_GlobalId); unitType = unit->r_UnitChimp;
+                current = unit->r_CurrentHealth; max = unit->r_MaxHealth;
+                return globalId != 0;
             }
             public void Write(int unitId, uint current, uint max, ushort percent, uint healthBarBlocks)
             {
@@ -106,7 +107,6 @@ namespace APISharedTests
                         }
                 }
                 finally { process.PriorityClass = priority; Thread.CurrentThread.Priority = threadPriority; }
-                Assert.AreEqual((150u, 120u), (units[0].r_MaxHealth, units[0].r_CurrentHealth), "the last mode (8 modifiers) wrote its composition");
                 for (int mode = 0; mode < modes.Length; mode++)
                 {
                     var sorted = samples[mode].OrderBy(value => value).ToArray();
@@ -114,6 +114,7 @@ namespace APISharedTests
                         modes[mode].Name, bytes[mode] / (double)(Rounds * Calls), sorted[0], sorted[sorted.Length / 2], Rounds, Calls);
                     Assert.AreEqual(0L, bytes[mode], modes[mode].Name + " allocates.");
                 }
+                Assert.AreEqual((150u, 120u), (units[0].r_MaxHealth, units[0].r_CurrentHealth), "the last mode (8 modifiers) wrote its composition");
             }
             finally { Marshal.FreeHGlobal(new IntPtr(units)); }
         }

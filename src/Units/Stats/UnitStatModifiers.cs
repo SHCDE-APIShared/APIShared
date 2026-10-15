@@ -88,18 +88,17 @@ namespace APIShared.Units
     // Interop fields read and written here are audited by tools/Validation/Verify-Interop.ps1.
     internal sealed unsafe class GameUnitHealthStore : IUnitHealthStore
     {
-        public UnitHealthState Read(int unitId)
+        public bool TryRead(int unitId, out int globalId, out eChimps unitType, out uint current, out uint max)
         {
+            globalId = 0; unitType = default; current = max = 0;
             try
             {
-                if (!UnitAccess.TryGetById(unitId, out GameUnit* unit, out _) || unit == null) return default;
-                return new UnitHealthState
-                {
-                    Found = true, GlobalId = unchecked((int)unit->r_GlobalId), UnitType = unit->r_UnitChimp,
-                    Current = unit->r_CurrentHealth, Max = unit->r_MaxHealth,
-                };
+                if (!UnitAccess.TryGetById(unitId, out GameUnit* unit, out _) || unit == null) return false;
+                globalId = unchecked((int)unit->r_GlobalId); unitType = unit->r_UnitChimp;
+                current = unit->r_CurrentHealth; max = unit->r_MaxHealth;
+                return true;
             }
-            catch { return default; }
+            catch { return false; }
         }
 
         public void Write(int unitId, uint current, uint max, ushort percent, uint healthBarBlocks)

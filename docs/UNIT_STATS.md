@@ -133,7 +133,8 @@ records; save capture copies the table under a sequence counter (odd while a rec
 table changes) and retries on a change, so the settle path takes no lock. Loads replace the
 table reference. The settle and compose methods skip `.locals init`
 (`SkipLocalsInitAttribute`), which the .NET Framework JIT otherwise satisfies by zeroing the
-frame with `rep stos`.
+frame with `rep stos`, and the unit store passes primitives instead of a struct for the same
+reason.
 
 ### Measurements
 
@@ -147,16 +148,26 @@ alternating mode order, raised priority. 0 bytes allocated per call in every mod
 
 | Mode (ns per settlement, min / median) | Cost |
 |---|---|
-| Hand-written single write (one consumer's own callback) | 6.7 / 6.9 |
-| Composer, 0 active modifiers | 1.9 / 2.1 |
-| Composer, 1 modifier | 44.0 / 44.9 |
-| Composer, 8 modifiers (all five layers) | 64.8 / 66.2 |
+| Hand-written single write (one consumer's own callback) | 6.8 / 7.2 |
+| Composer, 0 active modifiers | 2.0 / 2.1 |
+| Composer, 1 modifier | 41.0 / 43.0 |
+| Composer, 8 modifiers (all five layers) | 61.3 / 69.9 |
 
-One of three consecutive runs; the other two were up to 10 ns (1 modifier) and 30 ns
-(8 modifiers) slower at the median on this shared machine. The fixed part over a
-hand-written write (about 37 ns) is the marker read and its sequence-counted write, the
-subject and the modifier call; each further modifier adds about 3 ns.
+The quietest of five runs (other work kept the machine at 60 to 100 percent CPU); the
+others were up to 8 ns (1 modifier) and 40 ns (8 modifiers) slower at the median.
+Removing parts one at a time puts the extra cost of one modifier, about 36 ns, at roughly
+8 ns for the wound rescale and percentage (three 64-bit divisions, two of which the
+hand-written write also needs), 4 ns for the composition and the modifier call, 3 ns for
+the marker read and its sequence-counted write, and the rest in the call structure: two
+calls into the composer, two calls through the unit store and the subject passed by value.
+Each further modifier adds about 3 ns.
+
+**What the comparison leaves out.** The hand-written write is not correct on its own: it
+scales again after a reload or a second report, and it does not compose with other mods. A
+correct consumer also needs its own record of what it wrote, kept in the save and restored
+before units can settle again, plus its own wound rescale. Today one consumer keeps a save
+file of its own and scans every 10 ticks, another scans every unit on every tick. A settlement happens once per created, recruited,
+assigned or disbanded unit, never per tick or frame, so 8 modifiers cost about 70 ns per
+new unit for every mod together.
 
 Limits: desktop CLR 4.8.1 on the test host, not the game's Unity Mono; no in-game timing.
-Settlements are rare (one per created or recruited unit), so these costs are per unit, not
-per frame.
