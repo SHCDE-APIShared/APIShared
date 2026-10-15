@@ -55,6 +55,7 @@
   </ItemGroup>
   <ItemGroup><Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../../src/Workshop/WorkshopUpdaterActivity.cs" Link="Production/WorkshopUpdaterActivity.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopUpdaterReadiness.cs" Link="Production/WorkshopUpdaterReadiness.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" /></ItemGroup>
   <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>

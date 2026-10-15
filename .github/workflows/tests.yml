@@ -41,7 +41,7 @@ jobs:
           ./tools/Validation/Test-WorkshopHotfixBoundaries.ps1
           ./tools/Validation/Test-ShellScripts.ps1
       - name: Managed recovery and maintenance with native Linux backend
-        run: dotnet test tests/Core.Tests/Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~WorkshopMaintenancePlanTests|FullyQualifiedName~WorkshopMaintenanceRunnerTests|FullyQualifiedName~WorkshopRecoveryTests|FullyQualifiedName~WorkshopStartupTests' --logger trx --results-directory TestResults
+        run: dotnet test tests/Core.Tests/Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~WorkshopMaintenancePlanTests|FullyQualifiedName~WorkshopMaintenanceRunnerTests|FullyQualifiedName~WorkshopRecoveryTests|FullyQualifiedName~WorkshopStartupTests|FullyQualifiedName~OpenUpdaterWriterDoesNotBreakTheHandoffAndPartialHashIsNotReady|FullyQualifiedName~MissingEmptyWrongAndTruncatedReadinessNeverConfirm' --logger trx --results-directory TestResults
       - name: Production Bash recovery including the user regression
         shell: pwsh
         run: ./tools/Validation/Test-WorkshopRecovery.ps1 -BackendSelection bash -Bash /usr/bin/bash -RequireBash
@@ -49,6 +49,7 @@ jobs:
         shell: bash
         run: |
           bash tools/Validation/test-workshop-updater.sh
+          bash tools/Validation/test-workshop-restart.sh
           bash tools/Validation/test-workshop-coordination.sh
           bash tools/Validation/test-workshop-maintenance.sh
       - uses: actions/upload-artifact@v7

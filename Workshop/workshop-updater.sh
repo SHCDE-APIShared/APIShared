@@ -215,8 +215,21 @@ running() {
     return 1
 }
 restart_game() {
-    if command -v xdg-open >/dev/null; then xdg-open 'steam://rungameid/3024040' >/dev/null 2>&1 9>&- &
-    else record 'restart-warning xdg-open unavailable; start through Steam manually'; fi
+    # A desktop launcher can fail or wait for its client. Do not hold apply.lock
+    # or run inherited recovery/cleanup traps in this detached restart attempt.
+    (
+        trap - ERR EXIT
+        if command -v xdg-open >/dev/null; then
+            if xdg-open 'steam://rungameid/3024040'; then exit 0; fi
+            record 'restart-warning xdg-open failed; trying Steam directly' || true
+        fi
+        if command -v steam >/dev/null; then
+            if steam -applaunch 3024040; then exit 0; fi
+            record 'restart-warning Steam launch failed; start through Steam manually' || true
+        else
+            record 'restart-warning no usable Steam launcher; start through Steam manually' || true
+        fi
+    ) >/dev/null 2>&1 9>&- &
 }
 source "$(dirname -- "${BASH_SOURCE[0]}")/workshop-maintenance.sh"
 if [[ $transaction == --maintain ]]; then maintenance; exit 0; fi
