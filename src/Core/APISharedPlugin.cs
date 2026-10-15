@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.9.1";
+        public const string PluginVersion = "0.9.2";
 
         private void Awake()
         {
@@ -51,7 +51,6 @@ namespace APIShared
                 NativeApiLog.Error(Logger, $"Could not hash the installed CrusaderDE.dll: {ex}");
                 hash = string.Empty;
             }
-            ScriptExtenderReplacements.PathfindingTables.Initialize(context.ModuleHandle, context.Memory.Length, hash, Logger);
             AssassinPathAPI.Initialize(context.ModuleHandle, context.Memory, context.Region, hash, Logger);
             AssassinAttackControlAPI.Initialize(context.ModuleHandle, context.Region, hash, Logger);
             Economy.MarketPriceNativeRuntime.Initialize(context.ModuleHandle, context.Region, hash, Logger);

@@ -1,13 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs" />
     <Compile Include="../../src/Pathfinding/GateRoutes/GateAccessRules.cs" Link="Production/GateAccessRules.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipContracts.cs" Link="Production/BuildingTooltipContracts.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipSelection.cs" Link="Production/BuildingTooltipSelection.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipRegistry.cs" Link="Production/BuildingTooltipRegistry.cs" />
     <Compile Include="../../src/Workshop/WorkshopInventory.cs" Link="Production/WorkshopInventory.cs" />
-    <Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" />
     <Compile Include="../../src/Workshop/WorkshopApplyCoordinator.cs" Link="Production/WorkshopApplyCoordinator.cs" />
     <Compile Include="../../src/Workshop/WorkshopDeletionManifest.cs" Link="Production/WorkshopDeletionManifest.cs" />
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Production/WorkshopContracts.cs" />
@@ -55,6 +53,14 @@
   <ItemGroup Condition="!Exists('$(SHCDE_GAME_DIR)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll')">
     <PackageReference Include="SharpZipLib" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopUpdaterActivity.cs" Link="Production/WorkshopUpdaterActivity.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopUpdaterReadiness.cs" Link="Production/WorkshopUpdaterReadiness.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" /></ItemGroup>
   <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAML/IngameUIScreens.xaml" Link="Fixtures/IngameUIScreens.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-maintenance.ps1" Link="Fixtures/workshop-maintenance.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-updater.sh" Link="Fixtures/workshop-updater.sh" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../Workshop/workshop-maintenance.sh" Link="Fixtures/workshop-maintenance.sh" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

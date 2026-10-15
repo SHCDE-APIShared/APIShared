@@ -120,39 +120,6 @@ namespace LobbyModSettingsPresetTests
             CollectionAssert.AreEqual(expected, controller.CreateCurrentMissionSnapshot()[nameof(Settings.HostAmount)]);
             Assert.AreEqual(17, host.Target.HostAmount);
         }
-        [TestMethod]
-        public void NestedSnapshotCannotPublishAPartiallyAppliedOuterPreset()
-        {
-            var host = new Host();
-            var controller = Start(host);
-            int writes = controller.TestWriteCount;
-            bool nested = false;
-            host.Target.Changed = name =>
-            {
-                if (!nested && name == nameof(Settings.HostAmount))
-                {
-                    nested = true;
-                    controller.ApplyWorkingSnapshot(new Dictionary<string, byte[]>
-                    {
-                        [nameof(Settings.HostAmount)] = MessagePackSerializer.Serialize(31),
-                        [nameof(Settings.LocalAmount)] = MessagePackSerializer.Serialize(5)
-                    });
-                    Assert.IsTrue(controller.IsApplyingSnapshot, "Nested application cleared the outer snapshot guard.");
-                }
-                controller.AfterPropertyChanged(name);
-            };
-            controller.ApplyWorkingSnapshot(new Dictionary<string, byte[]>
-            {
-                [nameof(Settings.HostAmount)] = MessagePackSerializer.Serialize(31),
-                [nameof(Settings.LocalAmount)] = MessagePackSerializer.Serialize(43)
-            });
-            Assert.IsTrue(nested);
-            Assert.IsFalse(controller.IsApplyingSnapshot);
-            Assert.AreEqual(writes + 2, controller.TestWriteCount, "A setter published an intermediate snapshot.");
-            Assert.AreEqual(31, host.Target.HostAmount);
-            Assert.AreEqual(43, host.Target.LocalAmount);
-        }
-
         private sealed class Host : ILobbyPresetHost
         {
             internal readonly Settings Target = new Settings();

@@ -17,13 +17,15 @@ namespace APIShared.Workshop
     {
         private const string BlockKey = "APIShared.Workshop.Blocked";
         private const string ConflictKey = "APIShared.Workshop.Conflicts";
+        internal static void MarkBlocked(Exception exception) => exception.Data[BlockKey] = true;
         internal static InvalidOperationException Blocked(string message)
         {
             var exception = new InvalidOperationException(message);
-            exception.Data[BlockKey] = true;
+            MarkBlocked(exception);
             return exception;
         }
         internal static WorkshopDiagnosticLevel Level(Exception exception) => exception.Data.Contains(BlockKey) ? WorkshopDiagnosticLevel.Warning : WorkshopDiagnosticLevel.Error;
+        internal static bool UserVisible(Exception exception) => Level(exception) == WorkshopDiagnosticLevel.Error;
         internal static void Failure(Action<WorkshopDiagnosticLevel, string> write, string context, Exception exception)
         {
             if (exception.Data[ConflictKey] is IReadOnlyList<WorkshopOwnershipConflict> conflicts) {

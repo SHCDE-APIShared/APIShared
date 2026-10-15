@@ -19,8 +19,14 @@ $extender = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $ExtenderDi
 $zip = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $ExtenderDir 'ICSharpCode.SharpZipLib.dll'))
 $steam = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data/Managed/com.rlabrecque.steamworks.net.dll'))
 try {
+    # One allow-list: the runtime gate's AuditedExtenderHashes in WorkshopCleanupRuntime.cs.
+    $runtime = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../src/Workshop/WorkshopCleanupRuntime.cs'))
+    $list = [regex]::Match($runtime, 'AuditedExtenderHashes\s*=\s*\{(?<list>[^}]*)\}')
+    $audited = @([regex]::Matches($list.Groups['list'].Value, '"(?<hash>[0-9a-f]{64})"') | ForEach-Object { $_.Groups['hash'].Value })
+    if (-not $list.Success -or $audited.Count -eq 0) { throw 'Missing AuditedExtenderHashes in WorkshopCleanupRuntime.cs.' }
     $hash = Get-WorkshopFileHash (Join-Path $ExtenderDir 'SHCDESE.dll')
-    if ($hash -ne 'e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3') { throw 'Workshop hook audit must be renewed for this installed Extender.' }
+    if ($audited -cnotcontains $hash) { throw "Workshop hook audit must be renewed for this installed Extender (SHA-256 $hash)." }
+    Write-Host "Verified audited Extender binary: $hash"
     Assert-WorkshopMethod $game 'Platform_Workshop' 'get_Instance' 'Platform_Workshop' @() $true $true
     Assert-WorkshopMethod $game 'Platform_Workshop' 'GetListOfSubscribedItemsPaths' 'System.Collections.Generic.List`1<System.String>' @() $true $false
     $map = 'SHCDESE.API.Components.Archive.MapArchive'

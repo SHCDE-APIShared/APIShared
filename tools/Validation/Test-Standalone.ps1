@@ -4,7 +4,6 @@ $ErrorActionPreference = 'Stop'
 $apiRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 . (Join-Path $PSScriptRoot 'RuntimePreflight.Common.ps1')
 Assert-SERuntimeModPreflight ([pscustomobject]@{ Name = 'APIShared'; Plugin = 'APIShared_Serp'; Project = 'APIShared.csproj' }) $apiRoot
-if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-SavegameLoadContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 . (Join-Path $PSScriptRoot 'DependencyMetadata.Common.ps1')
 $source = (Get-ChildItem -LiteralPath (Join-Path $apiRoot 'src') -Recurse -File -Filter '*.cs' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join [Environment]::NewLine
 Assert-PluginDependencyMetadata $source ([IO.File]::ReadAllText((Join-Path $apiRoot 'info.json')) | ConvertFrom-Json) 'APIShared'
@@ -48,6 +47,23 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell release regression failed.' }
 }
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
+if (([IO.File]::ReadAllText((Join-Path $apiRoot 'info.json')) | ConvertFrom-Json).Version -eq '0.9.2') {
+    & (Join-Path $PSScriptRoot 'Test-WorkshopHotfixBoundaries.ps1')
+}
+& (Join-Path $PSScriptRoot 'Test-ShellScripts.ps1')
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WorkshopRecovery.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Workshop updater recovery regression failed.' }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WorkshopCoordination.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Workshop updater coordination regression failed.' }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WorkshopMaintenance.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Workshop updater maintenance regression failed.' }
+} else {
+    & bash (Join-Path $PSScriptRoot 'test-workshop-coordination.sh')
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 77) { throw 'Linux Workshop updater coordination regression failed.' }
+    & bash (Join-Path $PSScriptRoot 'test-workshop-maintenance.sh')
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 77) { throw 'Linux Workshop updater maintenance regression failed.' }
+}
 & (Join-Path $PSScriptRoot 'Test-WorkshopMigration.ps1')
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-AudioContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-Interop.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }

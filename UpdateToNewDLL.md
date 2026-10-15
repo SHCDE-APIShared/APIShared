@@ -1,25 +1,5 @@
 # Native binary update contracts
 
-## Pathfinding table replacements
-
-Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
-Profiles: RVA 0x322540, 90 Int32 entries. Permissions: classes 1..6 start at
-RVA 0x32BDB0 and occupy 540 Int32 entries; each row is 0x168 bytes / 90 entries.
-Class-zero table base is 0x32BC48. Native reader 0x181E00 loads the unit's signed
-16-bit type at manager + gameId*0x490 + 0x6E6 and uses `(class*0x5A + type)*4`.
-Direct profile readers 0x18E1E0, 0x196280 and 0x198ED0 use type-indexed Int32s.
-Their symbol names remain candidate-level; these address calculations were
-confirmed in the complete native bodies and disassembly. The former two feed
-movement eligibility/search; the latter branches on the active unit's profile.
-
-SE 2.14.1 commit 5908e1f12437deb7ef5f5b1dc2d64e301178fba3 uses enum count 89
-as storage length and row stride. Keep the 89-value enum contract distinct from
-90-slot native storage. Re-audit complete readers, table extents, SE public
-address resolution and enum values on updates. No mutable canonical-value test
-may reject legitimate changes from foreign mods during initialization.
-The replacement installs no hook and performs no initialization writes.
-See [replacement contracts and migration](src/ScriptExtenderReplacements/DOCUMENTATION.md).
-
 Concrete native reference and resolution contracts belong here. General update
 policy is in [native compatibility](docs/NATIVE_COMPATIBILITY.md); consumer and
 implementation details are in the relevant feature guide.
@@ -109,3 +89,42 @@ owners; do not install competing entries. The byte checks permit no unknown
 native layout. Execute generated stubs with the installed RedBird backend after
 updates. Acquisition and legacy policy registration do not install hooks; explicit
 installation is permanent, setting/map changes only change logical data.
+
+## Workshop staging cleanup
+
+Managed contract, not native: Script Extender
+`MapModManager.TryStageModUpdate(string, MapArchive)` returning bool, every return
+intercepted. Consumer behavior: [Workshop package cleanup](docs/WORKSHOP.md#workshop-package-cleanup).
+The only allow-list is `AuditedExtenderHashes` in
+`src/Workshop/WorkshopCleanupRuntime.cs`; `tools/Validation/Verify-WorkshopContracts.ps1`
+reads it from there. Hash is lowercase SHA-256 of `BepInEx/plugins/000shcdese/SHCDESE.dll`.
+
+| SHCDESE.dll SHA-256 | Binary | Source |
+|---|---|---|
+| b170f163e69f7e8f64bda5874d282f4eb5ae5d9d1852e985ed6bef194c80d780 | Official 2.14.1 | GitLab package `shcdese` 2.14.1, SHCDESE.zip 9c3edd3b9dc101b080b4467ed4bb44a373ed0639f6a5717a3593b418c39895c6; built from db7415d5, parent of tag v2.14.1 |
+| ef943914b24cf1eec313ff427e9f34f7cbe8711d1437bc106ab853e4638dea9b | Official 2.14.0 | GitLab package `shcdese` 2.14.0, SHCDESE.zip 9566e10b865f7a23d8fa8dfb572be7f1f729cb18b10fd2d820714c5ba420b34a; built from 6ff6b7f4, parent of tag v2.14.0 |
+| e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3 | Local build | Tag v2.14.1, commit 5908e1f |
+
+The ProductVersion suffix names the source commit. 5908e1f differs from db7415d5
+only in CHANGELOG.md, and from 6ff6b7f4 only in CHANGELOG.md and
+`Detours/BulkUnitDetours.cs`, so `MapModManager` and the staging code are the same
+source in all three.
+
+Version numbers never authorize a binary. To add one:
+
+1. Take SHCDESE.zip from the official GitLab package registry, check its SHA-256
+   against the registry `file_sha256`, extract `000shcdese` into an empty folder and
+   hash SHCDESE.dll. Record the ProductVersion commit. A local build is acceptable
+   only with its tag and commit recorded.
+2. Diff that commit against an audited source. If `MapModManager`, `MapArchive`,
+   `ModInfo` or the staging/updater code changed, re-audit the
+   [cleanup flow](docs/WORKSHOP.md#workshop-package-cleanup): the bool result,
+   `_SE/.staging/BepInEx/plugins/<GUID>` and `_SE/.staging/delete_list.txt`
+   applied after exit and before staged files are copied.
+3. Add the hash to `AuditedExtenderHashes` and to the table above with its source.
+4. Run `Verify-WorkshopContracts.ps1 -GameDir <game> -ExtenderDir <extracted 000shcdese>`
+   and APISharedTests `WorkshopHookTests` built with `-p:ExtenderDir=<extracted 000shcdese>`.
+   `InstalledExtenderPassesTheCleanupInstallerGate` runs the same hash, signature,
+   transformation and compilation checks as `WorkshopCleanupRuntime.Initialize`.
+5. Run the full `build.bat /nopause /noinstall` on an install with the new binary.
+   Remove a hash only when that release is no longer supported.

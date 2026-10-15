@@ -78,12 +78,6 @@ The example library compiles against ordinary public assemblies and has no `Inte
 
 ## Script Extender bugfixes
 
-For explicitly called alternatives, see
-[Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md).
-That separate public area provides corrected pathfinding-table access with the
-SE method signatures; migrate those calls explicitly rather than expecting an
-automatic correction of existing SE calls.
-
 APIShared includes targeted corrections for Script Extender and bundled dependencies,
 implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consumer
 registration. They do not replace the Extender and do not change existing public
@@ -174,18 +168,6 @@ the built-in compact legend has English and German fallbacks.
 Derive your settings from `APIShared.ModSettings.PresetLobbyModSettingsViewModel` and register through `LobbyModSettingsPresetRegistration.Register`. The Script Extender displays the mod tab; APIShared owns discovery, personal preset files, persistence and lobby convergence. SerpsModsHost and ExtendedData are optional consumers, not prerequisites.
 
 Classify saved properties with Script Extender `[SyncHostOnly]` or `[SyncPerPlayer]`, or APIShared `[PresetLocal]`. Each per-player property needs a public compatible `<Name>Data` array for slots 0..8. Keep setters behind `CanMutateSetting()` and call `OnPropertyChanged` after actual changes. Configure additional per-player rules through `ConfigurePerPlayerLobbySettings`; do not implement another roster poller.
-
-Automatic save restoration prepares host settings before loading. Multiplayer saves
-are identified by their actual load entry, including a host playing alone. Existing
-Extender property sync and application-backend transports carry the values; APIShared
-checks current human peers' fingerprints before releasing the host load request.
-The save provenance comes from the authenticated host, so client save copies need
-not contain APIShared metadata. Personal properties and presets remain local.
-Coop content does not imply multiplayer: the mission entry determines transport,
-and the central mode reconciliation validates saved provenance against native data.
-Load preparation times out after 60 seconds; missing or changed participants cannot
-silently release a stale request. Setters still notify runtimes normally. Do not
-interpret a submitted packet as an acknowledgement of a complete settings snapshot.
 
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 

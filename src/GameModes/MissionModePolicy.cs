@@ -334,10 +334,7 @@ namespace APIShared.GameModes
             bool compatibleNativeFamily = observedKind == GameModeKind.CustomGame &&
                 (savedKind == GameModeKind.CustomTrail || savedKind == GameModeKind.CoopTrail ||
                  savedKind == GameModeKind.VanillaTrail || savedKind == GameModeKind.SandsOfTime);
-            // Frontend Customize fields can survive a save transition and alter
-            // the provisional kind. An exact native/saved match remains valid;
-            // existing conflict evidence is still retained below.
-            if (hasSaved && (savedKind == observedKind || savedKind == kind || compatibleNativeFamily ||
+            if (hasSaved && (savedKind == kind || compatibleNativeFamily ||
                 (observedKind == GameModeKind.Unknown && savedVariant == GameModeLaunchVariant.Standard)))
             {
                 kind = savedKind;

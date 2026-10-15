@@ -5,7 +5,7 @@ version. It accepts newer installed plugins and enforces startup order. It is no
 an exact-version pin. Keep this hard dependency for APIs needed by the plugin.
 
 The Script Extender supports arbitrary GUIDs in `info.json`. This example targets
-the APIs available since APIShared 0.9.0; select a published release containing
+the checked workspace APIShared 0.9.0 assembly; select a published release containing
 your required APIs before distributing a consumer:
 
 ```json

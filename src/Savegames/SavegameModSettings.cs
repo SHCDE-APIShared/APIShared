@@ -19,7 +19,7 @@ using System.Reflection;
 namespace APIShared
 {
     /// <summary>Persists compatible host settings and the mission permission context in saves.</summary>
-    public static partial class SavegameModSettings
+    public static class SavegameModSettings
     {
         /// <summary>Excludes a plugin type and its derived types from automatic savegame settings capture and restoration.</summary>
         /// <remarks>Call before settings registration when an optional APIShared dependency prevents applying the exclusion attribute.
@@ -79,8 +79,6 @@ namespace APIShared
                 initialized = true;
             }
             NativeApiLog.Debug(logger, "Savegame ModSettings handler registered after Script Extender startup cleanup.");
-            try { SavegameLoadCoordinator.Initialize(logger); }
-            catch (Exception error) { NativeApiLog.Error(logger, "Savegame load preparation could not initialize; multiplayer saves remain blocked: " + error); }
         }
 
         /// <summary>Reads only the selected save's own appended metadata for the load checkbox.</summary>
@@ -132,7 +130,6 @@ namespace APIShared
         /// <summary>Records the confirmed host choice for exactly one selected save.</summary>
         public static void PrepareLoad(string savePath, bool useCurrentSettings)
         {
-            ReleaseUnstartedPreparation();
             string path = Normalize(savePath);
             SavegameLoadChoiceState state = GetLoadChoiceState(path);
             Dictionary<string, Dictionary<string, byte[]>> current = CaptureCompatibleHostSettings();
@@ -170,7 +167,6 @@ namespace APIShared
                             MarkRestoreFailed();
                             NativeApiLog.Error(log, "Could not preserve local setting " +
                                 modId + "." + property.Name + ": " + error.Message);
-                            throw new InvalidDataException("Cannot prepare a save without preserving personal setting " + modId + "." + property.Name, error);
                         }
                     }
                     if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
@@ -196,11 +192,9 @@ namespace APIShared
 
         /// <summary>Validates required startup values before the original load callback runs.</summary>
         public static bool PrepareLoadWithRestartCheck(string savePath, bool useCurrentSettings)
-            => PrepareLoadCore(savePath, useCurrentSettings, false);
-
-        private static bool PrepareLoadCore(string savePath, bool useCurrentSettings, bool allParticipants)
         {
             PrepareLoad(savePath, useCurrentSettings);
+            if (!ModSettingsApplication.HasApplicationEndpoints && !ModSettingsApplication.HasRestartPreparation && !ModSettingsApplication.HasActivationFailures) return true;
             if (!GameNetworkAPI.IsLocalHost()) return ModSettingsApplication.PrepareLaunch();
             string path = Normalize(savePath);
             string fingerprint;
@@ -208,36 +202,28 @@ namespace APIShared
             using (var sha = System.Security.Cryptography.SHA256.Create())
                 fingerprint = BitConverter.ToString(sha.ComputeHash(file)).Replace("-", "");
             ModSettingsApplication.EnterContext("save:" + path + "|" + fingerprint);
-            if (ReadRecord(path, out var record) == RecordReadState.Invalid)
-                throw new InvalidDataException("The selected savegame ModSettings archive is invalid.");
+            TryReadRecord(path, out var record);
             if (record?.LockedByConflict == true)
                 throw new InvalidDataException("The savegame has conflicting or incomplete settings; startup configuration cannot be verified.");
             var values = legacyChoice || useChosenCurrent && IsCurrentChoiceAllowed(record) ? chosenCurrent : record?.Mods;
             bool locked = record?.LockedByConflict == true;
             if (locked) values = null;
             var participants = FindParticipants();
-            foreach (var item in participants)
+            foreach (var item in ModSettingsApplication.Endpoints)
             {
-                var participant = item.Value;
-                // Keep the public restart probe's established backend-only behavior.
-                // Ordinary local-save settings enter after retirement of the old
-                // mission; the multiplayer host gate explicitly prepares everyone.
-                if (!allParticipants && (!(participant.Endpoint is PresetLobbyModSettingsViewModel model) || !model.System_HasApplicationBackend)) continue;
+                if (!item.Value.System_HasApplicationBackend) continue;
+                if (!participants.TryGetValue(item.Key, out var participant))
+                    throw new InvalidDataException("Required savegame settings provider unavailable: " + item.Key);
                 var snapshot = ModSettingsApplication.ResumeSnapshot(item.Key) ??
                     ResolveStartupSnapshot(item.Key, participant, record, values, chosenCurrent, locked);
-                EnterPreparedPreset(item.Key, participant.Endpoint, snapshot);
+                item.Value.System_EnterMissionPreset(snapshot, "Savegame", false);
             }
-            preparedPath = path;
-            preparedRecord = record;
-            preparedApplied = allParticipants || participants.Count == 0;
             return ModSettingsApplication.PrepareLaunch();
         }
 
         /// <summary>Discards an unconsumed load-dialog choice after cancellation or failure.</summary>
         public static void CancelLoadChoice()
         {
-            if (!SavegameLoadCoordinator.CancelSelection()) return;
-            ReleaseUnstartedPreparation();
             lock (Sync)
             {
                 chosenPath = null;
@@ -247,27 +233,15 @@ namespace APIShared
             }
         }
 
-        internal static void BeginLoad(string filePath, bool multiplayer)
+        internal static void BeginLoad()
         {
-            SavegameLoadCoordinator.ValidateStart(filePath, multiplayer);
             Dictionary<string, Dictionary<string, byte[]>> fallback = null;
             lock (Sync) { if (chosenCurrent == null) fallback = CaptureCompatibleHostSettings(); }
             lock (Sync)
             {
-                // Multiplayer saves use OnLoadMap, whose Extender LoadContext is
-                // incorrectly marked as a map. The confirmed entry owns this read.
-                if (multiplayer) loaded = PreparedRecordForStart;
-                else
-                {
-                    RecordReadState read = ReadRecord(filePath, out var record);
-                    if (read == RecordReadState.Invalid) throw new InvalidDataException("Invalid savegame ModSettings archive.");
-                    loaded = record;
-                    legacyChoice = read == RecordReadState.Missing;
-                }
+                loaded = null;
                 restoreFailed = false;
                 if (chosenCurrent == null) chosenCurrent = fallback;
-                activeCreatorRules = loaded?.CreatorRules;
-                activeTrailCustomizeAllowed = loaded?.TrailCustomizeAllowed == true;
             }
         }
 
@@ -292,17 +266,72 @@ namespace APIShared
         internal static void ApplyLoadedSettings(MissionContext context)
         {
             if (context == null || !context.IsSave) return;
-            if (!preparedApplied) throw new InvalidOperationException("Savegame reached completion without settings preparation.");
-            foreach (var entry in preparedEndpoints)
-                ActivePreset.Track(context.SessionId, entry.Key, entry.Value);
-            preparedTransferred = true;
+            SavegameModSettingsRecord record;
+            Dictionary<string, Dictionary<string, byte[]>> current;
+            bool useCurrent;
+            bool legacy;
+            lock (Sync)
+            {
+                record = loaded;
+                current = chosenCurrent;
+                useCurrent = useChosenCurrent;
+                legacy = legacyChoice;
+            }
+            if (record == null)
+            {
+                lock (Sync)
+                {
+                    activeCreatorRules = null;
+                    activeTrailCustomizeAllowed = false;
+                }
+                if (!legacy) return;
+            }
+            else
+            {
+                lock (Sync)
+                {
+                    activeCreatorRules = record.CreatorRules;
+                    activeTrailCustomizeAllowed = record.TrailCustomizeAllowed;
+                }
+            }
+            // Only the host publishes host-owned values. The Extender's existing
+            // SyncHostOnly route sends property changes to clients.
+            if (context.Mode.IsRealMultiplayer && context.IsHost != true) return;
+            Dictionary<string, Dictionary<string, byte[]>> values =
+                legacy || useCurrent && IsCurrentChoiceAllowed(record) ? current : record.Mods;
+            bool locked = record?.LockedByConflict == true;
+            if (locked) values = null;
+            Dictionary<string, CompatibleMod> participants;
+            try { participants = FindParticipants(); }
+            catch (Exception error)
+            {
+                MarkRestoreFailed();
+                NativeApiLog.Error(log, "Could not enumerate savegame settings participants: " + error);
+                return;
+            }
+            foreach (KeyValuePair<string, CompatibleMod> participant in participants)
+            {
+                try
+                {
+                    Dictionary<string, byte[]> snapshot = ModSettingsApplication.ResumeSnapshot(participant.Key) ??
+                        ResolveStartupSnapshot(participant.Key, participant.Value, record, values, current, locked);
+                    participant.Value.Endpoint.System_ExitMissionPreset();
+                    participant.Value.Endpoint.System_EnterMissionPreset(snapshot, "Savegame", false);
+                    ModSettingsApplication.RestorePreparedSources(participant.Key);
+                    if (!participant.Value.Endpoint.IsMissionPresetActive)
+                        throw new InvalidOperationException("The savegame preset did not become active.");
+                    ActivePreset.Track(context.SessionId, participant.Key, participant.Value.Endpoint);
+                }
+                catch (Exception error)
+                {
+                    MarkRestoreFailed();
+                    NativeApiLog.Error(log, "Could not restore saved settings for " + participant.Key + ": " + error);
+                }
+            }
         }
 
         internal static void FinishLoad()
         {
-            if (!preparedTransferred) ReleaseUnstartedPreparation();
-            else ClearPreparation();
-            SavegameLoadCoordinator.FinishLoad();
             lock (Sync)
             {
                 loaded = null;

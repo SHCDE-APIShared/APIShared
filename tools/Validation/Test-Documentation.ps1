@@ -3,8 +3,7 @@ param([string]$XmlDocumentation)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $documents = @(Get-ChildItem -LiteralPath $root -File -Filter '*.md') +
-    @(Get-ChildItem -LiteralPath (Join-Path $root 'docs') -Recurse -File -Filter '*.md') +
-    @(Get-ChildItem -LiteralPath (Join-Path $root 'src/ScriptExtenderReplacements') -Recurse -File -Filter '*.md')
+    @(Get-ChildItem -LiteralPath (Join-Path $root 'docs') -Recurse -File -Filter '*.md')
 $links = 0
 foreach ($document in $documents) {
     $text = [regex]::Replace([IO.File]::ReadAllText($document.FullName), '(?ms)^```.*?^```[^\r\n]*', '')

@@ -1,9 +1,5 @@
 # API catalog
 
-Opt-in [Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md)
-provide the corrected `APIShared.ScriptExtenderReplacements.GamePathingManagerAPI`
-table methods. These require explicit caller migration and do not hook SE methods.
-
 APIShared also provides internal, binary-validated [Script Extender bugfixes](THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
 They require no capability acquisition or consumer registration and are implemented
 separately in `src/ScriptExtenderFixes`. Unsupported dependency implementations are
@@ -162,12 +158,6 @@ thread, outside locks, with exception isolation. Registrations have no hook tear
 `AssassinPathAPI`, `AssassinAttackControlAPI`, `EnemyGatePathPolicyBridge`, `EnemyBridgeDiagnosticBridge` and `TemporaryGateRouteAcceptanceBridge` expose specialized path integration/diagnostics. They are not a general-purpose movement-command API. Use their documented immediate context and ownership contracts; do not retain transient native contexts. `SavegameModSettings` supplies typed save/trail settings integration. `LobbyPreparationOverride` is advanced shared lobby-preparation integration, not an alternative general lifecycle service.
 
 Native addresses, scanners, memory writers and concrete services are not supported public extension points. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
-
-`SavegameModSettings` prepares save settings before initialization and coordinates
-authenticated multiplayer load readiness using the existing settings transports.
-Solo multiplayer needs only local readiness; Coop detection remains in the central
-mission mode service. See [settings integration](THIRD_PARTY_GUIDE.md#external-settings-and-application-backends)
-and the adjacent save-restoration notes for personal-storage and timeout behavior.
 
 `APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread.
 

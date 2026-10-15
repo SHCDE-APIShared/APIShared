@@ -19,7 +19,6 @@ namespace APISharedTests
 
         private sealed class PresetEndpointFixture : IModSettingsPresetEndpoint
         {
-            public int UnreadablePersonal { get => throw new InvalidOperationException("personal read failed"); set { } }
             public bool IsMissionPresetActive { get; private set; }
             public int ExitCount { get; private set; }
             public bool FailExit { get; set; }
@@ -37,26 +36,6 @@ namespace APISharedTests
 
         internal static void Run(Action<bool, string> check)
         {
-            var settingsType = typeof(SavegameModSettings);
-            var privateFlags = BindingFlags.NonPublic | BindingFlags.Static;
-            var participantType = settingsType.GetNestedType("CompatibleMod", BindingFlags.NonPublic);
-            var participant = Activator.CreateInstance(participantType, true);
-            var personalFixture = new PresetEndpointFixture();
-            participantType.GetField("Endpoint", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, personalFixture);
-            participantType.GetField("Properties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, Array.Empty<PropertyInfo>());
-            participantType.GetField("PersonalProperties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant,
-                new[] { typeof(PresetEndpointFixture).GetProperty(nameof(PresetEndpointFixture.UnreadablePersonal)) });
-            var failureField = settingsType.GetField("restoreFailed", privateFlags);
-            object previousFailure = failureField.GetValue(null);
-            try
-            {
-                bool rejected = false;
-                try { settingsType.GetMethod("ResolveStartupSnapshot", privateFlags).Invoke(null,
-                    new object[] { "foreign.fixture", participant, null, null, null, false }); }
-                catch (TargetInvocationException error) { rejected = error.InnerException is System.IO.InvalidDataException; }
-                check(rejected, "an unreadable personal setting silently fell back instead of blocking preparation");
-            }
-            finally { failureField.SetValue(null, previousFailure); }
             var lease = new SavegameMissionPresetLease();
             var first = new PresetEndpointFixture();
             var second = new PresetEndpointFixture { FailExit = true };
@@ -261,36 +240,6 @@ namespace APISharedTests
                 ref kind, ref variant, ref conflict);
             check(kind == GameModeKind.Campaign && conflict && variant == GameModeLaunchVariant.Standard,
                 "mismatched mission metadata unlocked a campaign");
-
-            foreach (GameModeKind saved in Enum.GetValues(typeof(GameModeKind)))
-            {
-                if (saved == GameModeKind.Unknown) continue;
-                foreach (GameModeLaunchVariant savedVariant in Enum.GetValues(typeof(GameModeLaunchVariant)))
-                {
-                    kind = saved; variant = GameModeLaunchVariant.Standard; conflict = false;
-                    GameModeHelper.ReconcileRestoredSaveMode(saved, true, saved, savedVariant, false,
-                        ref kind, ref variant, ref conflict);
-                    check(kind == saved && variant == savedVariant && !conflict,
-                        "matching saved mode/variant was not preserved: " + saved + "/" + savedVariant);
-                }
-            }
-            kind = GameModeKind.SandsOfTime;
-            variant = GameModeLaunchVariant.Customized;
-            conflict = false;
-            GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true,
-                GameModeKind.CustomGame, GameModeLaunchVariant.Standard, false,
-                ref kind, ref variant, ref conflict);
-            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard && !conflict,
-                "stale Customize presentation displaced an exact native/saved mode match");
-            foreach (var saved in new[] { GameModeKind.CoopTrail, GameModeKind.CustomTrail,
-                GameModeKind.VanillaTrail, GameModeKind.SandsOfTime })
-            {
-                kind = GameModeKind.CustomGame; variant = GameModeLaunchVariant.Standard; conflict = false;
-                GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true, saved,
-                    GameModeLaunchVariant.RestoredCustomizedSave, false, ref kind, ref variant, ref conflict);
-                check(kind == saved && variant == GameModeLaunchVariant.RestoredCustomizedSave && !conflict,
-                    "generic native save family lost Trail provenance: " + saved);
-            }
 
             int ready = 0, cleaned = 0, reported = 0;
             MissionLifecycleService.CompleteDeferredRestore(

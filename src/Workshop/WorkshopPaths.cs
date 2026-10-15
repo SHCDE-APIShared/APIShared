@@ -44,7 +44,13 @@ namespace APIShared.Workshop
         {
             for (string current = Path.GetFullPath(path); !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current))
             {
-                try { if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("Linked path: " + current); }
+                try {
+                    if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) {
+                        var exception = new InvalidDataException("Linked path: " + current + ". Use the canonical installation path or update manually.");
+                        WorkshopDiagnostics.MarkBlocked(exception);
+                        throw exception;
+                    }
+                }
                 catch (FileNotFoundException) { }
                 catch (DirectoryNotFoundException) { }
             }
