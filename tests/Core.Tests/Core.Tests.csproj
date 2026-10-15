@@ -55,6 +55,8 @@
     <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.cs" Link="Production/NativeOwnershipRegistry.cs" />
     <Compile Include="../../src/Core/NativeSites/NativeSiteContracts.cs" Link="Production/NativeSiteContracts.cs" />
+    <Compile Include="../../src/GameTables/GameDataContracts.cs" Link="Production/GameDataContracts.cs" />
+    <Compile Include="../../src/GameTables/GameDataComposer.cs" Link="Production/GameDataComposer.cs" />
   </ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_Troops.xaml" Link="Fixtures/HUD_Troops.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <!-- Local integration keeps testing the installed Extender library. Standalone
