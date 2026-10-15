@@ -91,27 +91,40 @@ namespace APISharedTests
                     MsAssert.IsNotNull(type, name);
                     Mono.Cecil.MethodDefinition method = type.Methods.Single(m => m.Name == installer.Method &&
                         (installer.Parameters < 0 || m.Parameters.Count == installer.Parameters));
-                    var calls = method.Body.Instructions
-                        .Where(i => i.OpCode.Code == Mono.Cecil.Cil.Code.Call || i.OpCode.Code == Mono.Cecil.Cil.Code.Callvirt ||
-                            i.OpCode.Code == Mono.Cecil.Cil.Code.Newobj)
-                        .Select(i => (Mono.Cecil.MethodReference)i.Operand).ToList();
+                    List<Mono.Cecil.MethodReference> calls = CallsInOrder(method, new HashSet<Mono.Cecil.MethodDefinition>());
                     int claim = calls.FindIndex(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Claim");
                     int publish = calls.FindIndex(m => installer.Publishes(m));
                     MsAssert.IsTrue(claim >= 0, name + " claims its native sites");
                     MsAssert.IsTrue(publish >= 0, name + " still contains its publication call");
                     MsAssert.IsTrue(claim < publish, name + " claims before it installs or uses the site");
                     // The release may sit in a rollback helper of the same type (audio's RollbackUnpublished).
-                    var reachable = calls.Concat(calls
-                        .Where(m => m.DeclaringType.FullName == installer.Type)
-                        .Select(m => m.Resolve())
-                        .Where(m => m != null && m.HasBody)
-                        .SelectMany(m => m.Body.Instructions)
-                        .Where(i => i.OpCode.Code == Mono.Cecil.Cil.Code.Call || i.OpCode.Code == Mono.Cecil.Cil.Code.Callvirt)
-                        .Select(i => (Mono.Cecil.MethodReference)i.Operand));
-                    MsAssert.IsTrue(reachable.Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Release"),
+                    MsAssert.IsTrue(calls.Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Release"),
                         name + " releases its claim when the installation is not published");
                 }
             }
+        }
+
+        // The method's calls in IL order, with each call into a method of the same type followed in place
+        // by that method's own calls (recursively, skipping methods already on the path). An installer can
+        // move its claim, publication or release into a helper without leaving this check, as audio's
+        // Install did with CreateHooks (#20).
+        private static List<Mono.Cecil.MethodReference> CallsInOrder(Mono.Cecil.MethodDefinition method,
+            HashSet<Mono.Cecil.MethodDefinition> path)
+        {
+            path.Add(method);
+            var calls = new List<Mono.Cecil.MethodReference>();
+            foreach (Mono.Cecil.Cil.Instruction instruction in method.Body.Instructions)
+            {
+                if (instruction.OpCode.Code != Mono.Cecil.Cil.Code.Call && instruction.OpCode.Code != Mono.Cecil.Cil.Code.Callvirt &&
+                    instruction.OpCode.Code != Mono.Cecil.Cil.Code.Newobj) continue;
+                var callee = (Mono.Cecil.MethodReference)instruction.Operand;
+                calls.Add(callee);
+                if (callee.DeclaringType.FullName != method.DeclaringType.FullName) continue;
+                Mono.Cecil.MethodDefinition body = callee.Resolve();
+                if (body != null && body.HasBody && !path.Contains(body)) calls.AddRange(CallsInOrder(body, path));
+            }
+            path.Remove(method);
+            return calls;
         }
 
         [TestMethod]
