@@ -22,6 +22,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `TryGetGatehouseTiming` | Typed timing/distance settings | Native validation required; exclusive owner; permanent hook and logical state; automation via `IGatehouseAutomationCapability` |
 | `TryGetGatehouseDistanceOrigin` | Vanilla begin coordinate or complete-bounds center | Native validation required; exclusive owner; permanent runtime state |
 | `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation; startup member check | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
+| `TryGetBuildingPanelExtensions` | Rows, buttons or text in the selected building's panel ([guide](THIRD_PARTY_GUIDE.md#building-panel-extensions)); startup member check | Unity thread; refresh after `setUpInbuilding` and GuiChecks Post; order/owner/ID ordering; isolated callbacks; dormant until the first registration; process lifetime |
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |

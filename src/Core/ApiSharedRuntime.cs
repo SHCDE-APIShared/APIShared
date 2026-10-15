@@ -22,6 +22,8 @@ namespace APIShared
         private UnitHudPresentationService unitHudPresentation;
         private HudExtrasButtonsService hudExtrasButtons;
         private NativeCapabilityDiagnostic hudExtrasDiagnostic; // Set only when its member check failed.
+        private BuildingPanelExtensionsService buildingPanelExtensions;
+        private NativeCapabilityDiagnostic buildingPanelExtensionsDiagnostic; // Set only when its member check failed.
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
@@ -88,6 +90,9 @@ namespace APIShared
                     hudExtrasButtons = new HudExtrasButtonsService(logger);
                     hudExtrasButtons.Start();
                 }
+                // Dormant until its first registration installs the refresh hooks.
+                if (buildingPanelExtensions == null && buildingPanelExtensionsDiagnostic == null)
+                    BuildingPanelExtensionsService.TryCreate(logger, out buildingPanelExtensions, out buildingPanelExtensionsDiagnostic);
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
                 if (briefingGoldDiagnostic.State == NativeCapabilityState.Pending)
@@ -349,6 +354,29 @@ namespace APIShared
                 capability = unitHudPresentation.Bind(ownerGuid);
                 diagnostic = unitHudDiagnostic;
                 return true;
+            }
+        }
+
+        internal bool TryGetBuildingPanelExtensions(string ownerGuid, out IBuildingPanelExtensionsCapability capability,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            capability = null;
+            if (string.IsNullOrWhiteSpace(ownerGuid))
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions, NativeCapabilityState.ValidationFailed,
+                    string.Empty, "A nonempty owner GUID is required."); return false;
+            }
+            lock (sync)
+            {
+                if (buildingPanelExtensions == null)
+                {
+                    diagnostic = buildingPanelExtensionsDiagnostic ?? new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions,
+                        NativeCapabilityState.Pending, string.Empty, "Managed presentation is not initialized.");
+                    return false;
+                }
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions, NativeCapabilityState.Available,
+                    string.Empty, "Building panel extensions are available; refresh hooks install with the first registration.");
+                capability = buildingPanelExtensions.Bind(ownerGuid); return true;
             }
         }
 

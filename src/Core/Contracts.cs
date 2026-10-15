@@ -61,6 +61,8 @@ namespace APIShared
         public const string BriefingGoldPresentation = "briefing-gold-presentation";
         /// <summary>Capability for complete building repair costs and repair HUD tooltips.</summary>
         public const string BuildingRepair = "building-repair";
+        /// <summary>Capability for rows, buttons or text in the selected building's panel.</summary>
+        public const string BuildingPanelExtensions = "building-panel-extensions";
     }
 
     /// <summary>Immutable diagnostic information returned by capability acquisition and mutation.</summary>

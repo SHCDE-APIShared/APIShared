@@ -543,6 +543,48 @@ took 29.5 ns instead of 284.8 ns per update (best of eight runs; every run faste
 Providers are still collected before the no-building return, since they may retire
 selection state there.
 
+## Building panel extensions
+
+`ModApiClient.TryGetBuildingPanelExtensions` gives your mod a place in the panel of the
+selected building: rows, buttons or text in one shared stack that APIShared owns. Register
+a `BuildingPanelExtensionDefinition` with a stable owner-local ID, a factory returning a
+fresh unattached element, an optional `appliesTo` filter on `BuildingPanelSelection`
+(building and global ID, owner, local ownership, type and Vanilla panel mode) and an
+optional `update`. [BuildingPanelExample](../examples/ThirdPartyMod/BuildingPanelExample.cs)
+shows a text row for buildings the local player owns.
+
+Extensions refresh after Vanilla's `MainViewModel.setUpInbuilding` and after the in-game GUI
+checks, on the Unity thread. On each refresh the filter runs for every visible extension and
+`update` runs for each shown one, so keep both cheap and allocation-free: change text only
+when the selection changed. The stack is ordered by `order`, then ordinal owner GUID and
+extension ID. A factory, filter or update that throws disables only that extension and logs
+once; `RequestContentRefresh` re-enables it and recreates its element. `SetVisible` and
+`SetOwnerActive` switch extensions off without running their callbacks. Registrations last
+for the process; there is no unregistration or hook teardown. Your callbacks own gameplay
+authorization and multiplayer synchronization.
+
+### Building panel implementation and measurements
+
+Nothing is hooked until the first registration installs a `setUpInbuilding` Post and takes
+an internal GuiChecks Post on the existing presentation site (one owner per site). The
+stack is created once per `HUD_Buildings` instance under its root grid, so a refresh never
+searches the visual tree or uses reflection, and an unchanged refresh only reads state and
+runs your callbacks. The capability checks its game and Script Extender members at startup.
+
+`BuildingPanelExtensionTests` measure the registry refresh on the .NET Framework 4.8.1 test
+host after warm-up with a fake element and no-op callbacks, best of five runs of 200,000:
+
+| Refresh | ns | Bytes |
+|---|---|---|
+| Broker, 0 extensions | 6.6 | 0 |
+| Broker, 1 extension | 16.4 | 0 |
+| Broker, 8 extensions | 93.2 | 0 |
+| Hand-written Post, 1 element | 8.4 | 0 |
+
+Both sides exclude reading the selected building, which the broker does once per refresh for
+all extensions and a hand-written Post does once per mod. The figures exclude Mono, Noesis
+and the game; the machine was under full CPU load from other work, so treat them as relative.
+
 ## Gate access contributions
 
 Use `GateAccessRules.TryRegister` for additional gate access exceptions and
