@@ -6,6 +6,13 @@ namespace APIShared
     {
         // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
         internal static unsafe ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefBarracksPanel", typeof(global::Noesis.Grid))
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefBedouinStockadePanel", typeof(global::Noesis.Grid))
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefHUDBuildingFullClickMask", typeof(global::Noesis.Grid))
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefMercPostPanel", typeof(global::Noesis.Grid))
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefShowCathedralPanel", typeof(global::Noesis.Grid))
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefShowEngineersGuildPanel", typeof(global::Noesis.Grid))
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefShowTunellersGuildPanel", typeof(global::Noesis.Grid))
             .Field(typeof(global::CrusaderDE.MainViewModel), "HUDBuildingPanel", typeof(global::CrusaderDE.HUD_Buildings))
             .Field(typeof(global::CrusaderDE.MainViewModel), "IsMapEditorMode", typeof(bool))
             .Field(typeof(global::CrusaderDE.MainViewModel), "viewModelLoaded", typeof(bool))

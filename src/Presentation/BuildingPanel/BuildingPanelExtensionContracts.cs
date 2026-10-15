@@ -78,6 +78,51 @@ namespace APIShared
         void RequestContentRefresh();
     }
 
+    /// <summary>An exclusive replacement of Vanilla's recruitment area for selected buildings of some types.</summary>
+    public sealed class BuildingPanelRecruitmentAreaDefinition
+    {
+        /// <summary>Creates a definition. All callbacks run on the Unity thread outside registry locks; each is isolated.</summary>
+        /// <param name="claimId">Stable owner-local ID.</param>
+        /// <param name="buildingTypes">Building types this claim owns. While the claim exists no other claim can
+        /// own any of them.</param>
+        /// <param name="factory">Creates a fresh, unattached element once per panel instance (and again after
+        /// RequestContentRefresh). APIShared adds it to the building panel's root grid and owns its visibility;
+        /// the element owns its own size and placement.</param>
+        /// <param name="appliesTo">Selects the buildings of these types that show the replacement; null selects all.
+        /// Others keep Vanilla's recruitment area. Runs on every refresh: keep it cheap and allocation-free.</param>
+        /// <param name="update">Optional per-refresh update while the replacement is shown; keep it allocation-free.</param>
+        public BuildingPanelRecruitmentAreaDefinition(string claimId, eStructs[] buildingTypes,
+            Func<BuildingPanelExtensionContext, FrameworkElement> factory,
+            Func<BuildingPanelSelection, bool> appliesTo = null,
+            Action<BuildingPanelSelection, FrameworkElement> update = null)
+        {
+            ClaimId = claimId; BuildingTypes = buildingTypes == null ? null : (eStructs[])buildingTypes.Clone();
+            Factory = factory; AppliesTo = appliesTo; Update = update;
+        }
+        /// <summary>Stable owner-local ID.</summary>
+        public string ClaimId { get; }
+        /// <summary>Claimed building types (a copy).</summary>
+        public eStructs[] BuildingTypes { get; }
+        /// <summary>Replacement factory.</summary>
+        public Func<BuildingPanelExtensionContext, FrameworkElement> Factory { get; }
+        /// <summary>Building filter within the claimed types; null for all.</summary>
+        public Func<BuildingPanelSelection, bool> AppliesTo { get; }
+        /// <summary>Optional per-refresh update.</summary>
+        public Action<BuildingPanelSelection, FrameworkElement> Update { get; }
+    }
+
+    /// <summary>Handle of an exclusive recruitment-area claim.</summary>
+    public interface IBuildingPanelRecruitmentAreaClaim
+    {
+        /// <summary>Whether Release was called.</summary>
+        bool IsReleased { get; }
+        /// <summary>Gives up the claim and its building types. Vanilla's recruitment panels are restored at the next
+        /// refresh on the Unity thread; another owner can claim the types immediately. Idempotent.</summary>
+        void Release();
+        /// <summary>Recreates the replacement at the next refresh, including after a failed callback disabled it.</summary>
+        void RequestContentRefresh();
+    }
+
     /// <summary>Owner-bound access to the shared building panel extension stack.</summary>
     /// <remarks>Extensions refresh after Vanilla's MainViewModel.setUpInbuilding and after the in-game GUI checks
     /// (PresentationOperation.GuiChecks), on the Unity thread. A callback that throws disables only its extension,
@@ -89,7 +134,17 @@ namespace APIShared
         /// ValidationFailed diagnostic for a missing ID or factory or a duplicate owner-local ID.</summary>
         bool TryRegisterExtension(BuildingPanelExtensionDefinition definition,
             out IBuildingPanelExtensionRegistration registration, out NativeCapabilityDiagnostic diagnostic);
-        /// <summary>Logically activates all of this owner's extensions without uninstalling callbacks. Defaults to true.</summary>
+        /// <summary>Logically activates all of this owner's extensions and recruitment-area claims without
+        /// uninstalling callbacks. Defaults to true. An inactive owner's claim keeps its building types.</summary>
         void SetOwnerActive(bool active);
+        /// <summary>Claims Vanilla's recruitment area for the selected buildings of some types. While the claim is
+        /// shown, Vanilla's recruitment panels (barracks, mercenary post, Bedouin stockade, engineers' and
+        /// tunnellers' guilds, cathedral) and the full-panel click mask are hidden; their exact visibility is
+        /// restored when another building is selected, on Release, when the claim's callback fails, when the panel
+        /// is recreated and at mission end. Returns false with a Conflict diagnostic naming the current owner when
+        /// any type is already claimed (a second claimant is refused, never silently overrides), and with
+        /// ValidationFailed for a missing ID, type list or factory.</summary>
+        bool TryClaimRecruitmentArea(BuildingPanelRecruitmentAreaDefinition definition,
+            out IBuildingPanelRecruitmentAreaClaim claim, out NativeCapabilityDiagnostic diagnostic);
     }
 }

@@ -563,6 +563,22 @@ once; `RequestContentRefresh` re-enables it and recreates its element. `SetVisib
 for the process; there is no unregistration or hook teardown. Your callbacks own gameplay
 authorization and multiplayer synchronization.
 
+### Recruitment-area claims
+
+`TryClaimRecruitmentArea` replaces Vanilla's recruitment area for selected buildings of
+some types, for example a custom recruitment panel on some stone barracks. A
+`BuildingPanelRecruitmentAreaDefinition` names the building types, a factory and an
+optional `appliesTo` and `update`, as for extensions. One claim owns each building type: a
+second claim on any of them is refused with `Conflict` and the current owner in
+`ConflictOwnerGuid`, never silently overridden. While a claim is shown, APIShared hides
+Vanilla's recruitment panels (barracks, mercenary post, Bedouin stockade, engineers' and
+tunnellers' guilds, cathedral) and the full-panel click mask, and adds your element to the
+panel's root grid; the element owns its size and placement. The panels get their exact
+visibility back when another building is selected, on `Release`, after a failed callback,
+when the panel is recreated and at mission end; a panel Vanilla changed in the meantime
+keeps Vanilla's value. `Release` frees the types at once; the panels return at the next
+refresh. Buildings of the type that `appliesTo` rejects keep Vanilla's area.
+
 ### Building panel implementation and measurements
 
 Nothing is hooked until the first registration installs a `setUpInbuilding` Post and takes
@@ -576,10 +592,15 @@ host after warm-up with a fake element and no-op callbacks, best of five runs of
 
 | Refresh | ns | Bytes |
 |---|---|---|
-| Broker, 0 extensions | 6.6 | 0 |
-| Broker, 1 extension | 16.4 | 0 |
-| Broker, 8 extensions | 93.2 | 0 |
-| Hand-written Post, 1 element | 8.4 | 0 |
+| Broker, 0 extensions | 8.0 | 0 |
+| Broker, 1 extension | 14.5 | 0 |
+| Broker, 8 extensions | 65.6 | 0 |
+| Broker, claim held, 0 extensions | 29.1 | 0 |
+| Broker, claim held, 8 extensions | 91.0 | 0 |
+| Hand-written Post, 1 element | 9.3 | 0 |
+
+A held claim reads the seven Vanilla panel visibilities on every refresh, so that a
+panel Vanilla shows again is hidden at once.
 
 Both sides exclude reading the selected building, which the broker does once per refresh for
 all extensions and a hand-written Post does once per mod. The figures exclude Mono, Noesis
