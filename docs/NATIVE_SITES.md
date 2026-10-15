@@ -24,8 +24,8 @@ corrupts bytes. Whether two hooks behave correctly together is still untested.
 
 | Situation | Use | Examples |
 |---|---|---|
-| APIShared already serves the point | The shared service; never a competing hook | Market price queries (`MarketPriceEvents`), gatehouse timing, audio, AIV build step, gate routing |
-| A second real owner needs the same point | Add or extend a shared APIShared service with explicit ordering, veto, replacement or exclusive-ownership rules | 0xE2610, detoured by both a naval mod and BugfixesAndQoL; 0x18E9A0, detoured by one mod, called by another and hooked by the Script Extender; 0xDB650, whose body holds APIShared's gate-routing spans |
+| APIShared already serves the point | The shared service; never a competing hook | Market price queries (`MarketPriceEvents`), gatehouse timing, audio, AIV build step, gate routing, 0xE2610 and 0xD90D0 ([native brokers](NATIVE_BROKERS.md)) |
+| A second real owner needs the same point | Add or extend a shared APIShared service with explicit ordering, veto, replacement or exclusive-ownership rules | 0xE2610 and 0xD90D0 (now the native brokers); 0x18E9A0, detoured by one mod, called by another and hooked by the Script Extender; 0xDB650, whose body holds APIShared's gate-routing spans |
 | A unit-specific AI or FSM route with exactly one consumer | Registry; the algorithm stays in the consumer mod | A custom unit's update, selection or controller detour (for example 0x174100, 0x1969B0, 0x16E440) |
 | A mid-function patch with a private register contract | Registry; a broker would need a one-off contract for one mod | CALL-site patches feeding one controller, a formation context hook (0xC0942), a terrain inline patch (0x182EE6) |
 
@@ -172,6 +172,8 @@ spans are built from each service's native contract constants in
 | `GateRouting.Comparisons` | Exclusive 0xE2705/20, 0xE3024/20 | Provider's `InstallComparisons` |
 | `GateRouting.Descent` | Exclusive 0x185D55/20; Observe 0x185934/4 | Provider's `InstallDescent` |
 | `Buildings.RepairQuote` | Observe 0xD51A0/17 (validated entry that the repair quote calls) | First repair capability acquisition |
+| `NativeBrokers.PclReachability` | Exclusive 0xE2610/16 with the displaced bytes' expected SHA-256; Observe 0xE2620/7 (continuation) | First `PclReachabilityBroker` registration |
+| `NativeBrokers.TileRefresh` | Exclusive 0xD90D0/15 with the displaced bytes' expected SHA-256; Observe 0xD90DF/1 (continuation) | First `TileRefreshBroker` registration |
 
 A conflict with another owner's earlier registration fails that APIShared service
 closed through its existing path (capability diagnostic `Conflict` or its install

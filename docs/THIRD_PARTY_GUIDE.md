@@ -366,6 +366,17 @@ cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
 
+## Sharing contested native entries
+
+If your mod detours 0xE2610 (PCL reachability) or 0xD90D0 (tile refresh), register with
+`APIShared.NativeBrokers.PclReachabilityBroker` or `TileRefreshBroker` instead, from your
+`LibraryLoaded` handler or later, with soft dependencies on `APIShared_Serp` and on any
+older mod that still detours the entry itself. Override in Pre, observe and replace in Post,
+and keep your previous detour as the fallback when `TryRegister` fails: the broker never
+patches over a foreign detour. Callbacks run on the native calling thread for every call.
+See [Native brokers](NATIVE_BROKERS.md) for the contract, the migration notes and the
+version-skew matrix, and the [compiled example](../examples/ThirdPartyMod/NativeBrokerExample.cs).
+
 ## Reacting to created and recruited units
 
 Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it

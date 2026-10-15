@@ -14,6 +14,7 @@ the runtime catalogs. This document explains their purpose; it does not override
 | AIV build-step observation | APIShared owns the detour at reference RVA `0x51790` |
 | HUD and recruitment | Shared managed/native presentation hooks and registration brokers |
 | Market buy/sell queries | APIShared owns reference RVAs `0xCEB10` and `0xCEB90`; fixed-image validation and NativeX64 Indirect detours |
+| Native entry brokers | APIShared owns reference RVAs `0xE2610` and `0xD90D0` from the first registration; NativeX64 Absolute detours behind a native demand guard; refuses an occupied or registered entry |
 | Additional route preferences | Managed Pre/Post registration; native command hooks belong to the participating publisher |
 | Assassin selection | Script Extender owns its function detour; APIShared uses its audited integration points |
 
@@ -82,6 +83,10 @@ those callers. See [market query semantics](API_CATALOG.md#native-market-price-q
 fixtures. UI/session doubles and synthetic memory are not gameplay acceptance.
 Relevant gameplay checks include startup cleanup, map transitions, save/load,
 host/client synchronization, gatehouse orientations and cooperating route-search publishers.
+
+The native entry brokers patch 0xE2610 and 0xD90D0 only at the first registration and
+only over the audited bytes; see [broker implementation](NATIVE_BROKERS.md#implementation)
+and [UpdateToNewDLL](../UpdateToNewDLL.md#native-entry-brokers).
 
 Audio owns coordinated native source-capture entries and managed playback
 interception. See [bridge validation](AUDIO.md#native-bridge-validation) for the

@@ -43,7 +43,8 @@ namespace APISharedTests
                 (0x113BC0, 10, ApiSharedNativeSites.GateMovement), (0x8F251, 29, ApiSharedNativeSites.GateMovement),
                 (0x8F1BF, 14, ApiSharedNativeSites.GateMovement), (0xDB857, 17, ApiSharedNativeSites.GateMovement),
                 (0xE2705, 20, ApiSharedNativeSites.GateComparisons), (0xE3024, 20, ApiSharedNativeSites.GateComparisons),
-                (0x185D55, 20, ApiSharedNativeSites.GateDescent)
+                (0x185D55, 20, ApiSharedNativeSites.GateDescent),
+                (0xE2610, 16, ApiSharedNativeSites.BrokerPclReachability), (0xD90D0, 15, ApiSharedNativeSites.BrokerTileRefresh)
             };
             foreach (var expected in expectedWriters)
             {
@@ -53,7 +54,7 @@ namespace APISharedTests
             }
             MsAssert.AreEqual(91, registry.Registrations.Count(r => r.Name == ApiSharedNativeSites.Audio && r.Mode == NativeSiteMode.Observe),
                 "every decoded audio catalog CALL site is observed");
-            foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17) })
+            foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17), (0xE2620, 7), (0xD90DF, 1) })
                 MsAssert.AreEqual(1, registry.Registrations.Count(r => r.Rva == observed.Item1 && r.Length == observed.Item2 && r.Mode == NativeSiteMode.Observe),
                     $"observed span 0x{observed.Item1:X}+{observed.Item2}");
             MsAssert.AreEqual(0, registry.Registrations.Count(r => r.Mode == NativeSiteMode.ChainableEntry || r.Mode == NativeSiteMode.CallOnly),
@@ -78,7 +79,8 @@ namespace APISharedTests
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallMovement", -1, m => m.Name == "InstallMovementHooks"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallComparisons", -1, m => m.Name == "InstallComparisonHooks"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallDescent", -1, m => m.Name == "Commit"),
-                ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook")
+                ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook"),
+                ("APIShared.NativeBrokers.NativeBrokerSite`1", "Install", -1, m => m.Name == "CreateDetour")
             };
             using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
             {
