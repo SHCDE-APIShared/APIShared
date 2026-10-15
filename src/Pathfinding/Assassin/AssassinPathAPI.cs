@@ -92,8 +92,12 @@ namespace APIShared
         public static int RunVanillaBuilder(IntPtr context, int startX, int startY,
             int targetX, int targetY, int maximumNodes, int continuation)
         {
-            if (!IsInstalled) throw new InvalidOperationException("Shared Assassin path hooks are unavailable.");
-            return builderHook.Original(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            // The handle is published with its original before the patch is written (EnsureInstalled), so a
+            // native call cannot outrun it; IsInstalled turns true only after the patch write returns.
+            DetourHandle<AssassinPathBuilder> published = Volatile.Read(ref builderHook);
+            if (published == null || !published.TryGetOriginal(out AssassinPathBuilder original))
+                throw new InvalidOperationException("Shared Assassin path hooks are unavailable.");
+            return original(context, startX, startY, targetX, targetY, maximumNodes, continuation);
         }
 
         /// <summary>Publishes the weighted builder's existing reconstruction relaxation as logical data only.</summary>
@@ -228,11 +232,14 @@ namespace APIShared
             var pendingBuilder = new DetourHandle<AssassinPathBuilder>();
             var pendingEndpoints = new HookHandle<X64InlineHook>[4];
             HookTransaction pending = null;
+            bool installed = false;
             try
             {
+                // InstallOnCommit = false: builderHook is published with its original before any patch
+                // is written, so Build never runs before RunVanillaBuilder can (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow,
-                        OwnsHooks = true, Backend = Backend });
+                        OwnsHooks = true, InstallOnCommit = false, Backend = Backend });
                 ulong nativeBase = unchecked((ulong)module.ToInt64());
                 for (int index = 0; index < pendingEndpoints.Length; index++)
                 {
@@ -248,6 +255,8 @@ namespace APIShared
                 CommitResult result = pending.Commit();
                 if (!result.IsCompleteSuccess || !pendingBuilder.Success)
                     throw new InvalidOperationException("Shared Assassin hook transaction failed.");
+                Volatile.Write(ref builderHook, pendingBuilder);
+                NativeHookPublication.Enable(pending, result);
                 AssassinPathNativeDefinition.ValidateInstalledDetour(pendingBuilder.Hook, nativeBase);
                 for (int index = 0; index < pendingEndpoints.Length; index++)
                     if (!pendingEndpoints[index].Success || !pendingEndpoints[index].IsInstalled ||
@@ -255,14 +264,15 @@ namespace APIShared
                         throw new InvalidOperationException("Shared Assassin endpoint displacement mismatch at site " + index);
                 transaction = pending;
                 endpointHooks = pendingEndpoints;
-                builderHook = pendingBuilder; // Publication; no cleanup path can dispose this transaction.
+                installed = true; // No cleanup path can dispose this transaction.
                 NativeApiLog.Debug(log, "Assassin shared hooks installed; owner=APIShared, builder=0xD9C40, " +
                     "scheme=Indirect/displaced=10, endpoints=0xD9F0C/16,0xD9F1C/15,0xE19D8/18,0xE19F9/23.");
             }
             catch (Exception ex)
             {
-                if (builderHook == pendingBuilder) throw; // Published hooks must never be rolled back.
-                pending?.Dispose(); // Unpublished installation candidate only.
+                if (installed) throw; // Installed hooks must never be rolled back.
+                pending?.Dispose(); // Removes the failed candidate's patches before it is unpublished.
+                Volatile.Write(ref builderHook, null);
                 ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.AssassinPath);
                 NativeApiLog.Error(log, "Shared Assassin hooks unavailable; Vanilla retained: " + ex);
                 throw;

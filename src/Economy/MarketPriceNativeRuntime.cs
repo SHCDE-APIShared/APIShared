@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using BepInEx.Logging;
 using Iced.Intel;
 using RedBird.Abstractions.Hooks;
@@ -82,16 +83,21 @@ namespace APIShared.Economy
             NativeOwnershipRegistry sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
             ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.MarketPrices, ApiSharedNativeSites.MarketPriceSpans(),
                 reason => new InvalidOperationException(reason));
-            buy = new DetourHandle<PriceCall>(); sell = new DetourHandle<PriceCall>();
+            Volatile.Write(ref buy, new DetourHandle<PriceCall>()); Volatile.Write(ref sell, new DetourHandle<PriceCall>());
             HookTransaction pending = null;
             try
             {
+                // InstallOnCommit = false: Commit attaches both originals before either patch is written,
+                // so Buy and Sell always find theirs (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true, Backend = Backend });
+                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
+                        InstallOnCommit = false, Backend = Backend });
                 pending.AddDetour(buy, HookTarget.FromAddress(unchecked((ulong)(module + BuyRva).ToInt64())), (PriceCall)Buy);
                 pending.AddDetour(sell, HookTarget.FromAddress(unchecked((ulong)(module + SellRva).ToInt64())), (PriceCall)Sell);
-                if (!pending.Commit().IsCompleteSuccess || !buy.Success || !sell.Success)
+                CommitResult result = pending.Commit();
+                if (!result.IsCompleteSuccess || !buy.Success || !sell.Success)
                     throw new InvalidOperationException("Both native market hooks must install atomically.");
+                NativeHookPublication.Enable(pending, result);
                 Validate(buy.Hook, module + BuyRva, BuyBytes);
                 Validate(sell.Hook, module + SellRva, SellBytes);
                 transaction = pending;
@@ -105,8 +111,8 @@ namespace APIShared.Economy
             try { log?.LogInfo("Shared native market price events installed: CEB10/CEB90, Indirect/10; process lifetime."); } catch { }
         }
         private static int Buy(IntPtr manager, int playerId, int good, int amount) =>
-            MarketPriceEvents.Dispatch(MarketPriceDirection.Buy, manager, playerId, good, amount, buy.Original);
+            MarketPriceEvents.Dispatch(MarketPriceDirection.Buy, manager, playerId, good, amount, Volatile.Read(ref buy).Original);
         private static int Sell(IntPtr manager, int playerId, int good, int amount) =>
-            MarketPriceEvents.Dispatch(MarketPriceDirection.Sell, manager, playerId, good, amount, sell.Original);
+            MarketPriceEvents.Dispatch(MarketPriceDirection.Sell, manager, playerId, good, amount, Volatile.Read(ref sell).Original);
     }
 }
