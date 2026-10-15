@@ -28,12 +28,24 @@ namespace APIShared
             log = logger;
         }
 
+        // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
+        internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "_choreManagerOptionsInternal", typeof(global::SHCDESE.Interop.ChoreManagerOptionsInternal))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_AlliesHumanFaceVis", typeof(global::System.Collections.ObjectModel.ObservableCollection<bool>))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_SkirmishBriefingAlly", typeof(global::System.Collections.ObjectModel.ObservableCollection<bool>))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_SkirmishBriefingGold", typeof(global::System.Collections.ObjectModel.ObservableCollection<string>))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GamePlayerManagerAPI))
+            .Method(typeof(global::SHCDESE.Interop.ChoreManagerOptionsInternal), "get_AdvOpt_NoGold", typeof(int).MakeByRefType())
+            .Method(typeof(global::SHCDESE.Interop.ChoreManagerOptionsInternal), "IsValid", typeof(bool));
+
         internal static bool TryCreate(
             ManualLogSource log,
             out BriefingGoldPresentationService service,
             out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.BriefingGoldPresentation, log, out diagnostic))
+                return false;
             Hook pending = null;
             try
             {
