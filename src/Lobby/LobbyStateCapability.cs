@@ -51,12 +51,30 @@ namespace APIShared
             this.capture = capture ?? Capture;
         }
 
+        // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
+        internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::Platform_Multiplayer), "activeLobby", typeof(global::Platform_Multiplayer.MPLobby))
+            .Field(typeof(global::Platform_Multiplayer), "gameMembers", typeof(global::System.Collections.Generic.List<global::Platform_Multiplayer.MPGameMember>))
+            .Field(typeof(global::Platform_Multiplayer.MPGameMember), "kicked", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPGameMember), "skirmishAI", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "id", typeof(global::Steamworks.CSteamID))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "members", typeof(global::System.Collections.Generic.List<global::Platform_Multiplayer.MPLobbyMember>))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "dummyToBeKicked", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "id", typeof(global::Steamworks.CSteamID))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "SkirmishHumanMember", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "SkirmishMember", typeof(bool))
+            .Method(typeof(global::Platform_Multiplayer), "get_Instance", typeof(global::Platform_Multiplayer))
+            .Method(typeof(global::Platform_Multiplayer.MPLobby), "getThisPlayerFromSteamID", typeof(int), typeof(ulong))
+            .Method(typeof(global::SHCDESE.API.GameNetworkAPI), "GetPlayerIdForSteamId", typeof(int), typeof(global::Steamworks.CSteamID));
+
         internal static bool TryCreate(
             ManualLogSource log,
             out LobbyStateService service,
             out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.LobbyState, log, out diagnostic))
+                return false;
             var installed = new List<Hook>();
             LobbyStateService candidate = null;
             try
