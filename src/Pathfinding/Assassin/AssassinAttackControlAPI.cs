@@ -107,7 +107,9 @@ namespace APIShared
                 if (Interlocked.Exchange(ref errorLogged, 1) == 0)
                     log?.LogError("Assassin attack guard failed; original update retained: " + ex);
             }
-            hook.Original(); // Full original housekeeping and state machine, exactly once.
+            // Full original housekeeping and state machine, exactly once. The handle is published before
+            // the patch is written (EnsureInstalled), so it is set whenever this callback can run.
+            Volatile.Read(ref hook).Original();
         }
 
         private static void EnsureInstalled()
@@ -123,22 +125,30 @@ namespace APIShared
                 reason => new InvalidOperationException(reason));
             var candidate = new DetourHandle<AssassinAttackNativeContract.UpdateDelegate>();
             HookTransaction pending = null;
+            bool installed = false;
             try
             {
+                // InstallOnCommit = false: the handle is attached and published before the patch goes
+                // live, so DispatchAssassinUpdate always finds its original (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true, Backend = AssassinAttackNativeContract.Backend });
+                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
+                        InstallOnCommit = false, Backend = AssassinAttackNativeContract.Backend });
                 pending.AddDetour(candidate, HookTarget.FromAddress(unchecked((ulong)target.ToInt64())), (AssassinAttackNativeContract.UpdateDelegate)DispatchAssassinUpdate);
-                if (!pending.Commit().IsCompleteSuccess || !candidate.Success)
+                CommitResult result = pending.Commit();
+                if (!result.IsCompleteSuccess || !candidate.Success)
                     throw new InvalidOperationException("Assassin update transaction failed.");
+                Volatile.Write(ref hook, candidate);
+                NativeHookPublication.Enable(pending, result);
                 AssassinAttackNativeContract.Validate(candidate.Hook, target);
                 transaction = pending;
-                hook = candidate; // Publication: process lifetime; no reachable teardown.
+                installed = true; // Process lifetime; no reachable teardown.
                 log?.LogInfo("Assassin attack guard installed; APIShared owner, RVA=0x16CD70, Indirect/10, continuation=0x16CD7A.");
             }
             catch
             {
-                if (hook == candidate) throw;
-                pending?.Dispose(); // Unpublished failed candidate only.
+                if (installed) throw;
+                pending?.Dispose(); // Removes the patch of the failed candidate before it is unpublished.
+                Volatile.Write(ref hook, null);
                 ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinAttack);
                 throw;
             }

@@ -95,13 +95,16 @@ namespace APIShared
                 ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.AivBuildStep, ApiSharedNativeSites.AivBuildStepSpans(),
                     reason => new NativeResolutionException(NativeCapabilityState.Conflict, reason));
                 var candidate = new AivBuildStepService(hash, log);
+                // InstallOnCommit = false: Commit attaches candidate.hook's original before the patch is
+                // written, so ExecuteBuildStep always finds it (NativeHookPublication).
                 pending = new HookTransaction(
                     region,
                     SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions
                     {
                         FailureMode = TransactionFailureMode.RollbackAndThrow,
-                        OwnsHooks = false
+                        OwnsHooks = false,
+                        InstallOnCommit = false
                     });
                 pending.AddDetour(
                     candidate.hook,
@@ -111,6 +114,10 @@ namespace APIShared
                 if (!result.IsCompleteSuccess || !candidate.hook.Success)
                     throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
                         "The AIV ExecuteBuildStep detour was not installed atomically.");
+                NativeHookPublication.Enable(pending, result);
+                if (!candidate.hook.IsInstalled)
+                    throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
+                        "The AIV ExecuteBuildStep detour was prepared but not written.");
 
                 candidate.transaction = pending;
                 pending = null;
