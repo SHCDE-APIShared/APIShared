@@ -59,10 +59,7 @@ namespace LobbyModSettingsPresetTests
             FakeSettings settings = new FakeSettings();
             settings.PreparePresets(null, assemblyPath, ModName);
 
-            if (File.Exists(settingsPath))
-                ApplyTopLevelSettings(settings, Read(settingsPath));
-
-            AttachExtenderSave(settings, settingsPath, suppressSave);
+            settings.LoadInitialPresetSettings();
             settings.ActivatePresets();
             return settings;
         }
@@ -72,12 +69,9 @@ namespace LobbyModSettingsPresetTests
             string settingsPath,
             Func<bool> suppressSave)
         {
-            PropertyChangedEventHandler handler = (sender, args) =>
-            {
-                if (!suppressSave())
-                    WriteTopLevelSettings(settingsPath, settings);
-            };
-            settings.PropertyChanged += handler;
+            // Production registration disables the Extender writer. Keep callers using
+            // this helper on the same single-writer path.
+            settings.LoadInitialPresetSettings();
         }
 
         private static void SetNetworkSyncInProgress(bool value)
@@ -154,10 +148,21 @@ namespace LobbyModSettingsPresetTests
             WriteLegacy(path, settings.EnableMod, settings.Number);
         }
 
+        private static string PersonalDirectory(string installRoot) =>
+            new PersonalSettingsPaths(Path.Combine(installRoot, "PresetTest.dll"), TargetGuid).Presets;
+
+        private static string CurrentFile(string path)
+        {
+            string installRoot = Path.GetDirectoryName(Path.GetDirectoryName(path));
+            return new PersonalSettingsPaths(Path.Combine(installRoot, "PresetTest.dll"), TargetGuid).SettingsFile;
+        }
+
+        private static string ExistingFile(string path) => File.Exists(CurrentFile(path)) ? CurrentFile(path) : path;
+
         private static Dictionary<string, byte[]> Read(string path)
         {
             return MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(
-                File.ReadAllBytes(path));
+                File.ReadAllBytes(ExistingFile(path)));
         }
 
         private static void RemoveCurrentProperty(string path, string propertyName)
@@ -167,14 +172,14 @@ namespace LobbyModSettingsPresetTests
                 MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(payload[CurrentSettingsKey]);
             current.Remove(propertyName);
             payload[CurrentSettingsKey] = MessagePackSerializer.Serialize(current);
-            File.WriteAllBytes(path, MessagePackSerializer.Serialize(payload));
+            File.WriteAllBytes(ExistingFile(path), MessagePackSerializer.Serialize(payload));
         }
 
         private static void CorruptMetadata(string path)
         {
             Dictionary<string, byte[]> payload = Read(path);
             payload[SchemaKey] = new byte[] { 0xC1 };
-            File.WriteAllBytes(path, MessagePackSerializer.Serialize(payload));
+            File.WriteAllBytes(ExistingFile(path), MessagePackSerializer.Serialize(payload));
         }
 
         private static void Assert(bool condition, string message)
@@ -223,9 +228,11 @@ namespace LobbyModSettingsPresetTests
         {
             testRoot = Path.Combine(Path.GetTempPath(), "APIShared-Presets-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(testRoot);
+            PersonalSettingsPaths.TestDocumentsDirectory = assembly => Path.Combine(Path.GetDirectoryName(assembly), "Documents");
         }
         [TestCleanup] public void RemoveStorage()
         {
+            PersonalSettingsPaths.TestDocumentsDirectory = null;
             if (Directory.Exists(testRoot)) Directory.Delete(testRoot, true);
         }
 

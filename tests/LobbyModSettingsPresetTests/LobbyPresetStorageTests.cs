@@ -49,7 +49,7 @@ namespace LobbyModSettingsPresetTests
             Assert.AreEqual(3, MessagePackSerializer.Deserialize<int>(externalRead["__SerpPresetSchemaVersion"]));
             Assert.AreEqual(123, MessagePackSerializer.Deserialize<int>(externalRead["setting"]));
             Assert.AreEqual(1, storage.TestWriteCount);
-            Assert.AreEqual(0, Directory.GetFiles(directory, "*.tmp-*").Length);
+            Assert.AreEqual(0, Directory.GetFiles(directory, "*.tmp").Length);
         }
 
         [TestMethod]
@@ -62,7 +62,7 @@ namespace LobbyModSettingsPresetTests
                 storage.Write(new Dictionary<string, byte[]> { ["value"] = new byte[] { 2 } });
                 CollectionAssert.AreEqual(original, File.ReadAllBytes(filePath));
                 Assert.AreEqual(1, storage.TestWriteCount);
-                Assert.AreEqual(0, Directory.GetFiles(directory, "*.tmp-*").Length);
+                Assert.AreEqual(0, Directory.GetFiles(directory, "*.tmp").Length);
             }
             storage.Write(new Dictionary<string, byte[]> { ["value"] = new byte[] { 2 } });
             Assert.IsTrue(storage.TryRead(out Dictionary<string, byte[]> updated));
