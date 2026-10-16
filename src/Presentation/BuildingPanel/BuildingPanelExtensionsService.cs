@@ -26,6 +26,7 @@ namespace APIShared
         private readonly BuildingPanelExtensionRegistry<FrameworkElement> registry;
         private readonly ManagedInterceptionHook<SetUpCall> setUpHook = new ManagedInterceptionHook<SetUpCall>();
         private readonly HashSet<string> loggedFailures = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> loggedConflicts = new HashSet<string>(StringComparer.Ordinal);
         private readonly NoesisView view = new NoesisView();
         private readonly Action<FatControler> guiPost;
         private bool hooksInstalled, refreshing;
@@ -37,7 +38,7 @@ namespace APIShared
         private BuildingPanelExtensionsService(ManualLogSource logger)
         {
             log = logger;
-            registry = new BuildingPanelExtensionRegistry<FrameworkElement>(ReportFailure);
+            registry = new BuildingPanelExtensionRegistry<FrameworkElement>(ReportFailure, ReportConflict);
             guiPost = OnGuiChecks;
         }
 
@@ -80,35 +81,29 @@ namespace APIShared
             { diagnostic = Diagnostic(NativeCapabilityState.Faulted, failure); return false; }
             Func<BuildingPanelExtensionContext, FrameworkElement> factory = definition.Factory;
             if (!registry.TryAdd(owner, definition.ExtensionId, definition.Order, item => Fresh(factory((BuildingPanelExtensionContext)item)),
-                definition.AppliesTo, definition.Update, out var entry, out string reason))
+                definition.AppliesTo, definition.Update, out var entry, out string reason, definition.ShowInMapEditor))
             { diagnostic = Diagnostic(NativeCapabilityState.ValidationFailed, reason); return false; }
             registration = entry;
             diagnostic = Diagnostic(NativeCapabilityState.Available, "Building panel extension registered for the process lifetime.");
             return true;
         }
 
-        private bool Claim(string owner, BuildingPanelRecruitmentAreaDefinition definition,
-            out IBuildingPanelRecruitmentAreaClaim claim, out NativeCapabilityDiagnostic diagnostic)
+        private bool RegisterArea(string owner, BuildingPanelRecruitmentAreaDefinition definition,
+            out IBuildingPanelRecruitmentAreaRegistration registration, out NativeCapabilityDiagnostic diagnostic)
         {
-            claim = null;
-            if (definition == null || string.IsNullOrWhiteSpace(definition.ClaimId) || definition.Factory == null ||
+            registration = null;
+            if (definition == null || string.IsNullOrWhiteSpace(definition.VariantId) || definition.Factory == null ||
                 definition.BuildingTypes == null || definition.BuildingTypes.Length == 0)
-            { diagnostic = Diagnostic(NativeCapabilityState.ValidationFailed, "A claim ID, at least one building type and a factory are required."); return false; }
+            { diagnostic = Diagnostic(NativeCapabilityState.ValidationFailed, "A variant ID, at least one building type and a factory are required."); return false; }
             if (!EnsureHooks(out string failure))
             { diagnostic = Diagnostic(NativeCapabilityState.Faulted, failure); return false; }
             Func<BuildingPanelExtensionContext, FrameworkElement> factory = definition.Factory;
-            if (!registry.TryClaim(owner, definition.ClaimId, definition.BuildingTypes,
+            if (!registry.TryAddArea(owner, definition.VariantId, definition.BuildingTypes,
                 item => Fresh(factory((BuildingPanelExtensionContext)item)), definition.AppliesTo, definition.Update,
-                out var created, out string reason, out string conflictOwner))
-            {
-                diagnostic = conflictOwner == null
-                    ? Diagnostic(NativeCapabilityState.ValidationFailed, reason)
-                    : new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions, NativeCapabilityState.Conflict,
-                        string.Empty, reason, conflictOwner);
-                return false;
-            }
-            claim = created;
-            diagnostic = Diagnostic(NativeCapabilityState.Available, "Recruitment area claimed until Release.");
+                out var created, out string reason))
+            { diagnostic = Diagnostic(NativeCapabilityState.ValidationFailed, reason); return false; }
+            registration = created;
+            diagnostic = Diagnostic(NativeCapabilityState.Available, "Recruitment area replacement registered until Release.");
             return true;
         }
 
@@ -216,11 +211,12 @@ namespace APIShared
             context = new BuildingPanelExtensionContext(hud);
         }
 
-        // The building Vanilla shows in the in-building panel: alive, with a global ID. Map editor excluded.
+        // The building Vanilla shows in the in-building panel: alive, with a global ID. In the map editor the
+        // selection carries IsMapEditor; the registry shows only opted-in extensions there.
         private static unsafe bool TryReadSelection(MainViewModel main, out BuildingPanelSelection selection)
         {
             selection = default;
-            if (main == null || !main.Show_HUD_Building || main.IsMapEditorMode) return false;
+            if (main == null || !main.Show_HUD_Building) return false;
             GameData data = GameData.Instance;
             EngineInterface.PlayState state = data?.lastGameState;
             if (state == null || state.app_mode != (int)Enums.AppModes.APP_MODE_IN_BUILDING || state.in_structure <= 0) return false;
@@ -230,7 +226,7 @@ namespace APIShared
             GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
             selection = new BuildingPanelSelection(state.in_structure, unchecked((int)building->r_GlobalId),
                 building->r_PlayerIdOwner, players != null ? players.GetLocalPlayerId() : 0,
-                building->r_BuildingType, state.app_sub_mode);
+                building->r_BuildingType, state.app_sub_mode, main.IsMapEditorMode);
             return true;
         }
 
@@ -241,6 +237,19 @@ namespace APIShared
             TryLog(true, item == "*"
                 ? "Building panel " + phase + " failed; it retries on the next refresh: " + error
                 : "Building panel item " + item + " disabled after its " + phase + " failed; RequestContentRefresh re-enables it: " + error);
+        }
+
+        // The single route of every building panel conflict, so the shared conflict report (issue #47) can take
+        // them over: two recruitment-area replacements matched the same selected building and the precedence
+        // decided which one is shown. Cold path, once per pair; nothing else in this service reports a conflict.
+        private void ReportConflict(BuildingPanelExtensionRegistry<FrameworkElement>.Area shown,
+            BuildingPanelExtensionRegistry<FrameworkElement>.Area other, BuildingPanelSelection selection)
+        {
+            if (!loggedConflicts.Add(shown.Key + "|" + other.Key)) return;
+            string message = "Building panel conflict: recruitment area of " + selection.BuildingType + " building " +
+                selection.BuildingId + ": variant '" + shown.Id + "' of " + shown.Owner + " is shown; variant '" + other.Id +
+                "' of " + other.Owner + " also matches this building and is not shown here. Its other buildings are unaffected.";
+            try { NativeApiLog.Warning(log, message); } catch { }
         }
 
         private void TryLog(bool error, string message)
@@ -288,9 +297,9 @@ namespace APIShared
                 out IBuildingPanelExtensionRegistration registration, out NativeCapabilityDiagnostic diagnostic) =>
                 service.Register(owner, definition, out registration, out diagnostic);
             public void SetOwnerActive(bool active) => service.registry.SetOwnerActive(owner, active);
-            public bool TryClaimRecruitmentArea(BuildingPanelRecruitmentAreaDefinition definition,
-                out IBuildingPanelRecruitmentAreaClaim claim, out NativeCapabilityDiagnostic diagnostic) =>
-                service.Claim(owner, definition, out claim, out diagnostic);
+            public bool TryRegisterRecruitmentArea(BuildingPanelRecruitmentAreaDefinition definition,
+                out IBuildingPanelRecruitmentAreaRegistration registration, out NativeCapabilityDiagnostic diagnostic) =>
+                service.RegisterArea(owner, definition, out registration, out diagnostic);
         }
     }
 }

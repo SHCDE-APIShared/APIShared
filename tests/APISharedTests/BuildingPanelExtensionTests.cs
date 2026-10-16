@@ -51,24 +51,30 @@ namespace APISharedTests
         private sealed class Fixture
         {
             internal readonly List<string> Failures = new List<string>();
+            // "shown>other@building" for each conflict the registry reports.
+            internal readonly List<string> Conflicts = new List<string>();
             internal readonly BuildingPanelExtensionRegistry<Element> Registry;
             internal readonly View View = new View();
-            internal Fixture() { Registry = new BuildingPanelExtensionRegistry<Element>((key, phase, error) => Failures.Add(key + ":" + phase)); }
-            internal BuildingPanelExtensionRegistry<Element>.Claim Claim(string owner, string id, eStructs[] types,
+            internal Fixture()
+            {
+                Registry = new BuildingPanelExtensionRegistry<Element>((key, phase, error) => Failures.Add(key + ":" + phase),
+                    (shown, other, selection) => Conflicts.Add(shown.Key + ">" + other.Key + "@" + selection.BuildingId));
+            }
+            internal BuildingPanelExtensionRegistry<Element>.Area Area(string owner, string id, eStructs[] types,
                 Func<object, Element> factory = null, Func<BuildingPanelSelection, bool> appliesTo = null,
                 Action<BuildingPanelSelection, Element> update = null)
             {
-                Assert.IsTrue(Registry.TryClaim(owner, id, types, factory ?? (_ => new Element(owner + "/" + id)), appliesTo, update,
-                    out var claim, out string reason, out _), reason);
-                return claim;
+                Assert.IsTrue(Registry.TryAddArea(owner, id, types, factory ?? (_ => new Element(owner + "/" + id)), appliesTo, update,
+                    out var area, out string reason), reason);
+                return area;
             }
             internal void Show(BuildingPanelSelection selection) => Registry.Apply(View, null, selection, true);
             internal BuildingPanelExtensionRegistry<Element>.Entry Add(string owner, string id, int order = 0,
                 Func<object, Element> factory = null, Func<BuildingPanelSelection, bool> appliesTo = null,
-                Action<BuildingPanelSelection, Element> update = null)
+                Action<BuildingPanelSelection, Element> update = null, bool showInMapEditor = false)
             {
                 Assert.IsTrue(Registry.TryAdd(owner, id, order, factory ?? (_ => new Element(owner + "/" + id)), appliesTo, update,
-                    out var entry, out string reason), reason);
+                    out var entry, out string reason, showInMapEditor), reason);
                 return entry;
             }
             internal void Refresh(bool selected = true) => Registry.Apply(View, null, Barracks, selected);
@@ -190,24 +196,25 @@ namespace APISharedTests
         }
 
         private const BuildingPanelVisibility V = BuildingPanelVisibility.Visible, H = BuildingPanelVisibility.Hidden;
-        private static readonly eStructs Stone = (eStructs)41, Wood = (eStructs)40, Market = (eStructs)3;
-        private static BuildingPanelSelection Select(int id, eStructs type) => new BuildingPanelSelection(id, 1000 + id, 1, 1, type, 0);
+        private static readonly eStructs Stone = eStructs.STRUCT_BARRACKS_STONE, Wood = eStructs.STRUCT_BARRACKS_WOOD, Market = (eStructs)3;
+        private static BuildingPanelSelection Select(int id, eStructs type, int owner = 1, int panelMode = 0, bool editor = false) =>
+            new BuildingPanelSelection(id, 1000 + id, owner, 1, type, panelMode, editor);
         private static BuildingPanelVisibility[] Initial => new[] { V, H, H, H, H, H, V };
 
         [TestMethod]
-        public void AClaimHidesVanillaRecruitmentAndRestoresItExactlyOnRelease()
+        public void AReplacementHidesVanillaRecruitmentAndRestoresItExactlyOnRelease()
         {
             var f = new Fixture();
-            var claim = f.Claim("byz", "garrison", new[] { Stone });
+            var area = f.Area("byz", "garrison", new[] { Stone });
             f.Show(Select(12, Stone));
-            Assert.IsTrue(f.View.AllVanillaHidden, "Claiming hides every Vanilla recruitment panel.");
+            Assert.IsTrue(f.View.AllVanillaHidden, "A shown replacement hides every Vanilla recruitment panel.");
             CollectionAssert.AreEqual(new[] { "byz/garrison" }, f.View.AreaShown);
-            claim.Release();
-            claim.Release();
-            Assert.IsTrue(claim.IsReleased);
+            area.Release();
+            area.Release();
+            Assert.IsTrue(area.IsReleased);
             f.Show(Select(12, Stone));
             CollectionAssert.AreEqual(Initial, f.View.Vanilla, "Release must restore every panel exactly.");
-            Assert.AreEqual(0, f.View.Area.Count, "A released claim's replacement is removed.");
+            Assert.AreEqual(0, f.View.Area.Count, "A released replacement is removed.");
             Assert.IsFalse(f.Registry.HasEntries, "Nothing is left to refresh.");
         }
 
@@ -215,9 +222,9 @@ namespace APISharedTests
         public void DeselectRestoresVanillaAndKeepsVanillasNewerWrites()
         {
             var f = new Fixture();
-            f.Claim("byz", "garrison", new[] { Stone });
+            f.Area("byz", "garrison", new[] { Stone });
             f.Show(Select(12, Stone));
-            // While claimed, Vanilla shows the mercenary panel: it is re-recorded and hidden again.
+            // While shown, Vanilla shows the mercenary panel: it is re-recorded and hidden again.
             f.View.Vanilla[1] = V;
             f.Show(Select(12, Stone));
             Assert.IsTrue(f.View.AllVanillaHidden);
@@ -229,41 +236,125 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void ASecondClaimantIsRefusedWithTheCurrentOwner()
+        public void TwoOwnersVariantsOnOneNativeTypeCoexist()
         {
+            // Serpens's example: two mods each build their own barracks on the native stone barracks.
             var f = new Fixture();
-            var first = f.Claim("byz", "garrison", new[] { Stone, Wood });
-            Assert.IsFalse(f.Registry.TryClaim("other.mod", "panel", new[] { Wood }, _ => new Element("x"), null, null,
-                out var refused, out string reason, out string owner));
-            Assert.IsNull(refused);
-            Assert.AreEqual("byz", owner);
-            StringAssert.Contains(reason, "byz/garrison");
-            Assert.IsFalse(f.Registry.TryClaim("byz", "garrison", new[] { Market }, _ => new Element("x"), null, null, out _, out _, out owner));
-            Assert.AreEqual("byz", owner, "The same owner and ID cannot claim twice.");
-            Assert.IsFalse(f.Registry.TryClaim("other.mod", "empty", new eStructs[0], _ => new Element("x"), null, null, out _, out _, out owner));
-            Assert.IsNull(owner, "An invalid request is not a conflict.");
-            f.Claim("other.mod", "market", new[] { Market });
-            f.Show(Select(12, Wood));
-            CollectionAssert.AreEqual(new[] { "byz/garrison" }, f.View.AreaShown, "The refused claimant never overrides.");
-            first.Release();
-            f.Claim("other.mod", "panel", new[] { Wood });
-            f.Show(Select(12, Wood));
-            CollectionAssert.AreEqual(new[] { "other.mod/panel" }, f.View.AreaShown);
+            f.Area("mod.a", "garrison", new[] { Stone }, appliesTo: s => s.BuildingId == 12);
+            f.Area("mod.b", "elite", new[] { Stone, Wood }, appliesTo: s => s.BuildingId == 13);
+            f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "mod.a/garrison" }, f.View.AreaShown);
+            f.Show(Select(13, Stone));
+            CollectionAssert.AreEqual(new[] { "mod.b/elite" }, f.View.AreaShown);
             Assert.IsTrue(f.View.AllVanillaHidden);
+            f.Show(Select(14, Stone));
+            CollectionAssert.AreEqual(Initial, f.View.Vanilla, "An ordinary stone barracks keeps Vanilla.");
+            Assert.AreEqual(0, f.View.AreaShown.Length);
+            Assert.AreEqual(0, f.Conflicts.Count, "Variants that never match the same building do not conflict.");
         }
 
         [TestMethod]
-        public void OnlyFilteredBuildingsOfAClaimedTypeLoseTheVanillaArea()
+        public void RegistrationOrderNeverDecidesWhichVariantIsShown()
+        {
+            foreach (bool reversed in new[] { false, true })
+            {
+                var f = new Fixture();
+                Func<BuildingPanelSelection, bool> both = s => s.BuildingId == 12;
+                if (reversed) { f.Area("mod.z", "panel", new[] { Stone }, appliesTo: both); f.Area("mod.a", "panel", new[] { Stone }, appliesTo: both); }
+                else { f.Area("mod.a", "panel", new[] { Stone }, appliesTo: both); f.Area("mod.z", "panel", new[] { Stone }, appliesTo: both); }
+                for (int i = 0; i < 3; i++) f.Show(Select(12, Stone));
+                CollectionAssert.AreEqual(new[] { "mod.a/panel" }, f.View.AreaShown, "Ordinal owner GUID decides, in both orders.");
+                CollectionAssert.AreEqual(new[] { "mod.a/panel>mod.z/panel@12" }, f.Conflicts, "One report per pair, not per refresh.");
+            }
+        }
+
+        [TestMethod]
+        public void AVariantSelectorTakesPrecedenceOverAWholeTypeReplacement()
         {
             var f = new Fixture();
-            f.Claim("byz", "garrison", new[] { Stone }, appliesTo: s => s.BuildingId == 12);
+            f.Area("aaa.overhaul", "all", new[] { Stone });
+            f.Area("zzz.byz", "garrison", new[] { Stone }, appliesTo: s => s.BuildingId == 12);
+            f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "zzz.byz/garrison" }, f.View.AreaShown, "The specific variant wins over the whole type.");
             f.Show(Select(13, Stone));
-            CollectionAssert.AreEqual(Initial, f.View.Vanilla, "Other buildings of the type keep Vanilla.");
-            f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "aaa.overhaul/all" }, f.View.AreaShown, "The whole-type replacement keeps every other building.");
             Assert.IsTrue(f.View.AllVanillaHidden);
-            f.Registry.SetOwnerActive("byz", false);
+            CollectionAssert.AreEqual(new[] { "zzz.byz/garrison>aaa.overhaul/all@12" }, f.Conflicts);
+        }
+
+        [TestMethod]
+        public void TheNextMatchingVariantTakesOverWhenTheShownOneLeaves()
+        {
+            var f = new Fixture();
+            var first = f.Area("mod.a", "panel", new[] { Stone });
+            f.Area("mod.b", "panel", new[] { Stone });
             f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "mod.a/panel" }, f.View.AreaShown);
+            f.Registry.SetOwnerActive("mod.a", false);
+            f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "mod.b/panel" }, f.View.AreaShown, "An inactive owner's variant matches nothing.");
+            Assert.IsTrue(f.View.AllVanillaHidden);
+            f.Registry.SetOwnerActive("mod.a", true);
+            first.Release();
+            f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "mod.b/panel" }, f.View.AreaShown);
+            Assert.IsTrue(f.View.AllVanillaHidden, "Handing over between variants keeps Vanilla hidden.");
+            Assert.AreEqual(1, f.View.Area.Count, "The released replacement is removed.");
+            f.Show(Select(13, Market));
+            CollectionAssert.AreEqual(Initial, f.View.Vanilla, "The recorded Vanilla state survives the hand-over.");
+        }
+
+        [TestMethod]
+        public void OnlyInvalidOrDuplicateVariantRegistrationsAreRefused()
+        {
+            var f = new Fixture();
+            f.Area("byz", "garrison", new[] { Stone, Wood });
+            Assert.IsTrue(f.Registry.TryAddArea("other.mod", "garrison", new[] { Wood }, _ => new Element("x"), null, null, out var other, out _),
+                "Another owner may use the same variant ID and types.");
+            Assert.IsNotNull(other);
+            Assert.IsFalse(f.Registry.TryAddArea("byz", "garrison", new[] { Market }, _ => new Element("x"), null, null, out var duplicate, out string reason));
+            Assert.IsNull(duplicate);
+            StringAssert.Contains(reason, "already registered");
+            Assert.IsFalse(f.Registry.TryAddArea("byz", "empty", new eStructs[0], _ => new Element("x"), null, null, out _, out _));
+            Assert.IsFalse(f.Registry.TryAddArea("byz", " ", new[] { Stone }, _ => new Element("x"), null, null, out _, out _));
+            Assert.IsFalse(f.Registry.TryAddArea("byz", "nofactory", new[] { Stone }, null, null, null, out _, out _));
+        }
+
+        [TestMethod]
+        public void TheGarrisonShapeKeepsOrdinaryStoneBarracksAndOtherPlayersVanilla()
+        {
+            // The Byzantine Garrison: a variant of the stone barracks, its own panel only for the local owner in the
+            // recruitment sub-mode; every other stone barracks keeps Vanilla.
+            var garrisons = new HashSet<int> { 12 };
+            var f = new Fixture();
+            f.Area("byz", "garrison", new[] { Stone },
+                appliesTo: s => s.IsLocallyOwned && s.PanelMode == 1 && garrisons.Contains(s.BuildingId));
+            f.Show(Select(13, Stone, panelMode: 1));
+            CollectionAssert.AreEqual(Initial, f.View.Vanilla, "An ordinary stone barracks keeps Vanilla.");
+            f.Show(Select(12, Stone, owner: 2, panelMode: 1));
+            CollectionAssert.AreEqual(Initial, f.View.Vanilla, "Another player's Garrison keeps Vanilla.");
+            f.Show(Select(12, Stone, panelMode: 1));
+            Assert.IsTrue(f.View.AllVanillaHidden);
+            CollectionAssert.AreEqual(new[] { "byz/garrison" }, f.View.AreaShown);
+            f.Registry.SetOwnerActive("byz", false);
+            f.Show(Select(12, Stone, panelMode: 1));
             CollectionAssert.AreEqual(Initial, f.View.Vanilla, "An inactive owner hands the area back.");
+        }
+
+        [TestMethod]
+        public void TheMapEditorShowsOnlyOptedInExtensionsAndNoReplacement()
+        {
+            var f = new Fixture();
+            f.Area("byz", "garrison", new[] { Stone });
+            f.Add("owner", "game-only");
+            f.Add("owner", "editor", showInMapEditor: true);
+            f.Show(Select(12, Stone, editor: true));
+            CollectionAssert.AreEqual(Initial, f.View.Vanilla, "Nothing is recruited in the map editor.");
+            Assert.AreEqual(0, f.View.Area.Count, "No replacement is created in the editor.");
+            CollectionAssert.AreEqual(new[] { "owner/editor" }, f.View.Visible);
+            f.Show(Select(12, Stone));
+            CollectionAssert.AreEqual(new[] { "owner/editor", "owner/game-only" }, f.View.Visible);
+            Assert.IsTrue(f.View.AllVanillaHidden);
         }
 
         [TestMethod]
@@ -271,7 +362,7 @@ namespace APISharedTests
         {
             var f = new Fixture();
             int created = 0;
-            f.Claim("byz", "garrison", new[] { Stone }, factory: _ => { created++; return new Element("byz/garrison"); });
+            f.Area("byz", "garrison", new[] { Stone }, factory: _ => { created++; return new Element("byz/garrison"); });
             f.Show(Select(12, Stone));
             View old = f.View;
             // The service hands the old panel back (no selection) before it forgets it.
@@ -289,21 +380,21 @@ namespace APISharedTests
         public void MissionEndHandsTheAreaBackUntilTheNextSelection()
         {
             var f = new Fixture();
-            f.Claim("byz", "garrison", new[] { Stone });
+            f.Area("byz", "garrison", new[] { Stone });
             f.Show(Select(12, Stone));
             f.Registry.ReleaseActive(f.View);
             CollectionAssert.AreEqual(Initial, f.View.Vanilla);
             Assert.AreEqual(0, f.View.AreaShown.Length);
             f.Show(Select(12, Stone));
-            Assert.IsTrue(f.View.AllVanillaHidden, "The claim persists into the next mission.");
+            Assert.IsTrue(f.View.AllVanillaHidden, "The replacement persists into the next mission.");
         }
 
         [TestMethod]
-        public void AFailingClaimHandsTheAreaBackAndReportsOnce()
+        public void AFailingReplacementHandsTheAreaBackAndReportsOnce()
         {
             var f = new Fixture();
             bool throws = false;
-            var claim = f.Claim("byz", "garrison", new[] { Stone }, update: (s, e) => { if (throws) throw new InvalidOperationException(); });
+            var area = f.Area("byz", "garrison", new[] { Stone }, update: (s, e) => { if (throws) throw new InvalidOperationException(); });
             f.Show(Select(12, Stone));
             throws = true;
             f.Show(Select(12, Stone));
@@ -311,16 +402,17 @@ namespace APISharedTests
             f.Show(Select(12, Stone));
             CollectionAssert.AreEqual(new[] { "byz/garrison:update" }, f.Failures);
             throws = false;
-            claim.RequestContentRefresh();
+            area.RequestContentRefresh();
             f.Show(Select(12, Stone));
-            Assert.IsTrue(f.View.AllVanillaHidden, "RequestContentRefresh re-enables the claim.");
-            f.Claim("other", "broken", new[] { Wood }, factory: _ => throw new InvalidOperationException());
-            f.Claim("other", "filter", new[] { Market }, appliesTo: _ => throw new InvalidOperationException());
+            Assert.IsTrue(f.View.AllVanillaHidden, "RequestContentRefresh re-enables the replacement.");
+            f.Area("other", "broken", new[] { Wood }, factory: _ => throw new InvalidOperationException());
+            f.Area("other", "filter", new[] { Market }, appliesTo: _ => throw new InvalidOperationException());
             f.Show(Select(14, Wood));
             CollectionAssert.AreEqual(Initial, f.View.Vanilla, "A failed factory leaves Vanilla in place.");
             f.Show(Select(15, Market));
             CollectionAssert.AreEqual(Initial, f.View.Vanilla);
             CollectionAssert.AreEqual(new[] { "byz/garrison:update", "other/broken:factory", "other/filter:filter" }, f.Failures);
+            Assert.AreEqual(0, f.Conflicts.Count, "A failed replacement is not a conflict.");
         }
 
         [TestMethod]
@@ -338,16 +430,21 @@ namespace APISharedTests
                 Assert.AreEqual(0.0, bytes, "Refresh with " + count + " extensions allocates.");
             }
             foreach (int count in new[] { 0, 8 })
-            {
-                var f = new Fixture();
-                f.Claim("owner", "area", new[] { Barracks.BuildingType }, appliesTo: Always, update: NoUpdate);
-                for (int i = 0; i < count; i++) f.Add("owner", "row" + i, appliesTo: Always, update: NoUpdate);
-                f.Refresh();
-                Assert.IsTrue(f.View.AllVanillaHidden);
-                Measure(() => f.Registry.Apply(f.View, null, Barracks, true), out double ns, out double bytes);
-                rows.Add(string.Format("broker, claim held + {0} extensions: {1:F1} ns, {2:F1} B", count, ns, bytes));
-                Assert.AreEqual(0.0, bytes, "Refresh with a held claim and " + count + " extensions allocates.");
-            }
+                foreach (int variants in new[] { 1, 2 })
+                {
+                    var f = new Fixture();
+                    for (int v = 0; v < variants; v++)
+                        f.Area("owner" + v, "area", new[] { Barracks.BuildingType }, appliesTo: Always, update: NoUpdate);
+                    for (int i = 0; i < count; i++) f.Add("owner", "row" + i, appliesTo: Always, update: NoUpdate);
+                    f.Refresh();
+                    Assert.IsTrue(f.View.AllVanillaHidden);
+                    Assert.AreEqual(variants - 1, f.Conflicts.Count);
+                    Measure(() => f.Registry.Apply(f.View, null, Barracks, true), out double ns, out double bytes);
+                    rows.Add(string.Format("broker, replacement shown{0} + {1} extensions: {2:F1} ns, {3:F1} B",
+                        variants == 2 ? " (second variant matching, conflict reported)" : "", count, ns, bytes));
+                    Assert.AreEqual(0.0, bytes, "Refresh with " + variants + " matching variants and " + count + " extensions allocates.");
+                    Assert.AreEqual(variants - 1, f.Conflicts.Count, "A steady refresh reports the conflict again.");
+                }
             var hand = new HandWrittenPost();
             var view = new View();
             hand.Post(view, Barracks, true);
@@ -400,7 +497,7 @@ namespace APISharedTests
                 var service = module.GetType("APIShared.BuildingPanelExtensionsService");
                 var registry = module.GetType("APIShared.BuildingPanelExtensionRegistry`1");
                 var methods = service.Methods.Where(m => new[] { "OnGuiChecks", "OnSetUp", "Refresh", "TryReadSelection" }.Contains(m.Name))
-                    .Concat(registry.Methods.Where(m => new[] { "Apply", "Applies", "Run", "ApplyClaims", "KeepVanillaHidden", "ClaimApplies" }.Contains(m.Name))).ToList();
+                    .Concat(registry.Methods.Where(m => new[] { "Apply", "Applies", "Run", "ApplyAreas", "KeepVanillaHidden", "AreaApplies" }.Contains(m.Name))).ToList();
                 Assert.AreEqual(10, methods.Count);
                 foreach (var method in methods)
                     foreach (var instruction in method.Body.Instructions)
