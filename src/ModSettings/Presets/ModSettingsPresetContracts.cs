@@ -152,7 +152,7 @@ namespace APIShared.ModSettings
         /// <summary>Selected setting keys and their value-resolution rules; values are validated against the target schema.</summary>
         public IReadOnlyDictionary<string, PublishedPresetSetting> Settings { get; internal set; } =
             new Dictionary<string, PublishedPresetSetting>(StringComparer.Ordinal);
-        /// <summary>Path of the discovered preset file, used for diagnostics and personal overwrite operations.</summary>
+        /// <summary>Path of the discovered preset file, used for diagnostics and deletion. Personal saves always target Documents, including when this source is an old plugin-local file.</summary>
         public string SourcePath { get; internal set; } = string.Empty;
 
         /// <summary>True only for personal presets; bundled and external sources remain read-only.</summary>

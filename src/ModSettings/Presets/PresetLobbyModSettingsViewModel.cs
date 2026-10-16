@@ -814,6 +814,8 @@ namespace APIShared.ModSettings
         }
 #endif
 
+        internal void LoadInitialPresetSettings() => presetController?.LoadInitialSettings();
+
         internal void ActivatePresets()
         {
             if (presetController == null)

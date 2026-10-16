@@ -52,7 +52,9 @@ namespace APIShared.ModSettings
             Version targetVersion,
             string targetPluginDirectory,
             string personalPresetRoot,
-            ManualLogSource log)
+            ManualLogSource log,
+            string legacyPersonalPresetRoot = null,
+            Action<PublishedModSettingsPreset> validatePreset = null)
         {
             targetGuid = RequireSafePathSegment(targetGuid, "target plugin GUID");
             var providers = new List<PresetProvider>();
@@ -65,6 +67,9 @@ namespace APIShared.ModSettings
                 personalPresetRoot,
                 ModSettingsPresetSourceKind.Personal,
                 directoryIsTarget: true);
+            if (!string.IsNullOrEmpty(legacyPersonalPresetRoot))
+                AddProvider(providers, seenDirectories, "personal:" + targetGuid, "Personal",
+                    legacyPersonalPresetRoot, ModSettingsPresetSourceKind.Personal, directoryIsTarget: true);
             AddProvider(
                 providers,
                 seenDirectories,
@@ -126,6 +131,7 @@ namespace APIShared.ModSettings
                         PublishedModSettingsPreset preset = ModSettingsPresetJson.Parse(
                             ReadPresetText(fullPath), provider.Guid, provider.Name, targetGuid, fullPath);
                         preset.SourceKind = provider.SourceKind;
+                        validatePreset?.Invoke(preset);
                         if (!MatchesVersion(targetVersion, preset.MinimumTargetVersion, preset.MaximumTargetVersion)) continue;
                         providerPresets.Add(preset);
                     }
@@ -155,7 +161,8 @@ namespace APIShared.ModSettings
                     }
                     if (!identities.Add(preset.StableId))
                     {
-                        DebugLogHelper.LogError(log, "Duplicate provider/target/preset identity [" + preset.StableId + "] was ignored.");
+                        if (preset.SourceKind != ModSettingsPresetSourceKind.Personal)
+                            DebugLogHelper.LogError(log, "Duplicate provider/target/preset identity [" + preset.StableId + "] was ignored.");
                         continue;
                     }
                     result.Add(preset);

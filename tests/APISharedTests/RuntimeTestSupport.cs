@@ -23,11 +23,14 @@ namespace APISharedTests
     {
         // These managed fixtures mutate process-wide state without installing hooks.
         // Restore it even when an assertion fails, so filtered/repeated runs are independent.
+        private string documentsRoot;
         private readonly Dictionary<FieldInfo, object> processState = new Dictionary<FieldInfo, object>();
 
         [TestInitialize]
         public void IsolateManagedProcessState()
         {
+            documentsRoot = Path.Combine(Path.GetTempPath(), "APIShared-Documents-" + Guid.NewGuid().ToString("N"));
+            PersonalSettingsPaths.TestDocumentsDirectory = _ => documentsRoot;
             processState.Clear();
             SnapshotAndReset(typeof(PlayerPerspectiveAPI), "identityOverrideActive", "selectedSpectatorPlayerId",
                 "transitionViewPlayerId", "transitionActive", "viewUncertain");
@@ -48,6 +51,8 @@ namespace APISharedTests
         [TestCleanup]
         public void RestoreManagedProcessState()
         {
+            PersonalSettingsPaths.TestDocumentsDirectory = null;
+            if (Directory.Exists(documentsRoot)) Directory.Delete(documentsRoot, true);
             foreach (var state in processState) state.Key.SetValue(null, state.Value);
             processState.Clear();
         }

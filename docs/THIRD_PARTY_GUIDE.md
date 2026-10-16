@@ -219,6 +219,34 @@ Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings
 
 The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
 
+### Personal files and previous installations
+
+APIShared preset participants store personal files in the platform-resolved Documents
+folder under `SHCDE/APIShared/<Mod-GUID>/`: `settings.msgpack` contains the working
+settings and `Presets/preset_<id>.json` contains personal presets. The same user and
+mod GUID share this data across game installations. Ordinary Extender settings
+registrations without APIShared presets keep their existing storage behavior.
+
+The previous plugin-local `LobbyModSettings/Presets/Override/<Mod-GUID>` directory
+remains readable. A valid Documents preset takes precedence over an old personal
+preset with the same stable identity; duplicate IDs within either directory remain
+invalid. Saving, importing or explicitly overwriting a personal preset writes only
+to Documents and preserves old JSON files. Explicit deletion removes personal copies
+of the selected identity from both directories and reports partial failures.
+Bundled and external provider presets remain read-only in their original locations.
+
+When no Documents working file exists, APIShared loads the previous plugin-local
+`.msgpack` and writes the validated/migrated state to Documents, retaining the original.
+A present but corrupt or inaccessible new file does not fall back to stale installation
+settings. Failed migrations retain their source for retry. APIShared restores initial
+values before UI binding and remains the sole writer for its participants. External
+configuration providers retain ownership of their own configuration files.
+
+Missing or unwritable Documents storage is reported rather than silently redirecting
+writes to the plugin directory. The shorter layout reduces installation-path dependence;
+it does not provide general long-path support for the game or its preset providers.
+Documents resolution and persistence need validation in the actual Proton prefix.
+
 ### External settings and application backends
 
 Settings adapters can override `DynamicSettingsProvider` with an

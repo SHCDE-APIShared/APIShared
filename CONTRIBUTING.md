@@ -142,7 +142,7 @@ approval is not a prerequisite for implementation or merging.
 Either maintainer may prepare releases from a tested, release-ready `main` revision
 in a committed and pushed standalone checkout:
 `release.bat` builds and creates a GitHub draft. Version bumps belong to release preparation,
-not test iterations. The Serpens66 mod workspace pins a tested commit using a Git submodule;
+not test iterations. The Serpens66 mod workspace uses an independent local APIShared clone and records exact SDK inputs in release provenance;
 contributors work in this repository with ordinary branches and pull requests.
 The release driver creates build evidence, checksums and provenance; it does not
 automatically test both maintainers' consumer mods in the game. For changes affecting

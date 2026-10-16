@@ -44,6 +44,7 @@
     <Compile Include="..\..\src\ModSettings\Presets\ILobbyPresetHost.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.PresetIntegration.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetStorage.cs" />
+    <Compile Include="..\..\src\ModSettings\Presets\PersonalSettingsPaths.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.Sources.cs" />
     <Compile Include="..\..\src\ModSettings\UI\ModSettingsHorizontalFocusScrollGuard.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyModSettingsPresetRegistration.cs" />

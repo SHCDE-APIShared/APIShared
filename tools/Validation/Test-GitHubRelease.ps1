@@ -104,6 +104,7 @@ function Get-WorkshopConfiguration {
     # Workspace driver policy is tested independently with real isolated worktrees.
     # These fixtures isolate only the existing release/publication confirmation paths.
     Write-Fixture (Join-Path $workspace 'Shared/Tools/ApiSharedRepository/MainSource.Common.ps1') @'
+function Get-ApiMainWorkspace($Workspace) { return $Workspace }
 function Resolve-ApiMainSelection($Workspace) { return 'fixture-main-selection' }
 function Get-WorkshopApiRoot($Workspace) { return (Join-Path $Workspace 'APIShared') }
 function Ensure-ApiMainBuild {}

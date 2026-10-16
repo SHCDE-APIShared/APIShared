@@ -34,6 +34,8 @@ namespace APIShared.ModSettings
         private readonly LobbyPresetStorage storage;
         private readonly string pluginDirectory;
         private readonly string personalPresetDirectory;
+        private readonly string legacyPersonalPresetDirectory;
+        private readonly string personalStorageRoot;
         private readonly string targetGuid;
         private readonly Version targetVersion;
         private readonly IDynamicPresetSettingsProvider dynamicProvider;
@@ -96,8 +98,11 @@ namespace APIShared.ModSettings
                 pluginDirectory,
                 LobbyModSettingsStorage.STORAGE_FOLDER_NAME,
                 safeFileName + LobbyModSettingsStorage.FILE_EXTENSION);
-            storage = new LobbyPresetStorage(filePath, log, this.modName);
-            personalPresetDirectory = Path.Combine(
+            var paths = new PersonalSettingsPaths(pluginAssemblyLocation, this.targetGuid);
+            personalStorageRoot = paths.DocumentsDirectory;
+            storage = new LobbyPresetStorage(paths.SettingsFile, log, this.modName, filePath, personalStorageRoot);
+            personalPresetDirectory = paths.Presets;
+            legacyPersonalPresetDirectory = Path.Combine(
                 pluginDirectory,
                 LobbyModSettingsStorage.STORAGE_FOLDER_NAME,
                 "Presets",

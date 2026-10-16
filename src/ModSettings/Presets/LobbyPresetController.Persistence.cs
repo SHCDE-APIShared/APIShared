@@ -15,6 +15,27 @@ namespace APIShared.ModSettings
     /// <summary>Reads and composes the existing MessagePack envelope; binary I/O belongs to LobbyPresetStorage.</summary>
     internal sealed partial class LobbyPresetController
     {
+        private bool initialSettingsLoaded;
+
+        // Runs before UI binding, with writes disabled. External providers retain ownership
+        // of their startup configuration; APIShared must not replay a stale working file there.
+        internal void LoadInitialSettings()
+        {
+            if (initialSettingsLoaded) return;
+            initialSettingsLoaded = true;
+            if (persistedProperties.Length == 0 || dynamicProvider != null) return;
+            if (!storage.TryRead(out Dictionary<string, byte[]> initial)) return;
+            bool previousApplying = applying;
+            applying = true;
+            try
+            {
+                foreach (PresetPropertyAccessor property in persistedProperties)
+                    if (property.CanWrite && initial.TryGetValue(property.Name, out byte[] bytes) && bytes != null)
+                        TryApplyProperty(property, bytes);
+            }
+            finally { applying = previousApplying; }
+        }
+
         public void Activate()
         {
             if (active)
@@ -27,15 +48,19 @@ namespace APIShared.ModSettings
                 return;
             }
 
+            LoadInitialSettings();
+            bool needsRelocation = storage.NeedsRelocation;
             Dictionary<string, byte[]> payload = null;
             bool fileExists = storage.Exists;
             if (fileExists && !storage.TryRead(out payload))
             {
                 storage.BackupCorruptFile();
+                // Do not turn a failed read into a successful defaults-only migration.
+                legacyMigrationPending = true;
                 payload = null;
             }
 
-            bool needsRewrite = false;
+            bool needsRewrite = needsRelocation;
             PublishedModSettingsPreset legacyPublishedToMaterialize = null;
             Dictionary<string, byte[]> legacyPreset1 = null;
             Dictionary<string, byte[]> legacyPreset2 = null;
@@ -77,6 +102,7 @@ namespace APIShared.ModSettings
                         log,
                         $"[{modName}] Preset metadata is invalid: {exception}");
                     storage.BackupCorruptFile();
+                    if (needsRelocation) legacyMigrationPending = true;
                     payload = null;
                 }
             }
@@ -112,11 +138,11 @@ namespace APIShared.ModSettings
 
             if (payload == null || !payload.ContainsKey(SchemaVersionKey))
             {
-                // The compatibility load before registration restored a legacy file here.
+                // The APIShared load before registration restored a legacy file here.
                 // Capturing the ViewModel preserves those values and supplies defaults
                 // for settings introduced after that file was written.
                 preset1 = CaptureCurrentSettings();
-                if (fileExists)
+                if (fileExists && !legacyMigrationPending)
                 {
                     try
                     {
@@ -142,6 +168,15 @@ namespace APIShared.ModSettings
                             ? $"[{modName}] Deferred legacy lobby-settings migration after a publication failure."
                         : $"[{modName}] Initialized editable settings from code defaults.");
             }
+
+            // Materialize newly introduced/missing settings into the owned snapshot.
+            // Otherwise a later metadata recovery could revive an obsolete top-level value.
+            foreach (PresetPropertyAccessor property in persistedProperties)
+                if (!preset1.ContainsKey(property.Name) && defaults.TryGetValue(property.Name, out byte[] defaultValue))
+                {
+                    preset1[property.Name] = defaultValue == null ? null : (byte[])defaultValue.Clone();
+                    needsRewrite = true;
+                }
 
             if (!legacyMigrationPending && !legacyPresetImportCompleted)
             {

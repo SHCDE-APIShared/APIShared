@@ -23,6 +23,7 @@ namespace LobbyModSettingsPresetTests
         {
             directory = Path.Combine(Path.GetTempPath(), "APIShared-PresetController-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
+            PersonalSettingsPaths.TestDocumentsDirectory = _ => Path.Combine(directory, "Documents");
             previousOrigin = GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin;
             SetOrigin(LobbyModSettingsChangeOrigin.Local);
         }
@@ -30,6 +31,7 @@ namespace LobbyModSettingsPresetTests
         public void Cleanup()
         {
             SetOrigin(previousOrigin);
+            PersonalSettingsPaths.TestDocumentsDirectory = null;
             string prefix = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "APIShared-PresetController-");
             Assert.IsTrue(Path.GetFullPath(directory).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             if (Directory.Exists(directory)) Directory.Delete(directory, true);
@@ -47,7 +49,7 @@ namespace LobbyModSettingsPresetTests
             controller.Activate();
             return controller;
         }
-        private string SettingsPath => Path.Combine(directory, "LobbyModSettings", Name + ".msgpack");
+        private string SettingsPath => new PersonalSettingsPaths(Path.Combine(directory, "Example.dll"), "Foreign.Author.Example").SettingsFile;
         private Dictionary<string, byte[]> Read() =>
             MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(File.ReadAllBytes(SettingsPath));
 
