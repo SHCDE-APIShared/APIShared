@@ -55,6 +55,9 @@ namespace APIShared
                 new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(Logger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                // Validates the build only; each broker patches its entry at its first registration.
+                new NativeInitializationStep("native brokers", () => NativeBrokers.NativeBrokerRuntime.Bind(
+                    context.ModuleHandle, context.Memory.Length, hash, Logger, runtime.NativeOwnership)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
                     context.ModuleHandle, context.Memory.Length, hash, Logger)),
                 new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(

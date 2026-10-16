@@ -126,6 +126,21 @@ native layout. Execute generated stubs with the installed RedBird backend after
 updates. Acquisition and legacy policy registration do not install hooks; explicit
 installation is permanent, setting/map changes only change logical data.
 
+## Native entry brokers
+
+Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+`src/NativeBrokers/NativeBrokerRuntime.cs` holds both contracts; the binding fails closed on
+any other hash, and each entry is checked live again at its first registration.
+0xE2610: displaced `40 55 41 54 41 55 41 56 48 8D AC 24 78 F7 FF FF` (push rbp, r12, r13,
+r14; lea rbp,[rsp-0x888]), continuation `48 81 EC 88 09 00 00` (sub rsp,0x988). Five
+arguments: RCX manager, EDX player, R8D and R9D PCL IDs, stack mode; returns EAX.
+0xD90D0: displaced `48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18` (three register spills),
+continuation `57` (push rdi). Three arguments: RCX manager, EDX tile Y, R8D tile ID; void.
+On an update re-audit the prologues (no RIP operand or branch may enter the displaced span),
+the argument roles above, the Absolute displacement (16 and 15 bytes) and that RAX is not an
+input at either entry. `ProductionContractHoldsOnTheInstalledImage` maps the installed DLL and
+validates both detours against it without executing them.
+
 ## Registered native sites
 
 Every APIShared native site above and in the other services is registered in the

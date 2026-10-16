@@ -9,6 +9,7 @@ GUID without installing hooks or reserving a capability.
 | Area | Purpose |
 |---|---|
 | Core | Initialization, capability diagnostics, ownership, native infrastructure and the public native-site registry |
+| NativeBrokers | Shared owners of contested native entries (0xE2610, 0xD90D0) with ordered consumer callbacks |
 | ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
 | ScriptExtenderReplacements | Opt-in public alternatives to specific SE methods; no interception of existing callers |
 | Missions, Lobby, Players | Shared observations and immutable state notifications |
@@ -270,6 +271,11 @@ registration of its own native sites at installation; consumers own their spans,
 modes and their reaction to a refusal. A refusal identifies a conflict without
 resolving it, and a recurring conflict becomes a shared service. The registry is
 cooperative and adds nothing to hooked paths. See [Native sites](docs/NATIVE_SITES.md).
+
+The native entry brokers belong to NativeBrokers. APIShared owns each brokered entry's
+single detour, its install-on-first-registration and foreign-owner refusal, the ordering
+and the exception isolation; consumers own their callbacks, their activation scope and
+their fallback path when a broker is refused. See [Native brokers](docs/NATIVE_BROKERS.md).
 
 Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
 owns shared presentation and registration; consumers own localized text,

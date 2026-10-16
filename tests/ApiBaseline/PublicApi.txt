@@ -1170,6 +1170,52 @@ APIShared.NativeApiState | public enum APIShared.NativeApiState : int
 APIShared.NativeApiState | Pending = 0
 APIShared.NativeApiState | Ready = 1
 APIShared.NativeApiState | Unavailable = 2
+APIShared.NativeBrokers.NativeBrokerRegistration | public sealed class APIShared.NativeBrokers.NativeBrokerRegistration : System.IDisposable
+APIShared.NativeBrokers.NativeBrokerRegistration | public bool IsActive { get; }
+APIShared.NativeBrokers.NativeBrokerRegistration | public int Order { get; }
+APIShared.NativeBrokers.NativeBrokerRegistration | public override string ToString()
+APIShared.NativeBrokers.NativeBrokerRegistration | public string OwnerGuid { get; }
+APIShared.NativeBrokers.NativeBrokerRegistration | public string RegistrationId { get; }
+APIShared.NativeBrokers.NativeBrokerRegistration | public void Dispose()
+APIShared.NativeBrokers.NativeBrokerState | public enum APIShared.NativeBrokers.NativeBrokerState : int
+APIShared.NativeBrokers.NativeBrokerState | Dormant = 1
+APIShared.NativeBrokers.NativeBrokerState | ForeignOwner = 3
+APIShared.NativeBrokers.NativeBrokerState | Installed = 2
+APIShared.NativeBrokers.NativeBrokerState | Pending = 0
+APIShared.NativeBrokers.NativeBrokerState | Unavailable = 4
+APIShared.NativeBrokers.PclReachabilityBroker | public static class APIShared.NativeBrokers.PclReachabilityBroker
+APIShared.NativeBrokers.PclReachabilityBroker | public const int EntryRva = 927248
+APIShared.NativeBrokers.PclReachabilityBroker | public static APIShared.NativeBrokers.NativeBrokerState State { get; }
+APIShared.NativeBrokers.PclReachabilityBroker | public static bool TryRegister(string ownerGuid, string registrationId, int order, APIShared.NativeBrokers.PclReachabilityHandler pre, APIShared.NativeBrokers.PclReachabilityHandler post, out APIShared.NativeBrokers.NativeBrokerRegistration registration, out string reason)
+APIShared.NativeBrokers.PclReachabilityBroker | public static int CallOriginal(System.IntPtr manager, int player, int firstPcl, int secondPcl, int mode)
+APIShared.NativeBrokers.PclReachabilityBroker | public static long CallbackFailures { get; }
+APIShared.NativeBrokers.PclReachabilityBroker | public static string Diagnostic { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public struct APIShared.NativeBrokers.PclReachabilityCall
+APIShared.NativeBrokers.PclReachabilityCall | public System.IntPtr Manager { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public bool IsOverridden { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public bool IsPost { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public bool OriginalCalled { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public bool TryOverride(int value)
+APIShared.NativeBrokers.PclReachabilityCall | public bool TrySetResult(int value)
+APIShared.NativeBrokers.PclReachabilityCall | public int FirstPcl { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public int Mode { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public int OriginalResult { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public int Player { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public int Result { get; }
+APIShared.NativeBrokers.PclReachabilityCall | public int SecondPcl { get; }
+APIShared.NativeBrokers.PclReachabilityHandler | public delegate void APIShared.NativeBrokers.PclReachabilityHandler(ref APIShared.NativeBrokers.PclReachabilityCall call)
+APIShared.NativeBrokers.TileRefreshBroker | public static class APIShared.NativeBrokers.TileRefreshBroker
+APIShared.NativeBrokers.TileRefreshBroker | public const int EntryRva = 889040
+APIShared.NativeBrokers.TileRefreshBroker | public static APIShared.NativeBrokers.NativeBrokerState State { get; }
+APIShared.NativeBrokers.TileRefreshBroker | public static bool TryRegister(string ownerGuid, string registrationId, int order, APIShared.NativeBrokers.TileRefreshHandler post, out APIShared.NativeBrokers.NativeBrokerRegistration registration, out string reason)
+APIShared.NativeBrokers.TileRefreshBroker | public static long CallbackFailures { get; }
+APIShared.NativeBrokers.TileRefreshBroker | public static string Diagnostic { get; }
+APIShared.NativeBrokers.TileRefreshBroker | public static void CallOriginal(System.IntPtr manager, int tileY, int tileId)
+APIShared.NativeBrokers.TileRefreshCall | public struct APIShared.NativeBrokers.TileRefreshCall
+APIShared.NativeBrokers.TileRefreshCall | public System.IntPtr Manager { get; }
+APIShared.NativeBrokers.TileRefreshCall | public int TileId { get; }
+APIShared.NativeBrokers.TileRefreshCall | public int TileY { get; }
+APIShared.NativeBrokers.TileRefreshHandler | public delegate void APIShared.NativeBrokers.TileRefreshHandler(APIShared.NativeBrokers.TileRefreshCall call)
 APIShared.NativeCapabilityDiagnostic | public sealed class APIShared.NativeCapabilityDiagnostic
 APIShared.NativeCapabilityDiagnostic | public .ctor(string capabilityId, APIShared.NativeCapabilityState state, string binaryHash, string reason, string conflictOwnerGuid = null)
 APIShared.NativeCapabilityDiagnostic | public APIShared.NativeCapabilityState State { get; }

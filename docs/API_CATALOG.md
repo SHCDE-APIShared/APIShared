@@ -32,6 +32,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
+| `APIShared.NativeBrokers.PclReachabilityBroker`, `TileRefreshBroker` | Shared owners of the contested native entries 0xE2610 (ordered Pre override and Post result replacement) and 0xD90D0 (ordered Post); `CallOriginal` reaches Vanilla without consumers. Patch the entry at the first registration; refuse a foreign detour or registered writer and leave the consumer's own path in place | Any-thread registration from LibraryLoaded on; native caller thread; order/owner/ID; demand-guarded, allocation-free dispatch; process-lifetime detour, disposable registrations ([guide](NATIVE_BROKERS.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
 
@@ -100,6 +101,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 | Native sites | [Contracts](../src/Core/NativeSites/NativeSiteContracts.cs), [registry](../src/Core/NativeSites/NativeSiteRegistry.cs) | [Owner registry](../src/Core/Internal/Native/NativeOwnershipRegistry.cs), [APIShared site catalog](../src/Core/NativeSites/ApiSharedNativeSites.cs), [guide](NATIVE_SITES.md) | [Native sites](../examples/ThirdPartyMod/NativeSiteExample.cs) |
+| Native entry brokers | [Contracts](../src/NativeBrokers/NativeBrokerContracts.cs), [0xE2610](../src/NativeBrokers/PclReachabilityBroker.cs), [0xD90D0](../src/NativeBrokers/TileRefreshBroker.cs) | [Dispatch](../src/NativeBrokers/NativeBrokerDispatch.cs), [entry owner](../src/NativeBrokers/NativeBrokerSite.cs), [guide](NATIVE_BROKERS.md) | [Native brokers](../examples/ThirdPartyMod/NativeBrokerExample.cs) |
 | Unit settlement | [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs), [notification contracts](../src/Units/Settled/UnitSettledContracts.cs) | [Settle tracker](../src/Units/Settled/UnitSettledTracker.cs), [SE subscriptions](../src/Units/Settled/UnitSettledScriptExtenderSource.cs) | [Unit settled](../examples/ThirdPartyMod/UnitSettledExample.cs) |
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
@@ -170,7 +172,7 @@ thread, outside locks, with exception isolation. Registrations have no hook tear
 
 `AssassinPathAPI`, `AssassinAttackControlAPI`, `EnemyGatePathPolicyBridge`, `EnemyBridgeDiagnosticBridge` and `TemporaryGateRouteAcceptanceBridge` expose specialized path integration/diagnostics. They are not a general-purpose movement-command API. Use their documented immediate context and ownership contracts; do not retain transient native contexts. `SavegameModSettings` supplies typed save/trail settings integration. `LobbyPreparationOverride` is advanced shared lobby-preparation integration, not an alternative general lifecycle service.
 
-Scanners, memory writers and concrete services are not supported public extension points. Native addresses are public only as coordination data in the [native-site registry](NATIVE_SITES.md): it records and reports who uses which span of CrusaderDE.dll and installs, scans or writes nothing itself. It supplements shared services for hooks APIShared does not cover yet; a point that several mods need belongs in a shared service. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
+Scanners, memory writers and concrete services are not supported public extension points. Native addresses are public only as coordination data in the [native-site registry](NATIVE_SITES.md), which records and reports who uses which span of CrusaderDE.dll and installs, scans or writes nothing itself, and as the two entries the [native entry brokers](NATIVE_BROKERS.md) own. It supplements shared services for hooks APIShared does not cover yet; a point that several mods need belongs in a shared service. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
 
 `SavegameModSettings` prepares save settings before initialization and coordinates
 authenticated multiplayer load readiness using the existing settings transports.
@@ -336,6 +338,20 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Native entry brokers
+
+[PclReachabilityBroker](../src/NativeBrokers/PclReachabilityBroker.cs) owns 0xE2610 and
+[TileRefreshBroker](../src/NativeBrokers/TileRefreshBroker.cs) owns 0xD90D0 on the audited
+image, for mods that would otherwise each detour the same entry. Pre callbacks of 0xE2610
+run in order until one overrides the call (the original is then skipped); Post callbacks
+always run and may replace the result. 0xD90D0 is Post only. The native arguments are
+read-only. Nothing is patched before the first registration, and with no active
+registration the entry jumps straight to the original. The brokers never install over a
+foreign detour or another owner's registered span: they report `ForeignOwner`, record the
+refusal in the native-site registry and refuse registrations, so the consumer keeps its
+own path. Contract, migration notes per consumer, version skew and measurements:
+[Native brokers](NATIVE_BROKERS.md).
 
 ## Unit settlement events
 

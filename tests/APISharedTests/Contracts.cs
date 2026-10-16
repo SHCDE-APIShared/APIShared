@@ -201,7 +201,7 @@ namespace APISharedTests
                 expected.Remove(type.FullName);
                 foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                 {
-                    if (!IsAuditedGateNativeType(type, method, null))
+                    if (!IsAuditedGateNativeType(type, method, null) && !IsAuditedBrokerNativeMember(type, method.Name, null))
                         AssertSafePublicType(method.ReturnType, $"{type.FullName}.{method.Name} return type");
                     foreach (ParameterInfo parameter in method.GetParameters())
                     {
@@ -223,7 +223,7 @@ namespace APISharedTests
                                 method.Name == "TryStageWeightedRoute" || method.Name == "TryGetCurrentWeightedRequest")) &&
                             parameter.Name == "context" && parameter.ParameterType == typeof(IntPtr))
                             continue;
-                        if (!IsAuditedGateNativeType(type, method, parameter))
+                        if (!IsAuditedGateNativeType(type, method, parameter) && !IsAuditedBrokerNativeMember(type, method.Name, parameter.Name))
                             AssertSafePublicType(parameter.ParameterType, $"{type.FullName}.{method.Name} parameter {parameter.Name}");
                     }
                 }
@@ -232,7 +232,8 @@ namespace APISharedTests
                         foreach (ParameterInfo parameter in constructor.GetParameters())
                             AssertSafePublicType(parameter.ParameterType, $"{type.FullName} constructor parameter {parameter.Name}");
                 foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                    AssertSafePublicType(property.PropertyType, $"{type.FullName}.{property.Name} property type");
+                    if (!IsAuditedBrokerNativeMember(type, property.Name, null))
+                        AssertSafePublicType(property.PropertyType, $"{type.FullName}.{property.Name} property type");
                 foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                     AssertSafePublicType(field.FieldType, $"{type.FullName}.{field.Name} field type");
             }
@@ -274,6 +275,23 @@ namespace APISharedTests
             Assert(NativeCapabilityIds.BuildingRepair == "building-repair",
                 "building-repair capability ID must remain stable");
         }
+        // Native entry brokers: the manager is the native call's own first argument, read-only in the
+        // call views and passed through unchanged by CallOriginal. Exactly these members, all IntPtr.
+        private static bool IsAuditedBrokerNativeMember(Type owner, string member, string parameter)
+        {
+            bool call = owner == typeof(APIShared.NativeBrokers.PclReachabilityCall) || owner == typeof(APIShared.NativeBrokers.TileRefreshCall);
+            bool broker = owner == typeof(APIShared.NativeBrokers.PclReachabilityBroker) || owner == typeof(APIShared.NativeBrokers.TileRefreshBroker);
+            if (!(call && parameter == null && (member == "Manager" || member == "get_Manager") ||
+                broker && member == "CallOriginal" && parameter == "manager"))
+                return false;
+            PropertyInfo property = call ? owner.GetProperty("Manager") : null;
+            MethodInfo method = broker ? owner.GetMethod("CallOriginal") : null;
+            Assert(call ? property.PropertyType == typeof(IntPtr) && !property.CanWrite
+                : method.GetParameters()[0].Name == "manager" && method.GetParameters()[0].ParameterType == typeof(IntPtr),
+                "audited broker manager member: " + owner.Name + "." + member);
+            return true;
+        }
+
         // Explicitly audited advanced native API. No namespace-wide pointer exemption.
         private static bool IsAuditedGateNativeType(Type owner, MethodInfo method, ParameterInfo parameter)
         {

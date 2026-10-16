@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using APIShared.Audio;
 using APIShared.Economy;
 using APIShared.GateRouting.Native;
+using APIShared.NativeBrokers;
 using APIShared.NativeSites;
 
 namespace APIShared
@@ -25,6 +26,8 @@ namespace APIShared
         internal const string GateComparisons = "GateRouting.Comparisons";
         internal const string GateDescent = "GateRouting.Descent";
         internal const string BuildingRepair = "Buildings.RepairQuote";
+        internal const string BrokerPclReachability = "NativeBrokers.PclReachability";
+        internal const string BrokerTileRefresh = "NativeBrokers.TileRefresh";
 
         // AIV detour: the backend's displacement is not fixed here, so the claim covers the
         // instruction-aligned prologue any patch of up to 14 bytes displaces (2+1+1+1+2+2+2+2+4).
@@ -137,6 +140,13 @@ namespace APIShared
         internal static NativeSiteSpan[] BuildingRepairSpans() =>
             new[] { Observe(BuildingRepairService.CanRepairRva, BuildingRepairService.CanRepairEntry.Length) };
 
+        // Claimed by NativeBrokerSite at the first registration, with the displaced bytes' expected hash.
+        internal static NativeSiteSpan[] PclReachabilityBrokerSpans() => NativeBrokerSite<PclReachabilityNative>.Spans(
+            NativeBrokerRuntime.PclReachabilityRva, NativeBrokerRuntime.PclReachabilityBytes, NativeBrokerRuntime.PclReachabilityDisplaced);
+
+        internal static NativeSiteSpan[] TileRefreshBrokerSpans() => NativeBrokerSite<TileRefreshNative>.Spans(
+            NativeBrokerRuntime.TileRefreshRva, NativeBrokerRuntime.TileRefreshBytes, NativeBrokerRuntime.TileRefreshDisplaced);
+
         // Every group in one list, for the catalog test and the documentation table.
         internal static IReadOnlyList<KeyValuePair<string, NativeSiteSpan[]>> All() => new[]
         {
@@ -151,7 +161,9 @@ namespace APIShared
             Group(GateMovement, GateMovementSpans()),
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
-            Group(BuildingRepair, BuildingRepairSpans())
+            Group(BuildingRepair, BuildingRepairSpans()),
+            Group(BrokerPclReachability, PclReachabilityBrokerSpans()),
+            Group(BrokerTileRefresh, TileRefreshBrokerSpans())
         };
 
         // Claims a group for APIShared before installation. Throws the service's own failure type
@@ -164,6 +176,16 @@ namespace APIShared
             NativeSiteRegistrationResult result = registry.RegisterSites(APISharedPlugin.PluginGuid, name, spans);
             if (!result.Succeeded)
                 throw failure("Native site registry refused " + name + ": " + result.Reason);
+        }
+
+        // The same claim for an installer that needs the verdict: the native brokers report a foreign
+        // owner (Conflict, UnexpectedBytes) differently from an invalid request. True when claimed or
+        // when no registry is given; result is then null.
+        internal static bool Claim(NativeOwnershipRegistry registry, string name, NativeSiteSpan[] spans,
+            out NativeSiteRegistrationResult result)
+        {
+            result = registry?.RegisterSites(APISharedPlugin.PluginGuid, name, spans);
+            return result == null || result.Succeeded;
         }
 
         internal static void Release(NativeOwnershipRegistry registry, string name)
