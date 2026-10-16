@@ -48,6 +48,9 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell release regression failed.' }
 }
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
+if (([IO.File]::ReadAllText((Join-Path $apiRoot 'info.json')) | ConvertFrom-Json).Version -eq '0.9.2') {
+    & (Join-Path $PSScriptRoot 'Test-WorkshopHotfixBoundaries.ps1')
+}
 & (Join-Path $PSScriptRoot 'Test-ShellScripts.ps1')
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WorkshopRecovery.ps1')

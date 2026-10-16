@@ -47,14 +47,18 @@ namespace APIShared.Workshop
             {
                 if (process == null) throw new IOException("Updater process could not be started.");
                 var watch = Stopwatch.StartNew();
+                IOException readFailure = null;
                 while (watch.Elapsed < TimeSpan.FromSeconds(20))
                 {
-                    if (File.Exists(ready) && File.ReadAllText(ready) == hash) return;
-                    if (process.HasExited) throw new IOException("Updater rejected the transaction before game exit; inspect " + transaction + "/journal.log. Exit code: " + process.ExitCode);
+                    bool confirmed = WorkshopUpdaterReadiness.TryConfirm(ready, hash, out readFailure);
+                    // A child can publish readiness and fail before this poll.
+                    // Its leftover hash must not authorize closing the game.
+                    if (process.HasExited) throw new IOException("Updater rejected the transaction before game exit; inspect " + transaction + "/journal.log. Exit code: " + process.ExitCode, readFailure);
+                    if (confirmed) return;
                     await Task.Delay(100);
                 }
                 Cancel(transaction);
-                throw new IOException("Updater readiness was not confirmed; the game remains running. Inspect " + transaction + " before retrying.");
+                throw new IOException("Updater readiness was not confirmed; the game remains running. Inspect " + transaction + " before retrying.", readFailure);
             }
         }
         internal static void Cancel(string transaction) => File.WriteAllText(WorkshopPaths.Inside(transaction, "cancel.flag"), "Cancelled before game exit.");
