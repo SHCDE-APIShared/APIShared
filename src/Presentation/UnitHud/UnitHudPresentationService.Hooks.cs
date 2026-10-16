@@ -36,6 +36,8 @@ namespace APIShared
             out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.UnitHudPresentation, log, out diagnostic))
+                return false;
             var installed = new List<Hook>();
             UnitHudPresentationService candidate = null;
             try

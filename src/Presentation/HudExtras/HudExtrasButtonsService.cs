@@ -13,7 +13,7 @@ namespace APIShared
     // Owns permanent registrations and rebuildable visuals, not gameplay command policy.
     // Application.onBeforeRender survives plugin cleanup; HUD property changes mark layout dirty.
     // Registry snapshots release the lock before invoking consumer factories/commands.
-    internal sealed class HudExtrasButtonsService
+    internal sealed partial class HudExtrasButtonsService
     {
         internal const string HostName = "APISharedHudExtrasButtonsHost";
         private readonly object sync = new object();
