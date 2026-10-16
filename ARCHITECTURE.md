@@ -221,6 +221,8 @@ The compiled runtime uses the real installed game and Extender assemblies.
 [Native compatibility](docs/NATIVE_COMPATIBILITY.md) describes native ownership and
 update checks. Native catalogs and tests express supported contracts, not a universal
 promise that an arbitrary game build is supported.
+The managed public surface and the internals that InternalsVisibleTo consumers bind are
+recorded in the [API compatibility baseline](docs/API_COMPATIBILITY.md).
 
 ## Development
 
