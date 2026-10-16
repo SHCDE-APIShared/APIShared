@@ -65,7 +65,9 @@ and type and still carries the written maximum, the composition starts from the 
 native maximum, so a save, reload or second report never applies a modifier twice. A unit
 whose type changed (recruitment, assignment, disband) or whose slot holds another unit starts
 from its new live maximum. Every archive load replaces the table: restored from the save, or
-emptied for a map, a save without the record or unreadable data.
+emptied for a map, a save without the record or unreadable data. A save made with this service
+therefore loads with the values it was saved with, however often it is saved and loaded again
+(`SaveLoadSaveLoadAppliesEveryModifierOnce` in `tests/Core.Tests/UnitStatModifierTests.cs`).
 
 **Already-settled units are not re-applied.** Registering, disposing or changing a modifier
 affects units that settle afterwards. Units already in the world keep their values until
@@ -73,23 +75,59 @@ they settle again (for example when recruited), and then compose from their reco
 maximum with the modifiers active at that moment. Re-applying at registration time would
 write at a moment that differs between multiplayer peers.
 
+**Settings are frozen during a match.** Modifiers read settings that change only between
+matches. A setting that its mod explicitly allows to change in a running match is an
+individually designed exception, with its own timing and multiplayer rules; this service has
+no mechanism for it.
+
 **Thread and lifetime.** Registration and disposal are thread-safe from any thread. Nothing
 is subscribed before the first registration; that registration subscribes APIShared to
 UnitSettled and registers the save record, both for the process lifetime. With no active
 registration a settlement costs one volatile read.
 
-## Consumer notes
+## Migration guides
 
-Notes for each consumer's maintainer; nothing here changes those mods. Keep the old path
-behind a switch for two releases, and never run both paths for the same units.
+For each consumer's maintainer; nothing here changes those mods. A transition switch that
+keeps the old path for a release or two is an optional strategy, useful when many independent
+mods depend on the old behavior; it is not required. Never run both paths for the same units.
 
-**ExtraFeatures Lord health** (first Serpens consumer). Today it records the Lord's Vanilla
-maximum per GlobalId in its own save file and writes maximum, current, percentage and
-health-bar blocks from a 10-tick scan. As a `Multiplier` returning `Percent(human or AI
-percent)` for `CHIMP_TYPE_LORD` only, the composer keeps the Vanilla basis and the marker.
-Its source notes that the game finishes AI Lord health scaling after the spawn Post; whether
-that is done when the Lord settles is not verified. Saves that carry only its own record
-need its existing path.
+**Saves made before the migration** need no special handling (agreed on
+[#43](https://github.com/SHCDE-APIShared/APIShared/pull/43)). They carry no `APIShared.UnitStats`
+record: units the game restores from them keep their saved values, and a unit that settles
+again after the load starts from its live maximum, so a value scaled before the save can be
+scaled once more.
+
+### ExtraFeatures Lord health
+
+Today `LordHealthRuntime` records each Lord's Vanilla maximum per GlobalId in its own save
+record (`ExtraFeatures.LordHealth.v1`), finds Lords from `OnUnitCreate` Post and a 10-tick
+scan, and writes maximum, current, percentage and health-bar blocks itself. At a loaded save
+it applies the current percentages again from the recorded Vanilla maximum.
+
+1. Require the APIShared release that contains `UnitStatModifiers` in the plugin's dependency
+   attribute.
+2. At startup (`Awake` or the Extender's `LibraryLoaded`), on every peer, register one
+   `Multiplier` modifier `lord-health` for `UnitStat.MaxHealth` at `order: 0`, and keep the handle.
+3. Capture the normalized human and AI percentages when the match starts, as `BeginMap` does
+   now; they stay fixed for the match.
+4. In the modifier, return false unless `unit.UnitType == eChimps.CHIMP_TYPE_LORD`, the feature
+   mode allows Lord health (`GameplayFeatureModePolicy`), and the player's percentage is not 100.
+   Otherwise return `UnitStatContribution.Percent(percent)`, choosing the human or AI
+   percentage with `GamePlayerManagerAPI.Instance.IsAIPlayer(unit.PlayerId)`. The service rounds
+   like `LordHealthMultiplierPolicy` (half away from zero, at least 1) and rescales current
+   health, percentage and health-bar blocks with the same arithmetic.
+5. Remove the `OnUnitCreate` subscription, the tick scan, `TryApplyPlayerLord` and the
+   `ExtraFeatures.LordHealth.v1` record handler: the service keeps the Vanilla maximum and the
+   applied marker in its own save record.
+6. Differences to check in game: the service writes when the Lord settles (the first tick at
+   which its slot is really alive, see UnitSettledEvents); whether the game has finished AI Lord health scaling by then is not
+   verified. A loaded save keeps the Lord health it was saved with; a percentage changed
+   between the save and the load applies only to Lords that settle afterwards.
+7. In the settings help text, say how the percentage combines with other mods' health
+   multipliers: it multiplies together with them, and an absolute value (`Override`) from
+   another mod replaces it.
+8. Check: new game, human and AI Lords at Vanilla x percent; save, load, save, load: unchanged
+   health and no `APIShared` write at the reloads.
 
 **CrusaderDETweaker health multiplier.** Today it multiplies by a float at `OnUnitCreate`
 Post and after recruitment and sets current health to the new maximum. As a `Multiplier`

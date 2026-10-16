@@ -292,6 +292,60 @@ public class UnitStatModifierTests
     }
 
     [TestMethod]
+    public void SaveLoadSaveLoadAppliesEveryModifierOnce()
+    {
+        Peer Process()
+        {
+            var peer = new Peer();
+            peer.Add("ExtraFeatures_Serp", "lord", UnitStatLayer.Multiplier, 0, Scale(150, 100));
+            peer.Add("CrusaderDETweaker", "plus", UnitStatLayer.Additive, 0, Add(10));
+            return peer;
+        }
+        // First match: (100 + 10) x 1.5 = 165, and the unit keeps its 80 percent share: 132.
+        var first = Process();
+        first.Units.Spawn(5, 77, eChimps.CHIMP_TYPE_SWORDSMAN, 80, 100);
+        first.Settle(5);
+        Assert.AreEqual((132u, 165u), (first.Units.Slots[5].Current, first.Units.Slots[5].Max));
+        byte[] firstSave = first.SaveGame();
+
+        // A new process loads it; the game reports the restored unit again, the unit is hit, a new unit is recruited.
+        var second = Process();
+        Array.Copy(first.Units.Slots, second.Units.Slots, first.Units.Slots.Length);
+        second.LoadGame(firstSave);
+        second.Settle(5);
+        second.Units.Slots[5].Current = 33;
+        second.Units.Spawn(6, 78, eChimps.CHIMP_TYPE_ARCHER, 50, 50);
+        second.Settle(6, UnitSettledCause.EuropeanBarracks);
+        Assert.AreEqual((33u, 165u), (second.Units.Slots[5].Current, second.Units.Slots[5].Max));
+        Assert.AreEqual((90u, 90u), (second.Units.Slots[6].Current, second.Units.Slots[6].Max));
+        Assert.AreEqual(1, second.Units.Writes, "only the new unit is written");
+        byte[] secondSave = second.SaveGame();
+
+        // A third process loads the second save twice in one session; every settlement and save in between
+        // leaves both units and the record as they were.
+        var third = Process();
+        for (int load = 0; load < 2; load++)
+        {
+            Array.Copy(second.Units.Slots, third.Units.Slots, second.Units.Slots.Length);
+            third.LoadGame(secondSave);
+            third.Settle(5);
+            third.Settle(6, UnitSettledCause.EuropeanBarracks);
+            Assert.AreEqual((33u, 165u), (third.Units.Slots[5].Current, third.Units.Slots[5].Max), "load " + load);
+            Assert.AreEqual((90u, 90u), (third.Units.Slots[6].Current, third.Units.Slots[6].Max), "load " + load);
+            Assert.AreEqual(0, third.Units.Writes, "load " + load);
+            CollectionAssert.AreEqual(secondSave, third.SaveGame(), "load " + load + ": saving again gives the same record");
+        }
+
+        // Loading the older save restores its own markers: unit 6 is not in it.
+        Array.Copy(first.Units.Slots, third.Units.Slots, first.Units.Slots.Length);
+        third.LoadGame(firstSave);
+        Assert.IsFalse(third.Composer.TryGetRecord(6, out _));
+        third.Settle(5);
+        Assert.AreEqual((132u, 165u), (third.Units.Slots[5].Current, third.Units.Slots[5].Max));
+        Assert.AreEqual(0, third.Units.Writes);
+    }
+
+    [TestMethod]
     public void EveryLoadReplacesTheMarkers()
     {
         var peer = new Peer();

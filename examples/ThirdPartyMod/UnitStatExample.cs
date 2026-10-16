@@ -23,6 +23,7 @@ namespace ThirdPartyMod
                 logger(reason);
         }
 
+        // Settings change between matches; they are frozen during a match.
         internal static void Configure(int lord, int recruitsPerMille) { lordPercent = lord; recruitPerMille = recruitsPerMille; }
 
         // Simulation thread, for every settled unit: decide from the subject only, no logging or Unity calls.
