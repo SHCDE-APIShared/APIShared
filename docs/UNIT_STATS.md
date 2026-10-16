@@ -119,14 +119,18 @@ it applies the current percentages again from the recorded Vanilla maximum.
 5. Remove the `OnUnitCreate` subscription, the tick scan, `TryApplyPlayerLord` and the
    `ExtraFeatures.LordHealth.v1` record handler: the service keeps the Vanilla maximum and the
    applied marker in its own save record.
-6. Differences to check in game: the service writes when the Lord settles (the first tick at
-   which its slot is really alive, see UnitSettledEvents); whether the game has finished AI Lord health scaling by then is not
-   verified. A loaded save keeps the Lord health it was saved with; a percentage changed
-   between the save and the load applies only to Lords that settle afterwards.
-7. In the settings help text, say how the percentage combines with other mods' health
+6. Behaviour change at a loaded save: today a loaded save's Lords pick up the current
+   percentage (applied again from the recorded Vanilla maximum). With the service they keep the
+   percentage the save was made with. This is intended: a load continues a match, the settings
+   coordinator restores the save's settings, and settings stay frozen during a match, so the
+   saved value is the correct one. Mention it in the release notes.
+7. To check in game: the service writes when the Lord settles (the first tick at which its slot
+   is really alive, see UnitSettledEvents); whether the game has finished AI Lord health scaling
+   by then is not verified.
+8. In the settings help text, say how the percentage combines with other mods' health
    multipliers: it multiplies together with them, and an absolute value (`Override`) from
    another mod replaces it.
-8. Check: new game, human and AI Lords at Vanilla x percent; save, load, save, load: unchanged
+9. Check: new game, human and AI Lords at Vanilla x percent; save, load, save, load: unchanged
    health and no `APIShared` write at the reloads.
 
 **CrusaderDETweaker health multiplier.** Today it multiplies by a float at `OnUnitCreate`
