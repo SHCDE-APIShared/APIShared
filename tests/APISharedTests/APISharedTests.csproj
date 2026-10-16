@@ -33,5 +33,6 @@
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)\RedBird.Core.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="RedBird.X64"><HintPath>$(ExtenderDir)\RedBird.X64.dll</HintPath><Private>true</Private></Reference>
     <ProjectReference Include="..\..\APIShared.csproj" />
+    <Compile Include="..\ApiBaseline\ApiSignatures.cs" Link="ApiBaseline\ApiSignatures.cs" />
   </ItemGroup>
 </Project>

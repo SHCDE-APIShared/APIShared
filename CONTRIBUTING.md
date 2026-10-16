@@ -89,6 +89,9 @@ dotnet test tests/LobbyModSettingsPresetTests/LobbyModSettingsPresetTests.csproj
 The full driver validates runtime contracts and installed interop, runs all suites,
 compiles public consumer examples and prepares the plugin package. Remove `/noinstall`
 to install it after closing the game; elevation is only needed for protected directories.
+The suites compare the compiled public API and the internals that InternalsVisibleTo
+consumers bind with the checked-in [API compatibility baseline](docs/API_COMPATIBILITY.md);
+CI compares only the game-independent subset. That guide lists the coverage split.
 TRX results from the driver are stored in `.local/test-results`.
 Successful builds also write `.local/build-proof.json`: source/reference fingerprints,
 the source commit and package hashes. `tools/BuildProof.ps1` validates this local evidence;
@@ -117,7 +120,9 @@ For changes affecting gameplay, report the relevant game checks and any remainin
 ## Compatibility and releases
 
 Keep required public contracts and serialized formats compatible unless a breaking
-change is explicitly intended and documented. APIShared owns its sources independently;
+change is explicitly intended and documented. An API change updates the
+[baseline](docs/API_COMPATIBILITY.md#updating-the-public-baseline) in the same pull
+request. APIShared owns its sources independently;
 consumer mods use the public DLL. References in consumer packages use `Private=false`.
 Avoid tests that prescribe source wording, filenames or implementation order. Test
 observable behavior; retain byte/layout expectations where they express a native contract.
