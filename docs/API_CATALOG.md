@@ -185,6 +185,9 @@ authenticated multiplayer load readiness using the existing settings transports.
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](THIRD_PARTY_GUIDE.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.
+The readiness packets are versioned (protocol 2); the host also compares every player's
+stored copy of declared simulation-relevant save records, see
+[multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
 
 `APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread.
 
@@ -367,8 +370,10 @@ and the [example](../examples/ThirdPartyMod/UnitSettledExample.cs).
 Script Extender `ModSaveDataAPI`. A record carries an explicit version; consumer-owned
 migration steps upgrade older records, entries the current version does not know are written
 back unchanged, and too-new, unrecognized or unmigratable data is kept byte for byte. The load
-callback runs once per archive load with a documented status, including `NoRecord`. Usage,
-the record-version migration policy, limits and implementation are in [Save data](SAVE_DATA.md).
+callback runs once per archive load with a documented status, including `NoRecord`. Records
+declared `SimulationRelevant` are compared across players before a multiplayer save loads.
+Usage, the record-version migration policy, the comparison boundary, limits and
+implementation are in [Save data](SAVE_DATA.md).
 
 ## Workshop inventory
 

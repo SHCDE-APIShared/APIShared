@@ -92,6 +92,9 @@ branch also builds the independent [dependency bootstrap](docs/DEPENDENCY_BOOTST
 Use `/noinstall`: installation is blocked until its separate game and lifecycle
 acceptance. Its source-linked tests run through `Test-DependencyBootstrap.ps1`;
 package/removal fixtures use `Test-DependencyBootstrapPackage.ps1`.
+The suites compare the compiled public API and the internals that InternalsVisibleTo
+consumers bind with the checked-in [API compatibility baseline](docs/API_COMPATIBILITY.md);
+CI compares only the game-independent subset. That guide lists the coverage split.
 TRX results from the driver are stored in `.local/test-results`.
 Successful builds also write `.local/build-proof.json`: source/reference fingerprints,
 the source commit and package hashes. `tools/BuildProof.ps1` validates this local evidence;
@@ -120,7 +123,9 @@ For changes affecting gameplay, report the relevant game checks and any remainin
 ## Compatibility and releases
 
 Keep required public contracts and serialized formats compatible unless a breaking
-change is explicitly intended and documented. APIShared owns its sources independently;
+change is explicitly intended and documented. An API change updates the
+[baseline](docs/API_COMPATIBILITY.md#updating-the-public-baseline) in the same pull
+request. APIShared owns its sources independently;
 consumer mods use the public DLL. References in consumer packages use `Private=false`.
 Avoid tests that prescribe source wording, filenames or implementation order. Test
 observable behavior; retain byte/layout expectations where they express a native contract.

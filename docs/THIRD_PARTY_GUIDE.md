@@ -221,6 +221,9 @@ and the central mode reconciliation validates saved provenance against native da
 Load preparation times out after 60 seconds; missing or changed participants cannot
 silently release a stale request. Setters still notify runtimes normally. Do not
 interpret a submitted packet as an acknowledgement of a complete settings snapshot.
+The same agreement compares each player's stored copy of versioned save records declared
+simulation-relevant and blocks the load with the mod and record named when they differ; see
+[multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
 
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 

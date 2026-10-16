@@ -48,6 +48,7 @@
     <Compile Include="../../src/Savegames/VersionedSaveDataContracts.cs" Link="Production/VersionedSaveDataContracts.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
+    <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
     <Compile Include="../../src/Units/UnitAccess.cs" Link="Production/UnitAccess.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledContracts.cs" Link="Production/UnitSettledContracts.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledTracker.cs" Link="Production/UnitSettledTracker.cs" />
@@ -57,6 +58,7 @@
     <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.cs" Link="Production/NativeOwnershipRegistry.cs" />
     <Compile Include="../../src/Core/NativeSites/NativeSiteContracts.cs" Link="Production/NativeSiteContracts.cs" />
+    <Compile Include="../ApiBaseline/ApiSignatures.cs" Link="ApiBaseline/ApiSignatures.cs" />
   </ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_Troops.xaml" Link="Fixtures/HUD_Troops.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <!-- Local integration keeps testing the installed Extender library. Standalone
