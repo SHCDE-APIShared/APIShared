@@ -379,6 +379,16 @@ Timing is indicative and not asserted; the host also ran unrelated work (21 to 5
 CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
 
+## Changing Script Extender tables together
+
+To change trade base prices, register a `GameDataLayers` layer instead of writing the table:
+every mod's layers then compose from the game's values in a fixed order, a factor of 1.0
+writes nothing, and a reload never compounds. Register at startup on every peer with settings
+that are identical on all of them. Settings stay frozen during a match: the next mission start
+applies changes. Tell players when another mod's absolute value replaces their setting
+(`TryGetCellStatus`). See [GameData](GAME_DATA.md) and the
+[example](../examples/ThirdPartyMod/GameDataExample.cs).
+
 ## Sharing native market price queries
 
 Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded
