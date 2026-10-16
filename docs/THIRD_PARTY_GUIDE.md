@@ -425,6 +425,11 @@ settle and drop rules are documented at the
 [declaration](../src/Units/Settled/UnitSettledEvents.cs); the
 [example](../examples/ThirdPartyMod/UnitSettledExample.cs) scales recruited troops' health.
 
+To change a settled unit's maximum health, register a `UnitStatModifiers` modifier instead of
+writing it from your own callback: several mods then compose in a fixed order into one write
+that keeps wounds, and a reload never scales a unit twice. See [Unit stats](UNIT_STATS.md) and
+the [example](../examples/ThirdPartyMod/UnitStatExample.cs).
+
 ### Settlement implementation and measurements
 
 One tracker owns a queue of triggers in raise order. SE unit events read the slot

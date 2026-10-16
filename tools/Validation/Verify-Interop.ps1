@@ -23,7 +23,8 @@ function Get-NativeSize($type) {
 }
 $sourcePaths = @(
     (Join-Path $apiRoot 'src\Units\UnitAccess.cs'),
-    (Join-Path $apiRoot 'src\Units\Settled\UnitSettledScriptExtenderSource.cs')) + $AdditionalSourceFiles
+    (Join-Path $apiRoot 'src\Units\Settled\UnitSettledScriptExtenderSource.cs'),
+    (Join-Path $apiRoot 'src\Units\Stats\UnitStatModifiers.cs')) + $AdditionalSourceFiles
 $source = (@($sourcePaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n")
 $consumed = @([regex]::Matches($source, '\br_\w+') | ForEach-Object Value | Sort-Object -Unique)
 $rows = @()
@@ -37,6 +38,10 @@ $expected = @{
     'GameUnit.r_TargetTilePositionX' = 'System.UInt16|196|2'
     'GameUnit.r_TargetTilePositionY' = 'System.UInt16|198|2'
     'GameUnit.r_IsKilledByProjectile' = 'System.UInt16|668|2'
+    'GameUnit.r_HealthBarBlocks' = 'System.UInt32|52|4'
+    'GameUnit.r_CurrentHealthPercentage' = 'System.UInt16|720|2'
+    'GameUnit.r_CurrentHealth' = 'System.UInt32|964|4'
+    'GameUnit.r_MaxHealth' = 'System.UInt32|968|4'
     'GameUnit.r_TribeId' = 'System.UInt16|724|2'
     'GameUnit.r_AttackMoveToTargetTileX' = 'System.UInt16|728|2'
     'GameUnit.r_AttackMoveToTargetTileY' = 'System.UInt16|730|2'

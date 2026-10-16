@@ -1718,6 +1718,44 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Units.UnitStat | public enum APIShared.Units.UnitStat : int
+APIShared.Units.UnitStat | MaxHealth = 0
+APIShared.Units.UnitStatContribution | public struct APIShared.Units.UnitStatContribution
+APIShared.Units.UnitStatContribution | public static APIShared.Units.UnitStatContribution Add(int amount)
+APIShared.Units.UnitStatContribution | public static APIShared.Units.UnitStatContribution Percent(int percent)
+APIShared.Units.UnitStatContribution | public static APIShared.Units.UnitStatContribution Range(int minimum, int maximum)
+APIShared.Units.UnitStatContribution | public static APIShared.Units.UnitStatContribution Scale(int numerator, int denominator)
+APIShared.Units.UnitStatContribution | public static APIShared.Units.UnitStatContribution Set(APIShared.Units.UnitStatLayer layer, int value)
+APIShared.Units.UnitStatLayer | public enum APIShared.Units.UnitStatLayer : int
+APIShared.Units.UnitStatLayer | Additive = 1
+APIShared.Units.UnitStatLayer | Base = 0
+APIShared.Units.UnitStatLayer | Clamp = 4
+APIShared.Units.UnitStatLayer | Multiplier = 2
+APIShared.Units.UnitStatLayer | Override = 3
+APIShared.Units.UnitStatModifier | public delegate bool APIShared.Units.UnitStatModifier(APIShared.Units.UnitStatSubject unit, out APIShared.Units.UnitStatContribution contribution)
+APIShared.Units.UnitStatModifiers | public static class APIShared.Units.UnitStatModifiers
+APIShared.Units.UnitStatModifiers | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Units.UnitStat stat, APIShared.Units.UnitStatLayer layer, int order, APIShared.Units.UnitStatModifier modifier, out APIShared.Units.UnitStatRegistration registration, out string reason)
+APIShared.Units.UnitStatModifiers | public static long Applications { get; }
+APIShared.Units.UnitStatModifiers | public static long CallbackFailures { get; }
+APIShared.Units.UnitStatRegistration | public sealed class APIShared.Units.UnitStatRegistration : System.IDisposable
+APIShared.Units.UnitStatRegistration | public APIShared.Units.UnitStat Stat { get; }
+APIShared.Units.UnitStatRegistration | public APIShared.Units.UnitStatLayer Layer { get; }
+APIShared.Units.UnitStatRegistration | public bool IsActive { get; }
+APIShared.Units.UnitStatRegistration | public int Order { get; }
+APIShared.Units.UnitStatRegistration | public override string ToString()
+APIShared.Units.UnitStatRegistration | public string OwnerGuid { get; }
+APIShared.Units.UnitStatRegistration | public string RegistrationId { get; }
+APIShared.Units.UnitStatRegistration | public void Dispose()
+APIShared.Units.UnitStatSubject | public struct APIShared.Units.UnitStatSubject
+APIShared.Units.UnitStatSubject | public .ctor(APIShared.Units.UnitStat stat, int unitId, int globalId, int playerId, SHCDESE.Interop.eChimps unitType, APIShared.Units.UnitSettledCause cause, int simulationTick, int nativeValue)
+APIShared.Units.UnitStatSubject | public APIShared.Units.UnitSettledCause Cause { get; }
+APIShared.Units.UnitStatSubject | public APIShared.Units.UnitStat Stat { get; }
+APIShared.Units.UnitStatSubject | public SHCDESE.Interop.eChimps UnitType { get; }
+APIShared.Units.UnitStatSubject | public int GlobalId { get; }
+APIShared.Units.UnitStatSubject | public int NativeValue { get; }
+APIShared.Units.UnitStatSubject | public int PlayerId { get; }
+APIShared.Units.UnitStatSubject | public int SimulationTick { get; }
+APIShared.Units.UnitStatSubject | public int UnitId { get; }
 APIShared.Workshop.WorkshopAction | public enum APIShared.Workshop.WorkshopAction : int
 APIShared.Workshop.WorkshopAction | Downgrade = 3
 APIShared.Workshop.WorkshopAction | Install = 0
