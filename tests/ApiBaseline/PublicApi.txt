@@ -189,6 +189,32 @@ APIShared.BriefingGoldContext | public int CurrentGold { get; }
 APIShared.BriefingGoldContext | public int EffectiveVanillaGold { get; }
 APIShared.BriefingGoldContext | public int SlotIndex { get; }
 APIShared.BriefingGoldContext | public int VanillaDisplayedGold { get; }
+APIShared.BuildingPanelExtensionContext | public sealed class APIShared.BuildingPanelExtensionContext
+APIShared.BuildingPanelExtensionContext | public Noesis.FrameworkElement Hud { get; }
+APIShared.BuildingPanelExtensionDefinition | public sealed class APIShared.BuildingPanelExtensionDefinition
+APIShared.BuildingPanelExtensionDefinition | public .ctor(string extensionId, System.Func<APIShared.BuildingPanelExtensionContext, Noesis.FrameworkElement> factory, System.Func<APIShared.BuildingPanelSelection, bool> appliesTo = null, System.Action<APIShared.BuildingPanelSelection, Noesis.FrameworkElement> update = null, int order = 0, bool showInMapEditor = false)
+APIShared.BuildingPanelExtensionDefinition | public System.Action<APIShared.BuildingPanelSelection, Noesis.FrameworkElement> Update { get; }
+APIShared.BuildingPanelExtensionDefinition | public System.Func<APIShared.BuildingPanelExtensionContext, Noesis.FrameworkElement> Factory { get; }
+APIShared.BuildingPanelExtensionDefinition | public System.Func<APIShared.BuildingPanelSelection, bool> AppliesTo { get; }
+APIShared.BuildingPanelExtensionDefinition | public bool ShowInMapEditor { get; }
+APIShared.BuildingPanelExtensionDefinition | public int Order { get; }
+APIShared.BuildingPanelExtensionDefinition | public string ExtensionId { get; }
+APIShared.BuildingPanelRecruitmentAreaDefinition | public sealed class APIShared.BuildingPanelRecruitmentAreaDefinition
+APIShared.BuildingPanelRecruitmentAreaDefinition | public .ctor(string variantId, SHCDESE.Interop.eStructs[] buildingTypes, System.Func<APIShared.BuildingPanelExtensionContext, Noesis.FrameworkElement> factory, System.Func<APIShared.BuildingPanelSelection, bool> appliesTo = null, System.Action<APIShared.BuildingPanelSelection, Noesis.FrameworkElement> update = null)
+APIShared.BuildingPanelRecruitmentAreaDefinition | public SHCDESE.Interop.eStructs[] BuildingTypes { get; }
+APIShared.BuildingPanelRecruitmentAreaDefinition | public System.Action<APIShared.BuildingPanelSelection, Noesis.FrameworkElement> Update { get; }
+APIShared.BuildingPanelRecruitmentAreaDefinition | public System.Func<APIShared.BuildingPanelExtensionContext, Noesis.FrameworkElement> Factory { get; }
+APIShared.BuildingPanelRecruitmentAreaDefinition | public System.Func<APIShared.BuildingPanelSelection, bool> AppliesTo { get; }
+APIShared.BuildingPanelRecruitmentAreaDefinition | public string VariantId { get; }
+APIShared.BuildingPanelSelection | public struct APIShared.BuildingPanelSelection
+APIShared.BuildingPanelSelection | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.BuildingPanelSelection | public bool IsLocallyOwned { get; }
+APIShared.BuildingPanelSelection | public bool IsMapEditor { get; }
+APIShared.BuildingPanelSelection | public int BuildingId { get; }
+APIShared.BuildingPanelSelection | public int GlobalId { get; }
+APIShared.BuildingPanelSelection | public int LocalPlayerId { get; }
+APIShared.BuildingPanelSelection | public int OwnerPlayerId { get; }
+APIShared.BuildingPanelSelection | public int PanelMode { get; }
 APIShared.BuildingRepairQuote | public sealed class APIShared.BuildingRepairQuote
 APIShared.BuildingRepairQuote | public .ctor(int buildingId, int buildingGlobalId, int panel, bool canRepair, int currentHealth, int maxHealth, int wood, int stone, int iron, int pitch, int gold, int availableWood, int availableStone, int availableIron, int availablePitch, int availableGold)
 APIShared.BuildingRepairQuote | public bool CanRepair { get; }
@@ -511,6 +537,17 @@ APIShared.IApiShared | public bool TryGetPlayerDefeat(string ownerGuid, out APIS
 APIShared.IApiShared | public bool TryGetUnitHudPresentation(string ownerGuid, out APIShared.IUnitHudPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IBriefingGoldPresentationCapability | public interface APIShared.IBriefingGoldPresentationCapability
 APIShared.IBriefingGoldPresentationCapability | public bool TryRegisterAdjustment(string registrationId, APIShared.BriefingGoldAdjustmentStage stage, APIShared.BriefingGoldAdjuster adjuster, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IBuildingPanelExtensionRegistration | public interface APIShared.IBuildingPanelExtensionRegistration
+APIShared.IBuildingPanelExtensionRegistration | public void RequestContentRefresh()
+APIShared.IBuildingPanelExtensionRegistration | public void SetVisible(bool visible)
+APIShared.IBuildingPanelExtensionsCapability | public interface APIShared.IBuildingPanelExtensionsCapability
+APIShared.IBuildingPanelExtensionsCapability | public bool TryRegisterExtension(APIShared.BuildingPanelExtensionDefinition definition, out APIShared.IBuildingPanelExtensionRegistration registration, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IBuildingPanelExtensionsCapability | public bool TryRegisterRecruitmentArea(APIShared.BuildingPanelRecruitmentAreaDefinition definition, out APIShared.IBuildingPanelRecruitmentAreaRegistration registration, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IBuildingPanelExtensionsCapability | public void SetOwnerActive(bool active)
+APIShared.IBuildingPanelRecruitmentAreaRegistration | public interface APIShared.IBuildingPanelRecruitmentAreaRegistration
+APIShared.IBuildingPanelRecruitmentAreaRegistration | public bool IsReleased { get; }
+APIShared.IBuildingPanelRecruitmentAreaRegistration | public void Release()
+APIShared.IBuildingPanelRecruitmentAreaRegistration | public void RequestContentRefresh()
 APIShared.IBuildingRepairCapability | public interface APIShared.IBuildingRepairCapability
 APIShared.IBuildingRepairCapability | public bool TryGetSelectedQuote(out APIShared.BuildingRepairQuote quote)
 APIShared.IBuildingRepairCapability | public void BeginHover(string buttonId)
@@ -689,6 +726,7 @@ APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { 
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBriefingGoldPresentation(out APIShared.IBriefingGoldPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetBuildingPanelExtensions(out APIShared.IBuildingPanelExtensionsCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBuildingRepair(out APIShared.IBuildingRepairCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetGatehouseDistanceOrigin(out APIShared.IGatehouseDistanceOriginCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetGatehouseTiming(out APIShared.IGatehouseTimingCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -1180,6 +1218,7 @@ APIShared.NativeCapabilityDiagnostic | public string Reason { get; }
 APIShared.NativeCapabilityIds | public static class APIShared.NativeCapabilityIds
 APIShared.NativeCapabilityIds | public const string AivBuildStep = "aiv-build-step"
 APIShared.NativeCapabilityIds | public const string BriefingGoldPresentation = "briefing-gold-presentation"
+APIShared.NativeCapabilityIds | public const string BuildingPanelExtensions = "building-panel-extensions"
 APIShared.NativeCapabilityIds | public const string BuildingRepair = "building-repair"
 APIShared.NativeCapabilityIds | public const string GatehouseAutomation = "gatehouse-automation"
 APIShared.NativeCapabilityIds | public const string GatehouseDistanceOrigin = "gatehouse-distance-origin"
