@@ -574,6 +574,89 @@ took 29.5 ns instead of 284.8 ns per update (best of eight runs; every run faste
 Providers are still collected before the no-building return, since they may retire
 selection state there.
 
+## Building panel extensions
+
+`ModApiClient.TryGetBuildingPanelExtensions` gives your mod a place in the panel of the
+selected building: rows, buttons or text in one shared stack that APIShared owns. Register
+a `BuildingPanelExtensionDefinition` with a stable owner-local ID, a factory returning a
+fresh unattached element, an optional `appliesTo` filter on `BuildingPanelSelection`
+(building and global ID, owner, local ownership, type and Vanilla panel mode) and an
+optional `update`. [BuildingPanelExample](../examples/ThirdPartyMod/BuildingPanelExample.cs)
+shows a text row for buildings the local player owns.
+
+Extensions refresh after Vanilla's `MainViewModel.setUpInbuilding` and after the in-game GUI
+checks, on the Unity thread. On each refresh the filter runs for every visible extension and
+`update` runs for each shown one, so keep both cheap and allocation-free: change text only
+when the selection changed. Extensions stay hidden in the map editor unless created with
+`showInMapEditor: true`; `BuildingPanelSelection.IsMapEditor` tells the two apart. The stack
+is ordered by `order`, then ordinal owner GUID and extension ID. A factory, filter or update that throws disables only that extension and logs
+once; `RequestContentRefresh` re-enables it and recreates its element. `SetVisible` and
+`SetOwnerActive` switch extensions off without running their callbacks. Registrations last
+for the process; there is no unregistration or hook teardown. Your callbacks own gameplay
+authorization and multiplayer synchronization.
+
+### Recruitment-area replacements
+
+`TryRegisterRecruitmentArea` replaces Vanilla's recruitment area for one building variant,
+for example a custom barracks that your mod builds on the native stone barracks. A
+`BuildingPanelRecruitmentAreaDefinition` names the variant ID, the native types the variant
+is built on, a factory and an optional `appliesTo` selector and `update`, as for
+extensions. Any number of mods can register variants on the same native type: each
+building shows the replacement whose selector picks it, and the other buildings of the type
+keep Vanilla's area. [BuildingPanelExample](../examples/ThirdPartyMod/BuildingPanelExample.cs)
+registers a stone-barracks variant. Only a missing ID, type list or factory, or a variant ID
+the same owner already registered, is refused.
+
+Two replacements conflict only when both match the same selected building. One is then
+shown by a fixed precedence that never depends on registration order: a replacement with a
+selector before one for every building of its types, then ordinal owner GUID, then ordinal
+variant ID. APIShared logs each such conflict once per pair as a warning naming both mods
+and the one shown; the shared conflict report for players
+([#47](https://github.com/SHCDE-APIShared/APIShared/issues/47)) is to list it too.
+
+While a replacement is shown, APIShared hides Vanilla's recruitment panels (barracks,
+mercenary post, Bedouin stockade, engineers' and tunnellers' guilds, cathedral) and the
+full-panel click mask, and adds your element to the panel's root grid; the element owns its
+size and placement. The panels get their exact visibility back when another building is
+selected, on `Release`, after a failed callback, when the panel is recreated and at mission
+end; a panel Vanilla changed in the meantime keeps Vanilla's value. After `Release`,
+Vanilla's panels or the next matching variant return at the next refresh. Replacements never
+show in the map editor, where nothing is recruited. A variant is identified by owner GUID
+and variant ID, not by a native ID, so a shared registry of building variants
+([#50](https://github.com/SHCDE-APIShared/APIShared/issues/50)) can later supply the
+selector without changing this contract.
+
+### Building panel implementation and measurements
+
+Nothing is hooked until the first registration installs a `setUpInbuilding` Post and takes
+an internal GuiChecks Post on the existing presentation site (one owner per site). The
+stack is created once per `HUD_Buildings` instance under its root grid, so a refresh never
+searches the visual tree or uses reflection, and an unchanged refresh only reads state and
+runs your callbacks. The capability checks its game and Script Extender members at startup.
+
+`BuildingPanelExtensionTests` measure the registry refresh on the .NET Framework 4.8.1 test
+host after warm-up with a fake element and no-op callbacks, best of five runs of 200,000
+(fastest of four test runs):
+
+| Refresh | ns | Bytes |
+|---|---|---|
+| Broker, 0 extensions | 7.9 | 0 |
+| Broker, 1 extension | 15.2 | 0 |
+| Broker, 8 extensions | 68.4 | 0 |
+| Broker, replacement shown, 0 extensions | 30.2 | 0 |
+| Broker, replacement shown, 8 extensions | 90.5 | 0 |
+| Broker, replacement shown, second variant also matching, 0 extensions | 35.5 | 0 |
+| Broker, replacement shown, second variant also matching, 8 extensions | 94.1 | 0 |
+| Hand-written Post, 1 element | 5.5 | 0 |
+
+A shown replacement reads the seven Vanilla panel visibilities on every refresh, so that a
+panel Vanilla shows again is hidden at once. A second variant matching the same building
+adds its selector call; its conflict is reported once, not on every refresh.
+
+Both sides exclude reading the selected building, which the broker does once per refresh for
+all extensions and a hand-written Post does once per mod. The figures exclude Mono, Noesis
+and the game; the machine was under full CPU load from other work, so treat them as relative.
+
 ## Gate access contributions
 
 Use `GateAccessRules.TryRegister` for additional gate access exceptions and

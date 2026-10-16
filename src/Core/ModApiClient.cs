@@ -53,6 +53,11 @@ namespace APIShared
         public bool TryGetHudExtrasButtons(out IHudExtrasButtonsCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetHudExtrasButtons(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Acquires the shared extension stack of the selected building's panel for this owner. Managed; available
+        /// before native initialization. See <see cref="IBuildingPanelExtensionsCapability"/> for thread and refresh contracts.</summary>
+        public bool TryGetBuildingPanelExtensions(out IBuildingPanelExtensionsCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetBuildingPanelExtensions(OwnerGuid, out capability, out diagnostic);
+
         /// <summary>Acquires observation around unchanged Vanilla AIV build-step calls for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IAivBuildStepCapability"/> for operation/thread contracts.</summary>
         public bool TryGetAivBuildStep(out IAivBuildStepCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetAivBuildStep(OwnerGuid, out capability, out diagnostic);

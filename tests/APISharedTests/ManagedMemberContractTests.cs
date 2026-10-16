@@ -24,6 +24,7 @@ namespace APISharedTests
             (NativeCapabilityIds.HudExtrasButtons, "APIShared.HudExtrasButtonsService", null),
             (NativeCapabilityIds.BuildingRepair, "APIShared.BuildingRepairService", "TryCreate"),
             (NativeCapabilityIds.UnitHudPresentation, "APIShared.UnitHudPresentationService", "TryCreate"),
+            (NativeCapabilityIds.BuildingPanelExtensions, "APIShared.BuildingPanelExtensionsService", "TryCreate"),
         };
         private static readonly string[] Helpers = { "APIShared.UnitAccess" };
 
