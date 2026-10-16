@@ -84,7 +84,11 @@ fails. The refusal is terminal for the process.
 
 ## Migration notes
 
-These are notes for each consumer's maintainer; nothing here changes those mods.
+These are notes for each consumer's maintainer; nothing here changes those mods. A
+transition switch that keeps the old detour for a release or two is an optional strategy,
+not a requirement. The fallback described below (keep the old detour when a registration
+fails) is different: it keeps the feature when the broker is unavailable, for example under
+an older APIShared.
 
 ### Naval plugin (ByzantineNaval, 0xE2610)
 
@@ -121,19 +125,64 @@ site 0x707DB; drop the 0xD90D0 guard and detour when `TryRegister` succeeded.
 
 ### BugfixesAndQoL (0xE2610 and 0xD90D0)
 
-Its 0xE2610 detour calls the original first and then may replace the result (ladder
-attack fix, dig and fill work regions, direct cursor moves, gate-routing observation).
-That is one Post: start from `call.OriginalResult`, return early when
-`call.OriginalCalled` is false (another consumer overrode the call), and replace with
-`TrySetResult`. Its direct calls of the original trampoline become
-`PclReachabilityBroker.CallOriginal`. Its 0xD90D0 observer becomes a `TileRefreshBroker`
-Post. Both detours sit in atomic transactions with other hooks; when a broker
-registration fails, keep the existing detour for that entry in the transaction as the
-fallback, so the opt-in never loses a feature. Its exact-prefix checks for these two
-entries must not run once it uses the broker, because the broker owns those bytes.
-BugfixesAndQoL hard-depends on APIShared 0.7.0: raising that minimum to the first release
-with the brokers makes an older APIShared refuse to load it, while a runtime check keeps
-the old path; that is the maintainer's choice.
+Today both entries are RedBird detours inside atomic `HookTransaction`s with other hooks:
+
+- 0xE2610 in `TryInstallAttackApproachDiagnostics` (`UnitCommandPathRuntime.AttackHooks.cs`),
+  together with the unit flood builder, the building approach builder and the building
+  candidate consumer. Its callback `ObserveScopedRegionPairReachability` calls the original
+  first, may then replace the result (ladder attack fix, dig and fill work regions, direct
+  cursor moves), and reports both values to `EnemyBridgeDiagnosticBridge` and the optional
+  gate-path observer.
+- 0xD90D0 in `InstallConnectivityAndRecovery` (`NativeMovementRecovery.cs`), together with
+  the moat write, moat delete and mask rebuild observers, the pre-builder recovery adapter and
+  the placement adapters. Its callback calls the original, then
+  `InvalidateMovementSearchData()` and `DirtyCursorTile(tile)`.
+
+Steps:
+
+1. Dependency. Keep the hard `BepInDependency` on `APIShared_Serp`. Either raise its minimum
+   to the first release with the brokers (an older APIShared then refuses to load the mod),
+   or keep 0.7.0 and touch the broker types only from a method that runs after checking that
+   APIShared is new enough, so the old path stays available. Both are valid; the fallback in
+   steps 4 and 7 is needed only for the second.
+2. Parameter mapping. The broker's `PclReachabilityCall` has the same five arguments as
+   `RegionPairReachabilityDelegate`: `Manager` = `pathManager`, `Player` = `movementClass`
+   (the entry uses it as player ID, as the existing comment says), `FirstPcl` =
+   `sourceRegion`, `SecondPcl` = `targetRegion`, `Mode` = `routeKind`. The result is `int`.
+3. 0xE2610 Post. Split `ObserveScopedRegionPairReachabilityCore` so that it takes the
+   Vanilla result instead of calling `originalRegionPairReachability` itself. Register one
+   Post with `PclReachabilityBroker.TryRegister(PluginGuid, "region-pair", 0, null, Post,
+   out registration, out reason)`. In `Post(ref PclReachabilityCall call)`: if
+   `call.OriginalCalled` is false, another consumer's Pre decided the call, so return
+   without changing it; otherwise run the split core with `call.OriginalResult`, call
+   `call.TrySetResult(result)` when it differs, and report both values to the diagnostic
+   bridge and the observer as today.
+4. 0xE2610 transaction. Register before building the attack-approach transaction. On
+   success, leave `pendingRegionPair` out of the transaction and do not resolve or check
+   0xE2610's entry pattern. On failure, log `reason` once and install the detour exactly as
+   today. If the transaction then fails, dispose the registration together with the rollback.
+5. Direct original calls. Replace `originalRegionPairReachability(...)` in
+   `UnitCommandPathRuntime.LadderAttackFix.cs` and `MovementSearchContext.cs` with
+   `PclReachabilityBroker.CallOriginal(manager, player, firstPcl, secondPcl, mode)` when the
+   registration succeeded. It calls Vanilla without any consumer, as the trampoline does now.
+6. Readiness checks. `WorkTargetHooks` refuses when `regionPairReachabilityDetour` is null;
+   accept an active broker registration (`registration.IsActive`) instead.
+7. 0xD90D0 Post. Register `TileRefreshBroker.TryRegister(PluginGuid, "tile-refresh", 0,
+   call => { try { InvalidateMovementSearchData(); DirtyCursorTile(call.TileId); } catch
+   (Exception ex) { InvalidateConnectivity(ex); } }, out registration, out reason)` before
+   building the connectivity transaction. On success, leave the 0xD90D0
+   `InstallConnectivityObserver` out of the transaction and out of the `Committed` check;
+   on failure, keep it as today. If the transaction fails, dispose the registration.
+8. Prefix contracts. Once the brokers serve these entries, the mod's exact-prefix checks for
+   them (`nativeDetourPrefixes` entries 0xE2610 and 0xD90D0, and the two resolve patterns)
+   must not run: the broker owns those bytes. Keep them only for the fallback path.
+9. Call-site checks stay. The call-target checks of call sites that call 0xE2610
+   (`ValidateAttackApproachCalls`, `ValidatePlacementReachabilityRouteCall` and the dig and
+   fill checks) read the calls, not the entry, and are unaffected.
+10. Check in game: the ladder attack fix, dig and fill work regions, direct cursor moves and
+    the movement search invalidation behave as before; `PclReachabilityBroker.State` and
+    `TileRefreshBroker.State` are `Installed`; with the naval plugin or LandscapeThemes also
+    installed, the log shows no broker refusal and both features work.
 
 ## Version skew
 
