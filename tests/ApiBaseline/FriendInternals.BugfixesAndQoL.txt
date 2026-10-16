@@ -1,0 +1,50 @@
+# Internal APIShared members that compiled BugfixesAndQoL builds bind through InternalsVisibleTo.
+# Source: Mono.Cecil scan of the BugfixesAndQoL releases 1.0.185, 1.0.186, 1.0.191 and 1.0.192,
+# which load the standalone APIShared plugin. A removed or changed line breaks them at JIT time.
+# See docs/API_COMPATIBILITY.md.
+APIShared.Internal.NativePatternSearchScope::EntireImage = 1
+APIShared.Internal.NativePatternSearchScope::ExecutableSections = 0
+APIShared.Pathfinding.RouteSearchEventRegistry.Invocation APIShared.Pathfinding.RouteSearchEventRegistry::Begin(APIShared.Pathfinding.RouteSearchContext, long, long)
+APIShared.Pathfinding.RouteSearchPreEventArgs APIShared.Pathfinding.RouteSearchEventRegistry.Invocation::get_Pre()
+bool APIShared.Pathfinding.RouteSearchEventRegistry::get_HasObservers()
+class APIShared.AssassinRouteHandoff
+class APIShared.GateRouting.Native.EnemyGatePathfindingNativeDefinition
+class APIShared.GateRouting.Native.NativeCallbackAdapterEmitter
+class APIShared.Internal.DebugLogHelper
+class APIShared.Internal.GameBuildingFootprint
+class APIShared.Internal.MissionEvents
+class APIShared.Internal.NativePatternResolver
+class APIShared.Internal.UnityMainThreadDispatch
+class APIShared.Pathfinding.RouteSearchEventRegistry
+class APIShared.Pathfinding.RouteSearchEventRegistry.Invocation
+enum APIShared.Internal.NativePatternSearchScope
+int APIShared.AssassinRouteHandoff::Complete(int)
+int APIShared.Internal.GameBuildingFootprintBounds::get_MaxX()
+int APIShared.Internal.GameBuildingFootprintBounds::get_MaxY()
+int APIShared.Internal.GameBuildingFootprintBounds::get_MinX()
+int APIShared.Internal.GameBuildingFootprintBounds::get_MinY()
+int APIShared.Internal.NativeResolution::get_Rva()
+static APIShared.Internal.NativeResolution APIShared.Internal.NativePatternResolver::ResolveUnique(System.ReadOnlySpan<byte>, string, int, bool, string, BepInEx.Logging.ManualLogSource, APIShared.Internal.NativePatternSearchScope)
+static APIShared.Pathfinding.RouteSearchEventRegistry APIShared.Pathfinding.RouteSearchEvents::Registry
+static R3.Observable<APIShared.MissionLifecycleNotification> APIShared.Internal.MissionEvents::get_Ended()
+static R3.Observable<APIShared.MissionLifecycleNotification> APIShared.Internal.MissionEvents::get_Loading()
+static R3.Observable<APIShared.MissionLifecycleNotification> APIShared.Internal.MissionEvents::get_NativeStart()
+static RedBird.Backends.NativeX64.NativeDetourBackend APIShared.AssassinPathAPI::Backend
+static bool APIShared.Internal.GameBuildingFootprint::ContainsTileId(SHCDESE.Interop.GameBuilding*, int)
+static bool APIShared.Internal.GameBuildingFootprint::TryGetBounds(SHCDESE.Interop.GameBuilding*, ref APIShared.Internal.GameBuildingFootprintBounds)
+static bool APIShared.Internal.UnityMainThreadDispatch::TryRunInlineOrEnqueue(System.Action)
+static int APIShared.Internal.NativePatternResolver::FindUniquePattern(System.ReadOnlySpan<byte>, string, string, APIShared.Internal.NativePatternSearchScope)
+static int APIShared.Internal.NativePatternResolver::ResolveRelativeTarget(System.ReadOnlySpan<byte>, int, int)
+static void APIShared.EnemyBridgeDiagnosticBridge::PublishTopologyOwner()
+static void APIShared.GateRouting.Native.EnemyGatePathfindingNativeDefinition::ValidateNativeHookContracts(System.ReadOnlySpan<byte>)
+static void APIShared.GateRouting.Native.EnemyGatePathfindingNativeDefinition::ValidateSamePclNativeFilterContracts(System.ReadOnlySpan<byte>, bool)
+static void APIShared.GateRouting.Native.NativeCallbackAdapterEmitter::Emit(Iced.Intel.Assembler, System.ReadOnlySpan<Iced.Intel.Instruction>, ulong, ulong)
+static void APIShared.GateRouting.Native.NativeCallbackAdapterEmitter::EmitExecution(Iced.Intel.Assembler, System.ReadOnlySpan<Iced.Intel.Instruction>, ulong, ulong, ulong, ulong, bool, int)
+static void APIShared.Internal.DebugLogHelper::LogDebug(BepInEx.Logging.ManualLogSource, object[])
+static void APIShared.Internal.DebugLogHelper::LogInfo(BepInEx.Logging.ManualLogSource, string)
+struct APIShared.Internal.GameBuildingFootprintBounds
+struct APIShared.Internal.NativeResolution
+void APIShared.AssassinRouteHandoff::.ctor(System.IntPtr, int, int, int, int, int, System.Func<bool>, System.Func<byte[], int, int>, int, int, System.Action<string, string, string>)
+void APIShared.AssassinRouteHandoff::Leave()
+void APIShared.Pathfinding.RouteSearchContext::.ctor(string, int, int, int, int, int, APIShared.Pathfinding.RouteSearchTerrain, int, long)
+void APIShared.Pathfinding.RouteSearchEventRegistry.Invocation::Complete(bool, string, int, int)

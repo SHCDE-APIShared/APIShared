@@ -37,10 +37,28 @@ try {
         (($_.Parameters | ForEach-Object { $_.ParameterType.FullName }) -join '|') -ceq 'SHCDESE.API.Components.ModManager.LobbyModSettingsChangeOrigin|System.Action'
     })
     if ($scope.Count -ne 1) { throw 'Changed Extender restore-origin scope.' }
+    # Record comparison: the save archive reader and the player names in its messages.
+    $steamAssembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data\Managed\com.rlabrecque.steamworks.net.dll'))
+    try {
+        foreach ($contract in @(
+            @{ Assembly = $extenderAssembly; Type = 'SHCDESE.API.Components.Archive.MapArchive'; Method = 'TryLoad'; Parameters = 'System.String|SHCDESE.API.Components.Archive.MapArchive&'; Return = 'System.Boolean'; Static = $true },
+            @{ Assembly = $extenderAssembly; Type = 'SHCDESE.API.Components.Archive.MapArchive'; Method = 'TryReadBinaryFile'; Parameters = 'System.String|System.Boolean'; Return = 'System.Byte[]'; Static = $false },
+            @{ Assembly = $extenderAssembly; Type = 'SHCDESE.IO.ZipUtil'; Method = 'FindEocdHeaderIndex'; Parameters = 'System.String'; Return = 'System.Int64'; Static = $true },
+            @{ Assembly = $extenderAssembly; Type = 'SHCDESE.IO.ZipUtil'; Method = 'FindFirstZipHeaderIndex'; Parameters = 'System.String'; Return = 'System.Int64'; Static = $true },
+            @{ Assembly = $steamAssembly; Type = 'Steamworks.SteamFriends'; Method = 'GetFriendPersonaName'; Parameters = 'Steamworks.CSteamID'; Return = 'System.String'; Static = $true }
+        )) {
+            $type = $contract.Assembly.MainModule.GetType($contract.Type)
+            $methods = @($type.Methods | Where-Object {
+                $_.Name -ceq $contract.Method -and $_.IsPublic -and $_.IsStatic -eq $contract.Static -and $_.ReturnType.FullName -ceq $contract.Return -and
+                (($_.Parameters | ForEach-Object { $_.ParameterType.FullName }) -join '|') -ceq $contract.Parameters
+            })
+            if ($methods.Count -ne 1) { throw "Changed save record comparison contract: $($contract.Type).$($contract.Method)" }
+        }
+    } finally { $steamAssembly.Dispose() }
     $runtimeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\src\Savegames'))
     $coordinator = [IO.File]::ReadAllText((Join-Path $runtimeRoot 'SavegameLoadCoordinator.cs'))
     if ($coordinator -match '\.(Undo|Disable)\s*\(' -or $coordinator -match '\bOn(Destroy|Disable|ApplicationQuit)\s*\(') {
         throw 'Save preparation contains a published-hook teardown.'
     }
-    Write-Host '[Contracts] Real game save entries/fields and installed Extender origin scope verified.'
+    Write-Host '[Contracts] Real game save entries/fields, installed Extender origin scope and record comparison readers verified.'
 } finally { $extenderAssembly.Dispose(); $gameAssembly.Dispose() }
