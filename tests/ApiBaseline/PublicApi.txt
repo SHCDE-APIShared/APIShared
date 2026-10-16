@@ -408,6 +408,53 @@ APIShared.GameModes.GameplayModeGate | public event System.Action<bool> StateCha
 APIShared.GameModes.GameplayModeGate | public string Reason { get; }
 APIShared.GameModes.GameplayModeGate | public void Update(APIShared.GameModes.GameModeSnapshot snapshot)
 APIShared.GameModes.GameplayModeGate | public void Update(APIShared.MissionLifecycleNotification notification)
+APIShared.GameTables.GameDataCell | public struct APIShared.GameTables.GameDataCell
+APIShared.GameTables.GameDataCell | public .ctor(APIShared.GameTables.GameDataTable table, int row, int column, int baseValue)
+APIShared.GameTables.GameDataCell | public APIShared.GameTables.GameDataTable Table { get; }
+APIShared.GameTables.GameDataCell | public int BaseValue { get; }
+APIShared.GameTables.GameDataCell | public int Column { get; }
+APIShared.GameTables.GameDataCell | public int Row { get; }
+APIShared.GameTables.GameDataCellStatus | public struct APIShared.GameTables.GameDataCellStatus
+APIShared.GameTables.GameDataCellStatus | public APIShared.GameTables.GameDataCell Cell { get; }
+APIShared.GameTables.GameDataCellStatus | public bool Contributes { get; }
+APIShared.GameTables.GameDataCellStatus | public bool HasDirectWrite { get; }
+APIShared.GameTables.GameDataCellStatus | public bool IsOverridden { get; }
+APIShared.GameTables.GameDataCellStatus | public int ComposedValue { get; }
+APIShared.GameTables.GameDataCellStatus | public int EffectiveValue { get; }
+APIShared.GameTables.GameDataCellStatus | public string LimitOwnerGuid { get; }
+APIShared.GameTables.GameDataCellStatus | public string LimitRegistrationId { get; }
+APIShared.GameTables.GameDataCellStatus | public string OverrideOwnerGuid { get; }
+APIShared.GameTables.GameDataCellStatus | public string OverrideRegistrationId { get; }
+APIShared.GameTables.GameDataContribution | public struct APIShared.GameTables.GameDataContribution
+APIShared.GameTables.GameDataContribution | public static APIShared.GameTables.GameDataContribution Add(int amount)
+APIShared.GameTables.GameDataContribution | public static APIShared.GameTables.GameDataContribution Percent(int percent)
+APIShared.GameTables.GameDataContribution | public static APIShared.GameTables.GameDataContribution Range(int minimum, int maximum)
+APIShared.GameTables.GameDataContribution | public static APIShared.GameTables.GameDataContribution Scale(int numerator, int denominator)
+APIShared.GameTables.GameDataContribution | public static APIShared.GameTables.GameDataContribution Set(int value)
+APIShared.GameTables.GameDataLayer | public enum APIShared.GameTables.GameDataLayer : int
+APIShared.GameTables.GameDataLayer | Additive = 1
+APIShared.GameTables.GameDataLayer | Clamp = 4
+APIShared.GameTables.GameDataLayer | Multiplier = 2
+APIShared.GameTables.GameDataLayer | Override = 3
+APIShared.GameTables.GameDataLayerHandler | public delegate bool APIShared.GameTables.GameDataLayerHandler(APIShared.GameTables.GameDataCell cell, out APIShared.GameTables.GameDataContribution contribution)
+APIShared.GameTables.GameDataLayers | public static class APIShared.GameTables.GameDataLayers
+APIShared.GameTables.GameDataLayers | public static bool TryGetCellStatus(APIShared.GameTables.GameDataRegistration registration, int row, int column, out APIShared.GameTables.GameDataCellStatus status, out string reason)
+APIShared.GameTables.GameDataLayers | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.GameTables.GameDataTable table, APIShared.GameTables.GameDataLayer layer, int order, APIShared.GameTables.GameDataLayerHandler handler, out APIShared.GameTables.GameDataRegistration registration, out string reason)
+APIShared.GameTables.GameDataLayers | public static int Reapply(APIShared.GameTables.GameDataTable table)
+APIShared.GameTables.GameDataLayers | public static long CallbackFailures { get; }
+APIShared.GameTables.GameDataLayers | public static long ForeignCells { get; }
+APIShared.GameTables.GameDataLayers | public static long RowWrites { get; }
+APIShared.GameTables.GameDataRegistration | public sealed class APIShared.GameTables.GameDataRegistration : System.IDisposable
+APIShared.GameTables.GameDataRegistration | public APIShared.GameTables.GameDataLayer Layer { get; }
+APIShared.GameTables.GameDataRegistration | public APIShared.GameTables.GameDataTable Table { get; }
+APIShared.GameTables.GameDataRegistration | public bool IsActive { get; }
+APIShared.GameTables.GameDataRegistration | public int Order { get; }
+APIShared.GameTables.GameDataRegistration | public override string ToString()
+APIShared.GameTables.GameDataRegistration | public string OwnerGuid { get; }
+APIShared.GameTables.GameDataRegistration | public string RegistrationId { get; }
+APIShared.GameTables.GameDataRegistration | public void Dispose()
+APIShared.GameTables.GameDataTable | public enum APIShared.GameTables.GameDataTable : int
+APIShared.GameTables.GameDataTable | TradeBasePrices = 0
 APIShared.GateAccessDecision | public enum APIShared.GateAccessDecision : int
 APIShared.GateAccessDecision | Allow = 1
 APIShared.GateAccessDecision | Deny = 2
