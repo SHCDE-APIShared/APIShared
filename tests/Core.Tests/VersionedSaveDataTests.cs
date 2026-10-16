@@ -492,6 +492,84 @@ public class VersionedSaveDataTests
     }
 
     [TestMethod]
+    public void OnlyDeclaredRecordsAreSimulationRelevantAndTheirNumberIsBounded()
+    {
+        var extender = new FakeExtender();
+        VersionedSaveCapture capture = _ => true;
+        Action<VersionedSaveLoad> loaded = _ => { };
+        Assert.IsTrue(extender.Registry.TryRegister(new("b.mod", "Zeta.Data", 1, 1, new[] { "a" }, capture, loaded)
+            { SimulationRelevant = true }, out _, out _));
+        Assert.IsTrue(extender.Registry.TryRegister(new("a.mod", "alpha.Data", 1, 1, new[] { "a" }, capture, loaded)
+            { SimulationRelevant = true }, out _, out _));
+        Assert.IsTrue(extender.Registry.TryRegister(new("a.mod", "Local.View", 1, 1, new[] { "a" }, capture, loaded), out _, out _));
+        CollectionAssert.AreEqual(new[] { "alpha.Data", "Zeta.Data" }, extender.Registry.SimulationRecords.Select(x => x.Value).ToArray(),
+            "Declared records only, ordered by identifier ignoring case.");
+        Assert.AreEqual("a.mod", extender.Registry.SimulationRecords[0].Key);
+
+        for (int i = 2; i < VersionedSaveData.MaximumSimulationRecords; i++)
+            Assert.IsTrue(extender.Registry.TryRegister(new("c.mod", "Sim" + i, 1, 1, new[] { "a" }, capture, loaded)
+                { SimulationRelevant = true }, out _, out _));
+        Assert.IsFalse(extender.Registry.TryRegister(new("c.mod", "Sim.Over", 1, 1, new[] { "a" }, capture, loaded)
+            { SimulationRelevant = true }, out _, out string reason));
+        StringAssert.Contains(reason, "simulation-relevant");
+        Assert.IsTrue(extender.Registry.TryRegister(new("c.mod", "Local.Over", 1, 1, new[] { "a" }, capture, loaded), out _, out _),
+            "The bound applies to declared records only.");
+    }
+
+    [TestMethod]
+    public void SinglePlayerStateAndLocalRecordsDoNotAffectTheMultiplayerComparison()
+    {
+        // Host and client run the same mods: a declared army record and an undeclared camera record.
+        var host = new FakeExtender();
+        var client = new FakeExtender();
+        var clientArmy = new Dictionary<string, byte[]>();
+        foreach (FakeExtender side in new[] { host, client })
+        {
+            var army = side.Registration("Mod.Army", 1, 1, new[] { "unit/" }, Writes(side == client ? clientArmy : new()));
+            army.SimulationRelevant = true;
+            side.Register(army);
+            side.Register("Mod.Camera", 1, 1, new[] { "view" }, Writes(new()));
+        }
+        FakeExtender.Mod armyOnClient = client.Handlers["Mod.Army"];
+
+        // The client first plays single-player: other army state, plus an entry its version does not know.
+        byte[] singlePlayer = SaveWith(1, 1, new[] { "unit/", "legacy" },
+            new() { ["unit/9"] = new byte[] { 99 }, ["legacy"] = new byte[] { 7 } });
+        client.LoadSave(singlePlayer, armyOnClient);
+        Assert.AreEqual(1, armyOnClient.Loads.Last().KeptEntryCount);
+        clientArmy["unit/9"] = new byte[] { 100 };
+
+        // The shared multiplayer save: the declared record is identical in both copies, the camera
+        // record (local view state) differs.
+        byte[] savedArmy = SaveWith(1, 1, new[] { "unit/" }, new() { ["unit/1"] = new byte[] { 5 } });
+        var hostCopy = new Dictionary<string, byte[]> { ["Mod.Army"] = savedArmy, ["Mod.Camera"] = new byte[] { 1 } };
+        var clientCopy = new Dictionary<string, byte[]> { ["Mod.Army"] = (byte[])savedArmy.Clone(), ["Mod.Camera"] = new byte[] { 2 } };
+        List<SavegameRecordDigest> hostDigests = SavegameRecordDigest.Capture(host.Registry.SimulationRecords,
+            id => hostCopy.TryGetValue(id, out byte[] b) ? b : null);
+        List<SavegameRecordDigest> clientDigests = SavegameRecordDigest.Capture(client.Registry.SimulationRecords,
+            id => clientCopy.TryGetValue(id, out byte[] b) ? b : null);
+        Assert.AreEqual(1, clientDigests.Count, "Only the declared record is compared.");
+        Assert.IsNull(SavegameRecordComparison.Describe(hostDigests, clientDigests, "Bob"),
+            "Earlier single-player state and local records must not reject the shared save.");
+
+        // Loading the multiplayer save replaces the single-player state, including its kept entry.
+        clientArmy.Clear();
+        client.LoadSave(clientCopy["Mod.Army"], armyOnClient, VersionedSaveLoadSource.MultiplayerSave);
+        VersionedSaveLoad loaded = armyOnClient.Loads.Last();
+        Assert.AreEqual(VersionedSaveLoadStatus.Restored, loaded.Status);
+        CollectionAssert.AreEqual(new[] { "unit/1" }, loaded.Entries.Keys.ToArray());
+        Assert.AreEqual(0, loaded.KeptEntryCount);
+        foreach (var entry in loaded.Entries) clientArmy[entry.Key] = entry.Value;
+        AssertEntries(client, armyOnClient, "unit/1");
+
+        // A different declared record in one copy is detected and named.
+        clientCopy["Mod.Army"] = SaveWith(1, 1, new[] { "unit/" }, new() { ["unit/1"] = new byte[] { 6 } });
+        string mismatch = SavegameRecordComparison.Describe(hostDigests, SavegameRecordDigest.Capture(client.Registry.SimulationRecords,
+            id => clientCopy.TryGetValue(id, out byte[] b) ? b : null), "Bob");
+        StringAssert.Contains(mismatch, "record 'Mod.Army' of mod 'owner' differs between the host's save and Bob's");
+    }
+
+    [TestMethod]
     public void EntriesEnforceNamesAndLimitsForMigrations()
     {
         var entries = new VersionedSaveEntries();
@@ -590,7 +668,7 @@ public class VersionedSaveDataTests
             var observed = new VersionedSaveDataRegistration(registration.OwnerGuid, registration.SaveDataIdentifier,
                 registration.CurrentVersion, registration.MinimumReaderVersion, registration.KnownEntries, registration.Capture,
                 load => { mod.Loads.Add(load); registration.Loaded(load); })
-            { Scope = registration.Scope, LegacyReader = registration.LegacyReader };
+            { Scope = registration.Scope, LegacyReader = registration.LegacyReader, SimulationRelevant = registration.SimulationRelevant };
             foreach (var step in registration.Migrations) observed.AddMigration(step.Key, step.Value);
             pendingRegistration = mod;
             Assert.IsTrue(Registry.TryRegister(observed, out var handle, out string reason), reason);
