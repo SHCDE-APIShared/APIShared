@@ -1,10 +1,13 @@
 using BepInEx.Logging;
 using R3;
 using SHCDESE.API;
+using SHCDESE.API.Components.Archive;
 using SHCDESE.EventAPI;
 using SHCDESE.EventAPI.MapLoader;
+using SHCDESE.IO;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace APIShared.Savegames
 {
@@ -30,8 +33,10 @@ namespace APIShared.Savegames
         /// settings are applied before the native load and therefore before these callbacks; the mission
         /// start notification follows them. Save capture order across mods is the Extender's handler
         /// order and is unspecified; captures must not depend on each other.</para>
-        /// <para>Multiplayer: every peer reads its own save copy. Records are not compared across peers;
-        /// the multiplayer save readiness agreement covers settings only.</para>
+        /// <para>Multiplayer: every peer reads its own save copy. Before a multiplayer save is loaded, the
+        /// save readiness agreement compares the stored bytes of records declared
+        /// <see cref="VersionedSaveDataRegistration.SimulationRelevant"/> in every peer's copy and blocks
+        /// the load on a difference; other records are not compared. Nothing is synchronized.</para>
         /// <para>Failures: every callback exception is isolated, logged and counted in
         /// <see cref="CallbackFailures"/>; nothing is thrown into the game or the Extender. A throwing
         /// load callback for a restored record makes later saves of that mission keep the loaded bytes.</para>
@@ -91,6 +96,27 @@ namespace APIShared.Savegames
                 current = registry;
             }
             return current.TryRegister(registration, out handle, out reason);
+        }
+
+        // Digests of the declared simulation-relevant records as stored in one save file, for the save
+        // readiness agreement. Reads the file's appended archive once, like SavegameModSettings.ReadRecord;
+        // with no declared record nothing is read. Entry names follow ModSaveDataAPI.cs:67, :272-275.
+        // A save without an archive has every record absent; a damaged archive makes every record
+        // unreadable, which blocks a multiplayer load rather than letting it start unverified.
+        internal static IReadOnlyList<SavegameRecordDigest> CaptureSimulationDigests(string savePath)
+        {
+            VersionedSaveDataRegistry current;
+            lock (Sync) current = registry;
+            List<KeyValuePair<string, string>> declared = current?.SimulationRecords;
+            if (declared == null || declared.Count == 0) return Array.Empty<SavegameRecordDigest>();
+            if (!MapArchive.TryLoad(savePath, out MapArchive archive))
+            {
+                bool noArchive = ZipUtil.FindEocdHeaderIndex(savePath) < 0 && ZipUtil.FindFirstZipHeaderIndex(savePath) < 0;
+                return SavegameRecordDigest.Capture(declared,
+                    _ => noArchive ? (byte[])null : throw new InvalidDataException("The save's mod data archive is damaged."));
+            }
+            using (archive)
+                return SavegameRecordDigest.Capture(declared, id => archive.TryReadBinaryFile("_SE_ModData_" + id + ".msgpack", true));
         }
 
         private static bool RegisterWithExtender(string identifier, Func<VersionedSaveContext, byte[]> save, Action<byte[]> load) =>

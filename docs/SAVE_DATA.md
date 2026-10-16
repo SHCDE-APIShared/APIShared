@@ -131,9 +131,9 @@ thrown into the game or the Extender.
   entries belong to one mission: they are dropped at the next load and at a map unload
   outside a load.
 - Multiplayer: every peer reads its own save copy, and client copies can differ from the
-  host's. Records are not compared across peers; the multiplayer save readiness agreement
-  ([SavegameLoadCoordinator](../src/Savegames/SavegameLoadCoordinator.cs)) covers mod settings
-  only. Keep simulation-relevant records identical on every peer, or synchronize them yourself.
+  host's. Records declared `SimulationRelevant` are compared before a multiplayer save loads
+  (see [multiplayer record comparison](#multiplayer-record-comparison)); other records are not.
+  Nothing is synchronized or repaired.
 - Load paths: the result `Source` names the Extender event (`SaveGame`, `MultiplayerSave`,
   `MapToPlay`, `EditorMap`). Multiplayer saves load through `OnLoadMap`, whose Extender
   `LoadContext` reports a map; `MultiplayerSave` is chosen while APIShared's confirmed
@@ -141,7 +141,50 @@ thrown into the game or the Extender.
   `LoadContext` flag is never used. Which other menu paths raise which event, and the thread
   of the save and load callbacks, are not yet verified in the game: single-player and
   multiplayer save loads, map and campaign starts, editor loads and saves are pending
-  in-game checks.
+  in-game checks, as is the multiplayer record comparison with two players.
+
+## Multiplayer record comparison
+
+Set `SimulationRelevant = true` on a registration whose record holds simulation state that
+must be identical on every player, for example unit identities or building state that the
+mod's simulation reads. Leave it false (the default) for local, view or presentation data,
+and keep such data in a separate record. At most 64 registrations may declare it.
+
+**What is compared.** When the host selects a multiplayer save, the save readiness agreement
+([SavegameLoadCoordinator](../src/Savegames/SavegameLoadCoordinator.cs)) reads, on every
+player, that player's own copy of the selected save and takes the SHA-256 of each declared
+record's stored bytes (or notes that the record is absent or unreadable). Clients send their
+list with their readiness confirmation; the host compares each list with its own and releases
+the load only when every player's settings fingerprint and declared records match.
+
+**What is not compared.** Undeclared records; mod settings (the agreement already brings
+every client's host settings to the saved values and compares their fingerprint); anything in
+memory, such as state of an earlier single-player mission or of the lobby; other saves; the
+rest of the save file, whose bytes can legitimately differ between players. Players can
+therefore change settings and play single-player freely before loading a shared multiplayer
+save. Loading that save then replaces earlier state: the load reports each record with
+`Restored` or `NoRecord`, and kept entries of the earlier mission are dropped.
+
+**On a difference.** The load does not start. Every player sees an explanation naming the
+player, the mod (owner GUID) and the record, and whether the record differs, is missing on one
+side, is unreadable, or is declared by only one side (different mod versions). At most three
+differences are listed. A hash comparison detects differences only; it neither copies nor
+repairs data.
+
+**Protocol version.** The readiness packets carry protocol version 2. A player whose
+APIShared build speaks the first, unversioned protocol, or a later one, is named in a message
+saying the versions differ, and the load is blocked. A build that cannot read version-2
+packets cannot confirm either; the host's 60-second timeout then names the players that did
+not confirm.
+
+**Cost.** Nothing runs per tick. Per multiplayer load request, when at least one record is
+declared and another player is present, each player reads its save's mod data archive once
+and hashes the declared records. On an 8 MiB test save with a 256 KiB declared record this
+took about 6 ms, against about 12 ms for the whole-file SHA-256 the agreement already takes
+twice per player (`SavegameReadinessProtocolTests`: warm file cache, .NET Framework test host,
+not the game's Mono runtime; not a frame-time measurement). Each declared record adds its
+owner GUID, identifier and 32 bytes to the readiness packets, about 70 bytes for typical
+names; the channel limit allows 64 records with names at their maximum length.
 
 ## Implementation
 
@@ -217,7 +260,14 @@ classifies the source of an `OnLoadMap` load.
 entries across a downgrade and upgrade, deletion of unwritten known entries, the migration
 chain, failed migration, corrupt and too-new records, legacy import, `NoRecord` and mission
 boundaries, both subscription orders, isolation and ordering of several mods, every limit on
-writer and reader, scope and registration validation. `VersionedSaveDataRuntimeTests`
-(APISharedTests) bind to the installed Script Extender handler table and feed the binding the
-real event argument types. Neither runs the game; in-game checks are listed under
+writer and reader, scope and registration validation, the bounded set of simulation-relevant
+declarations, and the single-player to multiplayer-save transition (earlier single-player
+state and differing local records do not reject a shared save, the multiplayer load replaces
+that state, a different declared record is named). `SavegameRecordComparisonTests`
+(Core.Tests) cover every kind of difference, the explanation, peer list validation and the
+host's acceptance rules. `VersionedSaveDataRuntimeTests` (APISharedTests) bind to the
+installed Script Extender handler table and feed the binding the real event argument types;
+`SavegameReadinessProtocolTests` cover the version-2 packet, protocol-1 recognition and reply,
+later versions, malformed lists, and digests read from save files built with the Extender's
+own archive class. None of them runs the game; in-game checks are listed under
 [Public limits](#public-limits).
