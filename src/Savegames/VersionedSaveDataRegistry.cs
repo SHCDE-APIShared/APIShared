@@ -50,15 +50,37 @@ namespace APIShared.Savegames
 
         internal long CallbackFailures => Interlocked.Read(ref failures);
 
+        /// <summary>Owner and identifier of every simulation-relevant registration, ordered by identifier
+        /// ignoring case (the archive's name comparison).</summary>
+        internal List<KeyValuePair<string, string>> SimulationRecords
+        {
+            get
+            {
+                Slot[] snapshot;
+                lock (sync) snapshot = slots;
+                var result = new List<KeyValuePair<string, string>>();
+                foreach (Slot slot in snapshot)
+                    if (slot.SimulationRelevant) result.Add(new KeyValuePair<string, string>(slot.Owner, slot.Identifier));
+                result.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Value, b.Value));
+                return result;
+            }
+        }
+
         internal bool TryRegister(VersionedSaveDataRegistration registration, out VersionedSaveDataHandle handle, out string reason)
         {
             handle = null;
             if (!TryCreateSlot(registration, out Slot slot, out reason)) return false;
             lock (sync)
             {
+                int declared = 0;
                 foreach (Slot existing in slots)
+                {
                     if (string.Equals(existing.Identifier, slot.Identifier, StringComparison.OrdinalIgnoreCase))
                     { reason = "The save data identifier is already registered."; return false; }
+                    if (existing.SimulationRelevant) declared++;
+                }
+                if (slot.SimulationRelevant && declared >= SavegameRecordComparison.MaximumRecords)
+                { reason = "At most " + SavegameRecordComparison.MaximumRecords + " records may be simulation-relevant."; return false; }
                 bool accepted;
                 try { accepted = transport(slot.Identifier, context => Save(slot, context), data => Deliver(slot, data)); }
                 catch (Exception ex) { reason = "Script Extender registration failed: " + ex.Message; return false; }
@@ -361,6 +383,7 @@ namespace APIShared.Savegames
                 Loaded = registration.Loaded;
                 Scope = registration.Scope;
                 Legacy = registration.LegacyReader;
+                SimulationRelevant = registration.SimulationRelevant;
                 Handle = new VersionedSaveDataHandle(Owner, Identifier);
             }
 
@@ -372,6 +395,7 @@ namespace APIShared.Savegames
             internal readonly Action<VersionedSaveLoad> Loaded;
             internal readonly VersionedSaveScope Scope;
             internal readonly VersionedSaveLegacyReader Legacy;
+            internal readonly bool SimulationRelevant;
             internal readonly VersionedSaveDataHandle Handle;
 
             // Guarded by the registry lock.

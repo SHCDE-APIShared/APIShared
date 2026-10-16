@@ -294,6 +294,13 @@ namespace APIShared.Savegames
         public VersionedSaveScope Scope { get; set; } = VersionedSaveScope.SaveGames;
         /// <summary>Optional converter for pre-existing data stored under the same identifier.</summary>
         public VersionedSaveLegacyReader LegacyReader { get; set; }
+        /// <summary>Declares the record simulation-relevant (default false). Before a multiplayer save is
+        /// loaded, every player's copy of this record in the selected save is compared by SHA-256 of its
+        /// stored bytes; a difference blocks the load with a message naming the mod and record. Declare
+        /// only records that every player saves identically: no local settings, view or presentation
+        /// state. The comparison detects differences and repairs nothing. At most
+        /// <see cref="VersionedSaveData.MaximumSimulationRecords"/> registrations may declare it.</summary>
+        public bool SimulationRelevant { get; set; }
 
         /// <summary>Adds the step that turns a <paramref name="fromVersion"/> record into a
         /// <paramref name="fromVersion"/> + 1 record. Steps run in ascending order up to the current
@@ -350,6 +357,9 @@ namespace APIShared.Savegames
         public static int MaximumRecordBytes => VersionedSaveRecordCodec.MaximumRecordBytes;
         /// <summary>Most UTF-16 characters in one entry name.</summary>
         public static int MaximumNameLength => VersionedSaveRecordCodec.MaximumNameLength;
+        /// <summary>Most registrations in the process that may declare
+        /// <see cref="VersionedSaveDataRegistration.SimulationRelevant"/>; bounds the readiness packet.</summary>
+        public static int MaximumSimulationRecords => SavegameRecordComparison.MaximumRecords;
     }
 
     internal sealed class VersionedSaveKnownEntries

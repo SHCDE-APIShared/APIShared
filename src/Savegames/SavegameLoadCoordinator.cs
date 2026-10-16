@@ -1,4 +1,5 @@
 using APIShared.Networking;
+using APIShared.Savegames;
 using BepInEx.Logging;
 using CrusaderDE;
 using MessagePack;
@@ -31,6 +32,8 @@ namespace APIShared
         private static bool acknowledged, released, loading, initialized;
         private static ulong hostId;
         private static string localSavePath, localSaveHash;
+        // This peer's digests of the declared simulation records in its own copy of the selected save.
+        private static IReadOnlyList<SavegameRecordDigest> localRecords;
         private static readonly Queue<string> retiredOrder = new Queue<string>();
         private static readonly HashSet<string> retired = new HashSet<string>(StringComparer.Ordinal);
 
@@ -38,8 +41,9 @@ namespace APIShared
         {
             if (initialized) return;
             log = logger;
+            // 64 KiB provenance plus at most 64 record digests (owner, identifier, SHA-256) and a reason.
             channel = ApiShared.ForMod(APISharedPlugin.PluginGuid).Network.RegisterMessage<SavegameLoadPacket>(
-                "SavegameLoadReadiness", Receive, new MessageChannelOptions<SavegameLoadPacket> { MaximumBodyBytes = 70000 });
+                "SavegameLoadReadiness", Receive, new MessageChannelOptions<SavegameLoadPacket> { MaximumBodyBytes = 200000 });
             Hook candidate = null;
             try
             {
@@ -74,6 +78,16 @@ namespace APIShared
             using (var sha = SHA256.Create())
                 return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
         }
+        private static string Name(ulong steamId)
+        {
+            try
+            {
+                string name = SteamFriends.GetFriendPersonaName(new CSteamID(steamId));
+                if (!string.IsNullOrWhiteSpace(name)) return name;
+            }
+            catch { }
+            return steamId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         private static void Request(Platform_Multiplayer self, string name)
         {
@@ -99,12 +113,16 @@ namespace APIShared
                 if (!humans.Contains(local)) throw new InvalidOperationException("Host is absent from lobby roster.");
                 hostId = SteamMatchmaking.GetLobbyOwner(self.activeLobby.id).m_SteamID;
                 if (hostId != local) throw new InvalidOperationException("Local host identity differs from lobby owner.");
+                // The stored records of this exact file; ValidateStart's whole-file hash keeps them current.
+                // A solo host has nobody to compare with and reads nothing.
+                IReadOnlyList<SavegameRecordDigest> records = humans.Length > 1
+                    ? VersionedSaveDataRuntime.CaptureSimulationDigests(localSavePath) : Array.Empty<SavegameRecordDigest>();
                 pending = new SavegameLoadPacket { Operation = 0, Lobby = self.activeLobby.id.m_SteamID,
                     Token = Guid.NewGuid().ToString("N"), SaveName = header.fileName,
                     Checksum = header.xPlaySaveChecksum, Time = header.xPlaySaveTime,
                     Fingerprint = fingerprint, Roster = Roster(self.activeLobby),
-                    Metadata = record == null ? null : MessagePackSerializer.Serialize(record) };
-                agreement = new SavegameLoadAgreement(pending.Token, fingerprint, humans.Where(x => x != local));
+                    Metadata = record == null ? null : MessagePackSerializer.Serialize(record), Records = records };
+                agreement = new SavegameLoadAgreement(pending.Token, fingerprint, humans.Where(x => x != local), records);
                 deadline = DateTime.UtcNow.AddSeconds(60);
                 acknowledged = false; released = false; loading = false;
                 SavegameModSettings.PublishPreparedHostValues();
@@ -119,11 +137,34 @@ namespace APIShared
             var result = channel.SendToLobby(packet);
             if (!result.Submitted) throw new InvalidOperationException("Save readiness transport failed: " + result.Reason);
         }
-        private static SavegameLoadPacket Reply(int operation) => new SavegameLoadPacket
+        private static SavegameLoadPacket Reply(int operation, string reason = null) => new SavegameLoadPacket
         {
             Operation = operation, Lobby = pending.Lobby, Token = pending.Token, SaveName = pending.SaveName,
-            Checksum = pending.Checksum, Time = pending.Time, Fingerprint = pending.Fingerprint, Roster = pending.Roster
+            Checksum = pending.Checksum, Time = pending.Time, Fingerprint = pending.Fingerprint, Roster = pending.Roster,
+            Records = operation == 1 ? localRecords ?? Array.Empty<SavegameRecordDigest>() : Array.Empty<SavegameRecordDigest>(),
+            Reason = reason == null || reason.Length <= SavegameLoadPacket.MaximumReasonLength
+                ? reason : reason.Substring(0, SavegameLoadPacket.MaximumReasonLength)
         };
+
+        // A peer on another readiness protocol cannot take part. A protocol-1 peer still understands a
+        // protocol-1 cancel, so it is told; the load is blocked with a message naming the versions.
+        private static void RejectProtocol(SavegameLoadPacket packet, ulong sender, Platform_Multiplayer.MPLobby lobby)
+        {
+            if (!Humans(lobby).Contains(sender) || packet.Token != null && retired.Contains(packet.Token)) return;
+            if (packet.Token != null) Retire(packet.Token); // The peer's own cancel echo is not reported twice.
+            string text = Name(sender) + " uses save readiness protocol " + packet.Version + " and this APIShared build uses " +
+                SavegameLoadPacket.CurrentVersion + ". Every player needs the same APIShared version.";
+            if (packet.Version == SavegameLoadPacket.LegacyVersion && packet.Lobby == lobby.id.m_SteamID && packet.Token?.Length == 32)
+            {
+                var cancel = new SavegameLoadPacket { Version = SavegameLoadPacket.LegacyVersion, Operation = 3, Lobby = packet.Lobby,
+                    Token = packet.Token, SaveName = packet.SaveName, Checksum = packet.Checksum, Time = packet.Time,
+                    Fingerprint = packet.Fingerprint, Roster = packet.Roster };
+                var result = channel.SendToSteamPeer(cancel, sender);
+                if (!result.Submitted) NativeApiLog.Error(log, "Could not cancel the protocol-1 peer's preparation: " + result.Reason);
+            }
+            if (pending != null) { Abort(text); return; }
+            ShowBlocked(text);
+        }
 
         private static void Receive(NetworkMessage<SavegameLoadPacket> message)
         {
@@ -136,7 +177,9 @@ namespace APIShared
             var packet = message.Packet;
             var mp = Platform_Multiplayer.Instance;
             var lobby = mp?.activeLobby;
-            if (packet == null || lobby == null || packet.Lobby != lobby.id.m_SteamID ||
+            if (packet == null || lobby == null) return;
+            if (packet.Version != SavegameLoadPacket.CurrentVersion) { RejectProtocol(packet, message.SenderSteamId, lobby); return; }
+            if (packet.Lobby != lobby.id.m_SteamID ||
                 packet.Operation < 0 || packet.Operation > 3 || packet.Token?.Length != 32 ||
                 !Guid.TryParseExact(packet.Token, "N", out _) || packet.SaveName?.Length > 1024 ||
                 string.IsNullOrEmpty(packet.SaveName) || packet.Fingerprint?.Length != 64 ||
@@ -144,11 +187,19 @@ namespace APIShared
             ulong host = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
             if (lobby.isHost)
             {
-                if (packet.Operation == 1 && pending != null && packet.SaveName == pending.SaveName &&
-                    packet.Checksum == pending.Checksum && packet.Time == pending.Time)
-                    agreement?.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint);
+                // The host compares every peer's declared simulation records with its own; a difference
+                // ends the preparation for everyone with the explanation.
+                if (packet.Operation == 1 && pending != null && agreement != null && packet.SaveName == pending.SaveName &&
+                    packet.Checksum == pending.Checksum && packet.Time == pending.Time &&
+                    !agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint, packet.Records,
+                        Name(message.SenderSteamId), out string mismatch) && mismatch != null)
+                { Abort(mismatch); return; }
                 if (packet.Operation == 3 && pending?.Token == packet.Token && Humans(lobby).Contains(message.SenderSteamId))
-                { Abort("A participant cancelled save preparation."); return; }
+                {
+                    Abort(string.IsNullOrEmpty(packet.Reason) ? "A participant cancelled save preparation." :
+                        Name(message.SenderSteamId) + " cancelled save preparation: " + packet.Reason);
+                    return;
+                }
                 Tick(); return;
             }
             if (message.SenderSteamId != host || retired.Contains(packet.Token)) return;
@@ -160,16 +211,22 @@ namespace APIShared
                     throw new InvalidDataException("Invalid host save provenance.");
                 if (packet.Metadata == null) record = null;
                 if (record != null && record.Mods.Count != 0) throw new InvalidDataException("Readiness must not carry settings values.");
+                if (!SavegameRecordComparison.IsValid(packet.Records)) throw new InvalidDataException("Invalid host save record list.");
                 pending = packet; owner = mp; agreement = null; acknowledged = false; released = false; loading = false;
                 hostId = host;
                 var header = MapFileManager.Instance.GetHeaderFromMpSaveFileName(packet.SaveName);
                 if (!Matches(header, packet)) { Abort("Local save does not match host selection."); return; }
                 localSavePath = Path.GetFullPath(header.filePath);
                 localSaveHash = HashLocalSave(localSavePath);
+                // Taken from this peer's own copy of the selected save, never from earlier in-memory
+                // state, so a previous single-player session or different local settings do not count.
+                localRecords = VersionedSaveDataRuntime.CaptureSimulationDigests(localSavePath);
                 deadline = DateTime.UtcNow.AddSeconds(60);
                 Tick();
             }
-            else if (pending?.Token == packet.Token && packet.Operation == 3) Abort("Host cancelled the save preparation.", false);
+            else if (pending?.Token == packet.Token && packet.Operation == 3)
+                Abort(string.IsNullOrEmpty(packet.Reason) ? "Host cancelled the save preparation." :
+                    "Host cancelled the save preparation: " + packet.Reason, false);
             else if (pending?.Token == packet.Token && packet.Operation == 2) released = true;
         }
 
@@ -183,7 +240,7 @@ namespace APIShared
                     throw new InvalidOperationException("Lobby or human roster changed.");
                 if (SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID != hostId)
                     throw new InvalidOperationException("Lobby owner changed.");
-                if (DateTime.UtcNow > deadline) throw new TimeoutException("Save settings preparation timed out after 60 seconds.");
+                if (DateTime.UtcNow > deadline) throw new TimeoutException(TimeoutReason());
                 var header = MapFileManager.Instance.GetHeaderFromMpSaveFileName(pending.SaveName);
                 if (!Matches(header, pending)) throw new InvalidDataException("Local save no longer matches the prepared selection.");
                 if (lobby.isHost)
@@ -257,25 +314,39 @@ namespace APIShared
             if (pending != null)
             {
                 if (notify && owner?.activeLobby?.isHost == true)
-                    try { Send(Reply(3)); } catch (Exception error) { NativeApiLog.Error(log, error.ToString()); }
+                    try { Send(Reply(3, reason)); } catch (Exception error) { NativeApiLog.Error(log, error.ToString()); }
                 else if (notify && owner?.activeLobby != null)
-                    try { channel.SendToSteamPeer(Reply(3), hostId); } catch (Exception error) { NativeApiLog.Error(log, error.ToString()); }
+                    try { channel.SendToSteamPeer(Reply(3, reason), hostId); } catch (Exception error) { NativeApiLog.Error(log, error.ToString()); }
                 Retire(pending.Token);
             }
             pending = null; agreement = null; record = null; owner = null;
-            localSavePath = localSaveHash = null;
+            localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
             SavegameModSettings.CancelLoadChoice();
             if (!showError) { NativeApiLog.Debug(log, "SAVE_SETTINGS_PREPARATION_CANCELLED: " + reason); return; }
+            ShowBlocked(reason);
+        }
+        private static void ShowBlocked(string reason)
+        {
             NativeApiLog.Error(log, "SAVE_SETTINGS_LOAD_BLOCKED: " + reason);
             try { HUD_ConfirmationPopup.ShowConfirmationOKMessage("Save settings", () => { }, "The save could not be loaded safely: " + reason); }
             catch (Exception error) { NativeApiLog.Error(log, "Could not display save preparation failure: " + error); }
+        }
+        // The host names the players that have not confirmed: an older or newer APIShared build drops
+        // packets it cannot read, so a missing confirmation is the only sign of it on this side.
+        private static string TimeoutReason()
+        {
+            string waiting = owner?.activeLobby?.isHost == true && agreement != null
+                ? string.Join(", ", agreement.Unconfirmed.Select(Name)) : string.Empty;
+            return waiting.Length == 0 ? "Save settings preparation timed out after 60 seconds." :
+                "Save settings preparation timed out after 60 seconds without confirmation from " + waiting +
+                ". Every player needs the same APIShared and mod versions and a copy of the selected save.";
         }
         internal static void FinishLoad()
         {
             if (pending != null) Retire(pending.Token);
             pending = null; agreement = null; record = null; owner = null;
-            localSavePath = localSaveHash = null;
+            localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
         }
     }
