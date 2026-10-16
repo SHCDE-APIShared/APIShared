@@ -33,9 +33,9 @@ file header names the consumer builds it was scanned from.
 | Rescan of compiled consumer assemblies | Opt-in, see below | No |
 | Compiling the public consumer examples | Yes, existing build step | No |
 
-The CI test output reports how many baseline types and pins it compared. A change outside that
-subset passes CI and fails only the local build, so a pull request that changes compiled API
-should report the local build result.
+The CI test results (the `test-results` TRX artifact) record how many baseline types and
+pins were compared. A change outside that subset passes CI and fails only the local build, so
+a pull request that changes compiled API should report the local build result.
 
 ## Updating the public baseline
 
