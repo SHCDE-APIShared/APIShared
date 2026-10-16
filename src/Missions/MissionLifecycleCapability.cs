@@ -81,11 +81,40 @@ namespace APIShared
             state = new MissionLifecycleState(ex => Report(ex));
         }
 
+        // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
+        internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::CrusaderDE.MainViewModel), "CurrentScreenNo", typeof(global::Enums.SceneIDS))
+            .Field(typeof(global::EditorDirector), "instance", typeof(global::EditorDirector))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "coopMissionID", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "difficulty_level", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "errorCode", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "mapSize", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "mission_level", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "multiplayerMap", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "playerID", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "siege_or_invasion", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "skirmishTrail", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "skirmishTrailLevel", typeof(int))
+            .Field(typeof(global::FatControler), "currentScene", typeof(global::Enums.SceneIDS))
+            .Field(typeof(global::FileHeader), "filePath", typeof(string))
+            .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnStartMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>))
+            .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnUnloadMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>))
+            .Method(typeof(global::Platform_Multiplayer), "get_Instance", typeof(global::Platform_Multiplayer))
+            .Method(typeof(global::Platform_Multiplayer), "IsGameMemberHost", typeof(bool))
+            .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "get_Phase", typeof(global::SHCDESE.EventAPI.EventHookPhase))
+            .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_bMultiplayerSave", typeof(byte))
+            .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_CampaignMapId", typeof(int))
+            .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_ReturnValue", typeof(ulong))
+            .Method(typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>), "get_Observable", typeof(global::R3.Observable<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>))
+            .Method(typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>), "get_Observable", typeof(global::R3.Observable<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>));
+
         internal static bool TryCreate(ManualLogSource log, out MissionLifecycleService service,
             out NativeCapabilityDiagnostic diagnostic)
         {
-            var candidate = new MissionLifecycleService(log);
             service = null;
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.MissionLifecycle, log, out diagnostic))
+                return false;
+            var candidate = new MissionLifecycleService(log);
             try
             {
                 candidate.Prepare();

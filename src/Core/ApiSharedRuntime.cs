@@ -21,6 +21,7 @@ namespace APIShared
         private GatehouseTimingService gatehouse;
         private UnitHudPresentationService unitHudPresentation;
         private HudExtrasButtonsService hudExtrasButtons;
+        private NativeCapabilityDiagnostic hudExtrasDiagnostic; // Set only when its member check failed.
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
@@ -81,7 +82,8 @@ namespace APIShared
                 Audio.SoundRuntime.InitializeManaged(logger);
                 MarkedUnitSelectionAPI.Initialize(logger);
                 PlayerPerspectiveAPI.Initialize(logger);
-                if (hudExtrasButtons == null)
+                if (hudExtrasButtons == null && hudExtrasDiagnostic == null &&
+                    ManagedMemberContracts.TryValidate(NativeCapabilityIds.HudExtrasButtons, logger, out hudExtrasDiagnostic))
                 {
                     hudExtrasButtons = new HudExtrasButtonsService(logger);
                     hudExtrasButtons.Start();
@@ -360,6 +362,7 @@ namespace APIShared
             }
             lock (sync)
             {
+                if (hudExtrasButtons == null && hudExtrasDiagnostic != null) { diagnostic = hudExtrasDiagnostic; return false; }
                 diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.HudExtrasButtons,
                     hudExtrasButtons == null ? NativeCapabilityState.Pending : NativeCapabilityState.Available, string.Empty,
                     hudExtrasButtons == null ? "Managed presentation is not initialized." : "Independent side-HUD presentation is available.");

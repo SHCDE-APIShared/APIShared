@@ -13,15 +13,15 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
-| `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
-| `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
-| `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions | Tick/simulation publisher starts with the first subscriber; first observed tick is baseline-only; no initial-state replay; do not change UI directly; process lifetime |
-| `TryGetUnitHudPresentation` | Categories, image overrides, interactions, recruitment tickets and control groups | Unity/Noesis presentation; owner-local IDs; ambiguity preserves Vanilla; logical activation extension; process lifetime |
-| `TryGetHudExtrasButtons` | Independent side-HUD buttons, paging and popup tooltips | Unity-thread factories/commands; owner-local IDs; logical activation; process lifetime |
-| `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
+| `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots; startup member check | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
+| `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions; startup member check | Tick/simulation publisher starts with the first subscriber; first observed tick is baseline-only; no initial-state replay; do not change UI directly; process lifetime |
+| `TryGetUnitHudPresentation` | Categories, image overrides, interactions, recruitment tickets and control groups; startup member check | Unity/Noesis presentation; owner-local IDs; ambiguity preserves Vanilla; logical activation extension; process lifetime |
+| `TryGetHudExtrasButtons` | Independent side-HUD buttons, paging and popup tooltips; startup member check | Unity-thread factories/commands; owner-local IDs; logical activation; process lifetime |
+| `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation; startup member check | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
 | `TryGetGatehouseTiming` | Typed timing/distance settings | Native validation required; exclusive owner; permanent hook and logical state; automation via `IGatehouseAutomationCapability` |
 | `TryGetGatehouseDistanceOrigin` | Vanilla begin coordinate or complete-bounds center | Native validation required; exclusive owner; permanent runtime state |
-| `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
+| `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation; startup member check | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |
@@ -35,6 +35,8 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.NativeBrokers.PclReachabilityBroker`, `TileRefreshBroker` | Shared owners of the contested native entries 0xE2610 (ordered Pre override and Post result replacement) and 0xD90D0 (ordered Post); `CallOriginal` reaches Vanilla without consumers. Patch the entry at the first registration; refuse a foreign detour or registered writer and leave the consumer's own path in place | Any-thread registration from LibraryLoaded on; native caller thread; order/owner/ID; demand-guarded, allocation-free dispatch; process-lifetime detour, disposable registrations ([guide](NATIVE_BROKERS.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
+
+Entries marked *startup member check* resolve every Script Extender and game member their own code binds when they are created ([member lists](../src/Core/Internal/ManagedMemberContract.cs)). If one is missing or has another type or signature, only that capability reports `ValidationFailed` with the member in `Reason` and logs one error; other capabilities are unaffected, and nothing is checked per call. A capability whose members resolve is never made unavailable by this check.
 
 The catalog describes this source checkout. Check the selected package and its
 public declarations before assigning a consumer minimum version; source features
