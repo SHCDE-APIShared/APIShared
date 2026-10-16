@@ -87,8 +87,11 @@ dotnet test tests/LobbyModSettingsPresetTests/LobbyModSettingsPresetTests.csproj
 ```
 
 The full driver validates runtime contracts and installed interop, runs all suites,
-compiles public consumer examples and prepares the plugin package. Remove `/noinstall`
-to install it after closing the game; elevation is only needed for protected directories.
+compiles public consumer examples and prepares the plugin package. This development
+branch also builds the independent [dependency bootstrap](docs/DEPENDENCY_BOOTSTRAP.md).
+Use `/noinstall`: installation is blocked until its separate game and lifecycle
+acceptance. Its source-linked tests run through `Test-DependencyBootstrap.ps1`;
+package/removal fixtures use `Test-DependencyBootstrapPackage.ps1`.
 TRX results from the driver are stored in `.local/test-results`.
 Successful builds also write `.local/build-proof.json`: source/reference fingerprints,
 the source commit and package hashes. `tools/BuildProof.ps1` validates this local evidence;

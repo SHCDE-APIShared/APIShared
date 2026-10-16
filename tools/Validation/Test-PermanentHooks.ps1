@@ -4,8 +4,16 @@ param()
 $ErrorActionPreference = 'Stop'
 $workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $files = @(Get-ChildItem -LiteralPath (Join-Path $workspace 'src') -Recurse -File -Filter '*.cs')
+$files += @(Get-ChildItem -LiteralPath (Join-Path $workspace 'bootstrap/src') -Recurse -File -Filter '*.cs')
 
 $errors = [System.Collections.Generic.List[string]]::new()
+foreach ($file in Get-ChildItem -LiteralPath (Join-Path $workspace 'bootstrap/src') -Recurse -File -Filter '*.cs') {
+    $text = [IO.File]::ReadAllText($file.FullName)
+    if ($text -match '\b(chainHook|compatibilityHook)\??\.(Dispose|Undo|Apply|Disable|Enable)\s*\(' -or
+        $text -match '\b(OnDestroy|OnDisable|OnApplicationQuit|StartCoroutine)\s*\(') {
+        $errors.Add('Dependency bootstrap must retain published hooks and avoid Unity component teardown: '+$file.Name)
+    }
+}
 & (Join-Path $PSScriptRoot 'Test-FixesWheatBoundary.ps1')
 $wheatMemory = Join-Path $workspace 'src\Compatibility\FixesWheatMemory.cs'
 foreach ($file in $files) {

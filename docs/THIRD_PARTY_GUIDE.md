@@ -1,5 +1,10 @@
 # Third-party integration guide
 
+The development [dependency bootstrap](DEPENDENCY_BOOTSTRAP.md) can correct false
+missing-provider warnings for selected nested plugins. Consumers keep their normal
+dependency declarations; no registration or bundled APIShared copy is required.
+This development package is not yet approved for installation or release.
+
 APIShared optionally loads after Fixes for its audited
 [wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
 is required. Check its explicit outcome log; APIShared being present does not

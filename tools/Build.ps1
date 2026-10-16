@@ -49,12 +49,14 @@ try {
     if (Test-Path -LiteralPath $proofPath) { Remove-Item -LiteralPath $proofPath }
     if ($NoInstall -eq 0 -and (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue)) { throw 'Close the game before installation.' }
     Write-Host '[Build] Validating runtime, XAML, native hooks and real interop contracts...'
+    & (Join-Path $root 'tools/Validation/Test-DependencyBootstrap.ps1') -GameDir $game -MSBuild $msbuild
     & (Join-Path $root 'tools\Validation\Test-Standalone.ps1') -GameDir $game -ExtenderDir $extender
     $results = Join-Path $root '.local\test-results'
     foreach ($project in @('Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
         Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests\' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
     }
     Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
+    Invoke-Tool $msbuild @((Join-Path $root 'bootstrap/APIShared.DependencyBootstrap.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game")
     Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkshopReadiness.ps1'), '-ApiAssembly', (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll'))
     if ($NoInstall -eq 0) {
         & (Join-Path $root 'tools/Validation/Verify-WorkshopConsumerReferences.ps1') -CandidateAssembly (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll') -GameDir $game
@@ -82,9 +84,14 @@ try {
     Assert-ApiOptimizedAssembly (Join-Path $package 'APIShared.dll') $game
     $unexpected = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.dll','.exe') -and $_.Name -ne 'APIShared.dll' })
     if ($unexpected.Count) { throw 'The package contains unexpected runtime binaries.' }
+    . (Join-Path $PSScriptRoot 'DependencyBootstrapPackage.ps1')
+    New-ApiBootstrapPair $root
+    Invoke-Tool (Join-Path $root 'tests/DependencyBootstrap.Tests/bin/APIShared.DependencyBootstrap.Tests.exe') @($game,'pair',$root)
+    & (Join-Path $root 'tools/Validation/Test-DependencyBootstrapPackage.ps1') -PackageRoot $root
     $null = New-ApiWorkshopInventory -Directory $package
     Write-ApiBuildProof $root $game $extender $msbuild $inputState
     if ($NoInstall -ne 0) { Write-Host ('APIShared built and tested successfully in {0:N1}s; installation skipped.' -f $buildWatch.Elapsed.TotalSeconds); exit 0 }
+    throw 'Dependency bootstrap is development-only; use /noinstall until its game and lifecycle acceptance.'
     if (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue) { throw 'The game started during the build; close it before installing.' }
     $destination = Join-Path $game 'BepInEx\plugins\APIShared_Serp'
     # Always install the separate plugin. Workshop migration owns historical

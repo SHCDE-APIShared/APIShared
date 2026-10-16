@@ -179,6 +179,7 @@ function Assert-ApiWorkshopZipLayout {
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $prefix = "BepInEx/plugins/$Guid/"
     $toolPrefix = 'BepInEx/tools/APISharedWorkshopPublisher/'
+    $bootstrapName = 'BepInEx/patchers/APIShared.DependencyBootstrap.dll'
     $toolEntries = @{}
     try {
         foreach ($entry in $zip.Entries) {
@@ -187,16 +188,18 @@ function Assert-ApiWorkshopZipLayout {
                 (($entry.ExternalAttributes -shr 16 -band 0xF000) -eq 0xA000) -or
                 -not $seen.Add($name.TrimEnd('/')) -or
                 ($entry.Name -and (-not $name.StartsWith($prefix, [StringComparison]::Ordinal) -and
-                    -not ($Guid -ceq 'APIShared_Serp' -and $name.StartsWith($toolPrefix, [StringComparison]::Ordinal))))) {
+                    -not ($Guid -ceq 'APIShared_Serp' -and ($name.StartsWith($toolPrefix, [StringComparison]::Ordinal) -or $name -ceq $bootstrapName))))) {
                 throw "Unsafe or unexpected APIShared ZIP entry: $name"
             }
             if (-not $entry.Name -and $name -notin @('BepInEx/','BepInEx/plugins/',$prefix) -and
-                -not ($Guid -ceq 'APIShared_Serp' -and $name -cin @('BepInEx/tools/',$toolPrefix)) -and
+                -not ($Guid -ceq 'APIShared_Serp' -and $name -cin @('BepInEx/tools/',$toolPrefix,'BepInEx/patchers/')) -and
                 -not $name.StartsWith($prefix, [StringComparison]::Ordinal)) { throw "Unexpected APIShared ZIP directory: $name" }
             if ($entry.Name -and $name.StartsWith($toolPrefix, [StringComparison]::Ordinal)) { $toolEntries.Add($name.Substring($toolPrefix.Length),$entry) }
         }
         if ($seen.Count -eq 0) { throw 'APIShared ZIP has no files.' }
         if ($Guid -ceq 'APIShared_Serp') {
+            . (Join-Path $PSScriptRoot 'DependencyBootstrapPackage.ps1')
+            Assert-ApiBootstrapZipPair $zip
             . (Join-Path $PSScriptRoot 'PublisherPackage.ps1')
             $allowed=@(Get-ApiPublisherNames)+@('publisher-files.json')
             if ($toolEntries.Count -ne $allowed.Count -or @($toolEntries.Keys | Where-Object { $_ -cnotin $allowed }).Count) { throw 'Incomplete or unexpected ZIP publisher.' }

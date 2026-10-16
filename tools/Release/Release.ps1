@@ -49,6 +49,8 @@ Copy-Item -Path (Join-Path $package '*') -Destination $pluginTarget -Recurse
 $asset = Join-Path $output "APIShared-v$version.zip"
  . (Join-Path $root 'tools/WorkshopPackage.ps1')
 Assert-ApiWorkshopInventory -Directory $pluginTarget
+. (Join-Path $root 'tools/DependencyBootstrapPackage.ps1')
+Copy-ApiBootstrapPayload $root $staging
 . (Join-Path $root 'tools/PublisherPackage.ps1')
 $publisherSource=Join-Path $root 'BepInEx/tools/APISharedWorkshopPublisher'
 Assert-ApiPublisherPackage $publisherSource (Join-Path $root '.local/WorkshopUploader')

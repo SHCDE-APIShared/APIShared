@@ -9,7 +9,7 @@ function Commit-Fixture([string]$Directory,[string]$Message) {
 }
 try {
     $proofRoot=Join-Path $temp 'proof'
-    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
+    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools','bootstrap')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'actual input'
     Write-Fixture (Join-Path $proofRoot 'APIShared.csproj') '<Project />'
     Write-Fixture (Join-Path $proofRoot 'info.json') '{}'
@@ -24,6 +24,16 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../BuildProof.ps1') -Destination (Join-Path $proofRoot 'tools/BuildProof.ps1')
     $compiler=Join-Path $temp 'compiler'; Write-Fixture $compiler 'external compiler boundary'
     $dll=Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/APIShared.dll'; Write-Fixture $dll 'external binary boundary'
+    foreach($name in @('WorkshopPackage.ps1','DependencyBootstrapPackage.ps1','Remove-DependencyBootstrap.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../'+$name)) -Destination (Join-Path $proofRoot ('tools/'+$name)) -Force
+    }
+    Write-Fixture (Join-Path $proofRoot 'bootstrap/APIShared.DependencyBootstrap.csproj') '<Project />'
+    Write-Fixture (Join-Path $proofRoot 'bootstrap/src/Package/PairContract.cs') 'bootstrap input'
+    Write-Fixture (Join-Path $proofRoot 'BepInEx/patchers/APIShared.DependencyBootstrap.dll') 'bootstrap fixture'
+    Write-Fixture (Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/info.json') '{"GUID":"APIShared_Serp","Version":"1.2.3"}'
+    . (Join-Path $proofRoot 'tools/WorkshopPackage.ps1')
+    . (Join-Path $proofRoot 'tools/DependencyBootstrapPackage.ps1')
+    New-ApiBootstrapPair $proofRoot
     & git init --initial-branch=main $proofRoot | Out-Null; Commit-Fixture $proofRoot inputs
     . (Join-Path $proofRoot 'tools/BuildProof.ps1')
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Missing evidence accepted'
@@ -31,6 +41,14 @@ try {
     Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $null=Assert-ApiBuildProof $proofRoot -Release
+    $bootstrapSource=Join-Path $proofRoot 'bootstrap/src/Package/PairContract.cs'
+    Write-Fixture $bootstrapSource 'changed nested bootstrap input'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed nested bootstrap source accepted'
+    Write-Fixture $bootstrapSource 'bootstrap input'
+    $bootstrapPath=Join-Path $proofRoot 'BepInEx/patchers/APIShared.DependencyBootstrap.dll'
+    Write-Fixture $bootstrapPath 'changed bootstrap'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed bootstrap accepted'
+    Write-Fixture $bootstrapPath 'bootstrap fixture'
     $recordedCommit=([IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json'))|ConvertFrom-Json).Commit
     Write-Fixture (Join-Path $proofRoot 'tests/internal-notes.txt') 'test-only change'
     Commit-Fixture $proofRoot 'test-only commit after build'

@@ -6,6 +6,16 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+The separate `bootstrap` project implements the development-only
+[early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md). It does not reference
+the main APIShared assembly; it binds the selected runtime by a validated package
+pair and owns its hooks for process lifetime. It is outside the runtime source glob. Its `src/EarlyEntry` contains the minimal
+listener entry, `src/DependencyCorrection` keeps provider policy and its hook owner
+together, `src/Package` owns pair validation, and `src/Diagnostics` owns tracing.
+Package/build tools remain under `tools`; isolated tests live under
+`tests/DependencyBootstrap.Tests`. This assembly boundary is required by its earlier
+load phase; it is not a second public APIShared service runtime.
+
 | Area | Purpose |
 |---|---|
 | Core | Initialization, capability diagnostics, ownership, native infrastructure and the public native-site registry |
