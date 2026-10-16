@@ -27,7 +27,6 @@ namespace APIShared.DependencyBootstrap
         private static bool extenderSeen;
         private static int checks;
         public const string CoreHash = "8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70";
-        public const string ExtenderHash = "E5D78FDF2EA9701336C398F7D29410F206D141FC01AA8099F30C824E6AB8A0B3";
 
         // Reached only through the listener after Chainloader ready, never from Finish.
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -210,14 +209,9 @@ namespace APIShared.DependencyBootstrap
                 extenderSeen = true;
                 Mark("BEFORE_EXTENDER", "snapshot=" + snapshotSeen + " type=" + type.FullName);
                 Mark("SE_BINARY", "sha256=" + ProbeIdentity.Hash(type.Assembly.Location));
-                if (!snapshotSeen || !ownerSelected || !HashMatches(type.Assembly.Location, ExtenderHash)) { Mark("SKIP", "SE binary or snapshot mismatch"); return; }
-                var manager = type.Assembly.GetType("SHCDESE.API.Components.ModManager.GameAssetModManager", true);
-                var method = manager.GetMethod("PrepareAllAndCheckCompatibility", BindingFlags.Instance | BindingFlags.NonPublic,
-                    null, new[] { typeof(string) }, null);
-                if (method == null || method.IsStatic || !method.ReturnType.IsGenericType ||
-                    method.ReturnType.GetGenericTypeDefinition() != typeof(IReadOnlyList<>) ||
-                    method.ReturnType.GetGenericArguments()[0] != type.Assembly.GetType("SHCDESE.API.Components.ModManager.ModCompatibilityIssue", true))
-                    throw new InvalidOperationException("SE signature mismatch");
+                if (!snapshotSeen || !ownerSelected) { Mark("SKIP", "snapshot or selected owner mismatch"); return; }
+                var method = ValidateCompatibilityMethod(type.Assembly);
+                var manager = method.DeclaringType;
                 Mark("SE_PREPARE", "validated signature; preparing copy");
                 using (var copy = new DynamicMethodDefinition(method))
                 using (var context = new ILContext(copy.Definition))
@@ -239,6 +233,19 @@ namespace APIShared.DependencyBootstrap
                 Mark("SE_HOOK_INSTALLED", "before AddComponent; original check unchanged");
             }
             catch (Exception ex) { Mark("ERROR", "BeforePlugin " + ex); }
+        }
+
+        // The actual SE contract authorizes the hook; whole-assembly hashes are diagnostics only.
+        internal static MethodInfo ValidateCompatibilityMethod(Assembly assembly)
+        {
+            var manager = assembly.GetType("SHCDESE.API.Components.ModManager.GameAssetModManager", true);
+            var method = manager.GetMethod("PrepareAllAndCheckCompatibility", BindingFlags.Instance | BindingFlags.NonPublic,
+                null, new[] { typeof(string) }, null);
+            if (method == null || method.IsStatic || method.ContainsGenericParameters || method.GetMethodBody() == null ||
+                !method.ReturnType.IsGenericType || method.ReturnType.GetGenericTypeDefinition() != typeof(IReadOnlyList<>) ||
+                method.ReturnType.GetGenericArguments()[0] != assembly.GetType("SHCDESE.API.Components.ModManager.ModCompatibilityIssue", true))
+                throw new InvalidOperationException("SE compatibility method signature or managed body mismatch");
+            return method;
         }
 
         internal static void ModifyCompatibility(ILContext il)

@@ -259,6 +259,12 @@ hooks and native resources survive until process exit. When upstream fixes a def
 re-audit the installed code before supporting that new binary or retiring the fix;
 a version number or changelog entry alone is not proof of equivalent behavior.
 
+SE compatibility uses the declared minimum version and the actual required managed
+contracts, never a fixed SE release or whole-assembly hash allow-list. Workshop
+staging and the development dependency bootstrap validate signatures, managed
+bodies and IL transformations before publishing hooks. Native game contracts and
+third-party dependency fingerprints remain independently validated.
+
 The solution contains the runtime, two local integration suites, a game-independent
 core suite and public consumer examples. Test-only packages never become plugin
 dependencies. The standalone build uses no neighboring repositories. Additional

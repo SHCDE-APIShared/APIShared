@@ -91,6 +91,8 @@ namespace APIShared.DependencyBootstrap
             var se = Assembly.LoadFrom(Path.Combine(game, "BepInEx/plugins/000shcdese/SHCDESE.dll"));
             var manager = se.GetType("SHCDESE.API.Components.ModManager.GameAssetModManager", true);
             var check = manager.GetMethod("PrepareAllAndCheckCompatibility", BindingFlags.NonPublic | BindingFlags.Instance);
+            Require(HookRuntime.ValidateCompatibilityMethod(se) == check, "Installed SE compatibility method refused");
+            Console.WriteLine("PASS: loaded SE compatibility signature/body accepted without binary approval.");
             foreach (string malformed in new[] { "missing index", "ambiguous index", "changed issues", "branch boundary", "extra return", "return boundary" })
             using (var copy = new DynamicMethodDefinition(check))
             using (var context = new ILContext(copy.Definition))

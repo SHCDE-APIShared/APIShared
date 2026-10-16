@@ -39,12 +39,11 @@ namespace APISharedTests
         [TestMethod]
         public void InstalledExtenderPassesTheCleanupInstallerGate()
         {
-            // Runs every check Initialize performs before publishing its ILHook (audited hash,
-            // signature, dry transformation and compilation) against the installed binary.
+            // Runs every check Initialize performs before publishing its ILHook:
+            // signature, managed body, dry transformation and compilation.
             WithExtenderResolver(() => {
                 Assembly assembly = typeof(MapArchive).Assembly;
                 string hash = WorkshopInventory.Hash(assembly.Location);
-                Assert.IsTrue(WorkshopCleanupRuntime.IsAuditedExtender(hash), "Unaudited installed Script Extender " + hash + "; see UpdateToNewDLL.md.");
                 Assert.AreEqual("TryStageModUpdate", WorkshopCleanupRuntime.ValidateExtender(assembly).Name);
                 Console.WriteLine("Workshop cleanup gate passed for SHCDESE.dll " + hash + " (" +
                     System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location).ProductVersion + ").");
@@ -52,12 +51,50 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void UnauditedExtenderHashesAreRefused()
+        public void CompatibleMethodOutsideTheExtenderAssemblyPassesWithoutBinaryApproval()
         {
-            Assert.IsFalse(WorkshopCleanupRuntime.IsAuditedExtender(new string('0', 64)));
-            Assert.IsFalse(WorkshopCleanupRuntime.IsAuditedExtender("B170F163E69F7E8F64BDA5874D282F4EB5AE5D9D1852E985ED6BEF194C80D780"), "Hashes are compared as lowercase hex.");
-            Assert.IsFalse(WorkshopCleanupRuntime.IsAuditedExtender(null));
-            Assert.IsTrue(WorkshopCleanupRuntime.IsAuditedExtender("b170f163e69f7e8f64bda5874d282f4eb5ae5d9d1852e985ed6bef194c80d780"));
+            WithExtenderResolver(() => WorkshopCleanupRuntime.ValidateStagingMethod(FixtureMethod("Compatible")));
+        }
+
+        [TestMethod]
+        public void IncompatibleSignaturesAndMissingBodiesAreRefusedBeforePublication()
+        {
+            WithExtenderResolver(() => {
+                Assert.ThrowsExactly<MissingMethodException>(() => WorkshopCleanupRuntime.ValidateStagingMethod(null));
+                foreach (string name in new[] { "WrongResult", "WrongArgument", "Static", "Generic", "NoBody" })
+                    Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopCleanupRuntime.ValidateStagingMethod(FixtureMethod(name)), name);
+            });
+        }
+
+        [TestMethod]
+        public void MissingReturnsAndInvalidIlAreRefusedBeforePublication()
+        {
+            WithExtenderResolver(() => {
+                var method = FixtureMethod("Compatible");
+                using (var definition = new DynamicMethodDefinition(method))
+                using (var context = new ILContext(definition.Definition))
+                {
+                    context.Body.Instructions.Clear();
+                    Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopCleanupRuntime.Modify(context));
+                    // A bool-returning method without a value on the evaluation stack cannot compile.
+                    context.Body.Instructions.Add(Instruction.Create(OpCodes.Ret));
+                    WorkshopCleanupRuntime.Modify(context);
+                    Assert.Throws<Exception>(() => WorkshopCleanupRuntime.CompileCopy(definition, method));
+                }
+            });
+        }
+
+        private static MethodInfo FixtureMethod(string name) => typeof(StagingFixture).GetMethod(name,
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+
+        private abstract class StagingFixture
+        {
+            protected bool Compatible(string path, MapArchive archive) => archive != null;
+            protected int WrongResult(string path, MapArchive archive) => 1;
+            protected bool WrongArgument(int path, MapArchive archive) => true;
+            protected static bool Static(string path, MapArchive archive) => true;
+            protected bool Generic<T>(string path, MapArchive archive) => true;
+            protected abstract bool NoBody(string path, MapArchive archive);
         }
 
         private static void WithExtenderResolver(Action test)

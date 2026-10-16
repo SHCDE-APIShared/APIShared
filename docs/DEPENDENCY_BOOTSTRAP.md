@@ -17,7 +17,7 @@ No public capability, consumer registration or changed dependency declaration is
 required. Existing APIShared public types and methods remain unchanged. The new
 behavior only adds eligible missing providers to a separate local check dictionary.
 It never overwrites original entries, registers assets, reorders plugins or filters
-the original compatibility result. Unknown binaries and failed validation preserve
+the original compatibility result. An unknown BepInEx binary or failed SE contract validation preserves
 the original check. Later successful plugin Awake is not guaranteed.
 
 ## Package and activation

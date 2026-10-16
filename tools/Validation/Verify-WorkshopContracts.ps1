@@ -19,18 +19,16 @@ $extender = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $ExtenderDi
 $zip = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $ExtenderDir 'ICSharpCode.SharpZipLib.dll'))
 $steam = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data/Managed/com.rlabrecque.steamworks.net.dll'))
 try {
-    # One allow-list: the runtime gate's AuditedExtenderHashes in WorkshopCleanupRuntime.cs.
-    $runtime = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../src/Workshop/WorkshopCleanupRuntime.cs'))
-    $list = [regex]::Match($runtime, 'AuditedExtenderHashes\s*=\s*\{(?<list>[^}]*)\}')
-    $audited = @([regex]::Matches($list.Groups['list'].Value, '"(?<hash>[0-9a-f]{64})"') | ForEach-Object { $_.Groups['hash'].Value })
-    if (-not $list.Success -or $audited.Count -eq 0) { throw 'Missing AuditedExtenderHashes in WorkshopCleanupRuntime.cs.' }
-    $hash = Get-WorkshopFileHash (Join-Path $ExtenderDir 'SHCDESE.dll')
-    if ($audited -cnotcontains $hash) { throw "Workshop hook audit must be renewed for this installed Extender (SHA-256 $hash)." }
-    Write-Host "Verified audited Extender binary: $hash"
+    # Installation depends on actual contracts, never a complete SE DLL hash or release list.
+    # WorkshopHookTests also exercise the runtime's dry transformation and compilation.
     Assert-WorkshopMethod $game 'Platform_Workshop' 'get_Instance' 'Platform_Workshop' @() $true $true
     Assert-WorkshopMethod $game 'Platform_Workshop' 'GetListOfSubscribedItemsPaths' 'System.Collections.Generic.List`1<System.String>' @() $true $false
     $map = 'SHCDESE.API.Components.Archive.MapArchive'
     Assert-WorkshopMethod $extender 'SHCDESE.API.Components.Archive.MapModManager' 'TryStageModUpdate' 'System.Boolean' @('System.String',$map) $false $false
+    $staging = $extender.MainModule.GetType('SHCDESE.API.Components.Archive.MapModManager').Methods | Where-Object Name -CEQ 'TryStageModUpdate'
+    if (-not $staging.HasBody -or -not @($staging.Body.Instructions | Where-Object { $_.OpCode.Code -eq [Mono.Cecil.Cil.Code]::Ret }).Count) {
+        throw 'Workshop staging method requires a managed body with return sites.'
+    }
     Assert-WorkshopMethod $extender $map '.ctor' 'System.Void' @('System.String') $true $false
     Assert-WorkshopMethod $extender $map 'TryReadTextFile' 'System.String' @('System.String','System.Boolean') $true $false
     Assert-WorkshopMethod $extender $map 'get_Info' 'SHCDESE.API.Components.ModManager.ModInfo' @() $true $false

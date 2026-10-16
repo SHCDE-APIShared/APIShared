@@ -485,7 +485,7 @@ and requires no command-engine mod.
 
 ## Workshop package cleanup
 
-APIShared cleans its own previous releases through the audited Extender staging
+APIShared cleans its own previous releases through the contract-validated Extender staging
 path. Foreign maps remain Extender-managed. Inventory schema, historical hashes
 and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cleanup).
 

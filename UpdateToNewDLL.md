@@ -208,36 +208,28 @@ patch of up to 14 bytes displaces; re-derive it if that prologue changes.
 Managed contract, not native: Script Extender
 `MapModManager.TryStageModUpdate(string, MapArchive)` returning bool, every return
 intercepted. Consumer behavior: [Workshop package cleanup](docs/WORKSHOP.md#workshop-package-cleanup).
-The only allow-list is `AuditedExtenderHashes` in
-`src/Workshop/WorkshopCleanupRuntime.cs`; `tools/Validation/Verify-WorkshopContracts.ps1`
-reads it from there. Hash is lowercase SHA-256 of `BepInEx/plugins/000shcdese/SHCDESE.dll`.
 
-| SHCDESE.dll SHA-256 | Binary | Source |
-|---|---|---|
-| b170f163e69f7e8f64bda5874d282f4eb5ae5d9d1852e985ed6bef194c80d780 | Official 2.14.1 | GitLab package `shcdese` 2.14.1, SHCDESE.zip 9c3edd3b9dc101b080b4467ed4bb44a373ed0639f6a5717a3593b418c39895c6; built from db7415d5, parent of tag v2.14.1 |
-| ef943914b24cf1eec313ff427e9f34f7cbe8711d1437bc106ab853e4638dea9b | Official 2.14.0 | GitLab package `shcdese` 2.14.0, SHCDESE.zip 9566e10b865f7a23d8fa8dfb572be7f1f729cb18b10fd2d820714c5ba420b34a; built from 6ff6b7f4, parent of tag v2.14.0 |
-| e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3 | Local build | Tag v2.14.1, commit 5908e1f |
+Compatibility depends on the loaded nonpublic instance method, its exact signature,
+managed body and return sites, followed by dry IL transformation and compilation.
+Neither runtime installation nor build validation uses an exact SE version or a
+whole-assembly hash allow-list. Only the declared minimum SE version is required.
+A failed technical check leaves this optional callback uninstalled and logs its
+specific reason; independent services remain available.
 
-The ProductVersion suffix names the source commit. 5908e1f differs from db7415d5
-only in CHANGELOG.md, and from 6ff6b7f4 only in CHANGELOG.md and
-`Detours/BulkUnitDetours.cs`, so `MapModManager` and the staging code are the same
-source in all three.
+When updating the Extender:
 
-Version numbers never authorize a binary. To add one:
+1. Review changes to `MapModManager`, `MapArchive`, `ModInfo` and staging/updater
+   semantics: the bool result, `_SE/.staging/BepInEx/plugins/<GUID>` and
+   `_SE/.staging/delete_list.txt` applied after exit and before staged files copy.
+2. Run `Verify-WorkshopContracts.ps1 -GameDir <game> -ExtenderDir <extender>`
+   and APISharedTests `WorkshopHookTests` with `-p:ExtenderDir=<extender>`.
+   `InstalledExtenderPassesTheCleanupInstallerGate` runs the same signature,
+   managed-body, transformation and compilation checks as runtime initialization.
+   Negative fixtures cover changed signatures, missing bodies and unusable IL.
+3. Run the full `build.bat /nopause /noinstall` with the installed dependencies.
+   A successful check is evidence for those contracts, not a complete gameplay test.
 
-1. Take SHCDESE.zip from the official GitLab package registry, check its SHA-256
-   against the registry `file_sha256`, extract `000shcdese` into an empty folder and
-   hash SHCDESE.dll. Record the ProductVersion commit. A local build is acceptable
-   only with its tag and commit recorded.
-2. Diff that commit against an audited source. If `MapModManager`, `MapArchive`,
-   `ModInfo` or the staging/updater code changed, re-audit the
-   [cleanup flow](docs/WORKSHOP.md#workshop-package-cleanup): the bool result,
-   `_SE/.staging/BepInEx/plugins/<GUID>` and `_SE/.staging/delete_list.txt`
-   applied after exit and before staged files are copied.
-3. Add the hash to `AuditedExtenderHashes` and to the table above with its source.
-4. Run `Verify-WorkshopContracts.ps1 -GameDir <game> -ExtenderDir <extracted 000shcdese>`
-   and APISharedTests `WorkshopHookTests` built with `-p:ExtenderDir=<extracted 000shcdese>`.
-   `InstalledExtenderPassesTheCleanupInstallerGate` runs the same hash, signature,
-   transformation and compilation checks as `WorkshopCleanupRuntime.Initialize`.
-5. Run the full `build.bat /nopause /noinstall` on an install with the new binary.
-   Remove a hash only when that release is no longer supported.
+The development dependency bootstrap follows the same SE policy for
+`GameAssetModManager.PrepareAllAndCheckCompatibility`: signature/body validation
+and a dry transformation/compilation precede installation. Pair ownership and the
+BepInEx binary gate remain separate requirements; SE hashes are diagnostic only.
