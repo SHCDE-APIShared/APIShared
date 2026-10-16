@@ -224,6 +224,73 @@ public class GameDataLayerTests
     }
 
     [TestMethod]
+    public void CellStatusNamesTheWinningOverrideTheLimitAndDirectWrites()
+    {
+        var peer = new Peer();
+        GameDataRegistration multiplier = peer.Add("extra", "buy x1.5", GameDataLayer.Multiplier, 0, (GameDataCell cell, out GameDataContribution c) => { c = GameDataContribution.Percent(150); return cell.Column == 0; });
+        GameDataRegistration early = peer.Add("first", "salt", GameDataLayer.Override, 0, (GameDataCell cell, out GameDataContribution c) => { c = GameDataContribution.Set(500); return cell.Row == 3; });
+        GameDataRegistration late = peer.Add("tweaker", "salt", GameDataLayer.Override, 1, (GameDataCell cell, out GameDataContribution c) => { c = GameDataContribution.Set(450); return cell.Row == 3 && cell.Column == 0; });
+        GameDataRegistration cap = peer.Add("cap", "range", GameDataLayer.Clamp, 0, (GameDataCell cell, out GameDataContribution c) => { c = GameDataContribution.Range(1, 400); return true; });
+        GameDataCellStatus Status(GameDataRegistration registration, int row, int column)
+        {
+            Assert.IsTrue(peer.Composer.TryDescribe(registration, row, column, out GameDataCellStatus status, out string reason), reason);
+            return status;
+        }
+
+        // Available before the first mission, from the game's values. Good 3 buy: x1.5, then two overrides
+        // (the later one by order wins), then the clamp.
+        GameDataCellStatus salt = Status(multiplier, 3, 0);
+        Assert.IsTrue(salt.Contributes && salt.IsOverridden);
+        Assert.AreEqual(("tweaker", "salt"), (salt.OverrideOwnerGuid, salt.OverrideRegistrationId));
+        Assert.AreEqual(("cap", "range"), (salt.LimitOwnerGuid, salt.LimitRegistrationId));
+        Assert.AreEqual(400, salt.ComposedValue);
+        Assert.IsTrue(Status(early, 3, 0).IsOverridden, "an override replaced by a later override");
+        Assert.IsFalse(Status(late, 3, 0).IsOverridden);
+        Assert.IsFalse(Status(cap, 3, 0).IsOverridden, "a clamp limits, it is never replaced");
+        GameDataCellStatus sell = Status(early, 3, 1);
+        Assert.IsTrue(sell.Contributes && !sell.IsOverridden);
+        Assert.AreEqual(("first", "salt"), (sell.OverrideOwnerGuid, sell.OverrideRegistrationId));
+        Assert.IsFalse(Status(late, 3, 1).Contributes);
+        GameDataCellStatus plain = Status(multiplier, 5, 0);
+        Assert.IsTrue(plain.Contributes && !plain.IsOverridden);
+        Assert.IsNull(plain.OverrideOwnerGuid);
+        Assert.IsNull(plain.LimitOwnerGuid);
+        Assert.AreEqual(80, plain.ComposedValue);
+        Assert.AreEqual(0, peer.Prices.Writes, "a query writes nothing");
+
+        // The status matches the composition cell by cell, including an Additive layer and a failing one.
+        peer.Add("plus", "two", GameDataLayer.Additive, 0, (GameDataCell cell, out GameDataContribution c) => { c = GameDataContribution.Add(2); return cell.Row % 2 == 0; });
+        peer.Add("broken", "ratio", GameDataLayer.Multiplier, 1, (GameDataCell cell, out GameDataContribution c) => { c = GameDataContribution.Scale(1, 0); return cell.Row == 7; });
+        peer.StartMission();
+        for (int row = 0; row < 25; row++)
+            for (int column = 0; column < 2; column++)
+                Assert.AreEqual(peer.Prices.Live[row * 2 + column], Status(cap, row, column).EffectiveValue, row + "/" + column);
+
+        // A direct write: overridden for every contributing layer, effective value is the written one, before and
+        // after the next composition (which leaves it).
+        peer.Prices.Live[5 * 2] = 77;
+        Assert.IsTrue(Status(multiplier, 5, 0).HasDirectWrite);
+        peer.Composer.Apply();
+        GameDataCellStatus written = Status(multiplier, 5, 0);
+        Assert.IsTrue(written.HasDirectWrite && written.IsOverridden);
+        Assert.AreEqual((80, 77), (written.ComposedValue, written.EffectiveValue));
+        Assert.IsTrue(Status(cap, 5, 0).IsOverridden);
+        Assert.IsFalse(Status(multiplier, 5, 1).IsOverridden, "a layer that does not contribute is not overridden");
+        peer.Prices.ResetMap();
+        peer.StartMission();
+        Assert.IsFalse(Status(multiplier, 5, 0).HasDirectWrite, "the next mission starts from the game's table");
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int round = 0; round < 200; round++) peer.Composer.TryDescribe(multiplier, 3, round & 1, out _, out _);
+        Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before, "a query allocates nothing");
+
+        Assert.IsFalse(peer.Composer.TryDescribe(multiplier, 25, 0, out _, out _));
+        Assert.IsFalse(peer.Composer.TryDescribe(multiplier, 0, 2, out _, out _));
+        multiplier.Dispose();
+        Assert.IsFalse(peer.Composer.TryDescribe(multiplier, 3, 0, out _, out _));
+    }
+
+    [TestMethod]
     public void ACompositionAllocatesNothing()
     {
         foreach (int count in new[] { 0, 1, 4 })

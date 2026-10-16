@@ -65,11 +65,31 @@ namespace APIShared.GameTables
             return TradeBasePrices.TryAdd(ownerGuid, registrationId, layer, order, handler, out registration, out reason);
         }
 
-        /// <summary>Composes <paramref name="table"/> now, for example after host-synchronized layer inputs
-        /// changed during a mission. Call it on the Unity thread at a point that is the same on every peer.
-        /// Returns the number of rows written.</summary>
+        /// <summary>Composes <paramref name="table"/> now. Settings are frozen during a match by default, so this
+        /// is for an individually designed exception: a layer input its mod explicitly allows to change in a
+        /// running match. Call it on the Unity thread at a point that is the same on every peer. Returns the
+        /// number of rows written.</summary>
         public static int Reapply(GameDataTable table) =>
             table == GameDataTable.TradeBasePrices ? TradeBasePrices.Apply() : 0;
+
+        /// <summary>Describes how one cell composes for your registration with the current layer inputs, for
+        /// example to tell players on a settings screen that another mod's absolute value replaces their
+        /// multiplier. Writes nothing.</summary>
+        /// <remarks>Unity thread (it runs the layer handlers like a composition, under the same lock, and reads the
+        /// cell's live row); allocates nothing.</remarks>
+        /// <param name="registration">Your registration.</param>
+        /// <param name="row">Row; for <see cref="GameDataTable.TradeBasePrices"/> the <c>eGoods</c> value.</param>
+        /// <param name="column">Column; for <see cref="GameDataTable.TradeBasePrices"/> 0 is buy, 1 is sell.</param>
+        /// <param name="status">The cell's status on success.</param>
+        /// <param name="reason">Empty on success; otherwise why there is no status.</param>
+        /// <returns>False for a disposed registration, a cell outside the table, or when the table cannot be read
+        /// yet.</returns>
+        public static bool TryGetCellStatus(GameDataRegistration registration, int row, int column, out GameDataCellStatus status, out string reason)
+        {
+            if (registration == null || registration.Table != GameDataTable.TradeBasePrices)
+            { status = default; reason = "Not a GameData layer registration."; return false; }
+            return TradeBasePrices.TryDescribe(registration, row, column, out status, out reason);
+        }
 
         /// <summary>Isolated handler exceptions and rejected contributions.</summary>
         public static long CallbackFailures => TradeBasePrices.CallbackFailures;

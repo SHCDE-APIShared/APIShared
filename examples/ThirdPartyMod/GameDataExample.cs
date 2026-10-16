@@ -22,11 +22,21 @@ namespace ThirdPartyMod
                 logger(reason);
         }
 
-        // Settings changed in a running mission: re-compose at a point that is the same on every peer.
+        // Settings change between matches; the next mission start composes them. No Reapply: settings are
+        // frozen during a match.
         internal static void Configure(int buyPercentValue, int sellPercentValue)
         {
             buyPercent = buyPercentValue; sellPercent = sellPercentValue;
-            GameDataLayers.Reapply(GameDataTable.TradeBasePrices);
+        }
+
+        // For the settings screen: tell the player when another mod's absolute price replaces the multiplier.
+        internal static string DescribeBuy(int good)
+        {
+            if (buy == null || !GameDataLayers.TryGetCellStatus(buy, good, 0, out GameDataCellStatus status, out _))
+                return string.Empty;
+            if (status.HasDirectWrite) return "No effect: another mod wrote this price directly.";
+            if (status.IsOverridden) return "No effect: " + status.OverrideOwnerGuid + " sets an absolute price.";
+            return "Price " + status.Cell.BaseValue + " becomes " + status.EffectiveValue + ".";
         }
 
         private static bool Buy(GameDataCell cell, out GameDataContribution contribution)

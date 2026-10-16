@@ -344,9 +344,10 @@ Additive, Multiplier, Override, Clamp, then order, owner GUID and ID. It compose
 mission start and on `Reapply`, and writes a row only when a composed cell differs from its
 live value, so a factor of 1.0 writes nothing. A cell that another mod wrote directly is
 reported once per mission and left as written. The composed values are kept in the save
-record `APIShared.GameData`, so a reload restores and re-applies instead of compounding. This
-pilot serves the trade base price table; costs follow. Contract, consumer notes and
-measurements: [GameData](GAME_DATA.md).
+record `APIShared.GameData`, so a reload restores and re-applies instead of compounding.
+`TryGetCellStatus` tells a settings screen whether its layer is overridden and by which
+registration. This pilot serves the trade base price table; costs follow. Contract, migration
+guides and measurements: [GameData](GAME_DATA.md).
 
 ## Unit settlement events
 

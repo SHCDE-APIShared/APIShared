@@ -63,6 +63,49 @@ namespace APIShared.GameTables
         public static GameDataContribution Range(int minimum, int maximum) => new GameDataContribution(GameDataLayer.Clamp, minimum, maximum);
     }
 
+    /// <summary>How one cell composes for one layer registration, for settings screens: whether the layer
+    /// contributes, the value the cell ends with, which Override decides it and which Clamp limits it. A value
+    /// copy, from <see cref="GameDataLayers.TryGetCellStatus"/>.</summary>
+    /// <remarks>Composed from the current layer inputs; the live value gets the same ownership check as in a
+    /// composition.</remarks>
+    public readonly struct GameDataCellStatus
+    {
+        internal GameDataCellStatus(GameDataCell cell, bool contributes, int composedValue, string overrideOwnerGuid, string overrideRegistrationId,
+            string limitOwnerGuid, string limitRegistrationId, bool isOverridden, bool hasDirectWrite, int effectiveValue)
+        {
+            Cell = cell; Contributes = contributes; ComposedValue = composedValue;
+            OverrideOwnerGuid = overrideOwnerGuid; OverrideRegistrationId = overrideRegistrationId;
+            LimitOwnerGuid = limitOwnerGuid; LimitRegistrationId = limitRegistrationId;
+            IsOverridden = isOverridden; HasDirectWrite = hasDirectWrite; EffectiveValue = effectiveValue;
+        }
+        /// <summary>The cell, with the game's own value.</summary>
+        public GameDataCell Cell { get; }
+        /// <summary>True when the asked registration's handler returns a valid contribution for the cell.</summary>
+        public bool Contributes { get; }
+        /// <summary>The value the layers compose for the cell, after every Override and Clamp.</summary>
+        public int ComposedValue { get; }
+        /// <summary>The value the game uses: <see cref="ComposedValue"/>, or the direct write when
+        /// <see cref="HasDirectWrite"/> is true.</summary>
+        public int EffectiveValue { get; }
+        /// <summary>Owner GUID of the Override the composed value comes from (the last one that applies, by order,
+        /// owner GUID and ID), or null when no Override applies.</summary>
+        public string OverrideOwnerGuid { get; }
+        /// <summary>Registration ID of that Override, or null.</summary>
+        public string OverrideRegistrationId { get; }
+        /// <summary>Owner GUID of the last Clamp that changed the value, or null when no Clamp changed it.</summary>
+        public string LimitOwnerGuid { get; }
+        /// <summary>Registration ID of that Clamp, or null.</summary>
+        public string LimitRegistrationId { get; }
+        /// <summary>True when the asked registration contributes but its contribution does not reach the cell: an
+        /// Override after it replaces the value (named by <see cref="OverrideOwnerGuid"/>), or another mod wrote
+        /// the cell directly (<see cref="HasDirectWrite"/>). A Clamp only limits a value and does not count.</summary>
+        public bool IsOverridden { get; }
+        /// <summary>True when the cell's live value was written directly by another mod: it is neither the game's
+        /// value nor the value this service composed. A composition leaves such a value as it is. APIShared cannot
+        /// tell which mod wrote it.</summary>
+        public bool HasDirectWrite { get; }
+    }
+
     /// <summary>Decides one layer's contribution for one cell. Return false to leave the cell alone.</summary>
     /// <remarks>Runs inside a composition (see <see cref="GameDataLayers.TryRegister"/>) for every cell of
     /// the table and must be deterministic: the same inputs give the same answer on every multiplayer peer.</remarks>

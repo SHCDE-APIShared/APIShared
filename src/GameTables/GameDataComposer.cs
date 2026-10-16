@@ -56,6 +56,7 @@ namespace APIShared.GameTables
         private readonly int rows, columns;
         private readonly int[] baseValues, applied, live, target;
         private readonly bool[] baseRead, hasApplied, reported;
+        private readonly Trace trace = new Trace();
         private bool activated;
         private Entry[] entries = Array.Empty<Entry>();
         private Entry[] snapshot = Array.Empty<Entry>();
@@ -183,6 +184,51 @@ namespace APIShared.GameTables
             return written;
         }
 
+        // How one cell composes for one registration with the current layer inputs; writes nothing. The handlers
+        // run as in a composition, and the live value gets the composition's ownership check.
+        internal bool TryDescribe(GameDataRegistration registration, int row, int column, out GameDataCellStatus status, out string reason)
+        {
+            status = default;
+            if (registration == null || !registration.IsActive || registration.Table != table)
+            { reason = "The registration is not an active layer of " + table + "."; return false; }
+            if ((uint)row >= (uint)rows || (uint)column >= (uint)columns)
+            { reason = "Row " + row + " column " + column + " is outside " + table + "."; return false; }
+            Entry[] layers = Volatile.Read(ref snapshot);
+            lock (compositionSync)
+            {
+                if (!baseRead[row])
+                {
+                    if (!store.TryReadBase(row, live)) { reason = "The game's values of " + table + " are not readable yet."; return false; }
+                    Array.Copy(live, 0, baseValues, row * columns, columns);
+                    baseRead[row] = true;
+                }
+                if (!store.TryReadLive(row, live)) { reason = "The live values of " + table + " are not readable."; return false; }
+                int cell = row * columns + column, now = live[column];
+                bool direct = now != baseValues[cell] && !(hasApplied[cell] && now == applied[cell]);
+                var subject = new GameDataCell(table, row, column, baseValues[cell]);
+                trace.Begin(registration);
+                int composed = ComposeTraced(layers, subject, trace);
+                GameDataRegistration decidedBy = trace.DecidedBy?.Handle, limitedBy = trace.LimitedBy?.Handle;
+                bool overridden = trace.Contributes && (direct ||
+                    registration.Layer < GameDataLayer.Override && decidedBy != null ||
+                    registration.Layer == GameDataLayer.Override && !ReferenceEquals(decidedBy, registration));
+                status = new GameDataCellStatus(subject, trace.Contributes, composed, decidedBy?.OwnerGuid, decidedBy?.RegistrationId,
+                    limitedBy?.OwnerGuid, limitedBy?.RegistrationId, overridden, direct, direct ? now : composed);
+                trace.Begin(null);
+            }
+            reason = string.Empty;
+            return true;
+        }
+
+        // Filled by a status query's composition.
+        private sealed class Trace
+        {
+            internal GameDataRegistration Subject;
+            internal bool Contributes;
+            internal Entry DecidedBy, LimitedBy;
+            internal void Begin(GameDataRegistration subject) { Subject = subject; Contributes = false; DecidedBy = null; LimitedBy = null; }
+        }
+
         private void Foreign(int row, int column, int value)
         {
             int cell = row * columns + column;
@@ -230,6 +276,47 @@ namespace APIShared.GameTables
                         value = Math.Min(Math.Max(value, contribution.Value), contribution.Second);
                         break;
                 }
+            }
+            return (int)value;
+        }
+
+        // Compose with the trace of a status query. Same steps as Compose (the status tests compare both);
+        // kept apart so the table composition carries no tracing.
+        private int ComposeTraced(Entry[] layers, GameDataCell cell, Trace tracing)
+        {
+            long value = cell.BaseValue;
+            for (int index = 0; index < layers.Length; index++)
+            {
+                Entry entry = layers[index];
+                if (Volatile.Read(ref entry.Handle.ActiveValue) == 0) continue;
+                GameDataContribution contribution;
+                bool applies;
+                try { applies = entry.Handler(cell, out contribution); }
+                catch (Exception ex) { Fail(entry, ex); continue; }
+                if (!applies) continue;
+                GameDataLayer layer = entry.Handle.Layer;
+                if (contribution.Layer != layer) { Fail(entry, WrongLayer); continue; }
+                switch (layer)
+                {
+                    case GameDataLayer.Additive:
+                        value = Clamp32(value + contribution.Value);
+                        break;
+                    case GameDataLayer.Multiplier:
+                        if (contribution.Value < 0 || contribution.Second < 1) { Fail(entry, InvalidContribution); continue; }
+                        value = Clamp32(DivideRounded(value * contribution.Value, contribution.Second));
+                        break;
+                    case GameDataLayer.Override:
+                        value = contribution.Value;
+                        tracing.DecidedBy = entry;
+                        break;
+                    case GameDataLayer.Clamp:
+                        if (contribution.Value > contribution.Second) { Fail(entry, InvalidContribution); continue; }
+                        long limited = Math.Min(Math.Max(value, contribution.Value), contribution.Second);
+                        if (limited != value) tracing.LimitedBy = entry;
+                        value = limited;
+                        break;
+                }
+                if (ReferenceEquals(entry.Handle, tracing.Subject)) tracing.Contributes = true;
             }
             return (int)value;
         }

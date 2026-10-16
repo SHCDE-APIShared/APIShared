@@ -30,6 +30,14 @@ GameDataLayers.TryRegister(MyPlugin.Guid, "market-buy", GameDataTable.TradeBaseP
 Rows of `TradeBasePrices` are `eGoods` values; column 0 is the buy price, column 1 the sell
 price. Keep handlers deterministic: integer settings that are identical on every peer.
 
+A settings screen asks how a cell composes for its own registration:
+
+```csharp
+if (GameDataLayers.TryGetCellStatus(registration, (int)eGoods.Wood, 0, out GameDataCellStatus status, out _) &&
+    status.IsOverridden && !status.HasDirectWrite)
+    note = "Your buy price multiplier has no effect on wood: " + status.OverrideOwnerGuid + " sets an absolute price.";
+```
+
 ## Contract
 
 **Base.** Every cell starts from the game's own value, read once per process before APIShared
@@ -46,14 +54,24 @@ ordinal owner GUID and ordinal registration ID, independent of registration time
 | `Override` | `Set(value)` | Replaces the result so far; the last one wins |
 | `Clamp` | `Range(minimum, maximum)` | Limits the result |
 
+So an absolute value (Override) replaces every Additive and Multiplier contribution to that
+cell, whichever mod registered them, and the final Clamps still limit it. Where several
+Overrides apply to one cell, the last by ascending `order`, then owner GUID, then registration
+ID wins.
+
 A contribution of the wrong kind, an invalid ratio or range, and a throwing handler are
 counted in `CallbackFailures` and skipped; the other layers still apply.
 
 **Phases.** A table is composed at every mission start (new game and loaded save, after the
-native initialization, not in the editor) and when an owner calls `Reapply`. A row is written
-only when one of its composed cells differs from the live value, so a layer that changes
-nothing, such as a factor of 1.0, writes nothing. Disposing the last layer writes the game's
-values back at the next phase.
+native initialization, not in the editor, where trading is unavailable) and when an owner calls
+`Reapply`. A row is written only when one of its composed cells differs from the live value, so
+a layer that changes nothing, such as a factor of 1.0, writes nothing. Disposing the last layer
+writes the game's values back at the next phase.
+
+**Settings are frozen during a match.** Layer inputs change between matches, and the next
+mission start applies them. `Reapply` exists for an individually designed exception: a setting
+its mod explicitly allows to change in a running match, applied at a point that is the same on
+every peer. APIShared has no general facility for such settings yet.
 
 **Writer rule.** Compositions serialize on one lock and run on the Unity thread: the mission
 lifecycle publisher, or the caller of `Reapply`.
@@ -74,29 +92,93 @@ values; a map or a save without the record starts empty.
 
 **Multiplayer.** Per peer, from the same Base with the same layers at the same phase. Layer
 inputs must be identical on every peer before the phase, for example host-synchronized before
-the mission starts. A mid-mission `Reapply` must run at a point that is the same on every peer.
+the mission starts.
+
+**Status query.** `TryGetCellStatus(registration, row, column, ...)` composes one cell with the
+current layer inputs and writes nothing. It reports whether the registration contributes
+(`Contributes`), the composed value (`ComposedValue`) and the value the game uses
+(`EffectiveValue`), the Override the value comes from (`OverrideOwnerGuid`,
+`OverrideRegistrationId`), the last Clamp that changed it (`LimitOwnerGuid`,
+`LimitRegistrationId`), and `IsOverridden`: the registration contributes, but a later Override
+or a direct write by another mod replaces its result. The direct-write check is the
+composition's own, on the cell's live value; APIShared cannot tell which mod made the write.
+Unity thread; allocates nothing; the table composition itself is unchanged by the query.
 
 **Cost.** Nothing is subscribed and no table is read before the first registration. A
 composition allocates nothing.
 
-## Consumer notes
+## Explaining the result to players
 
-Notes for each maintainer; nothing here changes those mods. Keep the old path behind a switch
-for two releases, and never run both for the same table.
+Players see one price, made from several mods' settings. Each consumer's settings text should
+say how its values combine with others:
 
-**ExtraFeatures market price multipliers** (first Serpens consumer). Today it writes
-`default x multiplier` into every trade base price at settings apply and at map load, also at
-factor 1.0, which replaces CrusaderDETweaker's `[Trade Prices]` and can differ between peers.
-As two `Multiplier` layers (buy column, sell column) with integer percentages, a factor of 1.0
-writes nothing and other mods' layers compose with it.
+- A multiplier or an added amount applies on top of the game's price together with every other
+  mod's multipliers. An absolute price set by any mod replaces all of them for that good, and
+  a range limit (Clamp) still applies last.
+- An absolute price says that it replaces multipliers. Where two mods set an absolute price
+  for the same good, say which one wins: the higher `order`, then the owner GUID and ID.
+- Where the result depends on another mod, show it: `TryGetCellStatus` names the Override that
+  decides a cell and the Clamp that limits it, and says when another mod wrote the cell
+  directly, so the screen can say "no effect on wood: an absolute price from X applies".
 
-**CrusaderDETweaker `[Trade Prices]`.** Today it writes configured absolute prices into the
-current table. As an `Override` layer for the configured cells it survives every other mod's
-multiplier and is restored after reloads.
+## Migration guides
 
-**UnitCosts and BuildingCosts.** Not served yet: unit gold and good costs and building costs
-are the next tables. UnitCosts writes its startup snapshot for every `-1` cost, which
+Step by step for each maintainer; nothing here changes those mods. Each step list replaces
+the mod's own table writes. A transition switch that keeps the old path for a release or two
+is an optional strategy, useful when many independent mods depend on the old behavior; it is
+not required. Never run the old path and a layer for the same table at the same time.
+
+### ExtraFeatures market price multipliers
+
+Today `ApplyMarketPriceMultipliers` writes `default x (general x per-good multiplier)` into every
+trade base price at every settings apply and map load, also at factor 1.0 (it then writes the
+default price), and `RestoreTradeBasePrices` writes the defaults when the mod is disabled. Both
+replace CrusaderDETweaker's `[Trade Prices]`, and a settings apply can differ between peers.
+
+1. Require the APIShared release that contains `GameDataLayers` in the plugin's dependency
+   attribute.
+2. At startup (`Awake` or the Extender's `LibraryLoaded`), on every peer, register two
+   `Multiplier` layers for `GameDataTable.TradeBasePrices`: `market-buy` (column 0) and
+   `market-sell` (column 1), both at `order: 0`. Keep the two `GameDataRegistration` handles.
+3. In each handler, return false when the mod is disabled (`GameplayModActivationGate`), when
+   the cell is not its column, or when the combined multiplier is 1.0. Otherwise return
+   `GameDataContribution.Scale(numerator, 10000)` with
+   `numerator = (int)Math.Round(general * perGood * 10000, MidpointRounding.AwayFromZero)`.
+   The layer rounds half away from zero like `MultiplyPrice`, but in integers, so a price can
+   differ by 1 only where today's double product lands next to a .5 boundary.
+4. Remove the `ApplyMarketPriceMultipliers` calls from `ApplySettings` and
+   `ApplyMapLoadedSettings`, and the `RestoreTradeBasePrices` call from `RestoreDefaultSettings`.
+   The service composes at every mission start from the settings of that moment, and writes the
+   game's prices back when no layer contributes.
+5. Do not call `Reapply` when a setting changes: settings are frozen during a match, and the
+   next mission start applies them. The editor needs nothing (no trading there).
+6. `AIMarketVanillaPriceHook` stays as it is: it reads the default table, which the service
+   never writes.
+7. In the settings help text, say that an absolute price from another mod replaces the
+   multiplier for that good (see Explaining the result to players). Optionally show
+   `TryGetCellStatus(...).IsOverridden` per good in the per-good price editor.
+8. Check: with factor 1.0 the log shows no `GAMEDATA:` line and `GameDataLayers.RowWrites`
+   stays 0; with x1.5 a new game and a reload of its save show the same prices.
+
+### CrusaderDETweaker `[Trade Prices]`
+
+Today `LoadTradePrices` writes the configured absolute buy and sell prices into the current
+table when the configuration applies.
+
+1. Register one `Override` layer (`trade-prices`, `order: 0`) for `TradeBasePrices` at startup.
+2. Its handler returns `GameDataContribution.Set(price)` for each configured good and column
+   (`row = (int)good`) and false for every other cell.
+3. Remove the `SetTradeBasePrice` write; keep the read-back log as a check of the composed
+   value at mission start.
+4. In the `[Trade Prices]` help text, say that a configured price replaces every multiplier
+   from other mods for that good.
+
+### UnitCosts and BuildingCosts
+
+Not served yet: unit gold and good costs and building costs are the next tables, each with its
+own Base and phase rules. UnitCosts writes its startup snapshot for every `-1` cost, which
 replaces host-synchronized costs on clients; as layers, a `-1` would simply register nothing.
+Their guides follow with those tables.
 
 ## Limits
 
@@ -123,18 +205,21 @@ keeps its live value and never becomes the service's own. The composing methods 
 through the same array-backed store calls, starting from the game's defaults every time.
 "Today" is the direct loop a mod uses now: read each default, multiply buy and sell by a
 double, round, write every row. 20,000 phases per sample, 31 samples after two warm-up
-rounds, alternating mode order, raised priority; the machine was at 97 to 100 percent CPU
-from other work. 0 bytes allocated per phase in every mode.
+rounds, alternating mode order, raised priority. The quietest of five runs; other work kept
+the machine at about 97 percent CPU. 0 bytes allocated per phase in every mode.
 
 | Mode (ns per phase, whole table, min / median) | Cost |
 |---|---|
-| Direct loop, x1.5 (today) | 1098 / 1212 |
-| Composer, 1 layer x1.5 | 1083 / 1188 |
-| Composer, 1 layer x1.0 (writes nothing) | 987 / 1109 |
-| Composer, 4 layers (all four kinds) | 1985 / 2190 |
+| Direct loop, x1.5 (today) | 578 / 607 |
+| Composer, 1 layer x1.5 | 648 / 704 |
+| Composer, 1 layer x1.0 (writes nothing) | 610 / 658 |
+| Composer, 4 layers (all four kinds) | 1215 / 1357 |
 
-A phase runs once per mission start (or explicit re-apply), so these are microseconds per
-mission. The Script Extender calls themselves (one read per row, plus one write per changed
-row; the direct loop also reads the default table every time) are not included.
+One layer costs about 70 ns more per phase than the direct loop, which checks no cell's
+ownership and calls no handler. A phase runs once per mission start (or explicit
+re-apply), so this is well under a microsecond per mission. The Script Extender calls
+themselves (one read per row, plus one write per changed row; the direct loop also reads the
+default table every time) are not included. The status query has its own composition pass,
+so the table composition carries no tracing.
 
 Limits: desktop CLR 4.8.1 on the test host, not the game's Unity Mono; no in-game timing.

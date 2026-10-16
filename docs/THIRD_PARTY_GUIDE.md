@@ -353,8 +353,10 @@ these measurements; no FPS change is implied.
 To change trade base prices, register a `GameDataLayers` layer instead of writing the table:
 every mod's layers then compose from the game's values in a fixed order, a factor of 1.0
 writes nothing, and a reload never compounds. Register at startup on every peer with settings
-that are identical on all of them; call `Reapply` only at a point that is the same on every
-peer. See [GameData](GAME_DATA.md) and the [example](../examples/ThirdPartyMod/GameDataExample.cs).
+that are identical on all of them. Settings stay frozen during a match: the next mission start
+applies changes. Tell players when another mod's absolute value replaces their setting
+(`TryGetCellStatus`). See [GameData](GAME_DATA.md) and the
+[example](../examples/ThirdPartyMod/GameDataExample.cs).
 
 ## Sharing native market price queries
 
