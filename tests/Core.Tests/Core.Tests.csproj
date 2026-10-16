@@ -47,6 +47,7 @@
     <Compile Include="../../src/Savegames/VersionedSaveDataContracts.cs" Link="Production/VersionedSaveDataContracts.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
+    <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
     <Compile Include="../../src/Units/UnitAccess.cs" Link="Production/UnitAccess.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledContracts.cs" Link="Production/UnitSettledContracts.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledTracker.cs" Link="Production/UnitSettledTracker.cs" />

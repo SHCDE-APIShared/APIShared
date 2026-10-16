@@ -21,6 +21,9 @@ namespace ThirdPartyMod
                 currentVersion: 2, minimumReaderVersion: 2, knownEntries: new[] { BuildingPrefix },
                 capture: Capture, loaded: OnLoaded);
             registration.AddMigration(1, MigrateFromVersion1);
+            // Building levels drive the simulation, so every player's saved copy must match before a
+            // multiplayer save loads. View or preference data would go into a separate, undeclared record.
+            registration.SimulationRelevant = true;
             if (!VersionedSaveData.TryRegister(registration, out _, out string reason))
                 logger("Example save data unavailable: " + reason);
         }

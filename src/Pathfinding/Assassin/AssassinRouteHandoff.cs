@@ -86,6 +86,16 @@ namespace APIShared
             return true;
         }
 
+        // A weighted builder call that threw is answered by Vanilla alone (AssassinPathAPI.BuilderFailed), so a
+        // route it staged for this request is dropped before this frame can publish it.
+        internal static void DiscardStaged(IntPtr context)
+        {
+            AssassinRouteHandoff frame = current;
+            if (frame == null || frame.context != context || frame.bytes == null) return;
+            frame.bytes = null; frame.routeValid = null; frame.completion = null;
+            Report("discarded-builder-failure");
+        }
+
         internal int Complete(int originalResult)
         {
             if (!ReferenceEquals(current, this) || bytes == null) return originalResult;
