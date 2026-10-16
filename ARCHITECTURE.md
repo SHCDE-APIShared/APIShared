@@ -9,6 +9,7 @@ GUID without installing hooks or reserving a capability.
 | Area | Purpose |
 |---|---|
 | Core | Initialization, capability diagnostics, ownership, native infrastructure and the public native-site registry |
+| Compatibility | Internal, binary-validated interoperability corrections for optional mods; no public capability |
 | ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
 | ScriptExtenderReplacements | Opt-in public alternatives to specific SE methods; no interception of existing callers |
 | Missions, Lobby, Players | Shared observations and immutable state notifications |
@@ -159,6 +160,10 @@ The compatible opt-in scroll diagnostic performs no formatting while disabled.
 Readiness, validation and isolated callback error reporting remain service duties.
 
 ## Publication
+
+Before managed publication, Awake attempts the optional
+[Fixes wheat-sale correction](docs/FIXES_COMPATIBILITY.md) synchronously. This
+one-time startup operation has no LibraryLoaded/tick retry or teardown path.
 
 Additional weighted route calculations publish through `Pathfinding/Routes`.
 `RouteSearchContracts` contains caller-facing arguments and results;

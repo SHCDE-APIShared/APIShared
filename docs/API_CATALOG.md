@@ -1,5 +1,9 @@
 # API catalog
 
+The internal [Fixes wheat-sale compatibility correction](FIXES_COMPATIBILITY.md)
+runs once at verified startup, after the optional Fixes plugin. It adds no public
+API and refuses unknown binary/startup contracts independently of public services.
+
 Opt-in [Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md)
 provide the corrected `APIShared.ScriptExtenderReplacements.GamePathingManagerAPI`
 table methods. These require explicit caller migration and do not hook SE methods.

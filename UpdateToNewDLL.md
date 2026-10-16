@@ -1,5 +1,72 @@
 # Native binary update contracts
 
+## Fixes wheat-sale startup correction
+
+Owner: internal `Compatibility/FixesWheatStartup`; foreign hook ownership stays
+with Fixes. See [startup safety, behavior and test limits](docs/FIXES_COMPATIBILITY.md).
+
+| Audited binary | SHA-256 |
+| --- | --- |
+| CrusaderDE.dll | FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2 |
+| Assembly-CSharp.dll | BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789 |
+| UnityEngine.CoreModule.dll | E468E19789D608B41E2C7FE4F367C7082FECE7D1883F568E75870F6C5384CC86 |
+| fixes.dll (1.26.4.0) | 6A4ED4F492812BDA9342766AC432954F483732CC864C4CAAD67F9172A4F9E5BA |
+| BepInEx.dll | 8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70 |
+| BepInEx.Preloader.dll | 55D3895351A9D16B63B6F35F1C01B44AC650979E853D0BD3A442B92A082AF64F |
+| SHCDESE.dll | E5D78FDF2EA9701336C398F7D29410F206D141FC01AA8099F30C824E6AB8A0B3 |
+| RedBird.Abstractions.dll | 339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E |
+| RedBird.Core.dll | EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F |
+| RedBird.X64.dll | E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB |
+| Iced.dll | CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F |
+
+Seller 0x3EE10 begins `89 54 24 10 48 89 4C 24 08 48 83 EC 58`:
+player EDX saved at entry RSP+0x10, then stack allocation 0x58. Fixes pushes RDX
+and R8, making the correct load displacement 0x10+0x58+8+8 = 0x78.
+The incorrect 0x50 refers to saved caller RDI, not a player argument.
+The native scheduler 0x2AE40 passes the profile in RCX and player in EDX to
+0x3F270; that controller's market/alternation branches tail-jump to purchase
+0x3EC90 or seller 0x3EE10. The seller iterates goods, and the wheat hook precedes
+reserve evaluation and the actual sale at 0x29700. Non-wheat and disabled-flag
+paths retain the original category. Enabled wheat uses category 6 (Resource).
+
+Fixes site 0x3F0C9 displaces 19 bytes, returning to 0x3F0DC:
+`45 8B 9A C4 00 00 00 49 8D 04 38 48 8D 2C 85 00 00 00 00`.
+The installed entry must be `FF 25 00 00 00 00 <stub u64>` plus five NOPs.
+Resolve the stub from the actual `Fixes.Detours.FixesAIDetours` static
+`c_game_ai_sell_item_handler_hook` (HookHandle<X64InlineHook>), not by scanning.
+Its `_originalBytesBackup`, resolved/target address, installed state and
+DisplacedByteCount must agree. `wheatSaleCategoryFlagArray` must be a
+NativeFlagArray of length 9; its Address must match the stub operand.
+
+Full stub layout (hex offsets):
+
+| Offset | Required instruction/data |
+| --- | --- |
+| 00 / 01 | push rdx / push r8 |
+| 03 / 07 | cmp rdi,9 / jne +27 |
+| 09 | mov edx,[rsp+50] or already-correct [rsp+78]; only byte +0C may change |
+| 0D / 0F | push r8 / mov r8,flagArrayAddress (u64 at +11) |
+| 19 / 1E / 20 | cmp byte ptr [r8+rdx],0 / pop r8 / je +27 |
+| 22 | mov ecx,6 |
+| 27 / 29 | pop r8 / pop rdx |
+| 2A..3C | complete original 19-byte instruction sequence |
+| 3D / 43 | FF 25 00 00 00 00 / absolute continuation u64; total 75 bytes |
+
+Scope/search/fallback: exact known module hash plus the exact foreign object and
+complete live bytes; no pattern search, migrated RVA or unknown backend fallback.
+The live Vanilla prolog is also checked, so a foreign seller-entry detour is
+refused. Missing hook with intact original entry needs no correction. Conflicting
+flags/handles, failed/prepared hooks or altered return bytes are refused.
+
+Update checklist: audit BepInEx soft-dependency sorting, AddComponent/Awake and
+_loaded publication; preloader Application..cctor injection; engine private lock
+and all tick/load/editor paths (editor calls are not universally locked); Fixes
+immediate LibraryLoaded installation and process-lived native state; RedBird
+handle, backup, stub generation and entry padding; complete seller/flag dataflow.
+Then update identities, source/byte/behavior tests and real backend/game tests
+together. Do not whitelist a newer version solely by name. No builds or gameplay
+acceptance have been performed for this implementation.
+
 ## Pathfinding table replacements
 
 Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.

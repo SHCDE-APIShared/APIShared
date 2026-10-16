@@ -6,6 +6,8 @@ $workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $files = @(Get-ChildItem -LiteralPath (Join-Path $workspace 'src') -Recurse -File -Filter '*.cs')
 
 $errors = [System.Collections.Generic.List[string]]::new()
+& (Join-Path $PSScriptRoot 'Test-FixesWheatBoundary.ps1')
+$wheatMemory = Join-Path $workspace 'src\Compatibility\FixesWheatMemory.cs'
 foreach ($file in $files) {
     $lines = [System.IO.File]::ReadAllLines($file.FullName)
     for ($index = 0; $index -lt $lines.Length; $index++) {
@@ -15,7 +17,9 @@ foreach ($file in $files) {
             $line -match '\bGatehouseNativeMutation\b' -or
             $line -match '\bVirtualProtect\s*\(' -or
             $line -match '\bFlushInstructionCache\s*\(') {
-            $errors.Add("$($file.FullName):$($index + 1): runtime executable-memory mutation: $($line.Trim())")
+            if ($file.FullName -ne $wheatMemory) {
+                $errors.Add("$($file.FullName):$($index + 1): runtime executable-memory mutation: $($line.Trim())")
+            }
         }
 
         if ($line -notmatch '(classifierTransaction|transaction)\??\.Dispose\s*\(') { continue }
@@ -81,4 +85,4 @@ foreach ($file in Get-ChildItem -LiteralPath (Split-Path $audioPath) -File -Filt
     if ([IO.File]::ReadAllText($file.FullName) -match '\.(?:Dispose|Undo|Disable|Enable|Apply)\s*\(') { throw "Unexpected audio hook mutation: $($file.Name)" }
 }
 if ($errors.Count -ne 0) { throw ($errors -join [Environment]::NewLine) }
-Write-Host 'PASS: APIShared has no executable-memory toggles or published transaction teardown.'
+Write-Host 'PASS: no executable-memory toggles or published teardown; audited one-time wheat startup exception checked separately.'

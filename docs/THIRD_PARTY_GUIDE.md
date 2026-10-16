@@ -1,5 +1,10 @@
 # Third-party integration guide
 
+APIShared optionally loads after Fixes for its audited
+[wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
+is required. Check its explicit outcome log; APIShared being present does not
+prove that an unknown Fixes binary was corrected.
+
 Unused observation services do not scan or prepare events. Register player-defeat
 observers before the first simulation tick if early transitions matter: the first
 tick after the first subscriber establishes the baseline and never replays earlier
