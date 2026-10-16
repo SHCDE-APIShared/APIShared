@@ -1,0 +1,4 @@
+# Internal APIShared members that MoatMove binds through InternalsVisibleTo.
+# Source: MoatMove 0.1.5 compiled from Serpens66/Stronghold-Crusader-DE-Mods main (a23aa1b)
+# against this APIShared and scanned with Mono.Cecil. It binds public members only.
+# See docs/API_COMPATIBILITY.md.
