@@ -11,13 +11,45 @@ with Fixes. See [startup safety, behavior and test limits](docs/FIXES_COMPATIBIL
 | Assembly-CSharp.dll | BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789 |
 | UnityEngine.CoreModule.dll | E468E19789D608B41E2C7FE4F367C7082FECE7D1883F568E75870F6C5384CC86 |
 | fixes.dll (1.26.4.0) | 6A4ED4F492812BDA9342766AC432954F483732CC864C4CAAD67F9172A4F9E5BA |
+| fixes.dll (1.26.5.0) | 47D77AC11585423AA2B054873C11EC3AF888CF92E955A0BA376F24BA1B7ECE2A |
 | BepInEx.dll | 8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70 |
 | BepInEx.Preloader.dll | 55D3895351A9D16B63B6F35F1C01B44AC650979E853D0BD3A442B92A082AF64F |
 | SHCDESE.dll | E5D78FDF2EA9701336C398F7D29410F206D141FC01AA8099F30C824E6AB8A0B3 |
+| SHCDESE.dll (2.14.2.0) | 577F9AAB5DE504BE0BFA2193C7DEB734B26076ECBBAF0A408FC9ABC4CC5E7175 |
 | RedBird.Abstractions.dll | 339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E |
 | RedBird.Core.dll | EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F |
 | RedBird.X64.dll | E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB |
 | Iced.dll | CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F |
+| MonoMod.RuntimeDetour.dll | 40E49BB314391CD7BDDC2644F8553EEBA92C194B940836B103DF16955C464E0C |
+| MonoMod.Utils.dll | 9D1495F147AC93C4F81F84538C1A326E8F8A6AEFC78D6289D798F3CE1162C5E9 |
+
+Fixes/SHCDESE rows record audited installations, not runtime version/hash allowlists.
+Their full loaded/disk assembly identities and MVIDs must agree. The native
+game and backend rows remain pinned to the audited machine/private-backend
+contracts. Unsupported hook bytes and startup evidence are always refused.
+
+The 2026-10-17 installed-binary recheck records the two updated identities above.
+Fixes 1.26.5 still emits the same
+wrong `rsp+0x50` player load; the installed RedBird/Iced, BepInEx, preloader,
+Unity and game files retain their audited hashes. The integration fixture invokes
+a private copy of the actual installed Fixes emitter with a test flag-array address
+and compares all emitted bytes; it never constructs the Fixes runtime or installs
+a foreign hook. Live validation still verifies the entire 75-byte stub and return.
+
+Unity may byte-load Assembly-CSharp and UnityEngine.CoreModule with empty
+Assembly.Location values. The wheat guard and popularity display resolve the
+relevant installed images from BepInEx's
+GameRootPath. SHA-256, full assembly identity and loaded/disk MVID must agree;
+hashing and metadata inspection share one read-only file handle. Missing or
+different files remain unsupported; an empty Location alone is not a failure.
+
+MonoMod loader-body contract: ILHook._Map[originalStart] must contain a Context
+whose Method is originalStart and whose Detour is valid/applied with the same
+Method. Its exact Target, normalized through GetIdentifiable's pinned-handle map,
+may identify the current frame. No DMD name/prefix is trusted. Registry mismatch,
+multiple loader frames or wrong surrounding Awake/Application ordering refuse
+the correction. Recheck this private read-only lookup when updating MonoMod;
+it never installs, refreshes, disposes or undoes a hook.
 
 Seller 0x3EE10 begins `89 54 24 10 48 89 4C 24 08 48 83 EC 58`:
 player EDX saved at entry RSP+0x10, then stack allocation 0x58. Fixes pushes RDX

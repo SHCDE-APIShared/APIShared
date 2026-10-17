@@ -1,10 +1,12 @@
-# Early dependency-index correction (development)
+# Early dependency-index correction
 
-This optional companion is under development. The transferred APIShared build has
-not yet passed a Unity-Mono startup or a real package update/removal test. The
-isolated probe previously demonstrated the algorithm on one audited installation;
-that is not acceptance of this assembly. Releases and installation through the
-development build driver are blocked until those checks are complete.
+The transferred APIShared package passed the targeted Windows/Unity-Mono acceptance
+on 2026-10-17 with Script Extender 2.14.2: the active correction preserved three
+genuine control errors while resolving the eligible nested dependency. A second
+start with only the orphaned bootstrap installed no hooks and preserved all four
+original errors. Menu/startup and post-cleanup evidence were recorded for both runs.
+These results cover the tested binaries, not subsequent source changes or other
+platforms. Ordinary release readiness requirements still apply.
 
 ## Purpose and compatibility
 
@@ -32,7 +34,10 @@ general consumer packages retain their existing protected-root restrictions.
 Historical packages without the companion and pair manifest remain readable.
 
 A complete pair and an audited loader are required. The actual selected APIShared
-winner must match the runtime path, version and hash. Duplicate/renamed own
+winner must match the runtime path, version and hash. The initially read manifest
+is hash-bound too. Ownership and the complete pair are rechecked at selection and
+immediately before publishing the local index. A failed check revokes correction
+without removing any published hook. Duplicate/renamed own
 bootstraps and the known dependency diagnostic probe block hook installation.
 Unrelated patchers are not removed. Unknown or unreadable patcher metadata refuses
 this optional correction rather than guessing ownership.
@@ -52,17 +57,30 @@ compiled and JIT-prepared before their hooks are installed, without executing th
 The chain observer captures selected winners and known failures. If the selected
 APIShared pair is rejected, a published observer stays rooted but cannot install
 the corrective SE hook. All callbacks and diagnostics contain their own failures.
-The standalone trace is `BepInEx/APIShared.DependencyBootstrap.trace.log` with
-millisecond timestamps and `ASDB` markers. `PAIR_VERIFIED`, `PAIR_SELECTED`,
-`CORRECTION_APPLIED`, `ORIGINAL_RESULT` and `CHAIN_COMPLETE` distinguish acceptance
-phases; desktop delegate generation never substitutes for Mono-JIT evidence.
+Only genuine warnings and errors are written to the normal BepInEx log, with
+millisecond timestamps. Successful startup, selected inventories, phase markers
+and compatibility-result dumps are silent. No separate trace file or optional
+verbose mode is provided. Internal package/index checks and exception containment
+remain active; desktop delegate generation never substitutes for Mono-JIT evidence.
 
 ## Development and manual removal
 
-Build with `build.bat /nopause /noinstall`. Outputs and build evidence remain inside
+Build the current working tree with `build.bat /workspace /nopause /noinstall`. Outputs and build evidence remain inside
 this checkout. The build checks the actual runtime pair contract and package/removal
-tools. The release gate `bootstrap/DEVELOPMENT-ONLY` is itself a build input; removing
-it requires reviewed runtime and lifecycle evidence, not merely another build.
+tools. Development use is permitted by user selection; runtime and lifecycle
+acceptance remain separate from a successful build.
+
+An orphaned bootstrap may remain in the patcher directory after plugin removal.
+At the later ready event, an absent APIShared plugin directory causes a silent
+return before runtime resolution, pair reads, method transformation or hooks.
+BepInEx still loads the bootstrap and its diagnostic listener. Access errors,
+linked paths or a file occupying the directory are not treated as removal.
+If the directory exists, a missing runtime DLL or manifest still rejects activation
+with a diagnostic; the original loader and dependency check continue unchanged.
+A mixed/reinstalled partner must pass the complete pair and
+selected-winner checks on a fresh process before correction can activate.
+The user's accepted removal policy is to retain this inert file or remove it
+manually. No parallel deletion worker is required.
 
 Automatic update/unsubscribe cleanup and self-repair are intentionally absent.
 A sequential partial update leaves correction inactive; equal versions do not
@@ -85,7 +103,7 @@ The standalone project is `bootstrap/APIShared.DependencyBootstrap.csproj`, outs
 `src` and its runtime compile glob. Within `bootstrap/src`, `EarlyEntry` owns Finish
 and the one-shot ready listener; `DependencyCorrection` owns provider evaluation,
 local index replacement and their permanent hook owner; `Package` owns the fixed
-pair contract; `Diagnostics` owns hashes and bounded trace output. Hooks stay beside
+pair contract and activation decisions; `Diagnostics` owns hashes and bounded trace output. Hooks stay beside
 the correction they implement. Folder moves do not change assembly/type identity.
 
 Packaging helpers remain beside the existing Workshop/build helpers in `tools`;
@@ -103,8 +121,23 @@ inventory rules, original SE comparisons and partial-copy pair checks.
 against retained local fixtures; Core.Tests exercises the actual map validator.
 No test invokes Chainloader.Start, installs runtime hooks, or starts Steam/the game.
 
-Before release: independently test the transferred assembly in Unity Mono, menu and
-post-cleanup behavior; implement and audit automatic ownership-aware post-exit
-cleanup; test Windows installation, interrupted updates and removal. Linux/Proton
-requires separate validation. Existing public consumer compatibility checks remain
+The transferred assembly's Windows installation, active Unity-Mono startup and
+orphan behavior passed the targeted acceptance above. Interrupted-copy behavior
+is covered by offline pair tests; a real APIShared update is not thereby certified.
+Automatic bootstrap removal is optional housekeeping, not a prerequisite for dependency correction.
+Linux/Proton requires separate validation. Existing public consumer compatibility checks remain
 required; this feature does not grant broader filesystem rights to consumer mods.
+
+## Probe evidence and transfer limits
+
+The independent probe passed a real Windows Extender A-to-B package replacement
+on 2026-10-17, including both executable partners, pair binding and restart.
+Both subsequent original version checks reported the package current. The synthetic
+Workshop-list adapter and its trial settings are not part of APIShared.
+This evidence supports the transfer design; it does not certify these different
+assemblies, automatic removal or Steam/Proton deployment. APIShared's separate
+active/orphan startup acceptance is described above.
+
+Native helper DLLs in patcher packages are distinguished by their PE/CLR header
+before managed assembly metadata is inspected. Invalid/unreadable images and
+renamed competing bootstraps still reject activation. The bootstrap creates no diagnostic files.

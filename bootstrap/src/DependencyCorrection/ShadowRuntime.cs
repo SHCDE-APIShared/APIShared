@@ -13,13 +13,13 @@ namespace APIShared.DependencyBootstrap
         internal static HashSet<string> Failed;
         private static int runs;
         private static bool correction;
-        private static bool correctionReady;
+        private static PairActivation activation;
         private static object expectedIndex;
         private static int expectedIssues;
-        internal static void Configure()
+        internal static void Configure(PairActivation package)
         {
+            activation = package;
             correction = true;
-            ProbeTrace.Mark("CORRECTION_MODE", "Enabled; verified pair required");
         }
         internal static ShadowPlugin FromInfo(BepInEx.PluginInfo info)
         {
@@ -34,16 +34,12 @@ namespace APIShared.DependencyBootstrap
         {
             try
             {
-                correctionReady = false;
                 if (++runs != 1 || Winners == null || Failed == null) throw new InvalidOperationException("shadow invocation/state mismatch");
-                ProbeTrace.Mark("SHADOW_BEGIN", "read-only; failures=" + Failed.Count);
-                foreach (var guid in Failed.OrderBy(g => g, StringComparer.Ordinal)) ProbeTrace.Mark("SHADOW_FAILED", guid);
                 var original = (IDictionary)originalObject;
                 var entryList = new List<DictionaryEntry>();
                 foreach (DictionaryEntry entry in original) entryList.Add(entry);
                 var entries = entryList.ToArray();
                 var raw = entries.ToDictionary(e => (string)e.Key, e => (string)Property(e.Value, "RawVersion"), StringComparer.OrdinalIgnoreCase);
-                foreach (var entry in raw) ProbeTrace.Mark("SHADOW_INDEX", Line(new Dictionary<string, object> { { "guid", entry.Key }, { "version", entry.Value } }));
                 var shadow = (IDictionary)Activator.CreateInstance(original.GetType(), new object[] { StringComparer.OrdinalIgnoreCase });
                 foreach (var entry in entries) shadow.Add(entry.Key, entry.Value);
                 var managerType = manager.GetType();
@@ -57,9 +53,6 @@ namespace APIShared.DependencyBootstrap
                 var installedType = original.GetType().GetGenericArguments()[1];
                 foreach (var decision in decisions)
                 {
-                    ProbeTrace.Mark("SHADOW_CANDIDATE", Line(new Dictionary<string, object> {
-                        {"guid", decision.Plugin.Guid}, {"version", decision.Plugin.Version}, {"path", decision.Plugin.Path},
-                        {"manifest", decision.Manifest}, {"state", decision.State}, {"reason", decision.Reason} }));
                     if (decision.State != "Eligible") continue;
                     shadow.Add(decision.Plugin.Guid, Activator.CreateInstance(installedType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
                         null, new object[] { decision.Plugin.Guid, decision.Plugin.Version }, null));
@@ -68,7 +61,7 @@ namespace APIShared.DependencyBootstrap
                 // Use the real SE comparison method on both dictionaries. Its original caller still runs unchanged.
                 var enumerate = managerType.GetMethod("EnumerateDependencies", BindingFlags.Static | BindingFlags.NonPublic);
                 var issue = managerType.GetMethod("TryGetDependencyIssue", BindingFlags.Static | BindingFlags.NonPublic);
-                int before = 0, after = 0, compared = 0;
+                int before = 0, after = 0;
                 foreach (var candidate in candidates)
                 {
                     var info = Property(candidate, "Info");
@@ -76,32 +69,24 @@ namespace APIShared.DependencyBootstrap
                     {
                         object[] oldArgs = { dependency, original, null }, newArgs = { dependency, shadow, null };
                         bool oldIssue = (bool)issue.Invoke(null, oldArgs), newIssue = (bool)issue.Invoke(null, newArgs);
-                        compared++;
                         if (oldIssue) before++;
                         if (newIssue) after++;
-                        ProbeTrace.Mark("SHADOW_DEPENDENCY", Line(new Dictionary<string, object> {
-                            {"consumer", Property(info, "GUID")}, {"dependency", Property(dependency, "GUID")},
-                            {"originalIssue", oldIssue}, {"shadowIssue", newIssue}, {"originalReason", oldArgs[2]}, {"shadowReason", newArgs[2]} }));
                     }
                 }
                 if (original.Count != entries.Length || entries.Any(e => !original.Contains(e.Key) || !ReferenceEquals(original[e.Key], e.Value)) ||
                     !ReferenceEquals(prepared, preparedField.GetValue(manager)) || !candidates.SequenceEqual(((IEnumerable)prepared).Cast<object>()) || shadow.Count != entries.Length + added)
                     throw new InvalidOperationException("shadow isolation invariant failed");
-                ProbeTrace.Mark("SHADOW_COMPLETE", "candidates=" + decisions.Count + " original=" + entries.Length + " added=" + added +
-                    " dependencies=" + compared + " issuesBefore=" + before + " issuesAfter=" + after + " originalUnchanged=True");
-                expectedIssues = correction ? after : before;
-                expectedIndex = SelectIndex(original, () => shadow, correction);
-                if (correction && !ReferenceEquals(expectedIndex, shadow)) throw new InvalidOperationException("Prepared index rejected");
-                correctionReady = correction;
-                if (correction) ProbeTrace.Mark("CORRECTION_PREPARED", "original=" + entries.Length + " effective=" + shadow.Count + " added=" + added + " expectedIssues=" + after);
+                bool enabled = correction && activation != null && activation.CanCorrect();
+                expectedIssues = enabled ? after : before;
+                expectedIndex = SelectIndex(original, () => shadow, enabled);
+                if (enabled && !ReferenceEquals(expectedIndex, shadow)) throw new InvalidOperationException("Prepared index rejected");
                 return expectedIndex;
             }
             catch (Exception ex)
             {
                 expectedIndex = originalObject;
                 expectedIssues = -1;
-                ProbeTrace.Mark("ERROR", "Shadow " + ex);
-                if (correction) ProbeTrace.Mark("CORRECTION_FALLBACK", "original index retained");
+                ProbeTrace.Error("Shadow " + ex);
                 return originalObject;
             }
         }
@@ -124,28 +109,18 @@ namespace APIShared.DependencyBootstrap
             try
             {
                 if (!ReferenceEquals(effective, expectedIndex)) throw new InvalidOperationException("Effective index differs from prepared index");
-                if (correctionReady) ProbeTrace.Mark("CORRECTION_APPLIED", "effective=" + ((IDictionary)effective).Count);
             }
-            catch (Exception ex) { ProbeTrace.Mark("ERROR", "Index confirmation " + ex); }
+            catch (Exception ex) { ProbeTrace.Error("Index confirmation " + ex); }
         }
         internal static void ObserveResult(object result)
         {
             try
             {
                 var issues = ((IEnumerable)result).Cast<object>().ToArray();
-                foreach (var issue in issues)
-                {
-                    var info = Property(issue, "Info"); var dependency = Property(issue, "Dependency");
-                    ProbeTrace.Mark("ORIGINAL_ISSUE", Line(new Dictionary<string, object> {
-                        {"consumer", Property(info, "GUID")}, {"dependency", Property(dependency, "GUID")},
-                        {"minimum", Property(dependency, "MinimumVersion")}, {"maximum", Property(dependency, "MaximumVersion")}, {"reason", Property(issue, "Reason")} }));
-                }
-                if (expectedIssues < 0 || issues.Length != expectedIssues) throw new InvalidOperationException("Original result differs from forecast");
-                ProbeTrace.Mark("ORIGINAL_RESULT", "issues=" + issues.Length + " expected=" + expectedIssues + " correction=" + correction);
+                if (expectedIssues >= 0 && issues.Length != expectedIssues) throw new InvalidOperationException("Original result differs from forecast");
             }
-            catch (Exception ex) { ProbeTrace.Mark("ERROR", "Original result " + ex); }
+            catch (Exception ex) { ProbeTrace.Error("Original result " + ex); }
         }
-        private static string Line(object value) => APIShared.Internal.DependencyFreeJson.Serialize(value).Replace("\r", "").Replace("\n", "");
         private static string ValidateCandidate(MethodInfo reader, string directory)
         {
             object candidate = reader.Invoke(null, new object[] { directory });

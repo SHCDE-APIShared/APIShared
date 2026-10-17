@@ -15,6 +15,7 @@
     <Reference Include="MonoMod.RuntimeDetour"><HintPath>$(GameDir)\BepInEx\core\MonoMod.RuntimeDetour.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="MonoMod.Utils"><HintPath>$(GameDir)\BepInEx\core\MonoMod.Utils.dll</HintPath><Private>false</Private></Reference>
     
+    <Compile Include="..\..\bootstrap\src\Package\PairActivation.cs" />
     <Compile Include="..\..\bootstrap\src\DependencyCorrection\ShadowInventory.cs" />
     <Compile Include="..\..\bootstrap\src\DependencyCorrection\ShadowRuntime.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs"><Link>Shared\DependencyFreeJson.cs</Link></Compile>
@@ -23,8 +24,8 @@
     <Compile Include="..\..\bootstrap\src\EarlyEntry\DependencyBootstrapPatcher.cs" />
     <Compile Include="..\..\bootstrap\src\DependencyCorrection\HookRuntime.cs" />
     <Compile Include="..\..\bootstrap\src\EarlyEntry\ReadyGate.cs" />
-      <Compile Include="ContractTests.cs" /><Compile Include="PairTests.cs" /><Compile Include="..\..\bootstrap\src\Package\PairContract.cs" />
-      <Compile Include="ShadowTests.cs" />
+    <Compile Include="ContractTests.cs" /><Compile Include="PairTests.cs" /><Compile Include="..\..\bootstrap\src\Package\PairContract.cs" />
+    <Compile Include="ShadowTests.cs" />
     <None Include="App.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

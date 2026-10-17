@@ -30,6 +30,7 @@ namespace APISharedTests
         private IntPtr vanillaContext;
         private Func<int> vanillaReturn = () => VanillaResult;
         private AssassinPathBuilder build;
+        private NativeHookPublicationTests.PublicationFixture publication;
         // Native-like contexts: the generation int lives at +4, as in Vanilla 0xD9C40.
         private IntPtr contextA, contextB;
 
@@ -44,6 +45,10 @@ namespace APISharedTests
             Field("callbackLogged").SetValue(null, 1);
             Field("builderFailureLogged").SetValue(null, 0);
             Field("builderHook").SetValue(null, PublishedVanilla());
+            // This fixture models a fully validated installation, not merely an attached handle.
+            publication = new NativeHookPublicationTests.PublicationFixture(
+                (NativeHookPublicationState)Field("publication").GetValue(null));
+            publication.State.Complete();
             build = (AssassinPathBuilder)Delegate.CreateDelegate(typeof(AssassinPathBuilder),
                 typeof(AssassinPathAPI).GetMethod("Build", PrivateStatic));
         }
@@ -52,6 +57,7 @@ namespace APISharedTests
         public void Restore()
         {
             foreach (string name in Fields) Field(name).SetValue(null, saved[name]);
+            publication?.Dispose();
             Marshal.FreeHGlobal(contextA); Marshal.FreeHGlobal(contextB);
         }
 
@@ -63,6 +69,19 @@ namespace APISharedTests
         }
 
         private static int Generation(IntPtr context) => Marshal.ReadInt32(context, 4);
+
+        [TestMethod]
+        public void FailedPublicationBypassesTheHandlerAndRetainsOneOriginalCall()
+        {
+            int handlers = 0;
+            Handler((context, sx, sy, tx, ty, nodes, continuation) => { handlers++; return 0; });
+            publication.State.Fail(new InvalidOperationException("Fixture publication failed."));
+            Assert.IsFalse(AssassinPathAPI.IsInstalled);
+            Assert.AreEqual(VanillaResult, build(contextA, 1, 2, 3, 4, 100, 0));
+            Assert.AreEqual(1, vanillaCalls);
+            Assert.AreEqual(0, handlers);
+            Assert.AreEqual(0, errors.Count);
+        }
 
         [TestMethod]
         public void AThrowingHandlerGetsTheVanillaResultAndOneLogLine()

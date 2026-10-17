@@ -75,6 +75,7 @@ namespace APIShared
                     Logger,
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
+                new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, Logger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(Logger)));

@@ -28,6 +28,7 @@ namespace APIShared
         private static ManualLogSource log;
         private static bool supported;
         private static HookTransaction transaction;
+        private static readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private static DetourHandle<AssassinAttackNativeContract.UpdateDelegate> hook;
         private static Func<int, bool> guard;
         private static AssassinObstacleCompletionMode completionMode;
@@ -62,6 +63,7 @@ namespace APIShared
                 throw new ArgumentOutOfRangeException(nameof(mode));
             lock (Sync)
             {
+                publication.ThrowIfUnavailable();
                 if (owner != null) throw new InvalidOperationException("Assassin attack guard already belongs to " + owner);
                 bool retargetClaimed = false;
                 try
@@ -80,7 +82,8 @@ namespace APIShared
                 }
                 catch
                 {
-                    if (retargetClaimed) ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinRetarget);
+                    if (retargetClaimed && !publication.HasStarted)
+                        ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinRetarget);
                     throw;
                 }
                 completionMode = mode;
@@ -91,6 +94,7 @@ namespace APIShared
 
         private static void DispatchAssassinUpdate()
         {
+            if (!publication.IsReady) { Volatile.Read(ref hook).Original(); return; }
             try
             {
                 int unitId = *(int*)((byte*)module + 0x9302C4);
@@ -114,7 +118,8 @@ namespace APIShared
 
         private static void EnsureInstalled()
         {
-            if (hook != null) return;
+            publication.ThrowIfUnavailable();
+            if (publication.IsReady) return;
             if (!supported || module == IntPtr.Zero || region == null)
                 throw new InvalidOperationException("Assassin update requires the audited native image.");
             byte[] expected = { 0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10 };
@@ -125,7 +130,6 @@ namespace APIShared
                 reason => new InvalidOperationException(reason));
             var candidate = new DetourHandle<AssassinAttackNativeContract.UpdateDelegate>();
             HookTransaction pending = null;
-            bool installed = false;
             try
             {
                 // InstallOnCommit = false: the handle is attached and published before the patch goes
@@ -138,20 +142,21 @@ namespace APIShared
                 if (!result.IsCompleteSuccess || !candidate.Success)
                     throw new InvalidOperationException("Assassin update transaction failed.");
                 Volatile.Write(ref hook, candidate);
-                NativeHookPublication.Enable(pending, result);
-                AssassinAttackNativeContract.Validate(candidate.Hook, target);
                 transaction = pending;
-                installed = true; // Process lifetime; no reachable teardown.
-                log?.LogInfo("Assassin attack guard installed; APIShared owner, RVA=0x16CD70, Indirect/10, continuation=0x16CD7A.");
+                NativeHookPublication.Enable(pending, result, publication, null,
+                    () => AssassinAttackNativeContract.Validate(candidate.Hook, target));
             }
             catch
             {
-                if (installed) throw;
-                pending?.Dispose(); // Removes the patch of the failed candidate before it is unpublished.
-                Volatile.Write(ref hook, null);
-                ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinAttack);
+                publication.RollbackUnpublished(pending, () =>
+                {
+                    Volatile.Write(ref hook, null);
+                    transaction = null;
+                    ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinAttack);
+                });
                 throw;
             }
+            try { log?.LogInfo("Assassin attack guard installed; APIShared owner, RVA=0x16CD70, Indirect/10, continuation=0x16CD7A."); } catch { }
         }
     }
 }

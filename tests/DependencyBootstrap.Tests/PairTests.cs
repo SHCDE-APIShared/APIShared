@@ -27,9 +27,33 @@ namespace APIShared.DependencyBootstrap
         {
             bool rejected = false; try { action(); } catch { rejected = true; } Check(rejected, name);
         }
-        internal static void Run()
+        internal static void Run(string game)
         {
             string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fixtures", Guid.NewGuid().ToString("N"));
+            try
+            {
+            PairActivation.VerifyPatcherFiles(Path.Combine(game, "BepInEx", "patchers"),
+                Path.Combine(game, "BepInEx", "patchers", "APIShared.DependencyBootstrap.dll")); checks++;
+            string patchers = Path.Combine(root, "patchers");
+            Directory.CreateDirectory(Path.Combine(patchers, "helpers"));
+            string helper = Path.Combine(patchers, "helpers", "native.dll");
+            File.Copy(Path.Combine(game, "BepInEx", "patchers", "SHCDESE.KillSwitch", "blake3_dotnet.dll"), helper);
+            PairActivation.VerifyPatcherFiles(patchers, "unused"); checks++;
+            string candidate = Path.Combine(patchers, "renamed.dll");
+            foreach (string name in new[] { "Unrelated.Helper", "APIShared.DependencyBootstrap", "DependencyBootstrapProbe.Patcher" })
+            {
+                using (var assembly = Mono.Cecil.AssemblyDefinition.CreateAssembly(new Mono.Cecil.AssemblyNameDefinition(name, new Version(1, 0)), name, Mono.Cecil.ModuleKind.Dll))
+                    assembly.Write(candidate);
+                if (name == "Unrelated.Helper") { PairActivation.VerifyPatcherFiles(patchers, "unused"); checks++; }
+                else Reject(() => PairActivation.VerifyPatcherFiles(patchers, "unused"), "renamed competitor " + name);
+            }
+            File.WriteAllText(candidate, "broken image");
+            Reject(() => PairActivation.VerifyPatcherFiles(patchers, "unused"), "malformed DLL does not bypass ownership");
+            File.Delete(candidate);
+            using (var locked = new FileStream(helper, FileMode.Open, FileAccess.Read, FileShare.None))
+                Reject(() => PairActivation.VerifyPatcherFiles(patchers, "unused"), "unreadable DLL rejects ownership");
+            File.Copy(helper, Path.Combine(patchers, "APIShared.DependencyBootstrap.dll"));
+            Reject(() => PairActivation.VerifyPatcherFiles(patchers, "unused"), "native image at bootstrap path rejected");
             string a = Path.Combine(root, "a"), b = Path.Combine(root, "b"), live = Path.Combine(root, "live");
             foreach (string revision in new[] { a, b })
             {
@@ -73,7 +97,30 @@ namespace APIShared.DependencyBootstrap
             Install(a, live); Copy(b, live, PairContract.RuntimePath);
             Check(!pair.MatchesSelected("APIShared_Serp", "1.2.3", PairContract.SafePath(live, PairContract.RuntimePath)), "change after initial validation");
             Install(b, live); Check(Valid(live), "manual complete repair");
-            Console.WriteLine("PASS: " + checks + " actual pair-contract cases; fixtures " + root);
+            Install(a, live);
+            pair = PairContract.Read(live);
+            bool ownerFails = false;
+            var activation = new PairActivation(pair, () => { if (ownerFails) throw new IOException("ownership unavailable"); });
+            var winner = new ShadowPlugin { Guid = "APIShared_Serp", Version = "1.2.3", Path = PairContract.SafePath(live, PairContract.RuntimePath) };
+            Check(!activation.CanCorrect(), "unbound activation rejected");
+            Check(activation.Bind(new[] { winner }) && activation.CanCorrect(), "selected activation accepted");
+            ownerFails = true;
+            Check(!activation.CanCorrect(), "late owner exception rejected");
+            ownerFails = false;
+            Check(!activation.CanCorrect(), "rejection remains inactive without rebinding");
+            Check(!activation.Bind(new[] { winner, winner }), "ambiguous owner rejected");
+            Check(activation.Bind(new[] { winner }), "valid owner can be explicitly bound");
+            File.AppendAllText(PairContract.SafePath(live, PairContract.ManifestPath), " ");
+            Check(!activation.CanCorrect(), "manifest changed after binding rejected");
+            Install(a, live);
+            activation = new PairActivation(PairContract.Read(live), () => { });
+            Check(activation.Bind(new[] { winner }), "fresh pair binds");
+            Copy(b, live, PairContract.RuntimePath);
+            var original = new System.Collections.Hashtable();
+            Check(ReferenceEquals(original, ShadowRuntime.SelectIndex(original, () => { throw new Exception("must not prepare"); }, activation.CanCorrect())), "late changed runtime keeps original index");
+            Console.WriteLine("PASS: " + checks + " actual pair-contract cases, including installed native helper and renamed competitors");
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         }
     }
 }

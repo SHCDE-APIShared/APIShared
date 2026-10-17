@@ -143,6 +143,8 @@ namespace APIShared.DependencyBootstrap
         }
         private static bool ValidAssetMode(object mode)
         {
+            // The internal JSON parser represents small integral values as Int32.
+            if (mode is int small) return small == 0 || small == 1;
             if (mode is long numeric) return numeric == 0 || numeric == 1;
             if (!(mode is string text)) return false;
             // The SE enum uses JsonStringEnumConverter (case-insensitive names, numeric strings accepted).

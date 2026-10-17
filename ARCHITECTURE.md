@@ -252,6 +252,10 @@ public capabilities and gameplay services. Fixes must validate the affected bina
 and method contracts, preserve foreign-mod callbacks, and fail closed independently
 of other APIShared services. No consumer registration or author-specific mod is required.
 
+The popularity display correction uses the existing GuiChecks Post publisher and
+mission lifecycle, with detached report calculations and reusable SE-value snapshots.
+Consumer settings and override ownership remain outside APIShared.
+
 The UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with
 SHCDE-SE 2.14.1. The configuration and compatibility limits are documented in the
 [integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes). Permanent

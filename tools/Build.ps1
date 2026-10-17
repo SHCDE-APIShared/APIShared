@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([int]$NoInstall = 0)
+param([int]$NoInstall = 0, [switch]$WorkspaceBuild)
 $ErrorActionPreference = 'Stop'
 $buildWatch = [Diagnostics.Stopwatch]::StartNew()
 Write-Host '[Build] APIShared: checking toolchain and installed game references...'
@@ -49,10 +49,12 @@ try {
     if (Test-Path -LiteralPath $proofPath) { Remove-Item -LiteralPath $proofPath }
     if ($NoInstall -eq 0 -and (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue)) { throw 'Close the game before installation.' }
     Write-Host '[Build] Validating runtime, XAML, native hooks and real interop contracts...'
+    Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkspaceBuild.ps1'))
     & (Join-Path $root 'tools/Validation/Test-DependencyBootstrap.ps1') -GameDir $game -MSBuild $msbuild
     & (Join-Path $root 'tools\Validation\Test-Standalone.ps1') -GameDir $game -ExtenderDir $extender
+    & (Join-Path $root 'tools/Validation/Verify-PopularityContracts.ps1') -GameDir $game -ExtenderDir $extender
     $results = Join-Path $root '.local\test-results'
-    foreach ($project in @('Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
+    foreach ($project in @('PopularityDisplay.Tests\PopularityDisplay.Tests.csproj','Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
         Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests\' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
     }
     Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
@@ -72,7 +74,8 @@ try {
     if (Test-Path -LiteralPath $packagePatches) { Remove-Item -LiteralPath $packagePatches -Recurse -Force }
     Copy-Item -LiteralPath (Join-Path $root 'info.json') -Destination $package
     Copy-Item -LiteralPath (Join-Path $root 'Patches') -Destination $package -Recurse -Force
-    & (Join-Path $root 'tools/WorkshopUploader/build.bat') /nopause
+    if ($WorkspaceBuild) { & (Join-Path $root 'tools/WorkshopUploader/build.bat') /workspace /nopause }
+    else { & (Join-Path $root 'tools/WorkshopUploader/build.bat') /nopause }
     if ($LASTEXITCODE -ne 0) { throw 'Publisher build failed.' }
     . (Join-Path $PSScriptRoot 'PublisherPackage.ps1')
     Sync-ApiPublisherPackage $root
@@ -91,7 +94,6 @@ try {
     $null = New-ApiWorkshopInventory -Directory $package
     Write-ApiBuildProof $root $game $extender $msbuild $inputState
     if ($NoInstall -ne 0) { Write-Host ('APIShared built and tested successfully in {0:N1}s; installation skipped.' -f $buildWatch.Elapsed.TotalSeconds); exit 0 }
-    throw 'Dependency bootstrap is development-only; use /noinstall until its game and lifecycle acceptance.'
     if (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue) { throw 'The game started during the build; close it before installing.' }
     $destination = Join-Path $game 'BepInEx\plugins\APIShared_Serp'
     # Always install the separate plugin. Workshop migration owns historical
@@ -108,6 +110,11 @@ try {
     foreach ($item in Get-ChildItem -LiteralPath $package -Force) {
         Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force
     }
+    if ($destination -ieq [IO.Path]::GetFullPath((Join-Path $game 'BepInEx/plugins/APIShared_Serp'))) {
+        Complete-ApiBootstrapInstallation -Root $root -GameDir $game
+    } else {
+        Write-Host 'Dependency bootstrap: alternate plugin layout retained; bootstrap deployment is not part of this layout.'
+    }
     $toolSource = Join-Path $root 'BepInEx/tools/APISharedWorkshopPublisher'
     $toolTarget = Join-Path $game 'BepInEx/tools/APISharedWorkshopPublisher'
     Assert-ApiPublisherPackage $toolSource (Join-Path $root '.local/WorkshopUploader')
@@ -115,6 +122,6 @@ try {
     [void][IO.Directory]::CreateDirectory($toolTarget)
     Assert-ApiWorkshopUnlinkedTree $toolTarget
     foreach ($file in Get-ChildItem -LiteralPath $toolSource -File) { Copy-Item -LiteralPath $file.FullName -Destination $toolTarget -Force }
-    Assert-ApiPublisherPackage $toolTarget $toolSource
+    Assert-ApiPublisherPackage $toolTarget $toolSource -Installed
     Write-Host ('APIShared built, tested and installed successfully in {0:N1}s.' -f $buildWatch.Elapsed.TotalSeconds)
 } catch { Write-Error $_; exit 1 }

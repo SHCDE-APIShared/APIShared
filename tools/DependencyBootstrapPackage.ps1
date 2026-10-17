@@ -63,3 +63,17 @@ function Copy-ApiBootstrapPayload([string]$Root,[string]$Stage) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))|Out-Null
     Copy-Item -LiteralPath (Join-Path $Root 'BepInEx/patchers/APIShared.DependencyBootstrap.dll') -Destination $target -Force
 }
+function Complete-ApiBootstrapInstallation([string]$Root,[string]$GameDir,[switch]$NoInstall) {
+    Assert-ApiBootstrapPair $Root
+    if ($NoInstall) { return }
+    # The runtime and pair manifest are copied by the regular plugin installer.
+    # Validate their identity before touching the shared patcher directory.
+    foreach ($name in @('APIShared.dll','dependency-bootstrap-pair.json','info.json')) {
+        $relative='BepInEx/plugins/APIShared_Serp/'+$name
+        $source=Join-Path $Root $relative; $target=Join-Path $GameDir $relative
+        Assert-ApiWorkshopUnlinkedPath $target
+        if ((Get-WorkshopFileHash $source) -cne (Get-WorkshopFileHash $target)) { throw 'Installed runtime package differs from the prepared bootstrap pair.' }
+    }
+    Copy-ApiBootstrapPayload $Root $GameDir
+    Assert-ApiBootstrapPair $GameDir
+}

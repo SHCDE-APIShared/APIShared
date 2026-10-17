@@ -41,17 +41,7 @@ namespace APIShared.Compatibility
                 }
                 Require(fixes.Instance != null, "Fixes plugin did not finish synchronous initialization");
                 Assembly fixesAssembly = fixes.Instance.GetType().Assembly;
-                VerifyAssembly(fixesAssembly, "6A4ED4F492812BDA9342766AC432954F483732CC864C4CAAD67F9172A4F9E5BA");
-                VerifyAssembly(typeof(Chainloader).Assembly, "8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70");
-                VerifyAssembly(typeof(EngineInterface).Assembly, "BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789");
-                VerifyAssembly(typeof(UnityEngine.Application).Assembly, "E468E19789D608B41E2C7FE4F367C7082FECE7D1883F568E75870F6C5384CC86");
-                VerifyAssembly(typeof(X64InlineHook).Assembly, "E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB");
-                VerifyAssembly(typeof(HookHandle<X64InlineHook>).Assembly, "339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E");
-                VerifyAssembly(typeof(NativeFlagArray).Assembly, "EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F");
-                VerifyAssembly(typeof(Iced.Intel.Assembler).Assembly, "CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F");
-                VerifyAssembly(typeof(SHCDESE.API.LowLevel.CrusaderLibrary).Assembly, "E5D78FDF2EA9701336C398F7D29410F206D141FC01AA8099F30C824E6AB8A0B3");
-                VerifyFile(Path.Combine(Paths.BepInExRootPath, "core", "BepInEx.Preloader.dll"),
-                    "55D3895351A9D16B63B6F35F1C01B44AC650979E853D0BD3A442B92A082AF64F");
+                VerifyBinaries(fixesAssembly);
                 RequireStartup();
 
                 FieldInfo lockField = typeof(EngineInterface).GetField("threadLock", StaticFields);
@@ -85,6 +75,9 @@ namespace APIShared.Compatibility
                 ReferenceEquals(own.Instance, null), "APIShared is not inside its initial AddComponent/Awake");
 
             int chain = -1, entry = -1, awake = -1;
+            MethodInfo chainloaderStart = typeof(Chainloader).GetMethod("Start", BindingFlags.Public | BindingFlags.Static);
+            Require(chainloaderStart != null, "Chainloader.Start contract unavailable");
+            MethodBase activeChainloaderBody = StartupMethodIdentity.ActiveBody(chainloaderStart);
             StackFrame[] frames = new StackTrace(false).GetFrames();
             Require(frames != null, "Startup stack unavailable");
             for (int i = 0; i < frames.Length; i++)
@@ -92,7 +85,7 @@ namespace APIShared.Compatibility
                 MethodBase method = frames[i].GetMethod();
                 if (method == null) continue;
                 if (method.DeclaringType == typeof(APISharedPlugin) && method.Name == "Awake") awake = i;
-                if (method.DeclaringType == typeof(Chainloader) && method.Name == "Start")
+                if (StartupMethodIdentity.Matches(method, chainloaderStart, activeChainloaderBody))
                 {
                     Require(chain == -1, "Reentrant Chainloader.Start");
                     chain = i;
@@ -103,11 +96,17 @@ namespace APIShared.Compatibility
             // therefore the lock alone cannot authorize a correction after game initialization.
             FieldInfo director = typeof(Director).GetField("instance", StaticFields);
             FieldInfo map = typeof(GameMap).GetField("instance", StaticFields);
+            bool initialized = ReadBoolean(typeof(Chainloader), "_initialized");
+            bool loaded = ReadBoolean(typeof(Chainloader), "_loaded");
+            bool ownAbsent = ReferenceEquals(own.Instance, null);
+            bool directorAbsent = director != null && ReferenceEquals(director.GetValue(null), null);
+            bool mapAbsent = map != null && ReferenceEquals(map.GetValue(null), null);
             Require(director != null && map != null && FixesWheatContract.IsStartup(
-                ReadBoolean(typeof(Chainloader), "_initialized"), ReadBoolean(typeof(Chainloader), "_loaded"),
-                ReferenceEquals(own.Instance, null), awake, chain, entry,
-                ReferenceEquals(director.GetValue(null), null), ReferenceEquals(map.GetValue(null), null)),
-                "Not the audited pre-game Application..cctor -> Chainloader.Start -> Awake context");
+                initialized, loaded, ownAbsent, awake, chain, entry, directorAbsent, mapAbsent),
+                "Not the audited pre-game Application..cctor -> Chainloader.Start -> Awake context" +
+                "; initialized=" + initialized + "; loaded=" + loaded + "; ownAbsent=" + ownAbsent +
+                "; frames Awake/Chainloader/Application=" + awake + "/" + chain + "/" + entry +
+                "; directorAbsent=" + directorAbsent + "; mapAbsent=" + mapAbsent + "; stack=" + new StackTrace(false));
         }
 
         private static void CorrectUnderLock(Assembly fixesAssembly, ManualLogSource log)
@@ -180,13 +179,39 @@ namespace APIShared.Compatibility
             return (bool)field.GetValue(null);
         }
 
-        private static void VerifyAssembly(Assembly assembly, string hash)
+        // Pure identity preflight, also exercised against installed files by integration tests.
+        internal static void VerifyBinaries(Assembly fixesAssembly)
         {
-            Require(!assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location), "Assembly location unavailable");
-            VerifyFile(assembly.Location, hash);
-            // Reject a different on-disk assembly masquerading as the loaded module.
-            using (var disk = Mono.Cecil.AssemblyDefinition.ReadAssembly(assembly.Location))
-                Require(disk.MainModule.Mvid == assembly.ManifestModule.ModuleVersionId, "Loaded/disk module identity differs");
+            // Fixes and SE versions are not safety boundaries. Validate their loaded
+            // provenance here and their full actual native hook contract below.
+            Internal.InstalledAssemblyIdentity.VerifyModule(fixesAssembly, fixesAssembly.Location);
+            VerifyAssembly(typeof(Chainloader).Assembly, "8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70");
+            VerifyAssembly(typeof(EngineInterface).Assembly, "BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789");
+            VerifyAssembly(typeof(UnityEngine.Application).Assembly, "E468E19789D608B41E2C7FE4F367C7082FECE7D1883F568E75870F6C5384CC86");
+            VerifyAssembly(typeof(X64InlineHook).Assembly, "E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB");
+            VerifyAssembly(typeof(HookHandle<X64InlineHook>).Assembly, "339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E");
+            VerifyAssembly(typeof(NativeFlagArray).Assembly, "EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F");
+            VerifyAssembly(typeof(Iced.Intel.Assembler).Assembly, "CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F");
+            Assembly extender = typeof(SHCDESE.API.LowLevel.CrusaderLibrary).Assembly;
+            Internal.InstalledAssemblyIdentity.VerifyModule(extender, extender.Location);
+            // These backend pins protect the private map/handle semantics used by
+            // StartupMethodIdentity, independently of the optional mod's version.
+            VerifyAssembly(typeof(MonoMod.RuntimeDetour.ILHook).Assembly,
+                "40E49BB314391CD7BDDC2644F8553EEBA92C194B940836B103DF16955C464E0C");
+            VerifyAssembly(typeof(MonoMod.Utils.DynamicMethodDefinition).Assembly,
+                "9D1495F147AC93C4F81F84538C1A326E8F8A6AEFC78D6289D798F3CE1162C5E9");
+            VerifyFile(Path.Combine(Paths.BepInExRootPath, "core", "BepInEx.Preloader.dll"),
+                "55D3895351A9D16B63B6F35F1C01B44AC650979E853D0BD3A442B92A082AF64F");
+        }
+
+        private static void VerifyAssembly(Assembly assembly, params string[] hashes)
+        {
+            string path = assembly == typeof(EngineInterface).Assembly
+                ? Internal.InstalledAssemblyIdentity.GameAssemblyPath(Paths.GameRootPath)
+                : assembly == typeof(UnityEngine.Application).Assembly
+                ? Internal.InstalledAssemblyIdentity.UnityCoreAssemblyPath(Paths.GameRootPath)
+                : assembly.Location;
+            Internal.InstalledAssemblyIdentity.Verify(assembly, path, hashes);
         }
 
         private static void VerifyFile(string path, string expected)

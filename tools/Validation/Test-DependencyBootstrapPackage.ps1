@@ -16,6 +16,19 @@ Write-TestFile (Join-Path $plugin 'APIShared.dll') 'runtime fixture'
 Write-TestFile (Join-Path $plugin 'info.json') '{"GUID":"APIShared_Serp","Version":"1.2.3"}'
 Write-TestFile (Join-Path $stage 'BepInEx/patchers/APIShared.DependencyBootstrap.dll') 'bootstrap fixture'
 New-ApiBootstrapPair $stage
+$install=Join-Path $fixture 'install'
+Complete-ApiBootstrapInstallation -Root $stage -GameDir $install -NoInstall
+Check (-not (Test-Path -LiteralPath $install)) 'NoInstall creates no installation files'
+$installedPlugin=Join-Path $install 'BepInEx/plugins/APIShared_Serp'
+[IO.Directory]::CreateDirectory($installedPlugin)|Out-Null
+Copy-Item -LiteralPath (Join-Path $plugin 'APIShared.dll'),(Join-Path $plugin 'info.json'),(Join-Path $plugin 'dependency-bootstrap-pair.json') -Destination $installedPlugin
+$foreignInstall=Join-Path $install 'BepInEx/patchers/Unrelated.dll'
+Write-TestFile $foreignInstall 'preserve foreign patcher'
+Complete-ApiBootstrapInstallation -Root $stage -GameDir $install
+Assert-ApiBootstrapPair $install
+Check ([IO.File]::ReadAllText($foreignInstall) -ceq 'preserve foreign patcher') 'complete installation preserves unrelated patcher'
+Write-TestFile (Join-Path $installedPlugin 'APIShared.dll') 'different runtime'
+Reject {Complete-ApiBootstrapInstallation -Root $stage -GameDir $install} 'mixed runtime rejected before bootstrap copy'
 $null=New-ApiWorkshopInventory $plugin
 $tools=Join-Path $stage 'BepInEx/tools/APISharedWorkshopPublisher'
 $files=@(foreach($name in Get-ApiPublisherNames){$path=Join-Path $tools $name;Write-TestFile $path 'publisher fixture';[ordered]@{Path=$name;Sha256=Get-WorkshopFileHash $path}})

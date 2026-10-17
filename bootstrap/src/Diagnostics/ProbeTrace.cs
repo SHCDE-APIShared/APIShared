@@ -1,44 +1,28 @@
 using System;
 using System.Globalization;
-using System.IO;
-using System.Text;
 using BepInEx.Logging;
 
 namespace APIShared.DependencyBootstrap
 {
+    // Diagnostics must never affect loader behavior. No separate files or startup traces.
     internal static class ProbeTrace
     {
-        private static readonly object gate = new object();
         private static ManualLogSource log;
         internal static void Initialize()
         {
-            WriteFile("SESSION", "id=" + Guid.NewGuid().ToString("N"));
-            log = Logger.CreateLogSource("APIShared.DependencyBootstrap");
+            try { if (log == null) log = Logger.CreateLogSource("APIShared.DependencyBootstrap"); }
+            catch { }
         }
-        internal static void Mark(string marker, string detail)
-        {
-            // Write before BepInEx logging: its log file may not exist yet.
-            WriteFile(marker, detail);
-            try { log?.LogInfo(Line(marker, detail)); } catch { }
-        }
-        internal static void WriteFile(string marker, string detail)
+        internal static void Warning(string detail) => Write(LogLevel.Warning, detail);
+        internal static void Error(string detail) => Write(LogLevel.Error, detail);
+        private static void Write(LogLevel level, string detail)
         {
             try
             {
-                lock (gate)
-                {
-                    string path = Path.Combine(BepInEx.Paths.BepInExRootPath, "APIShared.DependencyBootstrap.trace.log");
-                    using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
-                    using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
-                    {
-                        writer.WriteLine(Line(marker, detail));
-                        writer.Flush();
-                        stream.Flush(true);
-                    }
-                }
+                Initialize();
+                log?.Log(level, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + detail);
             }
-            catch { /* Never interrupt the game for diagnostic I/O. Missing evidence cannot pass validation. */ }
+            catch { }
         }
-        private static string Line(string marker, string detail) => DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " [ASDB:" + marker + "] " + detail;
     }
 }

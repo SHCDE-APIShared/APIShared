@@ -1,4 +1,4 @@
-# Build orchestration only. Runtime/project inputs always come from the selected commit.
+# Build orchestration: explicit source selection wins; automated default is the working tree.
 $ErrorActionPreference = 'Stop'
 function Write-BranchMessage([string]$Message) {
     Write-Host ('[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}' -f [DateTime]::Now, $Message)
@@ -27,6 +27,13 @@ function Assert-BranchUnlinkedPath([string]$Path) {
     }
 }
 function Get-BranchChoice([string[]]$DriverArguments) {
+    $working = $DriverArguments -icontains '/workspace' -or $DriverArguments -icontains '/source:working'
+    if (@($DriverArguments | Where-Object { $_ -match '^/source:' -and $_ -ine '/source:working' }).Count) { throw 'Supported source override: /source:working.' }
+    if ($working) {
+        if (@($DriverArguments | Where-Object { $_ -match '^/branch(?::|$)' }).Count) { throw 'Working sources and a branch commit cannot be selected together.' }
+        Write-BranchMessage 'Build source: current working tree (explicit selection).'
+        return 'working'
+    }
     $choices = @()
     foreach ($argument in $DriverArguments) {
         if ($argument -match '^/branch:(.+)$') { $choices += $Matches[1].ToLowerInvariant() }
@@ -35,7 +42,7 @@ function Get-BranchChoice([string[]]$DriverArguments) {
     $choices = @($choices | Sort-Object -Unique)
     if ($choices.Count -gt 1) { throw 'Conflicting /branch arguments.' }
     if ($choices.Count -eq 0) {
-        if ($DriverArguments -icontains '/nopause') { throw 'Automated builds require /branch:main or /branch:develop.' }
+        if ($DriverArguments -icontains '/nopause') { Write-BranchMessage 'Build source: current working tree (automated default; no source selected).'; return 'working' }
         Write-Host '1: main (release installation)'
         Write-Host '2: develop (separate _dev installation)'
         $answer = Read-Host 'Branch [1/main or 2/develop; empty cancels]'

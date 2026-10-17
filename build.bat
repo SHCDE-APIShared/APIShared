@@ -1,5 +1,21 @@
 @echo off
 setlocal EnableExtensions
+rem Source selection and installation are independent choices.
+set "API_WORKSPACE=0"
+set "API_BRANCH_ARG=0"
+for %%A in (%*) do (
+  if /I "%%~A"=="/workspace" set "API_WORKSPACE=1"
+  if /I "%%~A"=="/source:working" set "API_WORKSPACE=1"
+  for /f "tokens=1 delims=:" %%B in ("%%~A") do if /I "%%B"=="/branch" set "API_BRANCH_ARG=1"
+)
+if "%API_WORKSPACE%"=="1" (
+  if "%API_BRANCH_ARG%"=="1" (
+    echo ERROR: /workspace cannot select a committed branch.
+    goto :workspace_invalid
+  )
+  echo Build source: current working tree; /noinstall independently controls installation.
+  goto :shcde_branch_selected
+)
 rem SHCDE_BRANCH_DISPATCH: select committed sources; the selected child owns its build.
 if defined SHCDE_BRANCH_SOURCE_ROOT goto :shcde_branch_selected
 if defined SHCDE_BRANCH_PINNED goto :shcde_branch_selected
@@ -36,9 +52,17 @@ exit /b 1
 setlocal EnableExtensions
 set "NO_PAUSE=0"
 set "NO_INSTALL=0"
+set "WORKSPACE_BUILD="
+for %%A in (%*) do (
+  if /I "%%~A"=="/workspace" set "WORKSPACE_BUILD=-WorkspaceBuild"
+  if /I "%%~A"=="/source:working" set "WORKSPACE_BUILD=-WorkspaceBuild"
+)
 for %%A in (%*) do if /I "%%~A"=="/nopause" set "NO_PAUSE=1"
 for %%A in (%*) do if /I "%%~A"=="/noinstall" set "NO_INSTALL=1"
 echo [%date% %time%] PowerShell checks / build step
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Build.ps1" -NoInstall %NO_INSTALL%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Build.ps1" -NoInstall %NO_INSTALL% %WORKSPACE_BUILD%
 set "RESULT=%ERRORLEVEL%"
 exit /b %RESULT%
+
+:workspace_invalid
+exit /b 1

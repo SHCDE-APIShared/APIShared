@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
-using Mono.Cecil;
 
 namespace APIShared.DependencyBootstrap
 {
@@ -48,6 +46,16 @@ namespace APIShared.DependencyBootstrap
             File.WriteAllText(manifest, "{\"GUID\":\"a\",\"Version\":\"2.0\"}"); expect("Excluded", "mismatched version");
             a = Plugin(root, "a");
             File.WriteAllText(manifest, "{\"GUID\":\"a\",\"Version\":\"1.0\",\"AssetMode\":\"Local\"}"); expect("Eligible", "string AssetMode");
+            foreach (string mode in new[] { "0", "1", "\"0\"", "\"1\"", "\"global\"", "\"local\"" })
+            {
+                File.WriteAllText(manifest, "{\"GUID\":\"a\",\"Version\":\"1.0\",\"AssetMode\":" + mode + "}");
+                expect("Eligible", "valid AssetMode " + mode);
+            }
+            foreach (string mode in new[] { "-1", "1.5", "true", "null", "2147483648", "\"unknown\"" })
+            {
+                File.WriteAllText(manifest, "{\"GUID\":\"a\",\"Version\":\"1.0\",\"AssetMode\":" + mode + "}");
+                expect("Excluded", "invalid AssetMode " + mode);
+            }
             File.WriteAllText(manifest, "{\"GUID\":\"a\",\"Version\":\"1.0\",\"AssetMode\":2}"); expect("Excluded", "unknown AssetMode");
             a = Plugin(root, "a");
             accepted = _ => "blocked by SE"; expect("Excluded", "KillSwitch/source rejection"); accepted = _ => null;
@@ -94,7 +102,6 @@ namespace APIShared.DependencyBootstrap
             File.WriteAllText(Path.Combine(directory, "info.json"), "{\"GUID\":\"" + guid + "\",\"Version\":\"1.0\"}");
             return new ShadowPlugin { Guid = guid, Version = "1.0", Path = Path.Combine(directory, "plugin.dll") };
         }
-        private static object CecilMetadata(Type attribute, TypeDefinition type) => attribute.GetMethod("FromCecilType", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { type });
         internal static void CompareExtender(Type manager)
         {
             var parse = manager.GetMethod("TryParseModVersion", BindingFlags.Static | BindingFlags.NonPublic);
@@ -125,68 +132,6 @@ namespace APIShared.DependencyBootstrap
                 Require(actual == (ShadowInventory.Issue(new ShadowDependency { Guid = "P", Minimum = minimum, Maximum = maximum }, plain) != null), "SE bounds differential");
             }
             Console.WriteLine("PASS: real SE version parser and 75 dependency comparisons agree; compatibility method never executed.");
-        }
-        internal static void Offline(string game, string trace, string output)
-        {
-            var lines = File.ReadAllLines(trace);
-            int start = Array.FindLastIndex(lines, l => l.Contains("[DBP:SESSION]"));
-            if (start < 0) throw new Exception("No session");
-            var winners = new List<ShadowPlugin>();
-            var hashes = new List<object>();
-            using (var resolver = new DefaultAssemblyResolver())
-            {
-                resolver.AddSearchDirectory(Path.Combine(game, "BepInEx/core"));
-                resolver.AddSearchDirectory(Path.Combine(game, "Stronghold Crusader Definitive Edition_Data/Managed"));
-                var selected = lines.Skip(start).Select(l => Regex.Match(l, @"\[DBP:WINNER\] guid=(\S+) version=(\S+) path=(.*)$")).Where(m => m.Success).ToArray();
-                foreach (var match in selected) resolver.AddSearchDirectory(Path.GetDirectoryName(match.Groups[3].Value));
-                foreach (var match in selected)
-                {
-                    string guid = match.Groups[1].Value, version = match.Groups[2].Value, path = match.Groups[3].Value;
-                    var plugin = new ShadowPlugin { Guid = guid, Version = version, Path = path };
-                    winners.Add(plugin);
-                    try
-                    {
-                        using (var assembly = AssemblyDefinition.ReadAssembly(path, new ReaderParameters { AssemblyResolver = resolver }))
-                        {
-                            var matches = assembly.MainModule.GetTypes().Select(t => new { Type = t, Meta = (BepInEx.BepInPlugin)CecilMetadata(typeof(BepInEx.BepInPlugin), t) })
-                                .Where(t => t.Meta != null && t.Meta.GUID == guid && t.Meta.Version.ToString() == version).ToArray();
-                            if (matches.Length != 1) throw new Exception("recorded winner does not match exactly one current metadata type");
-                            var type = matches[0].Type;
-                            foreach (var dep in (IEnumerable<BepInEx.BepInDependency>)CecilMetadata(typeof(BepInEx.BepInDependency), type))
-                                plugin.Dependencies.Add(new ShadowDependency { Guid = dep.DependencyGUID, Minimum = dep.MinimumVersion.ToString(), Hard = (dep.Flags & BepInEx.BepInDependency.DependencyFlags.HardDependency) != 0 });
-                            plugin.Processes.AddRange(((IEnumerable<BepInEx.BepInProcess>)CecilMetadata(typeof(BepInEx.BepInProcess), type)).Select(p => p.ProcessName));
-                        }
-                        hashes.Add(new Dictionary<string, object> { { "path", path }, { "sha256", ProbeIdentity.Hash(path) } });
-                    }
-                    catch (Exception ex) { plugin.MetadataError = "offline metadata unresolved: " + ex.GetBaseException().Message; }
-                }
-            }
-            if (winners.Count == 0) throw new Exception("No winners in last session");
-            // This is not a reconstruction of SE discovery: root candidates/packages and live KillSwitch remain unknown.
-            var original = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var result = ShadowInventory.Evaluate(winners, Path.Combine(game, "BepInEx/plugins"), "Stronghold Crusader Definitive Edition", original, new HashSet<string>(), false, null);
-            var rows = result.Select(d => (object)new Dictionary<string, object> { { "guid", d.Plugin.Guid }, { "version", d.Plugin.Version }, { "path", d.Plugin.Path }, { "manifest", d.Manifest }, { "state", d.State }, { "reason", d.Reason } }).ToList();
-            var comparisons = new List<object>();
-            var selectedVersions = winners.ToDictionary(p => p.Guid, p => p.Version, StringComparer.OrdinalIgnoreCase);
-            foreach (var winner in winners)
-            {
-                string manifest = ShadowInventory.FindManifest(winner.Path, Path.Combine(game, "BepInEx/plugins"));
-                if (manifest == null) continue;
-                var json = APIShared.Internal.DependencyFreeJson.Parse(File.ReadAllText(manifest)) as Dictionary<string, object>;
-                if (json == null || !json.TryGetValue("GUID", out var guid) || !Equals(guid, winner.Guid) || !json.TryGetValue("Dependencies", out var dependencies) || !(dependencies is List<object> list)) continue;
-                foreach (var entry in list.OfType<Dictionary<string, object>>())
-                {
-                    entry.TryGetValue("GUID", out var dg); entry.TryGetValue("MinimumVersion", out var min); entry.TryGetValue("MaximumVersion", out var max);
-                    var dep = new ShadowDependency { Guid = dg as string, Minimum = min as string, Maximum = max as string };
-                    string issue = ShadowInventory.Issue(dep, selectedVersions);
-                    comparisons.Add(new Dictionary<string, object> { { "consumer", winner.Guid }, { "dependency", dg }, { "minimum", min }, { "maximum", max }, { "selectedVersionIssue", issue }, { "liveIndexVerified", false } });
-                }
-            }
-            var report = new Dictionary<string, object> { { "session", lines[start] }, { "traceSha256", ProbeIdentity.Hash(trace) },
-                { "limitation", "Current DLL bytes/metadata, recorded winner list; no plugin code executed. Original SE index, KillSwitch and prior failures not observed offline. Manifest dependency presence uses provisional selected versions. No correction is authorized by this report." }, { "binaries", hashes }, { "candidates", rows }, { "dependencyComparisons", comparisons } };
-            File.WriteAllText(output, APIShared.Internal.DependencyFreeJson.Serialize(report));
-            foreach (var d in result) Console.WriteLine(d.Plugin.Guid + ": " + d.State + " - " + d.Reason);
-            Console.WriteLine("Offline report: " + output);
         }
     }
 }

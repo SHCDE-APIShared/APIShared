@@ -5,18 +5,25 @@ function Get-ApiPublisherNames {
         'com.rlabrecque.steamworks.net.dll','ICSharpCode.SharpZipLib.dll','steam_api64.dll',
         'UnityEngine.CoreModule.dll','UnityEngine.SharedInternalsModule.dll')
 }
-function Get-ApiPublisherFiles([string]$Directory) {
-    Assert-ApiWorkshopUnlinkedTree $Directory
+function Get-ApiPublisherFiles([string]$Directory,[switch]$Installed) {
+    Assert-ApiWorkshopUnlinkedPath $Directory
     $names = @(Get-ApiPublisherNames)
-    $actual = @(Get-ChildItem -LiteralPath $Directory -Recurse -File -Force | Where-Object Name -ne 'publisher-files.json')
-    if ($actual.Count -ne $names.Count) { throw 'Incomplete or unexpected publisher contents.' }
-    foreach ($file in $actual) {
-        if ($file.DirectoryName -cne [IO.Path]::GetFullPath($Directory).TrimEnd('\') -or $file.Name -cnotin $names) { throw "Unexpected publisher file: $($file.FullName)" }
+    # Generated payloads own their complete inventory. An installation owns only
+    # its delivered files; unrelated files must neither fail validation nor be removed.
+    if (-not $Installed) {
+        Assert-ApiWorkshopUnlinkedTree $Directory
+        $actual = @(Get-ChildItem -LiteralPath $Directory -Recurse -File -Force | Where-Object Name -ne 'publisher-files.json')
+        if ($actual.Count -ne $names.Count) { throw 'Incomplete or unexpected generated publisher contents.' }
+        foreach ($file in $actual) {
+            if ($file.DirectoryName -cne [IO.Path]::GetFullPath($Directory).TrimEnd('\') -or $file.Name -cnotin $names) { throw "Unexpected publisher payload: $($file.FullName)" }
+        }
     }
+    foreach ($name in $names) { Assert-ApiWorkshopUnlinkedPath (Join-Path $Directory $name) }
     return @($names | ForEach-Object { [pscustomobject]@{ Path=$_; Sha256=(Get-WorkshopFileHash (Join-Path $Directory $_)) } })
 }
-function Assert-ApiPublisherPackage([string]$Directory,[string]$Source) {
-    $actual = @(Get-ApiPublisherFiles $Directory)
+function Assert-ApiPublisherPackage([string]$Directory,[string]$Source,[switch]$Installed) {
+    $actual = @(Get-ApiPublisherFiles $Directory -Installed:$Installed)
+    Assert-ApiWorkshopUnlinkedPath (Join-Path $Directory 'publisher-files.json')
     $record = [IO.File]::ReadAllText((Join-Path $Directory 'publisher-files.json')) | ConvertFrom-Json
     if ($record.SchemaVersion -ne 1 -or $record.Guid -cne 'APISharedWorkshopPublisher' -or @($record.Files).Count -ne $actual.Count) { throw 'Invalid publisher inventory.' }
     foreach ($file in $actual) {

@@ -20,26 +20,18 @@ namespace APIShared.DependencyBootstrap
             {
                 if (listener != null) return;
                 ProbeTrace.Initialize();
-                string identity = ProbeIdentity.Hash(typeof(DependencyBootstrapPatcher).Assembly.Location);
                 mode = File.Exists(Path.Combine(BepInEx.Paths.ConfigPath, "APIShared.DependencyBootstrap.disabled")) ? "Disabled" : "Active";
-                ProbeTrace.Mark("FINISH", "mode=" + mode + " patcher=" + identity);
-                ProbeTrace.Mark(mode == "Disabled" ? "DISABLED" : "MODE", mode);
-                listener = new ReadinessListener(new ReadyGate(OnReady, OnComplete, ProbeTrace.Mark));
+                listener = new ReadinessListener(new ReadyGate(OnReady, () => { }, (marker, detail) => ProbeTrace.Error(detail)));
                 Logger.Listeners.Add(listener);
-                ProbeTrace.Mark("LISTENER_ATTACHED", "no hooks prepared in Finish");
             }
-            catch (Exception ex) { ProbeTrace.Mark("ERROR", "Finish " + ex); }
+            catch (Exception ex) { ProbeTrace.Error("Finish " + ex); }
         }
         private static void OnReady()
         {
-            ProbeTrace.Mark("READY_OBSERVED", "mode=" + mode + "; Initialize has not yet assigned _initialized");
-            if (mode == "Active") InvokeHookRuntime("Install");
-        }
-        private static void OnComplete()
-        {
-            string status = "snapshot=False extender=False checks=0";
-            if (mode == "Active") status = (string)InvokeHookRuntime("GetStatus");
-            ProbeTrace.Mark("CHAIN_COMPLETE", status);
+            // A retained companion is inert after plugin removal. Keep this gate
+            // before runtime resolution, pair reads and any hook preparation.
+            if (mode == "Active" && PairContract.HasRuntimeDirectory(BepInEx.Paths.GameRootPath))
+                InvokeHookRuntime("Install");
         }
         // String-based dispatch deliberately avoids a runtime type token on the early path.
         private static object InvokeHookRuntime(string method)
@@ -54,7 +46,7 @@ namespace APIShared.DependencyBootstrap
             public void LogEvent(object sender, LogEventArgs args)
             {
                 try { gate.Process(args?.Source?.SourceName, args?.Data as string); }
-                catch (Exception ex) { ProbeTrace.Mark("ERROR", "listener " + ex); }
+                catch (Exception ex) { ProbeTrace.Error("listener " + ex); }
             }
             public void Dispose() { /* Process lifetime, no hook teardown. */ }
         }

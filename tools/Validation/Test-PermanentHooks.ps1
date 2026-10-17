@@ -7,6 +7,29 @@ $files = @(Get-ChildItem -LiteralPath (Join-Path $workspace 'src') -Recurse -Fil
 $files += @(Get-ChildItem -LiteralPath (Join-Path $workspace 'bootstrap/src') -Recurse -File -Filter '*.cs')
 
 $errors = [System.Collections.Generic.List[string]]::new()
+# These installers use the shared publication barrier. A catch/validation failure does not imply
+# that executable code is still unpublished; only RollbackUnpublished may dispose a candidate.
+$publicationInstallers = @(
+    'src/Economy/MarketPriceNativeRuntime.cs',
+    'src/Diagnostics/AivBuildStepCapability.cs',
+    'src/Pathfinding/Assassin/AssassinAttackControlAPI.cs',
+    'src/Pathfinding/Assassin/AssassinPathAPI.cs',
+    'src/Pathfinding/GateRoutes/Native/GateRoutingNativeHooks.cs'
+)
+foreach ($relative in $publicationInstallers) {
+    $text = [IO.File]::ReadAllText((Join-Path $workspace $relative))
+    if ($text -match '\.\s*(?:DisableAll|Dispose|Disable)\s*\(') {
+        $errors.Add("${relative}: direct hook teardown bypasses the publication barrier")
+    }
+    if ($text -notmatch '\.RollbackUnpublished\s*\(') {
+        $errors.Add("${relative}: candidate cleanup must use the publication barrier")
+    }
+}
+$publication = [IO.File]::ReadAllText((Join-Path $workspace 'src/Core/Internal/Native/NativeHookPublication.cs'))
+if ($publication -match '\.\s*(?:DisableAll|Disable)\s*\(' -or
+    $publication -notmatch '(?s)void RollbackUnpublished\([^)]*\)\s*\{\s*if \(HasStarted\) return;\s*pending\?\.Dispose\(\);') {
+    $errors.Add('Native hook publication must retain every attempted publication and guard candidate disposal.')
+}
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $workspace 'bootstrap/src') -Recurse -File -Filter '*.cs') {
     $text = [IO.File]::ReadAllText($file.FullName)
     if ($text -match '\b(chainHook|compatibilityHook)\??\.(Dispose|Undo|Apply|Disable|Enable)\s*\(' -or

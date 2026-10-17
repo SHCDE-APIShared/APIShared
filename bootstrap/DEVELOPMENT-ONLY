@@ -1,2 +1,0 @@
-Release gate: the transferred bootstrap has not passed Unity-Mono startup or actual
-installation/update/removal acceptance. Keep this gate until those are reviewed.
