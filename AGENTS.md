@@ -14,6 +14,8 @@ ARCHITECTURE.md for responsibilities, and docs/API_CATALOG.md for existing featu
   maintenance is authorized by the maintainers.
 - Preserve user changes. Do not commit or publish unless requested. Changes to runtime
   behavior need appropriate tests; documentation changes must not conceal behavior fixes.
+- Do not create extra backup copies of Git-tracked files; Git history is sufficient.
+  Uncommitted user changes are not covered by that history and must still be preserved.
 
 Serpens66 and Ensrick are equal maintainers. Either may integrate changes and publish
 releases without approval from the other. Pull-request reviews are advisory. Follow

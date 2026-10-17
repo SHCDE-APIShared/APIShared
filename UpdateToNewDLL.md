@@ -1,5 +1,72 @@
 # Native binary update contracts
 
+## Fixes wheat-sale startup correction
+
+Owner: internal `Compatibility/FixesWheatStartup`; foreign hook ownership stays
+with Fixes. See [startup safety, behavior and test limits](docs/FIXES_COMPATIBILITY.md).
+
+| Audited binary | SHA-256 |
+| --- | --- |
+| CrusaderDE.dll | FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2 |
+| Assembly-CSharp.dll | BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789 |
+| UnityEngine.CoreModule.dll | E468E19789D608B41E2C7FE4F367C7082FECE7D1883F568E75870F6C5384CC86 |
+| fixes.dll (1.26.4.0) | 6A4ED4F492812BDA9342766AC432954F483732CC864C4CAAD67F9172A4F9E5BA |
+| BepInEx.dll | 8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70 |
+| BepInEx.Preloader.dll | 55D3895351A9D16B63B6F35F1C01B44AC650979E853D0BD3A442B92A082AF64F |
+| SHCDESE.dll | E5D78FDF2EA9701336C398F7D29410F206D141FC01AA8099F30C824E6AB8A0B3 |
+| RedBird.Abstractions.dll | 339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E |
+| RedBird.Core.dll | EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F |
+| RedBird.X64.dll | E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB |
+| Iced.dll | CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F |
+
+Seller 0x3EE10 begins `89 54 24 10 48 89 4C 24 08 48 83 EC 58`:
+player EDX saved at entry RSP+0x10, then stack allocation 0x58. Fixes pushes RDX
+and R8, making the correct load displacement 0x10+0x58+8+8 = 0x78.
+The incorrect 0x50 refers to saved caller RDI, not a player argument.
+The native scheduler 0x2AE40 passes the profile in RCX and player in EDX to
+0x3F270; that controller's market/alternation branches tail-jump to purchase
+0x3EC90 or seller 0x3EE10. The seller iterates goods, and the wheat hook precedes
+reserve evaluation and the actual sale at 0x29700. Non-wheat and disabled-flag
+paths retain the original category. Enabled wheat uses category 6 (Resource).
+
+Fixes site 0x3F0C9 displaces 19 bytes, returning to 0x3F0DC:
+`45 8B 9A C4 00 00 00 49 8D 04 38 48 8D 2C 85 00 00 00 00`.
+The installed entry must be `FF 25 00 00 00 00 <stub u64>` plus five NOPs.
+Resolve the stub from the actual `Fixes.Detours.FixesAIDetours` static
+`c_game_ai_sell_item_handler_hook` (HookHandle<X64InlineHook>), not by scanning.
+Its `_originalBytesBackup`, resolved/target address, installed state and
+DisplacedByteCount must agree. `wheatSaleCategoryFlagArray` must be a
+NativeFlagArray of length 9; its Address must match the stub operand.
+
+Full stub layout (hex offsets):
+
+| Offset | Required instruction/data |
+| --- | --- |
+| 00 / 01 | push rdx / push r8 |
+| 03 / 07 | cmp rdi,9 / jne +27 |
+| 09 | mov edx,[rsp+50] or already-correct [rsp+78]; only byte +0C may change |
+| 0D / 0F | push r8 / mov r8,flagArrayAddress (u64 at +11) |
+| 19 / 1E / 20 | cmp byte ptr [r8+rdx],0 / pop r8 / je +27 |
+| 22 | mov ecx,6 |
+| 27 / 29 | pop r8 / pop rdx |
+| 2A..3C | complete original 19-byte instruction sequence |
+| 3D / 43 | FF 25 00 00 00 00 / absolute continuation u64; total 75 bytes |
+
+Scope/search/fallback: exact known module hash plus the exact foreign object and
+complete live bytes; no pattern search, migrated RVA or unknown backend fallback.
+The live Vanilla prolog is also checked, so a foreign seller-entry detour is
+refused. Missing hook with intact original entry needs no correction. Conflicting
+flags/handles, failed/prepared hooks or altered return bytes are refused.
+
+Update checklist: audit BepInEx soft-dependency sorting, AddComponent/Awake and
+_loaded publication; preloader Application..cctor injection; engine private lock
+and all tick/load/editor paths (editor calls are not universally locked); Fixes
+immediate LibraryLoaded installation and process-lived native state; RedBird
+handle, backup, stub generation and entry padding; complete seller/flag dataflow.
+Then update identities, source/byte/behavior tests and real backend/game tests
+together. Do not whitelist a newer version solely by name. No builds or gameplay
+acceptance have been performed for this implementation.
+
 ## Pathfinding table replacements
 
 Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
@@ -141,36 +208,28 @@ patch of up to 14 bytes displaces; re-derive it if that prologue changes.
 Managed contract, not native: Script Extender
 `MapModManager.TryStageModUpdate(string, MapArchive)` returning bool, every return
 intercepted. Consumer behavior: [Workshop package cleanup](docs/WORKSHOP.md#workshop-package-cleanup).
-The only allow-list is `AuditedExtenderHashes` in
-`src/Workshop/WorkshopCleanupRuntime.cs`; `tools/Validation/Verify-WorkshopContracts.ps1`
-reads it from there. Hash is lowercase SHA-256 of `BepInEx/plugins/000shcdese/SHCDESE.dll`.
 
-| SHCDESE.dll SHA-256 | Binary | Source |
-|---|---|---|
-| b170f163e69f7e8f64bda5874d282f4eb5ae5d9d1852e985ed6bef194c80d780 | Official 2.14.1 | GitLab package `shcdese` 2.14.1, SHCDESE.zip 9c3edd3b9dc101b080b4467ed4bb44a373ed0639f6a5717a3593b418c39895c6; built from db7415d5, parent of tag v2.14.1 |
-| ef943914b24cf1eec313ff427e9f34f7cbe8711d1437bc106ab853e4638dea9b | Official 2.14.0 | GitLab package `shcdese` 2.14.0, SHCDESE.zip 9566e10b865f7a23d8fa8dfb572be7f1f729cb18b10fd2d820714c5ba420b34a; built from 6ff6b7f4, parent of tag v2.14.0 |
-| e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3 | Local build | Tag v2.14.1, commit 5908e1f |
+Compatibility depends on the loaded nonpublic instance method, its exact signature,
+managed body and return sites, followed by dry IL transformation and compilation.
+Neither runtime installation nor build validation uses an exact SE version or a
+whole-assembly hash allow-list. Only the declared minimum SE version is required.
+A failed technical check leaves this optional callback uninstalled and logs its
+specific reason; independent services remain available.
 
-The ProductVersion suffix names the source commit. 5908e1f differs from db7415d5
-only in CHANGELOG.md, and from 6ff6b7f4 only in CHANGELOG.md and
-`Detours/BulkUnitDetours.cs`, so `MapModManager` and the staging code are the same
-source in all three.
+When updating the Extender:
 
-Version numbers never authorize a binary. To add one:
+1. Review changes to `MapModManager`, `MapArchive`, `ModInfo` and staging/updater
+   semantics: the bool result, `_SE/.staging/BepInEx/plugins/<GUID>` and
+   `_SE/.staging/delete_list.txt` applied after exit and before staged files copy.
+2. Run `Verify-WorkshopContracts.ps1 -GameDir <game> -ExtenderDir <extender>`
+   and APISharedTests `WorkshopHookTests` with `-p:ExtenderDir=<extender>`.
+   `InstalledExtenderPassesTheCleanupInstallerGate` runs the same signature,
+   managed-body, transformation and compilation checks as runtime initialization.
+   Negative fixtures cover changed signatures, missing bodies and unusable IL.
+3. Run the full `build.bat /nopause /noinstall` with the installed dependencies.
+   A successful check is evidence for those contracts, not a complete gameplay test.
 
-1. Take SHCDESE.zip from the official GitLab package registry, check its SHA-256
-   against the registry `file_sha256`, extract `000shcdese` into an empty folder and
-   hash SHCDESE.dll. Record the ProductVersion commit. A local build is acceptable
-   only with its tag and commit recorded.
-2. Diff that commit against an audited source. If `MapModManager`, `MapArchive`,
-   `ModInfo` or the staging/updater code changed, re-audit the
-   [cleanup flow](docs/WORKSHOP.md#workshop-package-cleanup): the bool result,
-   `_SE/.staging/BepInEx/plugins/<GUID>` and `_SE/.staging/delete_list.txt`
-   applied after exit and before staged files are copied.
-3. Add the hash to `AuditedExtenderHashes` and to the table above with its source.
-4. Run `Verify-WorkshopContracts.ps1 -GameDir <game> -ExtenderDir <extracted 000shcdese>`
-   and APISharedTests `WorkshopHookTests` built with `-p:ExtenderDir=<extracted 000shcdese>`.
-   `InstalledExtenderPassesTheCleanupInstallerGate` runs the same hash, signature,
-   transformation and compilation checks as `WorkshopCleanupRuntime.Initialize`.
-5. Run the full `build.bat /nopause /noinstall` on an install with the new binary.
-   Remove a hash only when that release is no longer supported.
+The development dependency bootstrap follows the same SE policy for
+`GameAssetModManager.PrepareAllAndCheckCompatibility`: signature/body validation
+and a dry transformation/compilation precede installation. Pair ownership and the
+BepInEx binary gate remain separate requirements; SE hashes are diagnostic only.

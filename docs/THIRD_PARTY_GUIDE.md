@@ -1,5 +1,15 @@
 # Third-party integration guide
 
+The development [dependency bootstrap](DEPENDENCY_BOOTSTRAP.md) can correct false
+missing-provider warnings for selected nested plugins. Consumers keep their normal
+dependency declarations; no registration or bundled APIShared copy is required.
+This development package is not yet approved for installation or release.
+
+APIShared optionally loads after Fixes for its audited
+[wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
+is required. Check its explicit outcome log; APIShared being present does not
+prove that an unknown Fixes binary was corrected.
+
 Unused observation services do not scan or prepare events. Register player-defeat
 observers before the first simulation tick if early transitions matter: the first
 tick after the first subscriber establishes the baseline and never replays earlier
@@ -475,7 +485,7 @@ and requires no command-engine mod.
 
 ## Workshop package cleanup
 
-APIShared cleans its own previous releases through the audited Extender staging
+APIShared cleans its own previous releases through the contract-validated Extender staging
 path. Foreign maps remain Extender-managed. Inventory schema, historical hashes
 and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cleanup).
 

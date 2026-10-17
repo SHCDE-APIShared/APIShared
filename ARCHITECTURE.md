@@ -6,9 +6,20 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+The separate `bootstrap` project implements the development-only
+[early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md). It does not reference
+the main APIShared assembly; it binds the selected runtime by a validated package
+pair and owns its hooks for process lifetime. It is outside the runtime source glob. Its `src/EarlyEntry` contains the minimal
+listener entry, `src/DependencyCorrection` keeps provider policy and its hook owner
+together, `src/Package` owns pair validation, and `src/Diagnostics` owns tracing.
+Package/build tools remain under `tools`; isolated tests live under
+`tests/DependencyBootstrap.Tests`. This assembly boundary is required by its earlier
+load phase; it is not a second public APIShared service runtime.
+
 | Area | Purpose |
 |---|---|
 | Core | Initialization, capability diagnostics, ownership, native infrastructure and the public native-site registry |
+| Compatibility | Internal, binary-validated interoperability corrections for optional mods; no public capability |
 | ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
 | ScriptExtenderReplacements | Opt-in public alternatives to specific SE methods; no interception of existing callers |
 | Missions, Lobby, Players | Shared observations and immutable state notifications |
@@ -160,6 +171,10 @@ Readiness, validation and isolated callback error reporting remain service dutie
 
 ## Publication
 
+Before managed publication, Awake attempts the optional
+[Fixes wheat-sale correction](docs/FIXES_COMPATIBILITY.md) synchronously. This
+one-time startup operation has no LibraryLoaded/tick retry or teardown path.
+
 Additional weighted route calculations publish through `Pathfinding/Routes`.
 `RouteSearchContracts` contains caller-facing arguments and results;
 `RouteSearchEvents` owns process-lifetime registrations, stable ordering and callback
@@ -243,6 +258,12 @@ SHCDE-SE 2.14.1. The configuration and compatibility limits are documented in th
 hooks and native resources survive until process exit. When upstream fixes a defect,
 re-audit the installed code before supporting that new binary or retiring the fix;
 a version number or changelog entry alone is not proof of equivalent behavior.
+
+SE compatibility uses the declared minimum version and the actual required managed
+contracts, never a fixed SE release or whole-assembly hash allow-list. Workshop
+staging and the development dependency bootstrap validate signatures, managed
+bodies and IL transformations before publishing hooks. Native game contracts and
+third-party dependency fingerprints remain independently validated.
 
 The solution contains the runtime, two local integration suites, a game-independent
 core suite and public consumer examples. Test-only packages never become plugin

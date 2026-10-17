@@ -618,6 +618,9 @@ namespace APISharedTests
         {
             typeof(BepInEx.Paths).GetProperty(nameof(BepInEx.Paths.ConfigPath))
                 .GetSetMethod(true).Invoke(null, new object[] { Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test-config") });
+            // ConfigFile's static initializer uses the file path independently of ConfigPath.
+            typeof(BepInEx.Paths).GetProperty(nameof(BepInEx.Paths.BepInExConfigPath))
+                .GetSetMethod(true).Invoke(null, new object[] { Path.Combine(BepInEx.Paths.ConfigPath, "BepInEx.cfg") });
             AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
                 new AssemblyName(args.Name).Name == "Assembly-CSharp"
                     ? Assembly.LoadFrom(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assembly-CSharp.dll")) : null;

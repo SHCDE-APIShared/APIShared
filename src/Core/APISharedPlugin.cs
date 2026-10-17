@@ -10,6 +10,7 @@ namespace APIShared
     /// <summary>BepInEx host for the process-wide APIShared.</summary>
     [BepInDependency(ScriptExtenderGuid, "2.14.0")]
     [BepInDependency("scde.sc2-fog-of-war", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("fixes", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     public sealed class APISharedPlugin : BaseUnityPlugin
     {
@@ -23,6 +24,7 @@ namespace APIShared
 
         private void Awake()
         {
+            Compatibility.FixesWheatStartup.Initialize(Logger);
             Workshop.WorkshopCleanupRuntime.Initialize(Logger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, Logger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();

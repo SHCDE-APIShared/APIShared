@@ -48,6 +48,10 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Prepare-WorkshopPackage.ps1'),(Join-Path $Root 'tools/New-WorkshopBootstrap.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'tools/WorkshopUploader') -File | Where-Object { $_.Extension -in @('.cs','.csproj','.ps1','.bat','.sh','.config','.manifest') })
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/PublisherPackage.ps1'))
+    $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'bootstrap/src') -Recurse -File -Filter '*.cs')
+    $files += Get-Item -LiteralPath (Join-Path $Root 'bootstrap/APIShared.DependencyBootstrap.csproj')
+    if (Test-Path -LiteralPath (Join-Path $Root 'bootstrap/DEVELOPMENT-ONLY')) { $files += Get-Item -LiteralPath (Join-Path $Root 'bootstrap/DEVELOPMENT-ONLY') }
+    $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1'),(Join-Path $Root 'tools/Remove-DependencyBootstrap.ps1'))
     foreach ($file in $files | Sort-Object FullName -Unique) {
         $relative = $file.FullName.Substring($Root.Length + 1).Replace('\','/')
         $rows.Add($relative + ':' + (Get-ApiFileHash $file.FullName))
@@ -83,7 +87,10 @@ function Write-ApiBuildProof([string]$Root, [string]$GameDir, [string]$ExtenderD
     if ($InitialState.Fingerprint -ne $final.Fingerprint) { throw 'APIShared inputs changed during the build. Build again.' }
     $commit = (& git -C $Root rev-parse HEAD 2>$null)
     if ($LASTEXITCODE -ne 0) { $commit = $null }
-    $proof = [ordered]@{ SchemaVersion=1; Commit=$commit; CreatedUtc=[DateTime]::UtcNow.ToString('o'); GameDir=$GameDir; ExtenderDir=$ExtenderDir; MSBuild=$MSBuild; Fingerprint=$final.Fingerprint; Inputs=$final.Inputs; Files=(Get-ApiPackageFiles $Root); PublisherFiles=(Get-ApiPublisherProofFiles $Root) }
+    . (Join-Path $Root 'tools/WorkshopPackage.ps1')
+    . (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1')
+    Assert-ApiBootstrapPair $Root
+    $proof = [ordered]@{ SchemaVersion=1; BootstrapFiles=@(Get-ApiBootstrapRecords $Root); Commit=$commit; CreatedUtc=[DateTime]::UtcNow.ToString('o'); GameDir=$GameDir; ExtenderDir=$ExtenderDir; MSBuild=$MSBuild; Fingerprint=$final.Fingerprint; Inputs=$final.Inputs; Files=(Get-ApiPackageFiles $Root); PublisherFiles=(Get-ApiPublisherProofFiles $Root) }
     $directory = Join-Path $Root '.local'
     [IO.Directory]::CreateDirectory($directory) | Out-Null
     [IO.File]::WriteAllText((Join-Path $directory 'build-proof.json'),(($proof | ConvertTo-Json -Depth 6).Replace("`r`n","`n").Replace("`n","`r`n") + "`r`n"),[Text.UTF8Encoding]::new($false))
@@ -93,6 +100,12 @@ function Assert-ApiBuildProof([string]$Root, [switch]$Release) {
     if (-not (Test-Path -LiteralPath $path)) { throw 'APIShared build evidence is missing. Run APIShared/build.bat /nopause first.' }
     $proof = [IO.File]::ReadAllText($path) | ConvertFrom-Json
     if ($proof.SchemaVersion -ne 1) { throw 'Unsupported APIShared build evidence. Build APIShared again.' }
+    if ($Release -and [IO.File]::Exists((Join-Path $Root 'bootstrap/DEVELOPMENT-ONLY'))) { throw 'Dependency bootstrap has no APIShared game/lifecycle acceptance; release is blocked.' }
+    . (Join-Path $Root 'tools/WorkshopPackage.ps1')
+    . (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1')
+    Assert-ApiBootstrapPair $Root
+    $bootstrap = @(Get-ApiBootstrapRecords $Root)
+    if (-not $proof.PSObject.Properties['BootstrapFiles'] -or @($proof.BootstrapFiles).Count -ne 1 -or $proof.BootstrapFiles[0].Path -cne $bootstrap[0].Path -or $proof.BootstrapFiles[0].Sha256 -cne $bootstrap[0].Sha256) { throw 'Bootstrap build evidence missing or stale.' }
     $state = Get-ApiInputState $Root $proof.GameDir $proof.ExtenderDir $proof.MSBuild
     if ($state.Fingerprint -ne $proof.Fingerprint) { throw 'APIShared package is stale. Run APIShared/build.bat /nopause first.' }
     Assert-ApiPublisherEvidence $Root $proof
