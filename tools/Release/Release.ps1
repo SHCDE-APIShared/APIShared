@@ -27,7 +27,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShar
 $tag = "APIShared/v$version"
 if ($TestRelease) { if ($Publish) { throw 'Test releases must remain drafts.' }; $tag = "APIShared/test/v$version-$($commit.Substring(0,12))" }
 if (-not $PrepareOnly) {
-    & (Join-Path $root 'build.bat') /nopause /noinstall
+    $previousBranchPinned = $env:SHCDE_BRANCH_PINNED
+    try {
+        $env:SHCDE_BRANCH_PINNED = $commit
+        & (Join-Path $root 'build.bat') /nopause /noinstall
+    } finally { $env:SHCDE_BRANCH_PINNED = $previousBranchPinned }
     if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
 }
 . (Join-Path $root 'tools/BuildProof.ps1')

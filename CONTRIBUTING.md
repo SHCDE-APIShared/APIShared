@@ -83,8 +83,17 @@ With the installed dependencies configured:
 ```powershell
 dotnet test tests/APISharedTests/APISharedTests.csproj
 dotnet test tests/LobbyModSettingsPresetTests/LobbyModSettingsPresetTests.csproj
-& './build.bat' /nopause /noinstall
+& './build.bat' /branch:develop /nopause /noinstall
 ```
+
+Without arguments, both build BAT entrypoints offer a `main`/`develop` menu.
+Automated calls require `/branch:main` or `/branch:develop` together with `/nopause`.
+They build the last local commit of that branch in a detached worktree, excluding
+uncommitted changes and leaving the working checkout on its current branch.
+Build records beside the worktree record the commit and build-script adaptations.
+Development installations use `_dev` plugin and tool directories; the other
+installation is preserved for manual removal. `/noinstall` skips installation.
+Already pinned release and internal child builds do not open another menu.
 
 The full driver validates runtime contracts and installed interop, runs all suites,
 compiles public consumer examples and prepares the plugin package. This development
