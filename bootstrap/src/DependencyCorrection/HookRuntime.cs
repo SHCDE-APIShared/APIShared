@@ -19,13 +19,11 @@ namespace APIShared.DependencyBootstrap
     // Pair-gated correction of a local index copy; no asset registration or result filtering.
     internal static class HookRuntime
     {
-        private static PairContract pair;
-        private static bool ownerSelected;
+        private static PairActivation activation;
         private static ILHook chainHook;
         private static ILHook compatibilityHook;
         private static bool snapshotSeen;
         private static bool extenderSeen;
-        private static int checks;
         public const string CoreHash = "8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70";
 
         // Reached only through the listener after Chainloader ready, never from Finish.
@@ -33,66 +31,23 @@ namespace APIShared.DependencyBootstrap
         internal static void Install()
         {
             if (chainHook != null) return;
-            pair = PairContract.Read(BepInEx.Paths.GameRootPath);
-            var own = typeof(HookRuntime).Assembly;
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-            bool probe = assemblies.Any(a => a.GetName().Name == "DependencyBootstrapProbe.Patcher") ||
-                File.Exists(Path.Combine(BepInEx.Paths.PatcherPluginPath, "DependencyBootstrapProbe.Patcher.dll"));
-            int instances = assemblies.Count(a => a.GetName().Name == "APIShared.DependencyBootstrap");
-            pair.VerifyBootstrap(own.Location, instances, probe);
-            using (var diskModule = ModuleDefinition.ReadModule(own.Location))
-                if (diskModule.Mvid != own.ManifestModule.ModuleVersionId)
-                    throw new InvalidOperationException("Loaded bootstrap differs from current file");
-            // Inspect metadata only. Renamed copies must not evade the ownership gate.
-            foreach (string file in PatcherFiles(BepInEx.Paths.PatcherPluginPath))
-            {
-                var name = AssemblyName.GetAssemblyName(file).Name;
-                if (name == "DependencyBootstrapProbe.Patcher" ||
-                    (name == "APIShared.DependencyBootstrap" && !string.Equals(Path.GetFullPath(file), Path.GetFullPath(own.Location), StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidOperationException("Competing bootstrap file: " + file);
-            }
-            Mark("PAIR_VERIFIED", "runtime=" + pair.RuntimeHash + " bootstrap=" + pair.BootstrapHash);
-            Mark("CHAIN_PREPARE", "validating loaded assembly and Start");
-            Mark("SHADOW_REQUIRED", "development correction; only a separate index copy may change");
-            ShadowRuntime.Configure();
+            activation = PairActivation.Prepare();
+            ShadowRuntime.Configure(activation);
             var assembly = typeof(BepInEx.Bootstrap.Chainloader).Assembly;
-            Mark("CORE_BINARY", "sha256=" + ProbeIdentity.Hash(assembly.Location));
-            if (!HashMatches(assembly.Location, CoreHash)) { Mark("SKIP", "unknown BepInEx binary"); return; }
+            if (!HashMatches(assembly.Location, CoreHash)) { ProbeTrace.Warning("unknown BepInEx binary"); return; }
             var type = typeof(BepInEx.Bootstrap.Chainloader);
             var loaded = type.GetField("_loaded", BindingFlags.NonPublic | BindingFlags.Static);
-            if (loaded == null || (bool)loaded.GetValue(null)) { Mark("SKIP", "Chainloader already ran or contract changed"); return; }
+            if (loaded == null || (bool)loaded.GetValue(null)) { ProbeTrace.Warning("Chainloader already ran or contract changed"); return; }
             var method = type.GetMethod("Start", BindingFlags.Public | BindingFlags.Static);
             using (var copy = new DynamicMethodDefinition(method))
             using (var context = new ILContext(copy.Definition))
             {
                 ModifyChainloader(context);
-                Mark("CHAIN_TRANSFORMED", "copy validated and modified; compiling");
-                Mark("CHAIN_DELEGATE_BEGIN", "generating delegate");
                 var compiled = copy.Generate().CreateDelegate(typeof(Action));
-                Mark("CHAIN_DELEGATE_END", "delegate created");
-                Mark("CHAIN_JIT_BEGIN", "preparing delegate");
                 RuntimeHelpers.PrepareDelegate(compiled);
-                Mark("CHAIN_JIT_END", "delegate prepared");
                 GC.KeepAlive(compiled);
             }
-            Mark("CHAIN_COPY_COMPILED", "transformed copy prepared, never invoked");
-            Mark("CHAIN_INSTALL", "publishing permanent observer");
             chainHook = new ILHook(method, ModifyChainloader);
-            Mark("CHAIN_HOOK_INSTALLED", "permanent; original control flow retained");
-        }
-
-        private static IEnumerable<string> PatcherFiles(string directory)
-        {
-            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidOperationException("Linked patcher directory; ownership unclear");
-            foreach (string file in Directory.GetFiles(directory, "*.dll"))
-            {
-                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
-                    throw new InvalidOperationException("Linked patcher file; ownership unclear");
-                yield return file;
-            }
-            foreach (string child in Directory.GetDirectories(directory))
-                foreach (string file in PatcherFiles(child)) yield return file;
         }
 
         private static bool Calls(Instruction instruction, string type, string name)
@@ -130,14 +85,10 @@ namespace APIShared.DependencyBootstrap
             cursor.Goto(sorts[0].Next, MoveType.After);
             cursor.Emit(OpCodes.Ldloc, closure); // The sorted list stays untouched below this object.
             cursor.Emit(OpCodes.Call, Callback(nameof(Snapshot)));
-            cursor.Goto(0);
-            cursor.Emit(OpCodes.Call, Callback(nameof(OnChainEnter)));
         }
 
         private static MethodInfo Callback(string name) => typeof(HookRuntime)
             .GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static);
-        private static void OnChainEnter() => Mark("CHAIN_ENTER", "Start callback");
-        private static void OnCompatibilityEnter() { checks++; Mark("COMPATIBILITY_ENTER", "count=" + checks); }
 
         private static VariableDefinition FindWinnerClosure(ILContext il)
         {
@@ -184,20 +135,10 @@ namespace APIShared.DependencyBootstrap
                 var winners = (IDictionary)field.GetValue(closure);
                 ShadowRuntime.Winners = new List<ShadowPlugin>();
                 foreach (DictionaryEntry entry in winners) ShadowRuntime.Winners.Add(ShadowRuntime.FromInfo((BepInEx.PluginInfo)entry.Value));
-                var owners = ShadowRuntime.Winners.Where(p => p.Guid == "APIShared_Serp").ToArray();
-                ownerSelected = owners.Length == 1 && pair.MatchesSelected(owners[0].Guid, owners[0].Version, owners[0].Path);
-                Mark("PAIR_SELECTED", ownerSelected ? "matched" : "rejected; original check retained");
+                activation.Bind(ShadowRuntime.Winners);
                 snapshotSeen = true;
-                Mark("SNAPSHOT", "selected=" + winners.Count + "; selection is not an Awake success guarantee");
-                foreach (DictionaryEntry entry in winners)
-                {
-                    var info = entry.Value;
-                    var metadata = info.GetType().GetProperty("Metadata").GetValue(info, null);
-                    Mark("WINNER", "guid=" + entry.Key + " version=" + metadata.GetType().GetProperty("Version").GetValue(metadata, null) +
-                        " path=" + info.GetType().GetProperty("Location").GetValue(info, null));
-                }
             }
-            catch (Exception ex) { Mark("ERROR", "Snapshot " + ex); }
+            catch (Exception ex) { ProbeTrace.Error("Snapshot " + ex); }
         }
 
         private static void BeforePlugin(Type type, object failed)
@@ -207,32 +148,21 @@ namespace APIShared.DependencyBootstrap
                 if (type == null || type.Assembly.GetName().Name != "SHCDESE" || extenderSeen || compatibilityHook != null) return;
                 ShadowRuntime.Failed = new HashSet<string>((HashSet<string>)failed, StringComparer.Ordinal);
                 extenderSeen = true;
-                Mark("BEFORE_EXTENDER", "snapshot=" + snapshotSeen + " type=" + type.FullName);
-                Mark("SE_BINARY", "sha256=" + ProbeIdentity.Hash(type.Assembly.Location));
-                if (!snapshotSeen || !ownerSelected) { Mark("SKIP", "snapshot or selected owner mismatch"); return; }
+                if (!snapshotSeen || activation == null || !activation.CanCorrect()) { ProbeTrace.Warning("snapshot or selected owner mismatch"); return; }
                 var method = ValidateCompatibilityMethod(type.Assembly);
                 var manager = method.DeclaringType;
-                Mark("SE_PREPARE", "validated signature; preparing copy");
                 using (var copy = new DynamicMethodDefinition(method))
                 using (var context = new ILContext(copy.Definition))
                 {
                     ModifyCompatibility(context);
-                    Mark("SE_TRANSFORMED", "copy modified; compiling");
                     var delegateType = typeof(Func<,,>).MakeGenericType(manager, typeof(string), method.ReturnType);
-                    Mark("SE_DELEGATE_BEGIN", "generating delegate");
                     var compiled = copy.Generate().CreateDelegate(delegateType);
-                    Mark("SE_DELEGATE_END", "delegate created");
-                    Mark("SE_JIT_BEGIN", "preparing delegate");
                     RuntimeHelpers.PrepareDelegate(compiled);
-                    Mark("SE_JIT_END", "delegate prepared");
                     GC.KeepAlive(compiled);
                 }
-                Mark("SE_COPY_COMPILED", "transformed copy prepared, never invoked");
-                Mark("SE_INSTALL", "publishing permanent observer");
                 compatibilityHook = new ILHook(method, ModifyCompatibility);
-                Mark("SE_HOOK_INSTALLED", "before AddComponent; original check unchanged");
             }
-            catch (Exception ex) { Mark("ERROR", "BeforePlugin " + ex); }
+            catch (Exception ex) { ProbeTrace.Error("BeforePlugin " + ex); }
         }
 
         // The actual SE contract authorizes the hook; whole-assembly hashes are diagnostics only.
@@ -275,8 +205,6 @@ namespace APIShared.DependencyBootstrap
             cursor.Emit(OpCodes.Stloc, indices[0]);
             cursor.Emit(OpCodes.Ldloc, indices[0]);
             cursor.Emit(OpCodes.Call, typeof(ShadowRuntime).GetMethod("ConfirmIndex", BindingFlags.Static | BindingFlags.NonPublic));
-            cursor.Goto(0);
-            cursor.Emit(OpCodes.Call, Callback(nameof(OnCompatibilityEnter)));
         }
 
         private static bool HashMatches(string path, string expected)
@@ -285,8 +213,5 @@ namespace APIShared.DependencyBootstrap
             using (var sha = SHA256.Create())
                 return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "") == expected;
         }
-
-        internal static string GetStatus() => "snapshot=" + snapshotSeen + " extender=" + extenderSeen + " checks=" + checks;
-        private static void Mark(string marker, string detail) => ProbeTrace.Mark(marker, detail);
     }
 }

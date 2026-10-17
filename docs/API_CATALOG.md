@@ -15,7 +15,9 @@ table methods. These require explicit caller migration and do not hook SE method
 APIShared also provides internal, binary-validated [Script Extender bugfixes](THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
 They require no capability acquisition or consumer registration and are implemented
 separately in `src/ScriptExtenderFixes`. Unsupported dependency implementations are
-skipped without disabling the public services below.
+skipped without disabling the public services below. The popularity display correction
+automatically follows changed SE contribution values in reports and building panels,
+without modifying simulation or requiring consumer registration.
 
 Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event brokers also expose static registration methods. The command, presentation, recruitment and market entries below require APIShared 0.6.0 or later. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
 

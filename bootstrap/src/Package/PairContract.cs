@@ -14,6 +14,7 @@ namespace APIShared.DependencyBootstrap
         internal const string BootstrapPath = "BepInEx/patchers/APIShared.DependencyBootstrap.dll";
         internal const string ManifestPath = "BepInEx/plugins/APIShared_Serp/dependency-bootstrap-pair.json";
         internal string Root, RuntimeHash, BootstrapHash, Version;
+        private string manifestHash;
         internal static string SafePath(string root, string relative)
         {
             if (relative != RuntimePath && relative != BootstrapPath && relative != ManifestPath)
@@ -27,16 +28,31 @@ namespace APIShared.DependencyBootstrap
             return path;
         }
         internal static string Hash(string path) => ProbeIdentity.Hash(path).ToLowerInvariant();
+        internal static bool HasRuntimeDirectory(string root)
+        {
+            string directory = Path.GetDirectoryName(SafePath(root, RuntimePath));
+            try
+            {
+                if ((File.GetAttributes(directory) & FileAttributes.Directory) == 0)
+                    throw new InvalidDataException("APIShared plugin path is not a directory");
+                return true;
+            }
+            catch (DirectoryNotFoundException) { return false; }
+            catch (FileNotFoundException) { return false; }
+            // Access failures and linked paths are not proof of removal.
+        }
         internal static PairContract Read(string root)
         {
-            var json = DependencyFreeJson.Parse(File.ReadAllText(SafePath(root, ManifestPath))) as Dictionary<string, object>;
+            string manifest = SafePath(root, ManifestPath);
+            string originalHash = Hash(manifest);
+            var json = DependencyFreeJson.Parse(File.ReadAllText(manifest)) as Dictionary<string, object>;
             string[] fields = { "Schema", "Guid", "Version", "RuntimeSHA256", "BootstrapSHA256" };
             if (json == null || json.Count != fields.Length || fields.Any(f => !json.ContainsKey(f)) ||
                 !(json["Schema"] is int schema) || schema != 1 || (json["Guid"] as string) != "APIShared_Serp")
                 throw new InvalidDataException("Invalid bootstrap pair schema");
             string version = json["Version"] as string;
             if (!System.Version.TryParse(version, out _)) throw new InvalidDataException("Invalid pair version");
-            var pair = new PairContract { Root = Path.GetFullPath(root), Version = version,
+            var pair = new PairContract { manifestHash = originalHash, Root = Path.GetFullPath(root), Version = version,
                 RuntimeHash = Digest(json["RuntimeSHA256"]), BootstrapHash = Digest(json["BootstrapSHA256"]) };
             pair.VerifyFiles();
             return pair;
@@ -50,7 +66,7 @@ namespace APIShared.DependencyBootstrap
         }
         internal void VerifyFiles()
         {
-            if (Hash(SafePath(Root, RuntimePath)) != RuntimeHash || Hash(SafePath(Root, BootstrapPath)) != BootstrapHash)
+            if (Hash(SafePath(Root, ManifestPath)) != manifestHash || Hash(SafePath(Root, RuntimePath)) != RuntimeHash || Hash(SafePath(Root, BootstrapPath)) != BootstrapHash)
                 throw new InvalidDataException("Incomplete or mixed bootstrap pair");
         }
         internal bool MatchesSelected(string guid, string version, string location)

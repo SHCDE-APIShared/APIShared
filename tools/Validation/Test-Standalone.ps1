@@ -8,7 +8,12 @@ if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-SavegameLoadContracts
 . (Join-Path $PSScriptRoot 'DependencyMetadata.Common.ps1')
 $source = (Get-ChildItem -LiteralPath (Join-Path $apiRoot 'src') -Recurse -File -Filter '*.cs' | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join [Environment]::NewLine
 Assert-PluginDependencyMetadata $source ([IO.File]::ReadAllText((Join-Path $apiRoot 'info.json')) | ConvertFrom-Json) 'APIShared'
-$projects = @(Get-ChildItem -LiteralPath $apiRoot -Recurse -File -Filter '*.csproj' | Where-Object FullName -NotMatch '[\\/](bin|obj|BepInEx)[\\/]')
+# Generated snapshots/fixtures are not additional maintained source projects. These
+# are build-tool output boundaries, not a required layout of runtime features.
+$generated = '[\\/](bin|obj|BepInEx|\.git|\.local|\.work|\.release-output)[\\/]'
+$projects = @(Get-ChildItem -LiteralPath $apiRoot -Recurse -File -Filter '*.csproj' | Where-Object {
+    ('\' + $_.FullName.Substring($apiRoot.Length).TrimStart('\','/')) -notmatch $generated
+})
 $links = 0
 foreach ($project in $projects) {
     [xml]$xml = [IO.File]::ReadAllText($project.FullName)
@@ -22,7 +27,7 @@ foreach ($project in $projects) {
     }
 }
 $files = @(Get-ChildItem -LiteralPath $apiRoot -Recurse -File | Where-Object {
-    $_.FullName -notmatch '[\\/](bin|obj|BepInEx|\.git)[\\/]' -and $_.Extension -match '^\.(cs|csproj|ps1|bat|md|json|xaml|props|targets)$'
+    ('\' + $_.FullName.Substring($apiRoot.Length).TrimStart('\','/')) -notmatch $generated -and $_.Extension -match '^\.(cs|csproj|ps1|bat|md|json|xaml|props|targets)$'
 })
 foreach ($file in $files) {
     $text = [IO.File]::ReadAllText($file.FullName)
@@ -48,9 +53,9 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell release regression failed.' }
 }
 & (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
-if (([IO.File]::ReadAllText((Join-Path $apiRoot 'info.json')) | ConvertFrom-Json).Version -eq '0.9.2') {
-    & (Join-Path $PSScriptRoot 'Test-WorkshopHotfixBoundaries.ps1')
-}
+# Test-WorkshopHotfixBoundaries.ps1 is an opt-in historical release-scope audit
+# against the published 0.9.0 tree. Its exact 0.9.2 identity is deliberate, but
+# a version string alone must not select it as a current development-build gate.
 & (Join-Path $PSScriptRoot 'Test-ShellScripts.ps1')
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WorkshopRecovery.ps1')

@@ -17,8 +17,11 @@ Only `CORRECTED` and `ALREADY-CORRECT` confirm the fully validated stub.
 `NOT-NEEDED` means Fixes or its wheat hook was absent; it is not a protection
 claim. `REFUSED/UNCONFIRMED` means no confirmed protection, including errors after
 a write. Every outcome includes a timestamp with milliseconds. Other APIShared
-services continue. Unknown binaries, unavailable startup evidence or memory
-access failures cause refusal, never a relaxed signature search or later retry.
+services continue. Unsupported native/game/backend contracts, unavailable startup
+evidence or memory access failures cause refusal, never a relaxed signature search
+or later retry. Fixes and Script Extender have no exact-version, maximum-version
+or whole-file-hash gate here. Their loaded/disk identities must agree, and the
+actual native hook must satisfy the complete audited contract.
 
 This is a deliberately narrow exception to permanent-hook immutability: one
 validated displacement byte of one known foreign stub, before normal game
@@ -39,7 +42,13 @@ the plugin loop. Fixes' existing instance must already be published.
 The actual stack must contain APIShared Awake inside Chainloader.Start inside
 `UnityEngine.Application..cctor`, in that order. This is the entry patched by
 the audited BepInEx preloader; a config setting alone would not prove the actual
-call path. Missing/inlined stack evidence is conservatively refused. Director
+call path. Missing/inlined stack evidence is conservatively refused.
+The active MonoMod ILHook body of Chainloader.Start is equivalent evidence when
+the audited backend's live registry maps that exact original method to the active
+Detour.Target. Pinned runtime handles identify its stack frame; generated names
+are never accepted as proof. Unregistered method copies are rejected. This
+allows the dependency bootstrap's transformed Start without bypassing the stack,
+startup-state, null-singleton, one-attempt or lock requirements. Director
 and GameMap singleton fields must still be CLR-null (not Unity destroyed-null).
 No singleton property is evaluated. The known managed image initializes
 `EngineInterface.threadLock` as an object; reflection verifies that private field.
@@ -67,9 +76,16 @@ readiness/capability contracts; no public timing guarantee is added.
 ## Native validation and write
 
 Exact identities and byte contracts are in [UpdateToNewDLL](../UpdateToNewDLL.md#fixes-wheat-sale-startup-correction).
+The tested installation uses Fixes 1.26.5 and Script Extender 2.14.2. These are
+observations, not accepted-version limits. The installed Fixes emitter still
+loads the wrong stack slot. An emitter already using the audited correct slot is
+also supported and must cause no write. Unity byte-loaded Assembly-CSharp and
+UnityEngine.CoreModule use their canonical GameRootPath images, including
+SHA-256, full assembly name and loaded/disk MVID, rather than their empty Location.
 The native module is obtained from its loaded module handle and hashed at that
-module's path. Loaded managed identities are checked by SHA-256 and disk/loaded
-MVID agreement. The Fixes static HookHandle and NativeFlagArray are obtained by
+module's path. Game and backend identities are hash-bound; Fixes/Extender module
+provenance uses full assembly name and disk/loaded MVID agreement. The Fixes
+static HookHandle and NativeFlagArray are obtained by
 exact typed reflection; no Fixes assembly reference is linked.
 
 Validation covers the backend's installed state, resolved/target address,
@@ -88,6 +104,16 @@ revalidated. Restoration/cache errors never report success and never trigger a
 second write or undo. The code has no later hot-path overhead.
 
 ## Integration review and pending acceptance
+
+Recheck on 2026-10-17: the installed Fixes 1.26.5 emitter and the complete
+production identity preflight pass the targeted integration tests with Extender
+2.14.2. The generated 61-byte body matches the audited template. A private native
+fixture executes the corrected stub through its full continuation for players
+1..8, flags off/on, non-wheat goods and three unrelated old-stack-slot values;
+the production memory writer performs the one operand correction. File-path tests
+cover byte-loaded assemblies, missing/changed files and loaded/disk MVID mismatch.
+This is desktop fixture evidence, not game/save/editor acceptance. The earlier
+prepared/pending notes below retain their original implementation-stage context.
 
 The existing APIShared market hooks at 0xCEB10/0xCEB90 and AIV hook at 0x51790
 do not overlap 0x3F0C9..0x3F0DC. Gatehouse validation already allows the distinct

@@ -43,7 +43,6 @@ $package = Join-Path $root 'BepInEx/plugins/APIShared_Serp'
 [void][IO.Directory]::CreateDirectory($package)
 [IO.File]::WriteAllText((Join-Path $package 'APIShared.dll'),$source)
 if ($NoInstall) { exit 0 }
-if (Test-Path -LiteralPath (Join-Path $root 'bootstrap/DEVELOPMENT-ONLY')) { Write-Host 'INSTALL_BLOCKED'; exit 23 }
 $destination = Join-Path $game 'BepInEx\plugins\APIShared_Serp'
 $toolTarget = Join-Path $game 'BepInEx/tools/APISharedWorkshopPublisher'
 [void][IO.Directory]::CreateDirectory($destination)
@@ -57,7 +56,6 @@ exit 0
     Git-Fixture @('commit','-m','API main fixture')
     Git-Fixture @('checkout','-b','develop')
     Write-BranchText (Join-Path $repo 'source.txt') 'API_DEVELOP_COMMIT'
-    Write-BranchText (Join-Path $repo 'bootstrap/DEVELOPMENT-ONLY') 'pending game acceptance'
     Git-Fixture @('add','.')
     Git-Fixture @('commit','-m','API develop fixture')
     Write-BranchText (Join-Path $repo 'source.txt') 'DIRTY_MUST_NOT_BUILD'
@@ -78,12 +76,12 @@ exit 0
     $pluginHash = Get-BranchHash $plugin; $publisherHash = Get-BranchHash $publisher
     $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause','/noinstall') 0
     Assert-Fixture ($output -match 'API_DEVELOP_COMMIT' -and $output -match 'APIShared_Serp_dev') 'Standalone develop selection failed'
-    $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause') 23
-    Assert-Fixture ($output -match 'INSTALL_BLOCKED') 'Installation gate was bypassed'
-    Assert-Fixture ((Get-BranchHash $plugin) -ceq $pluginHash -and (Get-BranchHash $publisher) -ceq $publisherHash) 'Blocked/no-install build changed main'
+    $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause') 0
+    Assert-Fixture ([IO.File]::ReadAllText((Join-Path $game 'BepInEx/plugins/APIShared_Serp_dev/fixture.txt')) -ceq 'API_DEVELOP_COMMIT') 'Development installation failed'
+    Assert-Fixture ((Get-BranchHash $plugin) -ceq $pluginHash -and (Get-BranchHash $publisher) -ceq $publisherHash) 'Development/no-install build changed main'
     $output = Run-Fixture 'tools/WorkshopUploader/build.bat' @('/branch:develop','/nopause') 0
     Assert-Fixture ($output -match 'API_DEVELOP_COMMIT' -and $output -notmatch 'DIRTY_MUST_NOT_BUILD') 'Standalone publisher selected working sources'
     Assert-Fixture (((Invoke-BranchGit $repo @('branch','--show-current')) -join '') -ceq 'develop') 'Standalone working branch moved'
-    Write-Host "PASS: $cases standalone APIShared/publisher, source isolation, no-install and installation-gate cases."
+    Write-Host "PASS: $cases standalone APIShared/publisher, source isolation, no-install and development installation cases."
     Write-Host "Fixture evidence retained: $fixture"
 } finally { $env:SHCDE_GAME_DIR = $previousGame }

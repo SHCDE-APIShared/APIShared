@@ -12,6 +12,7 @@ try {
     foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools','bootstrap')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'actual input'
     Write-Fixture (Join-Path $proofRoot 'APIShared.csproj') '<Project />'
+    Write-Fixture (Join-Path $proofRoot 'build.bat') 'build entry fixture'
     Write-Fixture (Join-Path $proofRoot 'info.json') '{}'
     Write-Fixture (Join-Path $proofRoot '.gitignore') ".local/`n"
     Write-Fixture (Join-Path $proofRoot 'tools/Build.ps1') 'build fixture'
@@ -41,6 +42,9 @@ try {
     Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $null=Assert-ApiBuildProof $proofRoot -Release
+    Write-Fixture (Join-Path $proofRoot 'build.bat') 'changed build entry'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed build entry accepted'
+    Write-Fixture (Join-Path $proofRoot 'build.bat') 'build entry fixture'
     $bootstrapSource=Join-Path $proofRoot 'bootstrap/src/Package/PairContract.cs'
     Write-Fixture $bootstrapSource 'changed nested bootstrap input'
     $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed nested bootstrap source accepted'

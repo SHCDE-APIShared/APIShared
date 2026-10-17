@@ -36,14 +36,24 @@ the engine lock. It permits no general repatching, later retry or teardown undo.
 
 Published hooks remain installed for the process lifetime. Activation changes are
 logical gates; inactive callbacks preserve the original behavior. Installation
-rollback is limited to a candidate that has not completed installation.
+rollback is limited to a prepared candidate before the first patch activation attempt.
+An activation attempt is irreversible even when it throws: the backend may already
+have made executable code reachable. Installation success is not the publication boundary.
 
 A native call can enter a detour as soon as its patch is written, while RedBird's
 default commit attaches the detour handles only after writing every patch. Detours
 whose callbacks read a handle or its original therefore commit with
 `InstallOnCommit = false`, publish that handle, and only then write their patches
-through `NativeHookPublication.Enable` (issue #28). A failed candidate has its
-patches removed before its handle is unpublished.
+through `NativeHookPublication.Enable` (issue #28). Before the first activation
+attempt, a shared publication state permanently roots the transaction, handles and
+callback owner. A later activation or validation failure stops installation without
+disabling, disposing or unpublishing anything, and retains the native-site claims.
+Only a candidate that has never attempted activation may be disposed and release
+its claims. Full feature readiness follows all patch writes and post-write checks;
+until then, and after failure, callbacks preserve the original path. Subsequent
+requests report the retained failure instead of retrying a partial installation.
+Gate-routing providers must retain their supplied buffers even when installation
+throws; published callbacks may still access them for the rest of the process.
 
 RedBird inline-hook size is a minimum: actual displacement is instruction-aligned
 and can exceed the requested size. Function detours have a separate scheme-dependent
@@ -62,7 +72,8 @@ stubs on isolated buffers, never on another running game's executable pages.
 Market queries validate each complete 31-byte function before installation. Only
 the audited image and NativeX64 Indirect schema are accepted: six patch bytes
 displace ten instruction-aligned bytes. Validation checks the target, patch form,
-pointer slot, hook entry and trampoline continuation before publication. Unknown
+pointer slot, hook entry and trampoline continuation before feature readiness. These
+post-write checks cannot authorize rollback. Unknown
 images or occupied entries fail closed. The helpers serve AI affordability, trade
 execution and ally valuations; replacements must preserve consistent policy across
 those callers. See [market query semantics](API_CATALOG.md#native-market-price-queries).

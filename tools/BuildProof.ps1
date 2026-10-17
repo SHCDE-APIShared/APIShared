@@ -50,7 +50,7 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/PublisherPackage.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'bootstrap/src') -Recurse -File -Filter '*.cs')
     $files += Get-Item -LiteralPath (Join-Path $Root 'bootstrap/APIShared.DependencyBootstrap.csproj')
-    if (Test-Path -LiteralPath (Join-Path $Root 'bootstrap/DEVELOPMENT-ONLY')) { $files += Get-Item -LiteralPath (Join-Path $Root 'bootstrap/DEVELOPMENT-ONLY') }
+    $files += Get-Item -LiteralPath (Join-Path $Root 'build.bat')
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1'),(Join-Path $Root 'tools/Remove-DependencyBootstrap.ps1'))
     foreach ($file in $files | Sort-Object FullName -Unique) {
         $relative = $file.FullName.Substring($Root.Length + 1).Replace('\','/')
@@ -100,7 +100,6 @@ function Assert-ApiBuildProof([string]$Root, [switch]$Release) {
     if (-not (Test-Path -LiteralPath $path)) { throw 'APIShared build evidence is missing. Run APIShared/build.bat /nopause first.' }
     $proof = [IO.File]::ReadAllText($path) | ConvertFrom-Json
     if ($proof.SchemaVersion -ne 1) { throw 'Unsupported APIShared build evidence. Build APIShared again.' }
-    if ($Release -and [IO.File]::Exists((Join-Path $Root 'bootstrap/DEVELOPMENT-ONLY'))) { throw 'Dependency bootstrap has no APIShared game/lifecycle acceptance; release is blocked.' }
     . (Join-Path $Root 'tools/WorkshopPackage.ps1')
     . (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1')
     Assert-ApiBootstrapPair $Root

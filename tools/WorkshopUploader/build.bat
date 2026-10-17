@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions
+rem This helper builds local publisher artifacts only; it never installs.
+for %%A in (%*) do if /I "%%~A"=="/workspace" goto :shcde_branch_selected
 rem SHCDE_BRANCH_DISPATCH: select committed sources; the selected child owns its build.
 if defined SHCDE_BRANCH_SOURCE_ROOT goto :shcde_branch_selected
 if defined SHCDE_BRANCH_PINNED goto :shcde_branch_selected

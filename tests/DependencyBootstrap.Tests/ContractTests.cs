@@ -35,8 +35,7 @@ namespace APIShared.DependencyBootstrap
         private static void Run(string[] args)
         {
             if (args.Length == 3 && args[1] == "pair") { PairContract.Read(args[2]); Console.WriteLine("PASS: built pair validated by runtime contract"); return; }
-            if (args.Length == 4 && args[1] == "offline") ShadowTests.Offline(game, args[2], args[3]);
-            else { PairTests.Run(); ShadowTests.Run(); ContractTests.Run(game); }
+            PairTests.Run(game); ShadowTests.Run(); ContractTests.Run(game);
         }
     }
 
@@ -47,7 +46,9 @@ namespace APIShared.DependencyBootstrap
 
         internal static void Run(string game)
         {
+            TestLogging();
             TestEarlyEntry();
+            TestRemovedPlugin();
             using (var copy = new DynamicMethodDefinition(Start))
             using (var context = new ILContext(copy.Definition))
             {
@@ -124,6 +125,81 @@ namespace APIShared.DependencyBootstrap
                 GC.KeepAlive(compiled);
                 Console.WriteLine("PASS: actual SE DMD transform and desktop delegate generation; no check invoked.");
             }
+        }
+
+        private static void TestRemovedPlugin()
+        {
+            string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fixtures", Guid.NewGuid().ToString("N"));
+            var rootProperty = typeof(BepInEx.Paths).GetProperty("GameRootPath");
+            var setter = rootProperty.GetSetMethod(true);
+            object previousRoot = rootProperty.GetValue(null, null);
+            var mode = typeof(DependencyBootstrapPatcher).GetField("mode", BindingFlags.Static | BindingFlags.NonPublic);
+            object previousMode = mode.GetValue(null);
+            var log = (BepInEx.Logging.ManualLogSource)typeof(ProbeTrace).GetField("log", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
+            int messages = 0;
+            EventHandler<BepInEx.Logging.LogEventArgs> capture = (_, __) => messages++;
+            log.LogEvent += capture;
+            try
+            {
+                Directory.CreateDirectory(root);
+                setter.Invoke(null, new object[] { root });
+                mode.SetValue(null, "Active");
+                var onReady = typeof(DependencyBootstrapPatcher).GetMethod("OnReady", BindingFlags.Static | BindingFlags.NonPublic);
+                // The real entry runs with no pair files. Reaching pair validation
+                // would throw; reaching hook installation would change these fields.
+                onReady.Invoke(null, null);
+                Require(messages == 0, "Removed plugin must be silent");
+                foreach (string name in new[] { "activation", "chainHook", "compatibilityHook" })
+                    Require(typeof(HookRuntime).GetField(name, BindingFlags.Static | BindingFlags.NonPublic).GetValue(null) == null,
+                        "Removed plugin prepared runtime/hook: " + name);
+                string directory = Path.GetDirectoryName(PairContract.SafePath(root, PairContract.RuntimePath));
+                Directory.CreateDirectory(directory);
+                Require(PairContract.HasRuntimeDirectory(root), "Existing incomplete directory mistaken for removal");
+                bool rejected = false;
+                try { onReady.Invoke(null, null); } catch (TargetInvocationException) { rejected = true; }
+                Require(rejected, "Present but incomplete package must still be rejected");
+                Directory.Delete(directory);
+                File.WriteAllText(directory, "not a plugin directory");
+                rejected = false;
+                try { PairContract.HasRuntimeDirectory(root); } catch (InvalidDataException) { rejected = true; }
+                Require(rejected, "File occupying plugin directory must not masquerade as removal");
+                Console.WriteLine("PASS: removed plugin is silent before runtime/hook preparation; present incomplete package and wrong path type rejected.");
+            }
+            finally
+            {
+                log.LogEvent -= capture;
+                setter.Invoke(null, new[] { previousRoot });
+                mode.SetValue(null, previousMode);
+                Directory.Delete(root, true);
+            }
+        }
+
+        private static void TestLogging()
+        {
+            ProbeTrace.Initialize();
+            var log = (BepInEx.Logging.ManualLogSource)typeof(ProbeTrace)
+                .GetField("log", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
+            var levels = new System.Collections.Generic.List<BepInEx.Logging.LogLevel>();
+            EventHandler<BepInEx.Logging.LogEventArgs> capture = (sender, args) => levels.Add(args.Level);
+            log.LogEvent += capture;
+            try
+            {
+                ProbeTrace.Initialize();
+                ProbeTrace.Warning("warning fixture");
+                ProbeTrace.Error("error fixture");
+                Require(levels.SequenceEqual(new[] { BepInEx.Logging.LogLevel.Warning, BepInEx.Logging.LogLevel.Error }),
+                    "Bootstrap logging must be silent on initialization and preserve warning/error severity");
+            }
+            finally { log.LogEvent -= capture; }
+            EventHandler<BepInEx.Logging.LogEventArgs> broken = (sender, args) => { throw new Exception("logging fixture"); };
+            log.LogEvent += broken;
+            try { ProbeTrace.Error("must not escape"); }
+            finally { log.LogEvent -= broken; }
+            using (var module = ModuleDefinition.ReadModule(typeof(ContractTests).Assembly.Location))
+                Require(!module.Types.Single(t => t.Name == "ProbeTrace").Methods.Where(m => m.HasBody)
+                    .SelectMany(m => m.Body.Instructions).Any(i => i.Operand is MemberReference member && member.FullName.Contains("System.IO.")),
+                    "Bootstrap logger must not access diagnostic files");
+            Console.WriteLine("PASS: silent initialization, normal warning/error logging, contained logger failure, no diagnostic file access.");
         }
 
         private static void TestEarlyEntry()
@@ -249,7 +325,7 @@ namespace APIShared.DependencyBootstrap
                     Require(depth == initial, "Inserted block changes original stack height");
                     groups++;
                 }
-                Require(groups == 3, "Unexpected insertion blocks");
+                Require(groups == 2, "Unexpected insertion blocks (winner/index callbacks, no diagnostic entry callback)");
             }
             private static int Pops(Instruction i)
             {

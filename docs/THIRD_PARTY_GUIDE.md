@@ -124,6 +124,32 @@ implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consu
 registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
 
+The popularity display correction reads the 41 direct SE popularity modifiers after
+successful `GuiChecks` execution during an active mission. It automatically replaces
+only contributions whose effective SE value differs from Vanilla, including values
+set by third-party mods. It updates report/building text, totals and direction icons;
+it never changes simulation data, current popularity, SE stacks or building identity.
+No consumer registration, new setting or network packet is needed. Restoring a SE
+value to Vanilla automatically removes that correction. In particular, the existing
+zero-population Vanilla report discrepancy stays untouched when its SE value is Vanilla.
+The separate coverage/overpopulation thresholds are outside this correction's scope.
+
+The implementation in `ScriptExtenderFixes/Popularity` validates the audited native
+and managed game fingerprints before registering. Unknown report implementations
+are skipped independently. Mission observers and the GUI publisher survive startup
+cleanup; ending a mission closes only the logical gate. Snapshots are read from the
+current perspective, including paused checks and ration/tax previews. Public text
+setters retain Vanilla labels; signed church/cathedral sums never enter the identity
+byte. Overflow leaves the original display intact and produces a throttled error.
+One `SE_POPULARITY_DISPLAY` confirmation is logged per corrected session.
+
+The independent `tests/PopularityDisplay.Tests` suite covers all 41 modifiers, engine
+boundary callbacks and allocation checks. In the warmed .NET test runtime, effective
+value capture and calculation allocate no per-call objects; UI text output still
+creates strings. This is not a Unity frame-time or multiplayer performance claim.
+The original testmod correction was accepted in-game; the transferred implementation
+still needs its own game/editor/save-load and real host/client acceptance.
+
 The shutdown fix addresses an intermittent Alt+F4 crash in the audited UU-ImGUI API
 1.6.7 managed DLL and its matching `cimguiaio.dll` bundled with SHCDE-SE 2.14.1.
 Compatibility is determined by SHA-256 fingerprints and method/IL contracts, not

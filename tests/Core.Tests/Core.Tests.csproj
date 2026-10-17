@@ -63,10 +63,10 @@
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_Troops.xaml" Link="Fixtures/HUD_Troops.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <!-- Local integration keeps testing the installed Extender library. Standalone
        CI uses the matching public library without requiring proprietary game files. -->
-  <ItemGroup Condition="Exists('$(SHCDE_GAME_DIR)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll')">
-    <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(SHCDE_GAME_DIR)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll</HintPath></Reference>
+  <ItemGroup Condition="Exists('$(ExtenderDir)/ICSharpCode.SharpZipLib.dll')">
+    <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(ExtenderDir)/ICSharpCode.SharpZipLib.dll</HintPath></Reference>
   </ItemGroup>
-  <ItemGroup Condition="!Exists('$(SHCDE_GAME_DIR)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll')">
+  <ItemGroup Condition="!Exists('$(ExtenderDir)/ICSharpCode.SharpZipLib.dll')">
     <PackageReference Include="SharpZipLib" />
   </ItemGroup>
   <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>

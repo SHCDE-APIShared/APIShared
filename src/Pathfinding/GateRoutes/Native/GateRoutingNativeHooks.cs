@@ -68,14 +68,19 @@ namespace APIShared.GateRouting.Native
         private readonly ulong libraryBase;
         private readonly ManualLogSource log;
         private HookTransaction transaction;
+        private readonly NativeHookPublicationState movementPublication = new NativeHookPublicationState();
+        private readonly NativeHookPublicationState comparisonPublication = new NativeHookPublicationState();
+        private readonly NativeHookPublicationState descentPublication = new NativeHookPublicationState();
         private readonly List<object> roots = new List<object>();
         private IntPtr threadSlots, tacticalThreadSlots;
-        private bool hooksInstalled, movementAttempted, comparisonsAttempted, descentAttempted;
+        private bool movementAttempted, comparisonsAttempted, descentAttempted;
         private BuildingConsumerDelegate rootedAlternateConsumer;
         private CandidateSearchDelegate rootedCandidateSearch;
         private AiTacticalTargetDelegate rootedAiTacticalTarget;
         private DirectTileSearchDelegate rootedDirectCursorSearch;
         private CursorPclDecisionDelegate rootedCursorPclDecision;
+        private DirectTileSearchDelegate originalDirectCursorSearch;
+        private PclReachabilityDelegate originalPclReachability;
         private DetourCandidate<BuildingConsumerDelegate> alternateConsumer;
         private DetourCandidate<CandidateSearchDelegate> candidateSearch;
         private DetourCandidate<AiTacticalTargetDelegate> aiTacticalTarget;
@@ -115,38 +120,60 @@ namespace APIShared.GateRouting.Native
             }
         }
         // The three originals are set before the first movement patch is written, so a native callback
-        // can always call them, and cleared again if the installation fails (issue #28).
-        /// <summary>Original alternate building consumer, available after successful movement installation.</summary>
+        // can always call them. They remain available even if a later publication step fails.
+        /// <summary>Original alternate building consumer, available before movement publication and retained after a publication failure.</summary>
         public BuildingConsumerDelegate OriginalAlternateConsumer => System.Threading.Volatile.Read(ref originalAlternateConsumer);
-        /// <summary>Original candidate search, available after successful movement installation.</summary>
+        /// <summary>Original candidate search, available before movement publication and retained after a publication failure.</summary>
         public CandidateSearchDelegate OriginalCandidateSearch => System.Threading.Volatile.Read(ref originalCandidateSearch);
-        /// <summary>Original tactical search, available after successful movement installation.</summary>
+        /// <summary>Original tactical search, available before movement publication and retained after a publication failure.</summary>
         public AiTacticalTargetDelegate OriginalAiTacticalTarget => System.Threading.Volatile.Read(ref originalAiTacticalTarget);
         /// <summary>Installs the audited edge/cursor/tactical adapters once. Buffers follow
         /// GateNativeSearchScopes and must remain allocated until process exit. Each native callback
         /// owns exactly one original invocation; callbacks and transactions are retained permanently.
+        /// This includes partial publication followed by an exception. Provider callbacks stay inactive
+        /// until validation succeeds; originals are already available if a call arrives before return.
         /// Existing builder/attack/building/cursor-command function detours are not installed here.</summary>
         public void InstallMovement(IntPtr slots,IntPtr tactical, BuildingConsumerDelegate alternate,
             CandidateSearchDelegate candidates,AiTacticalTargetDelegate ai,DirectTileSearchDelegate direct,CursorPclDecisionDelegate cursor)
         {
             if(slots==IntPtr.Zero||tactical==IntPtr.Zero||alternate==null||candidates==null||ai==null||direct==null||cursor==null)throw new ArgumentException("Buffers and callbacks required");
+            movementPublication.ThrowIfUnavailable();
             if(movementAttempted)throw new InvalidOperationException("Gate movement installation already attempted");
             movementAttempted=true;
             threadSlots=slots;tacticalThreadSlots=tactical;rootedAlternateConsumer=alternate;rootedCandidateSearch=candidates;
-            rootedAiTacticalTarget=ai;rootedDirectCursorSearch=direct;rootedCursorPclDecision=cursor;
+            rootedAiTacticalTarget=ai;
+            // These are the same audited original functions called by the provider. Wrappers must
+            // bypass provider policy while the transaction is incomplete or permanently failed.
+            originalDirectCursorSearch = Marshal.GetDelegateForFunctionPointer<DirectTileSearchDelegate>(
+                new IntPtr(unchecked((long)(libraryBase + EnemyGatePathfindingNativeDefinition.DirectTileSearchRva))));
+            originalPclReachability = Marshal.GetDelegateForFunctionPointer<PclReachabilityDelegate>(
+                new IntPtr(unchecked((long)(libraryBase + EnemyGatePathfindingNativeDefinition.PclReachabilityRva))));
+            rootedDirectCursorSearch = (manager, x, y, a4, a5, a6) =>
+                movementPublication.IsReady ? direct(manager, x, y, a4, a5, a6) : originalDirectCursorSearch(manager, x, y, a4, a5, a6);
+            rootedCursorPclDecision = (manager, player, target, source, mode, unit) =>
+                movementPublication.IsReady ? cursor(manager, player, target, source, mode, unit) : originalPclReachability(manager, player, target, source, mode);
             // Claimed for APIShared before the transaction; released when it was not published.
             ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.GateMovement, ApiSharedNativeSites.GateMovementSpans(),
                 reason => new InvalidOperationException(reason));
             try { InstallMovementHooks(); }
-            catch { ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateMovement); throw; }
-            roots.Add(transaction);
+            catch
+            {
+                movementPublication.RollbackUnpublished(transaction, () =>
+                {
+                    System.Threading.Volatile.Write(ref originalAlternateConsumer, null);
+                    System.Threading.Volatile.Write(ref originalCandidateSearch, null);
+                    System.Threading.Volatile.Write(ref originalAiTacticalTarget, null);
+                    ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateMovement);
+                });
+                throw;
+            }
         }
         private sealed class DetourCandidate<T> where T : Delegate
         {
             internal readonly DetourHandle<T> Handle = new DetourHandle<T>();
             internal readonly ulong Address;
             internal DetourCandidate(ulong address) { Address = address; }
-            internal bool Committed => Handle.Success && Handle.IsInstalled &&
+            internal bool Prepared => Handle.Success &&
                 Handle.Failure == null && Handle.ResolvedAddress == Address;
         }
 
@@ -165,17 +192,29 @@ namespace APIShared.GateRouting.Native
             // provider's callbacks always find them (NativeHookPublication).
             transaction = new HookTransaction(region,
                 SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = false,
+                new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
                     InstallOnCommit = false, Backend = GateNativeDetourContract.Backend });
-            alternateConsumer = AddDetour(
+            alternateConsumer = AddDetour<BuildingConsumerDelegate>(
                 EnemyGatePathfindingNativeDefinition.AlternateBuildingConsumerRva,
-                rootedAlternateConsumer, libraryBase);
-            candidateSearch = AddDetour(
+                (manager, tribe, variant) =>
+                {
+                    if (movementPublication.IsReady) rootedAlternateConsumer(manager, tribe, variant);
+                    else originalAlternateConsumer(manager, tribe, variant);
+                }, libraryBase);
+            candidateSearch = AddDetour<CandidateSearchDelegate>(
                 EnemyGatePathfindingNativeDefinition.PlayerAwareCandidateSearchRva,
-                rootedCandidateSearch, libraryBase);
-            aiTacticalTarget = AddDetour(
+                (manager, start, count, target, player, mode, candidateClass) =>
+                {
+                    if (movementPublication.IsReady) rootedCandidateSearch(manager, start, count, target, player, mode, candidateClass);
+                    else originalCandidateSearch(manager, start, count, target, player, mode, candidateClass);
+                }, libraryBase);
+            aiTacticalTarget = AddDetour<AiTacticalTargetDelegate>(
                 EnemyGatePathfindingNativeDefinition.AiTacticalTargetSelectionRva,
-                rootedAiTacticalTarget, libraryBase);
+                (manager, tribe) =>
+                {
+                    if (movementPublication.IsReady) rootedAiTacticalTarget(manager, tribe);
+                    else originalAiTacticalTarget(manager, tribe);
+                }, libraryBase);
             ulong directCursorWrapper = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(
                 rootedDirectCursorSearch).ToInt64());
             DirectCursorCallAdapterEmitter.AssembleAndValidate(
@@ -266,73 +305,64 @@ namespace APIShared.GateRouting.Native
             CommitResult result = transaction.Commit();
             if (!result.IsCompleteSuccess)
                 throw new InvalidOperationException($"Vanilla Gate-Filter was not installed atomically: {result}");
+            ValidateMovement(result, false);
             System.Threading.Volatile.Write(ref originalAlternateConsumer, alternateConsumer.Handle.Original);
             System.Threading.Volatile.Write(ref originalCandidateSearch, candidateSearch.Handle.Original);
             System.Threading.Volatile.Write(ref originalAiTacticalTarget, aiTacticalTarget.Handle.Original);
-            try { NativeHookPublication.Enable(transaction, result); }
-            catch { RollBackMovement(); throw; }
+            NativeHookPublication.Enable(transaction, result, movementPublication, this,
+                () => ValidateMovement(result, true));
+        }
+
+        private void ValidateMovement(CommitResult result, bool installed)
+        {
             if (!result.IsCompleteSuccess ||
-                !alternateConsumer.Committed || !candidateSearch.Committed || !aiTacticalTarget.Committed ||
-                !directCursorHook.Success || !directCursorHook.IsInstalled ||
+                !alternateConsumer.Prepared || !candidateSearch.Prepared || !aiTacticalTarget.Prepared ||
+                !directCursorHook.Success || directCursorHook.IsInstalled != installed ||
                 directCursorHook.Failure != null ||
-                !cursorPclDecisionHook.Success || !cursorPclDecisionHook.IsInstalled ||
+                !cursorPclDecisionHook.Success || cursorPclDecisionHook.IsInstalled != installed ||
                 cursorPclDecisionHook.Failure != null ||
                 directCursorHook.Hook.DisplacedByteCount !=
                     EnemyGatePathfindingNativeDefinition.DirectCursorSearchBlockLength ||
                 cursorPclDecisionHook.Hook.DisplacedByteCount !=
                     EnemyGatePathfindingNativeDefinition.CursorPclDecisionLength)
             {
-                RollBackMovement();
                 throw new InvalidOperationException($"Vanilla Gate-Filter was not installed atomically: {result}");
             }
             for (int index = 0; index < edgeHooks.Length; index++)
             {
-                if (!edgeHooks[index].Success || !edgeHooks[index].IsInstalled ||
+                if (!edgeHooks[index].Success || edgeHooks[index].IsInstalled != installed ||
                     edgeHooks[index].Failure != null || edgeHooks[index].Hook.DisplacedByteCount !=
                         EnemyGatePathfindingNativeDefinition.DirectionFilterLengths[index])
                 {
-                    RollBackMovement();
                     throw new InvalidOperationException($"Direction-filter hook {index} failed its committed contract.");
                 }
             }
             for (int index = 0; index < tacticalEdgeHooks.Length; index++)
             {
-                if (!tacticalEdgeHooks[index].Success || !tacticalEdgeHooks[index].IsInstalled ||
+                if (!tacticalEdgeHooks[index].Success || tacticalEdgeHooks[index].IsInstalled != installed ||
                     tacticalEdgeHooks[index].Failure != null ||
                     tacticalEdgeHooks[index].Hook.DisplacedByteCount !=
                         EnemyGatePathfindingNativeDefinition.AiTacticalFilterLengths[index])
                 {
-                    RollBackMovement();
                     throw new InvalidOperationException(
                         $"AI tactical-filter hook {index} failed its committed contract.");
                 }
             }
-            try
-            {
-                GateNativeDetourContract.Validate(alternateConsumer.Handle.Hook,alternateConsumer.Address,6,true);
-                GateNativeDetourContract.Validate(candidateSearch.Handle.Hook,candidateSearch.Address,6,true);
-                GateNativeDetourContract.Validate(aiTacticalTarget.Handle.Hook,aiTacticalTarget.Address,10,true);
-            }
-            catch { RollBackMovement(); throw; } // Initialization candidate is not installed.
-            hooksInstalled = true;
-        }
-        // Failed movement installation: removes every patch first, then unpublishes the originals.
-        private void RollBackMovement()
-        {
-            transaction.DisableAll();
-            System.Threading.Volatile.Write(ref originalAlternateConsumer, null);
-            System.Threading.Volatile.Write(ref originalCandidateSearch, null);
-            System.Threading.Volatile.Write(ref originalAiTacticalTarget, null);
+            GateNativeDetourContract.Validate(alternateConsumer.Handle.Hook,alternateConsumer.Address,6,installed);
+            GateNativeDetourContract.Validate(candidateSearch.Handle.Hook,candidateSearch.Address,6,installed);
+            GateNativeDetourContract.Validate(aiTacticalTarget.Handle.Hook,aiTacticalTarget.Address,10,installed);
         }
         private CapturerComparisonCallback rootedPclComparison,rootedBuilderComparison;
         private readonly HookHandle<X64InlineHook> pclGraphCapturedByFilterHook=new HookHandle<X64InlineHook>();
         private readonly HookHandle<X64InlineHook> builderPrecheckCapturedByFilterHook=new HookHandle<X64InlineHook>();
-        /// <summary>Installs both capturer-comparison adapters atomically. The callback context is
+        /// <summary>Prepares both capturer-comparison adapters before publication. Any published part
+        /// survives installation failure; callbacks remain inactive until both hooks validate. The callback context is
         /// X64SmartCPUContext; R11b contains secured native inequality, never use Rflags as input/output.
         /// Clear R11b only to add rejection; retain native rejection. All other live state must be preserved.</summary>
         public void InstallComparisons(CapturerComparisonCallback pcl,CapturerComparisonCallback builder)
         {
             if (pcl==null||builder==null)throw new ArgumentNullException("comparison callbacks");
+            comparisonPublication.ThrowIfUnavailable();
             if (comparisonsAttempted) throw new InvalidOperationException("Gate comparison installation already attempted");
             comparisonsAttempted=true;
             var memory=context.Memory;
@@ -340,8 +370,8 @@ namespace APIShared.GateRouting.Native
             int builderPrecheckFilterRva=EnemyGatePathfindingNativeDefinition.BuilderPrecheckCapturedByFilterRva;
             // Our adapter executes CMP once, saves inequality in R11b, and TESTs
             // that Boolean after callback cleanup. The real R11 is preserved.
-            rootedPclComparison = pcl;
-            rootedBuilderComparison = builder;
+            rootedPclComparison = cpu => { if (comparisonPublication.IsReady) pcl(cpu); };
+            rootedBuilderComparison = cpu => { if (comparisonPublication.IsReady) builder(cpu); };
             ulong pclCallback = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(rootedPclComparison).ToInt64());
             ulong builderCallback = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(rootedBuilderComparison).ToInt64());
             CapturerComparisonAdapterEmitter.AssembleAndValidate(
@@ -353,7 +383,11 @@ namespace APIShared.GateRouting.Native
             ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.GateComparisons, ApiSharedNativeSites.GateComparisonSpans(),
                 reason => new InvalidOperationException(reason));
             try { InstallComparisonHooks(pclGraphFilterRva, builderPrecheckFilterRva, pclCallback, builderCallback); }
-            catch { ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateComparisons); throw; }
+            catch
+            {
+                if (!comparisonPublication.HasStarted) ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateComparisons);
+                throw;
+            }
         }
 
         private void InstallComparisonHooks(int pclGraphFilterRva, int builderPrecheckFilterRva, ulong pclCallback, ulong builderCallback)
@@ -364,36 +398,48 @@ namespace APIShared.GateRouting.Native
                 new HookTransactionOptions
                 {
                     FailureMode = TransactionFailureMode.RollbackAndThrow,
-                    OwnsHooks = false
+                    OwnsHooks = true,
+                    InstallOnCommit = false
                 });
-            transaction.AddInline(
-                pclGraphCapturedByFilterHook,
-                HookTarget.FromAddress(libraryBase + unchecked((ulong)pclGraphFilterRva)),
-                (asm, original, returnAddress) => CapturerComparisonAdapterEmitter.Emit(asm, original, pclCallback),
-                hookSize: EnemyGatePathfindingNativeDefinition.PclGraphCapturedByFilterHookLength);
-            transaction.AddInline(
-                builderPrecheckCapturedByFilterHook,
-                HookTarget.FromAddress(libraryBase + unchecked((ulong)builderPrecheckFilterRva)),
-                (asm, original, returnAddress) => CapturerComparisonAdapterEmitter.Emit(asm, original, builderCallback),
-                hookSize: EnemyGatePathfindingNativeDefinition.BuilderPrecheckCapturedByFilterHookLength);
-            CommitResult commitResult = transaction.Commit();
-            if (!commitResult.IsCompleteSuccess ||
-                !pclGraphCapturedByFilterHook.Success ||
-                !builderPrecheckCapturedByFilterHook.Success)
-                throw new InvalidOperationException(
-                    $"both snapshot-based captured-player filters were not installed atomically: {commitResult}");
-            if (pclGraphCapturedByFilterHook.Hook.DisplacedByteCount !=
-                    EnemyGatePathfindingNativeDefinition.PclGraphCapturedByFilterHookLength ||
-                builderPrecheckCapturedByFilterHook.Hook.DisplacedByteCount !=
-                    EnemyGatePathfindingNativeDefinition.BuilderPrecheckCapturedByFilterHookLength)
+            try
             {
-                // This object has not been published yet, so rollback is safe and mandatory.
-                transaction.DisableAll();
-                throw new InvalidOperationException(
-                    "RedBird committed an unexpected captured-player hook span; both hooks were rolled back.");
+                transaction.AddInline(
+                    pclGraphCapturedByFilterHook,
+                    HookTarget.FromAddress(libraryBase + unchecked((ulong)pclGraphFilterRva)),
+                    (asm, original, returnAddress) => CapturerComparisonAdapterEmitter.Emit(asm, original, pclCallback),
+                    hookSize: EnemyGatePathfindingNativeDefinition.PclGraphCapturedByFilterHookLength);
+                transaction.AddInline(
+                    builderPrecheckCapturedByFilterHook,
+                    HookTarget.FromAddress(libraryBase + unchecked((ulong)builderPrecheckFilterRva)),
+                    (asm, original, returnAddress) => CapturerComparisonAdapterEmitter.Emit(asm, original, builderCallback),
+                    hookSize: EnemyGatePathfindingNativeDefinition.BuilderPrecheckCapturedByFilterHookLength);
+                CommitResult commitResult = transaction.Commit();
+                if (!commitResult.IsCompleteSuccess ||
+                    !pclGraphCapturedByFilterHook.Success ||
+                    !builderPrecheckCapturedByFilterHook.Success)
+                    throw new InvalidOperationException(
+                        $"both snapshot-based captured-player filters were not installed atomically: {commitResult}");
+                if (pclGraphCapturedByFilterHook.Hook.DisplacedByteCount !=
+                        EnemyGatePathfindingNativeDefinition.PclGraphCapturedByFilterHookLength ||
+                    builderPrecheckCapturedByFilterHook.Hook.DisplacedByteCount !=
+                        EnemyGatePathfindingNativeDefinition.BuilderPrecheckCapturedByFilterHookLength)
+                {
+                    throw new InvalidOperationException(
+                        "RedBird prepared an unexpected captured-player hook span.");
+                }
+                NativeHookPublication.Enable(transaction, commitResult, comparisonPublication, this, () =>
+                {
+                    if (!pclGraphCapturedByFilterHook.IsInstalled || !builderPrecheckCapturedByFilterHook.IsInstalled ||
+                        pclGraphCapturedByFilterHook.Hook.DisplacedByteCount != EnemyGatePathfindingNativeDefinition.PclGraphCapturedByFilterHookLength ||
+                        builderPrecheckCapturedByFilterHook.Hook.DisplacedByteCount != EnemyGatePathfindingNativeDefinition.BuilderPrecheckCapturedByFilterHookLength)
+                        throw new InvalidOperationException("Captured-player hooks were prepared but not written.");
+                });
             }
-
-            roots.Add(rootedPclComparison);roots.Add(rootedBuilderComparison);roots.Add(transaction);
+            catch
+            {
+                comparisonPublication.RollbackUnpublished(transaction, null);
+                throw;
+            }
         }
         /// <summary>Installs the audited pre-step route-clear adapter once. Activation pointers refer to
         /// permanently allocated Int32 data; zero preserves the complete original path. The decision callback
@@ -403,6 +449,7 @@ namespace APIShared.GateRouting.Native
             CapturerComparisonCallback afterCallback,IntPtr activation,IntPtr diagnosticActivation)
         {
             if (decision==null||beforeCallback==null||afterCallback==null||activation==IntPtr.Zero||diagnosticActivation==IntPtr.Zero)throw new ArgumentException("Callbacks and activation data required");
+            descentPublication.ThrowIfUnavailable();
             if (descentAttempted) throw new InvalidOperationException("Gate descent installation already attempted");
             descentAttempted=true;
             const int Site=DescentSiteRva,Length=DescentLength,Continuation=DescentContinuationRva;
@@ -417,21 +464,35 @@ namespace APIShared.GateRouting.Native
                 if (probe.DisplacedByteCount != Length) throw new InvalidOperationException("Gate descent displacement changed");
             ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.GateDescent, ApiSharedNativeSites.GateDescentSpans(),
                 reason => new InvalidOperationException(reason));
-            HookTransaction transaction;
+            HookTransaction transaction = null;
+            CapturerComparisonCallback guardedDecision = cpu => { if (descentPublication.IsReady) decision(cpu); };
+            CapturerComparisonCallback guardedBefore = cpu => { if (descentPublication.IsReady) beforeCallback(cpu); };
+            CapturerComparisonCallback guardedAfter = cpu => { if (descentPublication.IsReady) afterCallback(cpu); };
+            roots.Add(guardedDecision); roots.Add(guardedBefore); roots.Add(guardedAfter);
             try
             {
                 transaction = new HookTransaction(context.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = false });
+                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
+                        InstallOnCommit = false });
                 transaction.AddInline(hook, HookTarget.FromAddress(module + Site), (a, original, ret) =>
-                    AssassinGateDescentAdapter.Emit(a, original, Address(decision), (ulong)activation.ToInt64(), module + Continuation,
-                        Address(beforeCallback), Address(afterCallback), (ulong)diagnosticActivation.ToInt64(), module), Length);
+                    AssassinGateDescentAdapter.Emit(a, original, Address(guardedDecision), (ulong)activation.ToInt64(), module + Continuation,
+                        Address(guardedBefore), Address(guardedAfter), (ulong)diagnosticActivation.ToInt64(), module), Length);
                 var result = transaction.Commit();
                 if (!result.IsCompleteSuccess || !hook.Success) throw new InvalidOperationException("Gate descent hook failed");
                 if (hook.Hook.DisplacedByteCount != Length)
-                { transaction.DisableAll(); throw new InvalidOperationException("Unpublished gate descent hook mismatch"); }
+                    throw new InvalidOperationException("Prepared gate descent hook mismatch");
+                NativeHookPublication.Enable(transaction, result, descentPublication, this, () =>
+                {
+                    if (!hook.IsInstalled || hook.Hook.DisplacedByteCount != Length)
+                        throw new InvalidOperationException("Gate descent hook failed its written contract.");
+                });
             }
-            catch { ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateDescent); throw; }
-            roots.Add(transaction);roots.Add(decision);roots.Add(beforeCallback);roots.Add(afterCallback);
+            catch
+            {
+                descentPublication.RollbackUnpublished(transaction,
+                    () => ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.GateDescent));
+                throw;
+            }
         }
         private static ulong Address(Delegate d) => (ulong)Marshal.GetFunctionPointerForDelegate(d).ToInt64();
     }

@@ -102,10 +102,10 @@ namespace APISharedTests
             }
         }
 
-        // The method's calls in IL order, with each call into a method of the same type followed in place
-        // by that method's own calls (recursively, skipping methods already on the path). An installer can
-        // move its claim, publication or release into a helper without leaving this check, as audio's
-        // Install did with CreateHooks (#20).
+        // Follow calls and callback bodies within the installer's lexical owner (including nested
+        // installation objects/closures). Cleanup may be supplied to a publication barrier as an
+        // Action rather than called directly. This proves presence/order, not rollback safety;
+        // NativeHookPublicationTests separately exercise the barrier and forbid direct teardown.
         private static List<Mono.Cecil.MethodReference> CallsInOrder(Mono.Cecil.MethodDefinition method,
             HashSet<Mono.Cecil.MethodDefinition> path)
         {
@@ -114,10 +114,14 @@ namespace APISharedTests
             foreach (Mono.Cecil.Cil.Instruction instruction in method.Body.Instructions)
             {
                 if (instruction.OpCode.Code != Mono.Cecil.Cil.Code.Call && instruction.OpCode.Code != Mono.Cecil.Cil.Code.Callvirt &&
-                    instruction.OpCode.Code != Mono.Cecil.Cil.Code.Newobj) continue;
+                    instruction.OpCode.Code != Mono.Cecil.Cil.Code.Newobj && instruction.OpCode.Code != Mono.Cecil.Cil.Code.Ldftn) continue;
                 var callee = (Mono.Cecil.MethodReference)instruction.Operand;
                 calls.Add(callee);
-                if (callee.DeclaringType.FullName != method.DeclaringType.FullName) continue;
+                Mono.Cecil.TypeReference calleeOwner = callee.DeclaringType;
+                Mono.Cecil.TypeReference methodOwner = method.DeclaringType;
+                while (calleeOwner.DeclaringType != null) calleeOwner = calleeOwner.DeclaringType;
+                while (methodOwner.DeclaringType != null) methodOwner = methodOwner.DeclaringType;
+                if (calleeOwner.FullName != methodOwner.FullName) continue;
                 Mono.Cecil.MethodDefinition body = callee.Resolve();
                 if (body != null && body.HasBody && !path.Contains(body)) calls.AddRange(CallsInOrder(body, path));
             }
