@@ -36,6 +36,8 @@ $expected = @{
     'GameUnit.r_CurrentTilePositionY' = 'System.UInt16|194|2'
     'GameUnit.r_TargetTilePositionX' = 'System.UInt16|196|2'
     'GameUnit.r_TargetTilePositionY' = 'System.UInt16|198|2'
+    # Formation speech consumes these audited tile and leader fields (GameUnit/GameTribe layout).
+    'GameUnit.r_CurrentPositionTileId' = 'System.UInt32|208|4'
     'GameUnit.r_IsKilledByProjectile' = 'System.UInt16|668|2'
     'GameUnit.r_TribeId' = 'System.UInt16|724|2'
     'GameUnit.r_AttackMoveToTargetTileX' = 'System.UInt16|728|2'
@@ -43,6 +45,7 @@ $expected = @{
     'GameTribe.r_PlayerIdOwner' = 'System.UInt16|2|2'
     'GameTribe.r_GlobalId' = 'System.UInt32|10|4'
     'GameTribe.r_AliveState' = 'SHCDESE.Interop.Enums.AliveState|22|2'
+    'GameTribe.r_LeaderUnitId' = 'System.UInt16|48|2'
     'GameCursorManager.r_IsCursorInGame' = 'System.UInt32|8|4'
     'GameCursorManager.r_HoverOverBuildingId' = 'System.UInt32|36|4'
     'GameCursorManager.r_HoverOverUnitId' = 'System.UInt32|48|4'
