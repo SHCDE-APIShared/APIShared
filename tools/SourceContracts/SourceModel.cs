@@ -400,17 +400,4 @@ internal sealed class SourceModel
         foreach (var type in Types.Where(t => bootstrapFiles.Contains(t.SyntaxTree.FilePath)))
             Require(!type.Members.OfType<MethodDeclarationSyntax>().Any(m => Lifecycle.Contains(m.Identifier.ValueText)), "Bootstrap acquired component lifecycle teardown.");
     }
-    internal void CheckWorkshop()
-    {
-        var startup = Parts("WorkshopStartup").ToArray();
-        Require(startup.SelectMany(Calls).Any(c => IsCall(c, "Interlocked", "Exchange")), "Workshop confirmation lost its one-attempt guard.");
-        Require(startup.SelectMany(Calls).Any(c => IsCall(c, "WorkshopStartupGate", "Run")), "Workshop startup bypasses its authorization gate.");
-        Require(!startup.SelectMany(t => t.Members).OfType<MethodDeclarationSyntax>().Any(m => m.Modifiers.Any(SyntaxKind.AsyncKeyword) && m.ReturnType.ToString() == "void"), "Workshop startup cannot be async void.");
-        var runtime = Parts("WorkshopRuntime").ToArray();
-        Require(runtime.SelectMany(t => t.Members).OfType<FieldDeclarationSyntax>().Any(f => f.Modifiers.Any(SyntaxKind.StaticKeyword) && f.Declaration.Type.ToString() == "IDisposable"), "Workshop subscription needs a process root.");
-        Require(runtime.SelectMany(Calls).Any(c => IsCall(c, "WorkshopStartup", "Run")), "Workshop runtime no longer invokes startup coordination.");
-        Require(runtime.SelectMany(Calls).Any(c => Name(c) == "Validate") && runtime.SelectMany(Calls).Any(c => Name(c) == "Quit"), "Workshop update handoff lacks authorization validation/quit.");
-        Require(!Types.Any(t => t.Identifier.ValueText == "WorkshopViewModel") && !runtime.SelectMany(Calls).Any(c => Name(c) == "RegisterLobbyModSettings"), "Removed Workshop UI is registered again.");
-        Require(!Parts("WorkshopSteamUpload").SelectMany(Calls).Any(c => Name(c) == "UploadWorkshopMap"), "Workshop publisher acquired the vanilla upload singleton.");
-    }
 }

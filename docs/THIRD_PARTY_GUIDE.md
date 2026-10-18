@@ -227,6 +227,28 @@ retiring a workaround. Do not install a competing patch for the same owned metho
 
 ## Optional game-mode permissions
 
+For a same-mission restart, wrap the complete preparation and loading action in
+`MissionRestart.Run(ownerGuid, action)` on the Unity thread. This requires a ready
+gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
+restart already use this boundary; opening or cancelling confirmation does not.
+Nested calls share one attempt. Other launches must use their normal entry points.
+Restart authorization retains the source's Customize provenance and conflict locks,
+including saves restored without ExtendedData; network and native facts are captured
+again. An incompatible native family cannot inherit the source's gameplay permission.
+
+The source receives an ordinary `End(Replaced)` with an immutable
+`ReplacementContext`. Its `RestartedFromSessionId` identifies the source session;
+the destination has its own session ID and `IsRestart`, and is a new game even
+when the source was loaded from a save. Settings owners can transfer their
+existing context to this destination instead of leaving/re-entering a preset.
+Preserve working values, source attribution, locks and personal state; do not
+reload source defaults while `MissionRestart.IsInProgress`. Release transferred
+ownership on destination failure or actual departure. Delayed MP-client loading
+retains the destination attempt until managed completion; no second transport or
+disk snapshot is introduced. Gameplay runtimes still receive normal end/start
+notifications and must perform their usual cleanup. See the
+[restart contract](../src/Missions/MissionRestart.cs).
+
 Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Use `GameModeHelper.Capture()` for a current snapshot where appropriate. Capture itself applies no permissions. Construct `GameplayModActivationProfile` with your own GUID, allowed contexts and `allowRealMultiplayer`, then call `GameplayModModePolicy.IsAllowed`. You can instead implement your own policy directly from the snapshot.
 
 The built-in optional evaluator rejects unknown or conflicting origins. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.

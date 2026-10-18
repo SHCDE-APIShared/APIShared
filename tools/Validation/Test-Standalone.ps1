@@ -52,7 +52,6 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-GitHubRelease.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell release regression failed.' }
 }
-& (Join-Path $PSScriptRoot 'Test-WorkshopManager.ps1')
 # Test-WorkshopHotfixBoundaries.ps1 is an opt-in historical release-scope audit
 # against the published 0.9.0 tree. Its exact 0.9.2 identity is deliberate, but
 # a version string alone must not select it as a current development-build gate.

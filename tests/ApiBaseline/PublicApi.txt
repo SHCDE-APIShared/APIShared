@@ -647,6 +647,7 @@ APIShared.MissionContext | public int? LocalPlayerId { get; }
 APIShared.MissionContext | public int? MapSize { get; }
 APIShared.MissionContext | public int? MissionIndex { get; }
 APIShared.MissionContext | public long SessionId { get; }
+APIShared.MissionContext | public long? RestartedFromSessionId { get; }
 APIShared.MissionContext | public string FilePath { get; }
 APIShared.MissionContext | public string MapName { get; }
 APIShared.MissionEndReason | public enum APIShared.MissionEndReason : int
@@ -670,6 +671,7 @@ APIShared.MissionLifecycleKind | Initialization = 0
 APIShared.MissionLifecycleKind | Start = 1
 APIShared.MissionLifecycleNotification | public sealed class APIShared.MissionLifecycleNotification
 APIShared.MissionLifecycleNotification | public APIShared.MissionContext Context { get; }
+APIShared.MissionLifecycleNotification | public APIShared.MissionContext ReplacementContext { get; }
 APIShared.MissionLifecycleNotification | public APIShared.MissionEndReason EndReason { get; }
 APIShared.MissionLifecycleNotification | public APIShared.MissionInitializationPhase Phase { get; }
 APIShared.MissionLifecycleNotification | public APIShared.MissionLifecycleKind Kind { get; }
@@ -683,6 +685,9 @@ APIShared.MissionMapType | FreeBuild = 1
 APIShared.MissionMapType | Invasion = 4
 APIShared.MissionMapType | Siege = 3
 APIShared.MissionMapType | Unknown = 0
+APIShared.MissionRestart | public static class APIShared.MissionRestart
+APIShared.MissionRestart | public static bool IsInProgress { get; }
+APIShared.MissionRestart | public static void Run(string ownerGuid, System.Action restart)
 APIShared.MissionStartKind | public enum APIShared.MissionStartKind : int
 APIShared.MissionStartKind | EditorCreated = 2
 APIShared.MissionStartKind | EditorLoaded = 3

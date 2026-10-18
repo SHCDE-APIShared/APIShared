@@ -19,6 +19,7 @@ namespace APIShared
         private static readonly Dictionary<string, Dictionary<string, byte[]>> preparedSnapshots =
             new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
         private static string preparedPath;
+        private static string preparedApplicationContext;
         private static SavegameModSettingsRecord preparedRecord;
         private static bool preparedApplied, preparedTransferred;
         internal static SavegameModSettingsRecord PreparedRecordForStart => preparedRecord;
@@ -150,13 +151,16 @@ namespace APIShared
                 try { entry.Value.System_ExitMissionPreset(); }
                 catch (Exception error) { NativeApiLog.Error(log, "Could not restore own preset for " + entry.Key + ": " + error); }
             }
-            if (preparedEndpoints.Count != 0) ModSettingsApplication.ExitContext();
+            if (preparedEndpoints.Count != 0 || preparedApplicationContext != null &&
+                ModSettingsApplication.ContextId == preparedApplicationContext)
+                ModSettingsApplication.ExitContext();
             ClearPreparation();
         }
 
         private static void ClearPreparation()
         {
             preparedEndpoints.Clear(); preparedPath = null; preparedRecord = null;
+            preparedApplicationContext = null;
             preparedSnapshots.Clear();
             preparedApplied = false; preparedTransferred = false;
         }

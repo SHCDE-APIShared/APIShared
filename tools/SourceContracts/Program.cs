@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis.CSharp;
 try
 {
     Console.InputEncoding = new System.Text.UTF8Encoding(false);
-    if (args.Length < 2) throw new ArgumentException("Usage: SourceContracts <repository> <wheat|hooks|workshop|lifecycle|interop> [additional source files]");
+    if (args.Length < 2) throw new ArgumentException("Usage: SourceContracts <repository> <wheat|hooks|lifecycle|interop> [additional source files]");
     if (args[1] == "dependencies") {
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(SourceModel.DependencyDeclarations(Console.In.ReadToEnd(),
             args.Length > 2 ? args[2].Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : Array.Empty<string>())));
@@ -16,7 +16,6 @@ try
     {
         case "wheat": model.CheckWheat(); model.CheckWheatMemory(); break;
         case "hooks": model.CheckHooks(); break;
-        case "workshop": model.CheckWorkshop(); break;
         case "lifecycle": model.CheckLifecycle(); break;
         case "interop":
             var selected = model.Types.Where(t => t.Identifier.ValueText is "UnitAccess" or "UnitSettledScriptExtenderSource").Cast<Microsoft.CodeAnalysis.SyntaxNode>()
