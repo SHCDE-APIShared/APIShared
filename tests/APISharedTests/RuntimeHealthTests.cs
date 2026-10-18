@@ -1,0 +1,218 @@
+using APIShared.Internal;
+using BepInEx.Logging;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
+
+[TestClass]
+public sealed class RuntimeHealthTests
+{
+    [TestMethod]
+    public void IndependentFallbackLoggersReceiveTheirOwnFailures()
+    {
+        using (var first = new ManualLogSource("first"))
+        using (var second = new ManualLogSource("second"))
+        {
+            int a = 0, b = 0;
+            first.LogEvent += (_, args) => a++;
+            second.LogEvent += (_, args) => b++;
+            RuntimeHealth.Failure(first, "same-feature", true, "same failure");
+            RuntimeHealth.Failure(second, "same-feature", true, "same failure");
+            RuntimeHealth.Failure(first, "same-feature", true, "same failure");
+            Assert.AreEqual(1, a); Assert.AreEqual(1, b);
+        }
+    }
+    [TestMethod]
+    public void ConstructionIsSilentAndFailuresRetainSeverityAndContext()
+    {
+        var messages = new List<(LogLevel, string)>();
+        var health = new RuntimeHealthLedger("mod", (level, text) => messages.Add((level, text)));
+        Assert.AreEqual(0, messages.Count);
+        health.Report("apply", true, "setter failed; Vanilla retained");
+        health.Report("optional", false, "requested capability unavailable; feature inactive");
+        Assert.AreEqual(2, messages.Count);
+        Assert.AreEqual(LogLevel.Error, messages[0].Item1); Assert.AreEqual(LogLevel.Warning, messages[1].Item1);
+        Assert.IsTrue(messages.All(m => m.Item2.Contains("mod=mod; feature=")));
+        // Only errors carry the failure tag; warnings may be expected degradations.
+        Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(messages[0].Item2,
+            @"^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\] MOD_FAILURE mod=.*; cause=[0-9A-F]{12}; detail="));
+        Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(messages[1].Item2,
+            @"^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\] MOD_WARNING mod=.*; cause=[0-9A-F]{12}; detail="));
+    }
+    [TestMethod]
+    [DoNotParallelize]
+    public void ReportsFromWorkerThreadsAreWrittenSynchronously()
+    {
+        // A main-thread handoff would lose reports of a hanging or crashing frame.
+        var fields = typeof(RuntimeHealth).GetFields(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Where(field => !field.IsInitOnly && !field.IsLiteral).ToDictionary(field => field, field => field.GetValue(null));
+        var previous = System.Threading.SynchronizationContext.Current;
+        using (var source = new ManualLogSource("worker-fixture"))
+        {
+            try
+            {
+                foreach (var field in fields.Keys) field.SetValue(null, null);
+                var messages = new List<string>(); source.LogEvent += (_, args) => { lock (messages) messages.Add(args.Data.ToString()); };
+                System.Threading.SynchronizationContext.SetSynchronizationContext(new DiscardingContext());
+                RuntimeHealth.Initialize(source);
+                var worker = new System.Threading.Thread(() => RuntimeHealth.Failure(source, "worker", true, "simulation failure"));
+                worker.Start(); worker.Join();
+                lock (messages) { Assert.AreEqual(1, messages.Count); Assert.IsTrue(messages[0].Contains("feature=worker;")); }
+            }
+            finally
+            {
+                System.Threading.SynchronizationContext.SetSynchronizationContext(previous);
+                foreach (var item in fields) item.Key.SetValue(null, item.Value);
+            }
+        }
+    }
+    private sealed class DiscardingContext : System.Threading.SynchronizationContext
+    {
+        public override void Post(System.Threading.SendOrPostCallback d, object state) { }
+    }
+    [TestMethod]
+    public void ForwardedWarningsKeepASingleTag()
+    {
+        using (var source = new ManualLogSource("warning-proxy-fixture"))
+        {
+            var messages = new List<string>();
+            source.LogEvent += (_, args) => messages.Add(args.Data.ToString());
+            var proxy = DebugLogHelper.ForExternalCode(source);
+            APIShared.NativeApiLog.Warning(proxy, "optional capability unavailable");
+            Assert.AreEqual(1, messages.Count);
+            Assert.AreEqual(1, System.Text.RegularExpressions.Regex.Matches(messages[0], "MOD_(WARNING|FAILURE)").Count);
+            Assert.IsTrue(messages[0].Contains("MOD_WARNING"));
+        }
+    }
+    [TestMethod]
+    [DoNotParallelize]
+    public void UnitSettledSourceReportsSwallowedHandlerFailures()
+    {
+        var previous = APIShared.Units.UnitSettledScriptExtenderSource.Log;
+        using (var source = new ManualLogSource("unit-settled-fixture"))
+        {
+            try
+            {
+                var messages = new List<(LogLevel, string)>();
+                source.LogEvent += (_, args) => messages.Add((args.Level, args.Data.ToString()));
+                APIShared.Units.UnitSettledScriptExtenderSource.Log = source;
+                APIShared.Units.UnitSettledScriptExtenderSource.Report("tick", new InvalidOperationException("tracker failed"));
+                APIShared.Units.UnitSettledScriptExtenderSource.Report("tick", new InvalidOperationException("tracker failed"));
+                Assert.AreEqual(1, messages.Count, "Identical per-tick repeats are throttled, the first is reported.");
+                Assert.AreEqual(LogLevel.Error, messages[0].Item1);
+                Assert.IsTrue(messages[0].Item2.Contains("feature=unit-settled:tick;") && messages[0].Item2.Contains("tracker failed"));
+                APIShared.Units.UnitSettledScriptExtenderSource.Log = null;
+                APIShared.Units.UnitSettledScriptExtenderSource.Report("discard", new InvalidOperationException("no logger"));
+                Assert.AreEqual(1, messages.Count, "Without a logger the handler stays silent and does not throw.");
+            }
+            finally { APIShared.Units.UnitSettledScriptExtenderSource.Log = previous; }
+        }
+    }
+    [TestMethod]
+    public void NewCausesAndIndependentFunctionsHaveNoReportQuota()
+    {
+        int reports = 0;
+        var health = new RuntimeHealthLedger("mod", (_, text) => reports++, () => 0, 1);
+        for (int i = 0; i < 1000; i++) health.Report("same-feature", true, "different cause " + i);
+        for (int i = 0; i < 300; i++) health.Report("different-feature-" + i, true, "same cause");
+        Assert.AreEqual(1300, reports);
+    }
+    [TestMethod]
+    public void OnlyIdenticalRepeatsAreSuppressedForThirtySeconds()
+    {
+        long now = 0;
+        var messages = new List<string>();
+        var health = new RuntimeHealthLedger("mod", (_, text) => messages.Add(text), () => now, 100);
+        health.Report("apply", true, "failure");
+        now = 1; health.Report("apply", true, "failure");
+        now = 2999; health.Report("apply", true, "failure");
+        Assert.AreEqual(1, messages.Count);
+        now = 3000; health.Report("apply", true, "failure");
+        Assert.AreEqual(2, messages.Count);
+        Assert.IsTrue(messages[1].Contains("suppressed repeats=2"));
+        health.Report("apply", false, "failure");
+        health.Report("independent", true, "failure");
+        health.Report("apply", true, "new failure");
+        Assert.AreEqual(5, messages.Count);
+        now = 6000; health.Report("apply", true, "failure");
+        Assert.AreEqual(6, messages.Count);
+        Assert.IsFalse(messages.Last().Contains("suppressed repeats="));
+    }
+    [TestMethod]
+    public void FullCacheEvictsOldIdentitiesAndAdmitsNewFailures()
+    {
+        int reports = 0;
+        var health = new RuntimeHealthLedger("mod", (_, text) => reports++, () => 0, 1);
+        for (int i = 0; i < 5000; i++) health.Report("feature-" + i, true, "failure");
+        Assert.AreEqual(5000, reports); Assert.AreEqual(4096, health.Count);
+        health.Report("feature-0", true, "failure");
+        Assert.AreEqual(5001, reports); Assert.AreEqual(4096, health.Count);
+    }
+    [TestMethod]
+    public void LeastRecentlyUsedEvictionPreservesFrequentlyRepeatedFailure()
+    {
+        int reports = 0;
+        var health = new RuntimeHealthLedger("mod", (_, text) => reports++, () => 0, 1, 2);
+        health.Report("A", true, "failure"); health.Report("B", true, "failure");
+        health.Report("A", true, "failure"); health.Report("C", true, "failure");
+        health.Report("A", true, "failure");
+        Assert.AreEqual(3, reports);
+        health.Report("B", true, "failure"); Assert.AreEqual(4, reports);
+    }
+    [TestMethod]
+    public void TimestampChangesAreRepeatsButTruncatedDifferentCausesRemainIndependent()
+    {
+        int reports = 0;
+        var health = new RuntimeHealthLedger("mod", (_, text) => reports++, () => 0, 1);
+        health.Report("apply", true, "[2026-10-18 20:00:00.001] failure");
+        health.Report("apply", true, "[2026-10-18 20:00:01.002] failure");
+        Assert.AreEqual(1, reports);
+        string prefix = new string('a', 5000);
+        health.Report("apply", true, prefix + "first"); health.Report("apply", true, prefix + "second");
+        Assert.AreEqual(3, reports);
+    }
+    [TestMethod]
+    public void ForwardedReportsAreNotThrottledAgain()
+    {
+        using (var source = new ManualLogSource("proxy-fixture"))
+        {
+            var messages = new List<string>();
+            source.LogEvent += (_, args) => messages.Add(args.Data.ToString());
+            var proxy = DebugLogHelper.ForExternalCode(source);
+            long now = 0;
+            var health = new RuntimeHealthLedger("mod", (level, text) => proxy.Log(level, text), () => now, 1);
+            health.Report("A", true, "failure"); health.Report("A", true, "failure");
+            now = 30; health.Report("A", true, "failure");
+            health.Report("B", true, "failure"); health.Report("B", false, "failure");
+            Assert.AreEqual(4, messages.Count);
+            Assert.IsTrue(messages[1].Contains("suppressed repeats=1"));
+            Assert.IsTrue(messages[2].Contains("feature=B;"));
+        }
+    }
+    [TestMethod]
+    public void ExistingLoggingApiSeparatesActualCallerFunctions()
+    {
+        using (var source = new ManualLogSource("caller-fixture"))
+        {
+            var messages = new List<string>(); source.LogEvent += (_, args) => messages.Add(args.Data.ToString());
+            ReportA(source); ReportB(source); ReportA(source);
+            Assert.AreEqual(2, messages.Count);
+            Assert.IsTrue(messages[0].Contains(nameof(ReportA)));
+            Assert.IsTrue(messages[1].Contains(nameof(ReportB)));
+        }
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ReportA(ManualLogSource log) { APIShared.NativeApiLog.Error(log, "same failure"); }
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ReportB(ManualLogSource log) { APIShared.NativeApiLog.Error(log, "same failure"); }
+    [TestMethod]
+    public void ThrowingListenerCannotInterruptIndependentFailures()
+    {
+        int attempts = 0;
+        var health = new RuntimeHealthLedger("mod", (_, text) => { attempts++; throw new InvalidOperationException("listener"); });
+        health.Report("apply", true, "required failure"); health.Report("apply", true, "required failure");
+        health.Report("cleanup", true, "independent failure"); Assert.AreEqual(2, attempts);
+    }
+}

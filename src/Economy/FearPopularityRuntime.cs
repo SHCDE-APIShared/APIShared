@@ -30,12 +30,14 @@ namespace APIShared.Economy
                 MethodInfo target = FindTarget(assembly);
                 // Validate against the installed original before publishing a permanent hook.
                 using (var definition = new DynamicMethodDefinition(target))
-                using (var context = new ILContext(definition.Definition)) FearPopularityIl.Sites(context);
+                using (var context = new ILContext(definition.Definition))
+                    context.Invoke(il => FearPopularityIl.Sites(il));
                 hook = new ILHook(target, FearPopularityIl.Apply);
             }
             catch (Exception ex) { Diagnostic = ex.Message; throw; }
             Diagnostic = null;
-            log.LogInfo(Stamp("FEAR_POPULARITY_READY validated SE coefficient/resource flow retained; rounding=away-from-zero; units=points*25"));
+            // API_SHARED_DIAGNOSTICS: startup and first-use proof markers, silent unless opted in.
+            NativeApiLog.Info(log, "FEAR_POPULARITY_READY validated SE coefficient/resource flow retained; rounding=away-from-zero; units=points*25");
         }
         internal static MethodInfo FindTarget(Assembly assembly)
         {
@@ -58,16 +60,16 @@ namespace APIShared.Economy
             if (candidates.Length != 1) throw new InvalidOperationException("Missing or ambiguous fear coefficient/contribution calculation.");
             return candidates[0];
         }
+        // Hot path: after the first call only one volatile read remains.
         internal static void ReportApplied(int level, int units)
         {
             if (Volatile.Read(ref appliedReported) == 0 && Interlocked.Exchange(ref appliedReported, 1) == 0)
-                log?.LogInfo(Stamp("FEAR_POPULARITY_APPLIED signedLevel=" + level + "; roundedPoints=" + (units / 25)));
+                try { NativeApiLog.Info(log, "FEAR_POPULARITY_APPLIED signedLevel=" + level + "; roundedPoints=" + (units / 25)); } catch { }
         }
         internal static void ReportOverflow()
         {
             if (Interlocked.Exchange(ref overflowReported, 1) == 0)
-                log?.LogError(Stamp("FEAR_POPULARITY_OVERFLOW original SE contribution preserved."));
+                try { Internal.RuntimeHealth.Failure(log, "fear-calculation", true, "FEAR_POPULARITY_OVERFLOW original SE contribution preserved."); } catch { }
         }
-        private static string Stamp(string text) => "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + text;
     }
 }

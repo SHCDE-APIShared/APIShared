@@ -55,10 +55,11 @@ namespace APIShared.Workshop
         internal static void Log(string text) => logger?.LogInfo(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text);
         internal static void WriteDiagnostic(WorkshopDiagnosticLevel level, string text)
         {
-            text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text;
-            if (level == WorkshopDiagnosticLevel.Error) logger?.LogError(text);
-            else if (level == WorkshopDiagnosticLevel.Warning) logger?.LogWarning(text);
-            else logger?.LogInfo(text);
+            // Failure reports are stamped by RuntimeHealth; an own unbracketed stamp would
+            // make every identical repeat a new cause and defeat its repeat throttling.
+            if (level == WorkshopDiagnosticLevel.Error) NativeApiLog.Error(logger, text);
+            else if (level == WorkshopDiagnosticLevel.Warning) NativeApiLog.Warning(logger, text);
+            else logger?.LogInfo(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text);
         }
         internal static void RequireSteam()
         {

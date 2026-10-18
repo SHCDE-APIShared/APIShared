@@ -31,15 +31,21 @@ namespace APIShared.Internal
         {
             if (diagnosticsInitialized) return;
             diagnosticsInitialized = true;
+            RuntimeHealth.Initialize(log);
             try
             {
                 diagnosticsEnabled = config.Bind("Diagnostics", "Enabled", false,
                     "API_SHARED_DIAGNOSTICS: enable APIShared routine logs and optional diagnostic presentation. " +
                     "Keep disabled for normal releases. Restart required; Debug output also needs a BepInEx Debug listener. " +
                     "Consumer-registered observers and warning/error reports are independent.").Value;
+                // A deliberate user choice, not a failure: bypass the failure ledger and its tag.
                 if (diagnosticsEnabled)
-                    LogWarning(log, "API_SHARED_DIAGNOSTICS_ENABLED: diagnostics are explicitly enabled for this process. " +
-                        "This persisted setting will also enable them on later starts; normal release default is disabled.");
+                    try
+                    {
+                        log?.LogWarning(WithTimestamp("API_SHARED_DIAGNOSTICS_ENABLED: diagnostics are explicitly enabled for this process. " +
+                            "This persisted setting will also enable them on later starts; normal release default is disabled."));
+                    }
+                    catch { }
             }
             catch (Exception ex)
             {
@@ -59,8 +65,11 @@ namespace APIShared.Internal
                 proxy = new ManualLogSource(log.SourceName);
                 proxy.LogEvent += (_, args) =>
                 {
-                    if (DiagnosticsEnabled || (args.Level & (LogLevel.Warning | LogLevel.Error | LogLevel.Fatal)) != 0)
-                        log.Log(args.Level, WithTimestamp(Convert.ToString(args.Data, CultureInfo.InvariantCulture)));
+                    string text = Convert.ToString(args.Data, CultureInfo.InvariantCulture);
+                    if ((args.Level & (LogLevel.Warning | LogLevel.Error | LogLevel.Fatal)) != 0)
+                        RuntimeHealth.Forward(log, args.Level, text);
+                    else if (DiagnosticsEnabled)
+                        try { log.Log(args.Level, WithTimestamp(text)); } catch { }
                 };
                 serviceLogs.Add(log, proxy);
                 return proxy;
@@ -105,7 +114,7 @@ namespace APIShared.Internal
             if (log == null || !IsDebugEnabled())
                 return;
 
-            log.LogDebug(WithTimestamp(string.Join(" ", parts)));
+            try { log.LogDebug(WithTimestamp(string.Join(" ", parts))); } catch { }
         }
 
         public static void LogDebug(ManualLogSource log, Func<string> messageFactory)
@@ -113,23 +122,25 @@ namespace APIShared.Internal
             if (log == null || messageFactory == null || !IsDebugEnabled())
                 return;
 
-            log.LogDebug(WithTimestamp(messageFactory()));
+            try { log.LogDebug(WithTimestamp(messageFactory())); } catch { }
         }
 
         public static void LogInfo(ManualLogSource log, string message)
         {
             if (!DiagnosticsEnabled) return;
-            log?.LogInfo(WithTimestamp(message));
+            try { log?.LogInfo(WithTimestamp(message)); } catch { }
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public static void LogWarning(ManualLogSource log, string message)
         {
-            log?.LogWarning(WithTimestamp(message));
+            RuntimeHealth.Failure(log, RuntimeHealth.CallerFeature(), false, message);
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public static void LogError(ManualLogSource log, string message)
         {
-            log?.LogError(WithTimestamp(message));
+            RuntimeHealth.Failure(log, RuntimeHealth.CallerFeature(), true, message);
         }
 
         public static bool ReportNativeLibraryVersion(

@@ -21,6 +21,7 @@ public sealed class FearPopularityIlTests
         using (var definition = new DynamicMethodDefinition(method))
         using (var context = new ILContext(definition.Definition))
         {
+            context.Invoke(il => {
             var sites = FearPopularityIl.Sites(context);
             var instructions = context.Body.Instructions.ToArray();
             var unchanged = instructions.Where(i => !sites.Contains(i)).Select(i => (i,i.OpCode,i.Operand)).ToArray();
@@ -28,6 +29,7 @@ public sealed class FearPopularityIlTests
             CollectionAssert.AreEqual(instructions,context.Body.Instructions.ToArray(), "Branch/exception instruction identities retained");
             foreach (var item in unchanged) { Assert.AreEqual(item.Item2,item.Item1.OpCode); Assert.AreSame(item.Item3,item.Item1.Operand); }
             foreach (var site in sites) Assert.AreEqual(OpCodes.Call,site.OpCode);
+            });
             // Generate the real edited callback. This verifies stack/signatures and both
             // downstream consumers; it does not execute native game memory or prove Mono gameplay.
             var generated = definition.Generate();
@@ -37,6 +39,44 @@ public sealed class FearPopularityIlTests
             System.Runtime.CompilerServices.RuntimeHelpers.PrepareDelegate(callback);
             Assert.IsNotNull(callback, "Edited real callback has a JIT-ready delegate");
             Assert.Throws<InvalidOperationException>(() => FearPopularityIl.Sites(context), "Double installation rejected");
+        }
+    }
+    [TestMethod]
+    public void ManipulatorResolvesLabelsAndSwitchesWithoutChangingThem()
+    {
+        using (var definition = new DynamicMethodDefinition(Fixture(nameof(ThreePaths))))
+        using (var context = new ILContext(definition.Definition))
+        {
+            var first = context.Body.Instructions[0];
+            context.Body.GetILProcessor().InsertBefore(first, Instruction.Create(OpCodes.Ldc_I4_0));
+            context.Body.GetILProcessor().InsertBefore(first, Instruction.Create(OpCodes.Switch, new[] { first, first }));
+            context.Invoke(il => {
+                Assert.IsTrue(il.Body.Instructions.Any(i => i.Operand is ILLabel));
+                Assert.IsTrue(il.Body.Instructions.Any(i => i.Operand is ILLabel[]));
+                var branches = il.Body.Instructions.Where(i => i.Operand is ILLabel || i.Operand is ILLabel[])
+                    .Select(i => (i, i.Operand)).ToArray();
+                FearPopularityIl.Apply(il);
+                foreach (var branch in branches) Assert.AreSame(branch.Item2, branch.Item1.Operand);
+            });
+        }
+    }
+    [TestMethod]
+    public void ForeignOrUnboundBranchTargetsAreRejectedBeforeEditing()
+    {
+        foreach (bool missing in new[] { false, true })
+        using (var definition = new DynamicMethodDefinition(Fixture(nameof(ThreePaths))))
+        using (var context = new ILContext(definition.Definition))
+        {
+            context.Invoke(il => {
+                var label = il.Body.Instructions.Select(i => i.Operand).OfType<ILLabel>().First();
+                var original = label.Target;
+                var before = il.Body.Instructions.Select(i => i.OpCode).ToArray();
+                try {
+                    label.Target = missing ? null : Instruction.Create(OpCodes.Nop);
+                    Assert.Throws<InvalidOperationException>(() => FearPopularityIl.Apply(il));
+                    CollectionAssert.AreEqual(before, il.Body.Instructions.Select(i => i.OpCode).ToArray());
+                } finally { label.Target = original; }
+            });
         }
     }
     [TestMethod]
