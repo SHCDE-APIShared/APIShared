@@ -31,6 +31,8 @@ namespace APIShared
             Presentation.BuildingTooltipPresentation.Initialize(Logger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
             Units.UnitSettledEvents.Initialize(Logger);
+            // Logging only: GameData layers subscribe to the mission lifecycle with the first registration.
+            GameTables.GameDataLayers.Initialize(Logger);
             Workshop.WorkshopRuntime.Initialize(this, Logger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(Logger);
             // The Script Extender event roots this plugin's native initialization after BepInEx

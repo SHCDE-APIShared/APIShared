@@ -41,6 +41,7 @@ Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event b
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
+| `APIShared.GameTables.GameDataLayers` | Ordered layers (Additive, Multiplier, Override, Clamp) over the game's own values of Script Extender tables, one composed write per phase; a factor of 1.0 writes nothing, direct writes by other mods are reported and left alone, reloads restore then apply. Pilot: trade base prices | Any-thread registration at startup; composed on the Unity thread at mission start and on `Reapply`; layer, then order/owner/ID; per peer with identical inputs; 0 B per composition ([guide](GAME_DATA.md)) |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
@@ -109,6 +110,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
+| GameData layers | [GameDataLayers](../src/GameTables/GameDataLayers.cs), [contracts](../src/GameTables/GameDataContracts.cs) | [Table composer and save record](../src/GameTables/GameDataComposer.cs), [guide](GAME_DATA.md) | [GameData](../examples/ThirdPartyMod/GameDataExample.cs) |
 | Native sites | [Contracts](../src/Core/NativeSites/NativeSiteContracts.cs), [registry](../src/Core/NativeSites/NativeSiteRegistry.cs) | [Owner registry](../src/Core/Internal/Native/NativeOwnershipRegistry.cs), [APIShared site catalog](../src/Core/NativeSites/ApiSharedNativeSites.cs), [guide](NATIVE_SITES.md) | [Native sites](../examples/ThirdPartyMod/NativeSiteExample.cs) |
 | Unit settlement | [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs), [notification contracts](../src/Units/Settled/UnitSettledContracts.cs) | [Settle tracker](../src/Units/Settled/UnitSettledTracker.cs), [SE subscriptions](../src/Units/Settled/UnitSettledScriptExtenderSource.cs) | [Unit settled](../examples/ThirdPartyMod/UnitSettledExample.cs) |
 
@@ -346,6 +348,19 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## GameData layers
+
+[GameDataLayers](../src/GameTables/GameDataLayers.cs) composes Script Extender data tables from
+the game's own values (read once, before APIShared's first write) through ordered layers:
+Additive, Multiplier, Override, Clamp, then order, owner GUID and ID. It composes at every
+mission start and on `Reapply`, and writes a row only when a composed cell differs from its
+live value, so a factor of 1.0 writes nothing. A cell that another mod wrote directly is
+reported once per mission and left as written. The composed values are kept in the save
+record `APIShared.GameData`, so a reload restores and re-applies instead of compounding.
+`TryGetCellStatus` tells a settings screen whether its layer is overridden and by which
+registration. This pilot serves the trade base price table; costs follow. Contract, migration
+guides and measurements: [GameData](GAME_DATA.md).
 
 ## Unit settlement events
 

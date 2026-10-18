@@ -160,6 +160,8 @@ directly when it is empty. Lobby capture starts with the first observer; defeat
 observation starts with the first subscriber's simulation-tick baseline. Marked
 selection tracking starts with an observer or a successful cache request.
 Unit settlement subscribes to Script Extender events at its first registration.
+GameData layers subscribe to the mission lifecycle and register their save record at their
+first registration; no table is read before it.
 Dormant internal HUD subscriptions do not create demand in shared event brokers.
 Keep capturing lambdas in separate active-path methods: an early source-level
 return alone does not prevent compiler-generated closure allocations.
