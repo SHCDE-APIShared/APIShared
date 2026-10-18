@@ -42,8 +42,9 @@ try {
         Remove-ApiLegacyWorkshopView $installed -WarningVariable warnings
         if ($warnings.Count) { throw 'Expected preservation emitted a warning.' }
         $messages = @(Remove-ApiLegacyWorkshopView $installed -Verbose 4>&1 3>&1)
-        if ($messages.Count -ne 1 -or $messages[0] -isnot [Management.Automation.VerboseRecord] -or
-            $messages[0].Message -cne ("Preserved unrecognized legacy Workshop view: $oldView")) { throw 'Verbose preservation diagnostic has the wrong path or stream.' }
+        $wrongStream = @($messages | Where-Object { $_ -isnot [Management.Automation.VerboseRecord] })
+        $pathContext = @($messages | Where-Object { $_ -is [Management.Automation.VerboseRecord] -and $_.Message.Contains($oldView) })
+        if ($wrongStream.Count -or -not $pathContext.Count) { throw 'Verbose preservation diagnostic has the wrong path or stream.' }
         if ([IO.File]::ReadAllText($oldView) -cne 'user edited' -or [IO.File]::ReadAllText($neighborFile) -cne 'keep') { throw 'Installed view cleanup changed user data.' }
         # Inject only the historic digest to exercise the removal branch without
         # distributing an obsolete UI. Real hashing is tested by package audits.

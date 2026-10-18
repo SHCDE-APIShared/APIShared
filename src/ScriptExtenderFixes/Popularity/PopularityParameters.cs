@@ -16,9 +16,11 @@ namespace APIShared.ScriptExtenderFixes
             internal Entry(string name, int vanilla, Func<int> read) { Name=name; Vanilla=vanilla; Read=read; }
         }
         private readonly Entry[] entries;
+        private readonly GameGlobalsManager globals;
         private readonly Dictionary<string, int> changed = new Dictionary<string, int>(41, StringComparer.Ordinal);
         internal PopularityParameters(GameGlobalsManager globals)
         {
+            this.globals = globals;
             entries = new[] {
                 new Entry("RationsPopModifierNone", -200, () => globals.RationsPopModifierNone.GetValue()),
                 new Entry("RationsPopModifierHalf", -100, () => globals.RationsPopModifierHalf.GetValue()),
@@ -71,6 +73,8 @@ namespace APIShared.ScriptExtenderFixes
                 int value = entry.Read();
                 if (value != entry.Vanilla) changed.Add(entry.Name, value);
             }
+            if (Economy.FearPopularity.HasActive)
+                changed["GoodBadThingPopModifierMultiplier"] = globals.GoodBadThingPopModifierMultiplier.GetValue();
             return changed;
         }
     }

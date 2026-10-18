@@ -24,7 +24,7 @@ public sealed unsafe class AudioNativeContractTests
     [TestMethod]
     public void AuditedBinaryPathsMembersMarkerTransportIlAndNativeBackend()
     {
-        game = Environment.GetEnvironmentVariable("SHCDE_GAME_DIR") ?? @"E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition";
+        game = APISharedTests.InstalledTestEnvironment.GameDirectory();
         Run();
     }
     private static void Check(bool value, string message)
@@ -395,7 +395,7 @@ public sealed unsafe class AudioNativeContractTests
     [TestMethod]
     public void ScriptExtenderMeleeHooksKeepKillAttributionButPinnedChangesFail()
     {
-        game = Environment.GetEnvironmentVariable("SHCDE_GAME_DIR") ?? @"E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition";
+        game = APISharedTests.InstalledTestEnvironment.GameDirectory();
         byte[] file = File.ReadAllBytes(new InstalledAudioFiles(game).Native);
         const int start = NativeContract.MeleeDamageRva, length = 0x199B43 - NativeContract.MeleeDamageRva;
         byte[] Mapped(byte[] code) { var mapped = new byte[start + length + 0x100]; Array.Copy(code, 0, mapped, start, length); return mapped; }

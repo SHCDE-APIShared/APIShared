@@ -28,13 +28,25 @@ $hook=@'
 $script:originalWait=${function:Wait-GameExit}
 $script:originalMaintenance=${function:Invoke-WorkshopMaintenance}
 $script:fixtureOrdinals=@{}
+$script:fixtureGameSequence=0
 function Start-FixtureGame {
+    # This suite needs one start per case, or exactly two for the shared-budget case.
+    $limit=if('__CASE__' -eq 'two-pauses'){2}else{1}
+    if($script:fixtureGameSequence -ge $limit){throw 'Fixture game start limit exceeded'}
+    $script:fixtureGameSequence++
+    $stem='game.'+$script:fixtureGameSequence
+    $pidPath=[IO.Path]::GetFullPath((Join-Path $GameRoot ($stem+'.pid')))
+    $readyPath=[IO.Path]::GetFullPath((Join-Path $GameRoot ($stem+'.ready')))
+    if($pidPath.Length -ge 240 -or $readyPath.Length -ge 240){throw 'Fixture process marker path exceeds the 239-character limit; use a shorter checkout path'}
     $info=[Diagnostics.ProcessStartInfo]::new($gameExecutable,('"'+(Join-Path $GameRoot 'fixture-game-exit.flag')+'"'))
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
     $process=[Diagnostics.Process]::Start($info)
-    try{[IO.File]::WriteAllText((Join-Path $GameRoot 'fixture-game.pid'),$process.Id.ToString())}finally{$process.Dispose()}
+    # A polling reader must never block publication of the next process identity.
+    # Each start owns an immutable PID file; readiness is published after detection.
+    try{[IO.File]::WriteAllText($pidPath,$process.Id.ToString())}finally{$process.Dispose()}
     $watch=[Diagnostics.Stopwatch]::StartNew()
     while(-not (Game-Running)){if($watch.ElapsedMilliseconds -gt 3000){throw 'Fixture game was not detected'};Start-Sleep -Milliseconds 20}
+    [IO.File]::WriteAllText($readyPath,'detected')
 }
 function Wait-GameExit {
     $repeated='__CASE__' -eq 'two-pauses'
@@ -84,6 +96,7 @@ foreach($case in $cases){
     $info=[Diagnostics.ProcessStartInfo]::new('powershell.exe',('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File '+(Quote (Join-Path $scripts 'workshop-updater.ps1'))+' -GameRoot '+(Quote $game)+' -Transaction '+(Quote $transaction)+' -OperationsHash '+(Hash (Join-Path $transaction 'operations.tsv'))))
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
     $updater=[Diagnostics.Process]::Start($info);$output=$updater.StandardOutput.ReadToEndAsync();$errors=$updater.StandardError.ReadToEndAsync()
+    $firstIdentityLease=$null
     try{
         $watch=[Diagnostics.Stopwatch]::StartNew();$record=''
         do{
@@ -112,12 +125,17 @@ foreach($case in $cases){
         if($case -eq 'changed-operations'){[IO.File]::AppendAllText((Join-Path $old 'operations.tsv'),"`r`n")}
         if($case -eq 'staging'){[void][IO.Directory]::CreateDirectory((Join-Path $game '_SE/.staging'))}
         if($case -eq 'killed'){$updater.Kill()}
-        $firstPid=if($case -eq 'two-pauses'){[IO.File]::ReadAllText((Join-Path $game 'fixture-game.pid'))}else{''}
+        if($case -eq 'two-pauses'){
+            # Deterministically reproduce the former reader/writer conflict: a second
+            # start must succeed while the first immutable identity is open for reading.
+            $firstIdentityLease=[IO.File]::Open((Join-Path $game 'game.1.pid'),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        }
         if($case -ne 'timeout'){Text (Join-Path $game 'fixture-game-exit.flag') 'exit'}
         if($case -eq 'two-pauses'){
             $watch=[Diagnostics.Stopwatch]::StartNew()
-            while([IO.File]::ReadAllText((Join-Path $game 'fixture-game.pid')) -ceq $firstPid -or [IO.File]::ReadAllText($target) -cne 'updated'){
-                if($updater.HasExited -or $watch.ElapsedMilliseconds -gt 10000){throw 'Second game restart was not reached'}
+            while(-not [IO.File]::Exists((Join-Path $game 'game.2.ready')) -or [IO.File]::ReadAllText($target) -cne 'updated'){
+                if($updater.HasExited){throw "Second game restart was not reached: $($output.Result) $($errors.Result)"}
+                if($watch.ElapsedMilliseconds -gt 10000){throw 'Second game restart was not reached; updater is still running (see retained fixture journal).'}
                 Start-Sleep -Milliseconds 20
             }
             # Keep the second owned game running: the remaining shared budget,
@@ -130,6 +148,10 @@ foreach($case in $cases){
             if([IO.File]::ReadAllText($target) -cne $expected -or [IO.File]::Exists($receipt)){throw 'Failed pause validation overwrote targets or committed a receipt'}
             $journal=[IO.File]::ReadAllLines((Join-Path $transaction 'journal.log'))
             if($journal -ccontains 'committed' -or $journal -ccontains 'restored'){throw 'Failed pause validation hid the unresolved transaction'}
+            if($case -in @('timeout','two-pauses')){
+                if(-not ($journal -match 'Game exit wait exceeded 120 seconds')){throw 'Fixture failed for another reason instead of the production shared wait budget'}
+                if($case -eq 'two-pauses' -and @($journal -match '^pause ').Count -ne 2){throw 'Shared-budget regression did not exercise both production pauses'}
+            }
         }elseif($case -ne 'killed'){
             if($updater.ExitCode -ne 0){throw "Updater failed: $($output.Result) $($errors.Result)"}
             $expected=if($case -eq 'restore'){'original'}else{'updated'}
@@ -146,11 +168,14 @@ foreach($case in $cases){
         $originalBackup=Join-Path $old 'Backup/0'
         if($case -ne 'changed-backup' -and [IO.File]::Exists($originalBackup) -and (Hash $originalBackup) -cne $before){throw 'Resuming changed the original rollback backup'}
     }finally{
+        if($firstIdentityLease){$firstIdentityLease.Dispose()}
         Text (Join-Path $game 'fixture-game-exit.flag') 'exit'
         if(-not $updater.HasExited){$updater.Kill();[void]$updater.WaitForExit(3000)};$updater.Dispose()
-        $pidFile=Join-Path $game 'fixture-game.pid'
-        if([IO.File]::Exists($pidFile)){
+        foreach($pidFile in [IO.Directory]::GetFiles($game,'game.*.pid')){
             try{$owned=[Diagnostics.Process]::GetProcessById([int][IO.File]::ReadAllText($pidFile));try{if(-not $owned.WaitForExit(3000) -and [IO.Path]::GetFullPath($owned.MainModule.FileName) -ceq [IO.Path]::GetFullPath($exe)){$owned.Kill();[void]$owned.WaitForExit(3000)}}finally{$owned.Dispose()}}catch [ArgumentException]{}
+            # Process markers are transient coordination files, not test evidence.
+            [IO.File]::Delete($pidFile)
+            [IO.File]::Delete([IO.Path]::ChangeExtension($pidFile,'.ready'))
         }
     }
 }

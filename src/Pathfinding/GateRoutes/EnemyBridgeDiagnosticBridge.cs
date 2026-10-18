@@ -3,6 +3,8 @@ using System.Threading;
 
 namespace APIShared
 {
+    // API_SHARED_DIAGNOSTICS: explicit TryRegister demand; no scheduler, hook or log
+    // is installed by registration. The consumer owns its diagnostic enable switch.
     /// <summary>Read-only bridge diagnostics, independent of the gate policy registration.</summary>
     public interface IEnemyBridgePathObserver : IEnemyGateAssassinObserver
     {

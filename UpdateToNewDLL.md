@@ -265,3 +265,28 @@ The development dependency bootstrap follows the same SE policy for
 `GameAssetModManager.PrepareAllAndCheckCompatibility`: signature/body validation
 and a dry transformation/compilation precede installation. Pair ownership and the
 BepInEx binary gate remain separate requirements; SE hashes are diagnostic only.
+
+## Rounded fear-popularity SE adapter (2026-10-18)
+
+`Economy/FearPopularityRuntime` installs a permanent managed IL hook, without a new
+native address or overlapping native span. Supported native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`;
+supported SHCDESE.dll SHA-256:
+`577F9AAB5DE504BE0BFA2193C7DEB734B26076ECBBAF0A408FC9ABC4CC5E7175`.
+These are explicit audited binary contracts, not version-string expectations.
+
+The owner is the existing SE popularity callback in `SHCDESE.Detours.BulkPlayerDetours`.
+Find it by its reference to `get_GoodBadThingPopModifierMultiplier`, not a generated
+lambda name or local number. Both signed branches load the integer ManagedValue,
+load the signed fear level and multiply. Replace only those two mul instructions
+with a two-int-to-int call; retain instruction identities, all incoming targets,
+resource-field stores, worst-source comparison, event publication and register writes.
+All sites validate before either edit. Unknown/ambiguous callback/data flow or native/SE
+fingerprint disables this optional service; other API services remain available.
+
+Native flow: scheduler 0xD1AD0 -> updater 0xCB090 (eligibility, fixed-mode and small-
+population bypasses retained) -> SE contribution calculation -> remaining timed event
+penalties -> final 0..10000 clamp/history/speech. The report producer 0x19D960 independently
+uses the signed fear level; only the public report correction consumes the rounded result.
+Before accepting a new binary, re-audit both data/control paths and update the fingerprint
+only with installed-assembly rewrite/generation tests and appropriate game acceptance.

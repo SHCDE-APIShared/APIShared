@@ -12,6 +12,7 @@ public sealed class FixesWheatContractTests
     public void ChangesExactlyOneByteAndSecondAttemptDoesNotWrite()
     {
         byte[] before = FixesWheatContract.ExpectedStub(Flags, Return, 0x50);
+        Assert.AreEqual(75, before.Length, "Audited complete native stub boundary.");
         byte[] actual = (byte[])before.Clone();
         int writes = 0;
         Action<int, byte> write = (offset, value) => { actual[offset] = value; writes++; };

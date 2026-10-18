@@ -21,11 +21,10 @@ function Get-NativeSize($type) {
         }
     }
 }
-$sourcePaths = @(
-    (Join-Path $apiRoot 'src\Units\UnitAccess.cs'),
-    (Join-Path $apiRoot 'src\Units\Settled\UnitSettledScriptExtenderSource.cs')) + $AdditionalSourceFiles
-$source = (@($sourcePaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n")
-$consumed = @([regex]::Matches($source, '\br_\w+') | ForEach-Object Value | Sort-Object -Unique)
+. (Join-Path $PSScriptRoot 'SourceContracts.Common.ps1')
+# Native layout expectations below are deliberate ABI contracts. Select consumed
+# identifiers from parsed owners, independent of filenames, comments and literals.
+$consumed = (Invoke-ApiSourceContracts -Root $apiRoot -Group interop -AdditionalSourceFiles $AdditionalSourceFiles) -join "`n" | ConvertFrom-Json
 $rows = @()
 $expected = @{
     'GameUnit.r_AliveState' = 'SHCDESE.Interop.Enums.AliveState|136|2'

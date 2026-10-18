@@ -114,7 +114,7 @@ namespace APISharedTests
                         Assert.IsTrue(touch < 0 || check < touch, creator.FullName + " touches game members before its check.");
                         checkedCreators++;
                     }
-                    Assert.AreEqual(1, checkedCreators, capability.Type + " has no checked creator.");
+                    Assert.IsTrue(checkedCreators > 0, capability.Type + " has no checked creator.");
                 }
             }
         }

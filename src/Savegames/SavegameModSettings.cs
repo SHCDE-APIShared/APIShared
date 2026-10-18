@@ -210,6 +210,7 @@ namespace APIShared
             using (var sha = System.Security.Cryptography.SHA256.Create())
                 fingerprint = BitConverter.ToString(sha.ComputeHash(file)).Replace("-", "");
             ModSettingsApplication.EnterContext("save:" + path + "|" + fingerprint);
+            preparedApplicationContext = ModSettingsApplication.ContextId;
             if (ReadRecord(path, out var record) == RecordReadState.Invalid)
                 throw new InvalidDataException("The selected savegame ModSettings archive is invalid.");
             if (record?.LockedByConflict == true)
@@ -295,6 +296,9 @@ namespace APIShared
         {
             if (context == null || !context.IsSave) return;
             if (!preparedApplied) throw new InvalidOperationException("Savegame reached completion without settings preparation.");
+            string applicationContext = ModSettingsApplication.ContextId;
+            ActivePreset.TrackSession(context.SessionId,
+                applicationContext.StartsWith("save:", StringComparison.Ordinal) ? applicationContext : null);
             foreach (var entry in preparedEndpoints)
                 ActivePreset.Track(context.SessionId, entry.Key, entry.Value);
             preparedTransferred = true;
@@ -318,10 +322,18 @@ namespace APIShared
 
         private static void OnMissionEnded(MissionLifecycleNotification notification)
         {
-            if (notification?.Context?.IsSave != true) return;
+            if (notification?.Context == null) return;
+            if (notification.ReplacementContext?.RestartedFromSessionId == notification.Context.SessionId)
+            {
+                ActivePreset.Transfer(notification.Context.SessionId, notification.ReplacementContext.SessionId);
+                return;
+            }
             ActivePreset.ReleaseOnEnd(notification.Context.SessionId,
                 (modId, error) => NativeApiLog.Error(log,
-                    "Could not leave savegame settings for " + modId + ": " + error));
+                    "Could not leave savegame settings for " + modId + ": " + error),
+                // Reloading the same save reuses its content identity. The new
+                // preparation, not the retiring session, already owns that context.
+                releaseApplicationContext: notification.ReplacementContext?.IsSave != true || preparedApplicationContext == null);
         }
 
         private static byte[] Save(SaveContext context)
@@ -351,7 +363,7 @@ namespace APIShared
                 Dictionary<string, Dictionary<string, TrailCreatorRule>> rules;
                 lock (Sync)
                 {
-                    rules = mission.IsSave ? activeCreatorRules : creatorRulesProvider?.Invoke();
+                    rules = mission.IsSave || ActivePreset.Contains(mission.SessionId) ? activeCreatorRules : creatorRulesProvider?.Invoke();
                 }
                 return rules ?? new Dictionary<string, Dictionary<string, TrailCreatorRule>>(StringComparer.Ordinal);
             }
@@ -368,7 +380,7 @@ namespace APIShared
                 return false;
             try
             {
-                lock (Sync) return mission.IsSave ? activeTrailCustomizeAllowed : trailCustomizeProvider?.Invoke() == true;
+                lock (Sync) return mission.IsSave || ActivePreset.Contains(mission.SessionId) ? activeTrailCustomizeAllowed : trailCustomizeProvider?.Invoke() == true;
             }
             catch (Exception error)
             {

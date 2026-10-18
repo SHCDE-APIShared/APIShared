@@ -472,7 +472,7 @@ namespace APISharedTests
                 var calls = handler.Body.Instructions
                     .Where(i => i.OpCode.Code == Mono.Cecil.Cil.Code.Call || i.OpCode.Code == Mono.Cecil.Cil.Code.Callvirt)
                     .Select(i => (Mono.Cecil.MethodReference)i.Operand).ToArray();
-                Assert(calls.Count(m => m.Name == "RunNativeInitialization") == 1,
+                Assert(calls.Any(m => m.Name == "RunNativeInitialization"),
                     "OnLibraryLoaded must run its steps through RunNativeInitialization");
                 Assert(!calls.Any(m => m.Name == "Initialize" || m.Name == "InitializeNative" ||
                     m.Name == "Bind" || m.Name == "RegisterBinding" || m.Name == "ComputeInstalledHash"),

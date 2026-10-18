@@ -54,10 +54,18 @@ try {
     $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed bootstrap accepted'
     Write-Fixture $bootstrapPath 'bootstrap fixture'
     $recordedCommit=([IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json'))|ConvertFrom-Json).Commit
-    Write-Fixture (Join-Path $proofRoot 'tests/internal-notes.txt') 'test-only change'
-    Commit-Fixture $proofRoot 'test-only commit after build'
+    Write-Fixture (Join-Path $proofRoot 'tests/internal-notes.md') 'documentation-only change'
+    Commit-Fixture $proofRoot 'documentation-only commit after build'
     $accepted=Assert-ApiBuildProof $proofRoot -Release
     Check ($accepted.Commit -ceq $recordedCommit) 'Content-identical commit changed original build provenance'
+    $validationInput = Join-Path $proofRoot 'tests/renamed/Contract.cs'
+    Write-Fixture $validationInput 'new test source'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed test coverage accepted with old evidence'
+    [IO.File]::Delete($validationInput)
+    $validationInput = Join-Path $proofRoot 'tools/Validation/arbitrary-name.ps1'
+    Write-Fixture $validationInput 'new validation source'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed validation tooling accepted with old evidence'
+    [IO.File]::Delete($validationInput)
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'changed input'
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Stale package accepted'
     Commit-Fixture $proofRoot 'runtime change after build'

@@ -35,6 +35,7 @@ namespace APIShared.ScriptExtenderFixes
             string ale = Tier(AlePercent, 100, AleKeys);
             result.Ale = Value(active, ale, Ale);
             if (active.TryGetValue("GoodBadThingPopModifierMultiplier", out int fear)) result.Fear = checked(fear * FearLevel);
+            if (Economy.FearPopularity.TryCalculate(FearLevel, out int roundedFear)) result.Fear = roundedFear;
             if (Fairs != 0) result.Fairs = Value(active, "FairsPopularityEventModifier", Fairs);
             result.Events = Events + result.Fairs - Fairs;
             result.Total = checked(Total + result.Food - Food + result.Tax - Tax + result.Crowding - Crowding +

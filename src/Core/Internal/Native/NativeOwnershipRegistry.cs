@@ -294,11 +294,16 @@ namespace APIShared
 
         // One summary of the registry state. The first call marks the startup report as emitted, so
         // every later refusal is logged individually through the refusal log.
-        internal string EmitReport()
+        internal string EmitReport() => EmitReport(includeSuccessSummary: true);
+
+        // API_SHARED_DIAGNOSTICS: complete the warning lifecycle atomically even
+        // when the optional success summary is omitted. Later refusals must log.
+        internal string EmitReport(bool includeSuccessSummary)
         {
             lock (sync)
             {
                 reportEmitted = true;
+                if (!includeSuccessSummary && refusalCount == 0) return null;
                 var owners = new SortedDictionary<string, int>(StringComparer.Ordinal);
                 foreach (NativeSiteRegistration site in sites)
                     owners[site.OwnerGuid] = owners.TryGetValue(site.OwnerGuid, out int count) ? count + 1 : 1;

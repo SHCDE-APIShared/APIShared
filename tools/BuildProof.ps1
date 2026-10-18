@@ -52,6 +52,17 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     $files += Get-Item -LiteralPath (Join-Path $Root 'bootstrap/APIShared.DependencyBootstrap.csproj')
     $files += Get-Item -LiteralPath (Join-Path $Root 'build.bat')
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1'),(Join-Path $Root 'tools/Remove-DependencyBootstrap.ps1'))
+    # A successful build also attests that its checks ran. Changes to their
+    # maintained inputs invalidate that evidence even when plugin bytes match.
+    foreach ($directory in @('tests','tools')) {
+        $inputRoot = Join-Path $Root $directory
+        if (-not [IO.Directory]::Exists($inputRoot)) { continue }
+        $files += @(Get-ChildItem -LiteralPath $inputRoot -Recurse -File | Where-Object {
+            $relative = $_.FullName.Substring($Root.Length + 1)
+            $relative -notmatch '[\\/](bin|obj|BepInEx|\.git|\.local|\.work|\.release-output)[\\/]' -and
+                $_.Extension -in @('.cs','.csproj','.ps1','.bat','.sh','.props','.targets','.runsettings','.txt','.json')
+        })
+    }
     foreach ($file in $files | Sort-Object FullName -Unique) {
         $relative = $file.FullName.Substring($Root.Length + 1).Replace('\','/')
         $rows.Add($relative + ':' + (Get-ApiFileHash $file.FullName))

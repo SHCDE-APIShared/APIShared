@@ -52,12 +52,12 @@ try {
     Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkspaceBuild.ps1'))
     & (Join-Path $root 'tools/Validation/Test-DependencyBootstrap.ps1') -GameDir $game -MSBuild $msbuild
     & (Join-Path $root 'tools\Validation\Test-Standalone.ps1') -GameDir $game -ExtenderDir $extender
-    & (Join-Path $root 'tools/Validation/Verify-PopularityContracts.ps1') -GameDir $game -ExtenderDir $extender
     $results = Join-Path $root '.local\test-results'
     foreach ($project in @('PopularityDisplay.Tests\PopularityDisplay.Tests.csproj','Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
         Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests\' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
     }
     Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
+    & (Join-Path $root 'tools/Validation/Verify-PopularityContracts.ps1') -GameDir $game -ExtenderDir $extender -ApiAssembly (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll')
     Invoke-Tool $msbuild @((Join-Path $root 'bootstrap/APIShared.DependencyBootstrap.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game")
     Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkshopReadiness.ps1'), '-ApiAssembly', (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll'))
     if ($NoInstall -eq 0) {

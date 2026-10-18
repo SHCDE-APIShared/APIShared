@@ -82,6 +82,20 @@ namespace APISharedTests
             check(!replacement.IsMissionPresetActive && replacement.ExitCount == 1,
                 "replacement session retained its savegame preset");
 
+            var restarted = new PresetEndpointFixture();
+            restarted.System_EnterMissionPreset(null, "Savegame", false);
+            lease.Track(51, "restart", restarted);
+            lease.Transfer(51, 52);
+            lease.Transfer(52, 53);
+            lease.ReleaseOnEnd(51, (_, __) => exitErrors++);
+            lease.ReleaseOnEnd(52, (_, __) => exitErrors++);
+            check(restarted.IsMissionPresetActive && restarted.ExitCount == 0 && lease.Contains(53),
+                "repeated restart restored personal settings before the new mission ended");
+            lease.ReleaseOnEnd(53, (_, __) => exitErrors++);
+            lease.ReleaseOnEnd(53, (_, __) => exitErrors++);
+            check(!restarted.IsMissionPresetActive && restarted.ExitCount == 1 && !lease.Contains(53),
+                "restarted new-game session did not release inherited savegame settings exactly once");
+
             var record = new SavegameModSettingsRecord
             {
                 Version = 3,

@@ -47,7 +47,7 @@ namespace APIShared
             phase = MissionInitializationPhase.None;
             reached.Clear();
             if (old != null) Publish(new MissionLifecycleNotification(old, MissionLifecycleKind.End,
-                oldPhase, MissionEndReason.Replaced, started));
+                oldPhase, MissionEndReason.Replaced, started, pending));
             return id;
         }
 

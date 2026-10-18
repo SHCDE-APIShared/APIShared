@@ -117,6 +117,30 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void ReplacementCarriesImmutableRestartOwnershipBeforeCleanup()
+        {
+            var events = new List<MissionLifecycleNotification>();
+            var state = new MissionLifecycleState(_ => { });
+            state.Register("settings", "ownership", events.Add);
+            var original = Seed(MissionStartKind.LoadedSave);
+            long source = state.Begin(original);
+            state.Ready(source, original);
+            var restart = new MissionContext(0, MissionStartKind.NewGame, default,
+                "same.map", "same map", true).AsRestartOf(source);
+            long destination = state.Begin(restart);
+            var end = events.Last();
+            Assert.AreEqual(MissionEndReason.Replaced, end.EndReason);
+            Assert.AreEqual(source, end.ReplacementContext.RestartedFromSessionId);
+            Assert.AreEqual(destination, end.ReplacementContext.SessionId);
+            Assert.IsFalse(end.ReplacementContext.IsSave);
+            state.Ready(destination, restart);
+            Assert.AreEqual(source, state.Current.RestartedFromSessionId);
+            state.End(MissionEndReason.SceneChanged);
+            Assert.IsNull(events.Last().ReplacementContext);
+            Assert.AreEqual(destination, end.ReplacementContext.SessionId, "retained notification changed after completion");
+        }
+
+        [TestMethod]
         public void StaleClientCompletionAndFailureCannotReplaceTheCurrentSession()
         {
             var replaced = new MissionLifecycleState(_ => { });

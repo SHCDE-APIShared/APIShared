@@ -103,6 +103,8 @@ namespace APIShared
         public string MapName { get; }
         /// <summary>True only when an explicit restart entry point was observed.</summary>
         public bool IsRestart { get; }
+        /// <summary>Previous ready session retained by an explicit restart; null for an ordinary launch.</summary>
+        public long? RestartedFromSessionId { get; private set; }
         /// <summary>Square map size in tiles, if known.</summary>
         public int? MapSize { get; }
         /// <summary>Vanilla difficulty value, if known.</summary>
@@ -125,7 +127,10 @@ namespace APIShared
         public bool IsSave => StartKind == MissionStartKind.LoadedSave;
         internal MissionContext With(long id, GameModeSnapshot mode) => new MissionContext(id, StartKind,
             mode, FilePath, MapName, IsRestart, MapSize, Difficulty, LocalPlayerId, MissionIndex, IsHost,
-            MapType, IsMultiplayerMap, IsSiegeThatEditor);
+            MapType, IsMultiplayerMap, IsSiegeThatEditor) { RestartedFromSessionId = RestartedFromSessionId };
+        internal MissionContext AsRestartOf(long? source) => new MissionContext(SessionId, StartKind,
+            Mode, FilePath, MapName, IsRestart, MapSize, Difficulty, LocalPlayerId, MissionIndex,
+            IsHost, MapType, IsMultiplayerMap, IsSiegeThatEditor) { RestartedFromSessionId = source };
     }
 
     /// <summary>Immutable publication. End carries the last context captured before retirement.</summary>
@@ -134,6 +139,13 @@ namespace APIShared
         internal MissionLifecycleNotification(MissionContext context, MissionLifecycleKind kind,
             MissionInitializationPhase phase, MissionEndReason reason, bool started, bool replay = false)
         { Context = context; Kind = kind; Phase = phase; EndReason = reason; HasStarted = started; IsReplay = replay; }
+        internal MissionLifecycleNotification(MissionContext context, MissionLifecycleKind kind,
+            MissionInitializationPhase phase, MissionEndReason reason, bool started,
+            MissionContext replacement) : this(context, kind, phase, reason, started)
+        { ReplacementContext = replacement; }
+        /// <summary>Destination of a Replaced end, captured before observers run; otherwise null.
+        /// Settings ownership may transfer only when its RestartedFromSessionId matches Context.SessionId.</summary>
+        public MissionContext ReplacementContext { get; }
         /// <summary>Context for this attempt or session.</summary>
         public MissionContext Context { get; }
         /// <summary>Initialization, start or end.</summary>

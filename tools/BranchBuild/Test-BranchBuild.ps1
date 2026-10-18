@@ -64,9 +64,9 @@ exit 0
     }
     foreach ($relative in @('build.bat','tools/WorkshopUploader/build.bat')) {
         $entry = [IO.File]::ReadAllText((Join-Path $actual $relative))
-        $end = $entry.IndexOf(":shcde_branch_selected`r`nendlocal`r`n")
-        if ($end -lt 0) { throw "Missing production dispatcher: $relative" }
-        Write-BranchText (Join-Path $repo $relative) ($entry.Substring(0,$end + ":shcde_branch_selected`r`nendlocal`r`n".Length) + "exit /b 99`r`n")
+        # Execute the whole maintained entrypoint. Only its build boundary is a
+        # fixture; labels, comments and dispatcher section layout may change.
+        Write-BranchText (Join-Path $repo $relative) $entry
     }
     $output = Run-Fixture 'build.bat' @('/branch:main','/nopause') 0
     Assert-Fixture ($output -match 'API_MAIN_COMMIT' -and $output -notmatch 'DIRTY_MUST_NOT_BUILD') 'Standalone main source failed'

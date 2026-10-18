@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../tools/SourceContracts/SourceModel.cs" Link="TestSupport/SourceModel.cs" />
+    <Reference Include="Microsoft.CodeAnalysis"><HintPath>$(MSBuildToolsPath)/Roslyn/bincore/Microsoft.CodeAnalysis.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp"><HintPath>$(MSBuildToolsPath)/Roslyn/bincore/Microsoft.CodeAnalysis.CSharp.dll</HintPath></Reference>
     <Compile Include="../../src/Compatibility/FixesWheatContract.cs" Link="Production/FixesWheatContract.cs" />
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs" />
     <Compile Include="../../src/Pathfinding/GateRoutes/GateAccessRules.cs" Link="Production/GateAccessRules.cs" />

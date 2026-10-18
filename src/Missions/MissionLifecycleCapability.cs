@@ -12,7 +12,7 @@ using System.Threading;
 
 namespace APIShared
 {
-    internal sealed class MissionLifecycleService
+    internal sealed partial class MissionLifecycleService
     {
         private delegate void CreateMap(EditorDirector self, int size, Enums.GameModes mode, bool siege, bool multiplayer);
         private delegate bool EditorLoad(EditorDirector self, string file, string name);
@@ -71,6 +71,8 @@ namespace APIShared
             internal int? Size, Difficulty;
             internal bool SiegeThatEditor;
             internal bool Multiplayer, Restart, NativeFailed, NativeSucceeded, ManagedSucceeded;
+            internal long? RestartedFrom;
+            internal GameModeSnapshot? RestartMode;
             internal EngineInterface.LoadMapReturnData? Data;
         }
 
@@ -152,6 +154,7 @@ namespace APIShared
 
         private void Prepare()
         {
+            PrepareRestartMenu();
             create = Hook<CreateMap>(typeof(EditorDirector), nameof(EditorDirector.createNewMap), (self, size, mode, siege, multi) =>
                 Run(new Operation { Kind = MissionStartKind.EditorCreated, Intent = GameModeKind.MapEditor, Size = size, SiegeThatEditor = siege },
                     () => { create(self, size, mode, siege, multi); MarkManaged(); }));
@@ -176,7 +179,12 @@ namespace APIShared
             skirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), "StartSkirmishGame", (self, info) =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.CustomGame), () => skirmish(self, info)));
             restartSkirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), nameof(FRONT_Multiplayer.RestartSkirmishGame), (self, info) =>
-                Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true }, () => restartSkirmish(self, info)));
+            {
+                if (executing == null && state.Current != null)
+                    Restart(() => restartSkirmish(self, info));
+                else
+                    Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true }, () => restartSkirmish(self, info));
+            });
             tutorial = Hook<Tutorial>(typeof(HUD_Tutorial), nameof(HUD_Tutorial.StartTutorial), self =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
             multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), (self, setup, map, coop, mission) =>
@@ -245,6 +253,7 @@ namespace APIShared
             try { mode = GameModeHelper.CaptureMission(op.Multiplayer, op.Kind == MissionStartKind.LoadedSave, op.Campaign, op.Trail,
                 op.Intent == GameModeKind.MapEditor, op.Data, op.Intent, op.CoopTrail); }
             catch (Exception ex) { Report(ex); mode = default; } // Unknown evidence never opens a mode gate.
+            if (op.RestartMode.HasValue) mode = mode.WithRestartProvenance(op.RestartMode.Value);
             var data = op.Data;
             int? player = data.HasValue && data.Value.playerID >= 1 && data.Value.playerID <= 8 ? data.Value.playerID : (int?)null;
             bool? host = null;
@@ -274,7 +283,8 @@ namespace APIShared
                 data.HasValue && data.Value.difficulty_level >= 0 ? data.Value.difficulty_level : op.Difficulty, player,
                 mission, host,
                 data.HasValue ? MapType(data.Value.siege_or_invasion) : MissionMapType.Unknown,
-                data.HasValue ? data.Value.multiplayerMap != 0 : (bool?)null, op.SiegeThatEditor);
+                data.HasValue ? data.Value.multiplayerMap != 0 : (bool?)null, op.SiegeThatEditor)
+                .AsRestartOf(op.RestartedFrom);
         }
 
         // LoadMapReturnData uses the native serialized subtype order, not Enums.GameModes values.

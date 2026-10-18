@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.10.0",
+  "Version": "0.11.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.11.1",
+      "Changes": ["Preserve saved author rules and Customize permission across restarts even when no settings provider is installed."]
+    },
+    {
+      "Version": "0.11.0",
+      "Changes": ["Link explicit mission restarts before cleanup so settings owners can retain active presets, including settings inherited from saves."]
+    },
     {
       "Version": "0.10.0",
       "Changes": [

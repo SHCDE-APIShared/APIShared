@@ -29,7 +29,7 @@ namespace APISharedTests
         [TestMethod]
         public void DormantAndObservedWrapperCostOnCopiedNativeCode()
         {
-            string game = Environment.GetEnvironmentVariable("SHCDE_GAME_DIR") ?? @"E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition";
+            string game = APISharedTests.InstalledTestEnvironment.GameDirectory();
             var files = new InstalledAudioFiles(game); files.Validate();
             byte[] image = File.ReadAllBytes(files.Native);
             IntPtr vanilla = Page(image, out IntPtr vanillaManager);
