@@ -81,18 +81,9 @@ try {
         if ($member.Count -ne 1) { throw 'SteamManager reflective contract changed.' }
         Write-Host ('Verified encapsulated SteamManager reflection: '+$field[0])
     }
-    $sourceRoot = Join-Path $PSScriptRoot '../../src/Workshop'
-    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot,(Join-Path $PSScriptRoot '../WorkshopUploader') -File -Filter '*.cs') {
-        $source = [IO.File]::ReadAllText($file.FullName)
-        foreach ($call in [regex]::Matches($source,'\b(SteamUGC|SteamUser|SteamFriends)\.(\w+)\(')) {
-            $type=$steam.MainModule.GetType('Steamworks.'+$call.Groups[1].Value)
-            $methods=@($type.Methods | Where-Object { $_.Name -ceq $call.Groups[2].Value -and $_.IsPublic -and $_.IsStatic })
-            if ($methods.Count -ne 1) { throw ('Unavailable or ambiguous installed Steam method: '+$call.Value) }
-            Write-Host ('Verified installed Steam signature: '+$methods[0].FullName)
-        }
-        foreach ($constant in [regex]::Matches($source,'\b(E\w+)\.(k_\w+)')) {
-            $type=$steam.MainModule.GetType('Steamworks.'+$constant.Groups[1].Value)
-            if (-not $type -or -not @($type.Fields | Where-Object Name -CEQ $constant.Groups[2].Value).Count) { throw ('Missing Steam enum member: '+$constant.Value) }
-        }
-    }
+    # Statically bound Steam calls/constants are checked by compiling the selected
+    # plugin and publisher against these real assemblies. A source-word scan would
+    # duplicate that check and wrongly reject harmless overloads or comments.
+    # Keep the explicit reflective/interop signatures above: compilation alone
+    # cannot validate those runtime member contracts.
 } finally { $steam.Dispose(); $zip.Dispose(); $extender.Dispose(); $game.Dispose() }

@@ -22,6 +22,47 @@ returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
 interested consumers. Registering an observer is explicit demand for observation.
 
+## Diagnostic opt-in and observer demand
+
+Search `API_SHARED_DIAGNOSTICS` in the sources to find optional tracing and its
+activation boundaries. APIShared's local `BepInEx/config/APIShared_Serp.cfg` has
+`[Diagnostics] Enabled = false` by default. Set it to `true` and restart the game
+to enable routine Info/Debug messages; Debug output additionally requires a
+BepInEx listener that accepts Debug. Changing the config during a session does not
+change this startup snapshot. APIShared logs a warning on every start with the
+persisted switch enabled. Neither the branch nor Debug/Release compilation enables
+tracing implicitly.
+
+Startup/native-service success messages, Workshop routine activity and preset
+routine output use this gate. Scroll tracing additionally needs the caller's
+`enableScrollDiagnostics` option. Services receive a filtered logger so their
+direct Info/Debug calls cannot bypass the gate. Successful native-site summaries
+are not constructed without opt-in; refused registrations still produce warnings.
+Warnings, errors, capability failure results and recovery evidence remain available.
+Workshop `Transactions/*/diagnostics.txt` contains installation warnings and is
+retained without opt-in, alongside the transaction protocol. The independent
+dependency bootstrap emits only warnings/errors and creates no tracing files.
+
+Consumer observation contracts retain their existing behavior: registering an
+`IAivBuildStepObserver`, `IEnemyBridgePathObserver` or temporary gate-route observer
+is explicit demand for those callbacks, not automatic APIShared tracing. Without
+registration these paths do not gather observer payloads. The owner of a temporary
+gate-route observer can also use `SetObservationEnabled`. Consumers must apply
+their own explicit diagnostic switch before registering diagnostic observers and
+before doing diagnostic analysis. APIShared's log switch does not suppress their
+callbacks, failure notifications, gameplay events or public query results.
+
+This changes the default visibility of routine logs, including logs written through
+consumer-provided loggers. Public signatures, observer registration, callback
+ordering/lifetime and gameplay behavior are unchanged. For troubleshooting, enable
+both APIShared's switch and any relevant consumer/page switch.
+
+The release driver prints an advisory summary from the staged DLL/configuration.
+A compiled enabled default or shipped `Enabled=true` produces a prominent warning;
+an unknown diagnostic state is reported as unknown. These notices never reject a
+release. Diagnostic builds may deliberately be published. Local user configuration
+can override the package default and is not inferred from a release summary.
+
 ## Multiplayer actions and messages
 
 Declare APIShared 0.7.0 or newer and use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
@@ -615,3 +656,35 @@ selection state there.
 Use `GateAccessRules.TryRegister` for additional gate access exceptions and
 `Invalidate` after synchronized data changes. Registration performs no world work.
 Follow the [gate routing guide](GATE_ROUTING.md); a routing provider is required.
+
+## Rounded fear popularity
+
+The 0.10.0 development API provides `APIShared.Economy.FearPopularity` for absolute,
+fractional popularity coefficients per signed fear level. After native initialization,
+call `TryRegister` with your own plugin GUID and stable local ID, retain the handle,
+and inspect the returned diagnostic. The installed native and SE implementations must
+match the audited adapter. No consumer native hook or SE stack manipulation is needed.
+
+`handle.SetMultiplier(1.1m)` computes `round(level * 1.1)` in whole report points,
+with midpoint ties away from zero, then converts to the engine's 25 units per report
+point. Thus level 5 produces 6 points and level -5 produces -6. The calculation runs
+inside both signed SE calculation branches, before the worst-source decision, event
+penalties and final native clamp. Reports and preview panels use the same arithmetic.
+Fear level, productivity and combat remain unchanged.
+
+Registration starts inactive. Set null at your mission end or when disabled; do not
+unhook or unregister. Among active registrations, the last in ascending order, ordinal
+owner GUID and local ID wins. `SetMultiplier` is thread-safe; synchronized settings,
+mode permissions and activation boundaries remain the consumer's responsibility.
+When every handle is inactive, original SE multiplication, including other mods'
+integer coefficients, remains intact. Overflow preserves the SE simulation contribution
+and logs once; the report's existing error boundary preserves its original display.
+Use sensible bounds in the consumer. The API accepts decimal coefficients; UI ranges
+and step sizes belong to the consumer.
+
+See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
+The pure popularity tests cover rounding, ownership and matching display deltas;
+installed-assembly tests validate and generate the actual edited SE callback and reject
+partial/double edits. They do not execute native game memory or prove in-game Mono,
+editor, save/load or real multiplayer acceptance. The adapter is permanent and statically
+rooted; startup component destruction never removes it.

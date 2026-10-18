@@ -118,7 +118,10 @@ namespace APIShared.NativeSites
             {
                 try
                 {
-                    string summary = store.EmitReport();
+                    // API_SHARED_DIAGNOSTICS: no success-summary construction without opt-in.
+                    // Refusals remain warnings even when routine diagnostics are disabled.
+                    string summary = store.EmitReport(APIShared.Internal.DebugLogHelper.DiagnosticsEnabled);
+                    if (summary == null) return;
                     if (store.RefusalCount == 0) NativeApiLog.Info(log, summary);
                     else NativeApiLog.Warning(log, summary);
                 }

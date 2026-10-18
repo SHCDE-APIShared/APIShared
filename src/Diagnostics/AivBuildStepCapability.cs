@@ -10,6 +10,8 @@ using System.Threading;
 
 namespace APIShared
 {
+    // API_SHARED_DIAGNOSTICS: consumer opt-in is TryRegisterObserver. The permanent
+    // hook passes straight through without observers; no automatic recording or output.
     internal sealed class AivBuildStepService
     {
         internal const int FunctionRva = 0x51790;

@@ -235,6 +235,11 @@ APIShared.Commands.GameActionPreEventArgs | public int ActionState { get; set; }
 APIShared.Commands.GameActionPreEventArgs | public int OriginalStructureId { get; }
 APIShared.Commands.GameActionPreEventArgs | public int StructureId { get; set; }
 APIShared.Commands.GameActionPreEventArgs | public int Value2 { get; set; }
+APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPopularity
+APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
+APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
+APIShared.Economy.FearPopularityRegistration | public sealed class APIShared.Economy.FearPopularityRegistration
+APIShared.Economy.FearPopularityRegistration | public void SetMultiplier(decimal? multiplier)
 APIShared.Economy.MarketPriceDirection | public enum APIShared.Economy.MarketPriceDirection : int
 APIShared.Economy.MarketPriceDirection | Buy = 0
 APIShared.Economy.MarketPriceDirection | Sell = 1

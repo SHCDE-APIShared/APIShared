@@ -83,6 +83,8 @@ namespace APIShared.Workshop
                 File.WriteAllText(WorkshopPaths.Inside(directory, "supersedes.sha256"), WorkshopInventory.Hash(WorkshopPaths.Inside(directory, "supersedes.tsv")), new UTF8Encoding(false));
             }
             File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), lines, new UTF8Encoding(false));
+            // API_SHARED_DIAGNOSTICS: these are retained installation warnings, not routine tracing;
+            // keep them available without diagnostic opt-in, alongside transaction/recovery evidence.
             File.WriteAllLines(WorkshopPaths.Inside(directory, "diagnostics.txt"), warnings, new UTF8Encoding(false));
             File.WriteAllText(WorkshopPaths.Inside(directory, "operations.sha256"), WorkshopInventory.Hash(WorkshopPaths.Inside(directory, "operations.tsv")), new UTF8Encoding(false));
             return directory;

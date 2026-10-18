@@ -1,5 +1,8 @@
 # API catalog
 
+Optional runtime tracing is marked `API_SHARED_DIAGNOSTICS` and defaults to off;
+see [diagnostic opt-in and observer demand](THIRD_PARTY_GUIDE.md#diagnostic-opt-in-and-observer-demand).
+
 The development-only [early dependency correction](DEPENDENCY_BOOTSTRAP.md) uses
 an independent, pair-validated bootstrap companion. It adds no public API and has
 not yet passed the transferred assembly's game/package-lifecycle acceptance.
@@ -20,6 +23,8 @@ automatically follows changed SE contribution values in reports and building pan
 without modifying simulation or requiring consumer registration.
 
 Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event brokers also expose static registration methods. The command, presentation, recruitment and market entries below require APIShared 0.6.0 or later. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
+
+Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#rounded-fear-popularity). This opt-in development API preserves SE behavior while inactive and shares the same result with the report correction.
 
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|

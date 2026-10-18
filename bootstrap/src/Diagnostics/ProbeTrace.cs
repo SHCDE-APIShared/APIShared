@@ -4,7 +4,8 @@ using BepInEx.Logging;
 
 namespace APIShared.DependencyBootstrap
 {
-    // Diagnostics must never affect loader behavior. No separate files or startup traces.
+    // API_SHARED_DIAGNOSTICS: warnings/errors only; always available, no verbose
+    // switch needed. Diagnostics never affect loader behavior. No files/startup traces.
     internal static class ProbeTrace
     {
         private static ManualLogSource log;

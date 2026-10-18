@@ -26,49 +26,54 @@ namespace APISharedTests
         private static void TestRoutineLoggingLevels()
         {
             var previousListeners = BepInEx.Logging.Logger.Listeners.ToArray();
-            var cacheExpiry = typeof(DebugLogHelper).GetField("debugEnabledCacheExpiresAtUtc", BindingFlags.Static | BindingFlags.NonPublic);
-            var cacheValue = typeof(DebugLogHelper).GetField("debugEnabledCache", BindingFlags.Static | BindingFlags.NonPublic);
-            object previousExpiry = cacheExpiry.GetValue(null);
-            object previousValue = cacheValue.GetValue(null);
-            var listener = new LoggingLevelListener { DisplayedLogLevel = BepInEx.Logging.LogLevel.Info | BepInEx.Logging.LogLevel.Warning | BepInEx.Logging.LogLevel.Error };
-            var messages = new List<BepInEx.Logging.LogEventArgs>();
-            using (var source = new BepInEx.Logging.ManualLogSource("LoggingReductionTests"))
+            // Snapshot the mutable process state, not a prescribed list of cache fields.
+            var state = typeof(DebugLogHelper).GetFields(BindingFlags.Static | BindingFlags.NonPublic)
+                .Where(field => !field.IsInitOnly && !field.IsLiteral).ToDictionary(field => field, field => field.GetValue(null));
+            string configPath = Path.Combine(Path.GetTempPath(), "APIShared-Logging-" + Guid.NewGuid().ToString("N") + ".cfg");
+            try
             {
-                source.LogEvent += (_, args) => messages.Add(args);
-                try
+                foreach (bool diagnostics in new[] { false, true })
+                foreach (bool debugListener in new[] { false, true })
                 {
+                    foreach (var field in state.Keys)
+                        field.SetValue(null, field.FieldType.IsValueType ? Activator.CreateInstance(field.FieldType) : null);
+                    var listener = new LoggingLevelListener { DisplayedLogLevel = BepInEx.Logging.LogLevel.Info | BepInEx.Logging.LogLevel.Warning | BepInEx.Logging.LogLevel.Error |
+                        (debugListener ? BepInEx.Logging.LogLevel.Debug : BepInEx.Logging.LogLevel.None) };
                     BepInEx.Logging.Logger.Listeners.Clear();
                     BepInEx.Logging.Logger.Listeners.Add(listener);
-                    cacheExpiry.SetValue(null, DateTime.MinValue);
-                    int formats = 0;
-                    DebugLogHelper.LogDebug(source, () => { formats++; return "routine"; });
-                    NativeApiLog.Debug(source, "native routine");
-                    Assert(formats == 0 && messages.Count == 0, "routine diagnostics were emitted or formatted without Debug");
-                    DebugLogHelper.LogInfo(source, "saved file");
-                    NativeApiLog.Info(source, "explicit result");
-                    DebugLogHelper.LogWarning(source, "warning");
-                    DebugLogHelper.LogError(source, "error");
-                    Assert(messages.Select(message => message.Level).SequenceEqual(new[] {
-                        BepInEx.Logging.LogLevel.Info, BepInEx.Logging.LogLevel.Info,
-                        BepInEx.Logging.LogLevel.Warning, BepInEx.Logging.LogLevel.Error }),
-                        "Info, Warning or Error helper semantics changed");
-                    messages.Clear();
-                    listener.DisplayedLogLevel |= BepInEx.Logging.LogLevel.Debug;
-                    cacheExpiry.SetValue(null, DateTime.MinValue);
-                    DebugLogHelper.LogDebug(source, () => { formats++; return "routine"; });
-                    NativeApiLog.Debug(source, "native routine");
-                    Assert(formats == 1 && messages.Count == 2 && messages.All(message =>
-                        message.Level == BepInEx.Logging.LogLevel.Debug &&
-                        System.Text.RegularExpressions.Regex.IsMatch(message.Data.ToString(), @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] ")),
-                        "Debug diagnostics are unavailable, formatted repeatedly, or lack millisecond timestamps");
+                    var messages = new List<BepInEx.Logging.LogEventArgs>();
+                    using (var source = new BepInEx.Logging.ManualLogSource("LoggingReductionTests"))
+                    {
+                        source.LogEvent += (_, args) => messages.Add(args);
+                        var config = new BepInEx.Configuration.ConfigFile(configPath, false) { SaveOnConfigSet = false };
+                        config.Bind("Diagnostics", "Enabled", diagnostics);
+                        DebugLogHelper.InitializeDiagnostics(config, source);
+                        messages.Clear(); // Explicit opt-in may report a startup warning of its own.
+                        int formats = 0;
+                        DebugLogHelper.LogDebug(source, () => { formats++; return "routine"; });
+                        NativeApiLog.Debug(source, "native routine");
+                        DebugLogHelper.LogInfo(source, "saved file");
+                        NativeApiLog.Info(source, "explicit result");
+                        DebugLogHelper.LogWarning(source, "warning");
+                        DebugLogHelper.LogError(source, "error");
+                        var expected = new List<BepInEx.Logging.LogLevel>();
+                        if (diagnostics && debugListener) expected.AddRange(new[] { BepInEx.Logging.LogLevel.Debug, BepInEx.Logging.LogLevel.Debug });
+                        if (diagnostics) expected.AddRange(new[] { BepInEx.Logging.LogLevel.Info, BepInEx.Logging.LogLevel.Info });
+                        expected.AddRange(new[] { BepInEx.Logging.LogLevel.Warning, BepInEx.Logging.LogLevel.Error });
+                        Assert(formats == (diagnostics && debugListener ? 1 : 0), "Lazy Debug formatting ignores diagnostic/listener demand");
+                        Assert(messages.Select(message => message.Level).SequenceEqual(expected),
+                            "Logging levels differ for diagnostics=" + diagnostics + ", Debug listener=" + debugListener);
+                        Assert(messages.All(message => Regex.IsMatch(message.Data.ToString(), @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] ")),
+                            "Diagnostic or warning/error output lacks millisecond timestamps");
+                    }
                 }
-                finally
-                {
-                    BepInEx.Logging.Logger.Listeners.Clear();
-                    foreach (var previous in previousListeners) BepInEx.Logging.Logger.Listeners.Add(previous);
-                    cacheExpiry.SetValue(null, previousExpiry);
-                    cacheValue.SetValue(null, previousValue);
-                }
+            }
+            finally
+            {
+                BepInEx.Logging.Logger.Listeners.Clear();
+                foreach (var previous in previousListeners) BepInEx.Logging.Logger.Listeners.Add(previous);
+                foreach (var field in state) field.Key.SetValue(null, field.Value);
+                if (File.Exists(configPath)) File.Delete(configPath);
             }
         }
         [TestMethod]

@@ -22,17 +22,21 @@ namespace APIShared
         /// <summary>Current API plugin version.</summary>
         public const string PluginVersion = "0.10.0";
 
+        // API_SHARED_DIAGNOSTICS: services retain this filtered logger after startup cleanup.
+        private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
+
         private void Awake()
         {
-            Compatibility.FixesWheatStartup.Initialize(Logger);
-            Workshop.WorkshopCleanupRuntime.Initialize(Logger);
-            ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, Logger);
+            Internal.DebugLogHelper.InitializeDiagnostics(Config, Logger);
+            Compatibility.FixesWheatStartup.Initialize(RuntimeLogger);
+            Workshop.WorkshopCleanupRuntime.Initialize(RuntimeLogger);
+            ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
-            Presentation.BuildingTooltipPresentation.Initialize(Logger);
+            Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
-            Units.UnitSettledEvents.Initialize(Logger);
-            Workshop.WorkshopRuntime.Initialize(this, Logger);
-            ApiSharedRuntime.ProcessInstance.InitializeManaged(Logger);
+            Units.UnitSettledEvents.Initialize(RuntimeLogger);
+            Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
+            ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.
             CrusaderLibrary.Instance.LibraryLoaded += OnLibraryLoaded;
@@ -46,7 +50,7 @@ namespace APIShared
         {
             ApiSharedRuntime runtime = ApiSharedRuntime.ProcessInstance;
             string hash = string.Empty;
-            runtime.RunNativeInitialization(Logger,
+            runtime.RunNativeInitialization(RuntimeLogger,
                 // Binds the image for site registrations before any APIShared or consumer hook claims it.
                 new NativeInitializationStep("native site registry", () => runtime.NativeOwnership.BindModule(
                     context.ModuleHandle.ToInt64(), context.Memory.Length, new ProcessNativeMemory().ReadByte)),
@@ -54,31 +58,32 @@ namespace APIShared
                 new NativeInitializationStep("repair tooltip binding", () => GameXAMLManagerAPI.Instance.RegisterBinding(
                     "APISharedRepairExtrasHost", runtime.RepairTooltip), runtime.FaultBuildingRepair),
                 new NativeInitializationStep("building tooltip bindings", Presentation.BuildingTooltipPresentation.Bind),
-                new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(Logger)),
+                new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
-                    context.ModuleHandle, context.Memory.Length, hash, Logger)),
+                    context.ModuleHandle, context.Memory.Length, hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(
-                    context.ModuleHandle, context.Memory, context.Region, hash, Logger)),
+                    context.ModuleHandle, context.Memory, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin attack control", () => AssassinAttackControlAPI.Initialize(
-                    context.ModuleHandle, context.Region, hash, Logger)),
+                    context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
-                    context.ModuleHandle, context.Region, hash, Logger)),
+                    context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
-                    context, Logger, runtime.NativeOwnership)),
+                    context, RuntimeLogger, runtime.NativeOwnership)),
+                new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("native API publication", () => runtime.Initialize(
                     context.ModuleHandle.ToInt64(),
                     context.Memory,
                     hash,
                     new ProcessNativeMemory(),
-                    Logger,
+                    RuntimeLogger,
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
-                new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, Logger)),
+                new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
-                    NativeSites.NativeSiteRegistry.ScheduleStartupReport(Logger)));
+                    NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));
         }
 
         private static string ComputeInstalledHash()

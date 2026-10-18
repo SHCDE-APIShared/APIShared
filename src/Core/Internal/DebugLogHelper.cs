@@ -1,7 +1,9 @@
 // APIShared-owned implementation; independent of workspace Shared helpers.
 // Initial provenance: a7888900e, Shared/DebugLogHelper.cs. No automatic synchronization.
 using BepInEx.Logging;
+using BepInEx.Configuration;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -17,9 +19,57 @@ namespace APIShared.Internal
         private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(1);
         private static DateTime debugEnabledCacheExpiresAtUtc;
         private static bool debugEnabledCache;
+        // API_SHARED_DIAGNOSTICS: optional logs only. Public observer registration is
+        // separate explicit consumer demand and is never disabled by this switch.
+        private static bool diagnosticsInitialized;
+        private static volatile bool diagnosticsEnabled;
+        private static readonly Dictionary<ManualLogSource, ManualLogSource> serviceLogs =
+            new Dictionary<ManualLogSource, ManualLogSource>();
+        internal static bool DiagnosticsEnabled => diagnosticsEnabled;
+
+        internal static void InitializeDiagnostics(ConfigFile config, ManualLogSource log)
+        {
+            if (diagnosticsInitialized) return;
+            diagnosticsInitialized = true;
+            try
+            {
+                diagnosticsEnabled = config.Bind("Diagnostics", "Enabled", false,
+                    "API_SHARED_DIAGNOSTICS: enable APIShared routine logs and optional diagnostic presentation. " +
+                    "Keep disabled for normal releases. Restart required; Debug output also needs a BepInEx Debug listener. " +
+                    "Consumer-registered observers and warning/error reports are independent.").Value;
+                if (diagnosticsEnabled)
+                    LogWarning(log, "API_SHARED_DIAGNOSTICS_ENABLED: diagnostics are explicitly enabled for this process. " +
+                        "This persisted setting will also enable them on later starts; normal release default is disabled.");
+            }
+            catch (Exception ex)
+            {
+                diagnosticsEnabled = false;
+                LogError(log, "API_SHARED_DIAGNOSTICS_CONFIG_FAILED: diagnostics remain disabled: " + ex);
+            }
+        }
+
+        // API_SHARED_DIAGNOSTICS: an unregistered source filters logs from services
+        // retaining a logger, including direct Info/Debug calls. Failures still forward.
+        internal static ManualLogSource ForExternalCode(ManualLogSource log)
+        {
+            if (log == null) return null;
+            lock (serviceLogs)
+            {
+                if (serviceLogs.TryGetValue(log, out ManualLogSource proxy)) return proxy;
+                proxy = new ManualLogSource(log.SourceName);
+                proxy.LogEvent += (_, args) =>
+                {
+                    if (DiagnosticsEnabled || (args.Level & (LogLevel.Warning | LogLevel.Error | LogLevel.Fatal)) != 0)
+                        log.Log(args.Level, WithTimestamp(Convert.ToString(args.Data, CultureInfo.InvariantCulture)));
+                };
+                serviceLogs.Add(log, proxy);
+                return proxy;
+            }
+        }
 
         public static bool IsDebugEnabled()
         {
+            if (!DiagnosticsEnabled) return false;
             DateTime now = DateTime.UtcNow;
             if (now < debugEnabledCacheExpiresAtUtc)
                 return debugEnabledCache;
@@ -31,6 +81,7 @@ namespace APIShared.Internal
 
         public static bool IsDiskDebugEnabled()
         {
+            if (!DiagnosticsEnabled) return false;
             try
             {
                 foreach (ILogListener listener in Logger.Listeners)
@@ -67,6 +118,7 @@ namespace APIShared.Internal
 
         public static void LogInfo(ManualLogSource log, string message)
         {
+            if (!DiagnosticsEnabled) return;
             log?.LogInfo(WithTimestamp(message));
         }
 

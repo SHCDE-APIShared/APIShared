@@ -17,7 +17,9 @@ $good = @('! running || return 1', 'if ! a; then b; fi', 'while ! a; do b; done'
 foreach ($line in $bad) { if (-not (Test-BareNegation $line)) { throw "Shell lint missed a bare negation: $line" } }
 foreach ($line in $good) { if (Test-BareNegation $line) { throw "Shell lint rejected a valid form: $line" } }
 $findings = @()
-foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.sh' | Where-Object FullName -NotMatch '[\\/](bin|obj|BepInEx|\.git|\.local)[\\/]') {
+foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.sh' | Where-Object {
+    ('\' + $_.FullName.Substring($root.Length).TrimStart('\','/')) -notmatch '[\\/](bin|obj|BepInEx|\.git|\.local|\.work|\.release-output)[\\/]'
+}) {
     $number = 0
     foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
         $number++
