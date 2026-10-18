@@ -266,27 +266,34 @@ The development dependency bootstrap follows the same SE policy for
 and a dry transformation/compilation precede installation. Pair ownership and the
 BepInEx binary gate remain separate requirements; SE hashes are diagnostic only.
 
-## Rounded fear-popularity SE adapter (2026-10-18)
+## Rounded fear-popularity SE adapter
 
 `Economy/FearPopularityRuntime` installs a permanent managed IL hook, without a new
-native address or overlapping native span. Supported native SHA-256:
-`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`;
-supported SHCDESE.dll SHA-256:
-`577F9AAB5DE504BE0BFA2193C7DEB734B26076ECBBAF0A408FC9ABC4CC5E7175`.
-These are explicit audited binary contracts, not version-string expectations.
+native address or overlapping native span. The native ABI retains its audited SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+SE has no version or hash allowlist. Loaded/disk assembly identity and MVID must agree;
+that establishes provenance without imposing a version ceiling.
 
-The owner is the existing SE popularity callback in `SHCDESE.Detours.BulkPlayerDetours`.
-Find it by its reference to `get_GoodBadThingPopModifierMultiplier`, not a generated
-lambda name or local number. Both signed branches load the integer ManagedValue,
-load the signed fear level and multiply. Replace only those two mul instructions
-with a two-int-to-int call; retain instruction identities, all incoming targets,
-resource-field stores, worst-source comparison, event publication and register writes.
-All sites validate before either edit. Unknown/ambiguous callback/data flow or native/SE
-fingerprint disables this optional service; other API services remain available.
+Discover the calculation by the public SE coefficient getter and contribution-field
+write across all module types, independent of generated type/method names. Exactly one
+calculation owner must be identifiable; ambiguity is an error. Analyze its CFG, stack,
+locals and ref/out pointer assignments. Every coefficient access must lead through
+ManagedValue<int>.GetValue and multiplication with the signed Int32 fear field to the
+32-bit contribution field of the same resource pointer. Accept any positive number of
+multiplication sites, local/stack spills, supported joins, NOPs and either operand order.
+Preserve instruction identities when replacing multiplication with the corresponding
+two-int-to-int helper, retaining branch targets and the downstream sum/source selection.
+
+All sites are validated before edits. Coefficient escapes, changed arithmetic/types,
+unresolved resource aliases, double patches and unsupported exception-region flows
+refuse only this optional service, with a reason. Never accept a new SE merely because
+its name/version matches, and never reject it solely for a different file hash. For a
+future unsupported layout, extend the semantic proof and positive/negative fixtures;
+do not replace a hash or remove a failing safety assertion just to make it pass.
 
 Native flow: scheduler 0xD1AD0 -> updater 0xCB090 (eligibility, fixed-mode and small-
 population bypasses retained) -> SE contribution calculation -> remaining timed event
-penalties -> final 0..10000 clamp/history/speech. The report producer 0x19D960 independently
-uses the signed fear level; only the public report correction consumes the rounded result.
-Before accepting a new binary, re-audit both data/control paths and update the fingerprint
-only with installed-assembly rewrite/generation tests and appropriate game acceptance.
+penalties -> final 0..10000 clamp/history/speech. Report producer 0x19D960 independently
+uses the signed fear level; public report correction consumes the same rounded result.
+Native game/report ABI changes still require their own audit. CLI fixtures validate
+rewriting and JIT preparation; actual Mono/game and multiplayer acceptance are separate.

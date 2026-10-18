@@ -684,13 +684,15 @@ Follow the [gate routing guide](GATE_ROUTING.md); a routing provider is required
 The 0.10.0 development API provides `APIShared.Economy.FearPopularity` for absolute,
 fractional popularity coefficients per signed fear level. After native initialization,
 call `TryRegister` with your own plugin GUID and stable local ID, retain the handle,
-and inspect the returned diagnostic. The installed native and SE implementations must
-match the audited adapter. No consumer native hook or SE stack manipulation is needed.
+and inspect the returned diagnostic. SE compatibility is determined from the installed
+module's actual coefficient-to-resource data flow, without an SE version or file-hash
+allowlist. The separate native game ABI remains bound to its audited fingerprint.
+No consumer native hook or SE stack manipulation is needed.
 
 `handle.SetMultiplier(1.1m)` computes `round(level * 1.1)` in whole report points,
 with midpoint ties away from zero, then converts to the engine's 25 units per report
 point. Thus level 5 produces 6 points and level -5 produces -6. The calculation runs
-inside both signed SE calculation branches, before the worst-source decision, event
+at every validated SE fear multiplication, before the worst-source decision, event
 penalties and final native clamp. Reports and preview panels use the same arithmetic.
 Fear level, productivity and combat remain unchanged.
 
@@ -707,6 +709,11 @@ and step sizes belong to the consumer.
 See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
 The pure popularity tests cover rounding, ownership and matching display deltas;
 installed-assembly tests validate and generate the actual edited SE callback and reject
-partial/double edits. They do not execute native game memory or prove in-game Mono,
+partial/double edits. Equivalent one-site/multiple-site calculations, reordered operands,
+local encodings, harmless NOPs and renamed compiler carriers are accepted. Incorrect input
+fields, player pointers, signedness/storage widths and changed arithmetic are rejected.
+Unsupported exception-region or escaped-reference flows fail with a diagnostic rather
+than claiming compatibility. The analysis runs once at startup, not on simulation ticks.
+Tests do not execute native game memory or prove in-game Mono,
 editor, save/load or real multiplayer acceptance. The adapter is permanent and statically
 rooted; startup component destruction never removes it.
