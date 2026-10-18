@@ -32,6 +32,7 @@ namespace ThirdPartyMod
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);
+            BuildingPanelExample.Register(Api, Log);
             Api.WhenReady(OnReady);
         }
 
