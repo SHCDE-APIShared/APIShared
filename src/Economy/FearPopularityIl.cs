@@ -281,14 +281,26 @@ namespace APIShared.Economy
             // Exception edges cannot be inferred from ordinary branches. Reject this
             // currently unsupported flow rather than skipping potential coefficient paths.
             if (method.Body.HasExceptionHandlers) throw Unsupported("Exception-region flow requires a supported analysis.");
+            var body = new HashSet<Instruction>(method.Body.Instructions);
+            if (body.Count == 0) throw Unsupported("Empty method body.");
             var states=new Dictionary<Instruction,Frame>(); var pending=new Queue<Instruction>();
             var first=method.Body.Instructions[0]; states.Add(first,new Frame(method)); pending.Enqueue(first);
             while (pending.Count != 0)
             {
                 var instruction=pending.Dequeue(); var frame=states[instruction].Copy(); Step(method,instruction,frame,null);
                 var successors=new List<Instruction>();
-                if (instruction.Operand is Instruction target) successors.Add(target);
-                else if (instruction.Operand is Instruction[] targets) successors.AddRange(targets);
+                // ILContext.Invoke (and ILHook) exposes labels, while an uninvoked
+                // Cecil body exposes Instructions. Resolve without rewriting either.
+                if (instruction.OpCode.FlowControl == FlowControl.Branch || instruction.OpCode.FlowControl == FlowControl.Cond_Branch)
+                {
+                    if (instruction.Operand is Instruction target) successors.Add(target);
+                    else if (instruction.Operand is ILLabel label) successors.Add(label.Target);
+                    else if (instruction.Operand is Instruction[] targets) successors.AddRange(targets);
+                    else if (instruction.Operand is ILLabel[] labels) successors.AddRange(labels.Select(item => item?.Target));
+                    else throw Unsupported("Unsupported branch target representation.");
+                    if (successors.Any(next => next == null || !body.Contains(next)))
+                        throw Unsupported("Branch target is missing or outside the method body.");
+                }
                 if (instruction.OpCode.FlowControl != FlowControl.Branch && instruction.OpCode.FlowControl != FlowControl.Return &&
                     instruction.OpCode.FlowControl != FlowControl.Throw && instruction.Next != null) successors.Add(instruction.Next);
                 foreach (var next in successors)

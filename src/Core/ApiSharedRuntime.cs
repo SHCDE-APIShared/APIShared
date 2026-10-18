@@ -243,7 +243,7 @@ namespace APIShared
                 catch (Exception ex)
                 {
                     lastFailure = $"Initialization step '{step.Name}' failed: {ex.GetType().Name}: {ex.Message}";
-                    try { NativeApiLog.Error(logger, $"{lastFailure}; independent steps continue. {ex}"); }
+                    try { Internal.RuntimeHealth.Failure(logger, "initialization:" + step.Name, true, $"{lastFailure}; independent steps continue. {ex}"); }
                     catch { }
                     try { step.Failed?.Invoke(lastFailure); }
                     catch { }

@@ -28,6 +28,7 @@ namespace APISharedTests
             var previousListeners = BepInEx.Logging.Logger.Listeners.ToArray();
             // Snapshot the mutable process state, not a prescribed list of cache fields.
             var state = typeof(DebugLogHelper).GetFields(BindingFlags.Static | BindingFlags.NonPublic)
+                .Concat(typeof(RuntimeHealth).GetFields(BindingFlags.Static | BindingFlags.NonPublic))
                 .Where(field => !field.IsInitOnly && !field.IsLiteral).ToDictionary(field => field, field => field.GetValue(null));
             string configPath = Path.Combine(Path.GetTempPath(), "APIShared-Logging-" + Guid.NewGuid().ToString("N") + ".cfg");
             try
@@ -49,6 +50,7 @@ namespace APISharedTests
                         config.Bind("Diagnostics", "Enabled", diagnostics);
                         DebugLogHelper.InitializeDiagnostics(config, source);
                         messages.Clear(); // Explicit opt-in may report a startup warning of its own.
+                        RuntimeHealth.Failure(null, "absent-source", true, "An absent caller logger must remain silent.");
                         int formats = 0;
                         DebugLogHelper.LogDebug(source, () => { formats++; return "routine"; });
                         NativeApiLog.Debug(source, "native routine");

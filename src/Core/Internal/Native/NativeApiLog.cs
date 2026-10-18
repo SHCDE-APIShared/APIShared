@@ -10,8 +10,8 @@ namespace APIShared
         public static void Debug(ManualLogSource log, string message) => APIShared.Internal.DebugLogHelper.LogDebug(log, message);
         // API_SHARED_DIAGNOSTICS: includes consumer-owned logger sources.
         public static void Info(ManualLogSource log, string message) => APIShared.Internal.DebugLogHelper.LogInfo(log, message);
-        public static void Warning(ManualLogSource log, string message) => log?.LogWarning(Stamp(message));
-        public static void Error(ManualLogSource log, string message) => log?.LogError(Stamp(message));
-        private static string Stamp(string message) => $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
-    }
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static void Warning(ManualLogSource log, string message) => APIShared.Internal.RuntimeHealth.Failure(log, APIShared.Internal.RuntimeHealth.CallerFeature(), false, message);
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static void Error(ManualLogSource log, string message) => APIShared.Internal.RuntimeHealth.Failure(log, APIShared.Internal.RuntimeHealth.CallerFeature(), true, message);    }
 }

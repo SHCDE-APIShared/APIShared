@@ -75,7 +75,7 @@ Scan compiled consumer assemblies, such as release assets or a local consumer bu
 the current build:
 
 ```powershell
-$env:APISHARED_CONSUMER_SCAN = 'path\to\BugfixesAndQoL.dll;path\to\MoatMove.dll'
+$env:APISHARED_CONSUMER_SCAN = 'path\to\BugfixesAndQoL.dll'
 dotnet test tests/APISharedTests/APISharedTests.csproj --configuration Release --filter "FullyQualifiedName~ScannedFriendConsumersBindOnlyPinnedInternals"
 Remove-Item Env:APISHARED_CONSUMER_SCAN
 ```

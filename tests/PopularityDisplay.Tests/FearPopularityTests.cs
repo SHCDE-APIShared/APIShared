@@ -13,7 +13,7 @@ public sealed class FearPopularityTests
         var cases = new[] {
             (5,1.1m,6), (-5,1.1m,-6), (5,-1.1m,-6), (-5,-1.1m,6),
             (4,0.1m,0), (5,0.1m,1), (5,-0.1m,-1), (3,1.5m,5),
-            (1,-1.5m,-2), (5,5m,25), (5,-5m,-25), (0,decimal.MaxValue,0)
+            (1,-1.5m,-2), (5,5m,25), (5,-5m,-25), (0,decimal.MaxValue,0), (5,2m,10), (-5,2m,-10), (5,0m,0)
         };
         foreach (var value in cases)
             Assert.AreEqual(value.Item3, FearPopularity.CalculatePoints(value.Item1,value.Item2));

@@ -51,6 +51,7 @@
     <Compile Include="..\..\src\ModSettings\Presets\LobbyModSettingsPresetRegistration.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\AtomicFileReplacement.cs" />
     <Compile Include="..\..\src\Core\Internal\DebugLogHelper.cs" />
+    <Compile Include="..\..\src\Core\Internal\RuntimeHealth.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs" />
     <Compile Include="..\..\src\GameModes\Internal\PlayerIdentityHelper.cs" />
     <Compile Include="..\..\src\Missions\Internal\MissionEventRelay.cs" />
