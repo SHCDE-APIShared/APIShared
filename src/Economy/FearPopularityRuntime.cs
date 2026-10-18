@@ -26,8 +26,7 @@ namespace APIShared.Economy
             try
             {
                 var assembly = typeof(CrusaderLibrary).Assembly;
-                Internal.InstalledAssemblyIdentity.Verify(assembly, assembly.Location,
-                    "577F9AAB5DE504BE0BFA2193C7DEB734B26076ECBBAF0A408FC9ABC4CC5E7175");
+                Internal.InstalledAssemblyIdentity.VerifyModule(assembly, assembly.Location);
                 MethodInfo target = FindTarget(assembly);
                 // Validate against the installed original before publishing a permanent hook.
                 using (var definition = new DynamicMethodDefinition(target))
@@ -36,25 +35,28 @@ namespace APIShared.Economy
             }
             catch (Exception ex) { Diagnostic = ex.Message; throw; }
             Diagnostic = null;
-            log.LogInfo(Stamp("FEAR_POPULARITY_READY signed SE branches retained; rounding=away-from-zero; units=points*25"));
+            log.LogInfo(Stamp("FEAR_POPULARITY_READY validated SE coefficient/resource flow retained; rounding=away-from-zero; units=points*25"));
         }
         internal static MethodInfo FindTarget(Assembly assembly)
         {
-            var type = assembly.GetType("SHCDESE.Detours.BulkPlayerDetours", true);
-            MethodInfo found = null;
-            foreach (var candidate in new[] { type }.Concat(type.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic)))
-            foreach (var method in candidate.GetMethods(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            using (var stream = System.IO.File.Open(assembly.Location, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+            using (var image = Mono.Cecil.AssemblyDefinition.ReadAssembly(stream))
             {
-                if (method.GetMethodBody() == null) continue;
-                using (var definition = new DynamicMethodDefinition(method))
-                {
-                    if (!definition.Definition.Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference call &&
-                        call.Name == "get_GoodBadThingPopModifierMultiplier")) continue;
-                    if (found != null) throw new InvalidOperationException("Ambiguous fear calculation callback.");
-                    found = method;
-                }
+                if (image.Name.FullName != assembly.FullName || image.MainModule.Mvid != assembly.ManifestModule.ModuleVersionId)
+                    throw new InvalidOperationException("Loaded/disk SE module identity differs.");
+                var target = FindTargetDefinition(image.MainModule);
+                return assembly.ManifestModule.ResolveMethod(target.MetadataToken.ToInt32()) as MethodInfo
+                    ?? throw new MissingMethodException("SE fear calculation is not a managed method.");
             }
-            return found ?? throw new MissingMethodException("SE fear calculation callback unavailable.");
+        }
+        internal static Mono.Cecil.MethodDefinition FindTargetDefinition(Mono.Cecil.ModuleDefinition module)
+        {
+            var candidates = module.GetTypes().SelectMany(t => t.Methods).Where(m => m.HasBody &&
+                m.Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference call && FearPopularityIl.IsCoefficientGetter(call)) &&
+                m.Body.Instructions.Any(i => (i.OpCode == Mono.Cecil.Cil.OpCodes.Stfld || i.OpCode == Mono.Cecil.Cil.OpCodes.Ldflda) &&
+                    i.Operand is Mono.Cecil.FieldReference field && FearPopularityIl.IsContributionField(field))).ToArray();
+            if (candidates.Length != 1) throw new InvalidOperationException("Missing or ambiguous fear coefficient/contribution calculation.");
+            return candidates[0];
         }
         internal static void ReportApplied(int level, int units)
         {

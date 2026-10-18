@@ -28,8 +28,10 @@ public sealed class FearPopularityTests
         try
         {
             Assert.AreEqual(-119, FearPopularity.Multiply(17,-7), "Dormant keeps foreign SE coefficient");
+            Assert.AreEqual(-119, FearPopularity.MultiplySwapped(-7,17), "Dormant reordered multiplication preserves SE");
             first.SetMultiplier(1.1m);
             Assert.AreEqual(150, FearPopularity.Multiply(17,5), "5.5 rounds to 6 points, then scales");
+            Assert.AreEqual(150, FearPopularity.MultiplySwapped(5,17), "Reordered IL operands use the same rounded result");
             var original = new PopularityReport { FearLevel=5, Fear=125, Total=300 };
             var corrected = original.Correct(new Dictionary<string,int>());
             Assert.AreEqual(150, corrected.Fear);

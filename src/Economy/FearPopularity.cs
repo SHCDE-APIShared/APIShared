@@ -69,6 +69,7 @@ namespace APIShared.Economy
         }
         // The IL call has the same two-int input and int output as the replaced mul.
         // Returning SE's original product while dormant preserves its unchecked arithmetic.
+        internal static int MultiplySwapped(int fearLevel, int originalCoefficient) => Multiply(originalCoefficient, fearLevel);
         internal static int Multiply(int originalCoefficient, int fearLevel)
         {
             try { if (TryCalculate(fearLevel, out int value)) { FearPopularityRuntime.ReportApplied(fearLevel, value); return value; } }

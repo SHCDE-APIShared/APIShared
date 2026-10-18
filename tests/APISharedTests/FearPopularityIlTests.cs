@@ -4,6 +4,10 @@ using MonoMod.Cil;
 using MonoMod.Utils;
 using Mono.Cecil.Cil;
 using SHCDESE.API.LowLevel;
+using SHCDESE.GameGlobals;
+using SHCDESE.Interop;
+using System.Reflection;
+using Mono.Cecil;
 using System;
 using System.Linq;
 
@@ -36,16 +40,145 @@ public sealed class FearPopularityIlTests
         }
     }
     [TestMethod]
-    public void MalformedOneBranchFailsBeforeEitherBranchIsModified()
+    public void MalformedProductFailsBeforeAnyEdit()
     {
         var method = FearPopularityRuntime.FindTarget(typeof(CrusaderLibrary).Assembly);
         using (var definition = new DynamicMethodDefinition(method))
         using (var context = new ILContext(definition.Definition))
         {
             var sites = FearPopularityIl.Sites(context);
-            sites[1].OpCode = OpCodes.Add;
+            sites.Last().OpCode = OpCodes.Add;
+            var before=context.Body.Instructions.Select(i=>i.ToString()).ToArray();
             Assert.Throws<InvalidOperationException>(() => FearPopularityIl.Apply(context));
-            Assert.AreEqual(OpCodes.Mul,sites[0].OpCode,"First branch untouched on a later validation failure");
+            CollectionAssert.AreEqual(before,context.Body.Instructions.Select(i=>i.ToString()).ToArray(),"No partial edit regardless of site count");
+        }
+    }
+
+    private static unsafe int Unified(GameGlobalsManager globals, GamePlayerResources* resources)
+    {
+        int coefficient=globals.GoodBadThingPopModifierMultiplier.GetValue();
+        int level=resources->r_GoodBadThingBoost;
+        int contribution=coefficient*level;
+        resources->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe int Swapped(GameGlobalsManager globals, GamePlayerResources* resources)
+    {
+        int contribution=resources->r_GoodBadThingBoost*globals.GoodBadThingPopModifierMultiplier.GetValue();
+        resources->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe int ThreePaths(GameGlobalsManager globals, GamePlayerResources* resources)
+    {
+        int level=resources->r_GoodBadThingBoost;
+        int coefficient=globals.GoodBadThingPopModifierMultiplier.GetValue();
+        int contribution;
+        if(level>0) contribution=coefficient*level;
+        else if(level<0) contribution=level*coefficient;
+        else contribution=coefficient*level;
+        resources->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe int WrongInput(GameGlobalsManager globals, GamePlayerResources* resources)
+    {
+        int contribution=globals.GoodBadThingPopModifierMultiplier.GetValue()*(int)resources->r_TotalPopulation;
+        resources->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe int WrongPlayer(GameGlobalsManager globals, GamePlayerResources* one, GamePlayerResources* two)
+    {
+        int contribution=globals.GoodBadThingPopModifierMultiplier.GetValue()*one->r_GoodBadThingBoost;
+        two->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe int ChangedMath(GameGlobalsManager globals, GamePlayerResources* resources)
+    {
+        int contribution=globals.GoodBadThingPopModifierMultiplier.GetValue()*(resources->r_GoodBadThingBoost+1);
+        resources->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe int ClampedProduct(GameGlobalsManager globals, GamePlayerResources* resources)
+    {
+        int contribution=Math.Min(100,globals.GoodBadThingPopModifierMultiplier.GetValue()*resources->r_GoodBadThingBoost);
+        resources->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static unsafe void ReplaceResources(ref GamePlayerResources* pointer, GamePlayerResources* next) { pointer=next; }
+    private static unsafe int ReassignedPlayer(GameGlobalsManager globals, GamePlayerResources* one, GamePlayerResources* two)
+    {
+        var pointer=one;
+        int level=pointer->r_GoodBadThingBoost;
+        ReplaceResources(ref pointer,two);
+        int contribution=globals.GoodBadThingPopModifierMultiplier.GetValue()*level;
+        pointer->r_GoodBadThingsPopularityModifier=unchecked((uint)contribution);
+        return contribution;
+    }
+    private static MethodInfo Fixture(string name) => typeof(FearPopularityIlTests).GetMethod(name,BindingFlags.NonPublic|BindingFlags.Static);
+    [TestMethod]
+    public void EquivalentLayoutsAcceptAnySiteCountAndRenamedCompilerCarriers()
+    {
+        foreach(string name in new[]{nameof(Unified),nameof(Swapped),nameof(ThreePaths)})
+        using(var definition=new DynamicMethodDefinition(Fixture(name)))
+        using(var context=new ILContext(definition.Definition))
+        {
+            var sites=FearPopularityIl.Sites(context);
+            Assert.IsTrue(sites.Count>0);
+            foreach(var instruction in context.Body.Instructions)
+            {
+                string nameOfOp=instruction.OpCode.Name;
+                if(nameOfOp.StartsWith("ldloc.") || nameOfOp.StartsWith("stloc."))
+                {
+                    if(int.TryParse(nameOfOp.Substring(6),out int index))
+                    {
+                        instruction.OpCode=nameOfOp.StartsWith("ldloc")?OpCodes.Ldloc:OpCodes.Stloc;
+                        instruction.Operand=context.Body.Variables[index];
+                    }
+                }
+            }
+            // Expand local opcodes and add harmless sequence points/NOPs. These
+            // variations must not become a version or compiler-layout gate.
+            foreach(var instruction in context.Body.Instructions.ToArray())
+                context.Body.GetILProcessor().InsertBefore(instruction,Instruction.Create(OpCodes.Nop));
+            Assert.AreEqual(sites.Count,FearPopularityIl.Sites(context).Count);
+            FearPopularityIl.Apply(context);
+            foreach(var site in sites) Assert.AreEqual(OpCodes.Call,site.OpCode);
+        }
+        foreach(var version in new[]{new Version(1,0),new Version(99,7)})
+        using(var image=AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("FutureSE",version),"FutureSE",ModuleKind.Dll))
+        using(var definition=new DynamicMethodDefinition(Fixture(nameof(Unified))))
+        {
+            var method=definition.Definition;
+            method.DeclaringType.Methods.Remove(method);
+            var carrier=new TypeDefinition("CompilerChanged","ArbitraryContainer",Mono.Cecil.TypeAttributes.Class,image.MainModule.TypeSystem.Object);
+            image.MainModule.Types.Add(carrier); carrier.Methods.Add(method); method.Name="RenamedCalculation";
+            Assert.AreSame(method,FearPopularityRuntime.FindTargetDefinition(image.MainModule),"Discovery ignores version/type/method names");
+            using(var context=new ILContext(method)) Assert.IsTrue(FearPopularityIl.Sites(context).Count>0);
+        }
+    }
+    [TestMethod]
+    public void ChangedMeaningIsRejectedBeforeMutation()
+    {
+        foreach(string name in new[]{nameof(WrongInput),nameof(WrongPlayer),nameof(ChangedMath),nameof(ClampedProduct),nameof(ReassignedPlayer)})
+        using(var definition=new DynamicMethodDefinition(Fixture(name)))
+        using(var context=new ILContext(definition.Definition))
+        {
+            var before=context.Body.Instructions.Select(i=>i.ToString()).ToArray();
+            Assert.Throws<InvalidOperationException>(()=>FearPopularityIl.Apply(context),name);
+            CollectionAssert.AreEqual(before,context.Body.Instructions.Select(i=>i.ToString()).ToArray(),name+" leaves the entire body unchanged");
+        }
+    }
+    [TestMethod]
+    public void ChangedSignednessOrWidthIsRejected()
+    {
+        foreach(bool input in new[]{true,false})
+        using(var definition=new DynamicMethodDefinition(Fixture(nameof(Unified))))
+        using(var context=new ILContext(definition.Definition))
+        {
+            var instruction=context.Body.Instructions.First(i=>i.Operand is FieldReference f &&
+                (input?f.Name=="r_GoodBadThingBoost":FearPopularityIl.IsContributionField(f)));
+            var original=(FieldReference)instruction.Operand;
+            instruction.Operand=new FieldReference(original.Name,input?context.Method.Module.TypeSystem.UInt32:context.Method.Module.TypeSystem.UInt64,original.DeclaringType);
+            Assert.Throws<InvalidOperationException>(()=>FearPopularityIl.Apply(context));
         }
     }
 }
