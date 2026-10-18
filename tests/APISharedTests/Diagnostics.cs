@@ -60,13 +60,24 @@ namespace APISharedTests
                         DebugLogHelper.LogError(source, "error");
                         var expected = new List<BepInEx.Logging.LogLevel>();
                         if (diagnostics && debugListener) expected.AddRange(new[] { BepInEx.Logging.LogLevel.Debug, BepInEx.Logging.LogLevel.Debug });
-                        if (diagnostics) expected.AddRange(new[] { BepInEx.Logging.LogLevel.Info, BepInEx.Logging.LogLevel.Info });
+                        // Info is never filtered; its volume is limited at the call sites.
+                        expected.AddRange(new[] { BepInEx.Logging.LogLevel.Info, BepInEx.Logging.LogLevel.Info });
                         expected.AddRange(new[] { BepInEx.Logging.LogLevel.Warning, BepInEx.Logging.LogLevel.Error });
+                        // Services logging through the forwarding proxy follow the same rules,
+                        // and lines they already stamped keep exactly one timestamp.
+                        var proxy = DebugLogHelper.ForExternalCode(source);
+                        proxy.LogDebug("service routine");
+                        proxy.LogInfo("service state");
+                        proxy.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) + "] stamped service state");
+                        if (diagnostics && debugListener) expected.Add(BepInEx.Logging.LogLevel.Debug);
+                        expected.AddRange(new[] { BepInEx.Logging.LogLevel.Info, BepInEx.Logging.LogLevel.Info });
                         Assert(formats == (diagnostics && debugListener ? 1 : 0), "Lazy Debug formatting ignores diagnostic/listener demand");
                         Assert(messages.Select(message => message.Level).SequenceEqual(expected),
                             "Logging levels differ for diagnostics=" + diagnostics + ", Debug listener=" + debugListener);
                         Assert(messages.All(message => Regex.IsMatch(message.Data.ToString(), @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] ")),
                             "Diagnostic or warning/error output lacks millisecond timestamps");
+                        Assert(messages.All(message => Regex.Matches(message.Data.ToString(), @"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}").Count == 1),
+                            "A forwarded line received a second timestamp");
                     }
                 }
             }

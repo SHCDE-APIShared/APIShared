@@ -99,7 +99,7 @@ namespace APIShared.Workshop
             if (WorkshopRuntime.IsExternallyManaged) return staged;
             try
             {
-                if (!reported) { reported = true; logger.LogInfo("Workshop cleanup callback active after startup cleanup."); }
+                if (!reported) { reported = true; logger.LogDebug("Workshop cleanup callback active after startup cleanup."); }
                 string guid = archive.Info?.GUID, version = archive.Info?.Version;
                 // The Extender owns every foreign map package. Only our own historical
                 // deliveries retain the explicitly supported inventory cleanup.

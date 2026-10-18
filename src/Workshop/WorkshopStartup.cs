@@ -177,20 +177,22 @@ namespace APIShared.Workshop
             string game = BepInEx.Paths.GameRootPath;
             var entries = await Task.Run(() => WorkshopRecovery.Inspect(game));
             string root = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions");
-            if (Directory.Exists(root)) foreach (string directory in Directory.EnumerateDirectories(root)) {
-                var journal = WorkshopRecovery.Journal(directory);
-                if (journal.Length == 0) continue;
-                var interrupted = entries.FirstOrDefault(x => x.Directory == directory);
-                WorkshopRuntime.Log("Workshop previous transaction=" + directory + "; outcome=" + (interrupted != null
-                    ? WorkshopRecovery.Describe(interrupted, CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de")
-                    : WorkshopRecovery.Finished(directory) ? journal.Last(x => x == "committed" || x == "restored") : journal.Last()));
+            bool german = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de";
+            // Unfinished transactions are logged in full; of the retained finished history
+            // only the newest outcome, so the log does not repeat it on every start.
+            if (Directory.Exists(root)) {
+                foreach (var interrupted in entries)
+                    WorkshopRuntime.Log("Workshop unfinished transaction=" + interrupted.Directory + "; " + WorkshopRecovery.Describe(interrupted, false));
+                string latest = Directory.EnumerateDirectories(root).Where(WorkshopRecovery.Finished).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault();
+                if (latest != null)
+                    WorkshopRuntime.Log("Workshop latest transaction=" + latest + "; outcome=" + WorkshopRecovery.Journal(latest).Last(x => x == "committed" || x == "restored"));
             }
             if (entries.Count == 0) return false;
-            bool rollback = entries.All(x => x.CanRollback);
-            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\nWorkshop: " + string.Join(", ", x.Items) + "\n" + WorkshopRecovery.Describe(x, CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de") +
-                (x.CanRollback ? "" : "\nRollback: " + x.RollbackError)));
+            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\nWorkshop: " + (x.Items.Length == 0 ? "?" : string.Join(", ", x.Items)) + "\n" +
+                WorkshopRecovery.Describe(x, german) + (x.CanRollback ? "" : "\nRollback: " + x.RollbackError)));
             // Show a failed external recovery/replacement attempt too: its
             // failure belongs to the request journal, not the original journal.
+            bool attemptFailed = false;
             foreach (string directory in Directory.EnumerateDirectories(root).OrderByDescending(Directory.GetLastWriteTimeUtc)) {
                 if (WorkshopRecovery.Finished(directory)) continue;
                 string references = WorkshopPaths.Inside(directory, "supersedes.tsv");
@@ -199,35 +201,57 @@ namespace APIShared.Workshop
                 string failure = WorkshopRecovery.Journal(directory).LastOrDefault(line => line.StartsWith("failure ", StringComparison.Ordinal));
                 if (failure == null) continue;
                 details += "\n\n" + WorkshopText.Pick("Previous attempt: ", "Vorheriger Versuch: ") + directory + "\n" + failure;
+                attemptFailed = true;
                 break;
             }
-            string choices = rollback ? WorkshopText.Pick(
-                "Yes: repair (restore first, restart and offer the current update).\nNo: rollback to the previous state and close the game. The next start offers updates again.\nCancel: later.",
-                "Ja: Reparieren (zuerst wiederherstellen, neu starten und aktuelles Update anbieten).\nNein: Rollback auf den vorherigen Zustand und Spiel schließen. Beim nächsten Start werden Updates wieder angeboten.\nAbbrechen: Später.") : WorkshopText.Pick(
-                "Rollback is unavailable for the reasons above.\nYes: prepare a complete repair.\nNo: later.",
-                "Rollback ist aus den oben genannten Gründen nicht verfügbar.\nJa: Vollständige Reparatur vorbereiten.\nNein: Später.");
-            int decision = Ask(WorkshopText.Pick("An interrupted Workshop installation needs attention.\n\n", "Eine unterbrochene Workshop-Installation benötigt eine Reparatur.\n\n") + details + "\n\n" + choices, rollback ? 0x3u : 0x4u);
-            var choice = WorkshopRecovery.Decide(rollback, decision);
-            if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
+            // A rollback that already failed is not offered again: the clean reinstallation
+            // below is the fallback that is always available.
+            bool rollback = !attemptFailed && entries.All(x => x.CanRollback);
             if (rollback) {
+                string choices = WorkshopText.Pick(
+                    "Yes: repair (restore first, restart and offer the current update).\nNo: rollback to the previous state and close the game. The next start offers updates again.\nCancel: later.",
+                    "Ja: Reparieren (zuerst wiederherstellen, neu starten und aktuelles Update anbieten).\nNein: Rollback auf den vorherigen Zustand und Spiel schließen. Beim nächsten Start werden Updates wieder angeboten.\nAbbrechen: Später.");
+                int decision = Ask(WorkshopText.Pick("An interrupted Workshop installation needs attention.\n\n", "Eine unterbrochene Workshop-Installation benötigt eine Reparatur.\n\n") + details + "\n\n" + choices, 0x3u);
+                var choice = WorkshopRecovery.Decide(true, decision);
+                if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
                 await WorkshopRuntime.RollbackAsync(entries, choice == WorkshopRecovery.Choice.Repair, WorkshopStartupGate.AuthorizeConfirmedUpdate());
                 return true;
             }
-            // No backup is trusted implicitly. A full package repair is a second,
-            // explicit consent boundary and preserves unrelated/obsolete files.
-            var plans = new List<WorkshopInstallPlan>();
-            foreach (ulong id in entries.SelectMany(x => x.Items).Distinct()) plans.Add(await WorkshopRuntime.PrepareRepairAsync(id));
-            if (plans.Count == 0) throw new InvalidOperationException("Cannot identify affected Workshop packages. Keep the transaction directory for manual repair: " + details);
-            await Task.Run(() => WorkshopRecovery.AssertRepairCoverage(game, entries, plans));
-            var catalog = await WorkshopRuntime.GetCatalogAsync();
-            var retained = catalog.Where(x => x.IsSubscribed && x.Package != null).ToArray();
-            WorkshopRuntime.CheckBatch(plans, retained);
-            string body = WorkshopText.Pick("Rollback is unavailable. Install the complete current packages after closing the game? Existing affected files will be backed up; settings and unknown files remain.\n\n",
-                "Rollback ist nicht möglich. Nach dem Schließen des Spiels die vollständigen aktuellen Pakete installieren? Vorhandene betroffene Dateien werden zusätzlich gesichert; Einstellungen und unbekannte Dateien bleiben erhalten.\n\n") +
-                string.Join("\n", plans.Select(p => p.PackageId + " " + p.Version + (p.Diagnostics.Count == 0 ? "" : "\n" + string.Join("\n", p.Diagnostics)))) + "\n\n" + details;
-            foreach (var plan in plans) foreach (string diagnostic in plan.Diagnostics) WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop complete repair; " + diagnostic);
-            if (Ask(body, 0x4) != 6) return true;
-            var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, WorkshopStartupGate.AuthorizeConfirmedUpdate(), entries);
+            return await CompleteRepairAsync(game, entries, details, german);
+        }
+
+        // Clean reinstallation from the Steam downloads (WorkshopRepairPlanner). It needs no
+        // backup of the interrupted transaction and no readable history, so it is always
+        // possible once Steam provides the subscribed packages. Every outcome is shown.
+        private static async Task<bool> CompleteRepairAsync(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, string details, bool german)
+        {
+            WorkshopRuntime.CleanRepair repair;
+            try { repair = await WorkshopRuntime.PrepareCleanRepairAsync(entries); }
+            catch (Exception ex) {
+                WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=complete repair preparation", ex);
+                Notice(WorkshopText.Pick("An interrupted Workshop installation must be repaired by a clean reinstallation, which cannot be prepared yet:\n",
+                    "Eine unterbrochene Workshop-Installation muss sauber neu installiert werden. Das ist gerade noch nicht möglich:\n") + ex.Message + "\n\n" +
+                    WorkshopText.Pick("Nothing was changed. The repair is offered again on the next start.", "Es wurde nichts verändert. Die Reparatur wird beim nächsten Start erneut angeboten.") + "\n\n" + details);
+                return true;
+            }
+            if (repair.Plans.Count == 0) {
+                // Only unreadable history and no APIShared-managed package installed or subscribed.
+                var moved = await Task.Run(() => WorkshopRecovery.Archive(game, repair.Archived));
+                WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop unreadable transactions archived; no installed package is affected: " + string.Join(", ", moved.Select(x => x.Value)));
+                return false;
+            }
+            string plans = string.Join("\n", repair.Plans.Select(p => WorkshopStartupSummary.Describe(p, german) + (p.RemovedFiles.Count == 0 ? "" :
+                WorkshopText.Pick(" (" + p.RemovedFiles.Count + " files removed with backup)", " (" + p.RemovedFiles.Count + " Dateien werden mit Sicherung entfernt)")) +
+                (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
+            string body = WorkshopText.Pick("An interrupted Workshop installation cannot be rolled back.\n\n", "Eine unterbrochene Workshop-Installation kann nicht zurückgesetzt werden.\n\n") + details + "\n\n" + plans + "\n\n" +
+                WorkshopText.Pick(
+                    "Yes: after the game closes, reinstall the affected mods cleanly from their Steam download and restart. Package files are rewritten, old or foreign DLLs and incomplete files in these mod folders are removed, and mods that are no longer subscribed are uninstalled. Every replaced or removed file is backed up first; settings are kept.\nNo: later.",
+                    "Ja: Nach dem Schließen des Spiels die betroffenen Mods sauber aus dem Steam-Download neu installieren und neu starten. Paketdateien werden neu geschrieben, alte oder fremde DLLs und unvollständige Dateien in diesen Mod-Ordnern entfernt und nicht mehr abonnierte Mods deinstalliert. Jede ersetzte oder entfernte Datei wird vorher gesichert; Einstellungen bleiben erhalten.\nNein: Später.");
+            if (WorkshopRecovery.Decide(false, Ask(body, 0x4)) != WorkshopRecovery.Choice.CompleteRepair) {
+                WorkshopRuntime.Log("Workshop complete repair postponed; retained " + details);
+                return true;
+            }
+            var operation = await WorkshopRuntime.ApplyStartupAsync(repair.Plans, repair.Retained, WorkshopStartupGate.AuthorizeConfirmedUpdate(), repair.Superseded, repair.Archived);
             if (operation.State != WorkshopOperationState.AwaitingRestart) throw operation.Failure ?? new IOException(operation.Diagnostic);
             return true;
         }

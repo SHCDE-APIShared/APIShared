@@ -132,7 +132,7 @@ namespace APIShared.Audio
             var files = new InstalledAudioFiles(BepInEx.Paths.GameRootPath);
             files.Validate();
             ValidateUnitMembers();
-            Info(log, "Installed audio binary identities verified from BepInEx game root: " + BepInEx.Paths.GameRootPath);
+            NativeApiLog.Debug(log, "Installed audio binary identities verified from BepInEx game root: " + BepInEx.Paths.GameRootPath);
             var live = new ReadOnlySpan<byte>(context.ModuleHandle.ToPointer(), context.Memory.Length);
             // All three targets and source sites are bound to the installed native hash.
             // Exact wrapper bytes replace the old per-unit handler detour.
@@ -142,7 +142,7 @@ namespace APIShared.Audio
                 Tuple.Create(NativeContract.FlagWrapperRva, NativeContract.FlagWrapperPattern, "Soldier flagged wrapper"),
                 Tuple.Create(NativeContract.EmitRva, NativeContract.EmitPattern, "Spatial sound emitter") }) {
                 var resolved = APIShared.Internal.NativePatternResolver.ResolveUnique(live, spec.Item2, spec.Item1, true, spec.Item3, log);
-                Info(log, "Audio native resolution: target=" + spec.Item3 + ",method=" + resolved.Method + ",rva=0x" + resolved.Rva.ToString("X"));
+                NativeApiLog.Debug(log, "Audio native resolution: target=" + spec.Item3 + ",method=" + resolved.Method + ",rva=0x" + resolved.Rva.ToString("X"));
                 if (resolved.Rva != spec.Item1) throw new InvalidOperationException("Audio target moved outside hash-bound provenance: " + spec.Item3);
             }
             ValidatePrologue(live, NativeContract.WrapperRva, NativeContract.WrapperBytes);
@@ -277,7 +277,7 @@ namespace APIShared.Audio
                 if (found && SoundContextPolicy.MatchesSource(source, (int)unit->r_UnitChimp, unit->r_AIState,
                     (short)unit->r_CurrentTilePositionX, (short)unit->r_CurrentTilePositionY, (short)x, (short)y, sound, flagged ? 1 : 0))
                 {
-                    if (Volatile.Read(ref confirmed) == 0 && Interlocked.Exchange(ref confirmed, 1) == 0) Info(log, "AUDIO_SOURCE_CONFIRMED: native callback executed after startup cleanup; source=" + source.Key + ",unitId=" + id + ",unitType=" + source.UnitType + ",state=" + unit->r_AIState + ",tiles=" + x + "," + y + "; action evidence=" + source.Evidence(sound));
+                    if (Volatile.Read(ref confirmed) == 0 && Interlocked.Exchange(ref confirmed, 1) == 0) NativeApiLog.Debug(log, "AUDIO_SOURCE_CONFIRMED: native callback executed after startup cleanup; source=" + source.Key + ",unitId=" + id + ",unitType=" + source.UnitType + ",state=" + unit->r_AIState + ",tiles=" + x + "," + y + "; action evidence=" + source.Evidence(sound));
                     if (sources)
                     {
                         var args = new SoundSourceArgs(sound, x, y, flagged, source.Situation(sound), source.Evidence(sound), source.Key,
@@ -322,7 +322,7 @@ namespace APIShared.Audio
                 {
                     int type = (int)attacker->r_UnitChimp;
                     if (Volatile.Read(ref killConfirmed) == 0 && Interlocked.Exchange(ref killConfirmed, 1) == 0)
-                        Info(log, "AUDIO_KILL_SOURCE_CONFIRMED: source=" + kill.Key + ",sound=" + sound + ",attackerId=" + attackerId + ",attackerType=" + type +
+                        NativeApiLog.Debug(log, "AUDIO_KILL_SOURCE_CONFIRMED: source=" + kill.Key + ",sound=" + sound + ",attackerId=" + attackerId + ",attackerType=" + type +
                             ",attackerGlobal=" + attacker->r_GlobalId + ",victimId=" + victimId + ",victimGlobal=" + victim->r_GlobalId + ",tiles=" + x + "," + y + "; evidence=NativeAudited");
                     var args = new SoundSourceArgs(sound, x, y, false, SoundSituation.MeleeKill, SituationEvidence.NativeAudited, kill.Key,
                         attackerId, attacker->r_GlobalId, type, victimId, victim->r_GlobalId);

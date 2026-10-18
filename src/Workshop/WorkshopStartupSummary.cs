@@ -43,6 +43,7 @@ namespace APIShared.Workshop
                 if (plan.Package.Bootstrap != null) text += german ? " Der Bootstrap ist bereits bereit; die Modpackdateien müssen noch übernommen werden." : " The bootstrap is ready; the package files still need to be applied.";
             } else if (plan.Action == WorkshopAction.Install) text = german ? "erstmals installieren: " + plan.Version : "first installation: " + plan.Version;
             else if (plan.Action == WorkshopAction.Update) text = german ? "aktualisieren: " + plan.Previous.Version + " auf " + plan.Version : "update: " + plan.Previous.Version + " to " + plan.Version;
+            else if (plan.Action == WorkshopAction.Reinstall) text = german ? "neu installieren: " + plan.Version : "reinstall: " + plan.Version;
             else text = german ? "Paketdateien entfernen: " + plan.Version : "remove package files: " + plan.Version;
             return name + ": " + text;
         }
