@@ -18,6 +18,10 @@ namespace APIShared.Internal
         private readonly object sync = new object();
         private readonly Dictionary<string, Entry> entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
         private readonly LinkedList<string> recent = new LinkedList<string>();
+        private readonly Dictionary<string, string> causes = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly System.Text.RegularExpressions.Regex Stamp =
+            new System.Text.RegularExpressions.Regex(@"\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\]");
+        [ThreadStatic] private static System.Security.Cryptography.SHA256 sha;
         private readonly string owner;
         private readonly Action<LogLevel, string> write;
         private readonly Func<long> clock;
@@ -38,12 +42,20 @@ namespace APIShared.Internal
             try
             {
                 feature = Clean(feature);
-                // Hash the complete normalized cause: truncating display text must not merge different failures.
-                string normalized = System.Text.RegularExpressions.Regex.Replace(detail ?? "",
-                    @"\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\]", "").Replace('\r', ' ').Replace('\n', ' ');
+                // A failure repeating every tick usually repeats the identical text: reuse its
+                // cause hash instead of normalizing and hashing it again before the throttle.
+                string raw = feature + (error ? "\nerror\n" : "\nwarning\n") + (detail ?? "");
                 string cause;
-                using (var hash = System.Security.Cryptography.SHA256.Create())
-                    cause = BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(normalized))).Replace("-", "");
+                lock (sync) causes.TryGetValue(raw, out cause);
+                if (cause == null)
+                {
+                    cause = Cause(detail);
+                    lock (sync)
+                    {
+                        if (causes.Count >= capacity) causes.Clear();
+                        causes[raw] = cause;
+                    }
+                }
                 string key = feature + (error ? "\nerror\n" : "\nwarning\n") + cause;
                 long suppressed = 0;
                 lock (sync)
@@ -74,6 +86,15 @@ namespace APIShared.Internal
                 try { write?.Invoke(error ? LogLevel.Error : LogLevel.Warning, message); } catch { }
             }
             catch { /* Logging cannot interrupt gameplay or cleanup. */ }
+        }
+        // Hash the complete normalized cause: truncating display text must not merge different failures.
+        private static string Cause(string detail)
+        {
+            string normalized = detail ?? "";
+            if (normalized.IndexOf('[') >= 0) normalized = Stamp.Replace(normalized, "");
+            normalized = normalized.Replace('\r', ' ').Replace('\n', ' ');
+            if (sha == null) sha = System.Security.Cryptography.SHA256.Create();
+            return BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(normalized))).Replace("-", "");
         }
         private static string Clean(string value)
         {
@@ -114,10 +135,13 @@ namespace APIShared.Internal
         {
             try
             {
-                foreach (var frame in new System.Diagnostics.StackTrace(false).GetFrames())
+                // Walk only the few logging frames above the caller instead of capturing
+                // the complete stack: repeated failures on deep game paths stay cheap.
+                for (int skip = 1; skip < 64; skip++)
                 {
-                    var method = frame.GetMethod(); var type = method?.DeclaringType;
-                    string name = type?.FullName;
+                    var method = new System.Diagnostics.StackFrame(skip, false).GetMethod();
+                    if (method == null) break;
+                    string name = method.DeclaringType?.FullName;
                     if (name == null || name.StartsWith("System.", StringComparison.Ordinal) ||
                         name.StartsWith("BepInEx.Logging.", StringComparison.Ordinal) ||
                         name.StartsWith(typeof(DebugLogHelper).FullName, StringComparison.Ordinal) ||

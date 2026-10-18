@@ -230,6 +230,24 @@ namespace APIShared
             else if (pending?.Token == packet.Token && packet.Operation == 2) released = true;
         }
 
+        // Serializing and hashing every host setting each frame is too costly while peers
+        // prepare. Waiting frames recheck at most twice per second; a release or
+        // acknowledgement always compares a fresh fingerprint, as does ValidateStart.
+        private static string fingerprintToken;
+        private static long fingerprintCheckedAt;
+        private static bool fingerprintMatched;
+        private static bool FingerprintMatches(bool decisive)
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (decisive || fingerprintToken != pending.Token || now - fingerprintCheckedAt >= System.Diagnostics.Stopwatch.Frequency / 2)
+            {
+                fingerprintMatched = SavegameModSettings.CaptureHostFingerprint() == pending.Fingerprint;
+                fingerprintToken = pending.Token;
+                fingerprintCheckedAt = now;
+            }
+            return fingerprintMatched;
+        }
+
         private static void Tick()
         {
             if (pending == null || loading) return;
@@ -245,19 +263,22 @@ namespace APIShared
                 if (!Matches(header, pending)) throw new InvalidDataException("Local save no longer matches the prepared selection.");
                 if (lobby.isHost)
                 {
-                    if (SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint)
+                    if (!FingerprintMatches(false))
                         throw new InvalidOperationException("Prepared host settings changed.");
                     if (released || !agreement.Ready) return;
                     if (!ModSettings.ModSettingsApplication.PrepareLaunch()) return;
+                    if (!FingerprintMatches(true))
+                        throw new InvalidOperationException("Prepared host settings changed.");
                     released = true;
                     if (Humans(lobby).Length > 1) Send(Reply(2));
                     NativeApiLog.Debug(log, "SAVE_SETTINGS_CONFIRMED: all current human peers ready; releasing Vanilla load once.");
                     original(owner, pending.SaveName);
                 }
-                else if (acknowledged && SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint)
-                    throw new InvalidOperationException("Confirmed client settings changed.");
-                else if (!acknowledged && SavegameModSettings.CaptureHostFingerprint() == pending.Fingerprint &&
-                    ModSettings.ModSettingsApplication.PrepareLaunch())
+                else if (acknowledged)
+                {
+                    if (!FingerprintMatches(false)) throw new InvalidOperationException("Confirmed client settings changed.");
+                }
+                else if (FingerprintMatches(false) && ModSettings.ModSettingsApplication.PrepareLaunch() && FingerprintMatches(true))
                 {
                     SavegameModSettings.AcceptPreparedClient(header.filePath, record);
                     var result = channel.SendToSteamPeer(Reply(1), SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID);
