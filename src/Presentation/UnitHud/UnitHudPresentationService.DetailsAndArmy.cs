@@ -105,24 +105,23 @@ namespace APIShared
                     if (reportIndex > 0 && reportIndex < main.AllTroops.Count && reportIndex - 1 < state.troop_counts.Length)
                         desiredCounts[reportIndex] = state.troop_counts[reportIndex - 1];
                 }
-                // Runs every frame while an army report is visible. Same query as
-                // UnitAccess.GetAllReallyAliveUnits into a reused list; owner and base type are
-                // tested before a snapshot is allocated, because Classify can only match a unit
-                // whose type has an army-report category (activity and matchers stay in Classify).
-                List<int> alive = armyAliveUnits;
-                alive.Clear();
-                GameUnitManagerAPI.Instance.QueryUnits()
-                    .Where((in GameUnit candidate) => APIShared.UnitAccess.IsReallyAlive(in candidate))
-                    .ToIdList(alive);
+                // Runs every frame while an army report is visible. One direct pass over the unit
+                // array in the same ascending game-ID order as UnitAccess.GetAllReallyAliveUnits;
+                // each slot is read in place instead of being queried and then looked up again.
+                // Owner and base type are tested before a snapshot is allocated, because Classify
+                // can only match a unit whose type has an army-report category. Category matchers
+                // are dynamic consumer predicates, so the result is deliberately not cached.
                 bool[] categoryTypes = ArmyCategoryTypes(CategoryCopy());
-                foreach (int unitId in alive)
+                Span<GameUnit> units = GameUnitManagerAPI.Instance.GetUnitsAsSpan();
+                for (int spanIndex = 0; spanIndex < units.Length; spanIndex++)
                 {
-                    if (unitId <= 0 || !APIShared.UnitAccess.TryGetById(unitId, out GameUnit* native, out _) || native == null ||
-                        !APIShared.UnitAccess.IsReallyAlive(native) || native->r_GlobalId == 0 ||
-                        native->r_ControllableForPlayerId != local) continue;
-                    int nativeType = (int)native->r_UnitChimp;
+                    ref GameUnit native = ref units[spanIndex];
+                    if (!APIShared.UnitAccess.IsReallyAlive(in native) || native.r_GlobalId == 0 ||
+                        native.r_ControllableForPlayerId != local) continue;
+                    int nativeType = (int)native.r_UnitChimp;
                     if ((uint)nativeType >= (uint)categoryTypes.Length || !categoryTypes[nativeType]) continue;
-                    var unit = new UnitHudUnitSnapshot(unitId, native->r_GlobalId, nativeType, native->r_ControllableForPlayerId, true);
+                    int unitId = spanIndex + 1;
+                    var unit = new UnitHudUnitSnapshot(unitId, native.r_GlobalId, nativeType, native.r_ControllableForPlayerId, true);
                     CategoryRegistration category = Classify(unit, UnitHudSurface.ArmyReport);
                     if (category == null) continue;
                     custom[category.Key] = custom.TryGetValue(category.Key, out int categoryCount) ? categoryCount + 1 : 1;
@@ -143,7 +142,6 @@ namespace APIShared
             }
             finally { buffers.Counts.Clear(); buffers.Reductions.Clear(); buffers.Desired.Clear(); armyBufferPool.Push(buffers); }
         }
-        private readonly List<int> armyAliveUnits = new List<int>();
         private CategoryRegistration[] armyTypeView;
         private bool[] armyCategoryTypes = Array.Empty<bool>();
 

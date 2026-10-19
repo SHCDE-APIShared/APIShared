@@ -117,6 +117,7 @@ namespace APIShared
         private int[] lastTroopSelectionIds = Array.Empty<int>();
         private int[] lastTroopSelectionTypes = Array.Empty<int>();
         private bool hasRenderedTroopSelection;
+        private LocalSelectionSnapshot lastRenderedTroopSelection;
         private int lastSpriteColour;
         private bool lastSpriteArabic;
         private bool hasSpriteContext;

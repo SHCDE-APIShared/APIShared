@@ -548,6 +548,10 @@ namespace APIShared
         {
             if (!hasRenderedTroopSelection || !TryGetTroopSelection(out LocalSelectionSnapshot selection))
                 return false;
+            // Runs every frame. LocalSelectionAPI returns the same immutable snapshot while the
+            // selection is unchanged, and the rendered arrays were copied from that snapshot.
+            if (ReferenceEquals(selection, lastRenderedTroopSelection))
+                return false;
             if (lastTroopSelectionIds.Length != selection.Count)
                 return true;
             for (int index = 0; index < selection.Count; index++)
@@ -575,6 +579,7 @@ namespace APIShared
                 lastTroopSelectionIds[index] = selection[index].UnitId;
                 lastTroopSelectionTypes[index] = selection[index].UnitType;
             }
+            lastRenderedTroopSelection = selection;
             hasRenderedTroopSelection = true;
         }
 

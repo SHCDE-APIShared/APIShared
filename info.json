@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.11.1",
+  "Version": "0.12.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.12.0",
+      "Changes": [
+        "Add RecruitmentAvailability: one shared pass per GUI check that lets mods disable Vanilla recruit buttons by side-effect-free predicates, only while a Vanilla recruitment panel is active.",
+        "Add TroopActionHud: the single owner of the troop-action HUD setup, which refreshes every registered button and lays out all shared troop-action hosts once.",
+        "The army report and troop-selection presentation skip redundant per-frame unit lookups and selection comparisons."
+      ]
+    },
     {
       "Version": "0.11.1",
       "Changes": [

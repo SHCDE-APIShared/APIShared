@@ -45,6 +45,8 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
+| `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
+| `APIShared.Presentation.TroopActionHud` | Single owner of the troop-action HUD setup: registered visibility refreshers, then one shared layout of all `SerpTroopAction_` hosts | Unity thread; owner/ID order; immediate refresh of an existing panel; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
@@ -110,7 +112,8 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
-| Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs), [button availability](../src/Units/Recruitment/RecruitmentAvailability.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
+| Troop action buttons | [TroopActionHud](../src/Presentation/TroopActions/TroopActionHud.cs) | [Layout](../src/Presentation/TroopActions/TroopActionHudLayout.cs), [slot policy](../src/Presentation/TroopActions/TroopActionHudLayoutPolicy.cs) | — |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
@@ -334,6 +337,27 @@ not remove native material costs or establish affordability. Predicate exception
 mean false. The installed original IL must match all 26 sites or registration fails.
 No source links or private bridge are required by consumers. See the compiled
 [interception example](../examples/ThirdPartyMod/InterceptionExample.cs).
+
+[RecruitmentAvailability](../src/Units/Recruitment/RecruitmentAvailability.cs) owns one
+GUI-check Post pass for all recruit-button restrictions (limits, extra costs). It runs
+only while Vanilla's recruitment in-building modes are active, because only then does
+Vanilla rewrite every recruit button's `IsEnabled` earlier in the same check. Each pass
+reads the local player, hovered type and requested amount once into a
+`RecruitmentAvailabilityContext`; `Sequence` identifies the check so predicates can reuse
+derived values across buttons. Buttons that are already disabled are never re-enabled
+and not queried. Active predicates combine by OR in owner/ID order and must be side-effect
+free; work with side effects belongs in the consumer's own GUI-check registration, whose
+order decides whether it runs before (negative order) or after this pass.
+
+[TroopActionHud](../src/Presentation/TroopActions/TroopActionHud.cs) is the single owner of
+`HUD_Troops.SetuptroopActionsUI`. After Vanilla's setup it runs every registered
+visibility refresher in owner/ID order and then lays out all `SerpTroopAction_` hosts once
+(two free slots, priority order, duplicates hidden). `Reflow` lays out a panel after a
+consumer changed `WantsVisibility` outside that setup; `RefreshCurrentPanel` repeats
+refreshers and layout, for example after a map start. A registration on an already
+built panel (direct editor launch) refreshes it immediately. Older mod builds that still
+install their own setup hook keep working, because every implementation applies the same
+host convention.
 
 ## Native market price queries
 

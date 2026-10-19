@@ -1434,6 +1434,22 @@ APIShared.Presentation.PresentationPreEventArgs | public System.Action<object> R
 APIShared.Presentation.PresentationPreEventArgs | public object Instance { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object OriginalParameter { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object Parameter { get; set; }
+APIShared.Presentation.TroopActionHud | public static class APIShared.Presentation.TroopActionHud
+APIShared.Presentation.TroopActionHud | public const int CurrentLayoutVersion = 1
+APIShared.Presentation.TroopActionHud | public const string HostNamePrefix = "SerpTroopAction_"
+APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<CrusaderDE.HUD_Troops> refreshVisibility, out string reason)
+APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
+APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
+APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
+APIShared.Recruitment.RecruitmentAvailability | public static class APIShared.Recruitment.RecruitmentAvailability
+APIShared.Recruitment.RecruitmentAvailability | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Recruitment.RecruitmentAvailabilityContext, SHCDESE.Interop.eChimps, bool> isBlocked, System.Func<bool> isActive, out string reason)
+APIShared.Recruitment.RecruitmentAvailability | public static long CallbackFailures { get; }
+APIShared.Recruitment.RecruitmentAvailabilityContext | public struct APIShared.Recruitment.RecruitmentAvailabilityContext
+APIShared.Recruitment.RecruitmentAvailabilityContext | public SHCDESE.Interop.eChimps HoveredUnitType { get; }
+APIShared.Recruitment.RecruitmentAvailabilityContext | public bool IsLocalPlayerHuman { get; }
+APIShared.Recruitment.RecruitmentAvailabilityContext | public int LocalPlayerId { get; }
+APIShared.Recruitment.RecruitmentAvailabilityContext | public int VanillaAmountToMake { get; }
+APIShared.Recruitment.RecruitmentAvailabilityContext | public long Sequence { get; }
 APIShared.Recruitment.RecruitmentConstraintAction | public enum APIShared.Recruitment.RecruitmentConstraintAction : int
 APIShared.Recruitment.RecruitmentConstraintAction | Block = 2
 APIShared.Recruitment.RecruitmentConstraintAction | ForwardAmount = 1
