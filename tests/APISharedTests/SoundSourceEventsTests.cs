@@ -179,7 +179,7 @@ namespace APISharedTests
                     Assert.IsTrue(demand && original, name + " dormant shape");
                 }
             using (var definition = new DynamicMethodDefinition(typeof(SoundSourceEvents).GetMethod("Dispatch", BindingFlags.Static | BindingFlags.NonPublic, null,
-                new[] { typeof(SoundSourceArgs).MakeByRefType(), typeof(SoundSourceEvents.Registration[]) }, null)))
+                new[] { typeof(SoundSourceArgs).MakeByRefType(), typeof(SoundSourceEvents.Registration[]), typeof(int) }, null)))
             {
                 var handlers = new HashSet<Instruction>();
                 foreach (var handler in definition.Definition.Body.ExceptionHandlers)

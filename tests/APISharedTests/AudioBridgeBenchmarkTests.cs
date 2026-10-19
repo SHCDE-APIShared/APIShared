@@ -34,14 +34,15 @@ namespace APISharedTests
             byte[] image = File.ReadAllBytes(files.Native);
             IntPtr vanilla = Page(image, out IntPtr vanillaManager);
             var vanillaLoop = LoopOver(vanilla, out _);
-            // Unattributed origin: the loop's return PC maps to a small non-catalog RVA, so the
-            // catalog lookups still run. Catalog origin: it maps to 0x1700D2 (Arabian draw, effect
-            // 180, flag 0) with current unit 0, the rejected-attribution path minus UnitAccess work.
+            // Unattributed origin: the loop's return PC maps to a small non-catalog RVA, which the
+            // native return filter keeps out of managed code. Catalog origin: it maps to 0x1700D2
+            // (Arabian draw, effect 180, flag 0) with current unit 0, the rejected-attribution path
+            // minus UnitAccess work.
             var plainLoop = Install(image, null, out IntPtr plainManager);
             var catalogLoop = Install(image, 0x1700D2, out IntPtr catalogManager);
 
             var status = typeof(SoundRuntime).GetField("playbackStatus", BindingFlags.Static | BindingFlags.NonPublic); var old = status.GetValue(null);
-            bool wasReady = SoundContextPolicy.Active; SoundRegistration source = null, playback = null;
+            bool wasReady = SoundContextPolicy.Active; SoundRegistration source = null, playback = null, selected = null;
             var process = Process.GetCurrentProcess(); var priority = process.PriorityClass; var threadPriority = System.Threading.Thread.CurrentThread.Priority;
             try
             {
@@ -50,12 +51,18 @@ namespace APISharedTests
                 string owner = "bridge.bench." + Guid.NewGuid();
                 Assert.IsTrue(SoundSourceEvents.TryRegister(owner, "source", (ref SoundSourceArgs a) => { }, out source, out _));
                 Assert.IsTrue(SoundEvents.TryRegister(owner, "playback", a => { }, null, out playback, out _));
+                // A playback registration selecting another source (Unit75.Source03): the 0x1700D2 origin
+                // is a catalog source without demand and must stay native.
+                Assert.IsTrue(SoundSourceSelection.TryCreate(new[] { "Unit75.Source03" }, null, out var other, out string reason), reason);
+                Assert.IsTrue(SoundEvents.TryRegister(owner, "selected", a => { }, null, other, out selected, out _));
+                void Only(SoundRegistration on) { foreach (var handle in new[] { source, playback, selected }) if (handle != on) handle.SetEnabled(false); on?.SetEnabled(true); }
                 var modes = new (string Name, Action Apply, Loop Loop, IntPtr Manager)[] {
-                    ("vanilla-unhooked", () => { source.SetEnabled(false); playback.SetEnabled(false); }, vanillaLoop, vanillaManager),
-                    ("dormant", () => { source.SetEnabled(false); playback.SetEnabled(false); }, plainLoop, plainManager),
-                    ("source-demand-unattributed", () => { playback.SetEnabled(false); source.SetEnabled(true); }, plainLoop, plainManager),
-                    ("playback-demand-unattributed", () => { source.SetEnabled(false); playback.SetEnabled(true); }, plainLoop, plainManager),
-                    ("playback-demand-catalog-rejected", () => { source.SetEnabled(false); playback.SetEnabled(true); }, catalogLoop, catalogManager),
+                    ("vanilla-unhooked", () => Only(null), vanillaLoop, vanillaManager),
+                    ("dormant", () => Only(null), plainLoop, plainManager),
+                    ("source-demand-unattributed", () => Only(source), plainLoop, plainManager),
+                    ("playback-demand-unattributed", () => Only(playback), plainLoop, plainManager),
+                    ("playback-demand-catalog-rejected", () => Only(playback), catalogLoop, catalogManager),
+                    ("selected-playback-catalog-unselected", () => Only(selected), catalogLoop, catalogManager),
                 };
                 var samples = modes.Select(_ => new List<double>()).ToArray(); var bytes = new long[modes.Length];
                 var wrapperBytes = new byte[modes.Length]; var emitterBytes = new byte[modes.Length];
@@ -83,11 +90,12 @@ namespace APISharedTests
                 Assert.AreEqual(0, (int)wrapperBytes[1]); Assert.AreEqual(0, (int)emitterBytes[1]);
                 Assert.AreEqual(1, (int)wrapperBytes[2]); Assert.AreEqual(0, (int)emitterBytes[2]);
                 Assert.AreEqual(1, (int)wrapperBytes[3]); Assert.AreEqual(1, (int)emitterBytes[3]);
+                Assert.AreEqual(1, (int)wrapperBytes[5]); Assert.AreEqual(1, (int)emitterBytes[5]);
             }
             finally
             {
                 process.PriorityClass = priority; System.Threading.Thread.CurrentThread.Priority = threadPriority;
-                source?.SetEnabled(false); playback?.SetEnabled(false); status.SetValue(null, old); SoundContextPolicy.SetReady(wasReady);
+                source?.SetEnabled(false); playback?.SetEnabled(false); selected?.SetEnabled(false); status.SetValue(null, old); SoundContextPolicy.SetReady(wasReady);
             }
         }
 
@@ -97,11 +105,8 @@ namespace APISharedTests
             IntPtr page = Page(image, out manager);
             var runtime = new SoundRuntime(new ManualLogSource("audio-bench"), new NativeOwnershipRegistry());
             ulong wrapper = unchecked((ulong)page.ToInt64()), flag = wrapper + 64, emit = wrapper + 256;
-            runtime.CreateHooks(wrapper, flag, emit, suspendThreads: false);
-            runtime.ValidateHooks(wrapper, flag, emit);
-            runtime.WrapperHook.Enable(); runtime.FlagWrapperHook.Enable(); runtime.EmitHook.Enable();
-            runtime.ValidateHooks(wrapper, flag, emit);
-            roots.Add(runtime);
+            // The loop's return PC defines the simulated module base; CreateHooks builds the native
+            // return filter from it, so it must be known before the hooks are created.
             var loop = LoopOver(page, out IntPtr entry);
             var decoder = Iced.Intel.Decoder.Create(64, new Iced.Intel.ByteArrayCodeReader(ReadCode(entry, 64)));
             decoder.IP = unchecked((ulong)entry.ToInt64());
@@ -109,6 +114,11 @@ namespace APISharedTests
             do call = decoder.Decode(); while (call.Mnemonic != Iced.Intel.Mnemonic.Call);
             ulong moduleBase = catalogReturnRva.HasValue ? call.NextIP - (ulong)catalogReturnRva.Value : call.NextIP - 0x10000;
             typeof(SoundRuntime).GetField("moduleBase", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, moduleBase);
+            runtime.CreateHooks(wrapper, flag, emit, suspendThreads: false);
+            runtime.ValidateHooks(wrapper, flag, emit);
+            runtime.WrapperHook.Enable(); runtime.FlagWrapperHook.Enable(); runtime.EmitHook.Enable();
+            runtime.ValidateHooks(wrapper, flag, emit);
+            roots.Add(runtime);
             typeof(SoundRuntime).GetField("killReady", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, true);
             IntPtr unit = Marshal.AllocHGlobal(8); Marshal.WriteInt64(unit, 0); roots.Add(unit);
             typeof(SoundRuntime).GetField("currentUnit", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(runtime, Pointer.Box(unit.ToPointer(), typeof(int*)));

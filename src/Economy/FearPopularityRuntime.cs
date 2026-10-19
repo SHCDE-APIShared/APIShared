@@ -36,7 +36,7 @@ namespace APIShared.Economy
             }
             catch (Exception ex) { Diagnostic = ex.Message; throw; }
             Diagnostic = null;
-            // API_SHARED_DIAGNOSTICS: startup and first-use proof markers, silent unless opted in.
+            // One-time startup marker; the first-use proof (ReportApplied) is Debug only.
             NativeApiLog.Info(log, "FEAR_POPULARITY_READY validated SE coefficient/resource flow retained; rounding=away-from-zero; units=points*25");
         }
         internal static MethodInfo FindTarget(Assembly assembly)
@@ -64,7 +64,7 @@ namespace APIShared.Economy
         internal static void ReportApplied(int level, int units)
         {
             if (Volatile.Read(ref appliedReported) == 0 && Interlocked.Exchange(ref appliedReported, 1) == 0)
-                try { NativeApiLog.Info(log, "FEAR_POPULARITY_APPLIED signedLevel=" + level + "; roundedPoints=" + (units / 25)); } catch { }
+                try { NativeApiLog.Debug(log, "FEAR_POPULARITY_APPLIED signedLevel=" + level + "; roundedPoints=" + (units / 25)); } catch { }
         }
         internal static void ReportOverflow()
         {

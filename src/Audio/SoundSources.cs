@@ -161,15 +161,15 @@ namespace APIShared.Audio
             Pikes = { 25, 78 }, Maces = { 26, 85 }, Swords = { 27, 28, 73, 75, 80, 81, 83 };
         internal static readonly SoundKillSource[] Kills = {
             // CALL 0x199952 at the victim tile; ebx selects the special cue, victim+0x380 bit 0 the variant.
-            new SoundKillSource(0x199957, "MeleeKill.Source01", false,
+            new SoundKillSource(0, 0x199957, "MeleeKill.Source01", false,
                 Pair(240, Axes, Lord, Pikes), Pair(241, Lord, Pikes), Pair(242, Axes, Lord), Pair(186, Pikes),
                 Pair(118, Spears), Pair(153, Spears), Pair(187, Spears),
                 Pair(116, Maces), Pair(151, Maces), Pair(185, Maces), Pair(188, Swords)),
-            new SoundKillSource(0x199823, "MeleeKill.Source02", false, Pair(119, Swords)),
-            new SoundKillSource(0x199837, "MeleeKill.Source03", false, Pair(154, Swords)),
+            new SoundKillSource(1, 0x199823, "MeleeKill.Source02", false, Pair(119, Swords)),
+            new SoundKillSource(2, 0x199837, "MeleeKill.Source03", false, Pair(154, Swords)),
             // CALL 0x199314 at the attacker tile, only for a victim with the native byte at +0x328 set.
             // That victim then skips the victim-tile cue above (0x199462).
-            new SoundKillSource(0x199319, "MeleeKill.Source04", true,
+            new SoundKillSource(3, 0x199319, "MeleeKill.Source04", true,
                 Pair(242, Axes, Lord), Pair(187, new[] { 24, 70, 72, 74, 76, 82 }), Pair(186, Pikes), Pair(185, Maces), Pair(188, Swords)),
         };
         private static readonly Dictionary<int, SoundKillSource> killReturns = BuildKills();
@@ -189,11 +189,16 @@ namespace APIShared.Audio
     internal sealed class SoundKillSource
     {
         internal readonly int ReturnRva;
+        // SoundSourceSelection demand index: kill cues follow the soldier catalog.
+        internal readonly int DemandIndex;
         internal readonly string Key;
         internal readonly bool AttackerTile;
         private readonly Dictionary<int, int[]> effects = new Dictionary<int, int[]>();
-        internal SoundKillSource(int returnRva, string key, bool attackerTile, params KeyValuePair<int, int[]>[] cues)
-        { ReturnRva = returnRva; Key = key; AttackerTile = attackerTile; foreach (var cue in cues) effects.Add(cue.Key, cue.Value); }
+        internal SoundKillSource(int index, int returnRva, string key, bool attackerTile, params KeyValuePair<int, int[]>[] cues)
+        {
+            DemandIndex = SoundSources.All.Length + index; ReturnRva = returnRva; Key = key; AttackerTile = attackerTile;
+            foreach (var cue in cues) effects.Add(cue.Key, cue.Value);
+        }
         internal bool Accepts(int effect) => effects.ContainsKey(effect);
         internal bool Accepts(int effect, int attackerType) => effects.TryGetValue(effect, out var types) && Array.BinarySearch(types, attackerType) >= 0;
         internal IEnumerable<KeyValuePair<int, int[]>> Cues => effects;

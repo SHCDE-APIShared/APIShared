@@ -87,6 +87,7 @@ APIShared.Audio.SoundEvents | public static class APIShared.Audio.SoundEvents
 APIShared.Audio.SoundEvents | public static System.Collections.Generic.IReadOnlyList<APIShared.Audio.SoundSituation> SupportedSituations { get; }
 APIShared.Audio.SoundEvents | public static bool ArabianIdleContextAvailable { get; }
 APIShared.Audio.SoundEvents | public static bool PlaybackAvailable { get; }
+APIShared.Audio.SoundEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Audio.SoundPreEventArgs> pre, System.Action<APIShared.Audio.SoundPostEventArgs> post, APIShared.Audio.SoundSourceSelection sources, out APIShared.Audio.SoundRegistration registration, out string reason, int order = 0)
 APIShared.Audio.SoundEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Audio.SoundPreEventArgs> pre, System.Action<APIShared.Audio.SoundPostEventArgs> post, out APIShared.Audio.SoundRegistration registration, out string reason, int order = 0)
 APIShared.Audio.SoundEvents | public static long CallbackFailures { get; }
 APIShared.Audio.SoundEvents | public static long ContextRejections { get; }
@@ -119,6 +120,7 @@ APIShared.Audio.SoundPreEventArgs | public void MultiplyVolume(float value)
 APIShared.Audio.SoundPreEventArgs | public void ReplaceSound(int effectId)
 APIShared.Audio.SoundPreEventArgs | public void SetPan(float value)
 APIShared.Audio.SoundRegistration | public sealed class APIShared.Audio.SoundRegistration
+APIShared.Audio.SoundRegistration | public APIShared.Audio.SoundSourceSelection Sources { get; }
 APIShared.Audio.SoundRegistration | public bool Enabled { get; }
 APIShared.Audio.SoundRegistration | public void SetEnabled(bool value)
 APIShared.Audio.SoundSituation | public enum APIShared.Audio.SoundSituation : int
@@ -163,11 +165,19 @@ APIShared.Audio.SoundSourceArgs | public uint? TargetGlobalId { get; }
 APIShared.Audio.SoundSourceEvents | public static class APIShared.Audio.SoundSourceEvents
 APIShared.Audio.SoundSourceEvents | public static bool Available { get; }
 APIShared.Audio.SoundSourceEvents | public static bool MeleeKillAvailable { get; }
+APIShared.Audio.SoundSourceEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Audio.SoundSourceHandler pre, APIShared.Audio.SoundSourceSelection sources, out APIShared.Audio.SoundRegistration registration, out string reason, int order = 0)
 APIShared.Audio.SoundSourceEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Audio.SoundSourceHandler pre, out APIShared.Audio.SoundRegistration registration, out string reason, int order = 0)
 APIShared.Audio.SoundSourceEvents | public static long CallbackFailures { get; }
 APIShared.Audio.SoundSourceEvents | public static string Diagnostic { get; }
 APIShared.Audio.SoundSourceEvents | public static string MeleeKillDiagnostic { get; }
 APIShared.Audio.SoundSourceHandler | public delegate void APIShared.Audio.SoundSourceHandler(ref APIShared.Audio.SoundSourceArgs args)
+APIShared.Audio.SoundSourceSelection | public sealed class APIShared.Audio.SoundSourceSelection
+APIShared.Audio.SoundSourceSelection | public System.Collections.Generic.IReadOnlyList<string> SourceKeys { get; }
+APIShared.Audio.SoundSourceSelection | public bool Contains(string sourceKey)
+APIShared.Audio.SoundSourceSelection | public bool IsAll { get; }
+APIShared.Audio.SoundSourceSelection | public static APIShared.Audio.SoundSourceSelection All { get; }
+APIShared.Audio.SoundSourceSelection | public static System.Collections.Generic.IReadOnlyList<string> SelectableSourceKeys { get; }
+APIShared.Audio.SoundSourceSelection | public static bool TryCreate(System.Collections.Generic.IEnumerable<string> sourceKeys, System.Collections.Generic.IEnumerable<APIShared.Audio.SoundSituation> situations, out APIShared.Audio.SoundSourceSelection selection, out string reason)
 APIShared.Audio.SoundTarget | public sealed class APIShared.Audio.SoundTarget
 APIShared.Audio.SoundTarget | public APIShared.Audio.SoundClipHandle Clip { get; }
 APIShared.Audio.SoundTarget | public APIShared.Audio.SoundTargetKind Kind { get; }

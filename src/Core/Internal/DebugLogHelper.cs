@@ -35,9 +35,9 @@ namespace APIShared.Internal
             try
             {
                 diagnosticsEnabled = config.Bind("Diagnostics", "Enabled", false,
-                    "API_SHARED_DIAGNOSTICS: enable APIShared routine logs and optional diagnostic presentation. " +
+                    "API_SHARED_DIAGNOSTICS: enable APIShared Debug logs and optional diagnostic presentation. " +
                     "Keep disabled for normal releases. Restart required; Debug output also needs a BepInEx Debug listener. " +
-                    "Consumer-registered observers and warning/error reports are independent.").Value;
+                    "Info, warning and error logs, and consumer-registered observers, are independent of this switch.").Value;
                 // A deliberate user choice, not a failure: bypass the failure ledger and its tag.
                 if (diagnosticsEnabled)
                     try
@@ -54,8 +54,9 @@ namespace APIShared.Internal
             }
         }
 
-        // API_SHARED_DIAGNOSTICS: an unregistered source filters logs from services
-        // retaining a logger, including direct Info/Debug calls. Failures still forward.
+        // An unregistered source for services retaining a logger: failures forward through
+        // RuntimeHealth, Info always passes, and only Debug needs API_SHARED_DIAGNOSTICS.
+        // Info volume is kept low at the call sites (one-time markers), not by this filter.
         internal static ManualLogSource ForExternalCode(ManualLogSource log)
         {
             if (log == null) return null;
@@ -68,8 +69,8 @@ namespace APIShared.Internal
                     string text = Convert.ToString(args.Data, CultureInfo.InvariantCulture);
                     if ((args.Level & (LogLevel.Warning | LogLevel.Error | LogLevel.Fatal)) != 0)
                         RuntimeHealth.Forward(log, args.Level, text);
-                    else if (DiagnosticsEnabled)
-                        try { log.Log(args.Level, WithTimestamp(text)); } catch { }
+                    else if ((args.Level & LogLevel.Debug) == 0 || IsDebugEnabled())
+                        try { log.Log(args.Level, HasTimestamp(text) ? text : WithTimestamp(text)); } catch { }
                 };
                 serviceLogs.Add(log, proxy);
                 return proxy;
@@ -127,7 +128,6 @@ namespace APIShared.Internal
 
         public static void LogInfo(ManualLogSource log, string message)
         {
-            if (!DiagnosticsEnabled) return;
             try { log?.LogInfo(WithTimestamp(message)); } catch { }
         }
 
@@ -255,6 +255,22 @@ namespace APIShared.Internal
         private static string WithTimestamp(string message)
         {
             return $"[{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)}] {message ?? string.Empty}";
+        }
+
+        // Services that stamp their own lines ("[yyyy-MM-dd HH:mm:ss.fff]" or without brackets)
+        // must not receive a second timestamp from the forwarding proxy.
+        private static bool HasTimestamp(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            int start = text[0] == '[' ? 1 : 0;
+            if (text.Length < start + 23) return false;
+            for (int i = 0; i < 23; i++)
+            {
+                char c = text[start + i];
+                bool separator = i == 4 || i == 7 || i == 10 || i == 13 || i == 16 || i == 19;
+                if (separator ? !(c == '-' || c == ' ' || c == ':' || c == '.') : (c < '0' || c > '9')) return false;
+            }
+            return true;
         }
 
         private static bool ComputeDebugEnabled()

@@ -37,7 +37,8 @@ namespace APIShared
     /// <summary>Availability and permission state of one selected savegame.</summary>
     public enum SavegameLoadChoiceState
     {
-        /// <summary>The save or its present metadata cannot be trusted.</summary>
+        /// <summary>The save's APIShared record is unreadable or unsupported. The save still loads,
+        /// like <see cref="Legacy"/>, with the current host settings.</summary>
         Invalid = 0,
         /// <summary>No APIShared record exists; current host settings are mandatory.</summary>
         Legacy = 1,

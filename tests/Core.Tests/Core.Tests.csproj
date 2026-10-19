@@ -26,6 +26,7 @@
     <Compile Include="../../src/Workshop/WorkshopUpdaterReadiness.cs" Link="Production/WorkshopUpdaterReadiness.cs" />
     <Compile Include="../../src/Workshop/WorkshopTransaction.cs" Link="Production/WorkshopTransaction.cs" />
     <Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" />
+    <Compile Include="../../src/Workshop/WorkshopRepairPlanner.cs" Link="Production/WorkshopRepairPlanner.cs" />
     <Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" />
     <Compile Include="../../src/Workshop/WorkshopPublishing.cs" Link="Production/WorkshopPublishing.cs" />
     <Compile Include="../../src/Workshop/WorkshopBootstrapValidation.cs" Link="Production/WorkshopBootstrapValidation.cs" />

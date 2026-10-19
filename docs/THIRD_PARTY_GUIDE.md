@@ -27,18 +27,19 @@ interested consumers. Registering an observer is explicit demand for observation
 Search `API_SHARED_DIAGNOSTICS` in the sources to find optional tracing and its
 activation boundaries. APIShared's local `BepInEx/config/APIShared_Serp.cfg` has
 `[Diagnostics] Enabled = false` by default. Set it to `true` and restart the game
-to enable routine Info/Debug messages; Debug output additionally requires a
-BepInEx listener that accepts Debug. Changing the config during a session does not
-change this startup snapshot. APIShared logs a warning on every start with the
-persisted switch enabled. Neither the branch nor Debug/Release compilation enables
-tracing implicitly.
+to enable Debug messages; Debug output additionally requires a BepInEx listener
+that accepts Debug. Changing the config during a session does not change this
+startup snapshot. APIShared logs a warning on every start with the persisted switch
+enabled. Neither the branch nor Debug/Release compilation enables tracing implicitly.
 
-Startup/native-service success messages, Workshop routine activity and preset
-routine output use this gate. Scroll tracing additionally needs the caller's
-`enableScrollDiagnostics` option. Services receive a filtered logger so their
-direct Info/Debug calls cannot bypass the gate. Successful native-site summaries
-are not constructed without opt-in; refused registrations still produce warnings.
-Warnings, errors, capability failure results and recovery evidence remain available.
+Info messages are not gated: APIShared keeps their number small at the call sites
+(one-time startup and state markers such as Workshop transaction outcomes), so they
+are available in every player log. Routine and per-use tracing is Debug. Scroll
+tracing additionally needs the caller's `enableScrollDiagnostics` option. Services
+receive a forwarding logger so their direct Debug calls cannot bypass the gate.
+Successful native-site summaries are not constructed without opt-in; refused
+registrations still produce warnings. Warnings, errors, capability failure results
+and recovery evidence remain available.
 Workshop `Transactions/*/diagnostics.txt` contains installation warnings and is
 retained without opt-in, alongside the transaction protocol. The independent
 dependency bootstrap emits only warnings/errors and creates no tracing files.
@@ -52,10 +53,10 @@ their own explicit diagnostic switch before registering diagnostic observers and
 before doing diagnostic analysis. APIShared's log switch does not suppress their
 callbacks, failure notifications, gameplay events or public query results.
 
-This changes the default visibility of routine logs, including logs written through
-consumer-provided loggers. Public signatures, observer registration, callback
-ordering/lifetime and gameplay behavior are unchanged. For troubleshooting, enable
-both APIShared's switch and any relevant consumer/page switch.
+The switch also affects Debug messages written through consumer-provided loggers.
+Public signatures, observer registration, callback ordering/lifetime and gameplay
+behavior are unchanged. For troubleshooting, enable both APIShared's switch and any
+relevant consumer/page switch.
 
 The release driver prints an advisory summary from the staged DLL/configuration.
 A compiled enabled default or shipped `Enabled=true` produces a prominent warning;
@@ -603,7 +604,9 @@ bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton 
 
 Declare APIShared **0.8.0** or newer. Register through `SoundEvents` after managed
 startup, retain the handle and use `SetEnabled` for live settings. Filter context
-before changing a request; preload clips outside playback callbacks.
+before changing a request; preload clips outside playback callbacks. If your rule
+needs only some named situations or sources, pass a `SoundSourceSelection` to
+`TryRegister` so the other soldier sounds stay native ([source selections](AUDIO.md#source-selections)).
 See the [audio integration guide](AUDIO.md#situational-sound-rules).
 
 ### Consumer filters, repeat limits and other sound policies

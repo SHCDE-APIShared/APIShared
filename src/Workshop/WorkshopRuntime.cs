@@ -10,7 +10,6 @@ using SHCDESE.EventAPI;
 using Steamworks;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -52,14 +51,14 @@ namespace APIShared.Workshop
                 }
             });
         }
-        internal static void Log(string text) => logger?.LogInfo(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text);
+        internal static void Log(string text) => NativeApiLog.Info(logger, text);
         internal static void WriteDiagnostic(WorkshopDiagnosticLevel level, string text)
         {
             // Failure reports are stamped by RuntimeHealth; an own unbracketed stamp would
             // make every identical repeat a new cause and defeat its repeat throttling.
             if (level == WorkshopDiagnosticLevel.Error) NativeApiLog.Error(logger, text);
             else if (level == WorkshopDiagnosticLevel.Warning) NativeApiLog.Warning(logger, text);
-            else logger?.LogInfo(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + text);
+            else NativeApiLog.Info(logger, text);
         }
         internal static void RequireSteam()
         {
@@ -120,21 +119,52 @@ namespace APIShared.Workshop
         }
         internal static Task<WorkshopInstallPlan> PrepareAsync(string owner, ulong id, WorkshopAction action) => PrepareCoreAsync(owner, id, action, false);
         internal static Task<WorkshopInstallPlan> PrepareStartupAsync(ulong id, WorkshopAction action) => PrepareCoreAsync(APISharedPlugin.PluginGuid, id, action, true);
-        internal static async Task<WorkshopInstallPlan> PrepareRepairAsync(ulong id)
+        internal sealed class CleanRepair
         {
-            WorkshopReceipt receipt = null;
-            try { receipt = WorkshopInstallation.ReadReceipt(Paths.GameRootPath, id); }
-            catch (System.IO.InvalidDataException) { }
-            var plan = await PrepareStartupAsync(id, receipt == null ? WorkshopAction.Install : WorkshopAction.Reinstall);
-            // Complete repair preserves all obsolete/unknown files. Only the
-            // current publisher's full inventory is replaced, with new backups.
-            plan.RemovedFiles = new string[0];
+            internal IReadOnlyList<WorkshopInstallPlan> Plans;
+            internal IReadOnlyList<WorkshopCatalogItem> Retained;
+            internal IReadOnlyList<WorkshopInterruptedTransaction> Superseded, Archived;
+        }
+        // Plans the clean reinstallation that replaces every interrupted transaction when
+        // rollback is unavailable (see WorkshopRepairPlanner). Affected packages come from the
+        // interrupted receipts and plugin folders; if any operation list is unreadable, every
+        // APIShared-managed package is affected. Subscribed packages are reinstalled from their
+        // Steam download, the others are removed. Throws only for conditions the player can
+        // resolve (download still pending, prerequisite missing), never for damaged history.
+        internal static async Task<CleanRepair> PrepareCleanRepairAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries)
+        {
             string game = Paths.GameRootPath;
-            var preserved = await Task.Run(() => WorkshopRecovery.PreservedAssemblies(game, plan.Package));
-            plan.Diagnostics = plan.Diagnostics.Concat(preserved.Select(path => WorkshopText.Pick(
-                "Preserved DLL outside the current package inventory (not removed by repair): ",
-                "Erhaltene DLL außerhalb des aktuellen Paketinventars (wird durch die Reparatur nicht entfernt): ") + path)).ToArray();
-            return plan;
+            var readable = entries.Where(x => x.Readable).ToArray();
+            var unreadable = entries.Where(x => !x.Readable).ToArray();
+            var scope = await Task.Run(() => WorkshopRepairPlanner.Collect(game, readable));
+            var catalog = await GetCatalogAsync();
+            var items = new HashSet<ulong>(scope.Items);
+            if (unreadable.Length != 0)
+                foreach (var item in catalog.Where(c => c.WorkshopId != 0 && (c.Package != null || c.InstalledVersion != null))) items.Add(item.WorkshopId);
+            foreach (string root in scope.RootTargets.Keys) {
+                var owner = catalog.FirstOrDefault(c => c.IsSubscribed && c.Package != null && c.Package.Roots.Contains(root, StringComparer.OrdinalIgnoreCase));
+                if (owner != null) items.Add(owner.WorkshopId);
+            }
+            var plans = new List<WorkshopInstallPlan>();
+            foreach (ulong id in items.OrderBy(x => x)) {
+                var item = catalog.FirstOrDefault(c => c.WorkshopId == id);
+                if (item != null && item.IsSubscribed) {
+                    if (item.Package == null)
+                        throw WorkshopDiagnostics.Blocked(WorkshopText.Pick("Workshop item is not ready in Steam: ", "Workshop-Element ist in Steam noch nicht bereit: ") +
+                            item.Title + " (" + item.Status + ")");
+                    WorkshopReceipt receipt = null;
+                    try { receipt = WorkshopInstallation.ReadReceipt(game, id); }
+                    catch (InvalidDataException) { }
+                    var plan = await PrepareStartupAsync(id, receipt == null ? WorkshopAction.Install : WorkshopAction.Reinstall);
+                    plans.Add(plan);
+                } else plans.Add(await Task.Run(() => WorkshopRepairPlanner.Removal(APISharedPlugin.PluginGuid, game, id)));
+            }
+            await Task.Run(() => {
+                WorkshopRepairPlanner.Complete(game, plans, scope);
+                if (readable.Length != 0) WorkshopRecovery.AssertRepairCoverage(game, readable, plans);
+            });
+            return new CleanRepair { Plans = plans.AsReadOnly(), Retained = catalog.Where(c => c.IsSubscribed && c.Package != null).ToArray(),
+                Superseded = readable, Archived = unreadable };
         }
         internal static async Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart, WorkshopStartupAuthorization authorization)
         {
@@ -253,22 +283,32 @@ namespace APIShared.Workshop
                 if (plan.Package != null) WorkshopSubscriptionOwnership.Verify(latest, plan.WorkshopId, plan.Package);
             }
         }
-        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog, WorkshopStartupAuthorization authorization, IReadOnlyList<WorkshopInterruptedTransaction> repair = null)
+        internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog, WorkshopStartupAuthorization authorization,
+            IReadOnlyList<WorkshopInterruptedTransaction> repair = null, IReadOnlyList<WorkshopInterruptedTransaction> archive = null)
         {
             authorization.Validate();
             CheckStartupConditions(); CheckBatch(plans, catalog);
             var snapshot = Subscriptions();
             CheckBatchSubscriptions(plans, snapshot);
             string id = Guid.NewGuid().ToString("N");
+            if (repair != null && repair.Count == 0) repair = null;
+            bool completeRepair = repair != null || archive != null && archive.Count != 0;
+            // Unreadable transactions are moved aside only for this confirmed repair and
+            // returned if it cannot be staged or handed off.
+            IReadOnlyList<KeyValuePair<string, string>> archived = null;
             return await ApplyCoordinator.ExecuteAsync(id, async operation => {
-                string transaction = await Task.Run(() => {
-                    foreach (var plan in plans.Where(p => p.Package != null)) {
-                        WorkshopBootstrapValidation.Verify(plan.Package, plan.Source);
-                        WorkshopSubscriptionOwnership.Verify(snapshot, plan.WorkshopId, plan.Package);
-                    }
-                    return WorkshopTransaction.StageBatch(plans, id, repair);
-                });
-                authorization.Validate();
+                string transaction;
+                try {
+                    transaction = await Task.Run(() => {
+                        foreach (var plan in plans.Where(p => p.Package != null)) {
+                            WorkshopBootstrapValidation.Verify(plan.Package, plan.Source);
+                            WorkshopSubscriptionOwnership.Verify(snapshot, plan.WorkshopId, plan.Package);
+                        }
+                        archived = WorkshopRecovery.Archive(Paths.GameRootPath, archive);
+                        return WorkshopTransaction.StageBatch(plans, id, repair);
+                    });
+                    authorization.Validate();
+                } catch { RestoreArchived(archived); throw; }
                 var completion = new TaskCompletionSource<WorkshopOperation>();
                 if (!UnityMainThreadDispatch.TryRunInlineOrEnqueue(async () => {
                     try {
@@ -278,16 +318,22 @@ namespace APIShared.Workshop
                         CheckBatchSubscriptions(plans, snapshot); CheckBatch(plans, catalog);
                         operation.Set(WorkshopOperationState.AwaitingRestart, "Confirmed startup batch; receipts commit after game exit.");
                         authorization.ConfirmHandoff(transaction);
-                        authorization.Quit(Log, UnityEngine.Application.Quit, repair == null ? "confirmed startup update" : "confirmed complete repair"); completion.TrySetResult(operation);
+                        authorization.Quit(Log, UnityEngine.Application.Quit, completeRepair ? "confirmed complete repair" : "confirmed startup update"); completion.TrySetResult(operation);
                     } catch (Exception ex) {
                         operation.Failure = ex;
                         WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=batch updater handoff; operation=" + operation.OperationId, ex);
                         try { WorkshopUpdaterLauncher.Cancel(transaction); } catch (Exception cancel) { operation.Failure = new AggregateException(ex, cancel); WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=batch handoff cancellation; operation=" + operation.OperationId, cancel); }
+                        RestoreArchived(archived);
                         operation.Set(WorkshopOperationState.Failed, ex.Message); completion.TrySetResult(operation);
                     }
-                })) throw new InvalidOperationException("Unity dispatcher unavailable; batch was not applied.");
+                })) { RestoreArchived(archived); throw new InvalidOperationException("Unity dispatcher unavailable; batch was not applied."); }
                 return await completion.Task;
             });
+        }
+        private static void RestoreArchived(IReadOnlyList<KeyValuePair<string, string>> moved)
+        {
+            try { WorkshopRecovery.Restore(moved); }
+            catch (Exception ex) { WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=restore archived transactions", ex); }
         }
         internal static async Task<WorkshopOperation> ApplyAsync(string owner, WorkshopInstallPlan plan)
         {

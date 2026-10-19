@@ -137,14 +137,16 @@ namespace APIShared
             ReleaseUnstartedPreparation();
             string path = Normalize(savePath);
             SavegameLoadChoiceState state = GetLoadChoiceState(path);
+            // An unreadable record loads like a legacy save (see ReadRecordForLoad).
+            bool legacy = state == SavegameLoadChoiceState.Legacy || state == SavegameLoadChoiceState.Invalid;
             Dictionary<string, Dictionary<string, byte[]>> current = CaptureCompatibleHostSettings();
             lock (Sync)
             {
                 chosenPath = path.Length == 0 ? null : path;
                 chosenCurrent = current;
-                useChosenCurrent = state == SavegameLoadChoiceState.Legacy ||
+                useChosenCurrent = legacy ||
                     state == SavegameLoadChoiceState.Selectable && useCurrentSettings;
-                legacyChoice = state == SavegameLoadChoiceState.Legacy;
+                legacyChoice = legacy;
             }
         }
 
@@ -211,8 +213,7 @@ namespace APIShared
                 fingerprint = BitConverter.ToString(sha.ComputeHash(file)).Replace("-", "");
             ModSettingsApplication.EnterContext("save:" + path + "|" + fingerprint);
             preparedApplicationContext = ModSettingsApplication.ContextId;
-            if (ReadRecord(path, out var record) == RecordReadState.Invalid)
-                throw new InvalidDataException("The selected savegame ModSettings archive is invalid.");
+            var record = ReadRecordForLoad(path, out _);
             if (record?.LockedByConflict == true)
                 throw new InvalidDataException("The savegame has conflicting or incomplete settings; startup configuration cannot be verified.");
             var values = legacyChoice || useChosenCurrent && IsCurrentChoiceAllowed(record) ? chosenCurrent : record?.Mods;
@@ -262,10 +263,8 @@ namespace APIShared
                 if (multiplayer) loaded = PreparedRecordForStart;
                 else
                 {
-                    RecordReadState read = ReadRecord(filePath, out var record);
-                    if (read == RecordReadState.Invalid) throw new InvalidDataException("Invalid savegame ModSettings archive.");
-                    loaded = record;
-                    legacyChoice = read == RecordReadState.Missing;
+                    loaded = ReadRecordForLoad(filePath, out bool legacy);
+                    legacyChoice = legacy;
                 }
                 restoreFailed = false;
                 if (chosenCurrent == null) chosenCurrent = fallback;
@@ -428,6 +427,18 @@ namespace APIShared
 
         private static bool TryReadRecord(string path, out SavegameModSettingsRecord record) =>
             ReadRecord(path, out record) == RecordReadState.Valid;
+
+        // An unreadable APIShared record (damaged appended archive, newer schema, invalid
+        // mode) never blocks the save itself: it loads like a save without a record,
+        // with the current host settings, as APIShared 0.9.2 did.
+        private static SavegameModSettingsRecord ReadRecordForLoad(string path, out bool legacy)
+        {
+            RecordReadState read = ReadRecord(path, out SavegameModSettingsRecord record);
+            if (read == RecordReadState.Invalid)
+                NativeApiLog.Warning(log, "Savegame ModSettings record is unreadable or unsupported; loading with current host settings: " + path);
+            legacy = read != RecordReadState.Valid;
+            return record;
+        }
 
         private static RecordReadState ReadRecord(string path, out SavegameModSettingsRecord record)
         {

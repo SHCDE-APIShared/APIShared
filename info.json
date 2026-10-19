@@ -12,7 +12,13 @@
   "SerpChangelog": [
     {
       "Version": "0.11.1",
-      "Changes": ["Preserve saved author rules and Customize permission across restarts even when no settings provider is installed."]
+      "Changes": [
+        "Preserve saved author rules and Customize permission across restarts even when no settings provider is installed.",
+        "Load saves whose APIShared settings record is damaged, from a newer version or otherwise unreadable with the current host settings instead of aborting the load.",
+        "Workshop complete repair is now a clean reinstallation from the Steam downloads and is always offered when rollback is not possible or already failed: package files are rewritten, stale or foreign DLLs and unsubscribed packages are removed with backups, settings are kept, and unreadable transactions are archived instead of blocking every start.",
+        "Report warnings and errors as throttled MOD_WARNING/MOD_FAILURE lines with feature and cause. Info logs are no longer hidden by the diagnostics switch and are limited to one-time markers; only Debug output is opt-in.",
+        "Audio registrations can select the catalog sources or situations they need (SoundSourceSelection); soldier sounds no enabled registration selects stay in native code. Existing registrations keep selecting every source."
+      ]
     },
     {
       "Version": "0.11.0",
@@ -21,8 +27,14 @@
     {
       "Version": "0.10.0",
       "Changes": [
-        "Unreleased development: prepare and verify savegame host settings before loading, including Solo Multiplayer and Coop provenance, with authenticated peer readiness and isolated personal presets.",
-        "Use a distinct network-compatible version for the new save-readiness control packet registration."
+        "Prepare and verify savegame host settings before loading, including Solo Multiplayer and Coop provenance, with authenticated peer readiness and isolated personal presets. SavegameModSettings.PrepareLoadWithRestartCheck now prepares these settings itself and throws when they cannot be verified.",
+        "Use a distinct network-compatible version for the new save-readiness control packet registration.",
+        "Store presets and preset-backed ModSettings under Documents/SHCDE/APIShared, so long game paths no longer prevent saving.",
+        "Add versioned per-mod save records (VersionedSaveData) with multiplayer comparison of simulation records, UnitSettledEvents, attributed SoundSourceEvents, the cooperative native-site registry, rounded fear popularity and MissionRestart.Run.",
+        "Check the members of managed capabilities at startup and isolate each initialization step, so WhenReady always completes.",
+        "Correct the optional Fixes mod's wheat-sale hook at startup and the Script Extender popularity display, and add the early dependency-index correction bootstrap.",
+        "Accept any Script Extender for Workshop cleanup whose staging method passes signature and IL validation instead of pinning binary hashes.",
+        "Reduce allocations on observed broker and audio paths, publish native hook handles before patching, and build the Release DLL with optimizations."
       ]
     },
     {

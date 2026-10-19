@@ -259,6 +259,68 @@ public sealed class WorkshopPackageTests
         Assert.AreEqual("1.0.27", WorkshopInstallation.ReadReceipt(Game, 123).Version);
         Assert.IsTrue(!Directory.Exists(interrupted) || File.ReadAllLines(Path.Combine(interrupted, "journal.log")).Contains("applying"));
     }
+    // Regression: without a usable backup the only repair kept stale/foreign DLLs and could
+    // dead-end. A clean reinstallation must always resolve the interrupted transaction.
+    [TestMethod] public void CleanRepairReinstallsFromSteamAndRemovesStaleAssembliesWithBackup()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Windows updater fixture requires Windows."); return; }
+        InstallReceipt(Package("1.0.23", "old.dll"));
+        File.Delete(WorkshopPaths.Inside(Source, "Payload/" + Root + "/old.dll")); Package("1.0.27");
+        Write(Game, Root + "/stray.dll", "foreign"); Write(Game, Root + "/notes.txt", "user data"); Write(Game, Root + "/config/settings.json", "settings");
+        var update = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Update);
+        string interrupted = WorkshopTransaction.Stage(update);
+        Write(Game, update.Files[0].Path, "interrupted partial copy");
+        Write(interrupted, "journal.log", "applying\r\nbegin\t0\r\n");
+        var entries = WorkshopRecovery.Inspect(Game);
+        Assert.IsFalse(entries[0].CanRollback); Assert.IsTrue(entries[0].Readable);
+        var repair = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Reinstall);
+        WorkshopRepairPlanner.Complete(Game, new[] { repair }, WorkshopRepairPlanner.Collect(Game, entries));
+        CollectionAssert.AreEquivalent(new[] { Root + "/old.dll", Root + "/stray.dll" }, repair.RemovedFiles.ToArray());
+        string replacement = WorkshopTransaction.StageBatch(new[] { repair }, Guid.NewGuid().ToString("N"), entries);
+        Assert.AreEqual(0, RunUpdater(replacement));
+        Assert.HasCount(0, WorkshopRecovery.Inspect(Game));
+        Assert.AreEqual("1.0.27", WorkshopInstallation.ReadReceipt(Game, 123).Version);
+        Assert.AreEqual("payload 1.0.27", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/Example.dll")));
+        Assert.IsFalse(File.Exists(WorkshopPaths.Inside(Game, Root + "/stray.dll")));
+        Assert.IsFalse(File.Exists(WorkshopPaths.Inside(Game, Root + "/old.dll")));
+        Assert.AreEqual("user data", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/notes.txt")));
+        Assert.AreEqual("settings", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/config/settings.json")));
+        Assert.IsTrue(Directory.EnumerateFiles(Path.Combine(replacement, "Backup")).Any(f => File.ReadAllText(f) == "foreign"));
+    }
+    [TestMethod] public void CleanRepairRemovesAnUnsubscribedPackageWithoutReceipt()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Windows updater fixture requires Windows."); return; }
+        Package(); Write(Game, Root + "/config/settings.json", "settings");
+        var install = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Install);
+        string interrupted = WorkshopTransaction.Stage(install);
+        Write(Game, install.Files[0].Path, "interrupted partial copy");
+        Write(interrupted, "journal.log", "applying\r\nbegin\t0\r\nfailure interrupted\r\n");
+        var entries = WorkshopRecovery.Inspect(Game);
+        // The player unsubscribed meanwhile: there is no package to reinstall and no receipt to remove.
+        var removal = WorkshopRepairPlanner.Removal("owner", Game, 123);
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopRepairPlanner.AssertCoverage(Game, entries, new[] { removal }));
+        WorkshopRepairPlanner.Complete(Game, new[] { removal }, WorkshopRepairPlanner.Collect(Game, entries));
+        WorkshopRepairPlanner.AssertCoverage(Game, entries, new[] { removal });
+        string replacement = WorkshopTransaction.StageBatch(new[] { removal }, Guid.NewGuid().ToString("N"), entries);
+        Assert.AreEqual(0, RunUpdater(replacement));
+        Assert.HasCount(0, WorkshopRecovery.Inspect(Game));
+        Assert.IsFalse(File.Exists(WorkshopInstallation.ReceiptPath(Game, 123)));
+        Assert.IsFalse(File.Exists(WorkshopPaths.Inside(Game, install.Files[0].Path)));
+        Assert.AreEqual("settings", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/config/settings.json")));
+    }
+    [TestMethod] public void UnreadableTransactionIsArchivedForRepairAndRestorable()
+    {
+        string broken = Path.Combine(WorkshopInstallation.StateRoot(Game), "Transactions", Guid.NewGuid().ToString("N"));
+        Write(broken, "operations.tsv", "damaged"); Write(broken, "journal.log", "applying\r\nbegin\t0\r\n");
+        var entries = WorkshopRecovery.Inspect(Game);
+        Assert.HasCount(1, entries); Assert.IsFalse(entries[0].Readable); Assert.IsFalse(entries[0].CanRollback);
+        var moved = WorkshopRecovery.Archive(Game, entries);
+        Assert.HasCount(0, WorkshopRecovery.Inspect(Game));
+        Assert.IsFalse(Directory.Exists(broken));
+        Assert.AreEqual("damaged", File.ReadAllText(Path.Combine(moved[0].Value, "operations.tsv")));
+        WorkshopRecovery.Restore(moved);
+        Assert.HasCount(1, WorkshopRecovery.Inspect(Game));
+    }
     [TestMethod] public void StagingWaitsForTheStartupMaintenanceGate()
     {
         Package();

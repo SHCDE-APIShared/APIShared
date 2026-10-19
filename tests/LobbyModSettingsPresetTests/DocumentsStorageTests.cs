@@ -201,6 +201,32 @@ namespace LobbyModSettingsPresetTests
             Assert(StartDocuments().Number == 29, "Publication failure prevented a later legacy retry.");
         }
 
+        // Regression: a Wine/Proton prefix without a Documents folder made the settings page fail.
+        [TestMethod]
+        public void MissingPlatformDocumentsUsesTheNextPerUserFolder()
+        {
+            var previousTest = PersonalSettingsPaths.TestDocumentsDirectory;
+            var previousFolders = PersonalSettingsPaths.PlatformFolders;
+            try
+            {
+                string fallback = Path.Combine(testRoot, "LocalAppData");
+                PersonalSettingsPaths.TestDocumentsDirectory = null;
+                PersonalSettingsPaths.PlatformFolders = () => new[] { "", "relative\\Documents", fallback };
+                Assert(NewFile.StartsWith(fallback + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
+                    "A missing Documents folder did not fall back to the next per-user folder.");
+                PersonalSettingsPaths.PlatformFolders = () => new string[] { null, " " };
+                bool rejected = false;
+                try { _ = NewFile; }
+                catch (IOException) { rejected = true; }
+                Assert(rejected, "Settings storage was resolved without any per-user folder.");
+            }
+            finally
+            {
+                PersonalSettingsPaths.TestDocumentsDirectory = previousTest;
+                PersonalSettingsPaths.PlatformFolders = previousFolders;
+            }
+        }
+
         [TestMethod]
         public void MissingDocumentsDoesNotFallBackToInstallationWrites()
         {
