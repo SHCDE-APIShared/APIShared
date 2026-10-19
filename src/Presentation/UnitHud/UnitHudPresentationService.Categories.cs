@@ -184,6 +184,57 @@ namespace APIShared
             args.Handled = true;
         }
 
+        // Runs after Vanilla's control-group populate every frame while the panel is open, over
+        // all GroupCount x GroupCapacity native records. Only unit types with a registered
+        // control-group category need a snapshot and classification; the dynamic activity,
+        // matcher and conflict rules stay in Classify. Vanilla rewrites the slots before this
+        // runs, so every visible value is still written each frame.
+        private CategoryRegistration[] groupTypeView;
+        private bool[] groupCategoryTypes = Array.Empty<bool>();
+        private readonly Dictionary<CategoryRegistration, GroupEntry> groupCategoryEntries = new Dictionary<CategoryRegistration, GroupEntry>();
+        private readonly Dictionary<int, GroupEntry> groupVanillaEntries = new Dictionary<int, GroupEntry>();
+        private readonly List<GroupEntry> groupVisible = new List<GroupEntry>();
+        private Func<HUD_ControlGroups, int, ImageSource> groupSprite;
+        private bool groupSpriteResolved;
+        private static readonly Comparison<GroupEntry> GroupOrder = (left, right) =>
+        {
+            int compare = left.BaseType.CompareTo(right.BaseType);
+            if (compare != 0) return compare;
+            compare = (left.Category == null ? 0 : 1).CompareTo(right.Category == null ? 0 : 1);
+            return compare != 0 ? compare : string.CompareOrdinal(left.SortKey, right.SortKey);
+        };
+
+        private bool[] GroupCategoryTypes(CategoryRegistration[] view)
+        {
+            if (ReferenceEquals(groupTypeView, view)) return groupCategoryTypes;
+            int size = 0;
+            foreach (CategoryRegistration category in view)
+                if (HasSurface(category, UnitHudSurface.ControlGroups) && category.Definition.BaseUnitType >= size)
+                    size = category.Definition.BaseUnitType + 1;
+            var types = new bool[size];
+            foreach (CategoryRegistration category in view)
+                if (HasSurface(category, UnitHudSurface.ControlGroups) && category.Definition.BaseUnitType >= 0)
+                    types[category.Definition.BaseUnitType] = true;
+            groupCategoryTypes = types;
+            groupTypeView = view;
+            return types;
+        }
+
+        private ImageSource GetGroupSprite(HUD_ControlGroups panel, int summaryType)
+        {
+            if (!groupSpriteResolved)
+            {
+                groupSpriteResolved = true;
+                // Typed open-instance delegate for the private Vanilla getter; any signature
+                // difference keeps the previous reflection call.
+                if (!GroupSpriteMethod.IsStatic && GroupSpriteMethod.ReturnType == typeof(ImageSource))
+                    groupSprite = Delegate.CreateDelegate(typeof(Func<HUD_ControlGroups, int, ImageSource>),
+                        GroupSpriteMethod, false) as Func<HUD_ControlGroups, int, ImageSource>;
+            }
+            return groupSprite != null ? groupSprite(panel, summaryType)
+                : GroupSpriteMethod.Invoke(panel, new object[] { summaryType }) as ImageSource;
+        }
+
         private void RenderGroups(HUD_ControlGroups panel)
         {
             Image[,] images = GroupImagesField.GetValue(panel) as Image[,];
@@ -192,34 +243,55 @@ namespace APIShared
             if (images == null || values == null || extras == null || images.GetLength(0) < GroupCount || images.GetLength(1) < GroupVisibleSlots)
                 throw new InvalidOperationException("Vanilla control-group HUD fields have an unexpected layout.");
             EnsureGroupTints(panel, images);
+            bool[] categoryTypes = GroupCategoryTypes(CategoryCopy());
+            bool unitManager = GameUnitManagerAPI.Instance != null;
             for (int group = 0; group < GroupCount; group++)
             {
-                var counts = new Dictionary<string, GroupEntry>(StringComparer.Ordinal);
+                groupCategoryEntries.Clear();
+                groupVanillaEntries.Clear();
                 int total = 0;
                 int* start = groupRecords + group * GroupCapacity * GroupRecordWidth;
                 for (int index = 0; index < GroupCapacity; index++)
                 {
                     int unitId = start[index * GroupRecordWidth];
+                    if (unitId <= 0 || !unitManager) continue;
                     int globalId = start[index * GroupRecordWidth + 1];
-                    if (!TryCapture(unitId, out UnitHudUnitSnapshot snapshot) || unchecked((int)snapshot.GlobalId) != globalId) continue;
+                    if (!APIShared.UnitAccess.TryGetById(unitId, out GameUnit* unit, out _) || unit == null ||
+                        !APIShared.UnitAccess.IsReallyAlive(unit) || unit->r_GlobalId == 0 ||
+                        unchecked((int)unit->r_GlobalId) != globalId) continue;
                     total++;
-                    CategoryRegistration category = Classify(snapshot, UnitHudSurface.ControlGroups);
-                    int summaryType = ToSummaryType(snapshot.VanillaType);
-                    string key = category != null ? category.Key : "v:" + summaryType;
+                    int vanillaType = (int)unit->r_UnitChimp;
+                    CategoryRegistration category = (uint)vanillaType < (uint)categoryTypes.Length && categoryTypes[vanillaType]
+                        ? Classify(new UnitHudUnitSnapshot(unitId, unit->r_GlobalId, vanillaType, unit->r_ControllableForPlayerId, true), UnitHudSurface.ControlGroups)
+                        : null;
+                    int summaryType = ToSummaryType(vanillaType);
                     if (summaryType < 0 && category == null) continue;
-                    if (!counts.TryGetValue(key, out GroupEntry entry)) counts[key] = entry = new GroupEntry(category, summaryType, snapshot.VanillaType);
+                    GroupEntry entry;
+                    if (category != null)
+                    {
+                        if (!groupCategoryEntries.TryGetValue(category, out entry))
+                            groupCategoryEntries[category] = entry = new GroupEntry(category, summaryType, vanillaType);
+                    }
+                    else if (!groupVanillaEntries.TryGetValue(summaryType, out entry))
+                        groupVanillaEntries[summaryType] = entry = new GroupEntry(null, summaryType, vanillaType);
                     entry.Count++;
                 }
-                GroupEntry[] visible = counts.Values.Where(x => x.Count > 0).OrderBy(x => x.BaseType).ThenBy(x => x.Category == null ? 0 : 1).ThenBy(x => x.SortKey, StringComparer.Ordinal).Take(GroupVisibleSlots).ToArray();
+                groupVisible.Clear();
+                groupVisible.AddRange(groupVanillaEntries.Values);
+                groupVisible.AddRange(groupCategoryEntries.Values);
+                // The keys (base type, Vanilla first, sort key) are unique, so this order equals
+                // the former stable LINQ ordering.
+                groupVisible.Sort(GroupOrder);
+                int visibleCount = Math.Min(groupVisible.Count, GroupVisibleSlots);
                 int shown = 0;
                 for (int slot = 0; slot < GroupVisibleSlots; slot++)
                 {
-                    if (slot < visible.Length)
+                    if (slot < visibleCount)
                     {
-                        GroupEntry entry = visible[slot];
+                        GroupEntry entry = groupVisible[slot];
                         ImageSource source = entry.Category != null
                             ? ResolveCategoryImage(entry.Category, UnitHudSurface.ControlGroups, null, panel)
-                            : GroupSpriteMethod.Invoke(panel, new object[] { entry.SummaryType }) as ImageSource;
+                            : GetGroupSprite(panel, entry.SummaryType);
                         images[group, slot].Source = source;
                         images[group, slot].Visibility = Visibility.Visible;
                         if (entry.Category != null)
@@ -244,7 +316,6 @@ namespace APIShared
                 extras[group].Visibility = remainder > 0 ? Visibility.Visible : Visibility.Hidden;
             }
         }
-
         private void EnsureGroupTints(HUD_ControlGroups panel, Image[,] images)
         {
             if (ReferenceEquals(activeGroupPanel, panel) && groupTints != null) return;
@@ -695,7 +766,9 @@ namespace APIShared
         {
             internal GroupEntry(CategoryRegistration category, int summaryType, int baseType) { Category = category; SummaryType = summaryType; BaseType = baseType; }
             internal CategoryRegistration Category { get; } internal int SummaryType { get; } internal int BaseType { get; } internal int Count { get; set; }
-            internal string SortKey => Category != null ? "1:" + Category.Key : "0:" + SummaryType.ToString("D2");
+            // Computed once per entry; the comparison runs several times per frame.
+            internal string SortKey => sortKey ?? (sortKey = Category != null ? "1:" + Category.Key : "0:" + SummaryType.ToString("D2"));
+            private string sortKey;
         }
     }
 }

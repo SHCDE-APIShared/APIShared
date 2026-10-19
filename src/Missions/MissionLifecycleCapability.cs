@@ -358,20 +358,30 @@ namespace APIShared
                 if (!normal)
                 {
                     waiting = null;
-                    try { Safe(() => state.End(MissionEndReason.Exception, op.Id)); }
-                    finally { SavegameModSettings.FinishLoad(); }
+                    FailDeferredMessage(op);
                 }
                 else if (op.ManagedSucceeded)
                 {
                     waiting = null;
-                    Safe(() => CompleteDeferredRestore(
-                        () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
-                        () => state.Ready(op.Id, Capture(op)),
-                        SavegameModSettings.FinishLoad,
-                        error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
+                    CompleteDeferredMessage(op);
                 }
             }
         }
+
+        // Runs for every multiplayer message: the lambdas capturing op live in these slow-path
+        // methods, so the common path allocates no closure on entry.
+        private void FailDeferredMessage(Operation op)
+        {
+            try { Safe(() => state.End(MissionEndReason.Exception, op.Id)); }
+            finally { SavegameModSettings.FinishLoad(); }
+        }
+
+        private void CompleteDeferredMessage(Operation op) =>
+            Safe(() => CompleteDeferredRestore(
+                () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
+                () => state.Ready(op.Id, Capture(op)),
+                SavegameModSettings.FinishLoad,
+                error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
 
         internal static void CompleteDeferredRestore(Action restore, Action ready,
             Action cleanup, Action<Exception> reportRestoreError)
