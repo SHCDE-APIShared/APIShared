@@ -131,6 +131,18 @@ namespace APIShared
         public static IReadOnlyDictionary<string, IModSettingsPresetEndpoint> GetCompatibleParticipants() =>
             FindParticipants().ToDictionary(item => item.Key, item => item.Value.Endpoint, StringComparer.Ordinal);
 
+        /// <summary>Inspects the existing lobby registrations and dynamic configuration endpoints,
+        /// returning read-only metadata for accepted and rejected participants, ordered by GUID.</summary>
+        /// <remarks>Call on the Unity thread after LibraryLoaded and settings registration. No caching,
+        /// provider registration, replay, persistence or settings application occurs. The existing contract
+        /// calls each otherwise eligible lobby endpoint's disabled-snapshot factory once; factories must
+        /// not apply settings. Metadata/snapshot failures reject only that participant. Discovery source
+        /// failures propagate. Conflicting accepted providers are reported here; automatic operations and
+        /// GetCompatibleParticipants continue to throw for that conflict. Dynamic endpoints retain their
+        /// existing explicit registration contract, independent of an optional lobby panel.</remarks>
+        public static IReadOnlyList<ModSettingsParticipantInfo> GetParticipantDiagnostics() =>
+            Array.AsReadOnly(InspectParticipants().OrderBy(item => item.ModGuid, StringComparer.Ordinal).ToArray());
+
         /// <summary>Records the confirmed host choice for exactly one selected save.</summary>
         public static void PrepareLoad(string savePath, bool useCurrentSettings)
         {
@@ -144,8 +156,7 @@ namespace APIShared
             {
                 chosenPath = path.Length == 0 ? null : path;
                 chosenCurrent = current;
-                useChosenCurrent = legacy ||
-                    state == SavegameLoadChoiceState.Selectable && useCurrentSettings;
+                useChosenCurrent = SavegameLoadDecision.UseCurrent(state, useCurrentSettings);
                 legacyChoice = legacy;
             }
         }
@@ -202,6 +213,11 @@ namespace APIShared
         public static bool PrepareLoadWithRestartCheck(string savePath, bool useCurrentSettings)
             => PrepareLoadCore(savePath, useCurrentSettings, false);
 
+        // Absence of a usable dialog choice means current settings, but PrepareLoad still
+        // enforces SavedOnly and creator rules. Explicit public Boolean calls retain their contract.
+        internal static bool PrepareAutomaticLoadWithRestartCheck(string savePath, bool? choice)
+            => PrepareLoadCore(savePath, choice ?? true, false);
+
         private static bool PrepareLoadCore(string savePath, bool useCurrentSettings, bool allParticipants)
         {
             PrepareLoad(savePath, useCurrentSettings);
@@ -254,6 +270,8 @@ namespace APIShared
         internal static void BeginLoad(string filePath, bool multiplayer)
         {
             SavegameLoadCoordinator.ValidateStart(filePath, multiplayer);
+            if (!multiplayer && !string.Equals(chosenPath, Normalize(filePath), StringComparison.OrdinalIgnoreCase))
+                PrepareLoad(filePath, true);
             Dictionary<string, Dictionary<string, byte[]>> fallback = null;
             lock (Sync) { if (chosenCurrent == null) fallback = CaptureCompatibleHostSettings(); }
             lock (Sync)
@@ -615,82 +633,37 @@ namespace APIShared
             internal PropertyInfo[] PersonalProperties;
         }
 
-        private static Dictionary<string, CompatibleMod> FindParticipants()
+        private static List<ModSettingsParticipantInfo> InspectParticipants()
         {
-            var result = new Dictionary<string, CompatibleMod>(StringComparer.Ordinal);
-            foreach (IGrouping<string, LobbyModSettingsEntry> group in GameXAMLManagerAPI.Instance.RegisteredModSettings
-                .Where(entry => entry?.Plugin?.Info?.Metadata?.GUID != null)
-                .GroupBy(entry => entry.Plugin.Info.Metadata.GUID, StringComparer.Ordinal))
-            {
-                if (group.Count() != 1 || group.Any(entry => IsOptedOut(entry.Plugin))) continue;
-                LobbyModSettingsEntry registration = group.First();
-                if (!(registration.ViewModel is IModSettingsPresetEndpoint endpoint)) continue;
-                PropertyInfo[] properties = registration.ViewModel.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(property => property.CanRead && property.CanWrite &&
-                        property.GetCustomAttributes(false).Any(attribute => attribute.GetType().Name == "SyncHostOnlyAttribute") &&
-                        !property.GetCustomAttributes(false).Any(attribute => attribute.GetType().Name == "DoNotPersistAttribute"))
-                    .OrderBy(property => property.Name, StringComparer.Ordinal).ToArray();
-                PropertyInfo[] personalProperties = registration.ViewModel.GetType()
-                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(property => property.CanRead && property.CanWrite &&
-                        !property.GetCustomAttributes(false).Any(attribute => attribute.GetType().Name == "DoNotPersistAttribute") &&
-                        property.GetCustomAttributes(false).Any(attribute =>
-                            attribute.GetType().Name == "SyncPerPlayerAttribute" ||
-                            attribute.GetType().Name == "PresetLocalAttribute"))
-                    .ToArray();
-                if (properties.Length == 0 || properties.Any(property =>
-                    property.Name == "EnableMod" && property.PropertyType != typeof(bool)) ||
-                    properties.GroupBy(property => property.Name, StringComparer.Ordinal).Any(items => items.Skip(1).Any()))
-                    continue;
-                try
-                {
-                    Dictionary<string, byte[]> disabled = endpoint.System_CreateDisabledMissionPresetSnapshot();
-                    if (disabled == null) continue;
-                    bool valid = true;
-                    foreach (PropertyInfo property in properties)
-                    {
-                        if (!disabled.TryGetValue(property.Name, out byte[] value) || value == null)
-                        {
-                            valid = false;
-                            break;
-                        }
-                        object disabledValue = MessagePackSerializer.Deserialize(property.PropertyType, value);
-                        if (property.Name == "EnableMod" && disabledValue is bool enabled && enabled)
-                        {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    if (!valid) continue;
-                    result[group.Key] = new CompatibleMod
-                    {
-                        Endpoint = endpoint,
-                        Properties = properties,
-                        PersonalProperties = personalProperties,
-                    };
-                }
-                catch (Exception error)
-                {
-                    NativeApiLog.Error(log, "Incompatible savegame settings for " + group.Key + ": " + error.Message);
-                }
-            }
-            foreach (var registered in ModSettingsApplication.Endpoints)
-            {
-                if (!registered.Value.System_HasDynamicSettings) continue;
-                if (result.ContainsKey(registered.Key)) throw new InvalidOperationException("Duplicate settings provider: " + registered.Key);
-                result[registered.Key] = new CompatibleMod
-                {
-                    Endpoint = registered.Value,
-                    Properties = ModSettingsApplication.GetHostProperties(registered.Value),
-                    PersonalProperties = Array.Empty<PropertyInfo>()
-                };
-            }
+            var lobby = GameXAMLManagerAPI.Instance.RegisteredModSettings.Select(entry =>
+                new ModSettingsParticipantDiscovery.Registration {
+                    Guid = entry?.Plugin?.Info?.Metadata?.GUID,
+                    Name = entry?.Plugin?.Info?.Metadata?.Name ?? entry?.Name,
+                    PluginType = entry?.Plugin?.GetType(), Model = entry?.ViewModel
+                }).ToArray();
+            var configurations = ModSettingsApplication.Endpoints.Select(pair =>
+                new ModSettingsParticipantDiscovery.Registration {
+                    Guid = pair.Key, Name = pair.Key, Model = pair.Value,
+                    IsDynamic = () => pair.Value.System_HasDynamicSettings,
+                    DynamicProperties = () => ModSettingsApplication.GetHostProperties(pair.Value)
+                }).ToArray();
+            var result = ModSettingsParticipantDiscovery.Inspect(lobby, configurations);
+            foreach (var item in result.Where(item => item.Status == ModSettingsParticipantStatus.InspectionFailed))
+                NativeApiLog.Error(log, "Incompatible savegame settings for " + item.ModGuid + ": " + item.Diagnostic);
             return result;
         }
 
-        private static bool IsOptedOut(object plugin)
+        private static Dictionary<string, CompatibleMod> FindParticipants()
         {
-            return SavegameSettingsParticipation.IsExcluded(plugin?.GetType());
+            var result = new Dictionary<string, CompatibleMod>(StringComparer.Ordinal);
+            foreach (var item in ModSettingsParticipantDiscovery.Accepted(InspectParticipants()))
+            {
+                result.Add(item.ModGuid, new CompatibleMod {
+                    Endpoint = item.Endpoint, Properties = item.HostProperties.ToArray(),
+                    PersonalProperties = item.PersonalProperties
+                });
+            }
+            return result;
         }
 
         private static string Normalize(string path)

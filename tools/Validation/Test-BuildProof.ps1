@@ -11,6 +11,7 @@ try {
     $proofRoot=Join-Path $temp 'proof'
     foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools','bootstrap')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'actual input'
+    Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'content input'
     Write-Fixture (Join-Path $proofRoot 'APIShared.csproj') '<Project />'
     Write-Fixture (Join-Path $proofRoot 'build.bat') 'build entry fixture'
     Write-Fixture (Join-Path $proofRoot 'info.json') '{}'
@@ -42,6 +43,9 @@ try {
     Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $null=Assert-ApiBuildProof $proofRoot -Release
+    Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'changed content input'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed Content source accepted'
+    Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'content input'
     Write-Fixture (Join-Path $proofRoot 'build.bat') 'changed build entry'
     $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed build entry accepted'
     Write-Fixture (Join-Path $proofRoot 'build.bat') 'build entry fixture'

@@ -118,6 +118,25 @@ namespace APIShared.DependencyBootstrap
             Copy(b, live, PairContract.RuntimePath);
             var original = new System.Collections.Hashtable();
             Check(ReferenceEquals(original, ShadowRuntime.SelectIndex(original, () => { throw new Exception("must not prepare"); }, activation.CanCorrect())), "late changed runtime keeps original index");
+            // New packages bind Content bytes too; the preceding cases retain coverage of
+            // historical packages without Content rather than rewriting their contract.
+            Install(a, live);
+            Write(live, PairContract.ContentPath, "content revision a");
+            Check(!Valid(live), "unclaimed Content rejected");
+            var manifest = (Dictionary<string, object>)DependencyFreeJson.Parse(File.ReadAllText(PairContract.SafePath(live, PairContract.ManifestPath)));
+            manifest.Add("ContentSHA256", PairContract.Hash(PairContract.SafePath(live, PairContract.ContentPath)));
+            Write(live, PairContract.ManifestPath, DependencyFreeJson.Serialize(manifest));
+            pair = PairContract.Read(live); checks++;
+            Write(live, PairContract.ContentPath, "content revision b");
+            Check(!Valid(live), "same-version mixed Content rejected");
+            Reject(pair.VerifyFiles, "Content change after initial validation rejected");
+            File.Delete(PairContract.SafePath(live, PairContract.ContentPath));
+            Check(!Valid(live), "missing declared Content rejected");
+            Write(live, PairContract.ContentPath, "content revision a");
+            Check(Valid(live), "complete Content repair accepted");
+            manifest["ContentSHA256"] = "invalid digest";
+            Write(live, PairContract.ManifestPath, DependencyFreeJson.Serialize(manifest));
+            Check(!Valid(live), "malformed Content digest rejected");
             Console.WriteLine("PASS: " + checks + " actual pair-contract cases, including installed native helper and renamed competitors");
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }

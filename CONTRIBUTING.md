@@ -69,7 +69,14 @@ root, run the core suite with only the .NET 10 SDK; no game installation is need
 ```powershell
 dotnet test tests/Core.Tests/Core.Tests.csproj
 dotnet test tests/Core.Tests/Core.Tests.csproj --filter FullyQualifiedName~JsonTests
+dotnet test tests/Content.Tests/Content.Tests.csproj
 ```
+
+Content tests exercise the public game-independent library and its separate API
+baseline. The Framework-to-SDK build regression can be run on Windows with
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Validation/Test-ContentBuild.ps1 -FixtureDirectory <empty-directory> -MSBuild <MSBuild.exe>`.
+It builds the actual Content target with isolated fixture sources and verifies
+nested edits, additions and removals. Its logs and fixture remain for inspection.
 
 With the game and Extender dependencies configured as described in [Setup](#setup):
 
@@ -86,7 +93,7 @@ temporary directories must clean them up.
 ### Coverage and limitations
 
 GitHub Actions runs source, metadata and XAML validation and the game-independent
-Core.Tests suite on Windows. Additional Linux checks cover Workshop recovery,
+Core.Tests and Content.Tests suites on Windows. Additional Linux checks cover Workshop recovery,
 maintenance and shell scripts. See the [CI workflow](.github/workflows/tests.yml)
 for the commands. CI does not run installed-game integration or gameplay tests.
 Core.Tests uses the public SharpZipLib package when the installed Extender library

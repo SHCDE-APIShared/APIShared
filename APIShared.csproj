@@ -24,6 +24,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="APIShared.Content"><HintPath>Content\bin\$(Configuration)\netstandard2.0\APIShared.Content.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(ExtenderDir)\ICSharpCode.SharpZipLib.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="System.Numerics" />
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
@@ -62,6 +63,13 @@
     <Content Include="Workshop\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- The legacy Framework MSBuild cannot resolve current SDK-style projects. Build
+       this independent library through dotnet, then consume its normal assembly output.
+       Let the SDK own incremental checks, including nested/removed sources and imports. -->
+  <Target Name="BuildContentLibrary" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="dotnet build &quot;$(MSBuildThisFileDirectory)Content\APIShared.Content.csproj&quot; --configuration &quot;$(Configuration)&quot; --nologo" />
+  </Target>
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(ExtenderDir)\SHCDESE.dll')" Text="SHCDESE.dll was not found: $(ExtenderDir)" />
     <Error Condition="!Exists('$(ExtenderDir)\R3.dll')" Text="R3.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />

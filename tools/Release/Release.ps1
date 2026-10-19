@@ -40,7 +40,7 @@ $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
 $dll = Join-Path $package 'APIShared.dll'
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Version -ne $parsed) { throw 'Assembly and manifest versions differ.' }
 $forbidden = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object {
-    ($_.Extension -in @('.dll', '.exe') -and $_.Name -ne 'APIShared.dll') -or $_.Name -match '(?i)credential|token|secret'
+    ($_.Extension -in @('.dll', '.exe') -and $_.Name -notin @('APIShared.dll','APIShared.Content.dll')) -or $_.Name -match '(?i)credential|token|secret'
 })
 if ($forbidden.Count -ne 0) { throw 'The package contains unexpected runtime dependencies or sensitive files.' }
 $output = Join-Path $root ('.local\release\v' + $version)

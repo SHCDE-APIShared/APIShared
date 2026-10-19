@@ -30,13 +30,18 @@ namespace APIShared.Workshop
                 {
                     if (pairEntry == null || bootstrapEntry == null) throw new InvalidDataException("Incomplete dependency bootstrap pair.");
                     var pair = WorkshopPackageCodec.Object(APIShared.Internal.DependencyFreeJson.Parse(map.ReadText(pairPath)));
-                    if (pair.Count != 5 || !pair.TryGetValue("Schema", out var schema) || !(schema is int n) || n != 1 ||
+                    if (pair.Count != 5 + (pair.ContainsKey("ContentSHA256") ? 1 : 0) || !pair.TryGetValue("Schema", out var schema) || !(schema is int n) || n != 1 ||
                         WorkshopPackageCodec.Text(pair, "Guid") != "APIShared_Serp" || WorkshopPackageCodec.Text(pair, "Version") != package.Version)
                         throw new InvalidDataException("Invalid dependency bootstrap pair.");
                     bootstrapHash = WorkshopPackageCodec.Text(pair, "BootstrapSHA256");
                     VerifyPairEntry(map, bootstrapEntry, bootstrapHash);
                     VerifyPairEntry(map, map.Archive.GetEntry(root + "APIShared.dll"), WorkshopPackageCodec.Text(pair, "RuntimeSHA256"));
+                    var contentEntry = map.Archive.GetEntry(root + "APIShared.Content.dll");
+                    if (pair.ContainsKey("ContentSHA256")) VerifyPairEntry(map, contentEntry, WorkshopPackageCodec.Text(pair, "ContentSHA256"));
+                    else if (contentEntry != null) throw new InvalidDataException("Unclaimed Content assembly.");
                 }
+                else if (map.Archive.GetEntry(root + "APIShared.Content.dll") != null)
+                    throw new InvalidDataException("Content assembly requires its package pair.");
                 var inventory = WorkshopInventory.Read(map.ReadText(root + WorkshopInventory.FileName), package.PackageId, package.Version);
                 var publisher = WorkshopInventory.Read(map.ReadText(tools + "publisher-files.json"), "APISharedWorkshopPublisher", package.Version);
                 var allowed = new HashSet<string>(new[] { "UploadMod.bat", "UploadMod-linux.sh", "WorkshopUploader.exe", "WorkshopUploader.exe.config",

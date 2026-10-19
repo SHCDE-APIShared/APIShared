@@ -10,7 +10,9 @@ try {
         @{ Type = 'Platform_Multiplayer'; Method = 'HostLoadGame'; Parameters = 'System.String'; Return = 'System.Void' },
         @{ Type = 'Platform_Multiplayer'; Method = 'StartSave'; Parameters = 'EngineInterface/MultiplayerSetupData|FileHeader'; Return = 'System.Void' },
         @{ Type = 'MapFileManager'; Method = 'GetHeaderFromMpSaveFileName'; Parameters = 'System.String'; Return = 'FileHeader' },
-        @{ Type = 'CrusaderDE.HUD_ConfirmationPopup'; Method = 'ShowConfirmationOKMessage'; Parameters = 'System.String|System.Action|System.String|System.Boolean'; Return = 'System.Void' }
+        @{ Type = 'CrusaderDE.HUD_ConfirmationPopup'; Method = 'ShowConfirmationOKMessage'; Parameters = 'System.String|System.Action|System.String|System.Boolean'; Return = 'System.Void' },
+        @{ Type = 'CrusaderDE.HUD_LoadSaveRequester'; Method = 'OpenLoadSaveRequester'; Parameters = 'Enums/RequesterTypes|System.Action`2<System.String,FileHeader>|System.Action|System.Int32|System.Boolean|System.Boolean'; Return = 'System.Void' },
+        @{ Type = 'CrusaderDE.HUD_LoadSaveRequester'; Method = 'ButtonClicked'; Parameters = 'System.Int32|System.Boolean'; Return = 'System.Void' }
     )) {
         $type = $gameAssembly.MainModule.GetType($contract.Type)
         $methods = @($type.Methods | Where-Object {
@@ -19,11 +21,20 @@ try {
         })
         if ($methods.Count -ne 1) { throw "Changed public save contract: $($contract.Type).$($contract.Method)" }
     }
+    # Private managed entry is intercepted through the validated hook helper, never called
+    # directly. It encloses the delayed overwrite callback and Vanilla filename bookkeeping.
+    $execute = @($gameAssembly.MainModule.GetType('CrusaderDE.HUD_LoadSaveRequester').Methods | Where-Object {
+        $_.Name -ceq 'RunOKAction' -and $_.IsPrivate -and -not $_.IsStatic -and
+        $_.ReturnType.FullName -ceq 'System.Void' -and $_.Parameters.Count -eq 0
+    })
+    if ($execute.Count -ne 1) { throw 'Changed private requester execution contract.' }
     foreach ($contract in @(
         @{ Type = 'Platform_Multiplayer'; Fields = @('activeLobby','gameMembers') },
         @{ Type = 'Platform_Multiplayer/MPLobby'; Fields = @('id','isHost','members') },
         @{ Type = 'Platform_Multiplayer/MPLobbyMember'; Fields = @('id','dummyToBeKicked') },
-        @{ Type = 'FileHeader'; Fields = @('fileName','filePath','xPlaySaveChecksum','xPlaySaveTime') }
+        @{ Type = 'FileHeader'; Fields = @('fileName','filePath','xPlaySaveChecksum','xPlaySaveTime') },
+        @{ Type = 'CrusaderDE.MainViewModel'; Fields = @('viewModelLoaded','HUDLoadSaveRequester') },
+        @{ Type = 'CrusaderDE.FileRow'; Fields = @('fileHeader') }
     )) {
         $type = $gameAssembly.MainModule.GetType($contract.Type)
         foreach ($name in $contract.Fields) {

@@ -815,6 +815,26 @@ APIShared.ModSettings.ModSettingsModeAvailability | public void ConfigureDefault
 APIShared.ModSettings.ModSettingsModeAvailability | public void ConfigureNetworkVariant(string key, bool? requiresRealMultiplayer)
 APIShared.ModSettings.ModSettingsModeAvailability | public void SetMission(APIShared.GameModes.GameModeSnapshot snapshot)
 APIShared.ModSettings.ModSettingsModeAvailability | public void SetPreview(APIShared.GameModes.GameplayModAllowedContext possibleContexts, bool? isRealMultiplayer)
+APIShared.ModSettings.ModSettingsParticipantInfo | public sealed class APIShared.ModSettings.ModSettingsParticipantInfo
+APIShared.ModSettings.ModSettingsParticipantInfo | public APIShared.ModSettings.IModSettingsPresetEndpoint Endpoint { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public APIShared.ModSettings.ModSettingsParticipantStatus Status { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public System.Collections.Generic.IReadOnlyList<System.Reflection.PropertyInfo> HostProperties { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public bool IsCompatible { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public bool IsConfigurationEndpoint { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public string Diagnostic { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public string DisplayName { get; }
+APIShared.ModSettings.ModSettingsParticipantInfo | public string ModGuid { get; }
+APIShared.ModSettings.ModSettingsParticipantStatus | public enum APIShared.ModSettings.ModSettingsParticipantStatus : int
+APIShared.ModSettings.ModSettingsParticipantStatus | Compatible = 0
+APIShared.ModSettings.ModSettingsParticipantStatus | ConflictingProvider = 9
+APIShared.ModSettings.ModSettingsParticipantStatus | DuplicateRegistration = 2
+APIShared.ModSettings.ModSettingsParticipantStatus | Excluded = 3
+APIShared.ModSettings.ModSettingsParticipantStatus | InspectionFailed = 8
+APIShared.ModSettings.ModSettingsParticipantStatus | InvalidHostSettings = 6
+APIShared.ModSettings.ModSettingsParticipantStatus | InvalidMissionSnapshot = 7
+APIShared.ModSettings.ModSettingsParticipantStatus | MissingEndpoint = 4
+APIShared.ModSettings.ModSettingsParticipantStatus | MissingPluginGuid = 1
+APIShared.ModSettings.ModSettingsParticipantStatus | NoHostSettings = 5
 APIShared.ModSettings.ModSettingsPresetJson | public static class APIShared.ModSettings.ModSettingsPresetJson
 APIShared.ModSettings.ModSettingsPresetJson | public const int MaximumDescriptionLength = 8192
 APIShared.ModSettings.ModSettingsPresetJson | public const int MaximumSettings = 16384
@@ -1485,6 +1505,7 @@ APIShared.SavegameLoadChoiceState | Selectable = 3
 APIShared.SavegameModSettings | public static class APIShared.SavegameModSettings
 APIShared.SavegameModSettings | public static APIShared.SavegameLoadChoiceState GetLoadChoiceState(string savePath)
 APIShared.SavegameModSettings | public static System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.IModSettingsPresetEndpoint> GetCompatibleParticipants()
+APIShared.SavegameModSettings | public static System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsParticipantInfo> GetParticipantDiagnostics()
 APIShared.SavegameModSettings | public static bool CanUseCurrentSettings(string savePath)
 APIShared.SavegameModSettings | public static bool PrepareLoadWithRestartCheck(string savePath, bool useCurrentSettings)
 APIShared.SavegameModSettings | public static void CancelLoadChoice()
@@ -1504,6 +1525,27 @@ APIShared.SavegameModSettingsRecordFormatter | public sealed class APIShared.Sav
 APIShared.SavegameModSettingsRecordFormatter | public .ctor()
 APIShared.SavegameModSettingsRecordFormatter | public APIShared.SavegameModSettingsRecord Deserialize(ref MessagePack.MessagePackReader reader, MessagePack.MessagePackSerializerOptions options)
 APIShared.SavegameModSettingsRecordFormatter | public void Serialize(ref MessagePack.MessagePackWriter writer, APIShared.SavegameModSettingsRecord value, MessagePack.MessagePackSerializerOptions options)
+APIShared.Savegames.SaveLoadDialogCallbacks | public sealed class APIShared.Savegames.SaveLoadDialogCallbacks
+APIShared.Savegames.SaveLoadDialogCallbacks | public .ctor()
+APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext, APIShared.Savegames.SaveLoadDialogOutcome> Closed { get; set; }
+APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext> AttemptFinished { get; set; }
+APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext> Opened { get; set; }
+APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext> Prepare { get; set; }
+APIShared.Savegames.SaveLoadDialogCallbacks | public System.Func<APIShared.Savegames.SaveLoadDialogContext, bool> Validate { get; set; }
+APIShared.Savegames.SaveLoadDialogContext | public sealed class APIShared.Savegames.SaveLoadDialogContext
+APIShared.Savegames.SaveLoadDialogContext | public Enums.RequesterTypes RequesterType { get; }
+APIShared.Savegames.SaveLoadDialogContext | public FileHeader Header { get; }
+APIShared.Savegames.SaveLoadDialogContext | public long Generation { get; }
+APIShared.Savegames.SaveLoadDialogContext | public object State { get; set; }
+APIShared.Savegames.SaveLoadDialogContext | public string FileName { get; }
+APIShared.Savegames.SaveLoadDialogEvents | public static class APIShared.Savegames.SaveLoadDialogEvents
+APIShared.Savegames.SaveLoadDialogEvents | public static bool IsAvailable { get; }
+APIShared.Savegames.SaveLoadDialogEvents | public static void Register(string ownerGuid, string registrationId, APIShared.Savegames.SaveLoadDialogCallbacks callbacks, int order = 0)
+APIShared.Savegames.SaveLoadDialogOutcome | public enum APIShared.Savegames.SaveLoadDialogOutcome : int
+APIShared.Savegames.SaveLoadDialogOutcome | Cancelled = 1
+APIShared.Savegames.SaveLoadDialogOutcome | Confirmed = 0
+APIShared.Savegames.SaveLoadDialogOutcome | Failed = 3
+APIShared.Savegames.SaveLoadDialogOutcome | Replaced = 2
 APIShared.Savegames.VersionedSaveCapture | public delegate bool APIShared.Savegames.VersionedSaveCapture(APIShared.Savegames.VersionedSaveWriter writer)
 APIShared.Savegames.VersionedSaveData | public static class APIShared.Savegames.VersionedSaveData
 APIShared.Savegames.VersionedSaveData | public static bool TryRegister(APIShared.Savegames.VersionedSaveDataRegistration registration, out APIShared.Savegames.VersionedSaveDataHandle handle, out string reason)

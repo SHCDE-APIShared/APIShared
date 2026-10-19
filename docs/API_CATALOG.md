@@ -1,5 +1,23 @@
 # API catalog
 
+## Game-independent content
+
+`APIShared.ModData.ModDataNamespaceReader.Read(json, modGuid, source)` in
+`APIShared.Content.dll` reads one GUID namespace into a recursively immutable snapshot.
+It needs no game installation and targets .NET Standard 2.0. See
+[content integration](THIRD_PARTY_GUIDE.md#game-independent-content).
+
+`APIShared.ModSettings.MissionModSettingsDocument`, `MissionModSettingsEntry` and
+`MissionModSettingsJson` in Content provide mutable schema-3 authoring documents,
+validation, pruning and deterministic JSON, without file access or runtime settings
+application. See the same [content guide](THIRD_PARTY_GUIDE.md#game-independent-content)
+for limits, mutation semantics and a minimal example.
+
+`SavegameModSettings.GetParticipantDiagnostics()` reports accepted and rejected
+Map/Trail/Savegame settings participants from the existing registrations, including
+typed status, reason and read-only host property metadata. It shares discovery with
+the existing automatic selection; see [participant diagnostics](THIRD_PARTY_GUIDE.md#settings-participant-diagnostics).
+
 Optional runtime tracing is marked `API_SHARED_DIAGNOSTICS` and defaults to off;
 see [diagnostic opt-in and observer demand](THIRD_PARTY_GUIDE.md#diagnostic-opt-in-and-observer-demand).
 
@@ -194,6 +212,11 @@ Scanners, memory writers and concrete services are not supported public extensio
 
 `SavegameModSettings` prepares save settings before initialization and coordinates
 authenticated multiplayer load readiness using the existing settings transports.
+APIShared also owns the load dialog checkbox and remembers its last explicit local
+choice across saves and process restarts (initially off). Without a usable checkbox,
+automatic loads use current supported settings, subject to saved mission/creator rules.
+[`SaveLoadDialogEvents`](../src/Savegames/SaveLoadDialogEvents.cs) coordinates ordered,
+owner-bound dialog gates and preparation; see the [dialog integration](THIRD_PARTY_GUIDE.md#loadsave-requester-integration).
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](THIRD_PARTY_GUIDE.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.

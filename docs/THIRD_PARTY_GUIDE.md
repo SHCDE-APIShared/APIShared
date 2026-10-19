@@ -1,5 +1,60 @@
 # Third-party integration guide
 
+## Game-independent content
+
+For JSON documents keyed by mod GUID, reference `APIShared.Content.dll` (target:
+.NET Standard 2.0). Runtime mods use `Private=false`, declare the APIShared plugin
+dependency, and install the complete central package. Do not bundle an additional
+Content DLL with a consumer. Offline tools may deploy this game-independent library
+with their own executable; they do not need APIShared.dll or the game.
+
+Call `APIShared.ModData.ModDataNamespaceReader.Read(json, modGuid, source)`.
+The result exposes `Status`, `Success`, canonical `ModGuid`, caller-supplied `Source`,
+`Data`, normalized `Json` and `Diagnostic`. Data and nested objects/arrays are read-only
+independent snapshots. GUID matching ignores case; duplicate GUID casing, blank keys
+and non-object namespaces invalidate the entire document, including unrequested entries.
+Missing namespaces and invalid requests have separate statuses. BOM text is accepted;
+the underlying parser limits JSON nesting to 64 levels. There is no generic byte limit:
+source-specific limits and authoritative host selection remain the caller's responsibility.
+The parser does not read files or apply gameplay settings.
+
+ExtendedData keeps its previous result types in ExtendedData.Core.dll and adapts them
+to this implementation. Its Lord sidecar/snapshot limits and host-data rules remain intact.
+
+For schema-3 mission settings, use `APIShared.ModSettings.MissionModSettingsDocument`,
+`MissionModSettingsEntry` and `MissionModSettingsJson` from the same Content assembly.
+The codec parses JSON text or a decoded dictionary (`ParseDocument`), validates and
+serializes deterministic CRLF JSON. Text parsing and serialization enforce 8 MiB
+of UTF-8; decoded-object callers own the enclosing document size limit. Each mod
+can supply up to 16384 combined player names and fixed overrides, counted before
+deduplication. Values are Boolean/string/integer/decimal/double scalars or flat
+scalar sequences; null, float, objects and nested sequences are rejected.
+
+These are mutable authoring documents. Missing mods/settings use mod-defined
+defaults; `PlayerSettings` selects player values and `Overrides` fixes author values.
+`NormalizeAndValidate` and `Serialize` mutate entries, sort names ordinally, deduplicate
+player names, reject player/fixed conflicts, remove empty entries and replace `Mods`.
+If a later entry fails, already visited entries can remain normalized. `RemoveUnknownSettings`
+preserves dictionary and retained entry identities and the order of retained player names.
+The codec does not register a provider, select files or apply settings. Calls are
+synchronous; callers own their documents and must coordinate concurrent access.
+
+ExtendedData's previous `ModSettingsDefinition`, `ModSettingsEntry` and `ModSettingsJson`
+remain in ExtendedData.Core.dll as compatible adapters, including observable mutations
+and entry aliases. Its filesystem `Read`/`WriteAtomic`, `.modtrail.json` selection,
+mission packages, Lord/host authority and runtime settings engine remain in ExtendedData.
+New consumers can use Content directly without loading either runtime assembly:
+
+```csharp
+using APIShared.ModSettings;
+
+var document = MissionModSettingsDocument.CreateModDefaults();
+document.Mods["Your.Mod.Guid"] = new MissionModSettingsEntry {
+    PlayerSettings = new[] { "PlayerChoice" }
+};
+string json = MissionModSettingsJson.Serialize(document);
+```
+
 The development [dependency bootstrap](DEPENDENCY_BOOTSTRAP.md) can correct false
 missing-provider warnings for selected nested plugins. Consumers keep their normal
 dependency declarations; no registration or bundled APIShared copy is required.
@@ -21,6 +76,36 @@ Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGe
 returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
 interested consumers. Registering an observer is explicit demand for observation.
+
+## Settings participant diagnostics
+
+Call `SavegameModSettings.GetParticipantDiagnostics()` on the Unity thread after
+LibraryLoaded and settings registration. The read-only result contains
+`ModSettingsParticipantInfo` entries ordered by ordinal plugin GUID: display name,
+`ModSettingsParticipantStatus`, diagnostic, accepted endpoint and host properties.
+Metadata is copied; endpoints and PropertyInfo targets remain live objects.
+Re-query when registrations or schemas change. This is an inspection of the existing
+lobby/configuration registries; it does not register another provider or apply settings.
+
+The same discovery drives `GetCompatibleParticipants()` and automatic savegame
+preparation. Lobby endpoints must expose persistent host properties and a complete
+disabled mission snapshot. Inspection calls that snapshot factory once per eligible
+lobby endpoint; factories must not apply settings. It does not additionally probe
+current host values. Missing GUIDs, duplicate panels, plugin exclusions, missing typed
+endpoints, invalid property schemas and invalid snapshots have separate statuses.
+Reflection, factory and decode exceptions reject that participant and leave other
+participants available. A failure of the discovery source itself still propagates.
+
+Explicitly registered dynamic configuration endpoints keep their existing contract,
+independent of their optional UI panel. They are identified by `IsConfigurationEndpoint`.
+Rejected UI panels may therefore coexist with an accepted dynamic endpoint for one
+GUID. Two accepted providers claiming one GUID produce `ConflictingProvider` with no
+usable endpoint. The diagnostic query reports this conflict; automatic operations and
+`GetCompatibleParticipants()` continue to throw rather than choose an arbitrary provider.
+
+ExtendedData uses these outcomes for its existing Map/Trail compatibility UI. Its
+legacy explicit opt-out marker and content-specific panel selection remain local.
+The old public Core compatibility helpers remain available for existing callers.
 
 ## Diagnostic opt-in and observer demand
 
@@ -366,6 +451,45 @@ participant without a page. `PrepareExternalWorkingCopy` creates an unpublished
 candidate; activate it only when the surrounding integration is ready. These
 entry points are Unity-thread operations. Optional consumer adapters and their
 activation rules belong to the integrating mod; presets do not require ExtendedData.
+
+### Load/save requester integration
+
+APIShared owns the savegame checkbox, including a persistent local preference
+(initially off). Save selection, forced legacy/saved-only states and cancellation
+do not change that preference. Missing/unusable UI means current supported settings
+for automatic loads, while saved mission permissions and fixed creator rules remain
+authoritative. Explicit `SavegameModSettings.PrepareLoad` and
+`PrepareLoadWithRestartCheck` Boolean calls keep their existing meaning.
+
+Use `APIShared.Savegames.SaveLoadDialogEvents.Register` on the Unity thread with
+your GUID, a stable owner-local registration ID and `SaveLoadDialogCallbacks`.
+Registration lasts until process exit and applies only to future requests.
+Consumers requiring this service check `SaveLoadDialogEvents.IsAvailable` after
+LibraryLoaded before publishing their runtime. The dialog API requires APIShared 0.12.1 or newer.
+Ordering is ascending numeric order, then owner GUID and registration ID ordinal. Delegates
+are copied; each contribution receives private per-request context state.
+
+`Opened` initializes a contribution after the game opened its view. `Validate`
+must only check readiness: false or an exception prevents every preparation and
+the original action. `Prepare` runs after all gates passed. `AttemptFinished`
+runs in reverse order even for a partially throwing preparation. Release temporary
+write decisions there, not a successfully transferred mission. `Closed` observes
+confirmation, cancellation, replacement or failure once, after attempt cleanup;
+its exceptions are isolated. A requester opened synchronously by a callback is
+deferred until the outer game operation has returned, including delayed editor
+overwrite execution and Vanilla's filename bookkeeping.
+Exceptions from the original game callback propagate after cleanup, preserving its failure path.
+Opening errors block that contribution's confirmation. Confirmation means the game
+callback returned, not that the mission initialized successfully. Use the mission
+lifecycle for the latter. A rejected confirmation keeps its request/selection and
+restores the requester view; it does not invoke the original action.
+
+Do not install another requester hook. Vanilla hides the requester before invoking
+its confirmation callback; APIShared captures checkbox availability before that hide.
+Older ExtendedData packages with their own requester interception must be updated
+together: APIShared diagnoses that combination before installing its dialog hooks.
+Save archives, packet protocols, local personal presets and the existing host-load
+agreement are unchanged. No ExtendedData installation is required for this UI.
 
 ## Namespaces and packaging
 
