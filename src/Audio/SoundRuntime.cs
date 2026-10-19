@@ -25,6 +25,7 @@ namespace APIShared.Audio
         private NativeDetour<Wrapper> wrapperHook, flagWrapperHook;
         private SoundReturnAddressBridge wrapperBridge, flagWrapperBridge;
         private SoundEmitterBridge emitBridge;
+        private SoundReturnFilter returnFilter;
         private ulong moduleBase;
         private NativeDetour<Emit> emitHook;
         
@@ -190,10 +191,16 @@ namespace APIShared.Audio
             wrapperFallback = (unused, x, y, sound) => OnWrapper(false, unused, x, y, sound, 0);
             flagWrapperFallback = (unused, x, y, sound) => OnWrapper(true, unused, x, y, sound, 0);
             // The bridges test native demand bytes first; zero demand never enters managed code.
-            wrapperBridge = new SoundReturnAddressBridge(wrapperCallback, SoundNativeDemand.Wrapper);
-            flagWrapperBridge = new SoundReturnAddressBridge(flagWrapperCallback, SoundNativeDemand.Wrapper);
+            // With demand, wrapper calls from origins outside the currently selected sources also stay
+            // native (OnWrapper would only forward them): the filter bitmap follows SoundNativeDemand.
+            // The emitter enters managed code only while a matched soldier source has armed it.
+            SoundReturnAddressBridge.ValidateScratchFree(NativeContract.WrapperBytes);
+            SoundReturnAddressBridge.ValidateScratchFree(NativeContract.FlagWrapperBytes);
+            returnFilter = SoundReturnFilter.ForCatalog(moduleBase);
+            wrapperBridge = new SoundReturnAddressBridge(wrapperCallback, SoundNativeDemand.Wrapper, returnFilter);
+            flagWrapperBridge = new SoundReturnAddressBridge(flagWrapperCallback, SoundNativeDemand.Wrapper, returnFilter);
             emitCallback = OnEmit;
-            emitBridge = new SoundEmitterBridge(emitCallback, SoundNativeDemand.Emitter);
+            emitBridge = new SoundEmitterBridge(emitCallback, SoundNativeDemand.EmitterArmed);
             var first = new DetourRequest<Wrapper> { Name = "APIShared.Audio.Source", TargetAddress = wrapper, Callback = wrapperFallback, IntermediaryFactory = wrapperBridge };
             var second = new DetourRequest<Wrapper> { Name = "APIShared.Audio.FlagSource", TargetAddress = flagWrapper, Callback = flagWrapperFallback, IntermediaryFactory = flagWrapperBridge };
             var emitRequest = new DetourRequest<Emit> { Name = "APIShared.Audio.Emit", TargetAddress = emit, Callback = emitCallback, IntermediaryFactory = emitBridge };
@@ -257,12 +264,17 @@ namespace APIShared.Audio
             int rva = (int)(origin - moduleBase);
             if (SoundSources.TryGet(rva, out var source))
             {
-                if (source.Flag == (flagged ? 1 : 0) && source.Situation(sound) != SoundSituation.Unknown)
+                // Per-source demand: the native filter is only a prefilter, and a source whose bit
+                // was set for one channel must not run the other channel's work.
+                playback = playback && SoundNativeDemand.PlaybackWants(source.Index);
+                sources = sources && SoundNativeDemand.SourceWants(source.Index);
+                if ((playback || sources) && source.Flag == (flagged ? 1 : 0) && source.Situation(sound) != SoundSituation.Unknown)
                     AttributeSoldier(hook, source, flagged, unused, x, y, sound, playback, sources);
                 else hook.Original(unused, x, y, sound);
                 return;
             }
-            hook.Original(unused, x, y, sources && !flagged && killReady && SoundSources.TryGetKill(rva, out var kill) && kill.Accepts(sound)
+            hook.Original(unused, x, y, sources && !flagged && killReady && SoundSources.TryGetKill(rva, out var kill) &&
+                SoundNativeDemand.SourceWants(kill.DemandIndex) && kill.Accepts(sound)
                 ? AttributeKill(kill, x, y, sound, frame) : sound);
         }
         // Current-unit global attribution, validated by type, coordinates and (for 0x1700D2) state.
@@ -282,14 +294,14 @@ namespace APIShared.Audio
                     {
                         var args = new SoundSourceArgs(sound, x, y, flagged, source.Situation(sound), source.Evidence(sound), source.Key,
                             id, unit->r_GlobalId, source.UnitType, null, null);
-                        SoundSourceEvents.Dispatch(ref args);
+                        SoundSourceEvents.Dispatch(ref args, source.Index);
                         final = args.SoundId;
                     }
                     mark = playback && final == sound;
                 }
                 else {
                     Interlocked.Increment(ref rejections);
-                    if (Interlocked.Exchange(ref rejectionLogged, 1) == 0)
+                    if (Volatile.Read(ref rejectionLogged) == 0 && Interlocked.Exchange(ref rejectionLogged, 1) == 0)
                         Error(log, "AUDIO_SOURCE_REJECTED: source=" + source.Key + ",unitId=" + id + ",lookup=" + lookupFailure +
                             ",actualType=" + (found ? (int)unit->r_UnitChimp : -1) + ",state=" + (found ? unit->r_AIState : -1) +
                             ",soundTiles=" + x + "," + y + "; mismatched source remains Unknown; other catalog entries stay available.");
@@ -300,8 +312,9 @@ namespace APIShared.Audio
             // The emitter consumes this scope inside the original; restore it even if the original throws.
             var saved = scope; int oldSound = scopeSound, oldX = scopeX, oldY = scopeY; bool oldConsumed = scopeConsumed;
             scope = source; scopeSound = sound; scopeX = (short)x; scopeY = (short)y; scopeConsumed = false;
+            SoundNativeDemand.Arm();
             try { hook.Original(unused, x, y, sound); }
-            finally { scope = saved; scopeSound = oldSound; scopeX = oldX; scopeY = oldY; scopeConsumed = oldConsumed; }
+            finally { SoundNativeDemand.Disarm(); scope = saved; scopeSound = oldSound; scopeX = oldX; scopeY = oldY; scopeConsumed = oldConsumed; }
         }
         // The melee damage routine's own arguments: victim = RBP (movsxd rbp,r8d at 0x199124),
         // attacker = [frame+0x78]/0x490 (spilled at 0x1991D5). Not the current-unit global.
@@ -326,12 +339,12 @@ namespace APIShared.Audio
                             ",attackerGlobal=" + attacker->r_GlobalId + ",victimId=" + victimId + ",victimGlobal=" + victim->r_GlobalId + ",tiles=" + x + "," + y + "; evidence=NativeAudited");
                     var args = new SoundSourceArgs(sound, x, y, false, SoundSituation.MeleeKill, SituationEvidence.NativeAudited, kill.Key,
                         attackerId, attacker->r_GlobalId, type, victimId, victim->r_GlobalId);
-                    SoundSourceEvents.Dispatch(ref args);
+                    SoundSourceEvents.Dispatch(ref args, kill.DemandIndex);
                     final = args.SoundId;
                 }
                 else {
                     Interlocked.Increment(ref rejections);
-                    if (Interlocked.Exchange(ref killRejectionLogged, 1) == 0)
+                    if (Volatile.Read(ref killRejectionLogged) == 0 && Interlocked.Exchange(ref killRejectionLogged, 1) == 0)
                         Error(log, "AUDIO_KILL_SOURCE_REJECTED: source=" + kill.Key + ",sound=" + sound + ",attackerId=" + attackerId + ",lookup=" + attackerFailure +
                             ",attackerType=" + (attackerFound ? (int)attacker->r_UnitChimp : -1) + ",victimId=" + victimId + ",lookup=" + victimFailure +
                             ",victimHealth=" + (victimFound ? (long)victim->r_CurrentHealth : -1) + ",soundTiles=" + x + "," + y + "; call forwarded unchanged.");

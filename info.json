@@ -16,7 +16,8 @@
         "Preserve saved author rules and Customize permission across restarts even when no settings provider is installed.",
         "Load saves whose APIShared settings record is damaged, from a newer version or otherwise unreadable with the current host settings instead of aborting the load.",
         "Workshop complete repair is now a clean reinstallation from the Steam downloads and is always offered when rollback is not possible or already failed: package files are rewritten, stale or foreign DLLs and unsubscribed packages are removed with backups, settings are kept, and unreadable transactions are archived instead of blocking every start.",
-        "Report warnings and errors as throttled MOD_WARNING/MOD_FAILURE lines with feature and cause. Info logs are no longer hidden by the diagnostics switch and are limited to one-time markers; only Debug output is opt-in."
+        "Report warnings and errors as throttled MOD_WARNING/MOD_FAILURE lines with feature and cause. Info logs are no longer hidden by the diagnostics switch and are limited to one-time markers; only Debug output is opt-in.",
+        "Audio registrations can select the catalog sources or situations they need (SoundSourceSelection); soldier sounds no enabled registration selects stay in native code. Existing registrations keep selecting every source."
       ]
     },
     {

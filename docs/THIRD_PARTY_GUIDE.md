@@ -604,7 +604,9 @@ bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton 
 
 Declare APIShared **0.8.0** or newer. Register through `SoundEvents` after managed
 startup, retain the handle and use `SetEnabled` for live settings. Filter context
-before changing a request; preload clips outside playback callbacks.
+before changing a request; preload clips outside playback callbacks. If your rule
+needs only some named situations or sources, pass a `SoundSourceSelection` to
+`TryRegister` so the other soldier sounds stay native ([source selections](AUDIO.md#source-selections)).
 See the [audio integration guide](AUDIO.md#situational-sound-rules).
 
 ### Consumer filters, repeat limits and other sound policies

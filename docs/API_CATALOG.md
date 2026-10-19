@@ -50,6 +50,7 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
+| `APIShared.Audio.SoundSourceSelection` | Optional set of catalog sources (by key or situation) for `SoundEvents`/`SoundSourceEvents` registrations; unselected sources stay native | Immutable; any thread; fixed per registration; existing overloads equal `All` ([guide](AUDIO.md#source-selections)) |
 
 Entries marked *startup member check* resolve every Script Extender and game member their own code binds when they are created ([member lists](../src/Core/Internal/ManagedMemberContract.cs)). If one is missing or has another type or signature, only that capability reports `ValidationFailed` with the member in `Reason` and logs one error; other capabilities are unaffected, and nothing is checked per call. A capability whose members resolve is never made unavailable by this check.
 
@@ -421,6 +422,14 @@ carries the acting unit's game ID, GlobalId and type, the killed victim for kill
 `TryReplaceSound`. Use it for exact-unit cue changes instead of detouring 0x2960.
 See [native source events](AUDIO.md#native-source-events).
 
+### Audio source selections
+
+Not in packages up to 0.9.2; check the package you require. `SoundSourceSelection.TryCreate`
+selects catalog sources by `SourceKey` or `SoundSituation`; additional `TryRegister` overloads of
+`SoundEvents` and `SoundSourceEvents` take it. Native attribution then runs only for sources some
+enabled registration selects; the existing overloads select every source.
+See [source selections](AUDIO.md#source-selections).
+
 ### Consumer-defined audio policies
 
 Filters, evidence thresholds, repeat limits, quiet modes, regional gain, alternate
@@ -432,7 +441,8 @@ and the [compiled example](../examples/ThirdPartyMod/SoundExample.cs).
 Inactive registrations do not create audio demand. Permanent hooks remain rooted; with no active
 registration the native bridges test a demand byte and run the original without managed code;
 managed dormant playback avoids context allocation and native attribution skips
-UnitAccess. See [implementation and measurements](AUDIO.md#audio-demand-and-dispatch-cost).
+UnitAccess. With demand, a native return-address filter admits only the sources selected by
+enabled registrations. See [implementation and measurements](AUDIO.md#audio-demand-and-dispatch-cost).
 
 ## Building tooltip contributions
 

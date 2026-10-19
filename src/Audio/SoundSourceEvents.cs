@@ -44,11 +44,28 @@ namespace APIShared.Audio
         /// <returns>False for missing arguments or a duplicate owner/ID pair.</returns>
         public static bool TryRegister(string ownerGuid, string registrationId, SoundSourceHandler pre,
             out SoundRegistration registration, out string reason, int order = 0)
+            => TryRegister(ownerGuid, registrationId, pre, SoundSourceSelection.All, out registration, out reason, order);
+
+        /// <summary>Registers a process-lifetime native-stage observer for the selected sources only.
+        /// Same contract as the overload without a selection, which equals <see cref="SoundSourceSelection.All"/>.</summary>
+        /// <remarks>The callback receives only calls whose <see cref="SoundSourceArgs.SourceKey"/> is in
+        /// <paramref name="sources"/>. While no enabled registration selects a source, its wrapper calls stay
+        /// native (no managed transition, no unit lookup). Order across registrations is unchanged.</remarks>
+        /// <param name="ownerGuid">Owning plugin GUID.</param>
+        /// <param name="registrationId">Stable ID, unique per owner.</param>
+        /// <param name="pre">Callback receiving the call by reference.</param>
+        /// <param name="sources">Sources this registration observes, from <see cref="SoundSourceSelection.TryCreate"/>.</param>
+        /// <param name="registration">Rooted activation handle on success.</param>
+        /// <param name="reason">Failure reason, empty on success.</param>
+        /// <param name="order">Ascending callback order.</param>
+        /// <returns>False for missing arguments or a duplicate owner/ID pair.</returns>
+        public static bool TryRegister(string ownerGuid, string registrationId, SoundSourceHandler pre, SoundSourceSelection sources,
+            out SoundRegistration registration, out string reason, int order = 0)
         {
             registration = null;
-            if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(registrationId) || pre == null)
-            { reason = "Owner GUID, registration ID and a callback are required."; return false; }
-            var handle = new SoundRegistration();
+            if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(registrationId) || pre == null || sources == null)
+            { reason = "Owner GUID, registration ID, a callback and a source selection are required."; return false; }
+            var handle = new SoundRegistration(sources);
             lock (sync)
             {
                 foreach (Registration entry in registrations)
@@ -70,8 +87,12 @@ namespace APIShared.Audio
 
         // Called only for validated sources while source demand exists. The snapshot is immutable;
         // a failing callback restores the sound it saw and later callbacks continue.
-        internal static void Dispatch(ref SoundSourceArgs args) => Dispatch(ref args, Volatile.Read(ref registrations));
-        internal static void Dispatch(ref SoundSourceArgs args, Registration[] snapshot)
+        // sourceIndex is the SoundSourceSelection demand index of the attributed source; -1 skips the
+        // per-registration selection test (tests of ordering and rollback).
+        internal static void Dispatch(ref SoundSourceArgs args) => Dispatch(ref args, Volatile.Read(ref registrations), -1);
+        internal static void Dispatch(ref SoundSourceArgs args, int sourceIndex) => Dispatch(ref args, Volatile.Read(ref registrations), sourceIndex);
+        internal static void Dispatch(ref SoundSourceArgs args, Registration[] snapshot) => Dispatch(ref args, snapshot, -1);
+        internal static void Dispatch(ref SoundSourceArgs args, Registration[] snapshot, int sourceIndex)
         {
             if (depth != 0) return;
             depth++;
@@ -80,7 +101,7 @@ namespace APIShared.Audio
                 for (int index = 0; index < snapshot.Length; index++)
                 {
                     Registration entry = snapshot[index];
-                    if (!entry.Handle.Enabled) continue;
+                    if (!entry.Handle.Enabled || sourceIndex >= 0 && !entry.Handle.Sources.Has(sourceIndex)) continue;
                     int before = args.SoundId;
                     try { entry.Pre(ref args); }
                     catch (Exception ex)

@@ -5,6 +5,7 @@ Audio. Consumer settings remain outside APIShared.
 
 - [Public contracts](#public-audio-contracts): registration, context and custom clips.
 - [Native source events](#native-source-events): exact-unit attribution and sound replacement before the native record.
+- [Source selections](#source-selections): limit a registration to the catalog sources it needs.
 - [Integration](#situational-sound-rules): initialization and live controls.
 - [Consumer policies](#consumer-filters-repeat-limits-and-other-sound-policies): filters, repeat limits and examples.
 - [Internal implementation](#internal-implementation): permanent hooks and clip lifetime.
@@ -176,6 +177,38 @@ record remains Unknown without disabling other catalog entries. Custom clip
 playback passes force=false; Vanilla-specific forced effect channels remain part
 of the effect path, while global gains/channel selection remain shared.
 
+### Source selections
+
+Not in packages up to 0.9.2; check the package you require.
+`SoundSourceSelection.TryCreate(sourceKeys, situations, out selection, out reason)`
+builds an immutable set of catalog sources: the union of the listed `SourceKey`
+values (ordinal) and every source that can report one of the listed situations.
+`SoundSituation.MeleeKill` selects the four kill cues. Unknown or unattributable
+keys (for example `Unit55.Source05`, which never has a named situation),
+`SoundSituation.Unknown`, situations no catalog source reports and an empty union
+return false with a reason. `SelectableSourceKeys` lists the accepted keys in
+catalog order; `SoundSourceSelection.All` is every one of them.
+
+Pass the selection to the additional overloads
+`SoundEvents.TryRegister(ownerGuid, registrationId, pre, post, sources, out handle, out reason, order)`
+and `SoundSourceEvents.TryRegister(ownerGuid, registrationId, pre, sources, out handle, out reason, order)`.
+The existing overloads equal `SoundSourceSelection.All` and keep their behavior.
+`SoundRegistration.Sources` reports the selection; it is fixed for the handle's
+lifetime, while `SetEnabled` adds or removes its demand. Order, thread, replay,
+failure isolation and the Pre/Post contracts are unchanged.
+
+- `SoundSourceEvents`: the callback receives only calls whose `SourceKey` is selected.
+- `SoundEvents`: callbacks still receive every covered playback call, including
+  Unknown ones. Named context (`Situation`, `SourceKey`, `UnitType`, evidence) is
+  guaranteed only for selected sources; an unselected source arrives as Unknown, or
+  named when another enabled registration selects it. Do not rely on either. Kill
+  cues never reach playback, so a selection without soldier sources is rejected.
+
+While no enabled registration selects a source, its wrapper calls stay native:
+no managed transition, no unit lookup and no record marking. Select as narrowly as
+your rule allows; a mod that needs only the Arabian draw selects
+`ArabianIdleSwordDraw` (`Unit75.Source04`).
+
 ## Situational sound rules
 
 Register a stable owner/ID pair through `APIShared.Audio.SoundEvents` after
@@ -183,6 +216,8 @@ APIShared managed startup. Keep the returned `SoundRegistration` rooted and
 change `SetEnabled` when your setting changes. Filter `args.Context` before
 mutating it; use `MultiplyVolume(0.25f)` for a quarter of the spatially computed
 gain. `SoundSituation.Unknown` is an explicit absence of audited attribution.
+When the rule depends on named situations, register with a
+[source selection](#source-selections) for exactly those situations.
 Do not install competing native sound or GameMap hooks.
 
 See the [audio contract](#public-audio-contracts) and
@@ -382,6 +417,44 @@ first, so no enabled handle meets a zero byte. Behind the guard the managed
 callbacks still check demand before touching ThreadStatic scope state. One-time
 confirmation markers first read their state and only the first contender needs an
 atomic write.
+
+With demand, the wrapper bridges additionally test the native return address
+against a process-lifetime bitmap of the attributable origins (the 91 soldier
+source call sites and the melee kill sites, `SoundReturnFilter`). Every other
+positional sound of the map (workers, animals, buildings) jumps straight to the
+trampoline: OnWrapper would only have forwarded it unchanged, so no observable
+behavior changes. The filter uses R10 as scratch, which is volatile in Win64 and
+validated not to be read by either displaced wrapper prologue. The emitter bridge
+no longer tests the playback demand byte but an "armed" counter that OnWrapper
+raises only around a matched soldier source with playback demand; all other emitter
+calls stay native. The emitter demand byte remains as the documented upper bound
+(armed implies context ready and playback demand). The table below predates both
+filters. Same harness after them (minimum of 31 samples, 0 bytes per call in every
+mode): unhooked 2.65 ns, dormant 4.08 ns, source demand with unattributed origin
+4.03 ns, playback demand with unattributed origin 3.58 ns (was 164.29 ns), playback
+demand with catalog origin and rejected attribution 84.64 ns (was 226.77 ns; the
+emitter no longer enters managed code). Desktop CLR, not Unity Mono.
+
+The filter bitmap holds only the union of currently selected sources
+([source selections](#source-selections)). SoundNativeDemand keeps one count of
+enabled handles per catalog index and channel (playback counts soldier sources
+only; source events count soldier sources and kill cues); a bit is set while
+either count is nonzero. The bridges embed the bitmap's address, base and length,
+which never change: a transition recomputes every touched bitmap byte from the
+counts and writes each byte once under the same lock that republishes the demand
+bytes, so no bridge is repatched. Native readers see each bit old or new; bits of
+sources whose demand did not change are equal in both. Enabling raises counts and
+bits before the handle's enabled flag and the wrapper byte; disabling clears the
+flag first, so no enabled handle meets a cleared bit. Behind the filter, OnWrapper
+re-checks the per-source counts, so a bit set for one channel never runs the other
+channel's work, and source dispatch skips registrations that did not select the
+source. Same harness, two runs (minimum of 31 samples, 0 bytes per call): playback
+demand with catalog origin and rejected attribution 47.1 ns; the same origin while
+the only playback registration selects another source 4.1 to 4.7 ns, equal to the
+dormant 3.6 to 3.8 ns plus the filter test. `SoundSourceSelectionTests` executes
+the production bridges on two copied wrappers whose origins are the Arabian draw
+and swing sites, and checks admission per selection, concurrent transitions without
+a cleared bit for an enabled handle, and byte-identical bridge code afterwards.
 
 ### Audio dispatch measurements
 
