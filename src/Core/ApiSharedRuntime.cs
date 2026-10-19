@@ -81,6 +81,7 @@ namespace APIShared
                     NativeApiLog.Error(logger, "Shared event callback failed: " + registration + ": " + error);
                 Audio.SoundRuntime.InitializeManaged(logger);
                 MarkedUnitSelectionAPI.Initialize(logger);
+                Presentation.TroopActionHud.Initialize(logger);
                 PlayerPerspectiveAPI.Initialize(logger);
                 if (hudExtrasButtons == null && hudExtrasDiagnostic == null &&
                     ManagedMemberContracts.TryValidate(NativeCapabilityIds.HudExtrasButtons, logger, out hudExtrasDiagnostic))
