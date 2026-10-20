@@ -11,13 +11,20 @@ namespace APIShared
     internal static class AssassinPathNativeDefinition
     {
         internal const int BuilderRva = 0xD9C40, BuilderDisplacedLength = 10;
-        internal static readonly int[] Sites = { 0xD9F0C, 0xD9F1C, 0xE19D8, 0xE19F9 };
-        internal static readonly int[] Lengths = { 16, 15, 18, 23 };
+        // Sites 0-3: building-ID endpoint guards (search D9F0C/D9F1C, reconstruction E19D8/E19F9).
+        // Site 4: E1640 mode-3 ordinary connection test (see AssassinEndpointEmitter.EmitReverseConnection).
+        internal const int ReverseConnectionSite = 4;
+        internal static readonly int[] Sites = { 0xD9F0C, 0xD9F1C, 0xE19D8, 0xE19F9, 0xE19C0 };
+        internal static readonly int[] Lengths = { 16, 15, 18, 23, 14 };
         internal static readonly string[] Patterns = {
             "0F 85 94 00 00 00 66 41 83 BC 14 50 AA B6 04 00",
             "0F 85 84 00 00 00 41 0B F9 0F BA E7 08 73 7B",
             "0F 85 B1 00 00 00 49 8D 04 D6 41 8B 84 87 B0 ED 05 04",
-            "0F 85 88 00 00 00 45 85 C9 75 1B 41 F7 84 8F B0 71 8F 04 00 01 00 00" };
+            "0F 85 88 00 00 00 45 85 C9 75 1B 41 F7 84 8F B0 71 8F 04 00 01 00 00",
+            "43 84 84 3E 20 26 31 00 75 55 41 F6 C4 01 0F 85 BB 00 00 00 66 45 85 DB" };
+        // E1640 tables used by site 4 (FBCB9319): per-row neighbor offsets [y * 8 + direction]
+        // and per-tile ordinary connection bits; direction masks at 0x312620 are 1 << direction.
+        internal const int NeighborOffsetsRva = 0x405EDB0, ConnectionsRva = 0x51890D0, DirectionMasksRva = 0x312620;
         internal const string BuilderPattern =
             "48 89 5C 24 08 48 89 6C 24 18 48 89 74 24 20 57 41 54 41 55 41 56 41 57 48 83 EC 30 48 63 EA 48 8B D9 49 63 F9";
 
@@ -28,6 +35,11 @@ namespace APIShared
             image.RequireMappedRange(AssassinPathAPI.TileFlagsRva, AssassinPathAPI.TileCount * 4, "Assassin tile flags");
             image.RequireMappedRange(AssassinPathAPI.BuildingAliveBaseRva,
                 4000 * AssassinPathAPI.BuildingStride + 4, "Assassin building records");
+            image.RequireMappedRange(NeighborOffsetsRva, 800 * 8 * 4, "Assassin neighbor offsets");
+            image.RequireMappedRange(ConnectionsRva, AssassinPathAPI.TileCount, "Assassin tile connections");
+            for (int direction = 0; direction < 8; direction++)
+                if (memory[DirectionMasksRva + direction] != 1 << direction)
+                    throw new InvalidOperationException("Unexpected Assassin direction mask table.");
             ResolveExact(memory, image, 0xD9C40, BuilderPattern, log);
             for (int index = 0; index < Sites.Length; index++)
             {

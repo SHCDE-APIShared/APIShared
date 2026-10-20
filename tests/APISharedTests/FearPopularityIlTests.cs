@@ -221,4 +221,20 @@ public sealed class FearPopularityIlTests
             Assert.Throws<InvalidOperationException>(()=>FearPopularityIl.Apply(context));
         }
     }
-}
+
+    // A remembered discovery result is bound to one loaded SE build; anything else repeats discovery.
+    [TestMethod]
+    public void RememberedTargetIsBoundToTheModuleBuild()
+    {
+        var mvid = Guid.NewGuid();
+        var method = FearPopularityRuntime.FindTarget(typeof(CrusaderLibrary).Assembly);
+        string text = FearPopularityRuntime.FormatRememberedTarget(mvid, method.MetadataToken);
+        Assert.IsTrue(FearPopularityRuntime.TryParseRememberedTarget(text, mvid, out int token));
+        Assert.AreEqual(method.MetadataToken, token);
+        Assert.IsTrue(FearPopularityRuntime.TryParseRememberedTarget(text + Environment.NewLine, mvid, out _), "trailing line break");
+        Assert.IsFalse(FearPopularityRuntime.TryParseRememberedTarget(text, Guid.NewGuid(), out _), "other SE build");
+        foreach (string broken in new[] { null, "", "   ", mvid.ToString("D"), mvid + " zz", mvid + " 0", "x " + token.ToString("X8"), text + " extra" })
+            Assert.IsFalse(FearPopularityRuntime.TryParseRememberedTarget(broken, mvid, out _), "malformed: " + broken);
+        // The remembered token resolves to exactly the discovered method in the loaded module.
+        Assert.AreEqual(method, typeof(CrusaderLibrary).Assembly.ManifestModule.ResolveMethod(token));
+    }}

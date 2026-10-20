@@ -26,12 +26,20 @@ namespace APIShared.Economy
             try
             {
                 var assembly = typeof(CrusaderLibrary).Assembly;
-                Internal.InstalledAssemblyIdentity.VerifyModule(assembly, assembly.Location);
-                MethodInfo target = FindTarget(assembly);
-                // Validate against the installed original before publishing a permanent hook.
-                using (var definition = new DynamicMethodDefinition(target))
-                using (var context = new ILContext(definition.Definition))
-                    context.Invoke(il => FearPopularityIl.Sites(il));
+                // Startup cost: discovery reads SHCDESE.dll and scans the IL of every method (~0.7 s).
+                // The result is remembered per loaded module build (MVID). A remembered target is
+                // used only after the same IL-site validation below succeeds on the loaded method;
+                // otherwise discovery runs exactly as before.
+                MethodInfo target = TryResolveRememberedTarget(assembly);
+                if (target != null && !TryValidateSites(target)) target = null;
+                if (target == null)
+                {
+                    Internal.InstalledAssemblyIdentity.VerifyModule(assembly, assembly.Location);
+                    target = FindTarget(assembly);
+                    // Validate against the installed original before publishing a permanent hook.
+                    ValidateSites(target);
+                    RememberTarget(assembly, target);
+                }
                 hook = new ILHook(target, FearPopularityIl.Apply);
             }
             catch (Exception ex) { Diagnostic = ex.Message; throw; }
@@ -39,6 +47,60 @@ namespace APIShared.Economy
             // One-time startup marker; the first-use proof (ReportApplied) is Debug only.
             NativeApiLog.Info(log, "FEAR_POPULARITY_READY validated SE coefficient/resource flow retained; rounding=away-from-zero; units=points*25");
         }
+        private static void ValidateSites(MethodInfo target)
+        {
+            using (var definition = new DynamicMethodDefinition(target))
+            using (var context = new ILContext(definition.Definition))
+                context.Invoke(il => FearPopularityIl.Sites(il));
+        }
+
+        private static bool TryValidateSites(MethodInfo target)
+        {
+            try { ValidateSites(target); return true; }
+            catch { return false; }
+        }
+
+        private static string RememberedTargetPath =>
+            System.IO.Path.Combine(BepInEx.Paths.CachePath, "APIShared_FearPopularityTarget.txt");
+
+        // Cache format: "<module MVID> <method metadata token as hex>", one line.
+        internal static string FormatRememberedTarget(Guid mvid, int token) =>
+            mvid.ToString("D") + " " + token.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
+
+        internal static bool TryParseRememberedTarget(string text, Guid mvid, out int token)
+        {
+            token = 0;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            string[] parts = text.Trim().Split(' ');
+            return parts.Length == 2 && Guid.TryParse(parts[0], out Guid stored) && stored == mvid &&
+                int.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber,
+                    System.Globalization.CultureInfo.InvariantCulture, out token) && token != 0;
+        }
+
+        private static MethodInfo TryResolveRememberedTarget(Assembly assembly)
+        {
+            try
+            {
+                string path = RememberedTargetPath;
+                if (!System.IO.File.Exists(path) ||
+                    !TryParseRememberedTarget(System.IO.File.ReadAllText(path), assembly.ManifestModule.ModuleVersionId, out int token))
+                    return null;
+                return assembly.ManifestModule.ResolveMethod(token) as MethodInfo;
+            }
+            catch { return null; }
+        }
+
+        private static void RememberTarget(Assembly assembly, MethodInfo target)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(BepInEx.Paths.CachePath);
+                System.IO.File.WriteAllText(RememberedTargetPath,
+                    FormatRememberedTarget(assembly.ManifestModule.ModuleVersionId, target.MetadataToken));
+            }
+            catch { /* A missing cache only repeats discovery on the next start. */ }
+        }
+
         internal static MethodInfo FindTarget(Assembly assembly)
         {
             using (var stream = System.IO.File.Open(assembly.Location, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))

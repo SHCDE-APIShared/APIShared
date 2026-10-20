@@ -169,6 +169,9 @@ namespace APIShared
         private static BuildFrame CreateFrame() => buildFrame = new BuildFrame();
 
         /// <summary>Publishes the weighted builder's existing reconstruction relaxation as logical data only.</summary>
+        /// <remarks>While this or <see cref="SetDirectGatehouseClimbing"/> is enabled, Assassin reconstruction also
+        /// accepts an ordinary step by the start-side tile's connection bit, as the distance field and the physical
+        /// step already do; a one-way connection no longer fails the route and triggers the full-map repair.</remarks>
         public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled)
         {
             lock (Sync)
@@ -180,6 +183,7 @@ namespace APIShared
         }
 
         /// <summary>Enables or disables the registered experiment's gatehouse endpoint rule without repatching code.</summary>
+        /// <remarks>Also enables the reconstruction connection rule described at <see cref="SetWeightedReconstructionEnabled"/>.</remarks>
         public static void SetDirectGatehouseClimbing(string ownerGuid, bool enabled)
         {
             if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));
@@ -354,7 +358,7 @@ namespace APIShared
             ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.AssassinPath, ApiSharedNativeSites.AssassinPathSpans(),
                 reason => new InvalidOperationException(reason));
             var pendingBuilder = new DetourHandle<AssassinPathBuilder>();
-            var pendingEndpoints = new HookHandle<X64InlineHook>[4];
+            var pendingEndpoints = new HookHandle<X64InlineHook>[AssassinPathNativeDefinition.Sites.Length];
             HookTransaction pending = null;
             try
             {
@@ -370,8 +374,14 @@ namespace APIShared
                     pendingEndpoints[index] = new HookHandle<X64InlineHook>();
                     pending.AddInline(pendingEndpoints[index],
                         HookTarget.FromAddress(nativeBase + (uint)AssassinPathNativeDefinition.Sites[index]),
-                        (assembler, instructions, returnAddress) => AssassinEndpointEmitter.Emit(
-                            assembler, instructions, nativeBase, unchecked((ulong)policyFlags.ToInt64()), site),
+                        (assembler, instructions, returnAddress) =>
+                        {
+                            ulong flagsAddress = unchecked((ulong)policyFlags.ToInt64());
+                            if (site == AssassinPathNativeDefinition.ReverseConnectionSite)
+                                AssassinEndpointEmitter.EmitReverseConnection(assembler, instructions, nativeBase, flagsAddress);
+                            else
+                                AssassinEndpointEmitter.Emit(assembler, instructions, nativeBase, flagsAddress, site);
+                        },
                         hookSize: 14);
                 }
                 pending.AddDetour(pendingBuilder, HookTarget.FromAddress(nativeBase + 0xD9C40), (AssassinPathBuilder)Build);
@@ -406,7 +416,7 @@ namespace APIShared
                 throw;
             }
             try { NativeApiLog.Debug(log, "Assassin shared hooks installed; owner=APIShared, builder=0xD9C40, " +
-                "scheme=Indirect/displaced=10, endpoints=0xD9F0C/16,0xD9F1C/15,0xE19D8/18,0xE19F9/23."); } catch { }
+                "scheme=Indirect/displaced=10, endpoints=0xD9F0C/16,0xD9F1C/15,0xE19D8/18,0xE19F9/23, reconstruction-connection=0xE19C0/14."); } catch { }
         }
     }
 }
