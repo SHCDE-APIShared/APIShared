@@ -245,6 +245,29 @@ APIShared.Commands.GameActionPreEventArgs | public int ActionState { get; set; }
 APIShared.Commands.GameActionPreEventArgs | public int OriginalStructureId { get; }
 APIShared.Commands.GameActionPreEventArgs | public int StructureId { get; set; }
 APIShared.Commands.GameActionPreEventArgs | public int Value2 { get; set; }
+APIShared.CoopAiCastleSource | public enum APIShared.CoopAiCastleSource : int
+APIShared.CoopAiCastleSource | Community = 1
+APIShared.CoopAiCastleSource | Explicit = 3
+APIShared.CoopAiCastleSource | Historical = 2
+APIShared.CoopAiCastleSource | Standard = 0
+APIShared.CoopAiSlotPlan | public sealed class APIShared.CoopAiSlotPlan
+APIShared.CoopAiSlotPlan | public .ctor(int playerId, int lordType, APIShared.CoopAiCastleSource castleSource, System.Collections.Generic.IReadOnlyList<short[]> candidates, EngineInterface.AILordConfigTransferData? lordConfiguration, bool candidateListComplete = true)
+APIShared.CoopAiSlotPlan | public APIShared.CoopAiCastleSource CastleSource { get; }
+APIShared.CoopAiSlotPlan | public EngineInterface.AILordConfigTransferData LordConfiguration { get; }
+APIShared.CoopAiSlotPlan | public bool CandidateListComplete { get; }
+APIShared.CoopAiSlotPlan | public bool HasLordConfiguration { get; }
+APIShared.CoopAiSlotPlan | public const int MaximumCandidates = 50
+APIShared.CoopAiSlotPlan | public int CandidateCount { get; }
+APIShared.CoopAiSlotPlan | public int LordType { get; }
+APIShared.CoopAiSlotPlan | public int PlayerId { get; }
+APIShared.CoopAiSlotPlan | public short[] CopyCandidate(int index)
+APIShared.CoopAiStartContribution | public sealed class APIShared.CoopAiStartContribution
+APIShared.CoopAiStartContribution | public .ctor(System.Collections.Generic.IReadOnlyList<APIShared.CoopAiSlotPlan> plans)
+APIShared.CoopAiStartContribution | public System.Collections.Generic.IReadOnlyList<APIShared.CoopAiSlotPlan> Plans { get; }
+APIShared.CoopAiStartRequest | public sealed class APIShared.CoopAiStartRequest
+APIShared.CoopAiStartRequest | public int CoopMission { get; }
+APIShared.CoopAiStartRequest | public int CoopTrail { get; }
+APIShared.CoopAiStartRequest | public long AttemptId { get; }
 APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPopularity
 APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
@@ -531,6 +554,8 @@ APIShared.IBuildingRepairCapability | public bool TryGetSelectedQuote(out APISha
 APIShared.IBuildingRepairCapability | public void BeginHover(string buttonId)
 APIShared.IBuildingRepairCapability | public void EndHover(string buttonId)
 APIShared.IBuildingRepairCapability | public void SetActive(bool active)
+APIShared.ICoopAiStartImportCapability | public interface APIShared.ICoopAiStartImportCapability
+APIShared.ICoopAiStartImportCapability | public bool TryRegisterProvider(string registrationId, System.Func<APIShared.CoopAiStartRequest, APIShared.CoopAiStartContribution> provider, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IEnemyBridgePathObserver | public interface APIShared.IEnemyBridgePathObserver : APIShared.IEnemyGateAssassinObserver
 APIShared.IEnemyBridgePathObserver | public object BeginSearch(string source, int rawPlayer)
 APIShared.IEnemyBridgePathObserver | public void EndSearch(object token, bool completed, int? nativeResult, int effectiveResult, long nativeCalls)
@@ -710,6 +735,7 @@ APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBriefingGoldPresentation(out APIShared.IBriefingGoldPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBuildingRepair(out APIShared.IBuildingRepairCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetCoopAiStartImport(out APIShared.ICoopAiStartImportCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetGatehouseDistanceOrigin(out APIShared.IGatehouseDistanceOriginCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetGatehouseTiming(out APIShared.IGatehouseTimingCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudExtrasButtonsCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -1253,6 +1279,7 @@ APIShared.NativeCapabilityIds | public static class APIShared.NativeCapabilityId
 APIShared.NativeCapabilityIds | public const string AivBuildStep = "aiv-build-step"
 APIShared.NativeCapabilityIds | public const string BriefingGoldPresentation = "briefing-gold-presentation"
 APIShared.NativeCapabilityIds | public const string BuildingRepair = "building-repair"
+APIShared.NativeCapabilityIds | public const string CoopAiStartImport = "coop-ai-start-import"
 APIShared.NativeCapabilityIds | public const string GatehouseAutomation = "gatehouse-automation"
 APIShared.NativeCapabilityIds | public const string GatehouseDistanceOrigin = "gatehouse-distance-origin"
 APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse-timing"

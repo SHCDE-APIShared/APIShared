@@ -18,6 +18,11 @@ validation, pruning and deterministic JSON, without file access or runtime setti
 application. See the same [content guide](THIRD_PARTY_GUIDE.md#game-independent-content)
 for limits, mutation semantics and a minimal example.
 
+`APIShared.Maps.TrailContainer` in Content reads the restart block of a `.trail`
+container and extracts the embedded map without it, from caller-owned bytes. Section
+data and unknown trailing data are copied unchanged; it neither loads nor validates the
+map for the game. See [Trail containers](THIRD_PARTY_GUIDE.md#trail-containers).
+
 `SavegameModSettings.GetParticipantDiagnostics()` reports accepted and rejected
 Map/Trail/Savegame settings participants from the existing registrations, including
 typed status, reason and read-only host property metadata. Its purpose overload
@@ -64,6 +69,7 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
 | `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots; startup member check | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
 | `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions; startup member check | Tick/simulation publisher starts with the first subscriber; first observed tick is baseline-only; no initial-state replay; do not change UI directly; process lifetime |

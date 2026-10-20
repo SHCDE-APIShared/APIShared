@@ -84,6 +84,59 @@ returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
 interested consumers. Registering an observer is explicit demand for observation.
 
+### Trail containers
+
+`APIShared.Maps.TrailContainer` (Content) inspects an SCDE map or `.trail` container
+held in a caller-owned byte array. `ReadLayout` validates the magic, the six
+length-prefixed preamble blocks, the optional restart field and a known section
+directory tag, and returns the restart offsets. `ReadRestartData` copies the saved
+restart payload; `ExtractMap` returns the embedded map with an empty restart field,
+copying every other byte, including section data and unknown trailing data, unchanged.
+
+Results are independent copies; the input is never modified. Malformed, truncated or
+oversized input (default limit 64 MiB, configurable per call) throws
+`InvalidDataException`. The library does not read files, decode the restart payload,
+load maps or decide whether the game accepts an extracted map; test that in the game.
+
+```csharp
+byte[] trail = File.ReadAllBytes(trailPath);
+byte[] restart = TrailContainer.ReadRestartData(trail);
+File.WriteAllBytes(mapPath, TrailContainer.ExtractMap(trail));
+```
+
+## Coop Trail AI start import
+
+Vanilla's Coop Trail start (`FRONT_Multiplayer.StartSkirmishGame`, Coop branch) calls
+`AIVLoader.UploadDefaultAIV` once per AI player. Unlike the skirmish branch it never
+imports selected castles or sets a custom Lord configuration (AIC). APIShared is the
+single owner of that upload; mods describe what each AI should receive:
+
+```csharp
+ModApiClient api = ApiShared.ForMod(MyPlugin.Guid);
+if (api.TryGetCoopAiStartImport(out ICoopAiStartImportCapability import, out var diagnostic))
+    import.TryRegisterProvider("my.coop.ai", request =>
+        IsMyMission(request.CoopTrail, request.CoopMission)
+            ? new CoopAiStartContribution(BuildPlans())
+            : null, out diagnostic);
+```
+
+- Providers run on the Unity thread inside the native multiplayer initialization of
+  each Coop start attempt (`CoopTrail` 1-4, zero-based `CoopMission`), before the AI
+  upload loop. Read only prepared in-memory state; confirm selection, session and
+  host authority yourself. Every peer must derive the same plans from the same data.
+- A `CoopAiSlotPlan` names the 1-based player ID, the Lord type Vanilla uploads for
+  the slot, the castle source and an optional `EngineInterface.AILordConfigTransferData`.
+  Explicit candidates are imported in order into bank `PlayerId - 1`; the AIC follows.
+  No additional AIV reset is performed. Slots without a plan keep Vanilla's upload.
+- Mark a plan incomplete when only a prefix of the candidate list is known, such as
+  the single candidate Vanilla's lobby data transmits. Complete plans from several
+  providers must be identical; incomplete plans must be prefixes of the complete one.
+  Contradictions, provider exceptions, a changed Lord type or a repeated upload abort
+  the start with `InvalidOperationException` instead of starting with Vanilla castles,
+  so validate earlier at your own start button.
+- Registrations are permanent; return null to contribute nothing. Plans exist only for
+  the current attempt. The capability requires the mission lifecycle.
+
 ## Mission settings preparation
 
 `MissionModSettingsPreparation` belongs to APIShared.dll and consumes the schema-3

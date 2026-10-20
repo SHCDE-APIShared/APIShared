@@ -26,6 +26,16 @@ an unclaimed Content DLL is rejected. Upgrade the complete package together: old
 bootstrap binaries cannot validate the extended pair. Build proofs also cover
 Content sources, project configuration and output files.
 
+Content also owns the byte-level `.trail` container reader (`APIShared.Maps`): restart
+block and map extraction without parsing sections or decoding the restart payload.
+Choosing files, packages and whether an extracted map is usable remains with consumers.
+
+`Missions/CoopAiStartImportService` is the single owner of `AIVLoader.UploadDefaultAIV`.
+The mission lifecycle notifies it inside the native multiplayer initialization of a
+Coop start attempt, where it collects immutable plans from registered providers, and
+again when the attempt finishes. Selection, transport and package authority stay with
+the providers (BugfixesAndQoL's lobby synchronization, ExtendedData's packages).
+
 Content also owns bounded mod-data document/namespace validation and caller-owned
 stream decoding. Runtime `ModDataAccess` owns current-archive/local-file reads and
 one optional confirmed selected-Lord callback. It caches no content. ExtendedData

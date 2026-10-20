@@ -205,6 +205,9 @@ namespace APIShared
                     if (coop > 0) { executing.Intent = GameModeKind.CoopTrail; executing.MissionIndex = mission; }
                     else if (custom && executing.Intent == GameModeKind.CustomGame) executing.Intent = GameModeKind.CustomTrail;
                 });
+                // Vanilla's Coop branch uploads AI castles right after this call; collect the plans first.
+                if (executing != null && coop > 0)
+                    Safe(() => CoopAiStartImportService.NotifyCoopInitialization(coop, mission));
                 return multiplayerInit(skirmishGame, restart, coop, mission, test, custom, extreme);
             });
             message = Hook<Message>(typeof(Platform_Multiplayer), "processMessage", ProcessMessage);
@@ -318,6 +321,7 @@ namespace APIShared
             finally
             {
                 executing = null;
+                Safe(CoopAiStartImportService.NotifyAttemptFinished);
                 if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
                     !op.NativeFailed && op.ManagedSucceeded)
                 {

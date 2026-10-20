@@ -1,3 +1,15 @@
+APIShared.Maps.TrailContainer | public const int DefaultMaximumContainerBytes = 67108864
+APIShared.Maps.TrailContainer | public static APIShared.Maps.TrailContainerLayout ReadLayout(byte[] container, int maximumContainerBytes = 67108864)
+APIShared.Maps.TrailContainer | public static byte[] ExtractMap(byte[] trail, int maximumContainerBytes = 67108864)
+APIShared.Maps.TrailContainer | public static byte[] ReadRestartData(byte[] trail, int maximumContainerBytes = 67108864)
+APIShared.Maps.TrailContainer | public static class APIShared.Maps.TrailContainer
+APIShared.Maps.TrailContainerLayout | public bool HasRestartData { get; }
+APIShared.Maps.TrailContainerLayout | public int DirectoryTagOffset { get; }
+APIShared.Maps.TrailContainerLayout | public int RestartPayloadOffset { get; }
+APIShared.Maps.TrailContainerLayout | public int RestartSize { get; }
+APIShared.Maps.TrailContainerLayout | public int RestartSizeFieldOffset { get; }
+APIShared.Maps.TrailContainerLayout | public sealed class APIShared.Maps.TrailContainerLayout
+APIShared.Maps.TrailContainerLayout | public uint DirectoryTag { get; }
 APIShared.ModData.ModDataDocumentJson | public const int MaximumDocumentBytes = 65536
 APIShared.ModData.ModDataDocumentJson | public const int MaximumNamespaceBytes = 16384
 APIShared.ModData.ModDataDocumentJson | public static APIShared.ModData.ModDataReadResult ReadNamespace(string json, string modGuid, string source)
