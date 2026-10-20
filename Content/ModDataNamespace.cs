@@ -73,12 +73,18 @@ namespace APIShared.ModData
         internal static ModDataReadResult HostDataUnavailable(string modGuid, string source, string diagnostic) =>
             Failure(ModDataReadStatus.HostDataUnavailable, modGuid, source, diagnostic);
 
-        private static ModDataReadResult Failure(
+        /// <summary>Creates an immutable failure result for a runtime source/provider. Success and unknown statuses
+        /// throw ArgumentOutOfRangeException; successful namespace snapshots are created by the namespace reader.</summary>
+        public static ModDataReadResult Failure(
             ModDataReadStatus status,
             string modGuid,
             string source,
-            string diagnostic) =>
-            new ModDataReadResult(status, modGuid, source, null, null, diagnostic);
+            string diagnostic)
+        {
+            if (status == ModDataReadStatus.Success || !Enum.IsDefined(typeof(ModDataReadStatus), status))
+                throw new ArgumentOutOfRangeException(nameof(status));
+            return new ModDataReadResult(status, modGuid, source, null, null, diagnostic);
+        }
     }
 
     /// <summary>Reads GUID-separated JSON object namespaces without game or filesystem dependencies. GUID matching ignores case. Ambiguous casing, empty GUID keys and non-object namespaces reject the entire document. Source-specific size limits remain the caller's responsibility.</summary>

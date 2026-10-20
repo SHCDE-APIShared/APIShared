@@ -423,25 +423,8 @@ namespace APIShared
         internal static void ApplyCreatorRules(Dictionary<string, byte[]> snapshot,
             IEnumerable<PropertyInfo> properties, Dictionary<string, TrailCreatorRule> rules,
             Dictionary<string, byte[]> current, bool strictTrail)
-        {
-            foreach (PropertyInfo property in properties)
-            {
-                if (!rules.TryGetValue(property.Name, out TrailCreatorRule rule)) continue;
-                byte[] bytes = rule.Mode == 1 ?
-                    current != null && current.TryGetValue(property.Name, out byte[] player) ? player : null :
-                    strictTrail && rule.Mode == 2 ? rule.FixedValue : null;
-                if (bytes == null) continue;
-                try
-                {
-                    if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) != null)
-                        snapshot[property.Name] = (byte[])bytes.Clone();
-                }
-                catch (Exception error)
-                {
-                    NativeApiLog.Error(log, "Invalid Trail creator rule " + property.Name + ": " + error.Message);
-                }
-            }
-        }
+            => MissionModSettingsCreatorRules.Apply(snapshot, properties, rules, current, strictTrail,
+                (name, error) => NativeApiLog.Error(log, "Invalid Trail creator rule " + name + ": " + error.Message));
 
         private static void Load(byte[] bytes, LoadContext context)
         {

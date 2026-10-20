@@ -162,6 +162,13 @@ Game-independent build-evidence checks run in CI and can be run locally:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tools/Validation/Test-BuildProof.ps1
 ```
 
+The installer consumer preflight has retained metadata fixtures for absent, legacy,
+compatible and unrelated plugins. Run its real Windows PowerShell subprocess with
+an existing empty fixture directory and a game installation supplying Mono.Cecil:
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Validation/Test-WorkshopConsumerReferences.ps1 -GameDir <game-directory> -FixtureDirectory <empty-directory>`.
+This checks rejection before installation; it does not install packages or prove
+actual hook coexistence in the game.
+
 Release checks accept a clean subsequent commit when every recorded build input
 and package hash still matches. The recorded build commit is retained; changes to
 compiled sources, packaging inputs or delivered files invalidate the evidence.

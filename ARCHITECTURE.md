@@ -26,6 +26,12 @@ an unclaimed Content DLL is rejected. Upgrade the complete package together: old
 bootstrap binaries cannot validate the extended pair. Build proofs also cover
 Content sources, project configuration and output files.
 
+Content also owns bounded mod-data document/namespace validation and caller-owned
+stream decoding. Runtime `ModDataAccess` owns current-archive/local-file reads and
+one optional confirmed selected-Lord callback. It caches no content. ExtendedData
+retains Lord selection/transport authority and supplies the current verified source;
+its legacy facade adapts results. See [mod data access](docs/MOD_DATA.md).
+
 The separate `bootstrap` project implements the development-only
 [early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md). It does not reference
 the main APIShared assembly; it binds the selected runtime by a validated package
@@ -58,6 +64,14 @@ automatic savegame selection and the public diagnostic catalog; consumer UIs reu
 its decisions. Purpose-specific checks preserve savegame-only exclusions and the
 historical authoring probes. Individual metadata/snapshot failures are isolated. This adds no
 provider registry or network/application engine.
+
+The runtime's `MissionModSettingsPreparation` owns host-value capture, override
+conversion validation and detached defaults/player/fixed source materialization.
+It shares existing property discovery and preset conversion, with the Content codec
+as the mission wire contract. `MissionModSettingsSession` owns application, temporary
+endpoint ownership and cleanup; author-rule capture/save materialization share one
+implementation. ExtendedData retains content lifecycle decisions, source registration
+and file ownership. Actual lifecycle adoption is explicit; no second registry is added.
 
 Directories help navigation; public namespaces define the contracts. Capabilities
 use `APIShared`; settings and general profiles use `APIShared.ModSettings` and

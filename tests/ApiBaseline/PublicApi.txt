@@ -719,6 +719,12 @@ APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDef
 APIShared.ModApiClient | public bool TryGetUnitHudPresentation(out APIShared.IUnitHudPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public string OwnerGuid { get; }
 APIShared.ModApiClient | public void WhenReady(System.Action<APIShared.ModApiClient> callback)
+APIShared.ModData.ModDataAccess | public static class APIShared.ModData.ModDataAccess
+APIShared.ModData.ModDataAccess | public static APIShared.ModData.ModDataReadResult ReadCurrentMapNamespace(string modGuid)
+APIShared.ModData.ModDataAccess | public static APIShared.ModData.ModDataReadResult ReadLocalLordNamespace(string lordJsonPath, string modGuid)
+APIShared.ModData.ModDataAccess | public static APIShared.ModData.ModDataReadResult ReadSelectedLordNamespace(int playerId, string modGuid)
+APIShared.ModData.ModDataAccess | public static System.IDisposable RegisterSelectedLordSource(string ownerGuid, string registrationId, System.Func<int, string, APIShared.ModData.ModDataReadResult> readNamespace)
+APIShared.ModData.ModDataAccess | public static bool HasSelectedLordSource { get; }
 APIShared.ModSettings.DynamicPresetSetting | public sealed class APIShared.ModSettings.DynamicPresetSetting
 APIShared.ModSettings.DynamicPresetSetting | public .ctor()
 APIShared.ModSettings.DynamicPresetSetting | public APIShared.ModSettings.PresetSettingScope Scope { get; set; }
@@ -780,6 +786,27 @@ APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void Re
 APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void RegisterExternalWorkingCopy(BepInEx.Logging.ManualLogSource log, string storageAssemblyLocation, string modName, string targetGuid, System.Version targetVersion, APIShared.ModSettings.PresetLobbyModSettingsViewModel viewModel)
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public sealed class APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public void Activate(System.Action enable, System.Func<System.Exception, bool> definitelyRejected = null)
+APIShared.ModSettings.MissionModSettingsApplicationKind | public enum APIShared.ModSettings.MissionModSettingsApplicationKind : int
+APIShared.ModSettings.MissionModSettingsApplicationKind | Authoring = 3
+APIShared.ModSettings.MissionModSettingsApplicationKind | AuthoringTest = 4
+APIShared.ModSettings.MissionModSettingsApplicationKind | Editable = 2
+APIShared.ModSettings.MissionModSettingsApplicationKind | Materialized = 5
+APIShared.ModSettings.MissionModSettingsApplicationKind | Playable = 0
+APIShared.ModSettings.MissionModSettingsApplicationKind | Preview = 1
+APIShared.ModSettings.MissionModSettingsCreatorRules | public static class APIShared.ModSettings.MissionModSettingsCreatorRules
+APIShared.ModSettings.MissionModSettingsCreatorRules | public static System.Collections.Generic.Dictionary<string, APIShared.TrailCreatorRule> Capture(APIShared.ModSettings.IModSettingsPresetEndpoint endpoint, APIShared.ModSettings.MissionModSettingsEntry entry, System.Action<string, System.Exception> onError = null)
+APIShared.ModSettings.MissionModSettingsPreparation | public static class APIShared.ModSettings.MissionModSettingsPreparation
+APIShared.ModSettings.MissionModSettingsPreparation | public static APIShared.ModSettings.MissionModSettingsEntry CaptureEntry(APIShared.ModSettings.IModSettingsPresetEndpoint endpoint, System.Func<string, APIShared.ModSettings.PublishedPresetValueMode> selectMode)
+APIShared.ModSettings.MissionModSettingsPreparation | public static System.Collections.Generic.Dictionary<string, byte[]> CaptureCurrentSnapshot(APIShared.ModSettings.IModSettingsPresetEndpoint endpoint)
+APIShared.ModSettings.MissionModSettingsPreparation | public static System.Collections.Generic.Dictionary<string, byte[]> MaterializeSource(APIShared.ModSettings.IModSettingsWorkingCopyEndpoint endpoint, APIShared.ModSettings.MissionModSettingsEntry entry)
+APIShared.ModSettings.MissionModSettingsPreparation | public static void ValidateEntry(APIShared.ModSettings.IModSettingsPresetEndpoint endpoint, APIShared.ModSettings.MissionModSettingsEntry entry)
+APIShared.ModSettings.MissionModSettingsSession | public sealed class APIShared.ModSettings.MissionModSettingsSession
+APIShared.ModSettings.MissionModSettingsSession | public .ctor()
+APIShared.ModSettings.MissionModSettingsSession | public System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlyList<string>> Apply(APIShared.ModSettings.MissionModSettingsDocument document, System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.IModSettingsPresetEndpoint> participants, APIShared.ModSettings.MissionModSettingsApplicationKind kind, string label = "Mission", System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.Dictionary<string, byte[]>> startingSnapshots = null, System.Action<APIShared.ModSettings.MissionModSettingsDocument> beforeApply = null)
+APIShared.ModSettings.MissionModSettingsSession | public System.Collections.Generic.IReadOnlyList<string> ActiveModGuids { get; }
+APIShared.ModSettings.MissionModSettingsSession | public long? MissionSessionId { get; }
+APIShared.ModSettings.MissionModSettingsSession | public void ConfirmStarted(long sessionId)
+APIShared.ModSettings.MissionModSettingsSession | public void Exit()
 APIShared.ModSettings.ModSettingsApplication | public static class APIShared.ModSettings.ModSettingsApplication
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.Dictionary<string, byte[]> ResumeSnapshot(string id)
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.PresetLobbyModSettingsViewModel> Endpoints { get; }
@@ -1059,6 +1086,8 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_HasDy
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_HasPendingConfiguration { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ModSettingsSearchHasActiveFilter { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ModSettingsSearchIncludeToolTips { get; set; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public float ClientSettingsOpacity { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public float HostSettingsOpacity { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public int System_ModSettingsSearchFocusRequest { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public int System_PresetSaveBulkModeIndex { get; set; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public object System_ReadDescribedValue(string key)

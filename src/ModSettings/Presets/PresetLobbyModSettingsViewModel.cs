@@ -143,6 +143,14 @@ namespace APIShared.ModSettings
             set => presetController?.SetClientSettingsEnabled(value);
         }
 
+        /// <summary>Opacity for the host options content: 0.65 when its activation switch is off, otherwise 1. Bind only the content container, leaving activation and preset actions outside it.</summary>
+        /// <remarks>Presentation only; does not change editing rights, setting values or runtime activation. A schema without a host activation switch remains fully opaque. Read on the Unity UI thread.</remarks>
+        public float HostSettingsOpacity => HasHostSettingsActivation && !HostSettingsEnabled ? 0.65f : 1f;
+
+        /// <summary>Opacity for the personal options content: 0.65 when its activation switch is off, otherwise 1. Bind only the content container, leaving activation and preset actions outside it.</summary>
+        /// <remarks>Presentation only; does not change editing rights, setting values or runtime activation. A schema without a client activation switch remains fully opaque. Read on the Unity UI thread.</remarks>
+        public float ClientSettingsOpacity => HasClientSettingsActivation && !ClientSettingsEnabled ? 0.65f : 1f;
+
         /// <summary>Whether the latest observed context identifies this peer as settings host.</summary>
         public bool IsLocalSettingsHost => isLocalHost;
 
@@ -1027,16 +1035,28 @@ namespace APIShared.ModSettings
             RaiseAccessProperties();
         }
 
-        /// <summary>Leaves temporary mission settings and restores the personal preset context.</summary>
+        /// <summary>Leaves temporary mission settings and restores the personal preset context.
+        /// If restoration throws, the context remains active so Exit can be retried.</summary>
         public void System_ExitMissionPreset()
         {
             if (!missionPresetContext || presetController == null)
                 return;
 
+            bool wasEditable = missionPresetEditable;
+            bool hadExplicitSettings = missionPresetHasExplicitSettings;
             missionPresetContext = false;
             missionPresetEditable = false;
             missionPresetHasExplicitSettings = false;
-            presetController.ExitMissionPreset();
+            try { presetController.ExitMissionPreset(); }
+            catch
+            {
+                // The controller needs personal scope during restoration. A failed restore
+                // must remain reachable by a later Exit rather than looking already complete.
+                missionPresetContext = true;
+                missionPresetEditable = wasEditable;
+                missionPresetHasExplicitSettings = hadExplicitSettings;
+                throw;
+            }
             RaiseAccessProperties();
         }
 
@@ -1148,9 +1168,15 @@ namespace APIShared.ModSettings
                 base.OnPropertyChanged(name);
 
                 if (presetController?.IsHostSettingsActivationProperty(name) == true)
+                {
                     base.OnPropertyChanged(nameof(HostSettingsEnabled));
+                    base.OnPropertyChanged(nameof(HostSettingsOpacity));
+                }
                 if (presetController?.IsClientSettingsActivationProperty(name) == true)
+                {
                     base.OnPropertyChanged(nameof(ClientSettingsEnabled));
+                    base.OnPropertyChanged(nameof(ClientSettingsOpacity));
+                }
             }
             finally
             {
@@ -1182,6 +1208,8 @@ namespace APIShared.ModSettings
             base.OnPropertyChanged(nameof(HasClientSettingsActivation));
             base.OnPropertyChanged(nameof(HostSettingsEnabled));
             base.OnPropertyChanged(nameof(ClientSettingsEnabled));
+            base.OnPropertyChanged(nameof(HostSettingsOpacity));
+            base.OnPropertyChanged(nameof(ClientSettingsOpacity));
             base.OnPropertyChanged(nameof(MissionPresetEditable));
             base.OnPropertyChanged(nameof(IsMissionPresetSelected));
             base.OnPropertyChanged(nameof(CanEditHostSettings));

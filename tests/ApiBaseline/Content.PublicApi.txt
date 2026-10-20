@@ -1,9 +1,16 @@
+APIShared.ModData.ModDataDocumentJson | public const int MaximumDocumentBytes = 65536
+APIShared.ModData.ModDataDocumentJson | public const int MaximumNamespaceBytes = 16384
+APIShared.ModData.ModDataDocumentJson | public static APIShared.ModData.ModDataReadResult ReadNamespace(string json, string modGuid, string source)
+APIShared.ModData.ModDataDocumentJson | public static System.Collections.Generic.Dictionary<string, object> Parse(string json, int maximumDocumentBytes = 65536, int maximumNamespaceBytes = 16384)
+APIShared.ModData.ModDataDocumentJson | public static class APIShared.ModData.ModDataDocumentJson
+APIShared.ModData.ModDataDocumentJson | public static string ReadUtf8(System.IO.Stream input, int maximumDocumentBytes = 65536)
 APIShared.ModData.ModDataNamespaceReader | public static APIShared.ModData.ModDataReadResult Read(string json, string modGuid, string source)
 APIShared.ModData.ModDataNamespaceReader | public static class APIShared.ModData.ModDataNamespaceReader
 APIShared.ModData.ModDataReadResult | public APIShared.ModData.ModDataReadStatus Status { get; }
 APIShared.ModData.ModDataReadResult | public System.Collections.Generic.IReadOnlyDictionary<string, object> Data { get; }
 APIShared.ModData.ModDataReadResult | public bool Success { get; }
 APIShared.ModData.ModDataReadResult | public sealed class APIShared.ModData.ModDataReadResult
+APIShared.ModData.ModDataReadResult | public static APIShared.ModData.ModDataReadResult Failure(APIShared.ModData.ModDataReadStatus status, string modGuid, string source, string diagnostic)
 APIShared.ModData.ModDataReadResult | public string Diagnostic { get; }
 APIShared.ModData.ModDataReadResult | public string Json { get; }
 APIShared.ModData.ModDataReadResult | public string ModGuid { get; }

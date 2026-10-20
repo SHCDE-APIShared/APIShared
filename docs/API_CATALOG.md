@@ -7,6 +7,11 @@
 It needs no game installation and targets .NET Standard 2.0. See
 [content integration](THIRD_PARTY_GUIDE.md#game-independent-content).
 
+`ModDataDocumentJson` provides bounded sidecar validation and strict stream decoding
+in Content. Runtime `ModDataAccess` reads the current map archive, explicitly local
+Lord sidecars or an optional confirmed selected-Lord source. See
+[mod data access](MOD_DATA.md) for authority, provider and lifecycle contracts.
+
 `APIShared.ModSettings.MissionModSettingsDocument`, `MissionModSettingsEntry` and
 `MissionModSettingsJson` in Content provide mutable schema-3 authoring documents,
 validation, pruning and deterministic JSON, without file access or runtime settings
@@ -19,6 +24,16 @@ typed status, reason and read-only host property metadata. Its purpose overload
 preserves the distinction between automatic saves and mission authoring. It shares
 discovery with the existing automatic selection; see
 [participant diagnostics](THIRD_PARTY_GUIDE.md#settings-participant-diagnostics).
+
+`MissionModSettingsPreparation` in the runtime assembly captures host authoring
+choices/current snapshots, validates known overrides and materializes detached
+Map/Trail working snapshots. It does not apply settings or own mission lifecycle.
+See [mission settings preparation](THIRD_PARTY_GUIDE.md#mission-settings-preparation).
+
+`MissionModSettingsSession` applies and cleans up temporary contexts with explicit
+playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
+`MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
+materialization. See [mission application](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 
 Optional runtime tracing is marked `API_SHARED_DIAGNOSTICS` and defaults to off;
 see [diagnostic opt-in and observer demand](THIRD_PARTY_GUIDE.md#diagnostic-opt-in-and-observer-demand).
@@ -125,6 +140,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Modes and launch evidence | [Profiles](../src/GameModes/GameplayModModePolicy.cs), [mode capture](../src/GameModes/MissionModePolicy.cs), [origins](../src/GameModes/CustomizedLaunchOrigins.cs) | Implementation in those files | [Mission policy](../examples/ThirdPartyMod/MissionExample.cs), [launch origin](../examples/ThirdPartyMod/CustomizedLaunchExample.cs) |
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettings.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Personal storage](THIRD_PARTY_GUIDE.md#personal-files-and-previous-installations), [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings search / tooltips | [Search and attached properties](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Implementation in those files; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
+| Settings activation presentation | `PresetLobbyModSettingsViewModel.HostSettingsOpacity` / `ClientSettingsOpacity` | Content-only opacity: inactive scopes use 0.65; editing rights and stored values are unchanged | [Settings UI integration](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | — |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |

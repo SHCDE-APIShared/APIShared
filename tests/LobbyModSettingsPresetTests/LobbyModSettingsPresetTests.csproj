@@ -9,6 +9,9 @@
     <DefineConstants>$(DefineConstants);API_SHARED_PRESET_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Content\APIShared.Content.csproj" />
+    <Compile Include="..\..\src\ModSettings\MissionModSettingsPreparation.cs" />
+    <Compile Include="..\..\src\ModSettings\MissionModSettingsSession.cs" />
     <Compile Include="..\..\src\Missions\MissionLifecycleContracts.cs" />
     <Compile Include="..\..\src\Missions\MissionLifecycleState.cs" />
     <Compile Include="..\..\src\Savegames\SavegameMissionPresetLease.cs" />
