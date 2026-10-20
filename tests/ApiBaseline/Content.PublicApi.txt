@@ -1,0 +1,43 @@
+APIShared.ModData.ModDataDocumentJson | public const int MaximumDocumentBytes = 65536
+APIShared.ModData.ModDataDocumentJson | public const int MaximumNamespaceBytes = 16384
+APIShared.ModData.ModDataDocumentJson | public static APIShared.ModData.ModDataReadResult ReadNamespace(string json, string modGuid, string source)
+APIShared.ModData.ModDataDocumentJson | public static System.Collections.Generic.Dictionary<string, object> Parse(string json, int maximumDocumentBytes = 65536, int maximumNamespaceBytes = 16384)
+APIShared.ModData.ModDataDocumentJson | public static class APIShared.ModData.ModDataDocumentJson
+APIShared.ModData.ModDataDocumentJson | public static string ReadUtf8(System.IO.Stream input, int maximumDocumentBytes = 65536)
+APIShared.ModData.ModDataNamespaceReader | public static APIShared.ModData.ModDataReadResult Read(string json, string modGuid, string source)
+APIShared.ModData.ModDataNamespaceReader | public static class APIShared.ModData.ModDataNamespaceReader
+APIShared.ModData.ModDataReadResult | public APIShared.ModData.ModDataReadStatus Status { get; }
+APIShared.ModData.ModDataReadResult | public System.Collections.Generic.IReadOnlyDictionary<string, object> Data { get; }
+APIShared.ModData.ModDataReadResult | public bool Success { get; }
+APIShared.ModData.ModDataReadResult | public sealed class APIShared.ModData.ModDataReadResult
+APIShared.ModData.ModDataReadResult | public static APIShared.ModData.ModDataReadResult Failure(APIShared.ModData.ModDataReadStatus status, string modGuid, string source, string diagnostic)
+APIShared.ModData.ModDataReadResult | public string Diagnostic { get; }
+APIShared.ModData.ModDataReadResult | public string Json { get; }
+APIShared.ModData.ModDataReadResult | public string ModGuid { get; }
+APIShared.ModData.ModDataReadResult | public string Source { get; }
+APIShared.ModData.ModDataReadStatus | FileNotFound = 1
+APIShared.ModData.ModDataReadStatus | HostDataUnavailable = 6
+APIShared.ModData.ModDataReadStatus | InvalidDocument = 3
+APIShared.ModData.ModDataReadStatus | InvalidRequest = 5
+APIShared.ModData.ModDataReadStatus | NamespaceNotFound = 2
+APIShared.ModData.ModDataReadStatus | ReadError = 4
+APIShared.ModData.ModDataReadStatus | Success = 0
+APIShared.ModData.ModDataReadStatus | public enum APIShared.ModData.ModDataReadStatus : int
+APIShared.ModSettings.MissionModSettingsDocument | public .ctor()
+APIShared.ModSettings.MissionModSettingsDocument | public System.Collections.Generic.Dictionary<string, APIShared.ModSettings.MissionModSettingsEntry> Mods { get; set; }
+APIShared.ModSettings.MissionModSettingsDocument | public int SchemaVersion { get; set; }
+APIShared.ModSettings.MissionModSettingsDocument | public sealed class APIShared.ModSettings.MissionModSettingsDocument
+APIShared.ModSettings.MissionModSettingsDocument | public static APIShared.ModSettings.MissionModSettingsDocument CreateModDefaults()
+APIShared.ModSettings.MissionModSettingsEntry | public .ctor()
+APIShared.ModSettings.MissionModSettingsEntry | public System.Collections.Generic.Dictionary<string, object> Overrides { get; set; }
+APIShared.ModSettings.MissionModSettingsEntry | public sealed class APIShared.ModSettings.MissionModSettingsEntry
+APIShared.ModSettings.MissionModSettingsEntry | public string[] PlayerSettings { get; set; }
+APIShared.ModSettings.MissionModSettingsJson | public const int MaximumBytes = 8388608
+APIShared.ModSettings.MissionModSettingsJson | public const int MaximumSettingsPerMod = 16384
+APIShared.ModSettings.MissionModSettingsJson | public static APIShared.ModSettings.MissionModSettingsDocument NormalizeAndValidate(APIShared.ModSettings.MissionModSettingsDocument settings, string path)
+APIShared.ModSettings.MissionModSettingsJson | public static APIShared.ModSettings.MissionModSettingsDocument ParseDocument(System.Collections.Generic.Dictionary<string, object> root)
+APIShared.ModSettings.MissionModSettingsJson | public static APIShared.ModSettings.MissionModSettingsDocument ParseObject(string json)
+APIShared.ModSettings.MissionModSettingsJson | public static bool IsSupportedValue(object value)
+APIShared.ModSettings.MissionModSettingsJson | public static class APIShared.ModSettings.MissionModSettingsJson
+APIShared.ModSettings.MissionModSettingsJson | public static string Serialize(APIShared.ModSettings.MissionModSettingsDocument document)
+APIShared.ModSettings.MissionModSettingsJson | public static string[] RemoveUnknownSettings(APIShared.ModSettings.MissionModSettingsDocument document, string modId, System.Collections.Generic.IEnumerable<string> currentSettingNames)

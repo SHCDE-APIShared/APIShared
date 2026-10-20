@@ -3,13 +3,14 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.12.0",
+  "Version": "0.12.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    { "Version": "0.12.1", "Changes": ["Own the savegame load checkbox and remember its local choice across restarts; automatic loads without usable UI use current supported settings within mission rules.", "Coordinate load/save requester gates, preparation and cleanup through a public owner-bound registry."] },
     {
       "Version": "0.12.0",
       "Changes": [

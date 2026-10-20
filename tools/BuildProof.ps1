@@ -42,6 +42,12 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     $files = @(Get-ChildItem -LiteralPath (Join-Path $Root 'src'),(Join-Path $Root 'Properties'),(Join-Path $Root 'Patches') -Recurse -File |
         Where-Object { $_.Extension -in @('.cs','.xaml') })
     $files += @(Get-ChildItem -LiteralPath $Root -File | Where-Object { $_.Name -match '^Directory\..*\.(props|targets)$|^APIShared\.csproj$|^info\.json$' })
+    $contentRoot = Join-Path $Root 'Content'
+    if ([IO.Directory]::Exists($contentRoot)) {
+        $files += @(Get-ChildItem -LiteralPath $contentRoot -Recurse -File | Where-Object {
+            $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and $_.Extension -in @('.cs','.csproj','.props','.targets')
+        })
+    }
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Build.ps1'),(Join-Path $Root 'tools/BuildProof.ps1'),(Join-Path $Root 'tools/WorkshopPackage.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Workshop') -Recurse -File)
     if ([IO.Directory]::Exists((Join-Path $Root 'Override'))) { $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Override') -Recurse -File) }
@@ -73,6 +79,9 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     }
     [xml]$project = [IO.File]::ReadAllText((Join-Path $Root 'APIShared.csproj'))
     foreach ($node in $project.SelectNodes('//*[local-name()="HintPath"]')) {
+        # Content is built from attested repository sources, not an external SDK input.
+        # Its output is covered by the package hashes and bootstrap ContentSHA256.
+        if ($node.ParentNode.Include -ceq 'APIShared.Content') { continue }
         $path = $node.InnerText.Replace('$(GameDir)',$GameDir).Replace('$(ExtenderDir)',$ExtenderDir)
         if ($path.Contains('$(')) { throw "Unresolved build reference: $path" }
         if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path $Root $path }

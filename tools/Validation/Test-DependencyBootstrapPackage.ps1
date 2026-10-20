@@ -37,6 +37,38 @@ function Make-Zip($Name){$path=Join-Path $fixture ($Name+'.zip');[IO.Compression
 $zip=Make-Zip 'valid'
 Assert-ApiWorkshopZipLayout $zip 'APIShared_Serp'
 Check $true 'actual ZIP validator accepts exact complete bootstrap pair'
+Write-TestFile (Join-Path $plugin 'APIShared.Content.dll') 'content fixture'
+Reject {Assert-ApiBootstrapPair $stage} 'unclaimed Content rejected'
+New-ApiBootstrapPair $stage
+Assert-ApiBootstrapPair $stage
+Copy-Item -LiteralPath (Join-Path $plugin 'APIShared.dll'),(Join-Path $plugin 'dependency-bootstrap-pair.json') -Destination $installedPlugin -Force
+Reject {Complete-ApiBootstrapInstallation -Root $stage -GameDir $install} 'missing installed Content rejected before patcher copy'
+Copy-Item -LiteralPath (Join-Path $plugin 'APIShared.dll'),(Join-Path $plugin 'APIShared.Content.dll'),(Join-Path $plugin 'dependency-bootstrap-pair.json') -Destination $installedPlugin -Force
+Complete-ApiBootstrapInstallation -Root $stage -GameDir $install
+$null=New-ApiWorkshopInventory $plugin
+$contentZip=Make-Zip 'content-valid'
+Assert-ApiWorkshopZipLayout $contentZip 'APIShared_Serp'
+$pairPath = Join-Path $plugin 'dependency-bootstrap-pair.json'
+$pairText = [IO.File]::ReadAllText($pairPath)
+$bootstrapPath = Join-Path $stage 'BepInEx/patchers/APIShared.DependencyBootstrap.dll'
+Remove-Item -LiteralPath $pairPath,$bootstrapPath
+$null=New-ApiWorkshopInventory $plugin
+$contentZip=Make-Zip 'content-unpaired'
+Reject {Assert-ApiWorkshopZipLayout $contentZip 'APIShared_Serp'} 'ZIP rejects Content without any package pair'
+Write-TestFile $pairPath $pairText
+Write-TestFile $bootstrapPath 'bootstrap fixture'
+Write-TestFile (Join-Path $plugin 'APIShared.Content.dll') 'wrong content'
+$null=New-ApiWorkshopInventory $plugin
+Reject {Assert-ApiBootstrapPair $stage} 'mixed Content rejected'
+$contentZip=Make-Zip 'content-mixed'
+Reject {Assert-ApiWorkshopZipLayout $contentZip 'APIShared_Serp'} 'ZIP independently rejects mixed Content with matching inventory'
+Remove-Item -LiteralPath (Join-Path $plugin 'APIShared.Content.dll')
+$null=New-ApiWorkshopInventory $plugin
+Reject {Assert-ApiBootstrapPair $stage} 'missing declared Content rejected'
+$contentZip=Make-Zip 'content-missing'
+Reject {Assert-ApiWorkshopZipLayout $contentZip 'APIShared_Serp'} 'ZIP independently rejects missing declared Content'
+Write-TestFile (Join-Path $plugin 'APIShared.Content.dll') 'content fixture'
+$null=New-ApiWorkshopInventory $plugin
 Reject {Assert-ApiWorkshopZipLayout $zip 'OtherMod'} 'foreign package cannot deliver bootstrap'
 $bootstrap=Join-Path $stage 'BepInEx/patchers/APIShared.DependencyBootstrap.dll'
 Write-TestFile $bootstrap 'changed'

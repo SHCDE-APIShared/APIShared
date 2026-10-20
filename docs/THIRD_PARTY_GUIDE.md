@@ -1,5 +1,67 @@
 # Third-party integration guide
 
+## Game-independent content
+
+For JSON documents keyed by mod GUID, reference `APIShared.Content.dll` (target:
+.NET Standard 2.0). Runtime mods use `Private=false`, declare the APIShared plugin
+dependency, and install the complete central package. Do not bundle an additional
+Content DLL with a consumer. Offline tools may deploy this game-independent library
+with their own executable; they do not need APIShared.dll or the game.
+
+Call `APIShared.ModData.ModDataNamespaceReader.Read(json, modGuid, source)`.
+The result exposes `Status`, `Success`, canonical `ModGuid`, caller-supplied `Source`,
+`Data`, normalized `Json` and `Diagnostic`. Data and nested objects/arrays are read-only
+independent snapshots. GUID matching ignores case; duplicate GUID casing, blank keys
+and non-object namespaces invalidate the entire document, including unrequested entries.
+Missing namespaces and invalid requests have separate statuses. BOM text is accepted;
+the underlying parser limits JSON nesting to 64 levels. There is no generic byte limit:
+source-specific limits and authoritative host selection remain the caller's responsibility.
+The parser does not read files or apply gameplay settings.
+
+ExtendedData keeps its previous result types in ExtendedData.Core.dll and adapts them
+to this implementation. Its Lord sidecar/snapshot limits and host-data rules remain intact.
+
+For bounded sidecars, `ModDataDocumentJson` centralizes document/namespace limits
+and strict caller-owned stream decoding. Runtime `ModDataAccess` reads current map
+data or explicitly local Lord sidecars independently of ExtendedData, and exposes
+an optional confirmed selected-Lord provider. See [mod data access](MOD_DATA.md)
+for provenance, lifecycle and provider contracts; a local read is not host confirmation.
+
+For schema-3 mission settings, use `APIShared.ModSettings.MissionModSettingsDocument`,
+`MissionModSettingsEntry` and `MissionModSettingsJson` from the same Content assembly.
+The codec parses JSON text or a decoded dictionary (`ParseDocument`), validates and
+serializes deterministic CRLF JSON. Text parsing and serialization enforce 8 MiB
+of UTF-8; decoded-object callers own the enclosing document size limit. Each mod
+can supply up to 16384 combined player names and fixed overrides, counted before
+deduplication. Values are Boolean/string/integer/decimal/double scalars or flat
+scalar sequences; null, float, objects and nested sequences are rejected.
+
+These are mutable authoring documents. Missing mods/settings use mod-defined
+defaults; `PlayerSettings` selects player values and `Overrides` fixes author values.
+`NormalizeAndValidate` and `Serialize` mutate entries, sort names ordinally, deduplicate
+player names, reject player/fixed conflicts, remove empty entries and replace `Mods`.
+If a later entry fails, already visited entries can remain normalized. `RemoveUnknownSettings`
+preserves dictionary and retained entry identities and the order of retained player names.
+The codec does not register a provider, select files or apply settings. Calls are
+synchronous; callers own their documents and must coordinate concurrent access.
+
+ExtendedData's previous `ModSettingsDefinition`, `ModSettingsEntry` and `ModSettingsJson`
+remain in ExtendedData.Core.dll as compatible adapters, including observable mutations
+and entry aliases. Its filesystem `Read`/`WriteAtomic`, `.modtrail.json` selection,
+mission packages and Lord/host authority remain in ExtendedData. Shared application
+and cleanup live in APIShared; see the mission application section below.
+New consumers can use Content directly without loading either runtime assembly:
+
+```csharp
+using APIShared.ModSettings;
+
+var document = MissionModSettingsDocument.CreateModDefaults();
+document.Mods["Your.Mod.Guid"] = new MissionModSettingsEntry {
+    PlayerSettings = new[] { "PlayerChoice" }
+};
+string json = MissionModSettingsJson.Serialize(document);
+```
+
 The development [dependency bootstrap](DEPENDENCY_BOOTSTRAP.md) can correct false
 missing-provider warnings for selected nested plugins. Consumers keep their normal
 dependency declarations; no registration or bundled APIShared copy is required.
@@ -21,6 +83,141 @@ Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGe
 returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
 interested consumers. Registering an observer is explicit demand for observation.
+
+## Mission settings preparation
+
+`MissionModSettingsPreparation` belongs to APIShared.dll and consumes the schema-3
+`MissionModSettingsEntry` from APIShared.Content.dll. Reference both assemblies;
+ship neither with a consumer mod. Call on the Unity thread after settings registration,
+without concurrent endpoint changes. Obtain compatible endpoints through participant
+discovery and keep authorization, source selection and lifecycle in your integration.
+
+- `CaptureEntry(endpoint, selectMode)` visits host metadata and asks for the existing
+  `PublishedPresetValueMode`. ModDefault omits the property, Player records its name,
+  Fixed reads and copies its value. Personal properties are not inspected. Normalize
+  the assembled document through `MissionModSettingsJson` before writing it.
+- `CaptureCurrentSnapshot(endpoint)` overlays current host values on a disabled
+  mission snapshot, or the current working snapshot for an APIShared model with an
+  application backend. It preserves other baseline entries and does not refresh the backend.
+- `ValidateEntry(endpoint, entry)` converts known fixed overrides without live getters,
+  mutation or application. Unknown properties are ignored; schema validation is separate.
+- `MaterializeSource(workingEndpoint, entry)` starts from mod defaults, copies known
+  Player values, then converts and serializes known Fixed values. Missing player values
+  retain defaults. A null entry selects defaults without requesting a player snapshot.
+
+Returned snapshots and captured mutable values are detached. Provider failures, getter
+errors and conversion errors propagate without returning a partial result; no method
+enters/exits a mission, applies a working snapshot, writes files or registers sources.
+Null provider snapshots and selected null player buffers throw `InvalidDataException`.
+Snapshot factories must still honor their existing non-mutating contracts.
+
+Mission encoding is preserved: supported scalars/flat sequences remain JSON values;
+other property types use the existing MessagePack/base64 marker. In particular float
+and enum properties retain their legacy mission representation. This is intentionally
+the mission codec's value domain, distinct from loose personal-preset JSON encoding.
+
+For example, capture `var entry = MissionModSettingsPreparation.CaptureEntry(endpoint,
+name => PublishedPresetValueMode.Player);`, put the entry under your mod GUID in a
+`MissionModSettingsDocument`, then normalize/serialize it with `MissionModSettingsJson`.
+Only the caller's authorized mission integration should later apply a prepared snapshot.
+
+### Applying and leaving a mission context
+
+Retain one `MissionModSettingsSession` for your coordinator. Pass your compatible
+endpoint snapshot, a validated `MissionModSettingsDocument` and an explicit
+`MissionModSettingsApplicationKind` to `Apply`. The returned dictionary reports
+pruned unknown properties; the supplied document is pruned in place. Missing
+mentioned providers block replacement before the previous context is left.
+GUID identity is ordinal for participants, document entries and optional starting
+snapshots, independent of the dictionaries' comparers. Differently cased GUIDs
+remain distinct: an absent provider is rejected and another GUID's rules or
+starting values cannot be substituted by a case-insensitive lookup.
+
+| Kind | Baseline and resolution | Editing |
+|---|---|---|
+| Playable | Disabled mission baseline, personal Player values, then Fixed | Read-only |
+| Preview | Playable, but skip participants absent after pruning | Read-only |
+| Editable | Playable | Editable |
+| Authoring | Captured working values, backend Player values, then Fixed | Editable |
+| AuthoringTest | Authoring | Read-only |
+| Materialized | Captured working values without resolving the document again | Read-only |
+
+Authoring values are captured before leaving the old context. Personal Player
+values resolve after exit; backend own values are refreshed first. Non-backend
+authoring retains captured Player values. Optional starting snapshots replace the
+captured baseline per participant. Matching unconsumed restart snapshots retain
+precedence except in Materialized. Existing `ModSettingsApplication` restart/source
+restoration is reused; the session creates no second registry, journal or transport.
+
+`beforeApply` is a required preparation callback if supplied: it runs once after
+all snapshots are ready, before any new endpoint enters. A failure blocks entry.
+Do not call Apply/Exit/ConfirmStarted recursively on the same session. Conversions
+are prevalidated before exit; later preparation/application failures clean up to
+personal state, without recreating the previous temporary mission context.
+Cleanup includes a partially failed Enter, attempts every owned endpoint and uses
+the exact instances originally entered. Failed cleanup owners remain for retry;
+errors are aggregated rather than hidden. Retry a failed Exit before applying a new
+context; values from an incompletely cleaned context are not captured as a new draft. APIShared models retain their active
+context when personal restoration throws, making a later Exit retry effective.
+Previously such a failure could clear the flag before restoration had completed.
+Providers must tolerate Exit after a
+partially failed Enter. An incomplete cleanup is not a successful replacement.
+
+On a matching actual successful mission lifecycle notification, call
+`session.ConfirmStarted(context.SessionId)`. Apply or a dialog callback returning
+is not evidence of mission start. Bind a new lifecycle ID for an accepted restart.
+On authoritative end/cancellation call `session.Exit()`; retain across an explicitly
+accepted replacement if your content lifecycle requires it. The caller still owns
+`ModSettingsApplication.EnterContext`, launch preparation and global context exit.
+The session neither subscribes to game events nor uninstalls hooks.
+
+`MissionModSettingsCreatorRules.Capture(endpoint, entry, onError)` creates the
+existing `TrailCreatorRule` save contract for host properties. Failed fixed values
+retain the preceding default/Player rule, with the existing 1 MiB property limit;
+optional diagnostics are isolated. ExtendedData supplies which active document is
+authoritative. Savegame materialization uses the same rule implementation while
+preserving its existing strict-trail/Customize/lock semantics and wire format.
+
+## Settings participant diagnostics
+
+Call `SavegameModSettings.GetParticipantDiagnostics()` on the Unity thread after
+LibraryLoaded and settings registration. The read-only result contains
+`ModSettingsParticipantInfo` entries ordered by ordinal plugin GUID: display name,
+`ModSettingsParticipantStatus`, diagnostic, accepted endpoint and host properties.
+Metadata is copied; endpoints and PropertyInfo targets remain live objects.
+Use `IsCompatible`/`Status` for decisions; a provider's exception message can be empty.
+Re-query when registrations or schemas change. This is an inspection of the existing
+lobby/configuration registries; it does not register another provider or apply settings.
+
+The default query uses `ModSettingsParticipantPurpose.AutomaticSavegame`.
+For Map/Trail authoring, pass `ModSettingsParticipantPurpose.MissionAuthoring` to
+the overload. A plugin's savegame-only exclusion remains effective for automatic
+saves and does not exclude it from authoring. For such excluded endpoints,
+authoring retains its historical current-value read/serialization checks before
+checking the disabled snapshot, unless an explicit dynamic endpoint already represents
+that GUID. That endpoint keeps its historical precedence without probing the shadowed
+panel. Ordinary accepted endpoints acquire no new
+current-value probes. Unknown purposes throw before accessing discovery sources.
+
+The same discovery drives `GetCompatibleParticipants()` and automatic savegame
+preparation. Lobby endpoints must expose persistent host properties and a complete
+disabled mission snapshot. Inspection calls that snapshot factory once per eligible
+lobby endpoint; factories must not apply settings. The automatic query does not
+additionally probe current host values. Missing GUIDs, duplicate panels, plugin exclusions, missing typed
+endpoints, invalid property schemas and invalid snapshots have separate statuses.
+Reflection, factory and decode exceptions reject that participant and leave other
+participants available. A failure of the discovery source itself still propagates.
+
+Explicitly registered dynamic configuration endpoints keep their existing contract,
+independent of their optional UI panel. They are identified by `IsConfigurationEndpoint`.
+Rejected UI panels may therefore coexist with an accepted dynamic endpoint for one
+GUID. Two accepted providers claiming one GUID produce `ConflictingProvider` with no
+usable endpoint. The diagnostic query reports this conflict; automatic operations and
+`GetCompatibleParticipants()` continue to throw rather than choose an arbitrary provider.
+
+ExtendedData uses the MissionAuthoring outcomes for its existing Map/Trail compatibility UI. Its
+legacy explicit opt-out marker and content-specific panel selection remain local.
+The old public Core compatibility helpers remain available for existing callers.
 
 ## Diagnostic opt-in and observer demand
 
@@ -317,6 +514,15 @@ simulation-relevant and blocks the load with the mod and record named when they 
 
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 
+For an activation hint, bind the host/client content containers' `Opacity` to
+`HostSettingsOpacity` / `ClientSettingsOpacity`. They return `0.65f` while the
+corresponding discovered activation switch is off, otherwise `1f`; a scope without
+an activation switch stays fully opaque. Keep activation switches, role headings,
+search and preset actions outside those containers. These Unity-thread presentation
+bindings notify after activation changes and snapshot application. They do not
+disable editing or change stored values: keep the existing editing-rights bindings
+and allow users to prepare values while a mod is inactive.
+
 The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
 
 ### Personal files and previous installations
@@ -366,6 +572,50 @@ participant without a page. `PrepareExternalWorkingCopy` creates an unpublished
 candidate; activate it only when the surrounding integration is ready. These
 entry points are Unity-thread operations. Optional consumer adapters and their
 activation rules belong to the integrating mod; presets do not require ExtendedData.
+
+### Load/save requester integration
+
+APIShared owns the savegame checkbox, including a persistent local preference
+(initially off). Save selection, forced legacy/saved-only states and cancellation
+do not change that preference. Missing/unusable UI means current supported settings
+for automatic loads, while saved mission permissions and fixed creator rules remain
+authoritative. Explicit `SavegameModSettings.PrepareLoad` and
+`PrepareLoadWithRestartCheck` Boolean calls keep their existing meaning.
+
+Use `APIShared.Savegames.SaveLoadDialogEvents.Register` on the Unity thread with
+your GUID, a stable owner-local registration ID and `SaveLoadDialogCallbacks`.
+Registration lasts until process exit and applies only to future requests.
+Consumers requiring this service check `SaveLoadDialogEvents.IsAvailable` after
+LibraryLoaded before publishing their runtime. The dialog API requires APIShared 0.12.1 or newer.
+Ordering is ascending numeric order, then owner GUID and registration ID ordinal. Delegates
+are copied; each contribution receives private per-request context state.
+
+`Opened` initializes a contribution after the game opened its view. `Validate`
+must only check readiness: false or an exception prevents every preparation and
+the original action. `Prepare` runs after all gates passed. `AttemptFinished`
+runs in reverse order even for a partially throwing preparation. Release temporary
+write decisions there, not a successfully transferred mission. `Closed` observes
+confirmation, cancellation, replacement or failure once, after attempt cleanup;
+its exceptions are isolated. A requester opened synchronously by a callback is
+deferred until the outer game operation has returned, including delayed editor
+overwrite execution and Vanilla's filename bookkeeping.
+Exceptions from the original game callback propagate after cleanup, preserving its failure path.
+Opening errors block that contribution's confirmation. Confirmation means the game
+callback returned, not that the mission initialized successfully. Use the mission
+lifecycle for the latter. A rejected confirmation keeps its request/selection and
+restores the requester view; it does not invoke the original action.
+
+Do not install another requester hook. Vanilla hides the requester before invoking
+its confirmation callback; APIShared captures checkbox availability before that hide.
+Older ExtendedData packages with their own requester interception must be updated
+together: APIShared diagnoses that combination before installing its dialog hooks.
+The build installer's consumer preflight also rejects an older ExtendedData plugin
+before copying the APIShared package. It checks the plugin GUID and its public
+constant broker marker in assemblies below `BepInEx/plugins`, including renamed
+files. It does not discover unopened Workshop archives or prove a working UI;
+the runtime check remains necessary for those loading paths and manual installs.
+Save archives, packet protocols, local personal presets and the existing host-load
+agreement are unchanged. No ExtendedData installation is required for this UI.
 
 ## Namespaces and packaging
 

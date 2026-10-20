@@ -53,7 +53,7 @@ try {
     & (Join-Path $root 'tools/Validation/Test-DependencyBootstrap.ps1') -GameDir $game -MSBuild $msbuild
     & (Join-Path $root 'tools\Validation\Test-Standalone.ps1') -GameDir $game -ExtenderDir $extender
     $results = Join-Path $root '.local\test-results'
-    foreach ($project in @('PopularityDisplay.Tests\PopularityDisplay.Tests.csproj','Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
+    foreach ($project in @('Content.Tests\Content.Tests.csproj','PopularityDisplay.Tests\PopularityDisplay.Tests.csproj','Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
         Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests\' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
     }
     Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
@@ -81,11 +81,12 @@ try {
     Sync-ApiPublisherPackage $root
     Sync-ApiWorkshopAssets -Root $root
     Remove-ApiLegacyWorkshopView $package
-    foreach ($required in @('APIShared.dll','APIShared.xml','info.json')) {
+    foreach ($required in @('APIShared.dll','APIShared.xml','APIShared.Content.dll','APIShared.Content.xml','info.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $required))) { throw ($required + ' is missing from the prepared package.') }
     }
     Assert-ApiOptimizedAssembly (Join-Path $package 'APIShared.dll') $game
-    $unexpected = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.dll','.exe') -and $_.Name -ne 'APIShared.dll' })
+    Assert-ApiOptimizedAssembly (Join-Path $package 'APIShared.Content.dll') $game
+    $unexpected = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.dll','.exe') -and $_.Name -notin @('APIShared.dll','APIShared.Content.dll') })
     if ($unexpected.Count) { throw 'The package contains unexpected runtime binaries.' }
     . (Join-Path $PSScriptRoot 'DependencyBootstrapPackage.ps1')
     New-ApiBootstrapPair $root

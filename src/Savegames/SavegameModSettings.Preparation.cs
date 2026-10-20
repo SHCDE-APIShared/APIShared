@@ -86,7 +86,7 @@ namespace APIShared
         {
             if (!string.Equals(preparedPath, Normalize(path), StringComparison.OrdinalIgnoreCase) || !preparedApplied)
             {
-                if (!string.Equals(chosenPath, Normalize(path), StringComparison.OrdinalIgnoreCase)) PrepareLoad(path, false);
+                if (!string.Equals(chosenPath, Normalize(path), StringComparison.OrdinalIgnoreCase)) PrepareLoad(path, true);
                 if (!PrepareLoadCore(path, useChosenCurrent, true))
                     throw new InvalidOperationException("Savegame configuration is not ready; restart or backend synchronization is required.");
             }

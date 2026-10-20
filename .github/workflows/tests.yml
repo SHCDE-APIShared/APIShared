@@ -26,6 +26,9 @@ jobs:
       - name: Run game-independent tests
         if: ${{ !cancelled() }}
         run: dotnet test tests/Core.Tests/Core.Tests.csproj --configuration Release --logger trx --results-directory TestResults
+      - name: Run Content contracts without game assemblies
+        if: ${{ !cancelled() }}
+        run: dotnet test tests/Content.Tests/Content.Tests.csproj --configuration Release --logger trx --results-directory TestResults
       - uses: actions/upload-artifact@v7
         if: always()
         with:

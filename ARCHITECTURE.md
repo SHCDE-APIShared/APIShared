@@ -6,6 +6,32 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+`Content/APIShared.Content.csproj` targets .NET Standard 2.0 and has no game,
+Extender, Unity or BepInEx dependencies. It owns the GUID-separated JSON namespace
+reader in `APIShared.ModData` and schema-3 mission-settings documents/codecs in
+`APIShared.ModSettings`, using the repository's internal JSON source by project-local
+source link. ExtendedData.Core retains its original public model identities through
+adapters; the schema algorithm is implemented once in Content. Runtime settings, network authority and file selection
+remain outside it. The main package ships both assemblies; consumers reference
+Content with `Private=false`. Its public surface has a separate compatibility baseline.
+Existing types in APIShared.dll retain their assembly identity.
+The Framework project builds Content through an incremental `dotnet build` target
+and references its output. This keeps the existing Framework MSBuild usable even
+when it cannot resolve the installed SDK's SDK-style projects itself.
+
+Packages containing Content extend the bootstrap pair with `ContentSHA256`.
+Offline ZIP/map validation and the bootstrap validate these bytes, including after
+initial selection. Historical pairs without Content retain their original shape;
+an unclaimed Content DLL is rejected. Upgrade the complete package together: old
+bootstrap binaries cannot validate the extended pair. Build proofs also cover
+Content sources, project configuration and output files.
+
+Content also owns bounded mod-data document/namespace validation and caller-owned
+stream decoding. Runtime `ModDataAccess` owns current-archive/local-file reads and
+one optional confirmed selected-Lord callback. It caches no content. ExtendedData
+retains Lord selection/transport authority and supplies the current verified source;
+its legacy facade adapts results. See [mod data access](docs/MOD_DATA.md).
+
 The separate `bootstrap` project implements the development-only
 [early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md). It does not reference
 the main APIShared assembly; it binds the selected runtime by a validated package
@@ -31,6 +57,21 @@ load phase; it is not a second public APIShared service runtime.
 | Audio | Native-record sound presentation, audited source contexts and shared rule events |
 | Economy | Shared native market price query events and validated hook ownership |
 | Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
+
+Participant inspection uses the existing lobby registrations and
+`ModSettingsApplication.Endpoints` snapshots. One discovery implementation supplies
+automatic savegame selection and the public diagnostic catalog; consumer UIs reuse
+its decisions. Purpose-specific checks preserve savegame-only exclusions and the
+historical authoring probes. Individual metadata/snapshot failures are isolated. This adds no
+provider registry or network/application engine.
+
+The runtime's `MissionModSettingsPreparation` owns host-value capture, override
+conversion validation and detached defaults/player/fixed source materialization.
+It shares existing property discovery and preset conversion, with the Content codec
+as the mission wire contract. `MissionModSettingsSession` owns application, temporary
+endpoint ownership and cleanup; author-rule capture/save materialization share one
+implementation. ExtendedData retains content lifecycle decisions, source registration
+and file ownership. Actual lifecycle adoption is explicit; no second registry is added.
 
 Directories help navigation; public namespaces define the contracts. Capabilities
 use `APIShared`; settings and general profiles use `APIShared.ModSettings` and
@@ -283,6 +324,13 @@ is independent of managed playback. See [Audio](docs/AUDIO.md) for contracts, im
 Workshop owns publishing, receipt-based plans and post-exit transactions. Its
 persistent staging integration cleans previous APIShared releases; foreign maps
 remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
+
+The load/save requester is also owned by Savegames. Its process-rooted managed hooks
+capture choice availability before Vanilla hides the view. Per-request gates run before
+preparation; cleanup includes partially throwing preparation. The local checkbox
+preference is separate from forced display state and the file-specific load decision.
+ExtendedData contributes Lord readiness and editor write decisions through the public
+dialog registry and retains ownership of its map/trail data.
 
 Versioned save data belongs to Savegames. APIShared owns the record format, the migration
 order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
