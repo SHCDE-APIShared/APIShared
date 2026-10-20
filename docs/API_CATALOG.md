@@ -15,8 +15,10 @@ for limits, mutation semantics and a minimal example.
 
 `SavegameModSettings.GetParticipantDiagnostics()` reports accepted and rejected
 Map/Trail/Savegame settings participants from the existing registrations, including
-typed status, reason and read-only host property metadata. It shares discovery with
-the existing automatic selection; see [participant diagnostics](THIRD_PARTY_GUIDE.md#settings-participant-diagnostics).
+typed status, reason and read-only host property metadata. Its purpose overload
+preserves the distinction between automatic saves and mission authoring. It shares
+discovery with the existing automatic selection; see
+[participant diagnostics](THIRD_PARTY_GUIDE.md#settings-participant-diagnostics).
 
 Optional runtime tracing is marked `API_SHARED_DIAGNOSTICS` and defaults to off;
 see [diagnostic opt-in and observer demand](THIRD_PARTY_GUIDE.md#diagnostic-opt-in-and-observer-demand).

@@ -824,6 +824,9 @@ APIShared.ModSettings.ModSettingsParticipantInfo | public bool IsConfigurationEn
 APIShared.ModSettings.ModSettingsParticipantInfo | public string Diagnostic { get; }
 APIShared.ModSettings.ModSettingsParticipantInfo | public string DisplayName { get; }
 APIShared.ModSettings.ModSettingsParticipantInfo | public string ModGuid { get; }
+APIShared.ModSettings.ModSettingsParticipantPurpose | public enum APIShared.ModSettings.ModSettingsParticipantPurpose : int
+APIShared.ModSettings.ModSettingsParticipantPurpose | AutomaticSavegame = 0
+APIShared.ModSettings.ModSettingsParticipantPurpose | MissionAuthoring = 1
 APIShared.ModSettings.ModSettingsParticipantStatus | public enum APIShared.ModSettings.ModSettingsParticipantStatus : int
 APIShared.ModSettings.ModSettingsParticipantStatus | Compatible = 0
 APIShared.ModSettings.ModSettingsParticipantStatus | ConflictingProvider = 9
@@ -1506,6 +1509,7 @@ APIShared.SavegameModSettings | public static class APIShared.SavegameModSetting
 APIShared.SavegameModSettings | public static APIShared.SavegameLoadChoiceState GetLoadChoiceState(string savePath)
 APIShared.SavegameModSettings | public static System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.IModSettingsPresetEndpoint> GetCompatibleParticipants()
 APIShared.SavegameModSettings | public static System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsParticipantInfo> GetParticipantDiagnostics()
+APIShared.SavegameModSettings | public static System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsParticipantInfo> GetParticipantDiagnostics(APIShared.ModSettings.ModSettingsParticipantPurpose purpose)
 APIShared.SavegameModSettings | public static bool CanUseCurrentSettings(string savePath)
 APIShared.SavegameModSettings | public static bool PrepareLoadWithRestartCheck(string savePath, bool useCurrentSettings)
 APIShared.SavegameModSettings | public static void CancelLoadChoice()

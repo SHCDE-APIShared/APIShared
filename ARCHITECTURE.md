@@ -55,7 +55,8 @@ load phase; it is not a second public APIShared service runtime.
 Participant inspection uses the existing lobby registrations and
 `ModSettingsApplication.Endpoints` snapshots. One discovery implementation supplies
 automatic savegame selection and the public diagnostic catalog; consumer UIs reuse
-its decisions. Individual metadata/snapshot failures are isolated. This adds no
+its decisions. Purpose-specific checks preserve savegame-only exclusions and the
+historical authoring probes. Individual metadata/snapshot failures are isolated. This adds no
 provider registry or network/application engine.
 
 Directories help navigation; public namespaces define the contracts. Capabilities

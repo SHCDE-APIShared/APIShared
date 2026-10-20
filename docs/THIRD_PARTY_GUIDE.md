@@ -84,14 +84,25 @@ LibraryLoaded and settings registration. The read-only result contains
 `ModSettingsParticipantInfo` entries ordered by ordinal plugin GUID: display name,
 `ModSettingsParticipantStatus`, diagnostic, accepted endpoint and host properties.
 Metadata is copied; endpoints and PropertyInfo targets remain live objects.
+Use `IsCompatible`/`Status` for decisions; a provider's exception message can be empty.
 Re-query when registrations or schemas change. This is an inspection of the existing
 lobby/configuration registries; it does not register another provider or apply settings.
+
+The default query uses `ModSettingsParticipantPurpose.AutomaticSavegame`.
+For Map/Trail authoring, pass `ModSettingsParticipantPurpose.MissionAuthoring` to
+the overload. A plugin's savegame-only exclusion remains effective for automatic
+saves and does not exclude it from authoring. For such excluded endpoints,
+authoring retains its historical current-value read/serialization checks before
+checking the disabled snapshot, unless an explicit dynamic endpoint already represents
+that GUID. That endpoint keeps its historical precedence without probing the shadowed
+panel. Ordinary accepted endpoints acquire no new
+current-value probes. Unknown purposes throw before accessing discovery sources.
 
 The same discovery drives `GetCompatibleParticipants()` and automatic savegame
 preparation. Lobby endpoints must expose persistent host properties and a complete
 disabled mission snapshot. Inspection calls that snapshot factory once per eligible
-lobby endpoint; factories must not apply settings. It does not additionally probe
-current host values. Missing GUIDs, duplicate panels, plugin exclusions, missing typed
+lobby endpoint; factories must not apply settings. The automatic query does not
+additionally probe current host values. Missing GUIDs, duplicate panels, plugin exclusions, missing typed
 endpoints, invalid property schemas and invalid snapshots have separate statuses.
 Reflection, factory and decode exceptions reject that participant and leave other
 participants available. A failure of the discovery source itself still propagates.
@@ -103,7 +114,7 @@ GUID. Two accepted providers claiming one GUID produce `ConflictingProvider` wit
 usable endpoint. The diagnostic query reports this conflict; automatic operations and
 `GetCompatibleParticipants()` continue to throw rather than choose an arbitrary provider.
 
-ExtendedData uses these outcomes for its existing Map/Trail compatibility UI. Its
+ExtendedData uses the MissionAuthoring outcomes for its existing Map/Trail compatibility UI. Its
 legacy explicit opt-out marker and content-specific panel selection remain local.
 The old public Core compatibility helpers remain available for existing callers.
 

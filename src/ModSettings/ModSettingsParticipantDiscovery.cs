@@ -20,9 +20,10 @@ namespace APIShared.ModSettings
         }
 
         internal static List<ModSettingsParticipantInfo> Inspect(IEnumerable<Registration> lobby,
-            IEnumerable<Registration> configurations)
+            IEnumerable<Registration> configurations, ModSettingsParticipantPurpose purpose = ModSettingsParticipantPurpose.AutomaticSavegame)
         {
             var result = new List<ModSettingsParticipantInfo>();
+            var authoringOnly = new List<Registration>();
             foreach (var group in lobby.GroupBy(item => item.Guid ?? string.Empty, StringComparer.Ordinal))
             {
                 var first = group.First();
@@ -38,9 +39,16 @@ namespace APIShared.ModSettings
                     // mission snapshot for a rejected registration group.
                     if (group.Skip(1).Any())
                         result.Add(Reject(first, ModSettingsParticipantStatus.DuplicateRegistration, "multiple mod-settings panels use the same plugin GUID"));
-                    else if (SavegameSettingsParticipation.IsExcluded(first.PluginType))
-                        result.Add(Reject(first, ModSettingsParticipantStatus.Excluded, "plugin excluded from automatic settings"));
-                    else result.Add(InspectLobby(first));
+                    else
+                    {
+                        bool savegameExcluded = SavegameSettingsParticipation.IsExcluded(first.PluginType);
+                        if (savegameExcluded)
+                        {
+                            result.Add(Reject(first, ModSettingsParticipantStatus.Excluded, "plugin excluded from automatic settings"));
+                            if (purpose == ModSettingsParticipantPurpose.MissionAuthoring) authoringOnly.Add(first);
+                        }
+                        else result.Add(InspectLobby(first, checkCurrentValues: false));
+                    }
                 }
                 catch (Exception error) { result.Add(Failed(first, error)); }
             }
@@ -63,6 +71,17 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception error) { result.Add(Failed(registration, error, true)); }
             }
+            // An explicit dynamic endpoint used to win before authoring considered a
+            // savegame-excluded panel. Preserve that precedence and avoid probing its
+            // shadowed panel; only otherwise unrepresented authoring panels need checks.
+            foreach (var registration in authoringOnly)
+            {
+                if (result.Any(item => item.ModGuid == registration.Guid &&
+                    (item.IsCompatible || item.Status == ModSettingsParticipantStatus.ConflictingProvider))) continue;
+                result.RemoveAll(item => item.ModGuid == registration.Guid && item.Status == ModSettingsParticipantStatus.Excluded);
+                try { result.Add(InspectLobby(registration, checkCurrentValues: true)); }
+                catch (Exception error) { result.Add(Failed(registration, error)); }
+            }
             return result;
         }
 
@@ -76,7 +95,7 @@ namespace APIShared.ModSettings
             }
         }
 
-        private static ModSettingsParticipantInfo InspectLobby(Registration registration)
+        private static ModSettingsParticipantInfo InspectLobby(Registration registration, bool checkCurrentValues)
         {
             if (!(registration.Model is IModSettingsPresetEndpoint endpoint))
                 return Reject(registration, ModSettingsParticipantStatus.MissingEndpoint, "missing typed APIShared preset endpoint");
@@ -94,6 +113,17 @@ namespace APIShared.ModSettings
             var duplicate = host.GroupBy(property => property.Name, StringComparer.Ordinal).FirstOrDefault(group => group.Skip(1).Any());
             if (duplicate != null)
                 return Reject(registration, ModSettingsParticipantStatus.InvalidHostSettings, "duplicate SyncHostOnly property " + duplicate.Key);
+            // Historically authoring separately validated savegame-excluded endpoints.
+            // Preserve those current-value probes without broadening the savegame opt-out
+            // or adding probes to ordinary automatic participants.
+            if (checkCurrentValues)
+                foreach (var property in host)
+                {
+                    object value = property.GetValue(registration.Model);
+                    if (value == null)
+                        return Reject(registration, ModSettingsParticipantStatus.InvalidHostSettings, property.Name + " is null");
+                    MessagePackSerializer.Serialize(property.PropertyType, value);
+                }
             var disabled = endpoint.System_CreateDisabledMissionPresetSnapshot();
             if (disabled == null)
                 return Reject(registration, ModSettingsParticipantStatus.InvalidMissionSnapshot, "mission snapshot is null");

@@ -4,6 +4,15 @@ using System.Reflection;
 
 namespace APIShared.ModSettings
 {
+    /// <summary>Context whose existing participation rules the diagnostic query evaluates.</summary>
+    public enum ModSettingsParticipantPurpose
+    {
+        /// <summary>Automatic savegame capture/restoration; honors plugin savegame exclusions.</summary>
+        AutomaticSavegame = 0,
+        /// <summary>Map/Trail authoring; a savegame-only exclusion does not disable authoring.</summary>
+        MissionAuthoring = 1
+    }
+
     /// <summary>Result of one current Map/Trail/Savegame settings participation check.</summary>
     public enum ModSettingsParticipantStatus
     {

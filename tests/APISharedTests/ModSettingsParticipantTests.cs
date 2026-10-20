@@ -29,15 +29,16 @@ namespace APISharedTests
             public void System_EnterMissionPreset(Dictionary<string, byte[]> snapshot, string label, bool editable) => throw new Exception("Must not apply");
             public void System_ExitMissionPreset() => throw new Exception("Must not exit");
         }
-        private sealed class Host : Endpoint
+        private class Host : Endpoint
         {
             [SyncHostOnly] public bool EnableMod { get; set; }
-            [SyncHostOnly] public int Value { get => throw new Exception("Live values must not be probed"); set { } }
+            [SyncHostOnly] public virtual int Value { get => throw new Exception("Live values must not be probed"); set { } }
             [PresetLocal] public string Personal { get; set; }
             internal Host() { Factory = () => new Dictionary<string, byte[]> {
                 ["EnableMod"] = MessagePackSerializer.Serialize(false), ["Value"] = MessagePackSerializer.Serialize(7)
             }; }
         }
+        private sealed class ReadableHost : Host { [SyncHostOnly] public override int Value { get; set; } = 7; }
         private sealed class InvalidEnable : Endpoint { [SyncHostOnly] public int EnableMod { get; set; } }
         private sealed class BrokenMetadata : Endpoint { [SyncHostOnly, Exploding] public int Value { get; set; } }
         [ExcludeFromSavegameModSettings] private sealed class OptOut { }
@@ -141,6 +142,50 @@ namespace APISharedTests
             dynamic.DynamicProperties = () => throw new InvalidOperationException("descriptor failure");
             var items = ModSettingsParticipantDiscovery.Inspect(new[] { Registration("healthy", new Host()) }, new[] { dynamic });
             Assert.IsTrue(items[0].IsCompatible); Assert.AreEqual(ModSettingsParticipantStatus.InspectionFailed, items[1].Status);
+        }
+
+        [TestMethod]
+        public void SavegameOptOutDoesNotDisableAuthoringOrSkipItsHistoricalValueProbe()
+        {
+            var registration = Registration("savegame-excluded", new ReadableHost()); registration.PluginType = typeof(OptOut);
+            Assert.AreEqual(ModSettingsParticipantStatus.Excluded, Inspect(registration).Single().Status);
+            var authoring = ModSettingsParticipantDiscovery.Inspect(new[] { registration },
+                Array.Empty<ModSettingsParticipantDiscovery.Registration>(), ModSettingsParticipantPurpose.MissionAuthoring).Single();
+            Assert.IsTrue(authoring.IsCompatible);
+            registration.Model = new Host(); // Authoring historically rejects this throwing getter.
+            authoring = ModSettingsParticipantDiscovery.Inspect(new[] { registration },
+                Array.Empty<ModSettingsParticipantDiscovery.Registration>(), ModSettingsParticipantPurpose.MissionAuthoring).Single();
+            Assert.AreEqual(ModSettingsParticipantStatus.InspectionFailed, authoring.Status);
+        }
+
+        [TestMethod]
+        public void UnknownPurposeRejectsBeforeAccessingTheGame()
+        {
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => APIShared.SavegameModSettings.GetParticipantDiagnostics((ModSettingsParticipantPurpose)99));
+        }
+
+        [TestMethod]
+        public void ExplicitConfigurationStillWinsOverSavegameExcludedAuthoringPanel()
+        {
+            var shadowed = new Host(); // Its live getter must not be probed.
+            var panel = Registration("same", shadowed); panel.PluginType = typeof(OptOut);
+            var configuration = Registration("same", new ReadableHost()); configuration.IsDynamic = () => true;
+            configuration.DynamicProperties = () => new[] { typeof(ReadableHost).GetProperty("Value") };
+            var items = ModSettingsParticipantDiscovery.Inspect(new[] { panel }, new[] { configuration }, ModSettingsParticipantPurpose.MissionAuthoring);
+            Assert.IsTrue(ModSettingsParticipantDiscovery.Accepted(items).Single().IsConfigurationEndpoint);
+            Assert.AreEqual(0, shadowed.Calls);
+            Assert.IsFalse(items.Any(item => item.Status == ModSettingsParticipantStatus.InspectionFailed || item.Status == ModSettingsParticipantStatus.ConflictingProvider));
+        }
+
+        [TestMethod]
+        public void EmptyProviderErrorMessageCannotTurnRejectionIntoAcceptance()
+        {
+            var host = new Host { Factory = () => throw new InvalidOperationException(string.Empty) };
+            var items = Inspect(Registration("broken", host));
+            Assert.AreEqual(string.Empty, items.Single().Diagnostic);
+            Assert.AreEqual(ModSettingsParticipantStatus.InspectionFailed, items.Single().Status);
+            Assert.IsFalse(items.Single().IsCompatible);
+            Assert.AreEqual(0, ModSettingsParticipantDiscovery.Accepted(items).Count());
         }
     }
 }

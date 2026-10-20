@@ -141,7 +141,21 @@ namespace APIShared
         /// GetCompatibleParticipants continue to throw for that conflict. Dynamic endpoints retain their
         /// existing explicit registration contract, independent of an optional lobby panel.</remarks>
         public static IReadOnlyList<ModSettingsParticipantInfo> GetParticipantDiagnostics() =>
-            Array.AsReadOnly(InspectParticipants().OrderBy(item => item.ModGuid, StringComparer.Ordinal).ToArray());
+            GetParticipantDiagnostics(ModSettingsParticipantPurpose.AutomaticSavegame);
+
+        /// <summary>Inspects participants for automatic savegames or Map/Trail authoring using
+        /// the same caller-thread, snapshot-factory and read-only metadata contract as the default query.</summary>
+        /// <remarks>MissionAuthoring does not apply savegame-only exclusions. For those excluded
+        /// endpoints not represented by an explicit dynamic provider, it preserves the historical
+        /// authoring current-value serialization probes before checking the disabled snapshot.
+        /// Consumer-specific authoring opt-outs remain with consumers.</remarks>
+        /// <exception cref="ArgumentOutOfRangeException">The purpose is not supported.</exception>
+        public static IReadOnlyList<ModSettingsParticipantInfo> GetParticipantDiagnostics(ModSettingsParticipantPurpose purpose)
+        {
+            if (purpose != ModSettingsParticipantPurpose.AutomaticSavegame && purpose != ModSettingsParticipantPurpose.MissionAuthoring)
+                throw new ArgumentOutOfRangeException(nameof(purpose));
+            return Array.AsReadOnly(InspectParticipants(purpose).OrderBy(item => item.ModGuid, StringComparer.Ordinal).ToArray());
+        }
 
         /// <summary>Records the confirmed host choice for exactly one selected save.</summary>
         public static void PrepareLoad(string savePath, bool useCurrentSettings)
@@ -633,7 +647,7 @@ namespace APIShared
             internal PropertyInfo[] PersonalProperties;
         }
 
-        private static List<ModSettingsParticipantInfo> InspectParticipants()
+        private static List<ModSettingsParticipantInfo> InspectParticipants(ModSettingsParticipantPurpose purpose = ModSettingsParticipantPurpose.AutomaticSavegame)
         {
             var lobby = GameXAMLManagerAPI.Instance.RegisteredModSettings.Select(entry =>
                 new ModSettingsParticipantDiscovery.Registration {
@@ -647,7 +661,7 @@ namespace APIShared
                     IsDynamic = () => pair.Value.System_HasDynamicSettings,
                     DynamicProperties = () => ModSettingsApplication.GetHostProperties(pair.Value)
                 }).ToArray();
-            var result = ModSettingsParticipantDiscovery.Inspect(lobby, configurations);
+            var result = ModSettingsParticipantDiscovery.Inspect(lobby, configurations, purpose);
             foreach (var item in result.Where(item => item.Status == ModSettingsParticipantStatus.InspectionFailed))
                 NativeApiLog.Error(log, "Incompatible savegame settings for " + item.ModGuid + ": " + item.Diagnostic);
             return result;
