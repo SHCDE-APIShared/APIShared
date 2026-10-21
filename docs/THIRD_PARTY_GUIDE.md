@@ -425,6 +425,16 @@ implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consu
 registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
 
+The Lord media correction validates the loaded internal resolver's signature and
+output-initialization/name-lookup entry before installing a process-lifetime managed
+hook. Null or empty Lord identities return false with empty outputs,
+so the native caller retains its original media paths. One warning per process explains
+the missing metadata. Nonempty identities retain the original lookup, results and
+exceptions. This does not reconstruct lost Lord identities or recover custom media;
+an incompatible resolver is skipped independently. No consumer registration is needed.
+`SE_LORD_MEDIA` names the missing input and message category, or the exact installation
+stage and observed method entry when its dependency contract is rejected.
+
 The popularity display correction reads the 41 direct SE popularity modifiers after
 successful `GuiChecks` execution during an active mission. It automatically replaces
 only contributions whose effective SE value differs from Vanilla, including values
@@ -463,13 +473,31 @@ All fingerprints are recorded in the implementation.
 Unknown or changed binaries are skipped with a `SE_IMGUI_SHUTDOWN_FIX` log reason;
 other services remain available. Recheck this evidence after upstream updates.
 
-BepInEx writes the setting to `BepInEx/config/APIShared_Serp.cfg`:
+The interpolate-event correction removes the largest managed allocation source in
+large battles: SE creates a new `UnitUnityVisualInterpolateEventArgs` for every
+visible unit and frame before raising `UnitR3EventHooks.OnUnitUnityVisualInterpolate`.
+APIShared reuses one instance instead, but only while every subscriber provably reads
+the event object synchronously. A subscriber qualifies automatically, without
+registration, when it is a plain `Observable.Subscribe(Action<T>)` handler that uses
+the args only through `Chimp`, `Phase`, `SkipOriginalFunction` getters or null checks.
+Handlers that store, pass, capture or modify the args, R3 operators such as `Where`,
+`Delay` or `Chunk`, and custom observers keep the original per-call allocation for
+all subscribers, so subscribers never observe a changed object. Subscription changes
+during a raise discard the shared instance. Nested raises and raises outside the Unity
+main thread always allocate. The hook body (one allocation, one `Raise`) is validated
+before the transpiler is published; unknown SE code is skipped with a
+`SE_INTERPOLATE_EVENT_REUSE` log reason. `tests/APISharedTests/InterpolateEventReuseTests.cs`
+covers the handler analysis, the subscription gate and the installed SE contracts.
+
+BepInEx writes the settings to `BepInEx/config/APIShared_Serp.cfg`:
 
     [ScriptExtenderFixes]
     EnableImGuiShutdownFix = true
+    EnableInterpolateEventReuse = true
 
-The default is enabled. Changes take effect after restarting the game. There is no
-live unpatching or network setting: the fix changes only local shutdown handling.
+The defaults are enabled. Changes take effect after restarting the game. There is no
+live unpatching or network setting: the fixes change only local shutdown handling and
+local event-object allocation.
 
 At the first close, menu exit, or quitting notification, a terminal shutdown gate
 stops new ImGui work. Subsequent Present/Resize callbacks call the existing native
@@ -586,6 +614,55 @@ disable editing or change stored values: keep the existing editing-rights bindin
 and allow users to prepare values while a mod is inactive.
 
 The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
+
+### Explicit settings-search support
+
+Global search includes only tabs that opted in through `ModSettingsSearchCatalog`.
+`LobbyModSettingsPresetRegistration.Register(...)` already registers the resolved
+XAML source and the preset ViewModel's local exact-key navigation. Existing preset
+consumers need no second registry or export method.
+
+A mod with its own settings ViewModel can opt in independently of presets and
+SerpsModsHost. On the Unity thread, resolve the same XAML filename used for its tab,
+then call:
+
+```csharp
+ModSettingsSearchCatalog.RegisterSource(settings, absoluteXamlPath, log, modName);
+```
+
+An optional fifth argument is `Func<string, string, bool>`: it receives an exact
+entry key and its current localized title. Return true after applying a local
+filter. Without a callback, or if it fails, the host simply opens the tab. The
+callback must not traverse, realize, measure or focus other views. See the
+[standalone example](../examples/ThirdPartyMod/SettingsSearchExample.cs).
+
+Register the same ViewModel object as the tab, preferably before publishing the
+tab. Metadata comes exclusively from the XAML document and public readable binding
+properties; it never loads a Noesis view. Titles, tooltips, sections, exclusion and
+ItemsSource-backed templates use the existing `ModSettingsSearch` attached
+metadata. Item collections are snapshots, not live UI subscriptions.
+Re-register the source to refresh changed language text or dynamic items. This
+replaces the source and optional callback and invalidates its cached entries.
+
+`IsRegistered(model)` checks support without reading consumer properties.
+`TryGetEntries(model, out entries)` returns false only for an unregistered model;
+a registered empty or failed catalog returns true with zero entries. Snapshots
+are read-only. A load/getter failure is logged once per registration and cached
+until replacement. Hosts must never fall back to a native UI-tree search.
+`TryNavigate(model, key)` rejects stale keys and isolates callback exceptions,
+logging the first navigation failure per registration. It uses the current title.
+`SourceChanged` runs synchronously after registration/replacement and isolates each
+listener's failure. Replacing the same source from its own notification is rejected
+before mutation to prevent recursive event loops. Recursive `TryNavigate` calls for
+the same model return false, including when a callback replaces its source. All these operations are Unity-thread operations; registration
+retains the ViewModel and callback for process lifetime.
+
+The original `ModSettingsSearch.RegisterSource(...)` remains a compatibility
+facade. Its legacy `Export(model, view)` method retains its existing realized-view
+fallback for older direct callers; the global host uses only the new catalog API
+and never calls that method. Exact keys remain ordinal. Free-text matching repairs
+malformed UTF-16 and Unicode noncharacters rejected by CLR normalization for comparison, retaining
+ordinary Unicode, valid surrogate pairs and diacritic folding.
 
 ### Personal files and previous installations
 

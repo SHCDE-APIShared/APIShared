@@ -9,7 +9,7 @@ namespace ThirdPartyMod
 {
     [BepInPlugin(Guid, "APIShared Example", "1.0.0")]
     [BepInDependency("000shcdese", "2.14.0")]
-    [BepInDependency("APIShared_Serp", "0.12.2")]
+    [BepInDependency("APIShared_Serp", "0.12.3")]
     public sealed class ExamplePlugin : BaseUnityPlugin
     {
         public const string Guid = "Example.Author.APISharedDemo";
@@ -29,6 +29,7 @@ namespace ThirdPartyMod
             InterceptionExample.Register(Log);
             BuildingTooltipExample.Register(Log);
             SaveDataExample.Register(Guid, Log);
+            // Also opts this page into the explicit search catalog and local result navigation.
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);

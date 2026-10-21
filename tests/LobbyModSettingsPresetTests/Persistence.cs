@@ -16,6 +16,19 @@ namespace LobbyModSettingsPresetTests
     public partial class PresetTests
     {
         [TestMethod]
+        public void PublicationDiagnosticIdentifiesStageBothPathLengthsAndIoFailure()
+        {
+            string target = new string('x', 224);
+            string staging = new string('y', 261);
+            var failure = new DirectoryNotFoundException("fixture missing directory");
+            string diagnostic = LobbyPresetController.DescribePublicationFailure("write-staging-file", target, staging, failure);
+            Assert(diagnostic.Contains("stage=write-staging-file") && diagnostic.Contains("targetPathLength=224") &&
+                diagnostic.Contains("temporaryPathLength=261") && diagnostic.Contains("errorType=System.IO.DirectoryNotFoundException") &&
+                diagnostic.Contains("fixture missing directory") && diagnostic.Contains("hresult=0x"),
+                "Publication diagnostic omitted the failed operation, exact path lengths or original IO cause.");
+        }
+
+        [TestMethod]
         public void LegacyPublicationWithLongInstallationPath()
         {
             PersonalSettingsPaths.TestDocumentsDirectory = _ => Path.Combine(testRoot, "RedirectedDocuments");

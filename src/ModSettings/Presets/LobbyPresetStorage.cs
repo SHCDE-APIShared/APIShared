@@ -30,6 +30,7 @@ namespace APIShared.ModSettings
         private string ReadPath => ExistsAt(filePath) ? filePath : legacyFilePath ?? filePath;
         internal bool Exists => ExistsAt(ReadPath);
         internal bool NeedsRelocation => !ExistsAt(filePath) && legacyFilePath != null && ExistsAt(legacyFilePath);
+        internal string DiagnosticPaths => $"workingSettingsPath={filePath}, legacySettingsPath={legacyFilePath ?? "none"}";
 
         private static bool ExistsAt(string path)
         {

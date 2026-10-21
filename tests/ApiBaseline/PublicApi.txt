@@ -962,6 +962,12 @@ APIShared.ModSettings.ModSettingsSearch | public static void SetSectionKey(Noesi
 APIShared.ModSettings.ModSettingsSearch | public static void SetSectionTitle(Noesis.DependencyObject value, string title)
 APIShared.ModSettings.ModSettingsSearch | public static void SetTitle(Noesis.DependencyObject value, string title)
 APIShared.ModSettings.ModSettingsSearch | public static void SetToolTipText(Noesis.DependencyObject value, string text)
+APIShared.ModSettings.ModSettingsSearchCatalog | public static class APIShared.ModSettings.ModSettingsSearchCatalog
+APIShared.ModSettings.ModSettingsSearchCatalog | public static bool IsRegistered(object viewModel)
+APIShared.ModSettings.ModSettingsSearchCatalog | public static bool TryGetEntries(object viewModel, out System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsSearchEntry> entries)
+APIShared.ModSettings.ModSettingsSearchCatalog | public static bool TryNavigate(object viewModel, string key)
+APIShared.ModSettings.ModSettingsSearchCatalog | public static event System.Action<object> SourceChanged
+APIShared.ModSettings.ModSettingsSearchCatalog | public static void RegisterSource(object viewModel, string absoluteXamlPath, BepInEx.Logging.ManualLogSource log, string modName, System.Func<string, string, bool> navigate = null)
 APIShared.ModSettings.ModSettingsSearchEntry | public sealed class APIShared.ModSettings.ModSettingsSearchEntry
 APIShared.ModSettings.ModSettingsSearchEntry | public .ctor(string key, string title, string toolTip)
 APIShared.ModSettings.ModSettingsSearchEntry | public .ctor(string key, string title, string toolTip, string sectionKey, string sectionTitle, bool isSection)
@@ -1453,11 +1459,21 @@ APIShared.PlayerLordDeathNotification | public int PlayerId { get; }
 APIShared.PlayerLordDeathNotification | public int SimulationTick { get; }
 APIShared.PlayerLordDeathNotification | public long SessionId { get; }
 APIShared.PlayerPerspectiveAPI | public static class APIShared.PlayerPerspectiveAPI
+APIShared.PlayerPerspectiveAPI | public static System.IDisposable SubscribeChanges(string ownerGuid, string registrationId, System.Action<APIShared.PlayerPerspectiveChange> callback)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorView(int playerId)
 APIShared.PlayerPerspectiveAPI | public static int GetControlledPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetRawNativeViewPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetViewedPlayerId()
 APIShared.PlayerPerspectiveAPI | public static void ClearSpectatorView()
+APIShared.PlayerPerspectiveChange | public sealed class APIShared.PlayerPerspectiveChange
+APIShared.PlayerPerspectiveChange | public APIShared.PlayerPerspectiveChangeReason Reason { get; }
+APIShared.PlayerPerspectiveChange | public int CurrentPlayerId { get; }
+APIShared.PlayerPerspectiveChange | public int PreviousPlayerId { get; }
+APIShared.PlayerPerspectiveChange | public long Sequence { get; }
+APIShared.PlayerPerspectiveChangeReason | public enum APIShared.PlayerPerspectiveChangeReason : int
+APIShared.PlayerPerspectiveChangeReason | Cleared = 1
+APIShared.PlayerPerspectiveChangeReason | Selected = 0
+APIShared.PlayerPerspectiveChangeReason | Uncertain = 2
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }

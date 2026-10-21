@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.12.2";
+        public const string PluginVersion = "0.12.3";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -31,6 +31,7 @@ namespace APIShared
             Compatibility.FixesWheatStartup.Initialize(RuntimeLogger);
             Workshop.WorkshopCleanupRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
+            ScriptExtenderFixes.LordMediaResolverRuntime.Initialize(RuntimeLogger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
             Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
@@ -87,6 +88,8 @@ namespace APIShared
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
+                // Managed SE correction; after the Extender has applied its managed detours.
+                new NativeInitializationStep("interpolate event reuse", () => ScriptExtenderFixes.InterpolateEventReuseRuntime.Initialize(Config, RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));
