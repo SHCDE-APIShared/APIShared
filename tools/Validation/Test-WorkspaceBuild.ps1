@@ -1,4 +1,7 @@
 $ErrorActionPreference = 'Stop'
+# A surrounding branch build marks its own process as already dispatched. The fixture
+# must exercise the top-level selection, so it must not inherit that marker.
+foreach ($name in @('SHCDE_BRANCH_SOURCE_ROOT','SHCDE_BRANCH_PINNED')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('build-choice-' + [guid]::NewGuid().ToString('N').Substring(0,8))
 [void][IO.Directory]::CreateDirectory((Join-Path $fixture 'tools/BranchBuild'))
