@@ -136,6 +136,7 @@ function Assert-ApiMainDeliveryIdentity($Workspace,$Identity) { return 'fixture-
         $expected = if ($case -eq 'existing') { 0 } else { 1 }
         Check ($result.ExitCode -eq $expected) ("Preparation /validate failed for ${case}: " + $result.Diagnostic)
         if ($expected -eq 0) { Check ($result.Output -match 'no release or build started') 'Validation did not exit before side effects.' }
+        if ($case -eq 'missing') { Check ($result.Diagnostic -match "own release.bat first") 'Missing APIShared release did not explain the separate release prerequisite.' }
     }
     # Stop at the existing human confirmation without accepting it or starting a release.
     $confirmationDriver = Join-Path $fixture 'confirmation wrapper.ps1'
@@ -153,7 +154,7 @@ exit $LASTEXITCODE
         if ($record -eq 'malformed') { Write-Fixture $platformPath 'invalid json' }
         $env:APISHARED_RELEASE_TEST_CASE = 'missing'
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$confirmationDriver,'-Driver',$driver) $powershell
-        Check ($result.ExitCode -ne 0) ("Consumer preparation accepted a missing release with " + $record + " platform record.")
+        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'own release.bat first' -and $result.Diagnostic -notmatch 'Fixture confirmation reached') ("Missing-release preparation did not stop before publication for " + $record + ": " + $result.Diagnostic)
         $calls = [IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
         Check ($calls -notmatch 'release\|(create|upload|edit|download)') 'Missing release reached a release mutation or download.'
     }

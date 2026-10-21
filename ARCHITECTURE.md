@@ -307,10 +307,11 @@ The popularity display correction uses the existing GuiChecks Post publisher and
 mission lifecycle, with detached report calculations and reusable SE-value snapshots.
 Consumer settings and override ownership remain outside APIShared.
 
-The interpolate-event correction transpiles only SE's `GameMap_InterpChimpHook` and
-reuses its event object while `TransientObserverGate` proves that every R3 observer
-reads it synchronously (IL analysis of plain `Subscribe(Action<T>)` handlers);
-otherwise it keeps SE's allocation. See the
+The interpolate-event optimization validates actual receivers before delivering a pooled
+argument. Unknown or retaining receivers receive a fresh object for the entire remaining
+notification. The private copy of the audited R3 loop preserves its dispatch rules without
+patching shared generic code or locking callbacks. Nested calls and other threads allocate;
+finally-based cleanup needs no frame callback. See the
 [integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
 
 The UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with

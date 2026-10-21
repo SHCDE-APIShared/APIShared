@@ -3,13 +3,29 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.12.3",
+  "Version": "0.12.4",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.12.4",
+      "Changes": [
+        "Retain interpolate-event allocation reuse only for verified transient receivers; guard each actual R3 delivery and give unknown or retaining receivers independently owned arguments.",
+        "Use fresh interpolate arguments for nested calls and other threads; preserve callback order and mutable notification state without locking across callbacks or patching unrelated generic Subject types.",
+        "Validate Extender/R3 forwarding, constructors, properties and the private dispatch transform before enabling reuse; release pooled unit references after delivery.",
+        "Cache up to 64 complete normalized failure causes of at most 4096 characters; continue hashing longer causes in full and preserve severity, repeat counts and throttling.",
+        "Add shared mission-settings authoring, preparation and session services, immutable mod-data access, Trail-container extraction and the independent APIShared.Content library.",
+        "Coordinate custom Coop AI imports and load/save requester preparation, with owner-bound registrations and independent failure handling.",
+        "Preserve mission-origin ownership, active settings and author rules across confirmed restarts; support current-setting recovery for unreadable saved settings records.",
+        "Provide shared recruitment availability, troop-action HUD coordination and explicit managed ModSettings search catalogs; reduce redundant HUD and selection work.",
+        "Extend attributed audio selection, versioned save records, multiplayer save-readiness comparison and native hook coordination while preserving documented consumer contracts.",
+        "Improve Workshop repair, dependency bootstrap, optional Fixes-mod compatibility and hash-bound native validation; avoid repeated startup fingerprint and pattern work.",
+        "Support long installation paths and isolated working-tree builds; keep public API compatibility baselines and regression coverage separate from in-game acceptance."
+      ]
+    },
     { "Version": "0.12.3", "Changes": ["Add an explicit managed settings-search catalog for independent mods, isolate navigation failures, and repair malformed Unicode and emoji truncation in search."] },
     { "Version": "0.12.2", "Changes": ["Faster startup: detours requested during the synchronous library-load run skip thread suspension, hash-bound pattern resolution checks the audited address first, and Workshop manifests validate repeated entries once.", "Assassin route reconstruction also accepts the reverse-neighbor edge into a drawbridge while weighted reconstruction or direct gatehouse climbing is enabled, avoiding the full-map repair for each assassin."] },
     { "Version": "0.12.1", "Changes": ["Own the savegame load checkbox and remember its local choice across restarts; automatic loads without usable UI use current supported settings within mission rules.", "Coordinate load/save requester gates, preparation and cleanup through a public owner-bound registry."] },
