@@ -1,5 +1,15 @@
 # Third-party integration guide
 
+## Example package requirements
+
+The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
+APIShared 0.12.2 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
+[info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
+Install the complete APIShared package and reference its assemblies with
+`Private=false`. The example references both `APIShared.dll` and
+`APIShared.Content.dll`; neither is bundled in the consumer. Its GUID is
+`Example.Author.APISharedDemo`, independent of ExtendedData and the modpack.
+
 ## Game-independent content
 
 For JSON documents keyed by mod GUID, reference `APIShared.Content.dll` (target:
@@ -18,8 +28,8 @@ the underlying parser limits JSON nesting to 64 levels. There is no generic byte
 source-specific limits and authoritative host selection remain the caller's responsibility.
 The parser does not read files or apply gameplay settings.
 
-ExtendedData keeps its previous result types in ExtendedData.Core.dll and adapts them
-to this implementation. Its Lord sidecar/snapshot limits and host-data rules remain intact.
+ExtendedData exposes its result types from ExtendedData.Core.dll through adapters
+to this implementation. Its Lord sidecar/snapshot limits and host-data rules apply.
 
 For bounded sidecars, `ModDataDocumentJson` centralizes document/namespace limits
 and strict caller-owned stream decoding. Runtime `ModDataAccess` reads current map
@@ -45,12 +55,12 @@ preserves dictionary and retained entry identities and the order of retained pla
 The codec does not register a provider, select files or apply settings. Calls are
 synchronous; callers own their documents and must coordinate concurrent access.
 
-ExtendedData's previous `ModSettingsDefinition`, `ModSettingsEntry` and `ModSettingsJson`
-remain in ExtendedData.Core.dll as compatible adapters, including observable mutations
+ExtendedData's `ModSettingsDefinition`, `ModSettingsEntry` and `ModSettingsJson`
+are provided by ExtendedData.Core.dll as adapters, including observable mutations
 and entry aliases. Its filesystem `Read`/`WriteAtomic`, `.modtrail.json` selection,
 mission packages and Lord/host authority remain in ExtendedData. Shared application
 and cleanup live in APIShared; see the mission application section below.
-New consumers can use Content directly without loading either runtime assembly:
+Offline consumers can use Content directly without loading either runtime assembly:
 
 ```csharp
 using APIShared.ModSettings;
@@ -65,7 +75,7 @@ string json = MissionModSettingsJson.Serialize(document);
 The development [dependency bootstrap](DEPENDENCY_BOOTSTRAP.md) can correct false
 missing-provider warnings for selected nested plugins. Consumers keep their normal
 dependency declarations; no registration or bundled APIShared copy is required.
-This development package is not yet approved for installation or release.
+Release readiness requires separate game and package-lifecycle acceptance of the development package.
 
 APIShared optionally loads after Fixes for its audited
 [wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
@@ -212,7 +222,6 @@ the exact instances originally entered. Failed cleanup owners remain for retry;
 errors are aggregated rather than hidden. Retry a failed Exit before applying a new
 context; values from an incompletely cleaned context are not captured as a new draft. APIShared models retain their active
 context when personal restoration throws, making a later Exit retry effective.
-Previously such a failure could clear the flag before restoration had completed.
 Providers must tolerate Exit after a
 partially failed Enter. An incomplete cleanup is not a successful replacement.
 
@@ -660,15 +669,16 @@ restores the requester view; it does not invoke the original action.
 
 Do not install another requester hook. Vanilla hides the requester before invoking
 its confirmation callback; APIShared captures checkbox availability before that hide.
-Older ExtendedData packages with their own requester interception must be updated
-together: APIShared diagnoses that combination before installing its dialog hooks.
-The build installer's consumer preflight also rejects an older ExtendedData plugin
-before copying the APIShared package. It checks the plugin GUID and its public
+An installed ExtendedData plugin must advertise the shared dialog integration with
+`public const bool UsesApiSharedSaveLoadDialog = true` on its plugin type. APIShared
+rejects a conflicting requester owner before installing its dialog hooks.
+The build installer's consumer preflight also rejects an incompatible ExtendedData
+plugin before copying the APIShared package. It checks the plugin GUID and its public
 constant broker marker in assemblies below `BepInEx/plugins`, including renamed
 files. It does not discover unopened Workshop archives or prove a working UI;
 the runtime check remains necessary for those loading paths and manual installs.
-Save archives, packet protocols, local personal presets and the existing host-load
-agreement are unchanged. No ExtendedData installation is required for this UI.
+The dialog uses the save archive, packet protocol, local personal presets and
+host-load agreement of the savegame service. No ExtendedData installation is required for this UI.
 
 ## Namespaces and packaging
 
