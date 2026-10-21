@@ -157,7 +157,8 @@ namespace APIShared.ModSettings
             {
                 // The catalog is read from XAML and is therefore available before Noesis has
                 // materialized an unselected tab's controls. This avoids touching native layout.
-                ModSettingsSearch.RegisterSource(viewModel, absoluteXamlSourceFile, log, modName);
+                ModSettingsSearchCatalog.RegisterSource(viewModel, absoluteXamlSourceFile, log, modName,
+                    viewModel.System_ApplyModSettingsSearchTarget);
             }
 #endif
             viewModel.PreparePresets(

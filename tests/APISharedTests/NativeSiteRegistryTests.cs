@@ -38,6 +38,7 @@ namespace APISharedTests
                 (0x51790, 17, ApiSharedNativeSites.AivBuildStep),
                 (0xCEB10, 10, ApiSharedNativeSites.MarketPrices), (0xCEB90, 10, ApiSharedNativeSites.MarketPrices),
                 (0xD9C40, 10, ApiSharedNativeSites.AssassinPath), (0xE19F9, 23, ApiSharedNativeSites.AssassinPath),
+                (0xE19C0, 14, ApiSharedNativeSites.AssassinPath),
                 (0x16CD70, 10, ApiSharedNativeSites.AssassinAttack),
                 (0x1232E0, 6, ApiSharedNativeSites.GateMovement), (0xDC3C0, 6, ApiSharedNativeSites.GateMovement),
                 (0x113BC0, 10, ApiSharedNativeSites.GateMovement), (0x8F251, 29, ApiSharedNativeSites.GateMovement),

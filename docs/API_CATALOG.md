@@ -18,6 +18,11 @@ validation, pruning and deterministic JSON, without file access or runtime setti
 application. See the same [content guide](THIRD_PARTY_GUIDE.md#game-independent-content)
 for limits, mutation semantics and a minimal example.
 
+`APIShared.Maps.TrailContainer` in Content reads the restart block of a `.trail`
+container and extracts the embedded map without it, from caller-owned bytes. Section
+data and unknown trailing data are copied unchanged; it neither loads nor validates the
+map for the game. See [Trail containers](THIRD_PARTY_GUIDE.md#trail-containers).
+
 `SavegameModSettings.GetParticipantDiagnostics()` reports accepted and rejected
 Map/Trail/Savegame settings participants from the existing registrations, including
 typed status, reason and read-only host property metadata. Its purpose overload
@@ -55,7 +60,11 @@ They require no capability acquisition or consumer registration and are implemen
 separately in `src/ScriptExtenderFixes`. Unsupported dependency implementations are
 skipped without disabling the public services below. The popularity display correction
 automatically follows changed SE contribution values in reports and building panels,
-without modifying simulation or requiring consumer registration.
+without modifying simulation or requiring consumer registration. The interpolate-event
+correction reuses SE's per-unit event object only while every subscriber provably
+reads it synchronously; other subscribers keep SE's allocation.
+The Lord media correction treats absent custom Lord identities as unavailable optional
+media, retaining original native paths and reporting missing metadata once per process.
 
 Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event brokers also expose static registration methods. The command, presentation, recruitment and market entries below require APIShared 0.6.0 or later. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
 
@@ -64,6 +73,7 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
 | `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots; startup member check | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
 | `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions; startup member check | Tick/simulation publisher starts with the first subscriber; first observed tick is baseline-only; no initial-state replay; do not change UI directly; process lifetime |
@@ -139,7 +149,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Selection and perspective | [Local selection](../src/Units/LocalSelectionAPI.cs), [marked units](../src/Units/MarkedUnitSelectionAPI.cs), [perspective](../src/Players/PlayerPerspectiveAPI.cs), [unit access](../src/Units/UnitAccess.cs) | Implementation in those files | — |
 | Modes and launch evidence | [Profiles](../src/GameModes/GameplayModModePolicy.cs), [mode capture](../src/GameModes/MissionModePolicy.cs), [origins](../src/GameModes/CustomizedLaunchOrigins.cs) | Implementation in those files | [Mission policy](../examples/ThirdPartyMod/MissionExample.cs), [launch origin](../examples/ThirdPartyMod/CustomizedLaunchExample.cs) |
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettings.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Personal storage](THIRD_PARTY_GUIDE.md#personal-files-and-previous-installations), [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
-| Settings search / tooltips | [Search and attached properties](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Implementation in those files; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
+| Settings search / tooltips | [Explicit catalog](../src/ModSettings/UI/ModSettingsSearchCatalog.cs), [search and attached properties](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Managed catalog snapshots; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [Opt-in contract](THIRD_PARTY_GUIDE.md#explicit-settings-search-support), [standalone search](../examples/ThirdPartyMod/SettingsSearchExample.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings activation presentation | `PresetLobbyModSettingsViewModel.HostSettingsOpacity` / `ClientSettingsOpacity` | Content-only opacity: inactive scopes use 0.65; editing rights and stored values are unchanged | [Settings UI integration](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | — |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
@@ -222,7 +232,7 @@ thread, outside locks, with exception isolation. Registrations have no hook tear
 
 ## Direct helpers and advanced integration
 
-`LocalSelectionAPI`, `MarkedUnitSelectionAPI` and `PlayerPerspectiveAPI` provide selection/perspective access independent of a custom command engine. `UnitAccess` validates unit lookup/liveness; its unsafe pointer views are immediate-use advanced contracts and must not outlive their valid game state. `GatehouseDrawbridgeCoupling` is a pure spatial helper: callers supply validated bounds and live identity predicates; it grants no ownership or access permission.
+`LocalSelectionAPI`, `MarkedUnitSelectionAPI` and `PlayerPerspectiveAPI` provide selection/perspective access independent of a custom command engine. `PlayerPerspectiveAPI.SubscribeChanges(ownerGuid, registrationId, callback)` reports immutable confirmed transitions (`Selected`, `Cleared`, `Uncertain`) with previous/current IDs and a monotonic sequence. Duplicate selections are silent. Notifications are queued in transition order and callbacks run outside the transition lock with per-observer exception isolation; UI dispatch belongs to the subscriber. Subscribe first, then read the initial snapshot: there is no implicit replay. Clear/uncertain notifications carry `-1` as the new override, not as a native player ID. Disposing stops future captures; already queued notifications may still arrive. `UnitAccess` validates unit lookup/liveness; its unsafe pointer views are immediate-use advanced contracts and must not outlive their valid game state. `GatehouseDrawbridgeCoupling` is a pure spatial helper: callers supply validated bounds and live identity predicates; it grants no ownership or access permission.
 
 `AssassinPathAPI`, `AssassinAttackControlAPI`, `EnemyGatePathPolicyBridge`, `EnemyBridgeDiagnosticBridge` and `TemporaryGateRouteAcceptanceBridge` expose specialized path integration/diagnostics. They are not a general-purpose movement-command API. Use their documented immediate context and ownership contracts; do not retain transient native contexts. `SavegameModSettings` supplies typed save/trail settings integration. `LobbyPreparationOverride` is advanced shared lobby-preparation integration, not an alternative general lifecycle service.
 

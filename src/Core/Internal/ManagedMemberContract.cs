@@ -90,6 +90,7 @@ namespace APIShared
                 [NativeCapabilityIds.HudExtrasButtons] = HudExtrasButtonsService.MemberContract,
                 [NativeCapabilityIds.BuildingRepair] = BuildingRepairService.MemberContract,
                 [NativeCapabilityIds.UnitHudPresentation] = UnitHudPresentationService.MemberContract,
+                [NativeCapabilityIds.CoopAiStartImport] = CoopAiStartImportService.MemberContract,
             };
 
         // Called once at the start of the capability's creation. On a mismatch only this capability reports

@@ -26,6 +26,16 @@ an unclaimed Content DLL is rejected. Upgrade the complete package together: old
 bootstrap binaries cannot validate the extended pair. Build proofs also cover
 Content sources, project configuration and output files.
 
+Content also owns the byte-level `.trail` container reader (`APIShared.Maps`): restart
+block and map extraction without parsing sections or decoding the restart payload.
+Choosing files, packages and whether an extracted map is usable remains with consumers.
+
+`Missions/CoopAiStartImportService` is the single owner of `AIVLoader.UploadDefaultAIV`.
+The mission lifecycle notifies it inside the native multiplayer initialization of a
+Coop start attempt, where it collects immutable plans from registered providers, and
+again when the attempt finishes. Selection, transport and package authority stay with
+the providers (BugfixesAndQoL's lobby synchronization, ExtendedData's packages).
+
 Content also owns bounded mod-data document/namespace validation and caller-owned
 stream decoding. Runtime `ModDataAccess` owns current-archive/local-file reads and
 one optional confirmed selected-Lord callback. It caches no content. ExtendedData
@@ -296,6 +306,12 @@ of other APIShared services. No consumer registration or author-specific mod is 
 The popularity display correction uses the existing GuiChecks Post publisher and
 mission lifecycle, with detached report calculations and reusable SE-value snapshots.
 Consumer settings and override ownership remain outside APIShared.
+
+The interpolate-event correction transpiles only SE's `GameMap_InterpChimpHook` and
+reuses its event object while `TransientObserverGate` proves that every R3 observer
+reads it synchronously (IL analysis of plain `Subscribe(Action<T>)` handlers);
+otherwise it keeps SE's allocation. See the
+[integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
 
 The UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with
 SHCDE-SE 2.14.1. The configuration and compatibility limits are documented in the

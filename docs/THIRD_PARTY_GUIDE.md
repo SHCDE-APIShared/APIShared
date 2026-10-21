@@ -1,5 +1,15 @@
 # Third-party integration guide
 
+## Example package requirements
+
+The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
+APIShared 0.12.2 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
+[info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
+Install the complete APIShared package and reference its assemblies with
+`Private=false`. The example references both `APIShared.dll` and
+`APIShared.Content.dll`; neither is bundled in the consumer. Its GUID is
+`Example.Author.APISharedDemo`, independent of ExtendedData and the modpack.
+
 ## Game-independent content
 
 For JSON documents keyed by mod GUID, reference `APIShared.Content.dll` (target:
@@ -18,8 +28,8 @@ the underlying parser limits JSON nesting to 64 levels. There is no generic byte
 source-specific limits and authoritative host selection remain the caller's responsibility.
 The parser does not read files or apply gameplay settings.
 
-ExtendedData keeps its previous result types in ExtendedData.Core.dll and adapts them
-to this implementation. Its Lord sidecar/snapshot limits and host-data rules remain intact.
+ExtendedData exposes its result types from ExtendedData.Core.dll through adapters
+to this implementation. Its Lord sidecar/snapshot limits and host-data rules apply.
 
 For bounded sidecars, `ModDataDocumentJson` centralizes document/namespace limits
 and strict caller-owned stream decoding. Runtime `ModDataAccess` reads current map
@@ -45,12 +55,12 @@ preserves dictionary and retained entry identities and the order of retained pla
 The codec does not register a provider, select files or apply settings. Calls are
 synchronous; callers own their documents and must coordinate concurrent access.
 
-ExtendedData's previous `ModSettingsDefinition`, `ModSettingsEntry` and `ModSettingsJson`
-remain in ExtendedData.Core.dll as compatible adapters, including observable mutations
+ExtendedData's `ModSettingsDefinition`, `ModSettingsEntry` and `ModSettingsJson`
+are provided by ExtendedData.Core.dll as adapters, including observable mutations
 and entry aliases. Its filesystem `Read`/`WriteAtomic`, `.modtrail.json` selection,
 mission packages and Lord/host authority remain in ExtendedData. Shared application
 and cleanup live in APIShared; see the mission application section below.
-New consumers can use Content directly without loading either runtime assembly:
+Offline consumers can use Content directly without loading either runtime assembly:
 
 ```csharp
 using APIShared.ModSettings;
@@ -65,7 +75,7 @@ string json = MissionModSettingsJson.Serialize(document);
 The development [dependency bootstrap](DEPENDENCY_BOOTSTRAP.md) can correct false
 missing-provider warnings for selected nested plugins. Consumers keep their normal
 dependency declarations; no registration or bundled APIShared copy is required.
-This development package is not yet approved for installation or release.
+Release readiness requires separate game and package-lifecycle acceptance of the development package.
 
 APIShared optionally loads after Fixes for its audited
 [wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
@@ -83,6 +93,59 @@ Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGe
 returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
 interested consumers. Registering an observer is explicit demand for observation.
+
+### Trail containers
+
+`APIShared.Maps.TrailContainer` (Content) inspects an SCDE map or `.trail` container
+held in a caller-owned byte array. `ReadLayout` validates the magic, the six
+length-prefixed preamble blocks, the optional restart field and a known section
+directory tag, and returns the restart offsets. `ReadRestartData` copies the saved
+restart payload; `ExtractMap` returns the embedded map with an empty restart field,
+copying every other byte, including section data and unknown trailing data, unchanged.
+
+Results are independent copies; the input is never modified. Malformed, truncated or
+oversized input (default limit 64 MiB, configurable per call) throws
+`InvalidDataException`. The library does not read files, decode the restart payload,
+load maps or decide whether the game accepts an extracted map; test that in the game.
+
+```csharp
+byte[] trail = File.ReadAllBytes(trailPath);
+byte[] restart = TrailContainer.ReadRestartData(trail);
+File.WriteAllBytes(mapPath, TrailContainer.ExtractMap(trail));
+```
+
+## Coop Trail AI start import
+
+Vanilla's Coop Trail start (`FRONT_Multiplayer.StartSkirmishGame`, Coop branch) calls
+`AIVLoader.UploadDefaultAIV` once per AI player. Unlike the skirmish branch it never
+imports selected castles or sets a custom Lord configuration (AIC). APIShared is the
+single owner of that upload; mods describe what each AI should receive:
+
+```csharp
+ModApiClient api = ApiShared.ForMod(MyPlugin.Guid);
+if (api.TryGetCoopAiStartImport(out ICoopAiStartImportCapability import, out var diagnostic))
+    import.TryRegisterProvider("my.coop.ai", request =>
+        IsMyMission(request.CoopTrail, request.CoopMission)
+            ? new CoopAiStartContribution(BuildPlans())
+            : null, out diagnostic);
+```
+
+- Providers run on the Unity thread inside the native multiplayer initialization of
+  each Coop start attempt (`CoopTrail` 1-4, zero-based `CoopMission`), before the AI
+  upload loop. Read only prepared in-memory state; confirm selection, session and
+  host authority yourself. Every peer must derive the same plans from the same data.
+- A `CoopAiSlotPlan` names the 1-based player ID, the Lord type Vanilla uploads for
+  the slot, the castle source and an optional `EngineInterface.AILordConfigTransferData`.
+  Explicit candidates are imported in order into bank `PlayerId - 1`; the AIC follows.
+  No additional AIV reset is performed. Slots without a plan keep Vanilla's upload.
+- Mark a plan incomplete when only a prefix of the candidate list is known, such as
+  the single candidate Vanilla's lobby data transmits. Complete plans from several
+  providers must be identical; incomplete plans must be prefixes of the complete one.
+  Contradictions, provider exceptions, a changed Lord type or a repeated upload abort
+  the start with `InvalidOperationException` instead of starting with Vanilla castles,
+  so validate earlier at your own start button.
+- Registrations are permanent; return null to contribute nothing. Plans exist only for
+  the current attempt. The capability requires the mission lifecycle.
 
 ## Mission settings preparation
 
@@ -159,7 +222,6 @@ the exact instances originally entered. Failed cleanup owners remain for retry;
 errors are aggregated rather than hidden. Retry a failed Exit before applying a new
 context; values from an incompletely cleaned context are not captured as a new draft. APIShared models retain their active
 context when personal restoration throws, making a later Exit retry effective.
-Previously such a failure could clear the flag before restoration had completed.
 Providers must tolerate Exit after a
 partially failed Enter. An incomplete cleanup is not a successful replacement.
 
@@ -363,6 +425,16 @@ implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consu
 registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
 
+The Lord media correction validates the loaded internal resolver's signature and
+output-initialization/name-lookup entry before installing a process-lifetime managed
+hook. Null or empty Lord identities return false with empty outputs,
+so the native caller retains its original media paths. One warning per process explains
+the missing metadata. Nonempty identities retain the original lookup, results and
+exceptions. This does not reconstruct lost Lord identities or recover custom media;
+an incompatible resolver is skipped independently. No consumer registration is needed.
+`SE_LORD_MEDIA` names the missing input and message category, or the exact installation
+stage and observed method entry when its dependency contract is rejected.
+
 The popularity display correction reads the 41 direct SE popularity modifiers after
 successful `GuiChecks` execution during an active mission. It automatically replaces
 only contributions whose effective SE value differs from Vanilla, including values
@@ -401,13 +473,31 @@ All fingerprints are recorded in the implementation.
 Unknown or changed binaries are skipped with a `SE_IMGUI_SHUTDOWN_FIX` log reason;
 other services remain available. Recheck this evidence after upstream updates.
 
-BepInEx writes the setting to `BepInEx/config/APIShared_Serp.cfg`:
+The interpolate-event correction removes the largest managed allocation source in
+large battles: SE creates a new `UnitUnityVisualInterpolateEventArgs` for every
+visible unit and frame before raising `UnitR3EventHooks.OnUnitUnityVisualInterpolate`.
+APIShared reuses one instance instead, but only while every subscriber provably reads
+the event object synchronously. A subscriber qualifies automatically, without
+registration, when it is a plain `Observable.Subscribe(Action<T>)` handler that uses
+the args only through `Chimp`, `Phase`, `SkipOriginalFunction` getters or null checks.
+Handlers that store, pass, capture or modify the args, R3 operators such as `Where`,
+`Delay` or `Chunk`, and custom observers keep the original per-call allocation for
+all subscribers, so subscribers never observe a changed object. Subscription changes
+during a raise discard the shared instance. Nested raises and raises outside the Unity
+main thread always allocate. The hook body (one allocation, one `Raise`) is validated
+before the transpiler is published; unknown SE code is skipped with a
+`SE_INTERPOLATE_EVENT_REUSE` log reason. `tests/APISharedTests/InterpolateEventReuseTests.cs`
+covers the handler analysis, the subscription gate and the installed SE contracts.
+
+BepInEx writes the settings to `BepInEx/config/APIShared_Serp.cfg`:
 
     [ScriptExtenderFixes]
     EnableImGuiShutdownFix = true
+    EnableInterpolateEventReuse = true
 
-The default is enabled. Changes take effect after restarting the game. There is no
-live unpatching or network setting: the fix changes only local shutdown handling.
+The defaults are enabled. Changes take effect after restarting the game. There is no
+live unpatching or network setting: the fixes change only local shutdown handling and
+local event-object allocation.
 
 At the first close, menu exit, or quitting notification, a terminal shutdown gate
 stops new ImGui work. Subsequent Present/Resize callbacks call the existing native
@@ -525,6 +615,55 @@ and allow users to prepare values while a mod is inactive.
 
 The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
 
+### Explicit settings-search support
+
+Global search includes only tabs that opted in through `ModSettingsSearchCatalog`.
+`LobbyModSettingsPresetRegistration.Register(...)` already registers the resolved
+XAML source and the preset ViewModel's local exact-key navigation. Existing preset
+consumers need no second registry or export method.
+
+A mod with its own settings ViewModel can opt in independently of presets and
+SerpsModsHost. On the Unity thread, resolve the same XAML filename used for its tab,
+then call:
+
+```csharp
+ModSettingsSearchCatalog.RegisterSource(settings, absoluteXamlPath, log, modName);
+```
+
+An optional fifth argument is `Func<string, string, bool>`: it receives an exact
+entry key and its current localized title. Return true after applying a local
+filter. Without a callback, or if it fails, the host simply opens the tab. The
+callback must not traverse, realize, measure or focus other views. See the
+[standalone example](../examples/ThirdPartyMod/SettingsSearchExample.cs).
+
+Register the same ViewModel object as the tab, preferably before publishing the
+tab. Metadata comes exclusively from the XAML document and public readable binding
+properties; it never loads a Noesis view. Titles, tooltips, sections, exclusion and
+ItemsSource-backed templates use the existing `ModSettingsSearch` attached
+metadata. Item collections are snapshots, not live UI subscriptions.
+Re-register the source to refresh changed language text or dynamic items. This
+replaces the source and optional callback and invalidates its cached entries.
+
+`IsRegistered(model)` checks support without reading consumer properties.
+`TryGetEntries(model, out entries)` returns false only for an unregistered model;
+a registered empty or failed catalog returns true with zero entries. Snapshots
+are read-only. A load/getter failure is logged once per registration and cached
+until replacement. Hosts must never fall back to a native UI-tree search.
+`TryNavigate(model, key)` rejects stale keys and isolates callback exceptions,
+logging the first navigation failure per registration. It uses the current title.
+`SourceChanged` runs synchronously after registration/replacement and isolates each
+listener's failure. Replacing the same source from its own notification is rejected
+before mutation to prevent recursive event loops. Recursive `TryNavigate` calls for
+the same model return false, including when a callback replaces its source. All these operations are Unity-thread operations; registration
+retains the ViewModel and callback for process lifetime.
+
+The original `ModSettingsSearch.RegisterSource(...)` remains a compatibility
+facade. Its legacy `Export(model, view)` method retains its existing realized-view
+fallback for older direct callers; the global host uses only the new catalog API
+and never calls that method. Exact keys remain ordinal. Free-text matching repairs
+malformed UTF-16 and Unicode noncharacters rejected by CLR normalization for comparison, retaining
+ordinary Unicode, valid surrogate pairs and diacritic folding.
+
 ### Personal files and previous installations
 
 APIShared preset participants store personal files in the platform-resolved Documents
@@ -607,15 +746,16 @@ restores the requester view; it does not invoke the original action.
 
 Do not install another requester hook. Vanilla hides the requester before invoking
 its confirmation callback; APIShared captures checkbox availability before that hide.
-Older ExtendedData packages with their own requester interception must be updated
-together: APIShared diagnoses that combination before installing its dialog hooks.
-The build installer's consumer preflight also rejects an older ExtendedData plugin
-before copying the APIShared package. It checks the plugin GUID and its public
+An installed ExtendedData plugin must advertise the shared dialog integration with
+`public const bool UsesApiSharedSaveLoadDialog = true` on its plugin type. APIShared
+rejects a conflicting requester owner before installing its dialog hooks.
+The build installer's consumer preflight also rejects an incompatible ExtendedData
+plugin before copying the APIShared package. It checks the plugin GUID and its public
 constant broker marker in assemblies below `BepInEx/plugins`, including renamed
 files. It does not discover unopened Workshop archives or prove a working UI;
 the runtime check remains necessary for those loading paths and manual installs.
-Save archives, packet protocols, local personal presets and the existing host-load
-agreement are unchanged. No ExtendedData installation is required for this UI.
+The dialog uses the save archive, packet protocol, local personal presets and
+host-load agreement of the savegame service. No ExtendedData installation is required for this UI.
 
 ## Namespaces and packaging
 

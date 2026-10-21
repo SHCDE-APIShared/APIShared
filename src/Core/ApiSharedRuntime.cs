@@ -28,6 +28,7 @@ namespace APIShared
         private MissionLifecycleService missionLifecycle;
         private BriefingGoldPresentationService briefingGoldPresentation;
         private BuildingRepairService buildingRepair;
+        private CoopAiStartImportService coopAiStartImport;
         internal RepairTooltipViewModel RepairTooltip { get; } = new RepairTooltipViewModel();
         private NativeCapabilityDiagnostic buildingRepairDiagnostic = Pending(NativeCapabilityIds.BuildingRepair);
         private long nativeModuleBase;
@@ -39,6 +40,7 @@ namespace APIShared
         private NativeCapabilityDiagnostic lobbyStateDiagnostic = Pending(NativeCapabilityIds.LobbyState);
         private NativeCapabilityDiagnostic playerDefeatDiagnostic = Pending(NativeCapabilityIds.PlayerDefeat);
         private NativeCapabilityDiagnostic briefingGoldDiagnostic = Pending(NativeCapabilityIds.BriefingGoldPresentation);
+        private NativeCapabilityDiagnostic coopAiStartImportDiagnostic = Pending(NativeCapabilityIds.CoopAiStartImport);
         private ManualLogSource log;
 
         internal NativeOwnershipRegistry NativeOwnership { get; } = new NativeOwnershipRegistry();
@@ -91,6 +93,15 @@ namespace APIShared
                 }
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
+                if (coopAiStartImportDiagnostic.State == NativeCapabilityState.Pending)
+                {
+                    // Plans are bound to lifecycle start attempts; without them nothing could be planned safely.
+                    if (missionLifecycle == null)
+                        coopAiStartImportDiagnostic = Faulted(NativeCapabilityIds.CoopAiStartImport,
+                            "The mission lifecycle is unavailable.");
+                    else
+                        CoopAiStartImportService.TryCreate(logger, out coopAiStartImport, out coopAiStartImportDiagnostic);
+                }
                 if (briefingGoldDiagnostic.State == NativeCapabilityState.Pending)
                     BriefingGoldPresentationService.TryCreate(
                         logger,
@@ -408,6 +419,21 @@ namespace APIShared
                 diagnostic = missionLifecycleDiagnostic;
                 if (missionLifecycle == null) return false;
                 capability = missionLifecycle.Bind(ownerGuid);
+                return true;
+            }
+        }
+
+        internal bool TryGetCoopAiStartImport(string ownerGuid, out ICoopAiStartImportCapability capability,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            capability = null;
+            if (!ValidateOwner(ownerGuid, NativeCapabilityIds.CoopAiStartImport, out diagnostic))
+                return false;
+            lock (sync)
+            {
+                diagnostic = coopAiStartImportDiagnostic;
+                if (coopAiStartImport == null) return false;
+                capability = coopAiStartImport.Bind(ownerGuid);
                 return true;
             }
         }

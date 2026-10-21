@@ -47,7 +47,7 @@ namespace APIShared
                 string groupReason = "Native control-group records unavailable; that surface remains Vanilla.";
                 if (string.Equals(hash, ApiSharedRuntime.SupportedHash, StringComparison.OrdinalIgnoreCase) && moduleBase != 0)
                 {
-                    int match = CompiledControlGroupStoragePattern.FindUnique(memory);
+                    int match = CompiledControlGroupStoragePattern.FindUniqueAtReference(memory, ControlGroupStoragePatternRva);
                     if (match == ControlGroupStoragePatternRva)
                     {
                         int displacement = BitConverter.ToInt32(memory.Slice(match + ControlGroupStorageDisplacementOffset, sizeof(int)).ToArray(), 0);

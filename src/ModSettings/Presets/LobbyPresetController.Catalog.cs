@@ -379,26 +379,25 @@ namespace APIShared.ModSettings
         private void PublishPresetJson(string path, string json, bool overwrite)
         {
             string directory = Path.GetDirectoryName(path);
-            ModSettingsPresetCatalog.ValidatePersonalWritePath(
-                personalStorageRoot,
-                personalPresetDirectory,
-                path);
-            Directory.CreateDirectory(directory);
-            ModSettingsPresetCatalog.ValidatePersonalWritePath(
-                personalStorageRoot,
-                personalPresetDirectory,
-                path);
             // Keep staging names independent of preset names and reserve them without overwriting another writer.
             string temporaryPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
             bool ownsTemporaryFile = false;
+            string stage = "validate-target";
             try
             {
+                ModSettingsPresetCatalog.ValidatePersonalWritePath(personalStorageRoot, personalPresetDirectory, path);
+                stage = "create-directory";
+                Directory.CreateDirectory(directory);
+                stage = "validate-created-directory";
+                ModSettingsPresetCatalog.ValidatePersonalWritePath(personalStorageRoot, personalPresetDirectory, path);
+                stage = "write-staging-file";
                 using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
                     ownsTemporaryFile = true;
                     using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
                         writer.Write(json);
                 }
+                stage = overwrite ? "replace-existing-preset" : "publish-new-preset";
                 if (!overwrite)
                 {
                     try
@@ -418,11 +417,23 @@ namespace APIShared.ModSettings
                     if (!publish.Succeeded) throw publish.Error;
                 }
             }
+            catch (PresetSaveFileExistsException) { throw; } // Expected UI conflict retains its typed contract.
+            catch (Exception error)
+            {
+                try { DebugLogHelper.LogError(log, $"[{modName}] " + DescribePublicationFailure(stage, path, temporaryPath, error)); }
+                catch { /* Preserve the original publication exception if a logger fails. */ }
+                throw;
+            }
             finally
             {
                 if (ownsTemporaryFile && File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
         }
+
+        internal static string DescribePublicationFailure(string stage, string targetPath, string temporaryPath, Exception error) =>
+            $"PRESET_PUBLICATION_FAILED: stage={stage}, targetPath={targetPath}, targetPathLength={targetPath?.Length ?? 0}, " +
+            $"temporaryPath={temporaryPath}, temporaryPathLength={temporaryPath?.Length ?? 0}, " +
+            $"errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}; {error.Message}";
 
     }
 }

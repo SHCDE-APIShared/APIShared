@@ -193,7 +193,7 @@ namespace APIShared.GateRouting.Native
             transaction = new HookTransaction(region,
                 SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                 new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
-                    InstallOnCommit = false, Backend = GateNativeDetourContract.Backend });
+                    InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(GateNativeDetourContract.Backend) });
             alternateConsumer = AddDetour<BuildingConsumerDelegate>(
                 EnemyGatePathfindingNativeDefinition.AlternateBuildingConsumerRva,
                 (manager, tribe, variant) =>
