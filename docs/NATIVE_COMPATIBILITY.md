@@ -24,7 +24,11 @@ service installs it; the spans are listed there and built in
 registration fails that service closed like an occupied entry.
 
 Capability failures remain independent. Hash-bound catalogs, live-byte validation
-and the existing unique-pattern resolution policy determine support. A pattern
+and the existing unique-pattern resolution policy determine support. Resolvers that
+already require the supported hash accept a pattern match at its audited reference
+RVA without rescanning the mapped image (`CompiledBytePattern.FindUniqueAtReference`;
+the full scan proved uniqueness for that hash and costs about 70 ms at startup); any
+other bytes keep the full unique scan. A pattern
 match is not permission to bypass function, layout, overlap or backend validation.
 Game or Extender version numbers alone are not evidence of native compatibility.
 

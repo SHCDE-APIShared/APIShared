@@ -107,6 +107,10 @@ namespace APISharedTests
                 "compiled AIV pattern must retain its canonical RVA");
             Assert(CompiledBytePattern.Parse(hudPattern).FindUnique(installedImage) == 0x186338,
                 "compiled HUD pattern must retain its canonical RVA");
+            // The hash-bound reference shortcut must agree with the full scan on the audited image.
+            Assert(CompiledBytePattern.Parse(aivPattern).FindUniqueAtReference(installedImage, 0x51790) == 0x51790 &&
+                CompiledBytePattern.Parse(hudPattern).FindUniqueAtReference(installedImage, 0x186338) == 0x186338,
+                "reference-first search must equal the full scan on the audited image");
 
             var random = new Random(0x53E2);
             string[] patterns =
@@ -129,6 +133,13 @@ namespace APISharedTests
                     }
                     Assert(compiled.FindUnique(data) == FindUniqueReference(data, pattern),
                         "compiled pattern search differs from reference semantics for " + pattern);
+                    // Reference-first: a match at the reference wins; otherwise the full-scan result.
+                    int reference = random.Next(-2, data.Length + 2);
+                    bool atReference = reference >= 0 && reference <= data.Length - compiled.Length &&
+                        FindUniqueReference(data.Skip(reference).Take(compiled.Length).ToArray(), pattern) == 0;
+                    Assert(compiled.FindUniqueAtReference(data, reference) ==
+                        (atReference ? reference : FindUniqueReference(data, pattern)),
+                        "reference-first search differs from its contract for " + pattern);
                 }
             }
         }

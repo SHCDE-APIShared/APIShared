@@ -95,7 +95,7 @@ namespace APIShared
                         "The native module or RedBird scan region is unavailable.");
                 NativePeImage image = NativePeImage.Parse(memory);
                 image.RequireExecutableRange(FunctionRva, FunctionSize, "AIV ExecuteBuildStep");
-                int match = CompiledFunctionPattern.FindUnique(memory);
+                int match = CompiledFunctionPattern.FindUniqueAtReference(memory, FunctionRva);
                 if (match < 0)
                     throw new NativeResolutionException(
                         match == -2 ? NativeCapabilityState.Ambiguous : NativeCapabilityState.PatternMissing,
