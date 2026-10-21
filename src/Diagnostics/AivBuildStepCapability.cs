@@ -121,7 +121,8 @@ namespace APIShared
                     {
                         FailureMode = TransactionFailureMode.RollbackAndThrow,
                         OwnsHooks = true,
-                        InstallOnCommit = false
+                        InstallOnCommit = false,
+                        Backend = NativeStartupPatchWindow.Backend()
                     });
                 pending.AddDetour(
                     candidate.hook,

@@ -366,7 +366,7 @@ namespace APIShared
                 // is written, so Build never runs before RunVanillaBuilder can (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow,
-                        OwnsHooks = true, InstallOnCommit = false, Backend = Backend });
+                        OwnsHooks = true, InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(Backend) });
                 ulong nativeBase = unchecked((ulong)module.ToInt64());
                 for (int index = 0; index < pendingEndpoints.Length; index++)
                 {

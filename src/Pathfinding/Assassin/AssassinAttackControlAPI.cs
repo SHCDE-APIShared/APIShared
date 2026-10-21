@@ -136,7 +136,7 @@ namespace APIShared
                 // live, so DispatchAssassinUpdate always finds its original (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
-                        InstallOnCommit = false, Backend = AssassinAttackNativeContract.Backend });
+                        InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(AssassinAttackNativeContract.Backend) });
                 pending.AddDetour(candidate, HookTarget.FromAddress(unchecked((ulong)target.ToInt64())), (AssassinAttackNativeContract.UpdateDelegate)DispatchAssassinUpdate);
                 CommitResult result = pending.Commit();
                 if (!result.IsCompleteSuccess || !candidate.Success)

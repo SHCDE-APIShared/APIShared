@@ -55,6 +55,16 @@ requests report the retained failure instead of retrying a partial installation.
 Gate-routing providers must retain their supplied buffers even when installation
 throws; published callbacks may still access them for the rest of the process.
 
+RedBird's NativeX64 detour backend suspends every other process thread around each
+patch (about 60 ms per detour). APIShared-owned detours skip that suspension only
+inside `NativeStartupPatchWindow`: the synchronous run that raises
+`CrusaderLibrary.LibraryLoaded`, on the thread that started APIShared's handler,
+until the next Unity main-thread turn. This covers APIShared's own startup detours
+and shared detours that consumers request from their own `LibraryLoaded` handlers.
+No simulation, AI, pathing, market or unit-speech code has run at that point, and
+the Script Extender writes its own detours there without suspension. Every other
+installation keeps suspension; scheme, jump and chaining options never change.
+
 RedBird inline-hook size is a minimum: actual displacement is instruction-aligned
 and can exceed the requested size. Function detours have a separate scheme-dependent
 contract. Validate the real backend, complete displaced range, incoming branches,

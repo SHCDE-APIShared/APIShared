@@ -48,8 +48,13 @@ namespace APIShared
         // boundary publishes Unavailable. WhenReady callbacks therefore always complete.
         private void OnLibraryLoaded(CrusaderLibraryLoadContext context)
         {
+            // Startup detours of APIShared and of consumers in this synchronous run skip RedBird's
+            // per-patch thread suspension (NativeStartupPatchWindow). Opening never throws.
+            NativeStartupPatchWindow.OpenForStartupRun();
             ApiSharedRuntime runtime = ApiSharedRuntime.ProcessInstance;
             string hash = string.Empty;
+            try
+            {
             runtime.RunNativeInitialization(RuntimeLogger,
                 // Binds the image for site registrations before any APIShared or consumer hook claims it.
                 new NativeInitializationStep("native site registry", () => runtime.NativeOwnership.BindModule(
@@ -85,6 +90,8 @@ namespace APIShared
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));
+            }
+            finally { NativeStartupPatchWindow.EndApiSharedHandler(); }
         }
 
         private static string ComputeInstalledHash()

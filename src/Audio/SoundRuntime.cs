@@ -167,7 +167,8 @@ namespace APIShared.Audio
                 reason => new InvalidOperationException("Audio hook conflict: " + reason));
             try
             {
-                CreateHooks(Address(context, NativeContract.WrapperRva), Address(context, NativeContract.FlagWrapperRva), Address(context, NativeContract.EmitRva));
+                CreateHooks(Address(context, NativeContract.WrapperRva), Address(context, NativeContract.FlagWrapperRva), Address(context, NativeContract.EmitRva),
+                    NativeStartupPatchWindow.SuspendThreads);
                 ValidateHooks(context);
             }
             catch { RollbackUnpublished(); throw; }

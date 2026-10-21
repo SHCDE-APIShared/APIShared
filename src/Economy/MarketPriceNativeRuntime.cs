@@ -91,7 +91,7 @@ namespace APIShared.Economy
                 // so Buy and Sell always find theirs (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
-                        InstallOnCommit = false, Backend = Backend });
+                        InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(Backend) });
                 pending.AddDetour(buy, HookTarget.FromAddress(unchecked((ulong)(module + BuyRva).ToInt64())), (PriceCall)Buy);
                 pending.AddDetour(sell, HookTarget.FromAddress(unchecked((ulong)(module + SellRva).ToInt64())), (PriceCall)Sell);
                 installation.Install(pending, buy, sell, () =>
