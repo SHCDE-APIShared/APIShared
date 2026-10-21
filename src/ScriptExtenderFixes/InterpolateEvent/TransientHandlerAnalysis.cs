@@ -16,7 +16,9 @@ namespace APIShared.ScriptExtenderFixes
 
         internal static bool IsTransient(MethodInfo method, Type argsType, Func<MethodBase, bool> isAllowedGetter)
         {
-            if (method == null || argsType == null || isAllowedGetter == null) return false;
+            if (method == null || argsType == null || isAllowedGetter == null || method.ReturnType != typeof(void)) return false;
+            // A patched handler can execute code absent from its reflected method body.
+            if (HarmonyLib.Harmony.GetPatchInfo(method) != null) return false;
             ParameterInfo[] parameters = method.GetParameters();
             if (parameters.Length != 1 || !parameters[0].ParameterType.IsAssignableFrom(argsType)) return false;
             byte[] il;

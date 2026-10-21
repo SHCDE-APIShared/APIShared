@@ -122,9 +122,10 @@ function Assert-ApiMainDeliveryIdentity($Workspace,$Identity) { return 'fixture-
     foreach ($case in @('missing','existing','commit','mode','auth','access','network')) {
         $env:APISHARED_RELEASE_TEST_CASE = $case
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$driver,'-ValidateOnly','1') $powershell
-        $expected = if ($case -in @('missing','existing')) { 0 } else { 1 }
+        $expected = if ($case -eq 'existing') { 0 } else { 1 }
         Check ($result.ExitCode -eq $expected) ("Preparation /validate failed for ${case}: " + $result.Diagnostic)
         if ($expected -eq 0) { Check ($result.Output -match 'no release or build started') 'Validation did not exit before side effects.' }
+        if ($case -eq 'missing') { Check ($result.Diagnostic -match "own release.bat first") 'Missing APIShared release did not explain the separate release prerequisite.' }
     }
     # Stop at the existing human confirmation without accepting it or starting a release.
     $confirmationDriver = Join-Path $fixture 'confirmation wrapper.ps1'
@@ -142,7 +143,7 @@ exit $LASTEXITCODE
         if ($record -eq 'malformed') { Write-Fixture $platformPath 'invalid json' }
         $env:APISHARED_RELEASE_TEST_CASE = 'missing'
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$confirmationDriver,'-Driver',$driver) $powershell
-        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'Fixture confirmation reached:\s*Type\s+VEROEFFENTLICHEN') ("Production preparation blocked by " + $record + " approval record: " + $result.Diagnostic)
+        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'own release.bat first' -and $result.Diagnostic -notmatch 'Fixture confirmation reached') ("Missing-release preparation did not stop before publication for " + $record + ": " + $result.Diagnostic)
     }
     # Exercise the actual upload driver with an inert publisher and isolated preparation state.
     $upload = Join-Path $driverDirectory 'Upload-Workshop.ps1'

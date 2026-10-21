@@ -473,21 +473,22 @@ All fingerprints are recorded in the implementation.
 Unknown or changed binaries are skipped with a `SE_IMGUI_SHUTDOWN_FIX` log reason;
 other services remain available. Recheck this evidence after upstream updates.
 
-The interpolate-event correction removes the largest managed allocation source in
-large battles: SE creates a new `UnitUnityVisualInterpolateEventArgs` for every
+For visual interpolation, SE creates a new `UnitUnityVisualInterpolateEventArgs` for every
 visible unit and frame before raising `UnitR3EventHooks.OnUnitUnityVisualInterpolate`.
-APIShared reuses one instance instead, but only while every subscriber provably reads
-the event object synchronously. A subscriber qualifies automatically, without
-registration, when it is a plain `Observable.Subscribe(Action<T>)` handler that uses
-the args only through `Chimp`, `Phase`, `SkipOriginalFunction` getters or null checks.
-Handlers that store, pass, capture or modify the args, R3 operators such as `Where`,
-`Delay` or `Chunk`, and custom observers keep the original per-call allocation for
-all subscribers, so subscribers never observe a changed object. Subscription changes
-during a raise discard the shared instance. Nested raises and raises outside the Unity
-main thread always allocate. The hook body (one allocation, one `Raise`) is validated
-before the transpiler is published; unknown SE code is skipped with a
-`SE_INTERPOLATE_EVENT_REUSE` log reason. `tests/APISharedTests/InterpolateEventReuseTests.cs`
-covers the handler analysis, the subscription gate and the installed SE contracts.
+APIShared avoids that allocation only for receivers whose handlers provably cannot retain
+or forward the arguments. Before the first unknown or retaining receiver actually runs,
+the notification is promoted to a fresh object. All subsequent receivers of that notification
+receive the same fresh object, preserving callback mutations and allowing it to be retained.
+R3 operators and custom observers are treated as unknown. Newly registered receivers are
+checked at their actual delivery; short-lived subscriptions cannot bypass this boundary.
+
+The implementation copies the audited R3 delivery loop into a private, non-generic stand-in.
+It does not patch `Subject<T>.OnNext`, avoiding effects on other events through Mono's
+shared generic code. R3 subscription versions, ordering, disposal and error handling remain
+in that loop. No callback runs under an added lock. Nested hook calls and other threads use
+fresh arguments. A finally wrapper balances notification state even after an exception;
+there is no per-frame recovery callback. Unknown method contracts or existing patches of
+the audited dispatch methods decline the optimization and keep SE's original path.
 
 BepInEx writes the settings to `BepInEx/config/APIShared_Serp.cfg`:
 
@@ -495,9 +496,9 @@ BepInEx writes the settings to `BepInEx/config/APIShared_Serp.cfg`:
     EnableImGuiShutdownFix = true
     EnableInterpolateEventReuse = true
 
-The defaults are enabled. Changes take effect after restarting the game. There is no
-live unpatching or network setting: the fixes change only local shutdown handling and
-local event-object allocation.
+Both fixes default to enabled and take effect after restarting the game.
+The existing interpolate setting remains supported; setting it to false retains the original path.
+Neither option is a network setting and no live unpatching occurs.
 
 At the first close, menu exit, or quitting notification, a terminal shutdown gate
 stops new ImGui work. Subsequent Present/Resize callbacks call the existing native

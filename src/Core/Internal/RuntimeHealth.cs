@@ -18,7 +18,6 @@ namespace APIShared.Internal
         private readonly object sync = new object();
         private readonly Dictionary<string, Entry> entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
         private readonly LinkedList<string> recent = new LinkedList<string>();
-        private readonly Dictionary<string, string> causes = new Dictionary<string, string>(StringComparer.Ordinal);
         private static readonly System.Text.RegularExpressions.Regex Stamp =
             new System.Text.RegularExpressions.Regex(@"\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\]");
         [ThreadStatic] private static System.Security.Cryptography.SHA256 sha;
@@ -36,26 +35,42 @@ namespace APIShared.Internal
             this.owner = owner ?? "unknown"; this.write = write; this.clock = clock;
             interval = frequency * 30; this.capacity = capacity;
         }
+        private const int CauseCacheCapacity = 64, MaximumCachedCauseLength = 4096;
+        private readonly Dictionary<string, string> causeCache = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Queue<string> causeCacheOrder = new Queue<string>();
+        internal int CachedCauseCount { get { lock (sync) return causeCache.Count; } }
+        internal long CauseHashComputations { get { return System.Threading.Interlocked.Read(ref causeHashComputations); } }
+        private long causeHashComputations;
+
+        private string CachedCause(string normalized)
+        {
+            bool cacheable = normalized.Length <= MaximumCachedCauseLength;
+            string cause;
+            if (cacheable)
+                lock (sync) if (causeCache.TryGetValue(normalized, out cause)) return cause;
+            System.Threading.Interlocked.Increment(ref causeHashComputations);
+            cause = HashCause(normalized);
+            if (cacheable)
+                lock (sync)
+                {
+                    // Another reporting thread may have inserted the same complete cause.
+                    if (!causeCache.ContainsKey(normalized))
+                    {
+                        if (causeCache.Count == CauseCacheCapacity) causeCache.Remove(causeCacheOrder.Dequeue());
+                        causeCache.Add(normalized, cause);
+                        causeCacheOrder.Enqueue(normalized);
+                    }
+                }
+            return cause;
+        }
+
         internal int Count { get { lock (sync) return entries.Count; } }
         internal void Report(string feature, bool error, string detail)
         {
             try
             {
                 feature = Clean(feature);
-                // A failure repeating every tick usually repeats the identical text: reuse its
-                // cause hash instead of normalizing and hashing it again before the throttle.
-                string raw = feature + (error ? "\nerror\n" : "\nwarning\n") + (detail ?? "");
-                string cause;
-                lock (sync) causes.TryGetValue(raw, out cause);
-                if (cause == null)
-                {
-                    cause = Cause(detail);
-                    lock (sync)
-                    {
-                        if (causes.Count >= capacity) causes.Clear();
-                        causes[raw] = cause;
-                    }
-                }
+                string cause = CachedCause(NormalizeCause(detail));
                 string key = feature + (error ? "\nerror\n" : "\nwarning\n") + cause;
                 long suppressed = 0;
                 lock (sync)
@@ -88,11 +103,15 @@ namespace APIShared.Internal
             catch { /* Logging cannot interrupt gameplay or cleanup. */ }
         }
         // Hash the complete normalized cause: truncating display text must not merge different failures.
-        private static string Cause(string detail)
+        private static string NormalizeCause(string detail)
         {
             string normalized = detail ?? "";
             if (normalized.IndexOf('[') >= 0) normalized = Stamp.Replace(normalized, "");
             normalized = normalized.Replace('\r', ' ').Replace('\n', ' ');
+            return normalized;
+        }
+        private static string HashCause(string normalized)
+        {
             if (sha == null) sha = System.Security.Cryptography.SHA256.Create();
             return BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(normalized))).Replace("-", "");
         }
