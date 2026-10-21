@@ -41,6 +41,8 @@
     <Compile Include="..\..\src\ModSettings\Lobby\PerPlayerLobbySettings.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetAtomicFilePublisher.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.cs" />
+    <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.RuntimeLog.cs" />
+    <Compile Include="..\..\src\ModSettings\ModSettingsStartLog.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Catalog.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Persistence.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Mission.cs" />

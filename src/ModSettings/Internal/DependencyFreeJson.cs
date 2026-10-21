@@ -31,6 +31,52 @@ namespace APIShared.Internal
             return output.ToString();
         }
 
+        // Keep the existing file/preset encoding unchanged. Only whitespace outside JSON
+        // strings is removed, so escaped quotes, backslashes and string spacing survive.
+        internal static string SerializeCompact(object value) => Compact(Serialize(value));
+
+        private static string Compact(string json)
+        {
+            var output = new StringBuilder(json.Length);
+            bool quoted = false, escaped = false;
+            foreach (char character in json)
+            {
+                if (quoted)
+                {
+                    output.Append(character);
+                    if (escaped) escaped = false;
+                    else if (character == '\\') escaped = true;
+                    else if (character == '"') quoted = false;
+                }
+                else if (character == '"')
+                {
+                    quoted = true;
+                    output.Append(character);
+                }
+                else if (character != ' ' && character != '\t' && character != '\r' && character != '\n')
+                    output.Append(character);
+            }
+            return output.ToString();
+        }
+
+        // Only this encoder can create a frozen value. Retaining encoded JSON avoids
+        // rereading mutable objects/getters and preserves exact decimal/integer literals;
+        // parsing back through a floating-point DOM could lose precision.
+        internal static object CaptureValue(object value, int depth)
+        {
+            if (depth < 0) throw new ArgumentOutOfRangeException(nameof(depth));
+            var output = new StringBuilder();
+            WriteValue(output, value, depth, new HashSet<object>(ReferenceComparer.Instance));
+            return value is bool ? value : new EncodedValue(Compact(output.ToString()), depth);
+        }
+
+        private sealed class EncodedValue
+        {
+            internal readonly string Json;
+            internal readonly int Depth;
+            internal EncodedValue(string json, int depth) { Json = json; Depth = depth; }
+        }
+
         private static void WriteValue(
             StringBuilder output,
             object value,
@@ -39,6 +85,13 @@ namespace APIShared.Internal
         {
             if (depth > MaximumDepth)
                 throw new InvalidDataException("JSON exceeds the maximum depth of " + MaximumDepth + ".");
+            if (value is EncodedValue encoded)
+            {
+                if (depth > encoded.Depth)
+                    throw new InvalidDataException("Captured JSON value was embedded deeper than its validated depth.");
+                output.Append(encoded.Json);
+                return;
+            }
             if (value == null)
             {
                 output.Append("null");

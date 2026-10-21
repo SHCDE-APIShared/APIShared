@@ -587,6 +587,8 @@ Derive your settings from `APIShared.ModSettings.PresetLobbyModSettingsViewModel
 
 Classify saved properties with Script Extender `[SyncHostOnly]` or `[SyncPerPlayer]`, or APIShared `[PresetLocal]`. Each per-player property needs a public compatible `<Name>Data` array for slots 0..8. Keep setters behind `CanMutateSetting()` and call `OnPropertyChanged` after actual changes. Configure additional per-player rules through `ConfigurePerPlayerLobbySettings`; do not implement another roster poller.
 
+For registered APIShared participants, personal values may change before a stable local slot exists or while leaving a lobby. The scalar, UI notifications and personal persistence remain local; only the outbound per-player broadcast waits. After the roster and transport mapping agree, the existing coordinator publishes the latest full personal snapshot into the resolved slot. No temporary value is assigned to slot 1. Host-only properties and settings registered outside APIShared retain their existing transport path.
+
 Automatic save restoration prepares host settings before loading. Multiplayer saves
 are identified by their actual load entry, including a host playing alone. Existing
 Extender property sync and application-backend transports carry the values; APIShared
@@ -614,6 +616,62 @@ disable editing or change stored values: keep the existing editing-rights bindin
 and allow users to prepare values while a mod is inactive.
 
 The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
+
+### Mission-start settings log
+
+APIShared automatically logs published preset endpoints, including local-only mods
+and external working-copy integrations. No additional consumer registration is
+needed. Successful new maps, save restores, explicit restarts and editor starts
+produce one Info block per process-local mission session. Failed attempts do not
+produce a block, and replayed start notifications do not duplicate it. This output
+is independent of the optional diagnostics switch and uses the normal BepInEx
+logger with millisecond timestamps; the disk listener must include Info.
+
+After the BepInEx/timestamp prefix, parse the exact `MODSETTINGS_BEGIN ` or
+`MODSETTINGS ` marker followed by one complete compact JSON object. Both objects
+contain integer `schema: 1` and `session`; session IDs are process-local, so combine
+them with the enclosing BepInEx process-start boundary when reading appended logs.
+
+The header contains `start` (`NewGame`, `LoadedSave`, `EditorCreated`, `EditorLoaded`),
+boolean `restart`, `mode` and `variant` (the names of the existing mission-mode
+enums), `role` (`host`, `client`, `local`, `unknown`), nullable `localPlayer` and
+the number of endpoint rows in `mods`. Unknown mode/authority is not guessed.
+For example, omitting the normal logger prefix:
+
+```text
+MODSETTINGS_BEGIN {"schema":1,"session":12,"start":"NewGame","restart":false,"mode":"CustomGame","variant":"Standard","role":"local","localPlayer":1,"mods":1}
+MODSETTINGS {"schema":1,"session":12,"mod":"Foreign.Author.Mod","host":{"EnableMod":false},"player":{"EnableClientFeatures":true,"Preference":2},"local":{"ShowMarkers":true},"disabled":["host"]}
+```
+
+Each endpoint row identifies the target plugin by its exact GUID in `mod`.
+`host`, `player` and `local` group the existing persistent setting scopes and use
+exact, case-sensitive code keys, ordered ordinally. Mods are ordered by GUID.
+All current values, including defaults and full arrays, are included; UI helpers,
+commands and companion arrays are not settings. Player values come from this
+client's own properties, never other players' companion slots. Configuration
+backends are read through `ReadActiveValues()`, never desired or pending values.
+The read-only capture runs on the Unity thread and does not alter presets,
+personal files, authority or synchronization.
+
+The controller's existing host/client activation switches determine shortening.
+An inactive group retains only its activation property, if that property belongs
+to the group. `disabled` explicitly lists shortened groups; the client switch
+shortens both `player` and `local`. A shortened local group can therefore be `{}`
+when its switch belongs to `player`. Groups without settings are absent, and
+groups without a discovered activation switch are not assumed disabled.
+
+Values use the existing JSON codec: numbers are culture-independent, enums use
+their underlying numeric value, booleans remain booleans, strings are escaped,
+and null remains null. Lines are not truncated. Parsers should accept additional
+metadata fields within this schema and distinguish an omitted value from null.
+Failed reads/encodings omit the affected value and add an `errors` array of
+objects with `scope`, `code: "read_failed"` and, for individual settings, `key`.
+A whole-endpoint or active-backend failure uses `scope: "mod"` without `key`;
+no desired-value fallback is used. Technical exceptions are logged separately
+as warnings. One endpoint failure does not suppress the other endpoint rows.
+
+This records current configuration, not proof that each configured feature runs
+in the current mode. Additional consumer-owned feature conditions are not inferred.
 
 ### Explicit settings-search support
 

@@ -858,6 +858,9 @@ namespace APIShared.ModSettings
                 ownerGuid,
                 builder.Build(),
                 logRoutineActivity);
+#if !API_SHARED_PRESET_TESTS
+            PerPlayerLobbyBroadcastGuard.Register(this, perPlayerSettingsCoordinator);
+#endif
         }
 
         internal void ActivatePerPlayerLobbySettings()
