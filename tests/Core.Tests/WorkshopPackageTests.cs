@@ -29,6 +29,20 @@ public sealed class WorkshopPackageTests
         Write(Game, "_APIShared/Workshop/Receipts/" + id + ".json", WorkshopPackageCodec.Write(new WorkshopReceipt { WorkshopId = id.ToString(), PackageId = package.PackageId, Version = package.Version,
             Files = package.Files, ModGuids = package.ModGuids, ManifestHash = WorkshopInventory.Hash(Path.Combine(Source, WorkshopPackage.ManifestFileName)), TransactionId = Guid.NewGuid().ToString("N") }));
     }
+    [TestMethod] public void LegacyReleasesShareValidationButStillRejectUnsafeEntries()
+    {
+        // Repeated legacy paths and hashes reuse one successful validation; rejections are unchanged.
+        var file = new WorkshopFile(Root + "/info.json", 1, new string('A', 64));
+        string Manifest(WorkshopFile[] legacy) => WorkshopPackageCodec.Write(new { SchemaVersion = 1, PackageId = "ExamplePackage", Version = "1.1.0",
+            MinimumAPISharedVersion = "0.7.1", Roots = new[] { Root }, Files = new[] { file },
+            LegacyReleases = new[] { new { Version = "1.0.0", Files = legacy }, new { Version = "0.9.0", Files = new[] { file } } } });
+        var package = WorkshopPackageCodec.Read(Manifest(new[] { file }));
+        Assert.AreEqual(2, package.LegacyReleases.Count);
+        Assert.AreEqual(file.Path, package.LegacyReleases[1].Files[0].Path);
+        Assert.AreEqual(new string('a', 64), package.LegacyReleases[1].Files[0].Sha256, "a remembered hash keeps its normalized form");
+        Assert.ThrowsExactly<InvalidDataException>(() => WorkshopPackageCodec.Read(Manifest(new[] { file, new WorkshopFile(Root + "/config/x.json", 1, new string('a', 64)) })));
+        Assert.ThrowsExactly<InvalidDataException>(() => WorkshopPackageCodec.Read(Manifest(new[] { new WorkshopFile(Root + "/info.json", 1, new string('z', 64)) })));
+    }
     [TestMethod] public void ReceiptControlsUpdatesDespiteChangedOrMissingDll()
     {
         var package = Package(); InstallReceipt(package); Write(Game, Root + "/Example.dll", "local changes");

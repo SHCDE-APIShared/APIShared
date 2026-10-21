@@ -61,6 +61,8 @@ namespace APIShared
         public const string BriefingGoldPresentation = "briefing-gold-presentation";
         /// <summary>Capability for complete building repair costs and repair HUD tooltips.</summary>
         public const string BuildingRepair = "building-repair";
+        /// <summary>Capability for importing planned AI castles and custom Lord configurations at Coop Trail starts.</summary>
+        public const string CoopAiStartImport = "coop-ai-start-import";
     }
 
     /// <summary>Immutable diagnostic information returned by capability acquisition and mutation.</summary>

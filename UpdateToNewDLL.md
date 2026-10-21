@@ -225,6 +225,34 @@ native layout. Execute generated stubs with the installed RedBird backend after
 updates. Acquisition and legacy policy registration do not install hooks; explicit
 installation is permanent, setting/map changes only change logical data.
 
+## Assassin reconstruction connection rule
+
+Owner: `Pathfinding/Assassin/AssassinPathAPI` (site index 4 of
+`AssassinPathNativeDefinition`), audited against
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+
+- Hook 0xE19C0/14 (X64InlineHook): `test byte [r14+r15+0x312620],al` (8) /
+  `jne short 0xE1A1F` (2) / `test r12b,1` (4). Reached only after `cmp ecx,3`
+  at 0xE19BB, i.e. E1640 mode 3, which F4930 passes when path manager +0x88 != 0
+  (0xF4B5A). E32B0 (mode 0) and F4930's second call (mode 1) never reach it.
+- Pattern fallback: the 24 bytes up to the 0xE19D8 site, unique in executable sections.
+  Incoming edges into 0xE19C1..0xE19CD are refused by `ValidateIncoming` over E1640.
+- Data: neighbor offsets 0x405EDB0 `[y * 8 + direction]`, connections 0x51890D0
+  (byte per tile), direction masks 0x312620 (must equal `1 << direction`, checked
+  before publication). Live at the site: al = current connections, rdx = row y,
+  r8d = current tile, r14 = direction, r15 = image base.
+- Semantics: D9C40 expands u->v by `conn[u] & mask[dir]` (0xD9EA6) and the physical
+  step DCE60 accepts either endpoint; E1640 descends target->start checking only
+  `conn[current]`. While policy flag 1 or 2 is set the stub also accepts
+  `conn[neighbor] & mask[(dir + 4) & 7]` and jumps to 0xE1A1F (stamp/distance check
+  unchanged, no flag dependency there). Otherwise `test r12b,1` is replayed last.
+  Without the rule, every unit leaving its own gatehouse over a one-way drawbridge
+  failed reconstruction and ran DAA50/E49D0/C3E50/DE6A0 (~19 ms each, 2026-10-20,
+  8-lord save: 112 failures vs. 10 without the gatehouse rule).
+- Update checks: re-derive the mode dispatch, register liveness at 0xE19C0, the
+  neighbor/connection layouts and the D9C40 edge direction; execute the generated
+  stub against the copied E1640 body (`AssassinReconstructionConnectionTests`).
+
 ## Registered native sites
 
 Every APIShared native site above and in the other services is registered in the

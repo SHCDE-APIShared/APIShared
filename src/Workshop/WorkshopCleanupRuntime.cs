@@ -26,13 +26,26 @@ namespace APIShared.Workshop
         {
             if (hook != null) return;
             logger = log;
+            string stage = "validate-staging-contract";
             try
             {
                 MethodInfo method = ValidateExtender(typeof(MapArchive).Assembly);
+                stage = "install-staging-hook";
                 hook = new ILHook(method, Modify);
                 logger.LogInfo("Workshop cleanup installed; process-lifetime staging callback, no plugin lifecycle scheduling.");
             }
-            catch (Exception ex) { logger.LogWarning("Workshop cleanup unavailable: " + ex.Message); }
+            catch (Exception ex) { logger.LogWarning("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " +
+                DescribeRejection(typeof(MapArchive).Assembly, stage, ex)); }
+        }
+
+        internal static string DescribeRejection(Assembly assembly, string stage, Exception error)
+        {
+            string hash;
+            try { hash = WorkshopInventory.Hash(assembly.Location); }
+            catch (Exception hashError) { hash = "unreadable:" + hashError.GetType().Name; }
+            return $"WORKSHOP_CLEANUP_UNAVAILABLE: stage={stage}, extender={assembly.FullName}, path={assembly.Location}, " +
+                $"sha256={hash}, errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}; " +
+                $"automatic obsolete-file cleanup was not installed; original Extender staging remains unchanged. Reason: {error}";
         }
 
         // Validate the loaded contract rather than a release number or whole-assembly hash.

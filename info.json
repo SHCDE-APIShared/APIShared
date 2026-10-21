@@ -3,13 +3,15 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.12.1",
+  "Version": "0.12.3",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    { "Version": "0.12.3", "Changes": ["Add an explicit managed settings-search catalog for independent mods, isolate navigation failures, and repair malformed Unicode and emoji truncation in search."] },
+    { "Version": "0.12.2", "Changes": ["Faster startup: detours requested during the synchronous library-load run skip thread suspension, hash-bound pattern resolution checks the audited address first, and Workshop manifests validate repeated entries once.", "Assassin route reconstruction also accepts the reverse-neighbor edge into a drawbridge while weighted reconstruction or direct gatehouse climbing is enabled, avoiding the full-map repair for each assassin."] },
     { "Version": "0.12.1", "Changes": ["Own the savegame load checkbox and remember its local choice across restarts; automatic loads without usable UI use current supported settings within mission rules.", "Coordinate load/save requester gates, preparation and cleanup through a public owner-bound registry."] },
     {
       "Version": "0.12.0",

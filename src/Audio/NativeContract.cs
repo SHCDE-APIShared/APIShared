@@ -46,8 +46,9 @@ namespace APIShared.Audio
             using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
         }
 
-        // suspendThreads=false is only for private test copies no other thread can execute: RedBird's
-        // thread-suspending patch destabilises the desktop CLR test host (crash at a later GC).
+        // suspendThreads=false is for private test copies no other thread can execute (RedBird's
+        // thread-suspending patch destabilises the desktop CLR test host: crash at a later GC) and for
+        // the synchronous startup run (NativeStartupPatchWindow).
         internal static NativeDetourBackend Backend(int size, bool suspendThreads = true)
         {
             var options = new NativeDetourOptions

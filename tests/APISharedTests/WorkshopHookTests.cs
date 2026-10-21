@@ -37,6 +37,18 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void RejectionDiagnosticIdentifiesTheLoadedBinaryAndFailedStage()
+        {
+            string diagnostic = WorkshopCleanupRuntime.DescribeRejection(typeof(MapArchive).Assembly,
+                "validate-staging-contract", new InvalidOperationException("fixture contract mismatch"));
+            StringAssert.Contains(diagnostic, "stage=validate-staging-contract");
+            StringAssert.Contains(diagnostic, "sha256=" + WorkshopInventory.Hash(typeof(MapArchive).Assembly.Location));
+            StringAssert.Contains(diagnostic, "errorType=System.InvalidOperationException");
+            StringAssert.Contains(diagnostic, "fixture contract mismatch");
+            StringAssert.Contains(diagnostic, "original Extender staging remains unchanged");
+        }
+
+        [TestMethod]
         public void InstalledExtenderPassesTheCleanupInstallerGate()
         {
             // Runs every check Initialize performs before publishing its ILHook:

@@ -132,7 +132,8 @@ namespace APIShared.ModSettings
                     legacyMigrationPending = true;
                     DebugLogHelper.LogError(
                         log,
-                        $"[{modName}] Could not publish legacy presets; the valid MessagePack data was retained for retry: {exception}");
+                        $"[{modName}] Could not publish legacy presets; the valid MessagePack data was retained for retry; " +
+                        DescribeMigrationFailure(exception));
                 }
             }
 
@@ -158,7 +159,8 @@ namespace APIShared.ModSettings
                         legacyMigrationPending = true;
                         DebugLogHelper.LogError(
                             log,
-                            $"[{modName}] Could not publish the legacy lobby-settings preset; the original file was retained for retry: {exception}");
+                            $"[{modName}] Could not publish the legacy lobby-settings preset; the original file was retained for retry; " +
+                            DescribeMigrationFailure(exception));
                     }
                 }
                 LogRoutine(
@@ -208,6 +210,11 @@ namespace APIShared.ModSettings
             if (needsRewrite && !legacyMigrationPending)
                 WriteCombinedPayload();
         }
+
+        private string DescribeMigrationFailure(Exception error) =>
+            $"stage=legacy-preset-publication, destinationDirectory={personalPresetDirectory}, " +
+            $"destinationDirectoryLength={personalPresetDirectory.Length}, {storage.DiagnosticPaths}, " +
+            $"errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}: {error}";
 
         private void WriteCombinedPayload()
         {

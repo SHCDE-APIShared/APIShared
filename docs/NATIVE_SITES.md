@@ -165,7 +165,7 @@ spans are built from each service's native contract constants in
 | `Gatehouse.Automation` | Exclusive 0xB7A4E/17, 0xB7BF4/15, 0xC53D5/18, 0xC54A0/16, 0xD5835/15, 0xB79E2/18; Observe 0xC5300/15 | First automation resolver |
 | `Diagnostics.AivBuildStep` | Exclusive 0x51790/17 (the instruction-aligned prologue any patch of up to 14 bytes displaces) | Native publication |
 | `Economy.MarketPrices` | Exclusive 0xCEB10/10, 0xCEB90/10; Observe the rest of each 31-byte helper | First market registration |
-| `Pathfinding.AssassinPath` | Exclusive 0xD9C40/10, 0xD9F0C/16, 0xD9F1C/15, 0xE19D8/18, 0xE19F9/23 | First Assassin path registration |
+| `Pathfinding.AssassinPath` | Exclusive 0xD9C40/10, 0xD9F0C/16, 0xD9F1C/15, 0xE19D8/18, 0xE19F9/23, 0xE19C0/14 | First Assassin path registration |
 | `Pathfinding.AssassinAttack` | Exclusive 0x16CD70/10 | First attack guard |
 | `Pathfinding.AssassinRetargetEntry` | Observe 0x122800/24 | Attack guard with NativeRetarget |
 | `GateRouting.Movement` | Exclusive 0x1232E0/6, 0xDC3C0/6, 0x113BC0/10, 0x8F251/29, 0x8F1BF/14, the 11 direction filters and 3 tactical filters | Provider's `InstallMovement` |
