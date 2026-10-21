@@ -12,7 +12,7 @@ using System.Reflection;
 namespace LobbyModSettingsPresetTests
 {
     [TestClass, DoNotParallelize]
-    public class LobbyPresetControllerTests
+    public partial class LobbyPresetControllerTests
     {
         private string directory;
         private LobbyModSettingsChangeOrigin previousOrigin;
@@ -159,24 +159,40 @@ namespace LobbyModSettingsPresetTests
         {
             internal readonly Settings Target = new Settings();
             internal int Notifications;
+            internal Action SnapshotApplied;
+            internal readonly System.Collections.Generic.List<string> Publications = new System.Collections.Generic.List<string>();
             public object SettingsTarget => Target;
             public IDynamicPresetSettingsProvider DynamicSettingsProvider => null;
             public IModSettingsApplicationBackend SettingsApplicationBackend => null;
             public bool IsLocalHost { get; set; } = true;
+            public bool CanRestorePersonalHostSettings { get; set; } = true;
             public bool HasMissionContext { get; set; }
             public bool MissionPresetEditable { get; set; }
             public bool IsMissionPresetSelected => HasMissionContext && SelectedPreset == 1;
             public int SelectedPreset { get; private set; }
             public bool IsRetiredPresetProperty(string name) => false;
             public void SetSelectedPresetCore(int value) { SelectedPreset = value; }
-            public void OnSettingsSnapshotApplied() { Notifications++; }
+            public void OnSettingsSnapshotApplied() { Notifications++; SnapshotApplied?.Invoke(); }
+            public void PublishSettingsSnapshot(System.Collections.Generic.IReadOnlyList<string> properties) { Publications.AddRange(properties); }
         }
         public sealed class Settings
         {
             internal Action<string> Changed;
-            private int hostAmount = 17, localAmount = 5;
+            private int hostAmount = 17, secondHostAmount = 19, localAmount = 5;
+            internal bool FailSecondHostSetter;
             [SyncHostOnly]
             public int HostAmount { get => hostAmount; set { hostAmount = value; Changed?.Invoke(nameof(HostAmount)); } }
+            [SyncHostOnly]
+            public int SecondHostAmount
+            {
+                get => secondHostAmount;
+                set
+                {
+                    if (FailSecondHostSetter) throw new InvalidOperationException("Injected second setter failure");
+                    secondHostAmount = value;
+                    Changed?.Invoke(nameof(SecondHostAmount));
+                }
+            }
             [PresetLocal]
             public int LocalAmount { get => localAmount; set { localAmount = value; Changed?.Invoke(nameof(LocalAmount)); } }
         }

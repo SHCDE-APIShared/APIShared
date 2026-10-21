@@ -151,6 +151,7 @@ namespace APIShared.ModSettings
                 throw new ArgumentNullException(nameof(viewModel));
 
 #if !API_SHARED_PRESET_TESTS
+            LobbySettingsReceiveRuntime.RequireAvailable();
             if (GameAssetManagerAPI.Instance.GetModifiedFilePath(
                 xamlSourceFile,
                 out string absoluteXamlSourceFile))

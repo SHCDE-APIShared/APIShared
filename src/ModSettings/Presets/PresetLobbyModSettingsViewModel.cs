@@ -63,6 +63,45 @@ namespace APIShared.ModSettings
         private SettingsMenuContext settingsMenuContext;
         private bool isRealMultiplayer;
         private bool isLocalHost = true;
+#if API_SHARED_PRESET_TESTS
+        internal Func<bool> System_TestPersonalHostRestoreAllowed;
+#endif
+        internal bool CanRestorePersonalHostSettings
+        {
+            get
+            {
+#if API_SHARED_PRESET_TESTS
+                return System_TestPersonalHostRestoreAllowed?.Invoke() ?? isLocalHost;
+#else
+                var lobby = Platform_Multiplayer.Instance?.activeLobby;
+                if (lobby != null) return lobby.isHost;
+                var mission = APIShared.MissionLifecycleService.ActiveContext;
+                return mission == null || !mission.Mode.IsRealMultiplayer || mission.IsHost == true;
+#endif
+            }
+        }
+
+        private void PublishSettingsSnapshot(IReadOnlyList<string> properties)
+        {
+            bool publishPersonal = false;
+            foreach (string name in properties)
+            {
+                var property = GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (property?.GetCustomAttribute<SyncHostOnlyAttribute>() != null)
+                {
+                    // Revalidate transport authority after the complete transaction.
+                    // The existing host publisher defers until the lobby slot is ready.
+#if API_SHARED_PRESET_TESTS
+                    if (isLocalHost) base.System_TriggerUpdate(name);
+#else
+                    if (GameNetworkAPI.IsLocalHost()) base.System_TriggerUpdate(name);
+#endif
+                }
+                else if (property?.GetCustomAttribute<SyncPerPlayerAttribute>() != null)
+                    publishPersonal = true;
+            }
+            if (publishPersonal) perPlayerSettingsCoordinator?.RequestPublish();
+        }
         private PerPlayerLobbySettingsCoordinator perPlayerSettingsCoordinator;
 #if !API_SHARED_PRESET_TESTS
         private string modSettingsSearchText = string.Empty;
@@ -1087,6 +1126,7 @@ namespace APIShared.ModSettings
             if (isLocalHost == currentIsHost && isRealMultiplayer == currentIsRealMultiplayer &&
                 settingsMenuContext == currentMenuContext)
             {
+                presetController?.RestorePersonalHostIfPending();
                 RefreshModeAvailability();
                 return;
             }
@@ -1094,6 +1134,7 @@ namespace APIShared.ModSettings
             isLocalHost = currentIsHost;
             isRealMultiplayer = currentIsRealMultiplayer;
             settingsMenuContext = currentMenuContext;
+            presetController?.RestorePersonalHostIfPending();
             RaiseAccessProperties();
         }
 

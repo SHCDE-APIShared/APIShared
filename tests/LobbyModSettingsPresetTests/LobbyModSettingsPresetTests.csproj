@@ -39,6 +39,7 @@
     <Compile Include="..\..\src\GameModes\GameplayModModePolicy.cs"><Link>APIShared\GameplayModModePolicy.cs</Link></Compile>
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.cs"><Link>APIShared\PresetLobbyModSettingsViewModel.cs</Link></Compile>
     <Compile Include="..\..\src\ModSettings\Lobby\PerPlayerLobbySettings.cs" />
+    <Compile Include="..\..\src\ModSettings\Lobby\HostLobbySettingsPublisher.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetAtomicFilePublisher.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.RuntimeLog.cs" />
@@ -55,6 +56,7 @@
     <Compile Include="..\..\src\ModSettings\UI\ModSettingsHorizontalFocusScrollGuard.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyModSettingsPresetRegistration.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\AtomicFileReplacement.cs" />
+    <Compile Include="..\..\src\ModSettings\Internal\LobbySettingsRestoreScope.cs" />
     <Compile Include="..\..\src\Core\Internal\DebugLogHelper.cs" />
     <Compile Include="..\..\src\Core\Internal\RuntimeHealth.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs" />

@@ -17,6 +17,35 @@ namespace LobbyModSettingsPresetTests
         }
 
         [TestMethod]
+        public void HostPublicationDoesNotWaitForThePersonalRosterConvergence()
+        {
+            var model = new Model { Status = "READY|local", HostChoice = true };
+            object identity = new object();
+            var coordinator = new PerPlayerLobbySettingsCoordinator(model, null, "mixed", "test.mixed",
+                new PerPlayerLobbySettingsBuilder(model).Build(), false);
+            coordinator.CaptureBroadcastLobby = () => new SettingsBroadcastLobby(identity, 10);
+            var sent = new List<string>();
+            model.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName != nameof(Model.Status) && args.PropertyName != nameof(Model.HostChoice)) return;
+                if (!coordinator.DeferBroadcast(args.PropertyName)) sent.Add(args.PropertyName);
+            };
+            coordinator.Activate();
+            try
+            {
+                Assert.IsTrue(coordinator.DeferBroadcast(nameof(Model.HostChoice)));
+                coordinator.Observe(10, new Dictionary<int, ulong> { [4] = 100 }, true, 4, false);
+                CollectionAssert.AreEqual(new[] { nameof(Model.HostChoice) }, sent);
+                Assert.IsTrue(coordinator.DeferBroadcast(nameof(Model.Status)));
+                Assert.IsFalse(coordinator.IsReady);
+                coordinator.Observe(10, new Dictionary<int, ulong> { [4] = 100 }, false, 4, false);
+                CollectionAssert.AreEqual(new[] { nameof(Model.HostChoice), nameof(Model.Status) }, sent);
+                Assert.AreEqual("READY|local", model.StatusData[4]);
+            }
+            finally { coordinator.Deactivate(); }
+        }
+
+        [TestMethod]
         public void UnknownSlotRetainsLatestScalarAndPublishesOnceAfterResolution()
         {
             var model = new Model();
@@ -29,7 +58,7 @@ namespace LobbyModSettingsPresetTests
             {
                 model.Status = "READY|first";
                 Assert.IsTrue(coordinator.DeferBroadcast(nameof(Model.Status)));
-                Assert.IsFalse(coordinator.DeferBroadcast(nameof(Model.HostChoice)));
+                Assert.IsTrue(coordinator.DeferBroadcast(nameof(Model.HostChoice)));
                 coordinator.Observe(10, new Dictionary<int, ulong>(), true, 0, false);
                 model.Status = "READY|latest";
                 Assert.IsTrue(coordinator.DeferBroadcast(nameof(Model.Status)));

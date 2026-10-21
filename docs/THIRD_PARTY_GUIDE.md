@@ -212,6 +212,36 @@ captured baseline per participant. Matching unconsumed restart snapshots retain
 precedence except in Materialized. Existing `ModSettingsApplication` restart/source
 restoration is reused; the session creates no second registry, journal or transport.
 
+Use `Editable` to open Customize with the same resolved values as `Playable`.
+Keep that draft through Ready/Unready and apply `Materialized` only at the actual
+start boundary. Working-copy endpoints retain their complete draft, including local
+options. A consumer which reopens a rejected start must retain a detached draft and
+re-enter it through `Authoring` with starting snapshots and no original overrides;
+applying the original document again would discard edits. Source documents and
+personal files are not modified by these transitions. Trail-maker authoring can
+continue to use `Authoring` for its current-values baseline.
+
+APIShared models apply internal snapshots under the Extender's `InitialLoad` origin.
+Property/UI notifications remain enabled, but intermediate values are neither sent
+nor persisted. Inclusion and authority are captured before the first setter; after
+successful application, eligible host properties use the existing Extender sender
+and personal values use the existing per-player convergence. Snapshot callbacks
+still run after application, and their failures propagate to the owning session.
+Personal persistence uses the owned working snapshot, never a mixture of current
+mission values and received host values. On exit a confirmed active client lobby
+retains host values until lobby departure; stale host flags left by local Coop do
+not prevent restoration. Personal restoration does not publish host values.
+
+The process-lifetime managed Extender receive hook copies packet data and transport
+sender on the raw callback and posts to the validated Unity FIFO also used by
+`Network.TryPostPresentation`. Application rechecks lobby/session identity and calls
+the original Extender receiver, preserving its sender checks and join protocol.
+Stale queued work is discarded. Missing dispatch never falls back to the network
+thread. Registration requires the signature-checked hook to be available. This
+changes incoming Extender settings delivery to queued Unity execution, including
+settings registered directly with the Extender; outbound formats and direct
+registration ownership remain unchanged.
+
 `beforeApply` is a required preparation callback if supplied: it runs once after
 all snapshots are ready, before any new endpoint enters. A failure blocks entry.
 Do not call Apply/Exit/ConfirmStarted recursively on the same session. Conversions
@@ -587,7 +617,9 @@ Derive your settings from `APIShared.ModSettings.PresetLobbyModSettingsViewModel
 
 Classify saved properties with Script Extender `[SyncHostOnly]` or `[SyncPerPlayer]`, or APIShared `[PresetLocal]`. Each per-player property needs a public compatible `<Name>Data` array for slots 0..8. Keep setters behind `CanMutateSetting()` and call `OnPropertyChanged` after actual changes. Configure additional per-player rules through `ConfigurePerPlayerLobbySettings`; do not implement another roster poller.
 
-For registered APIShared participants, personal values may change before a stable local slot exists or while leaving a lobby. The scalar, UI notifications and personal persistence remain local; only the outbound per-player broadcast waits. After the roster and transport mapping agree, the existing coordinator publishes the latest full personal snapshot into the resolved slot. No temporary value is assigned to slot 1. Host-only properties and settings registered outside APIShared retain their existing transport path.
+For registered APIShared participants, personal values may change before a stable local slot exists or while leaving a lobby. The scalar, UI notifications and personal persistence remain local; only the outbound per-player broadcast waits. After the roster and transport mapping agree, the existing coordinator publishes the latest full personal snapshot into the resolved slot. No temporary value is assigned to slot 1.
+
+Host-only changes also wait for a current lobby observation and a matching local transport slot. Only property names are retained: each pending property is published once with its current value through the original Extender sender. Host publication does not wait for other players' identities or personal reports. This also applies to participants without per-player settings. Publication rechecks host authority and lobby identity; leaving, replacing the lobby or starting a mission discards that lobby's pending work. Changes without an active lobby stay local, and the ordinary join sync supplies current host values to new peers. Settings registered outside APIShared retain their original transport behavior. The existing lobby observer reports a local player ID of zero until its roster and transport mappings agree, so a later transport resolution wakes waiting publishers even if the roster itself did not change. Replacing the actual lobby instance also notifies observers, even when the public snapshot values remain equal.
 
 Automatic save restoration prepares host settings before loading. Multiplayer saves
 are identified by their actual load entry, including a host playing alone. Existing

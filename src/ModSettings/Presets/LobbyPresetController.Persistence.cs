@@ -240,16 +240,8 @@ namespace APIShared.ModSettings
 
             foreach (PresetPropertyAccessor property in persistedProperties)
             {
-                bool mayCaptureLive = !owner.IsMissionPresetSelected &&
-                    (IsClientProperty(property) || owner.IsLocalHost);
-                if (mayCaptureLive)
-                {
-                    StoreProperty(snapshot, property);
-                    continue;
-                }
-
-                // Preserve the user's own host preset instead of serializing a
-                // remote host value or an externally owned Trail value.
+                // The controller updates its owned snapshot at each accepted edit.
+                // Live getters can still contain a retiring mission or remote host.
                 if (ownedPreset.TryGetValue(property.Name, out byte[] bytes))
                     snapshot[property.Name] = bytes == null ? null : (byte[])bytes.Clone();
                 else if (defaults.TryGetValue(property.Name, out bytes))

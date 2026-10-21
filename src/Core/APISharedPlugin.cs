@@ -38,6 +38,7 @@ namespace APIShared
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
             Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
+            ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.

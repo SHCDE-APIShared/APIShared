@@ -89,6 +89,7 @@ namespace APIShared.ModSettings
         private readonly string modName;
         private readonly string ownerGuid;
         private readonly PerPlayerLobbySettingsContract contract;
+        private readonly HostLobbySettingsPublisher hostPublisher;
         private readonly bool routineLoggingEnabled;
         private readonly Dictionary<int, ulong> playersById = new Dictionary<int, ulong>();
         private ulong lobbyId;
@@ -102,6 +103,8 @@ namespace APIShared.ModSettings
         private string readinessError = string.Empty;
         private bool active;
         internal Func<int, bool> TransportReady { get; set; } = TransportPlayerMatches;
+        internal Func<SettingsBroadcastLobby> CaptureBroadcastLobby { get; set; } = CaptureCurrentLobby;
+        internal Func<bool> HasHostAuthority { get; set; } = IsLocalHost;
 #if !API_SHARED_PRESET_TESTS
         private IDisposable mapStartSubscription;
         private string lastIdentityDiagnostic = string.Empty;
@@ -121,6 +124,8 @@ namespace APIShared.ModSettings
             this.ownerGuid = ownerGuid;
             this.contract = contract;
             routineLoggingEnabled = logRoutineActivity;
+            hostPublisher = new HostLobbySettingsPublisher(owner.GetType(), () => CaptureBroadcastLobby(),
+                () => HasHostAuthority(), id => TransportReady(id), owner.System_TriggerUpdate);
         }
 
         internal bool IsReady => isReady;
@@ -128,7 +133,7 @@ namespace APIShared.ModSettings
 
         internal void Activate()
         {
-            if (contract.Settings.Count == 0)
+            if (contract.Settings.Count == 0 && !hostPublisher.HasSettings)
                 return;
             if (active)
                 return;
@@ -143,12 +148,17 @@ namespace APIShared.ModSettings
                 mapStartSubscription = APIShared.Internal.MissionEvents.NativeStart.Subscribe(args =>
                 {
                     if (args.IsBeforeInitialization)
-                        FinalizeRosterForMapTransition(args.Context.IsSave && args.Context.Mode.IsRealMultiplayer);
+                    {
+                        hostPublisher.Suspend();
+                        if (contract.Settings.Count != 0)
+                            FinalizeRosterForMapTransition(args.Context.IsSave && args.Context.Mode.IsRealMultiplayer);
+                    }
                 });
                 if (mapStartSubscription == null)
                     throw new InvalidOperationException("The persistent map-start subscription could not be created.");
 #endif
                 active = true;
+                hostPublisher.Activate();
                 RequestPublish();
 #if !API_SHARED_PRESET_TESTS
 #if API_SHARED_LOBBY_OBSERVER
@@ -202,10 +212,12 @@ namespace APIShared.ModSettings
 #endif
             active = false;
             publishPending = false;
+            hostPublisher.Deactivate();
         }
 
         internal void RequestPublish()
         {
+            if (contract.Settings.Count == 0) return;
             publishPending = true;
             if (hasLobby && !rosterHasUnresolvedPlayers &&
                 IsValidPlayerId(resolvedLocalPlayerId) &&
@@ -218,6 +230,7 @@ namespace APIShared.ModSettings
 
         internal bool DeferBroadcast(string propertyName)
         {
+            if (hostPublisher.TryDefer(propertyName, out bool defer)) return defer;
             if (!contract.Settings.Any(setting => setting.Property.Name == propertyName)) return false;
             if (active && hasLobby && !rosterHasUnresolvedPlayers &&
                 IsValidPlayerId(resolvedLocalPlayerId) && playersById.ContainsKey(resolvedLocalPlayerId) &&
@@ -238,6 +251,26 @@ namespace APIShared.ModSettings
 #endif
         }
 
+        private static SettingsBroadcastLobby CaptureCurrentLobby()
+        {
+#if API_SHARED_PRESET_TESTS
+            return default;
+#else
+            var lobby = Platform_Multiplayer.Instance?.activeLobby;
+            return lobby == null ? default : new SettingsBroadcastLobby(lobby,
+                lobby.id.m_SteamID == 0 ? (ulong?)null : lobby.id.m_SteamID);
+#endif
+        }
+
+        private static bool IsLocalHost()
+        {
+#if API_SHARED_PRESET_TESTS
+            return true;
+#else
+            return GameNetworkAPI.IsLocalHost();
+#endif
+        }
+
         internal bool ArePlayersReady(IEnumerable<int> playerIds, out string error)
         {
             int[] supplied = (playerIds ?? Enumerable.Empty<int>()).ToArray();
@@ -254,6 +287,11 @@ namespace APIShared.ModSettings
             {
                 error = "No valid human player IDs were supplied.";
                 return false;
+            }
+            if (contract.Settings.Count == 0)
+            {
+                error = string.Empty;
+                return true;
             }
             if (rosterHasUnresolvedPlayers)
             {
@@ -379,8 +417,11 @@ namespace APIShared.ModSettings
             int localPlayerId,
             bool preserveForMapTransition)
         {
+            owner.System_RefreshSettingsAccess();
+            hostPublisher.InvalidateObservation();
             if (!currentLobbyId.HasValue)
             {
+                hostPublisher.Observe(null, 0, false);
                 if (preserveForMapTransition)
                     return;
 
@@ -452,6 +493,8 @@ namespace APIShared.ModSettings
                     hasUnresolvedPlayers,
                     localPlayerId));
             }
+            hostPublisher.Observe(currentLobbyId, localPlayerId, localResolved);
+            if (contract.Settings.Count == 0) return;
             if (publishPending && localResolved && !hasUnresolvedPlayers && TransportReady(localPlayerId))
                 PublishLocalSettings(localPlayerId);
 
@@ -559,12 +602,18 @@ namespace APIShared.ModSettings
 
         private void RequestReadinessRefresh()
         {
-            if (!hasLobby)
+            if (!hasLobby || contract.Settings.Count == 0)
                 return;
             if (!ArePlayersReady(playersById.Keys, out string error))
                 SetReadiness(false, error);
             else
                 SetReadiness(true, string.Empty);
+        }
+
+        internal void ObserveError(string error)
+        {
+            hostPublisher.InvalidateObservation();
+            if (contract.Settings.Count != 0) SetReadiness(false, error);
         }
 
 #if !API_SHARED_PRESET_TESTS
@@ -614,7 +663,7 @@ namespace APIShared.ModSettings
                 return;
             if (!string.IsNullOrEmpty(snapshot.Error))
             {
-                SetReadiness(false, snapshot.Error);
+                ObserveError(snapshot.Error);
                 ReportIdentityDiagnostic(new PlayerIdentityResolution(
                     0,
                     false,

@@ -37,6 +37,10 @@ See [mission settings preparation](THIRD_PARTY_GUIDE.md#mission-settings-prepara
 
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
+Internal snapshot application suppresses intermediate transport/storage and retains
+failed cleanup for retry. The managed Extender settings receiver dispatches copied
+packets to the shared Unity FIFO with lobby/session invalidation and original sender
+validation. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 `MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
 materialization. See [mission application](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 
@@ -85,7 +89,7 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation; startup member check | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
-| `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; existing host/per-player sync; personal persistence remains isolated |
+| `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; host/per-player publication waits for the appropriate lobby/transport identity; personal persistence remains isolated ([guide](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost)) |
 | `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |

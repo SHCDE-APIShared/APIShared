@@ -8,6 +8,7 @@ namespace APIShared.ModSettings
         IDynamicPresetSettingsProvider DynamicSettingsProvider { get; }
         IModSettingsApplicationBackend SettingsApplicationBackend { get; }
         bool IsLocalHost { get; }
+        bool CanRestorePersonalHostSettings { get; }
         bool HasMissionContext { get; }
         bool MissionPresetEditable { get; }
         bool IsMissionPresetSelected { get; }
@@ -15,5 +16,6 @@ namespace APIShared.ModSettings
         bool IsRetiredPresetProperty(string propertyName);
         void SetSelectedPresetCore(int value);
         void OnSettingsSnapshotApplied();
+        void PublishSettingsSnapshot(System.Collections.Generic.IReadOnlyList<string> properties);
     }
 }
