@@ -41,6 +41,13 @@ installed native contracts and reserves one owner GUID/registration ID. It does
 not install hooks. This low-level backend is for a routing provider, not ordinary
 rule contributors. `EnemyGatePathPolicyBridge.TryRegister` is passive.
 
+`GateRoutingNativeLayout` publishes the audited addresses, lengths, patterns and
+capturer-record offsets that such a provider reads around these callbacks, plus
+`ValidateComparisonSites` and `ValidateMovementSites` for its own preflight. The
+values are run-time properties of the DLL named by `ReferenceSha256`, so an
+APIShared update alone refreshes a provider after a game update. They are valid
+only once `TryRequest` or those validations succeeded for the loaded image.
+
 The explicitly invoked `InstallComparisons`, `InstallMovement` and `InstallDescent`
 methods own their audited native spans permanently. They retain delegates and
 transactions; installation must not be retried after a failed publication.

@@ -34,7 +34,7 @@ for %%A in (%*) do if /I "%%~A"=="/nopause" set "BUILD_DRIVER_NOPAUSE=1"
 set "BUILD_DRIVER_ORIGINAL_DIR=%CD%"
 echo [%date% %time%] START APIShared
 cd /d "%~dp0"
-if errorlevel 1 goto :build_driver_directory_failed
+if not "%ERRORLEVEL%"=="0" goto :build_driver_directory_failed
 rem The outer driver owns the pause, including failures before compilation.
 call :build_driver_main %* /nopause
 set "BUILD_DRIVER_RESULT=%ERRORLEVEL%"

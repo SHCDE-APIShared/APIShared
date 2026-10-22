@@ -13,6 +13,51 @@ namespace APIShared.Pathfinding
             Registry.TryRegister(ownerGuid, registrationId, pre, post, out reason);
         /// <summary>Total isolated callback failures and invalid cost contributions; not a gameplay failure count.</summary>
         public static long CallbackFailures => Registry.CallbackFailures;
+        /// <summary>Whether any observer is registered. A publisher may test this first to avoid creating a context
+        /// for a search nobody observes; <see cref="BeginSearch"/> returns null in the same case.</summary>
+        public static bool HasObservers => Registry.HasObservers;
+
+        /// <summary>Publishes one additional weighted route calculation to the registered observers.</summary>
+        /// <remarks>
+        /// For mods that run their own preference search beside Vanilla's pathing. Call synchronously on the thread
+        /// that performs the calculation, immediately before it. All Pre callbacks run inside this call; afterwards
+        /// <see cref="RouteSearchOperation.Pre"/> is frozen and holds the effective costs and skip decision. When it
+        /// asks to skip, do not run the calculation and do not call Complete. Otherwise run it with the effective
+        /// costs and call <see cref="RouteSearchOperation.Complete"/> exactly once, also after an ordinary failure.
+        /// A publisher exception that ends the calculation needs no Complete. A search published from inside an
+        /// observer callback is skipped without notification. Initial costs must lie in 1..MaximumEdgeCost.
+        /// </remarks>
+        /// <param name="context">Immutable identity of the operation; its SourceGuid is the publishing mod.</param>
+        /// <param name="groundEdgeCost">The publisher's own preference cost of an eligible ground edge.</param>
+        /// <param name="moatEdgeCost">The publisher's own preference cost of an eligible moat edge.</param>
+        /// <returns>The operation, or null when no observer is registered: then calculate with the own costs.</returns>
+        public static RouteSearchOperation BeginSearch(RouteSearchContext context, long groundEdgeCost, long moatEdgeCost)
+        {
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            if (groundEdgeCost <= 0 || groundEdgeCost > context.MaximumEdgeCost)
+                throw new ArgumentOutOfRangeException(nameof(groundEdgeCost));
+            if (moatEdgeCost <= 0 || moatEdgeCost > context.MaximumEdgeCost)
+                throw new ArgumentOutOfRangeException(nameof(moatEdgeCost));
+            RouteSearchEventRegistry.Invocation invocation = Registry.Begin(context, groundEdgeCost, moatEdgeCost);
+            return invocation == null ? null : new RouteSearchOperation(invocation);
+        }
+    }
+
+    /// <summary>One published route calculation returned by <see cref="RouteSearchEvents.BeginSearch"/>.</summary>
+    public sealed class RouteSearchOperation
+    {
+        private readonly RouteSearchEventRegistry.Invocation invocation;
+        internal RouteSearchOperation(RouteSearchEventRegistry.Invocation invocation) { this.invocation = invocation; }
+        /// <summary>The frozen Pre arguments: effective costs and whether the calculation must be skipped.</summary>
+        public RouteSearchPreEventArgs Pre => invocation.Pre;
+        /// <summary>Reports the executed calculation to Post observers. Ignored after the first call and for a skipped
+        /// calculation. Runs the Post callbacks synchronously on the caller's thread; their failures are isolated.</summary>
+        /// <param name="success">Whether the publisher produced a route that passed its own live-edge checks.</param>
+        /// <param name="reason">The publisher's result description (diagnostic text, not a stable enum).</param>
+        /// <param name="routeLength">Edges in the accepted route, or zero on failure.</param>
+        /// <param name="expandedNodes">Search nodes expanded for this calculation.</param>
+        public void Complete(bool success, string reason, int routeLength, int expandedNodes) =>
+            invocation.Complete(success, reason, routeLength, expandedNodes);
     }
 
     internal sealed class RouteSearchEventRegistry

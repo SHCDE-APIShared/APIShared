@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <StartupObject>Program</StartupObject>
+    <IsTestProject>false</IsTestProject><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><PlatformTarget>x64</PlatformTarget>
+    
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
+    <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
+    <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>
+    <Reference Include="RedBird.X64"><HintPath>$(ExtenderDir)/RedBird.X64.dll</HintPath></Reference>
+    <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)/SHCDESE.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions"><HintPath>$(ExtenderDir)/Microsoft.Extensions.Logging.Abstractions.dll</HintPath></Reference>
+    <Compile Include="../../src/Economy/AiMarketSellAssembly.cs" Link="Production/AiMarketSellAssembly.cs" />
+    <Compile Include="../../src/Economy/AiMarketSellPolicies.cs" Link="Production/AiMarketSellPolicies.cs" />
+  </ItemGroup>
+</Project>

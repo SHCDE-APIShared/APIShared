@@ -180,7 +180,10 @@ namespace APIShared
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.CustomGame), () => skirmish(self, info)));
             restartSkirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), nameof(FRONT_Multiplayer.RestartSkirmishGame), (self, info) =>
             {
-                if (executing == null && state.Current != null)
+                // Only a ready gameplay mission on the Unity thread is a lifecycle restart. The editor or a
+                // foreign thread starts a tracked new attempt instead of throwing inside Vanilla's path.
+                if (IsLifecycleRestart(executing != null, state.Current,
+                        Thread.CurrentThread.ManagedThreadId == unityThread))
                     Restart(() => restartSkirmish(self, info));
                 else
                     Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true }, () => restartSkirmish(self, info));

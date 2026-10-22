@@ -27,14 +27,16 @@ namespace APISharedTests
             try
             {
                 ulong image = unchecked((ulong)memory.ToInt64()), stub = image + 0x100, exit = image + 0x200;
-                byte[] complete = FixesWheatContract.ExpectedStub(flags.Address, exit, 0x50);
+                byte[] complete = FixesWheatTestStub.Audited(flags.Address, exit, 0x50);
                 Array.Copy(emitted, complete, emitted.Length);
                 // The source emitter was assembled without RIP-relative data or
                 // external branches; its relative internal labels survive this copy.
                 Marshal.Copy(complete, 0, new IntPtr(unchecked((long)stub)), complete.Length);
-                Assert.AreEqual(emitted[FixesWheatContract.OperandOffset] != FixesWheatContract.CorrectOffset, FixesWheatContract.Correct(
-                    () => FixesWheatMemory.Read(stub, complete.Length),
-                    (offset, value) => FixesWheatMemory.WriteOperand(stub + (uint)offset, value), flags.Address, exit));
+                // The fixture frame keeps the player at +0x68, like the installed seller's home slot.
+                Assert.AreEqual(emitted[FixesWheatTestStub.OperandOffset] != 0x78, FixesWheatAnalysis.Correct(
+                    () => FixesWheatMemory.ReadAvailable(stub, complete.Length),
+                    (offset, value) => FixesWheatMemory.WriteOperand(stub + (uint)offset, value),
+                    bytes => FixesWheatAnalysis.AnalyzeStub(bytes, stub, flags.Address, FixesWheatTestStub.Original, exit, 0x68)));
                 var continuation = new Assembler(64);
                 continuation.mov(eax, ecx);
                 continuation.add(rsp, 0x88);

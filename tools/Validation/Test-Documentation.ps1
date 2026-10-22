@@ -25,6 +25,8 @@ foreach ($document in $documents) {
                 $title = $heading.Groups[1].Value.Trim().ToLowerInvariant()
                 [regex]::Replace($title, '[^\p{L}\p{Nd}_ -]', '').Replace(' ', '-')
             })
+            # Field/evidence catalogs also use explicit stable HTML anchors, independent of display headings.
+            $anchors += @([regex]::Matches([IO.File]::ReadAllText($target), '<a\s+id="([^"]+)"\s*>') | ForEach-Object { $_.Groups[1].Value })
             if ([Uri]::UnescapeDataString($parts[1]) -notin $anchors) { throw "Broken heading link: $reference ($($document.Name))" }
         }
         $links++

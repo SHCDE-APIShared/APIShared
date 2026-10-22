@@ -1,5 +1,16 @@
 # API catalog
 
+## Native field knowledge
+
+`APIShared.NativeKnowledge.NativeFieldCatalog.Default` exposes immutable field IDs,
+qualified meanings, exact-storage aliases and evidence independently of game readiness.
+`NativeFieldReader.TryGetCurrent(out reader)` returns the process-owned reader after
+the existing native hash initialization; availability does not imply image/layout support.
+Reads require an exact typed key and a caller-owned valid complete record view.
+Uncertain meanings require explicit opt-in, which never bypasses unverified storage.
+See the [integration contract](../src/NativeKnowledge/INTEGRATION.md) and the
+[human-readable field catalog](../src/NativeKnowledge/FELDKATALOG.md).
+
 ## Game-independent content
 
 `APIShared.ModData.ModDataNamespaceReader.Read(json, modGuid, source)` in
@@ -37,8 +48,9 @@ See [mission settings preparation](THIRD_PARTY_GUIDE.md#mission-settings-prepara
 
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
-Internal snapshot application suppresses intermediate transport/storage and retains
-failed cleanup for retry. The managed Extender settings receiver dispatches copied
+Internal snapshot application suppresses intermediate transport/storage, isolates
+failing reflected setters (code-default fallback) and retains failed cleanup for a
+bounded retry. The managed Extender settings receiver dispatches copied
 packets to the shared Unity FIFO with lobby/session invalidation and original sender
 validation. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 `MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
@@ -77,7 +89,7 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
-| `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime |
+| `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime. The same object implements `ICoopAiStartPreviewCapability` for start-button checks; plans may confirm fewer candidates than they list (`ConfirmedCandidateCount`) |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
 | `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots; startup member check | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
 | `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions; startup member check | Tick/simulation publisher starts with the first subscriber; first observed tick is baseline-only; no initial-state replay; do not change UI directly; process lifetime |
@@ -97,6 +109,7 @@ Rounded fear coefficients use [`Economy.FearPopularity`](THIRD_PARTY_GUIDE.md#ro
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
 | `APIShared.Presentation.TroopActionHud` | Single owner of the troop-action HUD setup: registered visibility refreshers, then one shared layout of all `SerpTroopAction_` hosts | Unity thread; owner/ID order; immediate refresh of an existing panel; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
+| `APIShared.Economy.AiMarketSellPolicies` | Final AI reserve and pre-booking quantity policies, OR-combined native safety | [Contract and example](AI_MARKET_SELL.md); initially disabled; native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
@@ -239,9 +252,9 @@ thread, outside locks, with exception isolation. Registrations have no hook tear
 
 `LocalSelectionAPI`, `MarkedUnitSelectionAPI` and `PlayerPerspectiveAPI` provide selection/perspective access independent of a custom command engine. `PlayerPerspectiveAPI.SubscribeChanges(ownerGuid, registrationId, callback)` reports immutable confirmed transitions (`Selected`, `Cleared`, `Uncertain`) with previous/current IDs and a monotonic sequence. Duplicate selections are silent. Notifications are queued in transition order and callbacks run outside the transition lock with per-observer exception isolation; UI dispatch belongs to the subscriber. Subscribe first, then read the initial snapshot: there is no implicit replay. Clear/uncertain notifications carry `-1` as the new override, not as a native player ID. Disposing stops future captures; already queued notifications may still arrive. `UnitAccess` validates unit lookup/liveness; its unsafe pointer views are immediate-use advanced contracts and must not outlive their valid game state. `GatehouseDrawbridgeCoupling` is a pure spatial helper: callers supply validated bounds and live identity predicates; it grants no ownership or access permission.
 
-`AssassinPathAPI`, `AssassinAttackControlAPI`, `EnemyGatePathPolicyBridge`, `EnemyBridgeDiagnosticBridge` and `TemporaryGateRouteAcceptanceBridge` expose specialized path integration/diagnostics. They are not a general-purpose movement-command API. Use their documented immediate context and ownership contracts; do not retain transient native contexts. `SavegameModSettings` supplies typed save/trail settings integration. `LobbyPreparationOverride` is advanced shared lobby-preparation integration, not an alternative general lifecycle service.
+`AssassinPathAPI`, `AssassinAttackControlAPI`, `EnemyGatePathPolicyBridge`, `EnemyBridgeDiagnosticBridge` and `TemporaryGateRouteAcceptanceBridge` expose specialized path integration/diagnostics. They are not a general-purpose movement-command API. Use their documented immediate context and ownership contracts; do not retain transient native contexts. The owner of the movement path-builder detour opens the single-unit route output frame with `AssassinPathAPI.BeginRouteOutput` (complete, then leave in finally) and the owner of the topology hook reports it once with `EnemyBridgeDiagnosticBridge.PublishTopologyOwner`. `SavegameModSettings` supplies typed save/trail settings integration. `LobbyPreparationOverride` is advanced shared lobby-preparation integration, not an alternative general lifecycle service.
 
-Scanners, memory writers and concrete services are not supported public extension points. Native addresses are public only as coordination data in the [native-site registry](NATIVE_SITES.md): it records and reports who uses which span of CrusaderDE.dll and installs, scans or writes nothing itself. It supplements shared services for hooks APIShared does not cover yet; a point that several mods need belongs in a shared service. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
+Scanners, memory writers and concrete services are not supported public extension points. Native addresses are public only as coordination data in the [native-site registry](NATIVE_SITES.md) and as the audited layout of an explicitly requested backend (`GateRoutingNativeLayout` for the gate-routing provider, see [gate routing](GATE_ROUTING.md#advanced-native-provider)). The registry records and reports who uses which span of CrusaderDE.dll and installs, scans or writes nothing itself. It supplements shared services for hooks APIShared does not cover yet; a point that several mods need belongs in a shared service. Command dispatch and formation implementations live in the consuming mods. Prefer Script Extender APIs directly for ordinary unit commands, pathing data, messages and events already supplied there.
 
 `SavegameModSettings` prepares save settings before initialization and coordinates
 authenticated multiplayer load readiness using the existing settings transports.
@@ -311,6 +324,15 @@ already executed calculation. Callback errors are isolated and counted in
 `CallbackFailures`. Do not issue commands or mutate game state inside callbacks;
 nested preference calculations during notifications are skipped without recursion.
 See the [public example](../examples/ThirdPartyMod/RouteSearchExample.cs).
+
+A mod that runs its own additional preference search publishes it with
+`RouteSearchEvents.BeginSearch(new RouteSearchContext(...), groundCost, moatCost)`
+immediately before the calculation. A null result means no observer is registered
+(`HasObservers` tells the same in advance); then calculate with the own costs.
+Otherwise use the frozen `operation.Pre` costs, skip the calculation when
+`SkipOriginalFunction` is set, and call `operation.Complete(...)` once after an
+executed calculation, also after an ordinary failure. Initial costs lie in
+`1..MaximumEdgeCost`; the context validates its publisher GUID and bounds.
 
 ## Failure and registration rules
 
@@ -416,6 +438,10 @@ install their own setup hook keep working, because every implementation applies 
 host convention.
 
 ## Native market price queries
+
+For final reserves and transaction quantities use
+[AiMarketSellPolicies](AI_MARKET_SELL.md), including native stock safety and optional
+ordered adjusters. This separate owner does not change the price-query contract.
 
 [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) owns the two native market
 price queries on the audited image. Pre can supply `ReplacementTotal` and veto the

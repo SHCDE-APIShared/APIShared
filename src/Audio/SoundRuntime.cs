@@ -65,8 +65,7 @@ namespace APIShared.Audio
             processLog = logger;
             try
             {
-                var files = new InstalledAudioFiles(BepInEx.Paths.GameRootPath);
-                InstalledAudioFiles.ValidateFile(files.Managed, NativeContract.ManagedHash);
+                // Members and the IL contract below validate the loaded code; no Assembly-CSharp hash.
                 ValidateMembers();
                 SoundClips.Initialize();
                 var method = typeof(GameMap).GetMethod("processTestMap", new[] { typeof(short[]), typeof(int), typeof(EngineInterface.PlayState), typeof(byte[]) });
@@ -80,11 +79,11 @@ namespace APIShared.Audio
             }
             catch (Exception ex) { Volatile.Write(ref playbackStatus, "Unavailable: " + ex.Message); Error(logger, "Audio playback interception unavailable: " + ex); }
         }
-        internal static void InitializeNative(CrusaderLibraryLoadContext context, ManualLogSource logger, NativeOwnershipRegistry ownership)
+        internal static void InitializeNative(CrusaderLibraryLoadContext context, ManualLogSource logger, NativeOwnershipRegistry ownership, string nativeHash)
         {
             if (Interlocked.Exchange(ref nativeAttempted, 1) != 0) return;
             processContext = new SoundRuntime(logger, ownership);
-            try { processContext.Install(context); Volatile.Write(ref contextStatus, "Ready"); }
+            try { processContext.Install(context, nativeHash); Volatile.Write(ref contextStatus, "Ready"); }
             catch (Exception ex) { SoundContextPolicy.SetReady(false); Volatile.Write(ref contextStatus, "Unavailable: " + ex.Message); Error(logger, "Audio unit context unavailable; generic playback remains independent: " + ex); }
         }
         internal static void ReportClipBoundaryFailure(Exception error)
@@ -128,10 +127,10 @@ namespace APIShared.Audio
         }
         internal SoundRuntime(ManualLogSource log, NativeOwnershipRegistry ownership)
         { this.log = log; this.ownership = ownership ?? throw new ArgumentNullException(nameof(ownership)); }
-        internal void Install(CrusaderLibraryLoadContext context)
+        internal void Install(CrusaderLibraryLoadContext context, string nativeHash)
         {
             var files = new InstalledAudioFiles(BepInEx.Paths.GameRootPath);
-            files.Validate();
+            files.Validate(nativeHash);
             ValidateUnitMembers();
             NativeApiLog.Debug(log, "Installed audio binary identities verified from BepInEx game root: " + BepInEx.Paths.GameRootPath);
             var live = new ReadOnlySpan<byte>(context.ModuleHandle.ToPointer(), context.Memory.Length);

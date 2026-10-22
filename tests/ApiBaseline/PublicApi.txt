@@ -34,6 +34,7 @@ APIShared.AssassinObstacleCompletionMode | public enum APIShared.AssassinObstacl
 APIShared.AssassinObstacleCompletionMode | IdleOnly = 0
 APIShared.AssassinObstacleCompletionMode | NativeRetarget = 1
 APIShared.AssassinPathAPI | public static class APIShared.AssassinPathAPI
+APIShared.AssassinPathAPI | public static APIShared.AssassinRouteOutputFrame BeginRouteOutput(System.IntPtr context, int startX, int startY, int targetX, int targetY, int playerId, System.Func<bool> identityValid, System.Func<byte[], int, int> publish, int controlPlayer = -1, int speedDelay = -1, System.Action<string, string, string> reportStage = null)
 APIShared.AssassinPathAPI | public static APIShared.AssassinTransitionKind ClassifyNativeTransition(int fromTile, int toTile, int direction, bool climbEnabled)
 APIShared.AssassinPathAPI | public static bool DirectGatehouseClimbingEnabled { get; }
 APIShared.AssassinPathAPI | public static bool HasSingleUnitRoutePublication { get; }
@@ -48,6 +49,9 @@ APIShared.AssassinPathAPI | public static void RegisterWeightedBuilder(string ow
 APIShared.AssassinPathAPI | public static void SetDirectGatehouseClimbing(string ownerGuid, bool enabled)
 APIShared.AssassinPathAPI | public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled)
 APIShared.AssassinPathBuilder | public delegate int APIShared.AssassinPathBuilder(System.IntPtr context, int startX, int startY, int targetX, int targetY, int maximumNodes, int continuation)
+APIShared.AssassinRouteOutputFrame | public sealed class APIShared.AssassinRouteOutputFrame
+APIShared.AssassinRouteOutputFrame | public int Complete(int originalResult)
+APIShared.AssassinRouteOutputFrame | public void Leave()
 APIShared.AssassinTransitionKind | public enum APIShared.AssassinTransitionKind : int
 APIShared.AssassinTransitionKind | ClimbDown = 3
 APIShared.AssassinTransitionKind | ClimbUp = 2
@@ -252,22 +256,54 @@ APIShared.CoopAiCastleSource | Historical = 2
 APIShared.CoopAiCastleSource | Standard = 0
 APIShared.CoopAiSlotPlan | public sealed class APIShared.CoopAiSlotPlan
 APIShared.CoopAiSlotPlan | public .ctor(int playerId, int lordType, APIShared.CoopAiCastleSource castleSource, System.Collections.Generic.IReadOnlyList<short[]> candidates, EngineInterface.AILordConfigTransferData? lordConfiguration, bool candidateListComplete = true)
+APIShared.CoopAiSlotPlan | public .ctor(int playerId, int lordType, APIShared.CoopAiCastleSource castleSource, System.Collections.Generic.IReadOnlyList<short[]> candidates, EngineInterface.AILordConfigTransferData? lordConfiguration, bool candidateListComplete, int confirmedCandidateCount)
 APIShared.CoopAiSlotPlan | public APIShared.CoopAiCastleSource CastleSource { get; }
 APIShared.CoopAiSlotPlan | public EngineInterface.AILordConfigTransferData LordConfiguration { get; }
 APIShared.CoopAiSlotPlan | public bool CandidateListComplete { get; }
 APIShared.CoopAiSlotPlan | public bool HasLordConfiguration { get; }
 APIShared.CoopAiSlotPlan | public const int MaximumCandidates = 50
 APIShared.CoopAiSlotPlan | public int CandidateCount { get; }
+APIShared.CoopAiSlotPlan | public int ConfirmedCandidateCount { get; }
 APIShared.CoopAiSlotPlan | public int LordType { get; }
 APIShared.CoopAiSlotPlan | public int PlayerId { get; }
 APIShared.CoopAiSlotPlan | public short[] CopyCandidate(int index)
 APIShared.CoopAiStartContribution | public sealed class APIShared.CoopAiStartContribution
 APIShared.CoopAiStartContribution | public .ctor(System.Collections.Generic.IReadOnlyList<APIShared.CoopAiSlotPlan> plans)
 APIShared.CoopAiStartContribution | public System.Collections.Generic.IReadOnlyList<APIShared.CoopAiSlotPlan> Plans { get; }
+APIShared.CoopAiStartPreview | public sealed class APIShared.CoopAiStartPreview
+APIShared.CoopAiStartPreview | public APIShared.CoopAiSlotPlan PlanFor(int playerId)
+APIShared.CoopAiStartPreview | public bool Succeeded { get; }
+APIShared.CoopAiStartPreview | public string Failure { get; }
+APIShared.CoopAiStartPreview | public string OwnerOf(int playerId)
 APIShared.CoopAiStartRequest | public sealed class APIShared.CoopAiStartRequest
+APIShared.CoopAiStartRequest | public bool IsPreview { get; }
 APIShared.CoopAiStartRequest | public int CoopMission { get; }
 APIShared.CoopAiStartRequest | public int CoopTrail { get; }
 APIShared.CoopAiStartRequest | public long AttemptId { get; }
+APIShared.Economy.AiMarketSellPolicies | public static class APIShared.Economy.AiMarketSellPolicies
+APIShared.Economy.AiMarketSellPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Economy.AiMarketSellSafety safety, out APIShared.Economy.AiMarketSellRegistration registration, out string error, System.Action<APIShared.Economy.AiMarketSellReserveContext> reserveAdjuster = null, System.Action<APIShared.Economy.AiMarketSellQuantityContext> quantityAdjuster = null, int order = 0)
+APIShared.Economy.AiMarketSellQuantityContext | public sealed class APIShared.Economy.AiMarketSellQuantityContext
+APIShared.Economy.AiMarketSellQuantityContext | public int Amount { get; set; }
+APIShared.Economy.AiMarketSellQuantityContext | public int Good { get; }
+APIShared.Economy.AiMarketSellQuantityContext | public int OriginalAmount { get; }
+APIShared.Economy.AiMarketSellQuantityContext | public int PlayerId { get; }
+APIShared.Economy.AiMarketSellQuantityContext | public int Stock { get; }
+APIShared.Economy.AiMarketSellRegistration | public sealed class APIShared.Economy.AiMarketSellRegistration
+APIShared.Economy.AiMarketSellRegistration | public bool IsEnabled { get; }
+APIShared.Economy.AiMarketSellRegistration | public int CallbackErrorCount { get; }
+APIShared.Economy.AiMarketSellRegistration | public string OwnerGuid { get; }
+APIShared.Economy.AiMarketSellRegistration | public string RegistrationId { get; }
+APIShared.Economy.AiMarketSellRegistration | public void SetEnabled(bool enabled)
+APIShared.Economy.AiMarketSellReserveContext | public sealed class APIShared.Economy.AiMarketSellReserveContext
+APIShared.Economy.AiMarketSellReserveContext | public int Good { get; }
+APIShared.Economy.AiMarketSellReserveContext | public int OriginalReserve { get; }
+APIShared.Economy.AiMarketSellReserveContext | public int PlayerId { get; }
+APIShared.Economy.AiMarketSellReserveContext | public int Reserve { get; set; }
+APIShared.Economy.AiMarketSellReserveContext | public int Stock { get; }
+APIShared.Economy.AiMarketSellSafety | public enum APIShared.Economy.AiMarketSellSafety : int
+APIShared.Economy.AiMarketSellSafety | LimitQuantityToStock = 2
+APIShared.Economy.AiMarketSellSafety | NonNegativeReserve = 1
+APIShared.Economy.AiMarketSellSafety | None = 0
 APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPopularity
 APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
@@ -316,6 +352,7 @@ APIShared.EnemyBridgeDiagnosticBridge | public static string LastFailure { get; 
 APIShared.EnemyBridgeDiagnosticBridge | public static void EndSearch(object token, bool completed, int effectiveResult)
 APIShared.EnemyBridgeDiagnosticBridge | public static void EndTopology(object token, bool completed, bool originalCalled, int? nativeResult, int effectiveResult)
 APIShared.EnemyBridgeDiagnosticBridge | public static void ObserveRegion(int player, int source, int target, int mode, int nativeResult, int effectiveResult)
+APIShared.EnemyBridgeDiagnosticBridge | public static void PublishTopologyOwner()
 APIShared.EnemyGatePathPolicyBridge | public static class APIShared.EnemyGatePathPolicyBridge
 APIShared.EnemyGatePathPolicyBridge | public static APIShared.IEnemyGatePathPolicy Current { get; }
 APIShared.EnemyGatePathPolicyBridge | public static bool TryRegister(APIShared.IEnemyGatePathPolicy candidate)
@@ -469,6 +506,24 @@ APIShared.GateRouting.Native.GateNativeSearchScopes | public static class APISha
 APIShared.GateRouting.Native.GateNativeSearchScopes | public static System.IntPtr Allocate(int length)
 APIShared.GateRouting.Native.GateNativeSearchScopes | public static byte* Enter(System.IntPtr slots, System.IntPtr mask, out System.IntPtr previous, out long previousTouched)
 APIShared.GateRouting.Native.GateNativeSearchScopes | public static byte* EnterTactical(System.IntPtr slots, System.IntPtr mask)
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int GenericSlotCount { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int GenericSlotDepthOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int GenericSlotStride { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotBuildingDirectionOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotBuildingSourceOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotBuildingTargetOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotBuildingTouchedOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotCount { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotDepthOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotFallbackDirectionOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotFallbackSourceOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotFallbackTargetOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotFallbackTouchedOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotStride { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotUnitDirectionOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotUnitSourceOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotUnitTargetOffset { get; }
+APIShared.GateRouting.Native.GateNativeSearchScopes | public static int TacticalSlotUnitTouchedOffset { get; }
 APIShared.GateRouting.Native.GateNativeSearchScopes | public static long Leave(byte* slot, System.IntPtr previous, long touched)
 APIShared.GateRouting.Native.GateNativeSearchScopes | public static void LeaveTactical(byte* slot)
 APIShared.GateRouting.Native.GateRoutingNativeHooks | public sealed class APIShared.GateRouting.Native.GateRoutingNativeHooks
@@ -489,6 +544,38 @@ APIShared.GateRouting.Native.GateRoutingNativeHooks.CursorPclDecisionDelegate | 
 APIShared.GateRouting.Native.GateRoutingNativeHooks.DirectTileSearchDelegate | public delegate int APIShared.GateRouting.Native.GateRoutingNativeHooks.DirectTileSearchDelegate(System.IntPtr manager, int x, int y, int argument4, int argument5, int argument6)
 APIShared.GateRouting.Native.GateRoutingNativeHooks.PathBuilderDelegate | public delegate int APIShared.GateRouting.Native.GateRoutingNativeHooks.PathBuilderDelegate(System.IntPtr manager, int playerId, int profile)
 APIShared.GateRouting.Native.GateRoutingNativeHooks.PclReachabilityDelegate | public delegate int APIShared.GateRouting.Native.GateRoutingNativeHooks.PclReachabilityDelegate(System.IntPtr manager, int player, int targetPcl, int sourcePcl, int mode)
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static class APIShared.GateRouting.Native.GateRoutingNativeLayout
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int ActivePlayerIdRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int BuilderPrecheckCapturedByCompareOffsetInPattern { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int BuilderPrecheckCapturedByFilterHookLength { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int BuilderPrecheckCapturedByFilterRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int CapturedByPlayerTableDisplacement { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int CursorMouseTileIdRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int CursorMouseTileXRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int CursorMouseTileYRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int DirectCursorSearchNodeLimit { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int DirectTileSearchRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int MapGridWidth { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int MaximumTileIdExclusive { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int NativePathManagerRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int NativeTribePlayerIdOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int NativeTribeRecordStride { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int PclGraphCapturedByCompareOffsetInPattern { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int PclGraphCapturedByFilterHookLength { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int PclGraphCapturedByFilterRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int PclReachabilityRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int RecordBuildingIdOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int RecordFirstPclOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int RecordOwnerPlayerIdOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int RecordSecondPclOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int RecordSubjectGlobalIdOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int RecordThirdPclOffset { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static int TileRowStartRva { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static string BuilderPrecheckCapturedByComparePattern { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static string PclGraphCapturedByComparePattern { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static string ReferenceSha256 { get; }
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static void ValidateComparisonSites(System.ReadOnlySpan<byte> memory)
+APIShared.GateRouting.Native.GateRoutingNativeLayout | public static void ValidateMovementSites(System.ReadOnlySpan<byte> memory, bool sharedHookOwner)
 APIShared.GatehouseDistanceOrigin | public enum APIShared.GatehouseDistanceOrigin : int
 APIShared.GatehouseDistanceOrigin | BuildingBoundsCenter = 1
 APIShared.GatehouseDistanceOrigin | VanillaBuildingBegin = 0
@@ -556,6 +643,8 @@ APIShared.IBuildingRepairCapability | public void EndHover(string buttonId)
 APIShared.IBuildingRepairCapability | public void SetActive(bool active)
 APIShared.ICoopAiStartImportCapability | public interface APIShared.ICoopAiStartImportCapability
 APIShared.ICoopAiStartImportCapability | public bool TryRegisterProvider(string registrationId, System.Func<APIShared.CoopAiStartRequest, APIShared.CoopAiStartContribution> provider, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ICoopAiStartPreviewCapability | public interface APIShared.ICoopAiStartPreviewCapability
+APIShared.ICoopAiStartPreviewCapability | public bool TryPreview(int coopTrail, int coopMission, out APIShared.CoopAiStartPreview preview, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IEnemyBridgePathObserver | public interface APIShared.IEnemyBridgePathObserver : APIShared.IEnemyGateAssassinObserver
 APIShared.IEnemyBridgePathObserver | public object BeginSearch(string source, int rawPlayer)
 APIShared.IEnemyBridgePathObserver | public void EndSearch(object token, bool completed, int? nativeResult, int effectiveResult, long nativeCalls)
@@ -1303,6 +1392,192 @@ APIShared.NativeCapabilityState | PatternMissing = 3
 APIShared.NativeCapabilityState | Pending = 0
 APIShared.NativeCapabilityState | UnsupportedBuild = 2
 APIShared.NativeCapabilityState | ValidationFailed = 5
+APIShared.NativeKnowledge.NativeEvidenceKind | public enum APIShared.NativeKnowledge.NativeEvidenceKind : int
+APIShared.NativeKnowledge.NativeEvidenceKind | ExtenderSource = 1
+APIShared.NativeKnowledge.NativeEvidenceKind | KnowledgeReference = 2
+APIShared.NativeKnowledge.NativeEvidenceKind | NativeAudit = 0
+APIShared.NativeKnowledge.NativeEvidenceKind | Reconstruction = 3
+APIShared.NativeKnowledge.NativeEvidenceKind | RuntimeObservation = 4
+APIShared.NativeKnowledge.NativeFieldBinding | public sealed class APIShared.NativeKnowledge.NativeFieldBinding
+APIShared.NativeKnowledge.NativeFieldBinding | public APIShared.NativeKnowledge.NativeScalarType ScalarType { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public System.Collections.Generic.IReadOnlyList<APIShared.NativeKnowledge.NativeFieldEvidence> Evidence { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public bool ReadVerified { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public int ElementCount { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public int ElementStride { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public int Offset { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public int RecordSize { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public string Limitations { get; }
+APIShared.NativeKnowledge.NativeFieldBinding | public string NativeHash { get; }
+APIShared.NativeKnowledge.NativeFieldCatalog | public sealed class APIShared.NativeKnowledge.NativeFieldCatalog
+APIShared.NativeKnowledge.NativeFieldCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.NativeKnowledge.NativeFieldDescriptor> Fields { get; }
+APIShared.NativeKnowledge.NativeFieldCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.NativeKnowledge.NativeFieldDescriptor> FindByName(string name)
+APIShared.NativeKnowledge.NativeFieldCatalog | public bool TryGet(string id, out APIShared.NativeKnowledge.NativeFieldDescriptor field)
+APIShared.NativeKnowledge.NativeFieldCatalog | public bool TryGetKey<T>(string id, out APIShared.NativeKnowledge.NativeFieldKey<T> key) where T : struct
+APIShared.NativeKnowledge.NativeFieldCatalog | public const string BaselineExtenderCommit = "10628df85cd432184742a50a1dee3969a66cf89e"
+APIShared.NativeKnowledge.NativeFieldCatalog | public const string CapturedAnalysisGeneration = "sem/FBCB9319/analysis/g1E2FBFF53E33"
+APIShared.NativeKnowledge.NativeFieldCatalog | public const string CapturedNativeHash = "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2"
+APIShared.NativeKnowledge.NativeFieldCatalog | public const string CapturedSourceCommit = "4014ca67c96974a5e6d697665baf5351cbfebde6"
+APIShared.NativeKnowledge.NativeFieldCatalog | public static APIShared.NativeKnowledge.NativeFieldCatalog Default { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public sealed class APIShared.NativeKnowledge.NativeFieldDescriptor
+APIShared.NativeKnowledge.NativeFieldDescriptor | public System.Collections.Generic.IReadOnlyList<APIShared.NativeKnowledge.NativeFieldBinding> Bindings { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public System.Collections.Generic.IReadOnlyList<APIShared.NativeKnowledge.NativeFieldMeaning> Meanings { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public System.Collections.Generic.IReadOnlyList<string> Aliases { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public System.Collections.Generic.IReadOnlyList<string> RelatedFieldIds { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public string Description { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public string Id { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public string Name { get; }
+APIShared.NativeKnowledge.NativeFieldDescriptor | public string RecordTypeId { get; }
+APIShared.NativeKnowledge.NativeFieldEvidence | public sealed class APIShared.NativeKnowledge.NativeFieldEvidence
+APIShared.NativeKnowledge.NativeFieldEvidence | public APIShared.NativeKnowledge.NativeEvidenceKind Kind { get; }
+APIShared.NativeKnowledge.NativeFieldEvidence | public int FirstLine { get; }
+APIShared.NativeKnowledge.NativeFieldEvidence | public int LastLine { get; }
+APIShared.NativeKnowledge.NativeFieldEvidence | public string Source { get; }
+APIShared.NativeKnowledge.NativeFieldEvidence | public string SourceSha256 { get; }
+APIShared.NativeKnowledge.NativeFieldEvidence | public string Summary { get; }
+APIShared.NativeKnowledge.NativeFieldIds | public static class APIShared.NativeKnowledge.NativeFieldIds
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000001 = "nkf-000001"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000002 = "nkf-000002"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000003 = "nkf-000003"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000005 = "nkf-000005"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000006 = "nkf-000006"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000007 = "nkf-000007"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000008 = "nkf-000008"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000009 = "nkf-000009"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000010 = "nkf-000010"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000011 = "nkf-000011"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000012 = "nkf-000012"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000013 = "nkf-000013"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000014 = "nkf-000014"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000015 = "nkf-000015"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000016 = "nkf-000016"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000017 = "nkf-000017"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000018 = "nkf-000018"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000019 = "nkf-000019"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000020 = "nkf-000020"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000021 = "nkf-000021"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000022 = "nkf-000022"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000023 = "nkf-000023"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000024 = "nkf-000024"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000025 = "nkf-000025"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000026 = "nkf-000026"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000027 = "nkf-000027"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000028 = "nkf-000028"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000029 = "nkf-000029"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000030 = "nkf-000030"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000031 = "nkf-000031"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000032 = "nkf-000032"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000033 = "nkf-000033"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000034 = "nkf-000034"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000035 = "nkf-000035"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000036 = "nkf-000036"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000037 = "nkf-000037"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000038 = "nkf-000038"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000039 = "nkf-000039"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000040 = "nkf-000040"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000041 = "nkf-000041"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000042 = "nkf-000042"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000043 = "nkf-000043"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000044 = "nkf-000044"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000045 = "nkf-000045"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000046 = "nkf-000046"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000047 = "nkf-000047"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000048 = "nkf-000048"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000051 = "nkf-000051"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000052 = "nkf-000052"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000053 = "nkf-000053"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000054 = "nkf-000054"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000055 = "nkf-000055"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000056 = "nkf-000056"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000057 = "nkf-000057"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000058 = "nkf-000058"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000059 = "nkf-000059"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000060 = "nkf-000060"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000061 = "nkf-000061"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000062 = "nkf-000062"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000063 = "nkf-000063"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000064 = "nkf-000064"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000065 = "nkf-000065"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000066 = "nkf-000066"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000067 = "nkf-000067"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000068 = "nkf-000068"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000069 = "nkf-000069"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000070 = "nkf-000070"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000071 = "nkf-000071"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000072 = "nkf-000072"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000073 = "nkf-000073"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000075 = "nkf-000075"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000076 = "nkf-000076"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000077 = "nkf-000077"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000078 = "nkf-000078"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000079 = "nkf-000079"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000080 = "nkf-000080"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000081 = "nkf-000081"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000082 = "nkf-000082"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000083 = "nkf-000083"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000084 = "nkf-000084"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000085 = "nkf-000085"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000086 = "nkf-000086"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000087 = "nkf-000087"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000088 = "nkf-000088"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000089 = "nkf-000089"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000090 = "nkf-000090"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000091 = "nkf-000091"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000092 = "nkf-000092"
+APIShared.NativeKnowledge.NativeFieldKey<T> | public struct APIShared.NativeKnowledge.NativeFieldKey<T> where T : struct
+APIShared.NativeKnowledge.NativeFieldKey<T> | public string Id { get; }
+APIShared.NativeKnowledge.NativeFieldMeaning | public sealed class APIShared.NativeKnowledge.NativeFieldMeaning
+APIShared.NativeKnowledge.NativeFieldMeaning | public APIShared.NativeKnowledge.NativeMeaningConfidence Confidence { get; }
+APIShared.NativeKnowledge.NativeFieldMeaning | public System.Collections.Generic.IReadOnlyList<APIShared.NativeKnowledge.NativeFieldEvidence> Evidence { get; }
+APIShared.NativeKnowledge.NativeFieldMeaning | public string Description { get; }
+APIShared.NativeKnowledge.NativeFieldMeaning | public string Name { get; }
+APIShared.NativeKnowledge.NativeFieldReadFailure | public enum APIShared.NativeKnowledge.NativeFieldReadFailure : int
+APIShared.NativeKnowledge.NativeFieldReadFailure | ElementOutOfRange = 9
+APIShared.NativeKnowledge.NativeFieldReadFailure | InvalidKey = 1
+APIShared.NativeKnowledge.NativeFieldReadFailure | InvalidPolicy = 10
+APIShared.NativeKnowledge.NativeFieldReadFailure | None = 0
+APIShared.NativeKnowledge.NativeFieldReadFailure | RecordTooShort = 8
+APIShared.NativeKnowledge.NativeFieldReadFailure | RejectedMeaning = 7
+APIShared.NativeKnowledge.NativeFieldReadFailure | UncertainMeaning = 6
+APIShared.NativeKnowledge.NativeFieldReadFailure | UnsupportedByteOrder = 11
+APIShared.NativeKnowledge.NativeFieldReadFailure | UnsupportedImage = 2
+APIShared.NativeKnowledge.NativeFieldReadFailure | UnverifiedStorage = 3
+APIShared.NativeKnowledge.NativeFieldReadFailure | WrongRecordType = 4
+APIShared.NativeKnowledge.NativeFieldReadFailure | WrongScalarType = 5
+APIShared.NativeKnowledge.NativeFieldReadPolicy | public enum APIShared.NativeKnowledge.NativeFieldReadPolicy : int
+APIShared.NativeKnowledge.NativeFieldReadPolicy | AllowUncertainMeaning = 1
+APIShared.NativeKnowledge.NativeFieldReadPolicy | ConfirmedMeaningOnly = 0
+APIShared.NativeKnowledge.NativeFieldReader | public sealed class APIShared.NativeKnowledge.NativeFieldReader
+APIShared.NativeKnowledge.NativeFieldReader | public .ctor(APIShared.NativeKnowledge.NativeFieldCatalog catalog, string verifiedNativeHash)
+APIShared.NativeKnowledge.NativeFieldReader | public bool TryRead<T>(APIShared.NativeKnowledge.NativeRecordView record, APIShared.NativeKnowledge.NativeFieldKey<T> key, out T value, out APIShared.NativeKnowledge.NativeFieldReadFailure failure, APIShared.NativeKnowledge.NativeFieldReadPolicy policy = (APIShared.NativeKnowledge.NativeFieldReadPolicy)0, int elementIndex = 0) where T : struct
+APIShared.NativeKnowledge.NativeFieldReader | public static bool TryGetCurrent(out APIShared.NativeKnowledge.NativeFieldReader reader)
+APIShared.NativeKnowledge.NativeFieldReader | public string NativeHash { get; }
+APIShared.NativeKnowledge.NativeMeaningConfidence | public enum APIShared.NativeKnowledge.NativeMeaningConfidence : int
+APIShared.NativeKnowledge.NativeMeaningConfidence | Candidate = 0
+APIShared.NativeKnowledge.NativeMeaningConfidence | Confirmed = 2
+APIShared.NativeKnowledge.NativeMeaningConfidence | Probable = 1
+APIShared.NativeKnowledge.NativeMeaningConfidence | Rejected = 3
+APIShared.NativeKnowledge.NativeRecordTypes | public static class APIShared.NativeKnowledge.NativeRecordTypes
+APIShared.NativeKnowledge.NativeRecordTypes | public const string GameBuilding = "nkr-000001"
+APIShared.NativeKnowledge.NativeRecordTypes | public const string GamePlayerResources = "nkr-000002"
+APIShared.NativeKnowledge.NativeRecordTypes | public const string GameTribe = "nkr-000003"
+APIShared.NativeKnowledge.NativeRecordTypes | public const string GameUnit = "nkr-000004"
+APIShared.NativeKnowledge.NativeRecordTypes | public const string GameUnitManager = "nkr-000005"
+APIShared.NativeKnowledge.NativeRecordView | public struct APIShared.NativeKnowledge.NativeRecordView
+APIShared.NativeKnowledge.NativeRecordView | public .ctor(string recordTypeId, System.ReadOnlySpan<byte> bytes)
+APIShared.NativeKnowledge.NativeRecordView | public System.ReadOnlySpan<byte> Bytes { get; }
+APIShared.NativeKnowledge.NativeRecordView | public string RecordTypeId { get; }
+APIShared.NativeKnowledge.NativeScalarType | public enum APIShared.NativeKnowledge.NativeScalarType : int
+APIShared.NativeKnowledge.NativeScalarType | Float32 = 9
+APIShared.NativeKnowledge.NativeScalarType | Float64 = 10
+APIShared.NativeKnowledge.NativeScalarType | Int16 = 4
+APIShared.NativeKnowledge.NativeScalarType | Int32 = 6
+APIShared.NativeKnowledge.NativeScalarType | Int64 = 8
+APIShared.NativeKnowledge.NativeScalarType | Int8 = 2
+APIShared.NativeKnowledge.NativeScalarType | UInt16 = 3
+APIShared.NativeKnowledge.NativeScalarType | UInt32 = 5
+APIShared.NativeKnowledge.NativeScalarType | UInt64 = 7
+APIShared.NativeKnowledge.NativeScalarType | UInt8 = 1
+APIShared.NativeKnowledge.NativeScalarType | Unknown = 0
 APIShared.NativeSites.NativeSiteMode | public enum APIShared.NativeSites.NativeSiteMode : int
 APIShared.NativeSites.NativeSiteMode | CallOnly = 2
 APIShared.NativeSites.NativeSiteMode | ChainableEntry = 1
@@ -1417,6 +1692,7 @@ APIShared.Networking.NetworkSendStatus | TooLarge = 4
 APIShared.Networking.NetworkSendStatus | TransportFailed = 6
 APIShared.Networking.NetworkSendStatus | Unavailable = 1
 APIShared.Pathfinding.RouteSearchContext | public sealed class APIShared.Pathfinding.RouteSearchContext
+APIShared.Pathfinding.RouteSearchContext | public .ctor(string sourceGuid, int playerId, int startX, int startY, int targetX, int targetY, APIShared.Pathfinding.RouteSearchTerrain terrain, int maximumEdges, long maximumEdgeCost)
 APIShared.Pathfinding.RouteSearchContext | public APIShared.Pathfinding.RouteSearchTerrain Terrain { get; }
 APIShared.Pathfinding.RouteSearchContext | public int MaximumEdges { get; }
 APIShared.Pathfinding.RouteSearchContext | public int PlayerId { get; }
@@ -1427,8 +1703,13 @@ APIShared.Pathfinding.RouteSearchContext | public int TargetY { get; }
 APIShared.Pathfinding.RouteSearchContext | public long MaximumEdgeCost { get; }
 APIShared.Pathfinding.RouteSearchContext | public string SourceGuid { get; }
 APIShared.Pathfinding.RouteSearchEvents | public static class APIShared.Pathfinding.RouteSearchEvents
+APIShared.Pathfinding.RouteSearchEvents | public static APIShared.Pathfinding.RouteSearchOperation BeginSearch(APIShared.Pathfinding.RouteSearchContext context, long groundEdgeCost, long moatEdgeCost)
+APIShared.Pathfinding.RouteSearchEvents | public static bool HasObservers { get; }
 APIShared.Pathfinding.RouteSearchEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Pathfinding.RouteSearchPreEventArgs> pre, System.Action<APIShared.Pathfinding.RouteSearchPostEventArgs> post, out string reason)
 APIShared.Pathfinding.RouteSearchEvents | public static long CallbackFailures { get; }
+APIShared.Pathfinding.RouteSearchOperation | public sealed class APIShared.Pathfinding.RouteSearchOperation
+APIShared.Pathfinding.RouteSearchOperation | public APIShared.Pathfinding.RouteSearchPreEventArgs Pre { get; }
+APIShared.Pathfinding.RouteSearchOperation | public void Complete(bool success, string reason, int routeLength, int expandedNodes)
 APIShared.Pathfinding.RouteSearchPostEventArgs | public sealed class APIShared.Pathfinding.RouteSearchPostEventArgs
 APIShared.Pathfinding.RouteSearchPostEventArgs | public APIShared.Pathfinding.RouteSearchContext Context { get; }
 APIShared.Pathfinding.RouteSearchPostEventArgs | public bool Success { get; }

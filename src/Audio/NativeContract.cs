@@ -11,7 +11,6 @@ namespace APIShared.Audio
     internal static class NativeContract
     {
         internal const string NativeHash = "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2";
-        internal const string ManagedHash = "BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789";
         internal const string BackendHash = "0843DD4C381A3E77DD6D8B51D5CCF95465B3FB49BFDF2980F39A212D774AADB0";
         internal const int EmitRva = 0x1A41E0, CurrentUnitRva = 0x9302C4;
         internal const string EmitPattern = "48 63 41 08 4C 8B D9 4C 6B D0 2A 48 8B 01 66 45 89 44 02 02 48 63 41 08 4C 6B C0 2A 48 8B 01 66 45 89 4C 00 04";

@@ -1,9 +1,21 @@
 # Third-party integration guide
 
+## Native field knowledge
+
+Use `APIShared.NativeKnowledge.NativeFieldCatalog.Default` for offline metadata and
+`NativeFieldReader.TryGetCurrent(out var reader)` after native initialization for
+the actual process image. Retry acquisition from an existing appropriate publisher
+if called too early; no Unity component or new polling loop is needed. A reader for
+an unknown image reports `UnsupportedImage` on reads. Catalog field IDs remain stable
+through name improvements; meanings and storage verification are independent.
+Callers own native pointer validity, the game-thread/lifetime contract and correct
+view origins. See the [complete usage contract and example](../src/NativeKnowledge/INTEGRATION.md)
+and [field/evidence reference](../src/NativeKnowledge/FELDKATALOG.md).
+
 ## Example package requirements
 
 The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
-APIShared 0.12.2 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
+APIShared 0.12.6 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
 [info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
 Install the complete APIShared package and reference its assemblies with
 `Private=false`. The example references both `APIShared.dll` and
@@ -144,6 +156,23 @@ if (api.TryGetCoopAiStartImport(out ICoopAiStartImportCapability import, out var
   Contradictions, provider exceptions, a changed Lord type or a repeated upload abort
   the start with `InvalidOperationException` instead of starting with Vanilla castles,
   so validate earlier at your own start button.
+- `ConfirmedCandidateCount` (constructor overload) states how many leading candidates
+  you confirmed against data every peer shares. A complete list you could compare only
+  partly, such as a packaged list checked against Vanilla's single transmitted
+  candidate, may confirm fewer; a fully confirmed complete plan whose leading
+  candidates match then supplies the import. Existing plans confirm all candidates.
+- Validate at the start button with the preview the same capability object provides:
+
+```csharp
+if (import is ICoopAiStartPreviewCapability preview &&
+    preview.TryPreview(coopTrail, coopMission, out CoopAiStartPreview result, out _) && !result.Succeeded)
+    BlockStart(result.Failure);
+```
+
+  The preview runs every provider with `request.IsPreview` set and combines the plans
+  without importing anything; `PlanFor(playerId)` shows the plan that would be imported.
+  Answer a preview with the plans you will supply for that start, for example a list a
+  pending host synchronization will transfer.
 - Registrations are permanent; return null to contribute nothing. Plans exist only for
   the current attempt. The capability requires the mission lifecycle.
 
@@ -227,6 +256,14 @@ nor persisted. Inclusion and authority are captured before the first setter; aft
 successful application, eligible host properties use the existing Extender sender
 and personal values use the existing per-player convergence. Snapshot callbacks
 still run after application, and their failures propagate to the owning session.
+Reflected setters are applied independently: a setter that rejects its value receives
+the code default, and the other settings are applied regardless. The default is
+recorded in the working copy and a loaded preset then counts as modified; a setting
+that rejects even its default is reported and keeps its requested value for the next
+load. Leaving a mission or restoring personal host settings rethrows such a failure
+after the other values, so the owner keeps its context and retries; the third
+attempt completes and reports the settings that kept their current values. Dynamic
+providers and application backends keep their complete-configuration validation.
 Personal persistence uses the owned working snapshot, never a mixture of current
 mission values and received host values. On exit a confirmed active client lobby
 retains host values until lobby departure; stale host flags left by local Coop do
@@ -961,6 +998,11 @@ CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
 
 ## Sharing native market price queries
+
+For reserve or quantity policies, see [AI market sell policies](AI_MARKET_SELL.md)
+and the [consumer example](../examples/ThirdPartyMod/AiMarketSellExample.cs).
+Register after LibraryLoaded, then enable the process-held registration on every
+peer using the synchronized host setting. Safety-only registrations stay native.
 
 Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded
 initialization, on the startup publisher thread. Inspect TryRegister's failure

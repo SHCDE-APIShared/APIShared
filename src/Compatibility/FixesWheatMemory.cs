@@ -53,6 +53,19 @@ namespace APIShared.Compatibility
             return bytes;
         }
 
+        // Reads up to maximum bytes of one committed region; the decoder determines the actual length.
+        internal static byte[] ReadAvailable(ulong address, int maximum, bool executable = true)
+        {
+            if (IntPtr.Size != 8 || address == 0 || maximum <= 0)
+                throw new InvalidOperationException("Invalid memory range");
+            if (VirtualQuery(new IntPtr((long)address), out MemoryInfo info,
+                (UIntPtr)Marshal.SizeOf(typeof(MemoryInfo))) == UIntPtr.Zero)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "VirtualQuery refused");
+            ulong regionEnd = (ulong)info.BaseAddress.ToInt64() + info.RegionSize.ToUInt64();
+            if (address >= regionEnd) throw new InvalidOperationException("Address outside its memory region");
+            return Read(address, (int)Math.Min((ulong)maximum, regionEnd - address), executable);
+        }
+
         internal static void WriteOperand(ulong address, byte value)
         {
             uint observed = Check(address, 1, true);

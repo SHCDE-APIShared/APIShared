@@ -220,7 +220,8 @@ namespace APISharedTests
                         if ((type == typeof(AssassinPathBuilder) &&
                                 (method.Name == "Invoke" || method.Name == "BeginInvoke") ||
                              type == typeof(AssassinPathAPI) && (method.Name == "RunVanillaBuilder" ||
-                                method.Name == "TryStageWeightedRoute" || method.Name == "TryGetCurrentWeightedRequest")) &&
+                                method.Name == "TryStageWeightedRoute" || method.Name == "TryGetCurrentWeightedRequest" ||
+                                method.Name == "BeginRouteOutput")) &&
                             parameter.Name == "context" && parameter.ParameterType == typeof(IntPtr))
                             continue;
                         if (!IsAuditedGateNativeType(type, method, parameter))

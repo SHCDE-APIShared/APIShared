@@ -181,6 +181,7 @@ namespace LobbyModSettingsPresetTests
             internal Action<string> Changed;
             private int hostAmount = 17, secondHostAmount = 19, localAmount = 5;
             internal bool FailSecondHostSetter;
+            internal int? RejectSecondHostValue;
             [SyncHostOnly]
             public int HostAmount { get => hostAmount; set { hostAmount = value; Changed?.Invoke(nameof(HostAmount)); } }
             [SyncHostOnly]
@@ -190,6 +191,7 @@ namespace LobbyModSettingsPresetTests
                 set
                 {
                     if (FailSecondHostSetter) throw new InvalidOperationException("Injected second setter failure");
+                    if (value == RejectSecondHostValue) throw new ArgumentOutOfRangeException(nameof(value), "Injected value rejection");
                     secondHostAmount = value;
                     Changed?.Invoke(nameof(SecondHostAmount));
                 }

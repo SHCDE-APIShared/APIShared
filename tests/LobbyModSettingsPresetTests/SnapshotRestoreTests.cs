@@ -131,6 +131,64 @@ namespace LobbyModSettingsPresetTests
         }
 
         [TestMethod]
+        public void RejectedValueFallsBackToItsDefaultWithoutBlockingOtherSettings()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            int notifications = host.Notifications;
+            host.Target.RejectSecondHostValue = 77;
+            controller.ApplyWorkingSnapshot(Values(31, 77, 33));
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(19, host.Target.SecondHostAmount, "The code default replaces the rejected value.");
+            Assert.AreEqual(33, host.Target.LocalAmount, "Settings after the rejected one are still applied.");
+            Assert.AreEqual(notifications + 1, host.Notifications);
+            Assert.AreEqual(0, host.SelectedPreset);
+            Assert.AreEqual(19, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.SecondHostAmount)]),
+                "The working copy records the value the setting actually holds.");
+        }
+
+        [TestMethod]
+        public void SetterRejectingEvenItsDefaultNoLongerBlocksTheSnapshot()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.Target.FailSecondHostSetter = true;
+            controller.ApplyWorkingSnapshot(Values(31, 32, 33));
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(19, host.Target.SecondHostAmount);
+            Assert.AreEqual(33, host.Target.LocalAmount);
+            Assert.IsFalse(controller.IsApplyingSnapshot);
+            Assert.AreEqual(32, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.SecondHostAmount)]),
+                "A value that could not be applied stays requested for the next load.");
+        }
+
+        [TestMethod]
+        public void PermanentSetterFailureLeavesTheMissionAfterBoundedRetries()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Stuck Trail", false);
+            host.Target.FailSecondHostSetter = true;
+            host.Publications.Clear();
+            for (int attempt = 1; attempt < LobbyPresetController.MaximumRestoreAttempts; attempt++)
+            {
+                host.HasMissionContext = false;
+                Assert.ThrowsExactly<System.Reflection.TargetInvocationException>(() => controller.ExitMissionPreset());
+                host.HasMissionContext = true;
+                Assert.IsTrue(host.IsMissionPresetSelected, "A retryable failure keeps the mission.");
+            }
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            Assert.AreEqual(0, host.SelectedPreset);
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(5, host.Target.LocalAmount);
+            Assert.AreEqual(92, host.Target.SecondHostAmount, "The failing setting keeps its current value.");
+            Assert.IsTrue(host.Publications.Count > 0);
+            Assert.IsFalse(controller.IsApplyingSnapshot);
+        }
+
+        [TestMethod]
         public void SnapshotPublishesOnlyAfterAllValuesAndRestoresOuterOriginOnFailure()
         {
             var host = new Host();

@@ -18,6 +18,7 @@ namespace APIShared
         internal const string GatehouseAutomation = "Gatehouse.Automation";
         internal const string AivBuildStep = "Diagnostics.AivBuildStep";
         internal const string MarketPrices = "Economy.MarketPrices";
+        internal const string AiMarketSell = "Economy.AiMarketSell";
         internal const string AssassinPath = "Pathfinding.AssassinPath";
         internal const string AssassinAttack = "Pathfinding.AssassinAttack";
         internal const string AssassinRetarget = "Pathfinding.AssassinRetargetEntry";
@@ -69,6 +70,12 @@ namespace APIShared
 
         internal static NativeSiteSpan[] AivBuildStepSpans() =>
             new[] { Exclusive(AivBuildStepService.FunctionRva, AivPrologueLength) };
+
+        internal static NativeSiteSpan[] AiMarketSellSpans() => new[]
+        {
+            Exclusive(0x3F1F3, 15), Observe(0x3F202, 5),
+            Exclusive(0x29723, 15), Observe(0x29732, 5), Observe(0x2978B, 21)
+        };
 
         internal static NativeSiteSpan[] MarketPriceSpans() => new[]
         {
@@ -145,6 +152,7 @@ namespace APIShared
             Group(GatehouseAutomation, GatehouseAutomationSpans()),
             Group(AivBuildStep, AivBuildStepSpans()),
             Group(MarketPrices, MarketPriceSpans()),
+            Group(AiMarketSell, AiMarketSellSpans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),

@@ -56,6 +56,9 @@ try {
     foreach ($project in @('Content.Tests\Content.Tests.csproj','PopularityDisplay.Tests\PopularityDisplay.Tests.csproj','Core.Tests\Core.Tests.csproj','APISharedTests\APISharedTests.csproj','LobbyModSettingsPresetTests\LobbyModSettingsPresetTests.csproj')) {
         Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests\' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
     }
+    Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root 'tests/AiMarketSell.NativeTests/AiMarketSell.NativeTests.csproj'),
+        '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--',
+        (Join-Path $game 'Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/CrusaderDE.dll'))
     Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
     & (Join-Path $root 'tools/Validation/Verify-PopularityContracts.ps1') -GameDir $game -ExtenderDir $extender -ApiAssembly (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll')
     Invoke-Tool $msbuild @((Join-Path $root 'bootstrap/APIShared.DependencyBootstrap.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game")

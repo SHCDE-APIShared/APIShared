@@ -1,5 +1,13 @@
 # API compatibility baseline
 
+The 2026-10-22 NativeKnowledge source integration adds its public surface without
+a mod build, as requested by the maintainer. The unchanged catalog/reader types
+were formatted from their previously verified isolated fixture after source-hash
+comparison; `NativeFieldReader.TryGetCurrent` was added with its reviewed source
+signature. This records the intended additive contract, not a successful build of
+the current working tree. The full compiled-surface comparison and the transferred
+Core.Tests cases remain due at the next authorized build.
+
 The checked-in baseline catches accidental binary and source breaks of the managed API,
 including the internals that `InternalsVisibleTo` consumers compile against. Intentional
 breaks remain possible under the [maintainer policy](../CONTRIBUTING.md#compatibility-and-releases);
@@ -16,7 +24,9 @@ this guide explains how to record them. Native contracts are covered by
 Each `InternalsVisibleTo` grant except `APISharedTests` needs exactly one pin file, and each
 pin file needs its grant. Pinned internals are compatibility-relevant until a public
 replacement exists and the consumer builds that use them are no longer supported. Each pin
-file header names the consumer builds it was scanned from.
+file header names the consumer builds it was scanned from. Consumer mods use the public API;
+a friend grant is an exception that needs a documented reason. Without grants, the friend
+checks have nothing to compare and pass.
 
 `PluginVersion` is recorded without its value, because the value changes with every release.
 
@@ -75,7 +85,7 @@ Scan compiled consumer assemblies, such as release assets or a local consumer bu
 the current build:
 
 ```powershell
-$env:APISHARED_CONSUMER_SCAN = 'path\to\BugfixesAndQoL.dll'
+$env:APISHARED_CONSUMER_SCAN = 'path\to\FriendConsumer.dll'
 dotnet test tests/APISharedTests/APISharedTests.csproj --configuration Release --filter "FullyQualifiedName~ScannedFriendConsumersBindOnlyPinnedInternals"
 Remove-Item Env:APISHARED_CONSUMER_SCAN
 ```

@@ -11,6 +11,45 @@ namespace APIShared.GateRouting.Native
     public static unsafe class GateNativeSearchScopes
     {
         [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+
+        // Slot layout of the buffers below, for a provider that reads its own scope results. A slot is
+        // selected by (native thread ID & (count - 1)) * stride. Run-time values, not compiled-in constants.
+        /// <summary>Number of generic search slots (a power of two).</summary>
+        public static int GenericSlotCount => DirectionFilterAdapterEmitter.ThreadSlotCount;
+        /// <summary>Byte stride of one generic search slot.</summary>
+        public static int GenericSlotStride => 1 << DirectionFilterAdapterEmitter.ThreadSlotStrideShift;
+        /// <summary>Offset of the Int32 nesting depth in a generic slot; non-zero while a search is active.</summary>
+        public static int GenericSlotDepthOffset => DirectionFilterAdapterEmitter.SlotDepthOffset;
+        /// <summary>Number of tactical slots (a power of two).</summary>
+        public static int TacticalSlotCount => AiTacticalTargetAdapterEmitter.ThreadSlotCount;
+        /// <summary>Byte stride of one tactical slot.</summary>
+        public static int TacticalSlotStride => AiTacticalTargetAdapterEmitter.ThreadSlotStride;
+        /// <summary>Offset of the Int32 nesting depth in a tactical slot; non-zero while a tactical query is active.</summary>
+        public static int TacticalSlotDepthOffset => AiTacticalTargetAdapterEmitter.SlotDepthOffset;
+        /// <summary>Offset of the Int64 rejected-edge counter of the building search.</summary>
+        public static int TacticalSlotBuildingTouchedOffset => AiTacticalTargetAdapterEmitter.SlotBuildingTouchedOffset;
+        /// <summary>Offset of the Int64 rejected-edge counter of the unit search.</summary>
+        public static int TacticalSlotUnitTouchedOffset => AiTacticalTargetAdapterEmitter.SlotUnitTouchedOffset;
+        /// <summary>Offset of the Int64 rejected-edge counter of the fallback tile search.</summary>
+        public static int TacticalSlotFallbackTouchedOffset => AiTacticalTargetAdapterEmitter.SlotFallbackTouchedOffset;
+        /// <summary>Offset of the Int32 source tile of a sampled rejected building-search edge.</summary>
+        public static int TacticalSlotBuildingSourceOffset => AiTacticalTargetAdapterEmitter.SlotBuildingSourceOffset;
+        /// <summary>Offset of the Int32 target tile of a sampled rejected building-search edge.</summary>
+        public static int TacticalSlotBuildingTargetOffset => AiTacticalTargetAdapterEmitter.SlotBuildingTargetOffset;
+        /// <summary>Offset of the Int32 direction of a sampled rejected building-search edge.</summary>
+        public static int TacticalSlotBuildingDirectionOffset => AiTacticalTargetAdapterEmitter.SlotBuildingDirectionOffset;
+        /// <summary>Offset of the Int32 source tile of a sampled rejected unit-search edge.</summary>
+        public static int TacticalSlotUnitSourceOffset => AiTacticalTargetAdapterEmitter.SlotUnitSourceOffset;
+        /// <summary>Offset of the Int32 target tile of a sampled rejected unit-search edge.</summary>
+        public static int TacticalSlotUnitTargetOffset => AiTacticalTargetAdapterEmitter.SlotUnitTargetOffset;
+        /// <summary>Offset of the Int32 direction of a sampled rejected unit-search edge.</summary>
+        public static int TacticalSlotUnitDirectionOffset => AiTacticalTargetAdapterEmitter.SlotUnitDirectionOffset;
+        /// <summary>Offset of the Int32 source tile of a sampled rejected fallback-search edge.</summary>
+        public static int TacticalSlotFallbackSourceOffset => AiTacticalTargetAdapterEmitter.SlotFallbackSourceOffset;
+        /// <summary>Offset of the Int32 target tile of a sampled rejected fallback-search edge.</summary>
+        public static int TacticalSlotFallbackTargetOffset => AiTacticalTargetAdapterEmitter.SlotFallbackTargetOffset;
+        /// <summary>Offset of the Int32 direction of a sampled rejected fallback-search edge.</summary>
+        public static int TacticalSlotFallbackDirectionOffset => AiTacticalTargetAdapterEmitter.SlotFallbackDirectionOffset;
         /// <summary>Allocates zeroed permanent data; generic search slots need 2048 bytes, tactical slots 8192 bytes. The caller retains ownership for process lifetime.</summary>
         public static IntPtr Allocate(int length) {var p=Marshal.AllocHGlobal(length);for(int i=0;i<length;i++)((byte*)p)[i]=0;return p;}
         /// <summary>Enters a nested generic search; null means thread-slot collision and must preserve native behavior. Mask zero is explicitly unfiltered.</summary>

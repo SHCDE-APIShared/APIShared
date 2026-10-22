@@ -48,6 +48,20 @@ namespace APIShared
             }, action);
         }
 
+        internal enum ConfirmedRestart { Vanilla, Stale, Lifecycle }
+
+        // A lifecycle restart needs a ready gameplay mission on the Unity thread and no running attempt.
+        internal static bool IsLifecycleRestart(bool attemptRunning, MissionContext current, bool unityThread) =>
+            !attemptRunning && current != null && !current.IsEditor && unityThread;
+
+        // Without a tracked gameplay mission there is nothing for the lifecycle to restart, so the player's
+        // confirmation keeps Vanilla's behavior instead of being ignored. A popup of an earlier mission is stale.
+        internal static ConfirmedRestart DecideConfirmedRestart(long? source, MissionContext current, bool unityThread)
+        {
+            if (!source.HasValue || current == null || current.IsEditor || !unityThread) return ConfirmedRestart.Vanilla;
+            return current.SessionId == source.Value ? ConfirmedRestart.Lifecycle : ConfirmedRestart.Stale;
+        }
+
         private void PrepareRestartMenu()
         {
             menuButton = Hook<MenuButton>(typeof(HUD_IngameMenu), "ButtonIngameMenuFunction", (self, function) =>
@@ -67,12 +81,15 @@ namespace APIShared
                     long? source = state.Current?.SessionId;
                     accepted = () =>
                     {
-                        if (!source.HasValue || state.Current?.SessionId != source.Value)
+                        switch (DecideConfirmedRestart(source, state.Current,
+                            Thread.CurrentThread.ManagedThreadId == unityThread))
                         {
-                            Report(new InvalidOperationException("Restart confirmation no longer belongs to the active mission."));
-                            return;
+                            case ConfirmedRestart.Vanilla: yes(); break;
+                            case ConfirmedRestart.Stale:
+                                Report(new InvalidOperationException("Restart confirmation no longer belongs to the active mission."));
+                                break;
+                            default: Restart(yes); break;
                         }
-                        Restart(yes);
                     };
                 }
                 confirmation(title, accepted, no, multiplayer, masters);

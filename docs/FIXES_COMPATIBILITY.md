@@ -19,9 +19,11 @@ claim. `REFUSED/UNCONFIRMED` means no confirmed protection, including errors aft
 a write. Every outcome includes a timestamp with milliseconds. Other APIShared
 services continue. Unsupported native/game/backend contracts, unavailable startup
 evidence or memory access failures cause refusal, never a relaxed signature search
-or later retry. Fixes and Script Extender have no exact-version, maximum-version
-or whole-file-hash gate here. Their loaded/disk identities must agree, and the
-actual native hook must satisfy the complete audited contract.
+or later retry. Since 2026-10-22 no component has an exact-version, maximum-version,
+whole-file-hash or fixed-address gate here: neither the game, Fixes, Script Extender,
+BepInEx, Unity, RedBird, Iced nor MonoMod. Loaded/disk module identities must agree,
+and the actual code must satisfy the derived contract below, so updates keep the
+correction working while that contract holds and refuse it when it does not.
 
 This is a deliberately narrow exception to permanent-hook immutability: one
 validated displacement byte of one known foreign stub, before normal game
@@ -75,7 +77,31 @@ readiness/capability contracts; no public timing guarantee is added.
 
 ## Native validation and write
 
-Exact identities and byte contracts are in [UpdateToNewDLL](../UpdateToNewDLL.md#fixes-wheat-sale-startup-correction).
+Derived contract (2026-10-22, `Compatibility/FixesWheatAnalysis`):
+
+- The hook site is the target of Fixes' own `c_game_ai_sell_item_handler_hook`; it
+  must lie in an executable section of the loaded CrusaderDE.dll. The backend's
+  displaced snapshot must equal the disk bytes at that site and decode to complete,
+  branch-free, non-RIP-relative and stack-neutral instructions. The live entry is the
+  backend's `jmp qword [rip+0]` to the stub plus NOP padding.
+- The seller is the function whose x64 unwind entry (`.pdata`) contains the site,
+  following chained fragments to the primary entry. Fragments may only save
+  registers; no frame register is allowed. The stack allocation comes from the
+  unwind codes and must equal the decoded prolog, which must store the untouched EDX
+  (second argument, the player) in its entry home slot `+0x10` exactly once. No
+  instruction of the seller or its fragments may write that slot or take its
+  address. The live prolog must equal the disk prolog (no foreign entry detour).
+- The Fixes stub is decoded up to its absolute jump back to `site + displaced`,
+  which must be preceded by the displaced instructions. It must contain balanced
+  push/pop pairs, exactly one stack load, a 32-bit `mov reg,[rsp+disp8]`, and that
+  register must index `cmp byte [flags+reg],0` after `mov flags, imm64` with the
+  actual `wheatSaleCategoryFlagArray` address (at least 9 flags). The required
+  displacement is the stub's pushed bytes plus allocation plus `0x10`; only that one
+  operand byte is written, and only when it differs.
+
+The audited installation and its earlier exact byte contracts remain documented in
+[UpdateToNewDLL](../UpdateToNewDLL.md#fixes-wheat-sale-startup-correction) as observations.
+The paragraph below records the state before 2026-10-22.
 The tested installation uses Fixes 1.26.5 and Script Extender 2.14.2. These are
 observations, not accepted-version limits. The installed Fixes emitter still
 loads the wrong stack slot. An emitter already using the audited correct slot is

@@ -32,6 +32,7 @@ namespace APISharedTests
 
             var expectedWriters = new (int Rva, int Length, string Group)[]
             {
+                (0x3F1F3, 15, ApiSharedNativeSites.AiMarketSell), (0x29723, 15, ApiSharedNativeSites.AiMarketSell),
                 (0x2960, 15, ApiSharedNativeSites.Audio), (0x2990, 15, ApiSharedNativeSites.Audio), (0x1A41E0, 14, ApiSharedNativeSites.Audio),
                 (0xB7B70, 75, ApiSharedNativeSites.GatehousePermanent), (0xB7BBB, 37, ApiSharedNativeSites.GatehousePermanent),
                 (0xB7A4E, 17, ApiSharedNativeSites.GatehouseAutomation), (0xB79E2, 18, ApiSharedNativeSites.GatehouseAutomation),
@@ -73,6 +74,7 @@ namespace APISharedTests
                 ("APIShared.GatehouseAutomationNativeState", "TryPublish", -1, m => m.Name == "Commit"),
                 ("APIShared.AivBuildStepService", "TryCreate", 8, m => m.Name == "Commit"),
                 ("APIShared.Economy.MarketPriceNativeRuntime", "EnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.AiMarketSellNativeRuntime", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinPathAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "RegisterGuard", 3, m => m.Name == "GetDelegateForFunctionPointer"),
