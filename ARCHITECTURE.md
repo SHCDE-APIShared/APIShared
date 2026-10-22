@@ -55,6 +55,7 @@ load phase; it is not a second public APIShared service runtime.
 | Area | Purpose |
 |---|---|
 | Core | Initialization, capability diagnostics, ownership, native infrastructure and the public native-site registry |
+| NativeKnowledge | Immutable field identities, independently qualified meanings and bounded raw reads from caller-owned views |
 | Compatibility | Internal, binary-validated interoperability corrections for optional mods; no public capability |
 | ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
 | ScriptExtenderReplacements | Opt-in public alternatives to specific SE methods; no interception of existing callers |
@@ -103,6 +104,7 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
+  NativeKnowledge/              stable field catalog, evidence and hash-bound raw readers
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Native/            pattern resolution, memory, native reservations
   ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
@@ -155,6 +157,11 @@ Native market query ownership belongs to Economy/MarketPriceEvents; consumer AI
 settings and player classification remain in the consumer. The two native helpers
 serve both AI trade and ally valuations. Their fixed-image ABI and backend contract
 are validated before publication; their hooks remain installed for the process.
+
+Economy/AiMarketSellPolicies separately owns final reserve and pre-booking quantity
+spans. Ordered optional adjusters compose before OR-combined native safety. The
+shared service has no default gameplay policy; consumers own synchronized settings.
+See [AI market sell policies](docs/AI_MARKET_SELL.md).
 
 Customized launch owners register typed snapshot providers in `CustomizedLaunchOrigins`.
 The registry combines evidence without naming or reflecting over consumer assemblies.
@@ -229,8 +236,9 @@ one-time startup operation has no LibraryLoaded/tick retry or teardown path.
 Additional weighted route calculations publish through `Pathfinding/Routes`.
 `RouteSearchContracts` contains caller-facing arguments and results;
 `RouteSearchEvents` owns process-lifetime registrations, stable ordering and callback
-isolation. The command planner publishes Pre before its existing calculation and
-Post after live-edge validation. Observers can change preference costs or skip the
+isolation. A publisher, such as the command planner, calls the public
+`RouteSearchEvents.BeginSearch` before its existing calculation and completes the
+returned operation after live-edge validation. Observers can change preference costs or skip the
 additional search; they cannot broaden traversal permissions or replace native
 publication. This shared extension stays separate from the mod's command algorithm.
 Use Script Extender events for existing unit-order interception rather than

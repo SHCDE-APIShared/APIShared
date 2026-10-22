@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.12.5";
+        public const string PluginVersion = "0.12.6";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -70,6 +70,7 @@ namespace APIShared
                 new NativeInitializationStep("savegame load dialog", () => Savegames.SaveLoadDialogEvents.Initialize(Config, RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("native field knowledge", () => NativeKnowledge.NativeFieldReader.InitializeCurrent(hash)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
                     context.ModuleHandle, context.Memory.Length, hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(
@@ -78,8 +79,10 @@ namespace APIShared
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
+                new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
+                    context.ModuleHandle, context.Region, context.Memory.Length, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
-                    context, RuntimeLogger, runtime.NativeOwnership)),
+                    context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("native API publication", () => runtime.Initialize(
                     context.ModuleHandle.ToInt64(),

@@ -198,7 +198,7 @@ namespace APIShared.ModSettings
             XDocument document = XDocument.Load(path, LoadOptions.None);
             var result = new List<ModSettingsSearchEntry>();
             var keys = new HashSet<string>(StringComparer.Ordinal);
-            var identities = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+            var identities = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
             foreach (XElement element in document.Descendants())
             {
                 if (IsExcluded(element))
@@ -403,7 +403,14 @@ namespace APIShared.ModSettings
                 return string.Empty;
             }
             if (path.Length == 0)
-                return xamlValue.Trim();
+            {
+                string text = xamlValue.Trim();
+                // "{}" escapes literal text; any other markup extension (TemplateBinding,
+                // StaticResource, x:Static ...) is not resolvable here and is no title.
+                if (text.StartsWith("{}", StringComparison.Ordinal))
+                    return text.Substring(2).Trim();
+                return text.StartsWith("{", StringComparison.Ordinal) ? string.Empty : text;
+            }
             return ReadPropertyPath(dataContext, path)?.ToString()?.Trim() ?? string.Empty;
         }
 

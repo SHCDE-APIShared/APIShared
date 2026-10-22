@@ -1,9 +1,21 @@
 # Third-party integration guide
 
+## Native field knowledge
+
+Use `APIShared.NativeKnowledge.NativeFieldCatalog.Default` for offline metadata and
+`NativeFieldReader.TryGetCurrent(out var reader)` after native initialization for
+the actual process image. Retry acquisition from an existing appropriate publisher
+if called too early; no Unity component or new polling loop is needed. A reader for
+an unknown image reports `UnsupportedImage` on reads. Catalog field IDs remain stable
+through name improvements; meanings and storage verification are independent.
+Callers own native pointer validity, the game-thread/lifetime contract and correct
+view origins. See the [complete usage contract and example](../src/NativeKnowledge/INTEGRATION.md)
+and [field/evidence reference](../src/NativeKnowledge/FELDKATALOG.md).
+
 ## Example package requirements
 
 The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
-APIShared 0.12.2 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
+APIShared 0.12.6 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
 [info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
 Install the complete APIShared package and reference its assemblies with
 `Private=false`. The example references both `APIShared.dll` and
@@ -986,6 +998,11 @@ CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
 
 ## Sharing native market price queries
+
+For reserve or quantity policies, see [AI market sell policies](AI_MARKET_SELL.md)
+and the [consumer example](../examples/ThirdPartyMod/AiMarketSellExample.cs).
+Register after LibraryLoaded, then enable the process-held registration on every
+peer using the synchronized host setting. Safety-only registrations stay native.
 
 Register APIShared.Economy.MarketPriceEvents after APIShared's LibraryLoaded
 initialization, on the startup publisher thread. Inspect TryRegister's failure

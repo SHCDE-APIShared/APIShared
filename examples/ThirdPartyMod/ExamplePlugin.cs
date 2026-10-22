@@ -4,12 +4,13 @@ using APIShared;
 using BepInEx;
 using BepInEx.Logging;
 using SHCDESE.API;
+using SHCDESE.API.LowLevel;
 
 namespace ThirdPartyMod
 {
     [BepInPlugin(Guid, "APIShared Example", "1.0.0")]
     [BepInDependency("000shcdese", "2.14.0")]
-    [BepInDependency("APIShared_Serp", "0.12.3")]
+    [BepInDependency("APIShared_Serp", "0.12.6")]
     public sealed class ExamplePlugin : BaseUnityPlugin
     {
         public const string Guid = "Example.Author.APISharedDemo";
@@ -34,6 +35,7 @@ namespace ThirdPartyMod
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);
             Api.WhenReady(OnReady);
+            CrusaderLibrary.Instance.LibraryLoaded += _ => AiMarketSellExample.Register(Log);
         }
 
         private static void OnReady(ModApiClient client)

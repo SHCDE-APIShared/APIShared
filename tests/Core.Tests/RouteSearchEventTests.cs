@@ -141,4 +141,36 @@ public class RouteSearchEventTests
         Assert.IsFalse(registry.TryRegister("owner", "", _ => { }, null, out _));
         Assert.IsFalse(registry.TryRegister("owner", "id", null, null, out _));
     }
+
+    [TestMethod]
+    public void PublicContextRejectsInvalidPublisherBounds()
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => new RouteSearchContext(" ", 1, 0, 0, 1, 1, RouteSearchTerrain.GroundOnly, 10, 10));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new RouteSearchContext("p", 1, 0, 0, 1, 1, (RouteSearchTerrain)9, 10, 10));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new RouteSearchContext("p", 1, 0, 0, 1, 1, RouteSearchTerrain.GroundOnly, 0, 10));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new RouteSearchContext("p", 1, 0, 0, 1, 1, RouteSearchTerrain.GroundOnly, 10, 0));
+        Assert.AreEqual(int.MaxValue, new RouteSearchContext("p", 1, 0, 0, 1, 1, RouteSearchTerrain.GroundOnly, int.MaxValue, 10).MaximumEdges);
+    }
+
+    [TestMethod]
+    public void PublicPublisherSeesEffectiveCostsAndReportsPostOnce()
+    {
+        // The process registry is permanent; this observer only reacts to its own publisher GUID.
+        const string publisher = "community.public-route-publisher";
+        int posts = 0;
+        Assert.IsTrue(RouteSearchEvents.TryRegister("community.public-route-observer", "costs",
+            a => { if (a.Context.SourceGuid == publisher) a.MoatEdgeCost = 40; },
+            a => { if (a.Context.SourceGuid == publisher) posts++; }, out _));
+        Assert.IsTrue(RouteSearchEvents.HasObservers);
+        var context = new RouteSearchContext(publisher, 1, 2, 3, 4, 5, RouteSearchTerrain.FriendlyMoat, 1998, 10000);
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => RouteSearchEvents.BeginSearch(context, 0, 20));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => RouteSearchEvents.BeginSearch(context, 10, 10001));
+        RouteSearchOperation operation = RouteSearchEvents.BeginSearch(context, 10, 20);
+        Assert.AreEqual(10L, operation.Pre.GroundEdgeCost);
+        Assert.AreEqual(40L, operation.Pre.MoatEdgeCost);
+        Assert.ThrowsExactly<InvalidOperationException>(() => operation.Pre.MoatEdgeCost = 1);
+        operation.Complete(true, "found", 3, 9);
+        operation.Complete(true, "found", 3, 9);
+        Assert.AreEqual(1, posts);
+    }
 }

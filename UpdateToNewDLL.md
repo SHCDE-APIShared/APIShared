@@ -1,5 +1,69 @@
 # Native binary update contracts
 
+## Native field knowledge
+
+Owner: `src/NativeKnowledge`. This area installs no hook and resolves no executable
+target. The captured field bindings belong exclusively to native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Offsets, scalar widths, record extents and evidence are authoritative in
+`NativeFieldCatalog.Data.cs`; the [field reference](src/NativeKnowledge/FELDKATALOG.md)
+explains each identity. Only bindings explicitly marked read-verified are admitted.
+
+The existing hash initialization publishes one immutable process reader. Unknown
+hashes remain unknown and yield `UnsupportedImage`; hash failure leaves acquisition
+unavailable. There is no layout/pattern fallback: no independently established
+semantic migration anchors are provided for these bindings. Future image support
+requires a separate full field/root/stride/width/ID-origin audit; add a hash binding
+without silently changing a published identity. Extender header/source names alone,
+recovered layouts and historical similarity never authorize migration.
+
+Tribe target slices +0x622/+0x626 deliberately do not follow named source-field
+boundaries. Their native stores +0x64C/+0x650 derive through the audited +0x2A
+origin; original machine sites are RVA 0x11FC2C/0x11FC38. Revalidate those stores,
+paired identity consumers and full record extent when adding support. No private
+managed member or executable-memory mutation is involved. Caller-supplied spans
+still require valid object identity, owning thread and immediate lifetime.
+
+## AI market sell policies
+
+Owner: `Economy.AiMarketSell`, `AiMarketSellNativeRuntime` and
+`AiMarketSellAssembly`. Reference SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Unknown hash, changed layout/backend, occupied bytes, ambiguous pattern or wrong
+displacement refuses the entire service. No late installation retry. No AIC edits.
+
+| Site/data | Audited contract and update check |
+| --- | --- |
+| 0x3F1F3..0x3F202 | 15 bytes `488D0516D06203448B8C2890F01200`: LEA RAX manager, MOV R9D total stock. Replay once before callbacks/floor. EDX final reserve, R8 player*0x160F, RDI good, RBP player*0x583C+good*4. Next `443BCA7F16` compares signed stock and reserve. |
+| 0x29723..0x29732 | 15 bytes `8BD7488D2DE42A6403418BF0488BCD`: EDX=EDI, RBP manager, ESI=R8D, RCX=RBP. Input EDI one-based player, R8D good, EBX/R9D amount after negative rejection. Set EBX and R9D together; replay once on continuation. |
+| 0x29732 | `E859540A00` price call 0xCEB90 before credits 0x2974D/58/5F and removal 0xB7D80. |
+| 0x2978B | Empty-sale exit `488B6C2440488B5C2448488B7424504883C4305FC3`; complete prologue has already run. No pricing, credits, removal or presentation on this exit. |
+| 0x379B2A0 + player*0x583C + good*4 | Signed aggregate stock. GamePlayerResources stride 0x583C, null/ale/gold offsets 0x4D0/508/50C; eGoods null=0, ale=14, gold=15, Count=25. Gold base 0x379B2DC is harness evidence, not a new production write. |
+
+At the reference hash check exact site bytes first. On mismatch scan executable PE
+sections for the exact fingerprint and reject duplicates; a moved match cannot
+establish relocated data/layouts, so remains refused. Validate comparison, price
+call and epilogue separately. Re-audit the full 0x3EE10 decision loop, scheduler
+0x2AE40/controller 0x3F270, .lordjson/AIC copy 0x87350, table 0x2CEC90 (20 entries,
+eight categories) and the complete 0x29700 booking/removal chain on updates.
+Check whole-function branch targets, all xrefs and external entries for BOTH entire
+15-byte spans; no interior entry is allowed. Adjacent owners: Fixes 0x3F0C9..DC,
+stone reserve 0x3F156..16A, price 0xCEB90 and diagnosis 0x29700..09 remain separate.
+
+Actual RedBird X64InlineHook probes and prepared/published hooks must displace
+exactly 15 bytes. Backend/Iced identities are checked in the runtime; update only
+after inspecting new backend behavior (minimum 14, whole instructions, FF25/0
+pointer jump and final NOP). Native state is aligned int32 demand 1/2/4/8. Safety
+paths preserve flags/scratch state; reverse callbacks additionally preserve volatile
+GP/XMM0..5 and shadow space. Re-run the productive machine harness, including
+recursive consumption before the final stock re-read and inactive Vanilla parity.
+
+Publication uses APIShared's shared root/latch before any Enable attempt. A partial
+write or failed post-validation retains all code/data and zero demand until process
+exit. Never dispose, retry, release site ownership or free reachable state afterward.
+Only unpublished failures clean up. Tests and public limits:
+[AI market sell policies](docs/AI_MARKET_SELL.md).
+
 ## Fixes wheat-sale startup correction
 
 Owner: internal `Compatibility/FixesWheatStartup`; foreign hook ownership stays

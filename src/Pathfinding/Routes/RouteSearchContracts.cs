@@ -16,9 +16,23 @@ namespace APIShared.Pathfinding
     /// <summary>Read-only identity and bounds of one additional weighted route search, without native pointers.</summary>
     public sealed class RouteSearchContext
     {
-        internal RouteSearchContext(string sourceGuid, int playerId, int startX, int startY,
+        /// <summary>Creates the context a publisher passes to <see cref="RouteSearchEvents.BeginSearch"/>.</summary>
+        /// <param name="sourceGuid">The exact GUID of the publishing mod.</param>
+        /// <param name="playerId">The one-based player game ID of the searching unit.</param>
+        /// <param name="startX">The starting tile X coordinate.</param>
+        /// <param name="startY">The starting tile Y coordinate.</param>
+        /// <param name="targetX">The requested destination tile X coordinate.</param>
+        /// <param name="targetY">The requested destination tile Y coordinate.</param>
+        /// <param name="terrain">The traversal permissions the publisher has already selected.</param>
+        /// <param name="maximumEdges">Positive route-length bound; int.MaxValue when the search is unbounded.</param>
+        /// <param name="maximumEdgeCost">Positive largest preference cost the publisher can sum without overflow.</param>
+        public RouteSearchContext(string sourceGuid, int playerId, int startX, int startY,
             int targetX, int targetY, RouteSearchTerrain terrain, int maximumEdges, long maximumEdgeCost)
         {
+            if (string.IsNullOrWhiteSpace(sourceGuid)) throw new ArgumentException("Source GUID required.", nameof(sourceGuid));
+            if (!Enum.IsDefined(typeof(RouteSearchTerrain), terrain)) throw new ArgumentOutOfRangeException(nameof(terrain));
+            if (maximumEdges <= 0) throw new ArgumentOutOfRangeException(nameof(maximumEdges));
+            if (maximumEdgeCost <= 0) throw new ArgumentOutOfRangeException(nameof(maximumEdgeCost));
             SourceGuid = sourceGuid; PlayerId = playerId;
             StartX = startX; StartY = startY; TargetX = targetX; TargetY = targetY;
             Terrain = terrain; MaximumEdges = maximumEdges; MaximumEdgeCost = maximumEdgeCost;

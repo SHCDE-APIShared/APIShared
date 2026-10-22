@@ -17,7 +17,7 @@ namespace APIShared.ModSettings
     /// <summary>Pure matching policy shared by runtime filtering and isolated tests.</summary>
     public static class ModSettingsSearchMatcher
     {
-        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case and diacritics.</summary>
+        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case (culture-invariant) and diacritics.</summary>
         public static bool IsMatch(
             string filterText,
             bool includeToolTips,
@@ -37,7 +37,7 @@ namespace APIShared.ModSettings
                 string.Empty);
         }
 
-        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case and diacritics.</summary>
+        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case (culture-invariant) and diacritics.</summary>
         public static bool IsMatch(
             string filterText,
             bool includeToolTips,
@@ -94,7 +94,7 @@ namespace APIShared.ModSettings
             foreach (char character in decomposed)
             {
                 if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
-                    result.Append(char.ToLower(character, CultureInfo.CurrentCulture));
+                    result.Append(char.ToLowerInvariant(character));
             }
             return result.ToString().Normalize(NormalizationForm.FormC);
         }
@@ -394,7 +394,7 @@ namespace APIShared.ModSettings
 
             var realizedEntries = new List<ModSettingsSearchEntry>();
             var keys = new HashSet<string>(StringComparer.Ordinal);
-            var identities = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+            var identities = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
             var visited = new HashSet<DependencyObject>();
             var structuralParents = new Dictionary<DependencyObject, DependencyObject>();
             Visit(view, realizedEntries, keys, identities, visited, structuralParents, null, 0);

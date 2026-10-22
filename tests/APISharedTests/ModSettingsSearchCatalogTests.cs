@@ -230,6 +230,33 @@ namespace APISharedTests
             }
         }
 
+        [TestMethod]
+        public void CaseFoldingDoesNotDependOnTheCurrentCulture()
+        {
+            var previous = System.Threading.Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+                Assert.IsTrue(ModSettingsSearchMatcher.IsSectionTitleMatch("info", "INFO"));
+                Assert.IsTrue(ModSettingsSearchMatcher.IsSectionTitleMatch("INFO", "info"));
+            }
+            finally { System.Threading.Thread.CurrentThread.CurrentCulture = previous; }
+        }
+
+        [TestMethod]
+        public void UnresolvableMarkupExtensionsAreNoTextButEscapedLiteralsAre()
+        {
+            WithFile("<Grid><CheckBox Content='{StaticResource Caption}' ToolTip='Plain tip'/>" +
+                "<CheckBox Content='{}{Literal} title' ToolTip='{TemplateBinding ToolTip}'/>" +
+                "<CheckBox Content='Second' ToolTip='{}{Escaped} tip'/></Grid>", path => {
+                var model = new object();
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "markup");
+                ModSettingsSearchCatalog.TryGetEntries(model, out var entries);
+                Assert.IsFalse(entries.Any(e => e.Title.Contains("StaticResource") || e.ToolTip.Contains("TemplateBinding")));
+                Assert.AreEqual("{Escaped} tip", entries.Single(e => e.Title == "Second").ToolTip);
+            });
+        }
+
         private static void WithFile(string xaml, Action<string> action)
         {
             string path = Path.GetTempFileName();

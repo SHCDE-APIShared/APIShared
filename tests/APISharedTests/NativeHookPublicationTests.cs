@@ -433,6 +433,7 @@ public sealed class NativeHookPublicationTests
             ("APIShared.AssassinAttackControlAPI", "EnsureInstalled", true),
             ("APIShared.AssassinPathAPI", "EnsureInstalled", true),
             ("APIShared.Economy.MarketPriceNativeRuntime/Installation", "Install", true),
+            ("APIShared.Economy.AiMarketSellNativeRuntime", "Install", false),
             ("APIShared.AivBuildStepService", "TryCreate", false),
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallMovementHooks", true),
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallComparisonHooks", false),
@@ -471,6 +472,7 @@ public sealed class NativeHookPublicationTests
         string[] owners =
         {
             "APIShared.Economy.MarketPriceNativeRuntime",
+            "APIShared.Economy.AiMarketSellNativeRuntime",
             "APIShared.AivBuildStepService",
             "APIShared.AssassinAttackControlAPI",
             "APIShared.AssassinPathAPI",

@@ -38,7 +38,7 @@ namespace APIShared.Workshop
             steamSubscription = SteamworksR3EventHooks.OnSteamworksInitialized.Observable.Subscribe(e => {
                 if (e.Phase != EventHookPhase.Post) return;
                 try {
-                    var pending = Subscriptions().Where(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0).ToArray();
+                    var pending = InitialSubscriptions().Where(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0).ToArray();
                     startupDownloadPending = pending.Length != 0;
                     startupPendingItems = string.Join(", ", pending.Select(x => x.Id + " (" + x.State + ")"));
                     Log("Workshop startup gate active on Steam initialization; external management=" + IsExternallyManaged + ".");
@@ -69,6 +69,15 @@ namespace APIShared.Workshop
                 throw new InvalidOperationException("Steamworks is not initialized.");
         }
         internal sealed class Subscription { internal ulong Id; internal string Root; internal EItemState State; }
+        // Startup runs once per session: a list that changes while Steam is still
+        // enumerating it must not disable startup Workshop handling for the session.
+        private static Subscription[] InitialSubscriptions()
+        {
+            for (int attempt = 1; ; attempt++) {
+                try { return Subscriptions(); }
+                catch (IOException) when (attempt < 3) { }
+            }
+        }
         internal static Subscription[] Subscriptions()
         {
             RequireSteam(); uint count = SteamUGC.GetNumSubscribedItems();
@@ -372,7 +381,8 @@ namespace APIShared.Workshop
                         if (IsExternallyManaged || MissionLifecycleService.HasContext || Directory.Exists(WorkshopPaths.Inside(Paths.GameRootPath, "_SE/.staging")) ||
                             beforeExit.Any(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0) ||
                             !beforeExit.Select(x => x.Id).OrderBy(x => x).SequenceEqual(latest.Select(x => x.Id).OrderBy(x => x))) {
-                            WorkshopUpdaterLauncher.Cancel(transaction); throw new InvalidOperationException("Installation conditions changed before game exit.");
+                            // The catch below cancels the handoff and reports a cancellation failure.
+                            throw new InvalidOperationException("Installation conditions changed before game exit.");
                         }
                         operation.Set(WorkshopOperationState.AwaitingRestart, "Updater started; installation is committed only after game exit.", plan.WorkshopId);
                         Log("Workshop quit reason=confirmed consumer update; transaction=" + transaction + "; handoff=confirmed.");

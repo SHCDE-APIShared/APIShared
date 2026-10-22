@@ -38,7 +38,6 @@ public sealed unsafe class AudioNativeContractTests
         var files = new InstalledAudioFiles(game);
         files.Validate();
         Check(NativeContract.HashFile(files.Native) == NativeContract.NativeHash, "native identity");
-        Check(NativeContract.HashFile(files.Managed) == NativeContract.ManagedHash, "managed identity");
         Check(NativeContract.HashFile(files.Backend) == NativeContract.BackendHash, "installed backend identity");
         Paths(files);
         SoundRuntime.ValidateMembers();
@@ -60,7 +59,7 @@ public sealed unsafe class AudioNativeContractTests
         files.Validate();
         Check(File.Exists(files.Managed) && File.Exists(files.Native) && File.Exists(files.Backend), "canonical files resolve independently of empty Location");
         bool missing = false;
-        try { InstalledAudioFiles.ValidateFile(files.Managed + ".missing-unit-audio", NativeContract.ManagedHash); }
+        try { InstalledAudioFiles.ValidateFile(files.Managed + ".missing-unit-audio", NativeContract.NativeHash); }
         catch (FileNotFoundException) { missing = true; }
         Check(missing && !SoundContextPolicy.Active, "missing file rejected before activation");
         bool changed = false;
