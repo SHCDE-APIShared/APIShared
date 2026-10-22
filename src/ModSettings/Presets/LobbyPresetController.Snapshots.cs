@@ -198,6 +198,11 @@ namespace APIShared.ModSettings
             // Capture inclusion once, before a setter's PropertyChanged can refresh
             // the live role. Deserialization likewise finishes before any mutation.
             bool includeHost = restoreHost ?? (selected == MissionPresetIndex || owner.IsLocalHost);
+            // Reflected presets historically omit null values (CaptureCurrentSettings and
+            // TryApplyProperty do the same). A missing optional value must not prevent
+            // activation or restoration of the other settings. Backends retain their
+            // existing complete-configuration validation.
+            bool omitNull = dynamicProvider == null && owner.SettingsApplicationBackend == null;
             var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
             foreach (PresetPropertyAccessor property in persistedProperties)
             {
@@ -206,15 +211,24 @@ namespace APIShared.ModSettings
                 byte[] bytes = null;
                 stored?.TryGetValue(property.Name, out bytes);
                 if (bytes == null) defaults.TryGetValue(property.Name, out bytes);
+                if (bytes == null && omitNull) continue;
                 try
                 {
-                    if (bytes == null || MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                    if (bytes == null) throw new InvalidDataException("Missing setting: " + property.Name);
+                    if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                    {
+                        if (omitNull) continue;
                         throw new InvalidDataException("Missing setting: " + property.Name);
+                    }
                 }
                 catch
                 {
-                    if (!defaults.TryGetValue(property.Name, out bytes) || bytes == null ||
-                        MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null) throw;
+                    if (!defaults.TryGetValue(property.Name, out bytes) || bytes == null) throw;
+                    if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                    {
+                        if (omitNull) continue;
+                        throw;
+                    }
                 }
                 prepared.Add(property, (byte[])bytes.Clone());
             }

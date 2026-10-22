@@ -158,10 +158,11 @@ namespace LobbyModSettingsPresetTests
         private sealed class Host : ILobbyPresetHost
         {
             internal readonly Settings Target = new Settings();
+            internal object SettingsTargetOverride;
             internal int Notifications;
             internal Action SnapshotApplied;
             internal readonly System.Collections.Generic.List<string> Publications = new System.Collections.Generic.List<string>();
-            public object SettingsTarget => Target;
+            public object SettingsTarget => SettingsTargetOverride ?? Target;
             public IDynamicPresetSettingsProvider DynamicSettingsProvider => null;
             public IModSettingsApplicationBackend SettingsApplicationBackend => null;
             public bool IsLocalHost { get; set; } = true;

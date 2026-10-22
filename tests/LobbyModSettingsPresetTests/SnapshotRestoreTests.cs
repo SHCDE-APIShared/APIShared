@@ -3,6 +3,7 @@ using MessagePack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SHCDESE.API;
 using SHCDESE.API.Components.ModManager;
+using SHCDESE.API.Components.Network;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,6 +13,44 @@ namespace LobbyModSettingsPresetTests
 {
     public partial class LobbyPresetControllerTests
     {
+        public sealed class OptionalSettings
+        {
+            [PresetLocal] public string Name { get; set; }
+            [PresetLocal] public int? Count { get; set; }
+            [SyncHostOnly] public int Amount { get; set; } = 17;
+        }
+
+        [TestMethod]
+        public void OmittedNullDefaultsDoNotBlockOtherSnapshotValues()
+        {
+            var settings = new OptionalSettings();
+            var controller = Start(new Host { SettingsTargetOverride = settings });
+            controller.ApplyWorkingSnapshot(new Dictionary<string, byte[]> {
+                [nameof(OptionalSettings.Amount)] = MessagePackSerializer.Serialize(31)
+            });
+            Assert.AreEqual(31, settings.Amount);
+            Assert.IsNull(settings.Name);
+            Assert.IsNull(settings.Count);
+            var restarted = new OptionalSettings();
+            Start(new Host { SettingsTargetOverride = restarted });
+            Assert.AreEqual(31, restarted.Amount);
+        }
+
+        [TestMethod]
+        public void SerializedNullDefaultsRetainTheExistingOmissionSemantics()
+        {
+            var settings = new OptionalSettings();
+            var controller = Start(new Host { SettingsTargetOverride = settings });
+            controller.SetDefaultValue<string>(nameof(OptionalSettings.Name), null);
+            controller.SetDefaultValue<int?>(nameof(OptionalSettings.Count), null);
+            settings.Name = "Keep current optional value";
+            settings.Count = 7;
+            controller.ApplyDefaultsAsWorkingCopy();
+            Assert.AreEqual("Keep current optional value", settings.Name);
+            Assert.AreEqual(7, settings.Count);
+            Assert.AreEqual(17, settings.Amount);
+        }
+
         private static Dictionary<string, byte[]> Values(int first, int second, int local) =>
             new Dictionary<string, byte[]> {
                 [nameof(Settings.HostAmount)] = MessagePackSerializer.Serialize(first),
