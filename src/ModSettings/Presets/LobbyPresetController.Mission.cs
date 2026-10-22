@@ -16,14 +16,33 @@ namespace APIShared.ModSettings
     internal sealed partial class LobbyPresetController
     {
         private bool personalHostRestorePending;
+        // A restoration whose setter rejects even the code default is retried by its owner.
+        // The final attempt completes with the other values, so no context stays stuck.
+        internal const int MaximumRestoreAttempts = 3;
+        private int missionExitFailures, hostRestoreFailures;
+        // Set by ApplySnapshot when a retryable cleanup throws because of a failed setter.
+        private bool retryableSetterFailure;
 
         internal void RestorePersonalHostIfPending()
         {
             if (!personalHostRestorePending || applying || owner.HasMissionContext ||
                 !owner.CanRestorePersonalHostSettings ||
                 GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin == LobbyModSettingsChangeOrigin.InitialLoad) return;
-            ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false);
+            bool retryable = hostRestoreFailures + 1 < MaximumRestoreAttempts;
+            SnapshotApplicationResult result;
+            try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false, retryableCleanup: retryable); }
+            catch { if (retryableSetterFailure) hostRestoreFailures++; retryableSetterFailure = false; throw; }
+            ReportFinalRestoreAttempt(result, hostRestoreFailures, "personal host settings");
+            hostRestoreFailures = 0;
             personalHostRestorePending = false;
+        }
+
+        private void ReportFinalRestoreAttempt(SnapshotApplicationResult result, int failedAttempts, string scope)
+        {
+            if (result.Failed.Count == 0) return;
+            DebugLogHelper.LogError(log,
+                $"[{modName}] Restored {scope} after {failedAttempts + 1} attempts without " +
+                $"[{string.Join(", ", result.Failed.Select(property => property.Name))}]; those settings keep their current values.");
         }
 
 #if API_SHARED_PRESET_TESTS
@@ -58,6 +77,7 @@ namespace APIShared.ModSettings
             missionPresetLabel = label ?? string.Empty;
             missionBasedOnPreset = null;
             missionPresetDirty = false;
+            missionExitFailures = 0;
             missionPreset = Clone(preset1 ?? defaults);
             Dictionary<string, byte[]> supplied = snapshot ?? CreateDisabledSnapshot();
             foreach (KeyValuePair<string, byte[]> entry in supplied)
@@ -71,10 +91,15 @@ namespace APIShared.ModSettings
             bool restoreHost = owner.CanRestorePersonalHostSettings;
             // Keep the entire mission and its source metadata until restoration
             // succeeds. The session retains failed owners and calls Exit again.
+            // A setter that rejects even its default keeps the mission for a bounded number of
+            // retries; callback and publication failures stay retryable without a bound.
             int previousSelection = owner.SelectedPreset;
+            bool retryable = missionExitFailures + 1 < MaximumRestoreAttempts;
+            SnapshotApplicationResult result;
             try
             {
-                ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false);
+                try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false, retryableCleanup: retryable); }
+                catch { if (retryableSetterFailure) missionExitFailures++; retryableSetterFailure = false; throw; }
                 owner.PublishSettingsSnapshot(clientProperties.Select(property => property.Name).ToArray());
             }
             catch
@@ -82,6 +107,8 @@ namespace APIShared.ModSettings
                 LobbySettingsRestoreScope.Execute(() => owner.SetSelectedPresetCore(previousSelection));
                 throw;
             }
+            ReportFinalRestoreAttempt(result, missionExitFailures, "the normal preset");
+            missionExitFailures = 0;
             personalHostRestorePending = !restoreHost;
             missionPreset = null;
             missionBasedOnPreset = null;

@@ -16,7 +16,8 @@
         "Log the applied settings of registered mods once per successful mission start as compact, versioned JSON, including scope activation, own-player values and isolated read errors.",
         "Restore settings snapshots with their original ownership and change origin; preserve Customize drafts and publish host settings only after authoritative application.",
         "Resolve late player assignments before applying personal settings; receive lobby settings through the Unity main-thread FIFO and recheck sender authority at delivery.",
-        "Preserve omitted nullable reflected settings during snapshot restoration without suppressing setter failures.",
+        "Preserve omitted nullable reflected settings during snapshot restoration.",
+        "Apply reflected settings independently: a rejected value falls back to the code default and no longer blocks or partially applies a preset; mission exit and host restoration retry a setter that rejects even its default at most three times, then complete with a reported error.",
         "Integrate the guarded interpolation delivery and runtime-health fixes from develop while preserving the settings and release-safety regressions."
       ]
     },

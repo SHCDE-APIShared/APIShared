@@ -227,6 +227,14 @@ nor persisted. Inclusion and authority are captured before the first setter; aft
 successful application, eligible host properties use the existing Extender sender
 and personal values use the existing per-player convergence. Snapshot callbacks
 still run after application, and their failures propagate to the owning session.
+Reflected setters are applied independently: a setter that rejects its value receives
+the code default, and the other settings are applied regardless. The default is
+recorded in the working copy and a loaded preset then counts as modified; a setting
+that rejects even its default is reported and keeps its requested value for the next
+load. Leaving a mission or restoring personal host settings rethrows such a failure
+after the other values, so the owner keeps its context and retries; the third
+attempt completes and reports the settings that kept their current values. Dynamic
+providers and application backends keep their complete-configuration validation.
 Personal persistence uses the owned working snapshot, never a mixture of current
 mission values and received host values. On exit a confirmed active client lobby
 retains host values until lobby departure; stale host flags left by local Coop do

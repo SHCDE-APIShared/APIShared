@@ -37,8 +37,9 @@ See [mission settings preparation](THIRD_PARTY_GUIDE.md#mission-settings-prepara
 
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
-Internal snapshot application suppresses intermediate transport/storage and retains
-failed cleanup for retry. The managed Extender settings receiver dispatches copied
+Internal snapshot application suppresses intermediate transport/storage, isolates
+failing reflected setters (code-default fallback) and retains failed cleanup for a
+bounded retry. The managed Extender settings receiver dispatches copied
 packets to the shared Unity FIFO with lobby/session invalidation and original sender
 validation. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 `MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
