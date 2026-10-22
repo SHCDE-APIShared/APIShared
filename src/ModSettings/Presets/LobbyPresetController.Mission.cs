@@ -15,6 +15,17 @@ namespace APIShared.ModSettings
     /// <summary>Transient mission attribution and property-change ownership; remote and mission values stay out of personal storage.</summary>
     internal sealed partial class LobbyPresetController
     {
+        private bool personalHostRestorePending;
+
+        internal void RestorePersonalHostIfPending()
+        {
+            if (!personalHostRestorePending || applying || owner.HasMissionContext ||
+                !owner.CanRestorePersonalHostSettings ||
+                GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin == LobbyModSettingsChangeOrigin.InitialLoad) return;
+            ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false);
+            personalHostRestorePending = false;
+        }
+
 #if API_SHARED_PRESET_TESTS
         public void SwitchTo(int selected)
         {
@@ -57,6 +68,21 @@ namespace APIShared.ModSettings
 
         public void ExitMissionPreset()
         {
+            bool restoreHost = owner.CanRestorePersonalHostSettings;
+            // Keep the entire mission and its source metadata until restoration
+            // succeeds. The session retains failed owners and calls Exit again.
+            int previousSelection = owner.SelectedPreset;
+            try
+            {
+                ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false);
+                owner.PublishSettingsSnapshot(clientProperties.Select(property => property.Name).ToArray());
+            }
+            catch
+            {
+                LobbySettingsRestoreScope.Execute(() => owner.SetSelectedPresetCore(previousSelection));
+                throw;
+            }
+            personalHostRestorePending = !restoreHost;
             missionPreset = null;
             missionBasedOnPreset = null;
             missionPresetDirty = false;
@@ -67,7 +93,6 @@ namespace APIShared.ModSettings
             activePublishedPreset = suspendedPublishedPreset != null && publishedPresets.Contains(suspendedPublishedPreset)
                 ? suspendedPublishedPreset
                 : null;
-            ApplySnapshot(preset1, 0, writeLocalStorage: true);
             suspendedPublishedPreset = null;
             missionPresetLabel = string.Empty;
             LogRoutine($"[{modName}] Left mission preset and restored the previous normal preset.");
@@ -76,6 +101,8 @@ namespace APIShared.ModSettings
         public void AfterPropertyChanged(string propertyName)
         {
             if (!active || applying || string.IsNullOrEmpty(propertyName))
+                return;
+            if (GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin == LobbyModSettingsChangeOrigin.InitialLoad)
                 return;
 
             persistedPropertiesByName.TryGetValue(

@@ -38,7 +38,7 @@ namespace APIShared
         public IReadOnlyDictionary<int, ulong> Players { get; }
         /// <summary>Whether at least one required lobby identity is not resolved yet.</summary>
         public bool HasUnresolvedPlayers { get; }
-        /// <summary>Resolved one-based local player slot, or zero while unresolved.</summary>
+        /// <summary>Resolved one-based local player slot agreeing with the outbound transport mapping, or zero while unresolved.</summary>
         public int LocalPlayerId { get; }
         /// <summary>Whether a missing lobby must be preserved for an ongoing map transition.</summary>
         public bool PreserveForMapTransition { get; }

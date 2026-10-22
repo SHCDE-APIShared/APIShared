@@ -113,12 +113,5 @@ if ($PrepareOnly) {
     return
 }
 if ($PSCmdlet.ShouldProcess("$repository / $tag", 'Create release with the validated APIShared asset')) {
-    $existing = Get-ApiGitHubRelease $repository $tag
-    if ($null -ne $existing) {
-        if (-not $existing.isDraft -or $existing.targetCommitish -ne $commit) { throw 'An existing published or different-source release must never be replaced.' }
-        & gh release upload $tag @assets --repo $repository --clobber
-        if ($LASTEXITCODE -ne 0) { throw 'Could not resume the matching draft assets.' }
-        & gh release edit $tag --repo $repository --notes-file $notes --draft=$(-not $Publish)
-    } else { & gh @arguments }
-    if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed; the validated local artifact was preserved.' }
+    Invoke-ApiReleasePublication -Repository $repository -Tag $tag -Commit $commit -Assets $assets -Notes $notes -Publish ([bool]$Publish) -CreationArguments $arguments
 }

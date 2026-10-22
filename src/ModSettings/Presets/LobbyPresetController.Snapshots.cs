@@ -29,9 +29,10 @@ namespace APIShared.ModSettings
             if (owner.IsMissionPresetSelected)
                 throw new InvalidOperationException("Mission defaults must be materialized by the registered mission source provider.");
             var prepared = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            bool host = owner.IsLocalHost;
             foreach (PresetPropertyAccessor property in persistedProperties)
             {
-                if (IsHostProperty(property) && !owner.IsLocalHost) continue;
+                if (IsHostProperty(property) && !host) continue;
                 if (defaults.TryGetValue(property.Name, out byte[] value))
                     prepared[property.Name] = value == null ? null : (byte[])value.Clone();
             }
@@ -50,7 +51,12 @@ namespace APIShared.ModSettings
                 ApplyMissionWorkingSnapshot(snapshot, missionPresetLabel);
                 return;
             }
-            Dictionary<string, byte[]> clone = Clone(snapshot);
+            Dictionary<string, byte[]> clone = Clone(preset1 ?? defaults);
+            bool host = owner.IsLocalHost;
+            foreach (var entry in snapshot)
+                if (persistedPropertiesByName.TryGetValue(entry.Key, out var property) &&
+                    (host || IsClientProperty(property)))
+                    clone[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
             ApplySnapshot(clone, 0, writeLocalStorage: false);
             preset1 = clone;
             WriteCombinedPayload();
@@ -73,7 +79,7 @@ namespace APIShared.ModSettings
             Clone(owner.IsMissionPresetSelected ? missionPreset : preset1 ?? defaults);
 
         public Dictionary<string, byte[]> CreatePlayerMissionSnapshot() =>
-            Clone(owner.IsMissionPresetSelected ? preset1 ?? defaults : CaptureCurrentSettings());
+            Clone(preset1 ?? defaults);
 
         public void ApplyMissionWorkingSnapshot(Dictionary<string, byte[]> snapshot, string label)
         {
@@ -81,11 +87,12 @@ namespace APIShared.ModSettings
                 throw new InvalidOperationException("Mission settings are not currently editable.");
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             Dictionary<string, byte[]> merged = Clone(missionPreset ?? defaults);
+            bool host = owner.IsLocalHost;
             foreach (KeyValuePair<string, byte[]> entry in snapshot)
             {
                 if (!persistedPropertiesByName.TryGetValue(entry.Key, out PresetPropertyAccessor property))
                     continue;
-                if (IsHostProperty(property) && !owner.IsLocalHost)
+                if (IsHostProperty(property) && !host)
                     continue;
                 merged[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
             }
@@ -106,11 +113,12 @@ namespace APIShared.ModSettings
                 ? Clone(preset1 ?? defaults)
                 : CaptureCurrentSettings();
             var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
+            bool host = owner.IsLocalHost;
             foreach (KeyValuePair<string, PublishedPresetSetting> entry in preset.Settings)
             {
                 if (owner.IsRetiredPresetProperty(entry.Key)) continue;
                 PresetPropertyAccessor property = persistedPropertiesByName[entry.Key];
-                if (IsHostProperty(property) && !owner.IsLocalHost)
+                if (IsHostProperty(property) && !host)
                     continue;
 
                 byte[] bytes;
@@ -137,15 +145,8 @@ namespace APIShared.ModSettings
                 prepared[property] = (byte[])bytes.Clone();
             }
 
-            applying = true;
-            try
+            ApplyPreparedValues(prepared, () =>
             {
-                if (dynamicProvider != null || owner.SettingsApplicationBackend != null) ApplyDynamicValues(prepared);
-                else foreach (KeyValuePair<PresetPropertyAccessor, byte[]> entry in prepared)
-                {
-                    if (!TryApplyProperty(entry.Key, entry.Value))
-                        throw new InvalidDataException($"Published value for [{entry.Key.Name}] could not be applied.");
-                }
                 if (owner.IsMissionPresetSelected)
                 {
                     foreach (PresetPropertyAccessor property in prepared.Keys)
@@ -162,12 +163,7 @@ namespace APIShared.ModSettings
                     SetBasedOn(preset, modified: false);
                     owner.SetSelectedPresetCore(0);
                 }
-            }
-            finally
-            {
-                applying = false;
-            }
-            owner.OnSettingsSnapshotApplied();
+            }, publish: true);
             if (writeLocalStorage) WriteCombinedPayload();
             LogRoutine($"[{modName}] Loaded editable preset [{preset.Name}] from [{preset.ProviderName}].");
         }
@@ -195,59 +191,88 @@ namespace APIShared.ModSettings
         private void ApplySnapshot(
             Dictionary<string, byte[]> stored,
             int selected,
-            bool writeLocalStorage)
+            bool writeLocalStorage,
+            bool? restoreHost = null,
+            bool publish = true)
+        {
+            // Capture inclusion once, before a setter's PropertyChanged can refresh
+            // the live role. Deserialization likewise finishes before any mutation.
+            bool includeHost = restoreHost ?? (selected == MissionPresetIndex || owner.IsLocalHost);
+            // Reflected presets historically omit null values (CaptureCurrentSettings and
+            // TryApplyProperty do the same). A missing optional value must not prevent
+            // activation or restoration of the other settings. Backends retain their
+            // existing complete-configuration validation.
+            bool omitNull = dynamicProvider == null && owner.SettingsApplicationBackend == null;
+            var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
+            foreach (PresetPropertyAccessor property in persistedProperties)
+            {
+                if (!includeHost && !IsClientProperty(property)) continue;
+                if (!property.CanWrite) continue;
+                byte[] bytes = null;
+                stored?.TryGetValue(property.Name, out bytes);
+                if (bytes == null) defaults.TryGetValue(property.Name, out bytes);
+                if (bytes == null && omitNull) continue;
+                try
+                {
+                    if (bytes == null) throw new InvalidDataException("Missing setting: " + property.Name);
+                    if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                    {
+                        if (omitNull) continue;
+                        throw new InvalidDataException("Missing setting: " + property.Name);
+                    }
+                }
+                catch
+                {
+                    if (!defaults.TryGetValue(property.Name, out bytes) || bytes == null) throw;
+                    if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                    {
+                        if (omitNull) continue;
+                        throw;
+                    }
+                }
+                prepared.Add(property, (byte[])bytes.Clone());
+            }
+            int previousSelection = owner.SelectedPreset;
+            try { ApplyPreparedValues(prepared, () => owner.SetSelectedPresetCore(selected), publish); }
+            catch
+            {
+                LobbySettingsRestoreScope.Execute(() => owner.SetSelectedPresetCore(previousSelection));
+                throw;
+            }
+            if (writeLocalStorage) WriteCombinedPayload();
+        }
+
+        private void ApplyPreparedValues(Dictionary<PresetPropertyAccessor, byte[]> prepared,
+            Action commit, bool publish)
         {
             bool previousApplying = applying;
             applying = true;
             try
             {
-                if (dynamicProvider != null || owner.SettingsApplicationBackend != null)
+                LobbySettingsRestoreScope.Execute(() =>
                 {
-                    var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
-                    foreach (PresetPropertyAccessor property in persistedProperties)
+                    if (dynamicProvider != null || owner.SettingsApplicationBackend != null) ApplyDynamicValues(prepared);
+                    else foreach (var entry in prepared)
                     {
-                        if (selected != MissionPresetIndex && !owner.IsLocalHost && !IsClientProperty(property)) continue;
-                        byte[] bytes = null;
-                        if (stored != null) stored.TryGetValue(property.Name, out bytes);
-                        if (bytes == null) defaults.TryGetValue(property.Name, out bytes);
-                        if (bytes == null) throw new InvalidDataException("Missing dynamic setting: " + property.Name);
-                        prepared.Add(property, bytes);
+                        object value = MessagePackSerializer.Deserialize(entry.Key.PropertyType, entry.Value);
+                        // Setter failures must reach the owning session: a retryable
+                        // cleanup cannot be silently converted into a partial success.
+                        entry.Key.SetValue(owner.SettingsTarget, value);
                     }
-                    ApplyDynamicValues(prepared);
-                }
-                else foreach (PresetPropertyAccessor property in persistedProperties)
-                {
-                    bool include = selected == MissionPresetIndex || owner.IsLocalHost || IsClientProperty(property);
-                    if (!include)
-                        continue;
-
-                    byte[] bytes = null;
-                    if (stored != null)
-                        stored.TryGetValue(property.Name, out bytes);
-                    if (bytes == null)
-                        defaults.TryGetValue(property.Name, out bytes);
-                    if (bytes == null || !property.CanWrite)
-                        continue;
-
-                    if (!TryApplyProperty(property, bytes) &&
-                        defaults.TryGetValue(property.Name, out byte[] defaultBytes) &&
-                        !ReferenceEquals(bytes, defaultBytes))
-                    {
-                        TryApplyProperty(property, defaultBytes);
-                    }
-                }
-
-                owner.SetSelectedPresetCore(selected);
+                    commit();
+                    // Preserve the protected callback contract: the outer snapshot is
+                    // complete, while its notifications still cannot escape to storage.
+                    applying = previousApplying;
+                    owner.OnSettingsSnapshotApplied();
+                });
             }
             finally
             {
                 applying = previousApplying;
             }
 
-            owner.OnSettingsSnapshotApplied();
-
-            if (writeLocalStorage)
-                WriteCombinedPayload();
+            if (publish && !previousApplying)
+                owner.PublishSettingsSnapshot(prepared.Keys.Select(property => property.Name).ToArray());
         }
 
         private void ApplyDynamicValues(Dictionary<PresetPropertyAccessor, byte[]> prepared)

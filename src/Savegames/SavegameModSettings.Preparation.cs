@@ -167,13 +167,7 @@ namespace APIShared
 
         private static void RunLocalRestore(Action action)
         {
-            var method = typeof(GameXAMLManagerAPI).GetMethod("RunWithChangeOrigin", BindingFlags.Instance | BindingFlags.NonPublic,
-                null, new[] { typeof(LobbyModSettingsChangeOrigin), typeof(Action) }, null);
-            if (method == null || method.ReturnType != typeof(void)) throw new MissingMethodException("Extender restore-origin scope is unavailable.");
-            ExceptionDispatchInfo failure = null;
-            Action guarded = () => { try { action(); } catch (Exception error) { failure = ExceptionDispatchInfo.Capture(error); } };
-            method.Invoke(GameXAMLManagerAPI.Instance, new object[] { LobbyModSettingsChangeOrigin.InitialLoad, guarded });
-            failure?.Throw();
+            LobbySettingsRestoreScope.Execute(action);
         }
     }
 }

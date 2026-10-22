@@ -25,6 +25,47 @@ public class JsonTests
         finally { CultureInfo.CurrentCulture = previous; }
     }
     [TestMethod]
+    public void CompactEncodingPreservesStringsAndValuesWithoutChangingTheFileEncoding()
+    {
+        const string text = "  spaced \"quote\\\" \\ \\\\ \r\n\tä Ω  ";
+        var payload = new Dictionary<string, object> { ["text"] = text,
+            ["nested"] = new Dictionary<string, object> { ["values"] = new object[] { true, null, 1.25, "" } } };
+        string compact = DependencyFreeJson.SerializeCompact(payload);
+        Assert.IsFalse(compact.Contains('\r') || compact.Contains('\n') || compact.Contains('\t'));
+        var parsed = (Dictionary<string, object>)DependencyFreeJson.Parse(compact);
+        Assert.AreEqual(text, parsed["text"]);
+        var values = (List<object>)((Dictionary<string, object>)parsed["nested"])["values"];
+        Assert.AreEqual(true, values[0]);
+        Assert.IsNull(values[1]);
+        Assert.AreEqual(1.25, values[2]);
+        Assert.AreEqual("", values[3]);
+        Assert.IsTrue(DependencyFreeJson.Serialize(payload).EndsWith("\r\n", StringComparison.Ordinal));
+    }
+    [TestMethod]
+    public void CapturedValuesAreDetachedAndPreserveExactNestedNumbers()
+    {
+        const decimal precise = 1.2345678901234567890123456789m;
+        var input = new Dictionary<string, object> { ["precise"] = precise, ["maximum"] = ulong.MaxValue };
+        object captured = DependencyFreeJson.CaptureValue(input, depth: 1);
+        input["precise"] = 0;
+        string json = DependencyFreeJson.SerializeCompact(new Dictionary<string, object> { ["value"] = captured });
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.AreEqual(precise, document.RootElement.GetProperty("value").GetProperty("precise").GetDecimal());
+        Assert.AreEqual(ulong.MaxValue, document.RootElement.GetProperty("value").GetProperty("maximum").GetUInt64());
+        Assert.ThrowsExactly<InvalidDataException>(() => DependencyFreeJson.CaptureValue(double.NaN, depth: 1));
+    }
+    [TestMethod]
+    public void CaptureReservesItsEnclosingObjectsAndCannotBypassTheDepthLimit()
+    {
+        object nested = 1;
+        for (int i = 0; i < DependencyFreeJson.MaximumDepth; i++) nested = new[] { nested };
+        DependencyFreeJson.Parse(DependencyFreeJson.SerializeCompact(nested));
+        Assert.ThrowsExactly<InvalidDataException>(() => DependencyFreeJson.CaptureValue(nested, depth: 2));
+        object captured = DependencyFreeJson.CaptureValue(new[] { 1 }, depth: 1);
+        Assert.ThrowsExactly<InvalidDataException>(() => DependencyFreeJson.SerializeCompact(
+            new Dictionary<string, object> { ["outer"] = new Dictionary<string, object> { ["inner"] = captured } }));
+    }
+    [TestMethod]
     [DataRow("{\"x\":1,\"x\":2}")]
     [DataRow("{\"x\":1,}")]
     [DataRow("[1,]")]

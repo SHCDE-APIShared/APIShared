@@ -18,6 +18,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 #if !API_SHARED_PRESET_TESTS
+using MonoMod.RuntimeDetour;
 using R3;
 using SHCDESE.EventAPI;
 using SHCDESE.NoesisUtil;
@@ -30,6 +31,55 @@ using APIShared;
 
 namespace APIShared.ModSettings
 {
+#if !API_SHARED_PRESET_TESTS
+    // Extender broadcasts before our PropertyChanged observer runs. Intercept only its
+    // outbound boundary for prepared APIShared participants; persistence/UI events and
+    // unrelated Extender consumers keep their original behavior. Retained until exit.
+    internal static class PerPlayerLobbyBroadcastGuard
+    {
+        private delegate void Broadcast(GameXAMLManagerAPI self, string mod, object model, PropertyInfo property);
+        private static readonly ConditionalWeakTable<object, PerPlayerLobbySettingsCoordinator> coordinators =
+            new ConditionalWeakTable<object, PerPlayerLobbySettingsCoordinator>();
+        private static Hook hook;
+        private static Broadcast original;
+
+        internal static void Register(object model, PerPlayerLobbySettingsCoordinator coordinator)
+        {
+            if (hook == null)
+            {
+                MethodInfo target = typeof(GameXAMLManagerAPI).GetMethod("BroadcastSettingChange",
+                    BindingFlags.Instance | BindingFlags.NonPublic, null,
+                    new[] { typeof(string), typeof(object), typeof(PropertyInfo) }, null);
+                if (target == null || target.ReturnType != typeof(void) || target.IsStatic || target.GetMethodBody() == null)
+                    throw new MissingMethodException("GameXAMLManagerAPI.BroadcastSettingChange contract changed.");
+                Hook candidate = null;
+                try
+                {
+                    candidate = new Hook(target, (Broadcast)OnBroadcast,
+                        new HookConfig { ManualApply = true, ID = "APIShared.PerPlayerLobbyBroadcast" });
+                    original = candidate.GenerateTrampoline<Broadcast>();
+                    candidate.Apply();
+                    hook = candidate;
+                }
+                catch
+                {
+                    // Only a candidate that failed before publication can be rolled back.
+                    candidate?.Dispose();
+                    throw;
+                }
+            }
+            coordinators.Add(model, coordinator);
+        }
+
+        private static void OnBroadcast(GameXAMLManagerAPI self, string mod, object model, PropertyInfo property)
+        {
+            if (model != null && property != null && coordinators.TryGetValue(model, out var coordinator) &&
+                coordinator.DeferBroadcast(property.Name)) return;
+            original(self, mod, model, property);
+        }
+    }
+#endif
+
     internal sealed class PerPlayerLobbySettingsCoordinator
     {
         private const int FirstPlayerId = 1;
@@ -39,6 +89,7 @@ namespace APIShared.ModSettings
         private readonly string modName;
         private readonly string ownerGuid;
         private readonly PerPlayerLobbySettingsContract contract;
+        private readonly HostLobbySettingsPublisher hostPublisher;
         private readonly bool routineLoggingEnabled;
         private readonly Dictionary<int, ulong> playersById = new Dictionary<int, ulong>();
         private ulong lobbyId;
@@ -51,6 +102,9 @@ namespace APIShared.ModSettings
         private bool isReady = true;
         private string readinessError = string.Empty;
         private bool active;
+        internal Func<int, bool> TransportReady { get; set; } = TransportPlayerMatches;
+        internal Func<SettingsBroadcastLobby> CaptureBroadcastLobby { get; set; } = CaptureCurrentLobby;
+        internal Func<bool> HasHostAuthority { get; set; } = IsLocalHost;
 #if !API_SHARED_PRESET_TESTS
         private IDisposable mapStartSubscription;
         private string lastIdentityDiagnostic = string.Empty;
@@ -70,6 +124,8 @@ namespace APIShared.ModSettings
             this.ownerGuid = ownerGuid;
             this.contract = contract;
             routineLoggingEnabled = logRoutineActivity;
+            hostPublisher = new HostLobbySettingsPublisher(owner.GetType(), () => CaptureBroadcastLobby(),
+                () => HasHostAuthority(), id => TransportReady(id), owner.System_TriggerUpdate);
         }
 
         internal bool IsReady => isReady;
@@ -77,7 +133,7 @@ namespace APIShared.ModSettings
 
         internal void Activate()
         {
-            if (contract.Settings.Count == 0)
+            if (contract.Settings.Count == 0 && !hostPublisher.HasSettings)
                 return;
             if (active)
                 return;
@@ -92,12 +148,17 @@ namespace APIShared.ModSettings
                 mapStartSubscription = APIShared.Internal.MissionEvents.NativeStart.Subscribe(args =>
                 {
                     if (args.IsBeforeInitialization)
-                        FinalizeRosterForMapTransition(args.Context.IsSave && args.Context.Mode.IsRealMultiplayer);
+                    {
+                        hostPublisher.Suspend();
+                        if (contract.Settings.Count != 0)
+                            FinalizeRosterForMapTransition(args.Context.IsSave && args.Context.Mode.IsRealMultiplayer);
+                    }
                 });
                 if (mapStartSubscription == null)
                     throw new InvalidOperationException("The persistent map-start subscription could not be created.");
 #endif
                 active = true;
+                hostPublisher.Activate();
                 RequestPublish();
 #if !API_SHARED_PRESET_TESTS
 #if API_SHARED_LOBBY_OBSERVER
@@ -151,18 +212,63 @@ namespace APIShared.ModSettings
 #endif
             active = false;
             publishPending = false;
+            hostPublisher.Deactivate();
         }
 
         internal void RequestPublish()
         {
+            if (contract.Settings.Count == 0) return;
             publishPending = true;
             if (hasLobby && !rosterHasUnresolvedPlayers &&
                 IsValidPlayerId(resolvedLocalPlayerId) &&
-                playersById.ContainsKey(resolvedLocalPlayerId))
+                playersById.ContainsKey(resolvedLocalPlayerId) && TransportReady(resolvedLocalPlayerId))
             {
                 PublishLocalSettings(resolvedLocalPlayerId);
                 RequestReadinessRefresh();
             }
+        }
+
+        internal bool DeferBroadcast(string propertyName)
+        {
+            if (hostPublisher.TryDefer(propertyName, out bool defer)) return defer;
+            if (!contract.Settings.Any(setting => setting.Property.Name == propertyName)) return false;
+            if (active && hasLobby && !rosterHasUnresolvedPlayers &&
+                IsValidPlayerId(resolvedLocalPlayerId) && playersById.ContainsKey(resolvedLocalPlayerId) &&
+                TransportReady(resolvedLocalPlayerId)) return false;
+            // Keep the scalar and its ordinary PropertyChanged/persistence path. Only the
+            // outbound call waits; Observe republishes all scalars after roster convergence.
+            publishPending = true;
+            return true;
+        }
+
+        private static bool TransportPlayerMatches(int localPlayerId)
+        {
+#if API_SHARED_PRESET_TESTS
+            return true;
+#else
+            return GameNetworkAPI.IsNetworkedEnvironment() &&
+                GameNetworkAPI.GetPlayerIdForSteamId(Steamworks.SteamUser.GetSteamID()) == localPlayerId;
+#endif
+        }
+
+        private static SettingsBroadcastLobby CaptureCurrentLobby()
+        {
+#if API_SHARED_PRESET_TESTS
+            return default;
+#else
+            var lobby = Platform_Multiplayer.Instance?.activeLobby;
+            return lobby == null ? default : new SettingsBroadcastLobby(lobby,
+                lobby.id.m_SteamID == 0 ? (ulong?)null : lobby.id.m_SteamID);
+#endif
+        }
+
+        private static bool IsLocalHost()
+        {
+#if API_SHARED_PRESET_TESTS
+            return true;
+#else
+            return GameNetworkAPI.IsLocalHost();
+#endif
         }
 
         internal bool ArePlayersReady(IEnumerable<int> playerIds, out string error)
@@ -181,6 +287,11 @@ namespace APIShared.ModSettings
             {
                 error = "No valid human player IDs were supplied.";
                 return false;
+            }
+            if (contract.Settings.Count == 0)
+            {
+                error = string.Empty;
+                return true;
             }
             if (rosterHasUnresolvedPlayers)
             {
@@ -306,8 +417,11 @@ namespace APIShared.ModSettings
             int localPlayerId,
             bool preserveForMapTransition)
         {
+            owner.System_RefreshSettingsAccess();
+            hostPublisher.InvalidateObservation();
             if (!currentLobbyId.HasValue)
             {
+                hostPublisher.Observe(null, 0, false);
                 if (preserveForMapTransition)
                     return;
 
@@ -379,7 +493,9 @@ namespace APIShared.ModSettings
                     hasUnresolvedPlayers,
                     localPlayerId));
             }
-            if (publishPending && localResolved && !hasUnresolvedPlayers)
+            hostPublisher.Observe(currentLobbyId, localPlayerId, localResolved);
+            if (contract.Settings.Count == 0) return;
+            if (publishPending && localResolved && !hasUnresolvedPlayers && TransportReady(localPlayerId))
                 PublishLocalSettings(localPlayerId);
 
             if (hasUnresolvedPlayers)
@@ -394,6 +510,7 @@ namespace APIShared.ModSettings
 
         private void PublishLocalSettings(int localPlayerId)
         {
+            publishPending = false;
             contract.BeforePublish?.Invoke();
             contract.LocalPlayerResolved?.Invoke(localPlayerId);
             foreach (PerPlayerLobbySettingContract setting in contract.Settings)
@@ -402,7 +519,6 @@ namespace APIShared.ModSettings
                 data.SetValue(CloneValue(setting.Property.GetValue(owner)), localPlayerId);
                 owner.System_TriggerUpdate(setting.Property.Name);
             }
-            publishPending = false;
             contract.Published?.Invoke();
             LogRoutine(
                 $"[{modName}] Shared personal settings advertised for playerId={localPlayerId}, " +
@@ -486,12 +602,18 @@ namespace APIShared.ModSettings
 
         private void RequestReadinessRefresh()
         {
-            if (!hasLobby)
+            if (!hasLobby || contract.Settings.Count == 0)
                 return;
             if (!ArePlayersReady(playersById.Keys, out string error))
                 SetReadiness(false, error);
             else
                 SetReadiness(true, string.Empty);
+        }
+
+        internal void ObserveError(string error)
+        {
+            hostPublisher.InvalidateObservation();
+            if (contract.Settings.Count != 0) SetReadiness(false, error);
         }
 
 #if !API_SHARED_PRESET_TESTS
@@ -541,7 +663,7 @@ namespace APIShared.ModSettings
                 return;
             if (!string.IsNullOrEmpty(snapshot.Error))
             {
-                SetReadiness(false, snapshot.Error);
+                ObserveError(snapshot.Error);
                 ReportIdentityDiagnostic(new PlayerIdentityResolution(
                     0,
                     false,

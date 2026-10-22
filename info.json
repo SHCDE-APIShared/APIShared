@@ -3,13 +3,23 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.12.4",
+  "Version": "0.12.5",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.12.5",
+      "Changes": [
+        "Log the applied settings of registered mods once per successful mission start as compact, versioned JSON, including scope activation, own-player values and isolated read errors.",
+        "Restore settings snapshots with their original ownership and change origin; preserve Customize drafts and publish host settings only after authoritative application.",
+        "Resolve late player assignments before applying personal settings; receive lobby settings through the Unity main-thread FIFO and recheck sender authority at delivery.",
+        "Preserve omitted nullable reflected settings during snapshot restoration without suppressing setter failures.",
+        "Integrate the guarded interpolation delivery and runtime-health fixes from develop while preserving the settings and release-safety regressions."
+      ]
+    },
     {
       "Version": "0.12.4",
       "Changes": [
