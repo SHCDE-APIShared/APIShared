@@ -144,6 +144,23 @@ if (api.TryGetCoopAiStartImport(out ICoopAiStartImportCapability import, out var
   Contradictions, provider exceptions, a changed Lord type or a repeated upload abort
   the start with `InvalidOperationException` instead of starting with Vanilla castles,
   so validate earlier at your own start button.
+- `ConfirmedCandidateCount` (constructor overload) states how many leading candidates
+  you confirmed against data every peer shares. A complete list you could compare only
+  partly, such as a packaged list checked against Vanilla's single transmitted
+  candidate, may confirm fewer; a fully confirmed complete plan whose leading
+  candidates match then supplies the import. Existing plans confirm all candidates.
+- Validate at the start button with the preview the same capability object provides:
+
+```csharp
+if (import is ICoopAiStartPreviewCapability preview &&
+    preview.TryPreview(coopTrail, coopMission, out CoopAiStartPreview result, out _) && !result.Succeeded)
+    BlockStart(result.Failure);
+```
+
+  The preview runs every provider with `request.IsPreview` set and combines the plans
+  without importing anything; `PlanFor(playerId)` shows the plan that would be imported.
+  Answer a preview with the plans you will supply for that start, for example a list a
+  pending host synchronization will transfer.
 - Registrations are permanent; return null to contribute nothing. Plans exist only for
   the current attempt. The capability requires the mission lifecycle.
 

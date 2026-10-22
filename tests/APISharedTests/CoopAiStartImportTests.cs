@@ -133,6 +133,84 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void PartiallyConfirmedListYieldsToAFullyConfirmedListMatchingItsConfirmedPrefix()
+        {
+            // A packaged list compared with the lobby only through candidate 0, and a synchronized host list.
+            Func<CoopAiStartRequest, CoopAiStartContribution> packaged = _ => Plans(new CoopAiSlotPlan(3, 2,
+                CoopAiCastleSource.Explicit, new[] { new short[] { 1 }, new short[] { 2 }, new short[] { 3 } }, Aic(5), true, 1));
+            Func<CoopAiStartRequest, CoopAiStartContribution> synchronized = _ => Plans(new CoopAiSlotPlan(3, 2,
+                CoopAiCastleSource.Explicit, new[] { new short[] { 1 }, new short[] { 7 } }, Aic(5)));
+            foreach (var order in new[] { new[] { packaged, synchronized }, new[] { synchronized, packaged } })
+            {
+                var recorder = new Recorder();
+                CoopAiStartImportService service = Service(recorder, order);
+                service.BeginAttempt(1, 1);
+                service.OnUpload(2, 3, false, false);
+                CollectionAssert.AreEqual(new[] { "import:2:0:1", "import:2:1:7", "aic:3:5" }, recorder.Calls);
+            }
+
+            // Alone, the packaged list is imported completely, as before.
+            var alone = new Recorder();
+            CoopAiStartImportService single = Service(alone, packaged);
+            single.BeginAttempt(1, 1);
+            single.OnUpload(2, 3, false, false);
+            CollectionAssert.AreEqual(new[] { "import:2:0:1", "import:2:1:2", "import:2:2:3", "aic:3:5" }, alone.Calls);
+
+            // A different confirmed candidate, or two differing partially confirmed lists, still contradict.
+            foreach (var other in new Func<CoopAiStartRequest, CoopAiStartContribution>[] {
+                _ => Plans(new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit, new[] { new short[] { 9 }, new short[] { 7 } }, Aic(5))),
+                _ => Plans(new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit, new[] { new short[] { 1 }, new short[] { 8 } }, Aic(5), true, 1)) })
+            {
+                var recorder = new Recorder();
+                CoopAiStartImportService service = Service(recorder, packaged, other);
+                service.BeginAttempt(1, 1);
+                Assert.ThrowsExactly<InvalidOperationException>(() => service.OnUpload(2, 3, false, false));
+                Assert.AreEqual(0, recorder.Calls.Count);
+            }
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit,
+                new[] { new short[] { 1 } }, null, true, 2));
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit,
+                new[] { new short[] { 1 } }, null, true, 0));
+            Assert.AreEqual(1, new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit, new[] { new short[] { 1 } }, null).ConfirmedCandidateCount);
+        }
+
+        [TestMethod]
+        public void PreviewCombinesPlansWithoutImportOrAttemptAndReportsConflicts()
+        {
+            var requests = new List<CoopAiStartRequest>();
+            var recorder = new Recorder();
+            CoopAiStartImportService service = Service(recorder,
+                request => { requests.Add(request); return Plans(new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit,
+                    new[] { new short[] { 1 }, new short[] { 2 } }, Aic(5), true, 1)); },
+                request => request.IsPreview ? Plans(new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit,
+                    new[] { new short[] { 1 }, new short[] { 4 } }, Aic(5))) : null);
+            var preview = (ICoopAiStartPreviewCapability)service.Bind("test.consumer");
+            Assert.IsTrue(preview.TryPreview(2, 5, out CoopAiStartPreview result, out _));
+            Assert.IsTrue(result.Succeeded);
+            Assert.IsTrue(requests.Single().IsPreview);
+            Assert.AreEqual(2, requests.Single().CoopTrail);
+            Assert.AreEqual(5, requests.Single().CoopMission);
+            Assert.AreEqual(4, result.PlanFor(3).CopyCandidate(1)[0]);
+            Assert.AreEqual("test.owner/provider-1", result.OwnerOf(3));
+            Assert.IsNull(result.PlanFor(4));
+            // Nothing was imported and no attempt remains: a later upload keeps Vanilla.
+            service.OnUpload(2, 3, false, false);
+            CollectionAssert.AreEqual(new[] { "default:2:3:False:False" }, recorder.Calls);
+
+            CoopAiStartImportService conflicting = Service(new Recorder(),
+                _ => Plans(new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit, new[] { new short[] { 1 } }, Aic(5))),
+                _ => Plans(new CoopAiSlotPlan(3, 2, CoopAiCastleSource.Explicit, new[] { new short[] { 2 } }, Aic(5))));
+            Assert.IsTrue(((ICoopAiStartPreviewCapability)conflicting.Bind("test.consumer")).TryPreview(1, 1, out result, out _));
+            Assert.IsFalse(result.Succeeded);
+            StringAssert.Contains(result.Failure, "contradicting plans");
+
+            service.BeginAttempt(1, 1);
+            Assert.IsFalse(preview.TryPreview(1, 1, out result, out _), "no preview inside a start attempt");
+            Assert.IsNull(result);
+            service.EndAttempt();
+        }
+
+        [TestMethod]
         public void ProviderFailuresAbortTheAttempt()
         {
             var failing = new Recorder();

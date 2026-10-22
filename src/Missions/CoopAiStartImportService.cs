@@ -38,6 +38,7 @@ namespace APIShared
             internal readonly Dictionary<int, string> PlanOwners = new Dictionary<int, string>();
             internal readonly HashSet<int> Executed = new HashSet<int>();
             internal string Fault;
+            internal bool Preview;
         }
 
         private readonly ManualLogSource log;
@@ -112,6 +113,36 @@ namespace APIShared
         {
             var current = new Attempt { Request = new CoopAiStartRequest(++nextAttemptId, coopTrail, coopMission) };
             attempt = current;
+            Combine(current);
+            if (current.Plans.Count > 0 || current.Fault != null)
+                Debug("attempt " + current.Request.AttemptId + " prepared: trail=" + coopTrail + ", mission=" +
+                    coopMission + ", plans=" + current.Plans.Count + (current.Fault == null ? "." : ", fault=" + current.Fault));
+        }
+
+        // Same provider calls and combination as a start, without an attempt, import or error report.
+        internal bool TryPreview(int coopTrail, int coopMission, out CoopAiStartPreview preview,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            preview = null;
+            if (Thread.CurrentThread.ManagedThreadId != unityThread || attempt != null)
+            {
+                diagnostic = Status(NativeCapabilityState.ValidationFailed,
+                    "A preview requires the Unity thread and no running Coop start attempt.");
+                return false;
+            }
+            var current = new Attempt { Preview = true,
+                Request = new CoopAiStartRequest(++nextAttemptId, coopTrail, coopMission, isPreview: true) };
+            Combine(current);
+            preview = new CoopAiStartPreview(current.Fault, current.Plans, current.PlanOwners);
+            diagnostic = Status(NativeCapabilityState.Available, current.Fault == null
+                ? "Coop AI start preview combined " + current.Plans.Count + " plan(s)." : current.Fault);
+            Debug("preview " + current.Request.AttemptId + ": trail=" + coopTrail + ", mission=" + coopMission +
+                ", plans=" + current.Plans.Count + (current.Fault == null ? "." : ", fault=" + current.Fault));
+            return true;
+        }
+
+        private void Combine(Attempt current)
+        {
             Registration[] snapshot;
             lock (sync) snapshot = registrations;
             var offered = new SortedDictionary<int, List<KeyValuePair<string, CoopAiSlotPlan>>>();
@@ -135,22 +166,31 @@ namespace APIShared
             }
             foreach (KeyValuePair<int, List<KeyValuePair<string, CoopAiSlotPlan>>> slot in offered)
                 Choose(current, slot.Key, slot.Value);
-            if (current.Plans.Count > 0 || current.Fault != null)
-                Debug("attempt " + current.Request.AttemptId + " prepared: trail=" + coopTrail + ", mission=" +
-                    coopMission + ", plans=" + current.Plans.Count + (current.Fault == null ? "." : ", fault=" + current.Fault));
         }
 
-        // Complete plans must agree exactly; incomplete ones must be prefixes of the chosen plan.
+        // The chosen plan is the complete one confirming the most candidates (first in registration order).
+        // Fully confirmed complete plans must agree exactly; incomplete or partially confirmed plans must agree
+        // with the chosen one on the candidates they confirmed. Without a complete plan all must be identical.
         private void Choose(Attempt current, int playerId, List<KeyValuePair<string, CoopAiSlotPlan>> offers)
         {
             KeyValuePair<string, CoopAiSlotPlan> chosen = offers[0];
+            bool complete = false;
             foreach (KeyValuePair<string, CoopAiSlotPlan> offer in offers)
-                if (offer.Value.CandidateListComplete) { chosen = offer; break; }
+                if (offer.Value.CandidateListComplete &&
+                    (!complete || offer.Value.ConfirmedCandidateCount > chosen.Value.ConfirmedCandidateCount))
+                {
+                    chosen = offer;
+                    complete = true;
+                }
             foreach (KeyValuePair<string, CoopAiSlotPlan> offer in offers)
             {
-                bool agrees = offer.Value.CandidateListComplete || !chosen.Value.CandidateListComplete
-                    ? offer.Value.HasSameImport(chosen.Value)
-                    : offer.Value.IsPrefixOf(chosen.Value);
+                CoopAiSlotPlan plan = offer.Value;
+                bool agrees;
+                if (ReferenceEquals(plan, chosen.Value)) agrees = true;
+                else if (!complete) agrees = plan.HasSameImport(chosen.Value);
+                else if (plan.CandidateListComplete && (plan.FullyConfirmed || !chosen.Value.FullyConfirmed))
+                    agrees = plan.HasSameImport(chosen.Value);
+                else agrees = plan.ConfirmedPrefixOf(chosen.Value);
                 if (!agrees)
                 {
                     Fail(current, "player " + playerId + " has contradicting plans from " + chosen.Key + " and " + offer.Key + ".");
@@ -255,7 +295,8 @@ namespace APIShared
         private void Fail(Attempt current, string reason)
         {
             if (current.Fault == null) current.Fault = reason;
-            Report("attempt " + current.Request.AttemptId + ": " + reason);
+            if (current.Preview) Debug("preview " + current.Request.AttemptId + ": " + reason);
+            else Report("attempt " + current.Request.AttemptId + ": " + reason);
         }
 
         private void Debug(string message)
@@ -271,7 +312,7 @@ namespace APIShared
         private static NativeCapabilityDiagnostic Status(NativeCapabilityState state, string reason) =>
             new NativeCapabilityDiagnostic(NativeCapabilityIds.CoopAiStartImport, state, string.Empty, reason);
 
-        private sealed class Binding : ICoopAiStartImportCapability
+        private sealed class Binding : ICoopAiStartImportCapability, ICoopAiStartPreviewCapability
         {
             private readonly CoopAiStartImportService service;
             private readonly string owner;
@@ -280,6 +321,10 @@ namespace APIShared
             public bool TryRegisterProvider(string registrationId,
                 Func<CoopAiStartRequest, CoopAiStartContribution> provider, out NativeCapabilityDiagnostic diagnostic) =>
                 service.Register(owner, registrationId, provider, out diagnostic);
+
+            public bool TryPreview(int coopTrail, int coopMission, out CoopAiStartPreview preview,
+                out NativeCapabilityDiagnostic diagnostic) =>
+                service.TryPreview(coopTrail, coopMission, out preview, out diagnostic);
         }
 
         // Vanilla equivalents. ImportAIV uses the same bounds and call as the Script Extender's

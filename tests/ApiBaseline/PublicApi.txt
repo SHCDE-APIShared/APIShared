@@ -252,19 +252,27 @@ APIShared.CoopAiCastleSource | Historical = 2
 APIShared.CoopAiCastleSource | Standard = 0
 APIShared.CoopAiSlotPlan | public sealed class APIShared.CoopAiSlotPlan
 APIShared.CoopAiSlotPlan | public .ctor(int playerId, int lordType, APIShared.CoopAiCastleSource castleSource, System.Collections.Generic.IReadOnlyList<short[]> candidates, EngineInterface.AILordConfigTransferData? lordConfiguration, bool candidateListComplete = true)
+APIShared.CoopAiSlotPlan | public .ctor(int playerId, int lordType, APIShared.CoopAiCastleSource castleSource, System.Collections.Generic.IReadOnlyList<short[]> candidates, EngineInterface.AILordConfigTransferData? lordConfiguration, bool candidateListComplete, int confirmedCandidateCount)
 APIShared.CoopAiSlotPlan | public APIShared.CoopAiCastleSource CastleSource { get; }
 APIShared.CoopAiSlotPlan | public EngineInterface.AILordConfigTransferData LordConfiguration { get; }
 APIShared.CoopAiSlotPlan | public bool CandidateListComplete { get; }
 APIShared.CoopAiSlotPlan | public bool HasLordConfiguration { get; }
 APIShared.CoopAiSlotPlan | public const int MaximumCandidates = 50
 APIShared.CoopAiSlotPlan | public int CandidateCount { get; }
+APIShared.CoopAiSlotPlan | public int ConfirmedCandidateCount { get; }
 APIShared.CoopAiSlotPlan | public int LordType { get; }
 APIShared.CoopAiSlotPlan | public int PlayerId { get; }
 APIShared.CoopAiSlotPlan | public short[] CopyCandidate(int index)
 APIShared.CoopAiStartContribution | public sealed class APIShared.CoopAiStartContribution
 APIShared.CoopAiStartContribution | public .ctor(System.Collections.Generic.IReadOnlyList<APIShared.CoopAiSlotPlan> plans)
 APIShared.CoopAiStartContribution | public System.Collections.Generic.IReadOnlyList<APIShared.CoopAiSlotPlan> Plans { get; }
+APIShared.CoopAiStartPreview | public sealed class APIShared.CoopAiStartPreview
+APIShared.CoopAiStartPreview | public APIShared.CoopAiSlotPlan PlanFor(int playerId)
+APIShared.CoopAiStartPreview | public bool Succeeded { get; }
+APIShared.CoopAiStartPreview | public string Failure { get; }
+APIShared.CoopAiStartPreview | public string OwnerOf(int playerId)
 APIShared.CoopAiStartRequest | public sealed class APIShared.CoopAiStartRequest
+APIShared.CoopAiStartRequest | public bool IsPreview { get; }
 APIShared.CoopAiStartRequest | public int CoopMission { get; }
 APIShared.CoopAiStartRequest | public int CoopTrail { get; }
 APIShared.CoopAiStartRequest | public long AttemptId { get; }
@@ -556,6 +564,8 @@ APIShared.IBuildingRepairCapability | public void EndHover(string buttonId)
 APIShared.IBuildingRepairCapability | public void SetActive(bool active)
 APIShared.ICoopAiStartImportCapability | public interface APIShared.ICoopAiStartImportCapability
 APIShared.ICoopAiStartImportCapability | public bool TryRegisterProvider(string registrationId, System.Func<APIShared.CoopAiStartRequest, APIShared.CoopAiStartContribution> provider, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ICoopAiStartPreviewCapability | public interface APIShared.ICoopAiStartPreviewCapability
+APIShared.ICoopAiStartPreviewCapability | public bool TryPreview(int coopTrail, int coopMission, out APIShared.CoopAiStartPreview preview, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IEnemyBridgePathObserver | public interface APIShared.IEnemyBridgePathObserver : APIShared.IEnemyGateAssassinObserver
 APIShared.IEnemyBridgePathObserver | public object BeginSearch(string source, int rawPlayer)
 APIShared.IEnemyBridgePathObserver | public void EndSearch(object token, bool completed, int? nativeResult, int effectiveResult, long nativeCalls)

@@ -5,6 +5,13 @@
 Owner: internal `Compatibility/FixesWheatStartup`; foreign hook ownership stays
 with Fixes. See [startup safety, behavior and test limits](docs/FIXES_COMPATIBILITY.md).
 
+**Since 2026-10-22 none of the hashes, versions, RVAs or byte templates below is a
+runtime condition.** Site, seller frame and player displacement are derived from the
+actual code ([derived contract](docs/FIXES_COMPATIBILITY.md#native-validation-and-write));
+the values below are the audited installation and serve as test observations
+(`FixesWheatAnalysisTests`). After a game update, check that the derivation still
+succeeds; a refusal names the violated rule. The pre-2026-10-22 text follows unchanged.
+
 | Audited binary | SHA-256 |
 | --- | --- |
 | CrusaderDE.dll | FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2 |

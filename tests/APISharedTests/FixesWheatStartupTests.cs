@@ -44,7 +44,7 @@ namespace APISharedTests
             {
                 rootProperty.GetSetMethod(true).Invoke(null, new object[] { game });
                 bepinProperty.GetSetMethod(true).Invoke(null, new object[] { Path.Combine(game, "BepInEx") });
-                FixesWheatStartup.VerifyBinaries(fixes);
+                FixesWheatStartup.VerifyProvenance(fixes);
             }
             finally
             {
@@ -74,34 +74,35 @@ namespace APISharedTests
                     var target = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(method.DeclaringType);
                     var generate = (InlineHookGenerator)copy.Generate().CreateDelegate(typeof(InlineHookGenerator), target);
                     const ulong site = 0x18003F0C9, stub = 0x180400000;
-                    var decoder = Decoder.Create(64, new ByteArrayCodeReader(FixesWheatContract.Original));
+                    byte[] displaced = FixesWheatTestStub.Original;
+                    ulong continuation = site + (uint)displaced.Length;
+                    var decoder = Decoder.Create(64, new ByteArrayCodeReader(displaced));
                     decoder.IP = site;
                     var instructions = new List<Instruction>();
-                    while (decoder.IP < site + (uint)FixesWheatContract.DisplacedLength) instructions.Add(decoder.Decode());
+                    while (decoder.IP < continuation) instructions.Add(decoder.Decode());
                     var assembler = new Assembler(64);
-                    generate(assembler, instructions.ToArray(), site + FixesWheatContract.DisplacedLength);
+                    generate(assembler, instructions.ToArray(), continuation);
                     byte[] generated;
                     using (var stream = new MemoryStream())
                     {
                         assembler.Assemble(new StreamCodeWriter(stream), stub);
                         generated = stream.ToArray();
                     }
-                    Assert.IsTrue(generated.Length > FixesWheatContract.OperandOffset);
-                    byte[] expected = FixesWheatContract.ExpectedStub(fixtureFlags.Address,
-                        site + FixesWheatContract.DisplacedLength, generated[FixesWheatContract.OperandOffset]);
-                    // RedBird adds the terminal absolute jump; this verifies every
-                    // instruction produced by the actual foreign emitter before it.
-                    CollectionAssert.AreEqual(expected.Take(61).ToArray(), generated);
+                    // RedBird appends the absolute continuation jump to the foreign emitter's instructions.
+                    byte[] complete = generated.Concat(new byte[] { 0xFF, 0x25, 0, 0, 0, 0 })
+                        .Concat(BitConverter.GetBytes(continuation)).ToArray();
+                    // Semantic analysis of the actual installed emitter, not a byte template of one Fixes version.
+                    var analysis = FixesWheatAnalysis.AnalyzeStub(complete, stub, fixtureFlags.Address, displaced,
+                        continuation, 0x68);
+                    Assert.AreEqual((byte)0x78, analysis.Required);
                     FixesWheatExecutionFixture.Run(generated, fixtureFlags);
-                    byte[] complete = generated.Concat(expected.Skip(61)).ToArray();
                     int writes = 0;
-                    bool needsCorrection = generated[FixesWheatContract.OperandOffset] != FixesWheatContract.CorrectOffset;
-                    Assert.AreEqual(needsCorrection, FixesWheatContract.Correct(() => (byte[])complete.Clone(),
-                        (offset, value) => { complete[offset] = value; writes++; }, fixtureFlags.Address,
-                        site + FixesWheatContract.DisplacedLength));
-                    Assert.IsFalse(FixesWheatContract.Correct(() => (byte[])complete.Clone(),
-                        (_, __) => writes++, fixtureFlags.Address, site + FixesWheatContract.DisplacedLength));
-                    Assert.AreEqual(needsCorrection ? 1 : 0, writes);
+                    Func<byte[], FixesWheatAnalysis.WheatStub> analyze = bytes => FixesWheatAnalysis.AnalyzeStub(bytes,
+                        stub, fixtureFlags.Address, displaced, continuation, 0x68);
+                    Assert.AreEqual(!analysis.IsCorrect, FixesWheatAnalysis.Correct(() => (byte[])complete.Clone(),
+                        (offset, value) => { complete[offset] = value; writes++; }, analyze));
+                    Assert.IsFalse(FixesWheatAnalysis.Correct(() => (byte[])complete.Clone(), (_, __) => writes++, analyze));
+                    Assert.AreEqual(analysis.IsCorrect ? 0 : 1, writes);
                 }
             }
             fixtureFlags = null;
@@ -159,21 +160,6 @@ namespace APISharedTests
                 if (installed) Assert.IsTrue(order.IndexOf("fixes") < order.IndexOf(APISharedPlugin.PluginGuid));
                 else Assert.IsFalse(order.Contains("fixes"));
             }
-        }
-
-        [TestMethod]
-        public void UnsupportedBinaryIsRefusedWithoutInvokingNativeWriter()
-        {
-            string path = Path.GetTempFileName();
-            try
-            {
-                File.WriteAllText(path, "unknown binary");
-                var method = typeof(FixesWheatStartup).GetMethod("VerifyFile", BindingFlags.Static | BindingFlags.NonPublic);
-                var error = Assert.ThrowsExactly<TargetInvocationException>(() =>
-                    method.Invoke(null, new object[] { path, FixesWheatContract.NativeHash }));
-                Assert.IsInstanceOfType<InvalidOperationException>(error.InnerException);
-            }
-            finally { File.Delete(path); }
         }
     }
 }

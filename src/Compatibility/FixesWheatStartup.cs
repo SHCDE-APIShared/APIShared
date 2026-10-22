@@ -4,7 +4,6 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using BepInEx;
@@ -41,7 +40,7 @@ namespace APIShared.Compatibility
                 }
                 Require(fixes.Instance != null, "Fixes plugin did not finish synchronous initialization");
                 Assembly fixesAssembly = fixes.Instance.GetType().Assembly;
-                VerifyBinaries(fixesAssembly);
+                VerifyProvenance(fixesAssembly);
                 RequireStartup();
 
                 FieldInfo lockField = typeof(EngineInterface).GetField("threadLock", StaticFields);
@@ -116,53 +115,66 @@ namespace APIShared.Compatibility
             var path = new StringBuilder(32768);
             uint count = GetModuleFileName(module, path, path.Capacity);
             Require(count > 0 && count < path.Capacity, "Native module path unavailable");
-            VerifyFile(path.ToString(), FixesWheatContract.NativeHash);
             ulong image = (ulong)module.ToInt64();
+            // The unpatched code of the loaded module; live memory is compared against it below.
+            var disk = new FixesWheatAnalysis.PeImage(File.ReadAllBytes(path.ToString()));
             Type owner = fixesAssembly.GetType("Fixes.Detours.FixesAIDetours", true);
             var handle = ReadField<HookHandle<X64InlineHook>>(owner, "c_game_ai_sell_item_handler_hook");
             var flags = ReadField<NativeFlagArray>(owner, "wheatSaleCategoryFlagArray");
             Require(handle != null && handle.Failure == null, "Fixes hook handle missing or failed");
-            ulong site = image + FixesWheatContract.SiteRva;
             if (handle.Hook == null)
             {
                 Require(flags == null, "Flag array exists without its hook");
-                FixesWheatContract.RequireEqual(FixesWheatMemory.Read(site, FixesWheatContract.DisplacedLength),
-                    FixesWheatContract.Original, "absent Fixes hook entry");
                 Report(log, "NOT-NEEDED: wheat hook absent/disabled at initialization; no correction installed");
                 return;
             }
             X64InlineHook hook = handle.Hook;
+            ulong site = hook.TargetAddress;
+            int displacedLength = hook.DisplacedByteCount;
             Require(hook.IsInstalled && handle.IsInstalled && handle.ResolvedAddress == site &&
-                hook.TargetAddress == site && hook.DisplacedByteCount == FixesWheatContract.DisplacedLength,
+                site > image && site - image < disk.SizeOfImage && displacedLength >= 14 && displacedLength <= 64,
                 "Hook installation/target/displacement contract changed");
-            Require(flags != null && flags.Length == 9 && flags.Address != 0 && hook.StubAddress != IntPtr.Zero,
+            Require(flags != null && flags.Length >= 9 && flags.Address != 0 && hook.StubAddress != IntPtr.Zero,
                 "Wheat flag array/stub contract changed");
             ulong stub = (ulong)hook.StubAddress.ToInt64();
             ulong flagAddress = flags.Address;
             FixesWheatMemory.Read(flagAddress, flags.Length, false);
             byte[] original = (byte[])typeof(X64InlineHook).GetField("_originalBytesBackup",
                 BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(hook);
-            FixesWheatContract.RequireEqual(original, FixesWheatContract.Original, "backend displaced instructions");
-            ValidateEntry(image, site, stub);
-            bool changed = FixesWheatContract.Correct(
-                () => FixesWheatMemory.Read(stub, FixesWheatContract.StubLength),
+            Require(original != null && original.Length == displacedLength, "Backend displaced snapshot unavailable");
+            uint siteRva = (uint)(site - image);
+            // Disk bytes, backend snapshot and stub copy must agree; the frame is derived from the actual code.
+            FixesWheatAnalysis.SellerFrame frame = FixesWheatAnalysis.AnalyzeSeller(disk, siteRva, original);
+            ulong continuation = site + (uint)displacedLength;
+            Func<byte[], FixesWheatAnalysis.WheatStub> analyze = bytes =>
+                FixesWheatAnalysis.AnalyzeStub(bytes, stub, flagAddress, original, continuation, frame.PlayerHome);
+            Func<byte[]> readStub = () => FixesWheatMemory.ReadAvailable(stub, 256);
+            ValidateEntry(image, disk, frame, site, stub, displacedLength);
+            FixesWheatAnalysis.WheatStub before = analyze(readStub());
+            bool changed = FixesWheatAnalysis.Correct(readStub,
                 (offset, value) =>
                 {
                     RequireStartup();
-                    ValidateEntry(image, site, stub);
+                    ValidateEntry(image, disk, frame, site, stub, displacedLength);
                     FixesWheatMemory.WriteOperand(stub + (uint)offset, value);
-                }, flagAddress, site + FixesWheatContract.DisplacedLength);
-            ValidateEntry(image, site, stub);
-            Report(log, (changed ? "CORRECTED" : "ALREADY-CORRECT") + ": verified full 75-byte stub=0x" + stub.ToString("X") +
-                ", siteRva=0x3F0C9, player displacement=0x78; flags/settings unchanged; startup-only, no later retry");
+                }, analyze);
+            ValidateEntry(image, disk, frame, site, stub, displacedLength);
+            Report(log, (changed ? "CORRECTED" : "ALREADY-CORRECT") + ": derived from the actual code; stub=0x" +
+                stub.ToString("X") + " (" + before.Length + " bytes), siteRva=0x" + siteRva.ToString("X") +
+                ", sellerRva=0x" + frame.FunctionBegin.ToString("X") + ", frame=0x" + frame.Allocation.ToString("X") +
+                ", player displacement 0x" + before.Displacement.ToString("X") + "->0x" + before.Required.ToString("X") +
+                "; flags/settings unchanged; startup-only, no later retry");
         }
 
-        private static void ValidateEntry(ulong image, ulong site, ulong stub)
+        // The live seller prolog equals the disk code (no foreign entry detour), and the live site holds the
+        // backend's jump to this stub.
+        private static void ValidateEntry(ulong image, FixesWheatAnalysis.PeImage disk,
+            FixesWheatAnalysis.SellerFrame frame, ulong site, ulong stub, int displacedLength)
         {
-            FixesWheatContract.RequireEqual(FixesWheatMemory.Read(image + FixesWheatContract.SellerRva, FixesWheatContract.Prolog.Length),
-                FixesWheatContract.Prolog, "seller prolog/player stack derivation");
-            FixesWheatContract.RequireEqual(FixesWheatMemory.Read(site, FixesWheatContract.DisplacedLength),
-                FixesWheatContract.ExpectedEntry(stub), "installed Fixes entry and padding");
+            FixesWheatAnalysis.RequireEqual(FixesWheatMemory.Read(image + frame.FunctionBegin, (int)frame.PrologLength),
+                disk.Read(frame.FunctionBegin, (int)frame.PrologLength), "live seller prolog");
+            FixesWheatAnalysis.RequireEqual(FixesWheatMemory.Read(site, displacedLength),
+                FixesWheatAnalysis.ExpectedEntry(stub, displacedLength), "installed Fixes entry and padding");
         }
 
         private static T ReadField<T>(Type owner, string name) where T : class
@@ -179,47 +191,21 @@ namespace APIShared.Compatibility
             return (bool)field.GetValue(null);
         }
 
-        // Pure identity preflight, also exercised against installed files by integration tests.
-        internal static void VerifyBinaries(Assembly fixesAssembly)
+        // Loaded/disk provenance of every assembly whose private members are read here. This binds the
+        // inspected metadata to the loaded module; it is no version or file-hash allowlist. The private
+        // backend semantics are checked where they are used: startup stack and state, hook handle against
+        // live and disk bytes, flag array against the decoded stub operand.
+        internal static void VerifyProvenance(Assembly fixesAssembly)
         {
-            // Fixes and SE versions are not safety boundaries. Validate their loaded
-            // provenance here and their full actual native hook contract below.
             Internal.InstalledAssemblyIdentity.VerifyModule(fixesAssembly, fixesAssembly.Location);
-            VerifyAssembly(typeof(Chainloader).Assembly, "8255B28902886085C578B9E427D3073C97002DB85176D2090CDEDA90EF14CE70");
-            VerifyAssembly(typeof(EngineInterface).Assembly, "BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789");
-            VerifyAssembly(typeof(UnityEngine.Application).Assembly, "E468E19789D608B41E2C7FE4F367C7082FECE7D1883F568E75870F6C5384CC86");
-            VerifyAssembly(typeof(X64InlineHook).Assembly, "E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB");
-            VerifyAssembly(typeof(HookHandle<X64InlineHook>).Assembly, "339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E");
-            VerifyAssembly(typeof(NativeFlagArray).Assembly, "EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F");
-            VerifyAssembly(typeof(Iced.Intel.Assembler).Assembly, "CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F");
             Assembly extender = typeof(SHCDESE.API.LowLevel.CrusaderLibrary).Assembly;
             Internal.InstalledAssemblyIdentity.VerifyModule(extender, extender.Location);
-            // These backend pins protect the private map/handle semantics used by
-            // StartupMethodIdentity, independently of the optional mod's version.
-            VerifyAssembly(typeof(MonoMod.RuntimeDetour.ILHook).Assembly,
-                "40E49BB314391CD7BDDC2644F8553EEBA92C194B940836B103DF16955C464E0C");
-            VerifyAssembly(typeof(MonoMod.Utils.DynamicMethodDefinition).Assembly,
-                "9D1495F147AC93C4F81F84538C1A326E8F8A6AEFC78D6289D798F3CE1162C5E9");
-            VerifyFile(Path.Combine(Paths.BepInExRootPath, "core", "BepInEx.Preloader.dll"),
-                "55D3895351A9D16B63B6F35F1C01B44AC650979E853D0BD3A442B92A082AF64F");
-        }
-
-        private static void VerifyAssembly(Assembly assembly, params string[] hashes)
-        {
-            string path = assembly == typeof(EngineInterface).Assembly
-                ? Internal.InstalledAssemblyIdentity.GameAssemblyPath(Paths.GameRootPath)
-                : assembly == typeof(UnityEngine.Application).Assembly
-                ? Internal.InstalledAssemblyIdentity.UnityCoreAssemblyPath(Paths.GameRootPath)
-                : assembly.Location;
-            Internal.InstalledAssemblyIdentity.Verify(assembly, path, hashes);
-        }
-
-        private static void VerifyFile(string path, string expected)
-        {
-            using (var stream = File.OpenRead(path))
-            using (var sha = SHA256.Create())
-                Require(string.Equals(BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", ""), expected,
-                    StringComparison.OrdinalIgnoreCase), "Unsupported binary: " + Path.GetFileName(path));
+            foreach (Assembly backend in new[] { typeof(Chainloader).Assembly, typeof(X64InlineHook).Assembly,
+                typeof(HookHandle<X64InlineHook>).Assembly, typeof(NativeFlagArray).Assembly,
+                typeof(MonoMod.RuntimeDetour.ILHook).Assembly })
+                Internal.InstalledAssemblyIdentity.VerifyModule(backend, backend.Location);
+            Internal.InstalledAssemblyIdentity.VerifyModule(typeof(EngineInterface).Assembly,
+                Internal.InstalledAssemblyIdentity.GameAssemblyPath(Paths.GameRootPath));
         }
 
         private static void Require(bool valid, string reason)

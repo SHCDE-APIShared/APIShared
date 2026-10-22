@@ -117,6 +117,39 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void RestartOutsideReadyGameplayKeepsVanillaInsteadOfThrowing()
+        {
+            var state = new MissionLifecycleState(_ => { });
+            var gameplay = Seed(MissionStartKind.LoadedSave);
+            long session = state.Begin(gameplay);
+            state.Ready(session, gameplay);
+            MissionContext current = state.Current;
+            Assert.IsTrue(MissionLifecycleService.IsLifecycleRestart(false, current, true));
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(true, current, true), "running attempt");
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(false, current, false), "foreign thread");
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(false, null, true), "no session");
+            var editorState = new MissionLifecycleState(_ => { });
+            var editor = Seed(MissionStartKind.EditorLoaded);
+            long editorSession = editorState.Begin(editor);
+            editorState.Ready(editorSession, editor);
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(false, editorState.Current, true), "editor");
+
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Lifecycle,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId, current, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Stale,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId + 1, current, true));
+            // "Yes" without a tracked gameplay mission must still restart through Vanilla.
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(null, current, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId, null, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(editorState.Current.SessionId, editorState.Current, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId, current, false));
+        }
+
+        [TestMethod]
         public void ReplacementCarriesImmutableRestartOwnershipBeforeCleanup()
         {
             var events = new List<MissionLifecycleNotification>();
