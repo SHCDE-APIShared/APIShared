@@ -76,6 +76,7 @@ if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-AudioContracts.ps1') 
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-Interop.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-WorkshopContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-BuildingTooltipContracts.ps1') -GameDir $GameDir }
+if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Test-TooltipAnchors.ps1') -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-HudExtrasContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-ManagedInterceptionContracts.ps1') -GameDir $GameDir }
 if (-not $SourceOnly) { & (Join-Path $PSScriptRoot 'Verify-NetworkContracts.ps1') -GameDir $GameDir -ExtenderDir $ExtenderDir }

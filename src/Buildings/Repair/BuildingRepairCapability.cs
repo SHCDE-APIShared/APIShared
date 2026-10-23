@@ -516,6 +516,7 @@ namespace APIShared
                 return;
             }
             tooltip.Show(quote);
+            TooltipPresentation.EnsureRepairPresentation();
         }
 
         private sealed class OwnerView : IBuildingRepairCapability
@@ -560,6 +561,7 @@ namespace APIShared
         public event PropertyChangedEventHandler PropertyChanged;
         /// <summary>Extra resource costs after Vanilla's wood and stone.</summary>
         public ObservableCollection<RepairTooltipEntry> Costs { get; } = new ObservableCollection<RepairTooltipEntry>();
+        internal IReadOnlyList<TooltipLine> Lines { get; private set; } = Array.Empty<TooltipLine>();
         /// <summary>Visibility of the extra inline costs.</summary>
         public Noesis.Visibility Visibility
         {
@@ -585,6 +587,13 @@ namespace APIShared
             Add(eGoods.STORED_PITCH_RAW, quote.Pitch, quote.AvailablePitch);
             Add(eGoods.STORED_GOLD, quote.Gold, quote.AvailableGold);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Costs)));
+            var segments = new List<TooltipSegment>(Costs.Count * 3);
+            foreach (var cost in Costs)
+            {
+                segments.Add(new TooltipText(cost.Required)); segments.Add(new TooltipSymbol(cost.Icon));
+                segments.Add(new TooltipText(cost.Available));
+            }
+            Lines = new[] { new TooltipLine(segments.ToArray()) };
             Visibility = Noesis.Visibility.Visible;
         }
 
@@ -602,6 +611,7 @@ namespace APIShared
         /// <summary>Hides the extra inline costs.</summary>
         public void Clear()
         {
+            Lines = Array.Empty<TooltipLine>();
             if (Visibility == Noesis.Visibility.Collapsed) return;
             signature = null;
             Visibility = Noesis.Visibility.Collapsed;

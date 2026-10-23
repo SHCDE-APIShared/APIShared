@@ -119,7 +119,8 @@ src/
     Gatehouse/                  timing, origin and drawbridge coordination
   Presentation/
     Events/                     named HUD Pre/Post publishers
-    BuildingTooltip/            supplementary building-tooltip text and shared rendering
+    BuildingTooltip/            compatible building-text adapter and selection
+    Tooltips/                   general tooltip contributions and shared rendering
     UnitHud/                    HUD contracts and implementation parts
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
@@ -369,7 +370,8 @@ modes and their reaction to a refusal. A refusal identifies a conflict without
 resolving it, and a recurring conflict becomes a shared service. The registry is
 cooperative and adds nothing to hooked paths. See [Native sites](docs/NATIVE_SITES.md).
 
-Building tooltip contributions belong to Presentation/BuildingTooltip. APIShared
-owns shared presentation and registration; consumers own localized text,
-activation and gameplay decisions. See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
+Tooltip contributions belong to Presentation/Tooltips. Presentation/BuildingTooltip
+retains the compatible building-text adapter and selection contract. APIShared owns
+shared presentation and registration; consumers own localized text, symbols,
+activation and gameplay decisions. See the [tooltip guide](docs/TOOLTIPS.md). See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
 for the public entry point and integration documentation.

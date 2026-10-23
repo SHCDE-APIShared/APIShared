@@ -1810,6 +1810,47 @@ APIShared.Presentation.PresentationPreEventArgs | public System.Action<object> R
 APIShared.Presentation.PresentationPreEventArgs | public object Instance { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object OriginalParameter { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object Parameter { get; set; }
+APIShared.Presentation.TooltipAnchor | public static class APIShared.Presentation.TooltipAnchor
+APIShared.Presentation.TooltipAnchor | public static readonly Noesis.DependencyProperty AnchorProperty
+APIShared.Presentation.TooltipAnchor | public static string GetAnchor(Noesis.DependencyObject value)
+APIShared.Presentation.TooltipAnchor | public static void SetAnchor(Noesis.DependencyObject value, string anchor)
+APIShared.Presentation.TooltipContext | public sealed class APIShared.Presentation.TooltipContext
+APIShared.Presentation.TooltipContext | public .ctor(APIShared.Presentation.TooltipTarget target, bool isActive, int buildingType, int? unitType, int localPlayerId, int quantity, bool isSymbolHover)
+APIShared.Presentation.TooltipContext | public APIShared.Presentation.TooltipTarget Target { get; }
+APIShared.Presentation.TooltipContext | public bool IsActive { get; }
+APIShared.Presentation.TooltipContext | public bool IsSymbolHover { get; }
+APIShared.Presentation.TooltipContext | public int BuildingType { get; }
+APIShared.Presentation.TooltipContext | public int LocalPlayerId { get; }
+APIShared.Presentation.TooltipContext | public int Quantity { get; }
+APIShared.Presentation.TooltipContext | public int? UnitType { get; }
+APIShared.Presentation.TooltipLine | public sealed class APIShared.Presentation.TooltipLine
+APIShared.Presentation.TooltipLine | public .ctor(params APIShared.Presentation.TooltipSegment[] segments)
+APIShared.Presentation.TooltipLine | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.TooltipSegment> Segments { get; }
+APIShared.Presentation.TooltipPlacement | public enum APIShared.Presentation.TooltipPlacement : int
+APIShared.Presentation.TooltipPlacement | AfterDescription = 4
+APIShared.Presentation.TooltipPlacement | AfterMainLine = 1
+APIShared.Presentation.TooltipPlacement | BeforeDescription = 3
+APIShared.Presentation.TooltipPlacement | BeforeMainLine = 0
+APIShared.Presentation.TooltipPlacement | InlineAfterCosts = 2
+APIShared.Presentation.TooltipPresentation | public static class APIShared.Presentation.TooltipPresentation
+APIShared.Presentation.TooltipPresentation | public static bool Supports(APIShared.Presentation.TooltipTarget targets, APIShared.Presentation.TooltipPlacement placement)
+APIShared.Presentation.TooltipPresentation | public static bool TryRegisterContent(string ownerGuid, string contributionId, APIShared.Presentation.TooltipTarget targets, APIShared.Presentation.TooltipPlacement placement, System.Func<APIShared.Presentation.TooltipContext, System.Collections.Generic.IReadOnlyList<APIShared.Presentation.TooltipLine>> provider, out string reason, int order = 0)
+APIShared.Presentation.TooltipPresentation | public static bool TryRegisterText(string ownerGuid, string contributionId, APIShared.Presentation.TooltipTarget targets, APIShared.Presentation.TooltipPlacement placement, System.Func<APIShared.Presentation.TooltipContext, string> provider, out string reason, int order = 0)
+APIShared.Presentation.TooltipSegment | public abstract class APIShared.Presentation.TooltipSegment
+APIShared.Presentation.TooltipSymbol | public sealed class APIShared.Presentation.TooltipSymbol : APIShared.Presentation.TooltipSegment
+APIShared.Presentation.TooltipSymbol | public .ctor(Noesis.ImageSource source, string fallbackText = "")
+APIShared.Presentation.TooltipSymbol | public Noesis.ImageSource Source { get; }
+APIShared.Presentation.TooltipSymbol | public string FallbackText { get; }
+APIShared.Presentation.TooltipTarget | public enum APIShared.Presentation.TooltipTarget : int
+APIShared.Presentation.TooltipTarget | BuildingCompact = 1
+APIShared.Presentation.TooltipTarget | BuildingDetailed = 2
+APIShared.Presentation.TooltipTarget | Recruitment = 4
+APIShared.Presentation.TooltipTarget | Repair = 16
+APIShared.Presentation.TooltipTarget | SiegeConstruction = 8
+APIShared.Presentation.TooltipText | public sealed class APIShared.Presentation.TooltipText : APIShared.Presentation.TooltipSegment
+APIShared.Presentation.TooltipText | public .ctor(string text, uint? foregroundArgb = null)
+APIShared.Presentation.TooltipText | public string Text { get; }
+APIShared.Presentation.TooltipText | public uint? ForegroundArgb { get; }
 APIShared.Presentation.TroopActionHud | public static class APIShared.Presentation.TroopActionHud
 APIShared.Presentation.TroopActionHud | public const int CurrentLayoutVersion = 1
 APIShared.Presentation.TroopActionHud | public const string HostNamePrefix = "SerpTroopAction_"

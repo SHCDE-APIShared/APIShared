@@ -46,6 +46,7 @@
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(ApiSharedDir)\APIShared.dll')" Text="The freshly built APIShared.dll is required." />
   </Target>
+  <ItemGroup><Compile Include="TooltipExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="GateAccessExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="UnitSettledExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="NativeSiteExample.cs" /></ItemGroup>

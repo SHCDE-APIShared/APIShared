@@ -15,7 +15,7 @@ and [field/evidence reference](../src/NativeKnowledge/FELDKATALOG.md).
 ## Example package requirements
 
 The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
-APIShared 0.12.6 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
+APIShared 0.13.0 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
 [info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
 Install the complete APIShared package and reference its assemblies with
 `Private=false`. The example references both `APIShared.dll` and
@@ -1143,6 +1143,14 @@ For a cue that depends on one unit (for example a converted unit's kill sound), 
 `SoundSourceEvents` rather than a detour of the positional wrapper: its args carry the
 acting unit's game ID and GlobalId, the killed victim for melee kill cues, and
 `TryReplaceSound`. See [exact-unit cue replacement](AUDIO.md#exact-unit-cue-replacement).
+
+## General in-game tooltip extensions
+
+Use `APIShared.Presentation.TooltipPresentation.TryRegisterText` for literal strings,
+or `TryRegisterContent` for immutable text/image segments. Registration is owner-bound
+and Unity-thread-only. The [tooltip guide](TOOLTIPS.md) defines targets, semantic
+placements, ordering, inactive contexts, lifetime and migration. The
+[standalone example](../examples/ThirdPartyMod/TooltipExample.cs) demonstrates both paths.
 
 ## Building tooltip text
 

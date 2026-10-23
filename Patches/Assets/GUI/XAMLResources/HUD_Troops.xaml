@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Operation Type="AddNamespace" AttributeName="apt" Value="clr-namespace:APIShared.Presentation;assembly=APIShared" />
   <Operation Type="SetAttribute" XPath="//n:Grid[@Name='TroopSelectionControls']" AttributeName="Panel.ZIndex" Value="3" />
   <Operation Type="SetAttribute" XPath="//n:Button[@Name='ToggleControlGroups']" AttributeName="Panel.ZIndex" Value="4" />
   <Operation Type="Add" XPath="//n:UserControl.Resources">
@@ -49,4 +50,5 @@
       </Grid>
     </Content>
   </Operation>
+  <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='TroopsPanelRollover']" AttributeName="apt:TooltipAnchor.Anchor" Value="SiegeConstruction" />
 </Patch>

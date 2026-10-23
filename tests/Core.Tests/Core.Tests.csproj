@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Presentation/Tooltips/TooltipLayout.cs" Link="Production/TooltipLayout.cs" />
+    <Compile Include="../../src/Presentation/Tooltips/TooltipContracts.cs" Link="Production/TooltipContracts.cs" />
+    <Compile Include="../../src/Presentation/Tooltips/TooltipProviderAdapters.cs" Link="Production/TooltipProviderAdapters.cs" />
+    <Compile Include="../../src/Presentation/Tooltips/TooltipRegistry.cs" Link="Production/TooltipRegistry.cs" />
     <Compile Include="../../src/NativeKnowledge/*.cs" Link="Production/NativeKnowledge/%(Filename)%(Extension)" />
     <Compile Include="../../tools/SourceContracts/SourceModel.cs" Link="TestSupport/SourceModel.cs" />
     <Reference Include="Microsoft.CodeAnalysis"><HintPath>$(MSBuildToolsPath)/Roslyn/bincore/Microsoft.CodeAnalysis.dll</HintPath></Reference>
