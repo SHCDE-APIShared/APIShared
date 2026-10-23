@@ -131,14 +131,13 @@ function Assert-ApiMainDeliveryIdentity($Workspace,$Identity) { return 'fixture-
     foreach ($case in @('missing','existing','commit','mode','auth','access','network')) {
         $env:APISHARED_RELEASE_TEST_CASE = $case
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$driver,'-ValidateOnly','1') $powershell
-        # Consumer preparation requires an existing release. Only the standalone
-        # release command owns creation; absence must fail before download/publication.
+        # Validation never publishes: an absent release must fail before download or creation.
         $expected = if ($case -eq 'existing') { 0 } else { 1 }
         Check ($result.ExitCode -eq $expected) ("Preparation /validate failed for ${case}: " + $result.Diagnostic)
         if ($expected -eq 0) { Check ($result.Output -match 'no release or build started') 'Validation did not exit before side effects.' }
-        if ($case -eq 'missing') { Check ($result.Diagnostic -match "own release.bat first") 'Missing APIShared release did not explain the separate release prerequisite.' }
+        if ($case -eq 'missing') { Check ($result.Diagnostic -match 'without /validate') 'Missing APIShared release did not explain how preparation creates it.' }
     }
-    # Stop at the existing human confirmation without accepting it or starting a release.
+    # A missing release is created only after the human confirmation; refusing it must stop before any release work.
     $confirmationDriver = Join-Path $fixture 'confirmation wrapper.ps1'
     Write-Fixture $confirmationDriver @'
 param([string]$Driver,[switch]$ValidateUpload)
@@ -154,7 +153,7 @@ exit $LASTEXITCODE
         if ($record -eq 'malformed') { Write-Fixture $platformPath 'invalid json' }
         $env:APISHARED_RELEASE_TEST_CASE = 'missing'
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$confirmationDriver,'-Driver',$driver) $powershell
-        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'own release.bat first' -and $result.Diagnostic -notmatch 'Fixture confirmation reached') ("Missing-release preparation did not stop before publication for " + $record + ": " + $result.Diagnostic)
+        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'Fixture confirmation reached: Type VEROEFFENTLICHEN') ("Missing-release preparation did not stop at the publication confirmation for " + $record + ": " + $result.Diagnostic)
         $calls = [IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
         Check ($calls -notmatch 'release\|(create|upload|edit|download)') 'Missing release reached a release mutation or download.'
     }
