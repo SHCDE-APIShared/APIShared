@@ -80,7 +80,7 @@ namespace APIShared
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
-                    context.ModuleHandle, context.Region, context.Memory.Length, hash, RuntimeLogger)),
+                    context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
                     context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),

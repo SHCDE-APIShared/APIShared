@@ -13,7 +13,7 @@
     {
       "Version": "0.12.6",
       "Changes": [
-        "Add shared AI market reserve and pre-booking quantity policies, with composable native stock safety, ordered optional callbacks and process-lifetime hook ownership.",
+        "Add shared AI market reserve and pre-booking quantity policies, with composable native stock safety, ordered optional callbacks and process-lifetime hook ownership. The hook backend is verified at run time (displaced span, generated stub, jump form) instead of by pinned backend file hashes, so Script Extender updates keep the policies; another mod's hook at an audited continuation boundary is accepted.",
         "Public provider APIs instead of friend internals: RouteSearchEvents.BeginSearch with a public RouteSearchContext, AssassinPathAPI.BeginRouteOutput, EnemyBridgeDiagnosticBridge.PublishTopologyOwner and GateRoutingNativeLayout (run-time values instead of compiled-in constants); BugfixesAndQoL no longer has InternalsVisibleTo access.",
         "Fixes: ModSettings search ignores unresolvable markup extensions and reads {}-escaped text, Workshop startup retries a subscription list that changes during Steam initialization, recruitment variant buttons attach their hover handlers once, search case folding no longer depends on the current culture, and a Workshop upload whose Unity dispatcher is gone fails instead of staying active."
       ]

@@ -96,8 +96,11 @@ succeeds; a refusal names the violated rule. The pre-2026-10-22 text follows unc
 
 Fixes/SHCDESE rows record audited installations, not runtime version/hash allowlists.
 Their full loaded/disk assembly identities and MVIDs must agree. The native
-game and backend rows remain pinned to the audited machine/private-backend
-contracts. Unsupported hook bytes and startup evidence are always refused.
+game rows remain pinned to the audited machine contracts. The RedBird and Iced
+rows record the audited installation only: the AI market sell hooks prove the
+backend contract at run time (displaced span, generated stub bytes, jump form)
+instead of pinning those files. Unsupported hook bytes and startup evidence are
+always refused.
 
 The 2026-10-17 installed-binary recheck records the two updated identities above.
 Fixes 1.26.5 still emits the same
