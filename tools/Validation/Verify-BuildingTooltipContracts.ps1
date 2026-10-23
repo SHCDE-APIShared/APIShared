@@ -7,7 +7,7 @@ $managed = Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data\Manag
 $game = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $managed 'Assembly-CSharp.dll'))
 $noesis = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $managed 'Noesis.NoesisGUI.dll'))
 try {
-    foreach ($row in @(@('HoverStruct','System.Int32',$false),@('SelectedStruct','System.Int32',$false),@('HoverString','System.String',$true),@('SelectedString','System.String',$false),@('OtherVisible','System.Boolean',$false),@('OtherHighestPri','System.Boolean',$false))) {
+    foreach ($row in @(@('HoverStruct','System.Int32',$false),@('SelectedStruct','System.Int32',$false),@('HoverString','System.String',$true),@('SelectedString','System.String',$false),@('OtherVisible','System.Boolean',$false),@('OtherHighestPri','System.Boolean',$false),@('OtherData1','System.Int32',$false))) {
         $field = @($game.MainModule.GetType('CrusaderDE.HUD_Main').Fields | Where-Object Name -CEQ $row[0])
         if ($field.Count -ne 1 -or $field[0].FieldType.FullName -cne $row[1] -or $field[0].IsPublic -ne $row[2] -or $field[0].IsStatic) { throw "Changed HUD field: $($row[0])" }
     }
@@ -22,6 +22,10 @@ try {
     }
     $hud = @($game.MainModule.GetType('CrusaderDE.MainViewModel').Fields | Where-Object Name -CEQ 'HUDmain')
     if ($hud.Count -ne 1 -or -not $hud[0].IsPublic -or $hud[0].FieldType.FullName -cne 'CrusaderDE.HUD_Main') { throw 'Changed public HUDmain field.' }
+    foreach ($row in @(@('viewModelLoaded','System.Boolean',$true),@('lastTroopBuildOver','System.String',$false),@('lastTroopBuildChimp','Enums/eChimps',$false),@('lastTroopsAmountToMake','System.Int32',$false))) {
+        $field = @($game.MainModule.GetType('CrusaderDE.MainViewModel').Fields | Where-Object Name -CEQ $row[0])
+        if ($field.Count -ne 1 -or -not $field[0].IsPublic -or $field[0].FieldType.FullName -cne $row[1] -or $field[0].IsStatic -ne $row[2]) { throw "Changed tooltip context field: $($row[0])" }
+    }
     foreach ($row in @(
         @('Noesis.Visual','Noesis.Matrix4 Noesis.Visual::TransformToAncestor(Noesis.Visual)'),
         @('Noesis.Matrix4','Noesis.Rect Noesis.Matrix4::TransformBounds(Noesis.Rect)'),
@@ -37,5 +41,5 @@ try {
         $member = @($noesis.MainModule.GetType($row[0]).Methods | Where-Object FullName -CEQ $row[1])
         if ($member.Count -ne 1 -or -not $member[0].IsPublic) { throw "Changed public Noesis signature: $($row[1])" }
     }
-    Write-Host 'PASS: six real HUD selection fields, five public game accesses and ten public Noesis layout/lifetime contracts.'
+    Write-Host 'PASS: seven real HUD selection/repair fields, public recruitment context fields and five public game accesses and ten public Noesis layout/lifetime contracts.'
 } finally { $game.Dispose(); $noesis.Dispose() }

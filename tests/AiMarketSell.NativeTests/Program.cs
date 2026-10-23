@@ -74,6 +74,7 @@ internal static partial class Program
             Reset(image); SetStock(image,1,14,3); sale(image+Profile,1,14,99);
             Check(Get(image,GoldOffset(1))==1198 && Get(image,StockOffset(1,14))==0, "unpatched credit uses 99 while actual removal can remove only 3");
 
+            TestLoadImageContract(image);
             var hooks = new List<X64InlineHook>();
             try
             {
@@ -86,6 +87,14 @@ internal static partial class Program
                     hook.Generate((a,original,back)=>Generate(a,original,back,index,(ulong)image.ToInt64(),(ulong)state.ToInt64()));
                     hooks.Add(hook); hook.Enable();
                     Check(hook.IsInstalled && Marshal.ReadByte(image,site)==0xFF && Marshal.ReadByte(image,site+14)==0x90,"actual backend patch "+i);
+                    // Runtime backend contract (replaces pinned backend file hashes): the written stub is the
+                    // generator plus the backend's continuation jump, byte for byte.
+                    byte[] expected=AiMarketSellAssembly.ExpectedStub(index,(ulong)image.ToInt64(),(ulong)hook.StubAddress.ToInt64(),(ulong)state.ToInt64(),
+                        (ulong)Marshal.GetFunctionPointerForDelegate(reserveCallback).ToInt64(),(ulong)Marshal.GetFunctionPointerForDelegate(quantityCallback).ToInt64());
+                    var actual=new byte[expected.Length]; Marshal.Copy(hook.StubAddress,actual,0,actual.Length);
+                    Check(actual.SequenceEqual(expected),"actual backend stub equals generated contract "+i);
+                    actual[actual.Length/2]^=0xFF;
+                    Check(!actual.SequenceEqual(expected),"stub comparison detects a changed byte "+i);
                 }
                 // Fixture hooks are private and never published to the game. Test inactive transparency first.
                 Reset(image); Threshold(image,5,-999); decide(image+Profile,1);
@@ -101,6 +110,26 @@ internal static partial class Program
         finally { Marshal.FreeHGlobal(state); VirtualFree(image,UIntPtr.Zero,0x8000); }
         Console.WriteLine($"PASS: {checks} checks; original native exploit reproduced, actual native sale/decision/removal/recount executed, installed RedBird stubs executed, all 20 goods and 8 categories covered.");
     }
+    // Signatures and boundaries on the unmodified image; live boundaries may carry a foreign hook entry.
+    private static unsafe void TestLoadImageContract(IntPtr image)
+    {
+        AiMarketSellAssembly.ValidatePristine(new ReadOnlySpan<byte>((void*)image, ImageSize));
+        checks++;
+        byte saved = Marshal.ReadByte(image, 0x3F202);
+        Marshal.WriteByte(image, 0x3F202, 0xCC);
+        bool refused = false;
+        try { AiMarketSellAssembly.ValidatePristine(new ReadOnlySpan<byte>((void*)image, ImageSize)); }
+        catch (InvalidOperationException) { refused = true; }
+        Marshal.WriteByte(image, 0x3F202, saved);
+        Check(refused, "changed load-image boundary refused");
+        byte[] original = AiMarketSellAssembly.Hex(AiMarketSellAssembly.BoundaryHex[0]);
+        Check(AiMarketSellAssembly.AcceptsLiveBoundary(original, original), "unchanged live boundary accepted");
+        Check(AiMarketSellAssembly.AcceptsLiveBoundary(new byte[] { 0xE9, 1, 2, 3, 4 }, original), "foreign jmp rel32 at boundary accepted");
+        Check(AiMarketSellAssembly.AcceptsLiveBoundary(new byte[] { 0xFF, 0x25, 0, 0, 0 }, original), "foreign jmp [rip] at boundary accepted");
+        Check(!AiMarketSellAssembly.AcceptsLiveBoundary(new byte[] { 0x44, 0x3B, 0xCA, 0x7F, 0x00 }, original), "other live boundary change refused");
+        Check(!AiMarketSellAssembly.AcceptsLiveBoundary(new byte[] { 0xCC, 0x3B, 0xCA, 0x7F, 0x16 }, original), "breakpoint at boundary refused");
+    }
+
     private static void Reset(IntPtr image)
     {
         for (int player=1;player<=8;player++)

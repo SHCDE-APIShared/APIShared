@@ -15,14 +15,10 @@ namespace APIShared.Presentation
     /// <summary>Process-lifetime broker for plain-text additions above unchanged Vanilla building costs.</summary>
     public static class BuildingTooltipPresentation
     {
-        private static readonly BuildingTooltipRegistry registry = new BuildingTooltipRegistry();
         private static readonly TooltipView compact = new TooltipView(), detailed = new TooltipView();
-        private static readonly Action<string, Exception> report = Report;
         private static ManualLogSource log;
         private static HudSelection selection;
-        private static bool initialized, subscribed, confirmed;
         private static string failure;
-        private static BuildingTooltipContext lastContext;
         /// <summary>
         /// Register on Unity's main thread after APIShared initialization. Owner GUID and contribution ID
         /// must be nonempty and unique together. No replay. Providers run synchronously outside registry
@@ -36,17 +32,13 @@ namespace APIShared.Presentation
         public static bool TryRegister(string ownerGuid, string contributionId,
             Func<BuildingTooltipContext, IReadOnlyList<BuildingTooltipLine>> provider, out string reason, int order = 0)
         {
-            if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(contributionId) || provider == null) { reason = "Nonempty owner GUID, contribution ID and provider are required."; return false; }
-            if (!UnityMainThreadDispatch.IsMainThread) { reason = "Building tooltip registration requires Unity's main thread."; return false; }
-            if (!initialized) { reason = failure ?? "Building tooltip presentation is not initialized."; return false; }
-            if (!subscribed)
-            {
-                foreach (var operation in new[] { PresentationOperation.BuildingRollover, PresentationOperation.GuiChecks })
-                    if (!PresentationEvents.TryRegister(operation, APISharedPlugin.PluginGuid, "BuildingTooltipPresentation", null, Presented, out reason, int.MaxValue)) return false;
-                subscribed = true;
-            }
-            return registry.TryRegister(ownerGuid, contributionId, order, provider, out reason);
+            if (provider == null) { reason = "A provider is required."; return false; }
+            var adapter = new LegacyBuildingTooltipProvider(provider);
+            return TooltipPresentation.TryRegisterContent(ownerGuid, contributionId,
+                TooltipTarget.BuildingCompact | TooltipTarget.BuildingDetailed, TooltipPlacement.BeforeMainLine,
+                context => adapter.Get(context, TooltipPresentation.IsSelectedBuildingTarget(context.Target)), out reason, order);
         }
+
         internal static void Initialize(ManualLogSource logger)
         {
             log = logger;
@@ -54,7 +46,7 @@ namespace APIShared.Presentation
             {
                 if (!UnityMainThreadDispatch.IsMainThread) throw new InvalidOperationException("Tooltip initialization requires Unity's main thread.");
                 selection = new HudSelection();
-                initialized = true;
+                TooltipPresentation.Initialize(logger, selection);
             }
             catch (Exception error) { failure = error.Message; Report("initialization", error); }
         }
@@ -74,15 +66,18 @@ namespace APIShared.Presentation
         // per field so the update path performs no reflection or boxing.
         internal sealed class HudSelection
         {
-            private readonly Func<HUD_Main, int> hoverStruct, selectedStruct;
+            private readonly Func<HUD_Main, int> hoverStruct, selectedStruct, otherData1;
             private readonly Func<HUD_Main, string> hoverString, selectedString;
             private readonly Func<HUD_Main, bool> otherVisible, otherPriority;
             internal HudSelection()
             {
+                otherData1 = Read<int>(Field("OtherData1", typeof(int), false));
                 hoverStruct = Read<int>(Field("HoverStruct", typeof(int), false)); selectedStruct = Read<int>(Field("SelectedStruct", typeof(int), false));
                 hoverString = Read<string>(Field("HoverString", typeof(string), true)); selectedString = Read<string>(Field("SelectedString", typeof(string), false));
                 otherVisible = Read<bool>(Field("OtherVisible", typeof(bool), false)); otherPriority = Read<bool>(Field("OtherHighestPri", typeof(bool), false));
             }
+            // Managed HUD_Main.UpdateRollover interprets OtherData1 == 1 as the repair cost rollover.
+            internal bool IsRepair(HUD_Main hud) => otherVisible(hud) && otherData1(hud) == 1;
             internal int Resolve(HUD_Main hud, bool detailed, out bool hovering) =>
                 BuildingTooltipSelection.Resolve(hoverStruct(hud), hoverString(hud), selectedStruct(hud), selectedString(hud),
                     otherVisible(hud), otherPriority(hud), detailed, out hovering);
@@ -95,26 +90,8 @@ namespace APIShared.Presentation
                 return (Func<HUD_Main, T>)method.CreateDelegate(typeof(Func<HUD_Main, T>));
             }
         }
-        private static void Presented(PresentationPostEventArgs args)
-        {
-            if (!registry.HasDemand || !UnityMainThreadDispatch.IsMainThread) return;
-            if (!args.OriginalCompleted) { Clear(); return; }
-            var main = MainViewModel.Instance;
-            var hud = args.BuildingHud ?? main?.HUDmain;
-            if (hud == null || main == null || GameData.Instance.lastGameState == null) { Clear(); return; }
-            bool full = main.RolloverBuilding_TooltipVis;
-            int building = selection.Resolve(hud, full, out bool hovering);
-            var variant = full ? BuildingTooltipVariant.Detailed : BuildingTooltipVariant.Compact;
-            var context = lastContext;
-            if (context == null || context.BuildingType != building || context.Variant != variant || context.IsSymbolHover != hovering)
-                lastContext = context = new BuildingTooltipContext(building, variant, hovering);
-            var lines = registry.Collect(context, report);
-            if (building == 0) { Clear(); return; } // Providers can retire selection state, but no lines render outside building tooltips.
-            (full ? detailed : compact).Set(lines);
-            (full ? compact : detailed).Set(Array.Empty<BuildingTooltipLine>());
-            if (!confirmed) { confirmed = true; log?.LogDebug($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] BUILDING_TOOLTIP_RUNTIME_CONFIRMED Unity post publisher after startup cleanup."); }
-        }
-        private static void Clear() { compact.Set(Array.Empty<BuildingTooltipLine>()); detailed.Set(Array.Empty<BuildingTooltipLine>()); }
+
+
         private static void Report(string owner, Exception error) => log?.LogError("Building tooltip contribution " + owner + ": " + error);
         /// <summary>Shared Noesis binding model; consumers register text through the broker.</summary>
         public sealed class TooltipView : INotifyPropertyChanged, INoesisElementBindingAware

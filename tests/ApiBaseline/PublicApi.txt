@@ -695,6 +695,8 @@ APIShared.ILobbyStateCapability | public bool TryRegisterObserver(string registr
 APIShared.IMissionLifecycleCapability | public interface APIShared.IMissionLifecycleCapability
 APIShared.IMissionLifecycleCapability | public APIShared.MissionContext Current { get; }
 APIShared.IMissionLifecycleCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.MissionLifecycleNotification> onStart, System.Action<APIShared.MissionLifecycleNotification> onEnd, System.Action<APIShared.MissionLifecycleNotification> onInitialization, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IPlagueHeightCapability | public interface APIShared.IPlagueHeightCapability
+APIShared.IPlagueHeightCapability | public bool TrySetPolicy(bool active, APIShared.PlagueSurfaceCategory categories, int maximumHeightDifference, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlayerDefeatCapability | public interface APIShared.IPlayerDefeatCapability
 APIShared.IPlayerDefeatCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.PlayerLordDeathNotification> onLordDied, System.Action<APIShared.PlayerDefeatNotification> onDefeated, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ITemporaryAssassinGateObserver | public interface APIShared.ITemporaryAssassinGateObserver
@@ -830,6 +832,7 @@ APIShared.ModApiClient | public bool TryGetGatehouseTiming(out APIShared.IGateho
 APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudExtrasButtonsCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetUnitHudPresentation(out APIShared.IUnitHudPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public string OwnerGuid { get; }
@@ -1381,6 +1384,7 @@ APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse
 APIShared.NativeCapabilityIds | public const string HudExtrasButtons = "hud-extras-buttons"
 APIShared.NativeCapabilityIds | public const string LobbyState = "lobby-state"
 APIShared.NativeCapabilityIds | public const string MissionLifecycle = "mission-lifecycle"
+APIShared.NativeCapabilityIds | public const string PlagueHeight = "plague-height"
 APIShared.NativeCapabilityIds | public const string PlayerDefeat = "player-defeat"
 APIShared.NativeCapabilityIds | public const string UnitHudPresentation = "unit-hud-presentation"
 APIShared.NativeCapabilityState | public enum APIShared.NativeCapabilityState : int
@@ -1727,6 +1731,13 @@ APIShared.Pathfinding.RouteSearchTerrain | public enum APIShared.Pathfinding.Rou
 APIShared.Pathfinding.RouteSearchTerrain | DiagnosticMoat = 2
 APIShared.Pathfinding.RouteSearchTerrain | FriendlyMoat = 1
 APIShared.Pathfinding.RouteSearchTerrain | GroundOnly = 0
+APIShared.PlagueSurfaceCategory | public enum APIShared.PlagueSurfaceCategory : int
+APIShared.PlagueSurfaceCategory | All = 15
+APIShared.PlagueSurfaceCategory | Gates = 2
+APIShared.PlagueSurfaceCategory | Keeps = 8
+APIShared.PlagueSurfaceCategory | None = 0
+APIShared.PlagueSurfaceCategory | Towers = 4
+APIShared.PlagueSurfaceCategory | Walls = 1
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }
@@ -1810,6 +1821,47 @@ APIShared.Presentation.PresentationPreEventArgs | public System.Action<object> R
 APIShared.Presentation.PresentationPreEventArgs | public object Instance { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object OriginalParameter { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object Parameter { get; set; }
+APIShared.Presentation.TooltipAnchor | public static class APIShared.Presentation.TooltipAnchor
+APIShared.Presentation.TooltipAnchor | public static readonly Noesis.DependencyProperty AnchorProperty
+APIShared.Presentation.TooltipAnchor | public static string GetAnchor(Noesis.DependencyObject value)
+APIShared.Presentation.TooltipAnchor | public static void SetAnchor(Noesis.DependencyObject value, string anchor)
+APIShared.Presentation.TooltipContext | public sealed class APIShared.Presentation.TooltipContext
+APIShared.Presentation.TooltipContext | public .ctor(APIShared.Presentation.TooltipTarget target, bool isActive, int buildingType, int? unitType, int localPlayerId, int quantity, bool isSymbolHover)
+APIShared.Presentation.TooltipContext | public APIShared.Presentation.TooltipTarget Target { get; }
+APIShared.Presentation.TooltipContext | public bool IsActive { get; }
+APIShared.Presentation.TooltipContext | public bool IsSymbolHover { get; }
+APIShared.Presentation.TooltipContext | public int BuildingType { get; }
+APIShared.Presentation.TooltipContext | public int LocalPlayerId { get; }
+APIShared.Presentation.TooltipContext | public int Quantity { get; }
+APIShared.Presentation.TooltipContext | public int? UnitType { get; }
+APIShared.Presentation.TooltipLine | public sealed class APIShared.Presentation.TooltipLine
+APIShared.Presentation.TooltipLine | public .ctor(params APIShared.Presentation.TooltipSegment[] segments)
+APIShared.Presentation.TooltipLine | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.TooltipSegment> Segments { get; }
+APIShared.Presentation.TooltipPlacement | public enum APIShared.Presentation.TooltipPlacement : int
+APIShared.Presentation.TooltipPlacement | AfterDescription = 4
+APIShared.Presentation.TooltipPlacement | AfterMainLine = 1
+APIShared.Presentation.TooltipPlacement | BeforeDescription = 3
+APIShared.Presentation.TooltipPlacement | BeforeMainLine = 0
+APIShared.Presentation.TooltipPlacement | InlineAfterCosts = 2
+APIShared.Presentation.TooltipPresentation | public static class APIShared.Presentation.TooltipPresentation
+APIShared.Presentation.TooltipPresentation | public static bool Supports(APIShared.Presentation.TooltipTarget targets, APIShared.Presentation.TooltipPlacement placement)
+APIShared.Presentation.TooltipPresentation | public static bool TryRegisterContent(string ownerGuid, string contributionId, APIShared.Presentation.TooltipTarget targets, APIShared.Presentation.TooltipPlacement placement, System.Func<APIShared.Presentation.TooltipContext, System.Collections.Generic.IReadOnlyList<APIShared.Presentation.TooltipLine>> provider, out string reason, int order = 0)
+APIShared.Presentation.TooltipPresentation | public static bool TryRegisterText(string ownerGuid, string contributionId, APIShared.Presentation.TooltipTarget targets, APIShared.Presentation.TooltipPlacement placement, System.Func<APIShared.Presentation.TooltipContext, string> provider, out string reason, int order = 0)
+APIShared.Presentation.TooltipSegment | public abstract class APIShared.Presentation.TooltipSegment
+APIShared.Presentation.TooltipSymbol | public sealed class APIShared.Presentation.TooltipSymbol : APIShared.Presentation.TooltipSegment
+APIShared.Presentation.TooltipSymbol | public .ctor(Noesis.ImageSource source, string fallbackText = "")
+APIShared.Presentation.TooltipSymbol | public Noesis.ImageSource Source { get; }
+APIShared.Presentation.TooltipSymbol | public string FallbackText { get; }
+APIShared.Presentation.TooltipTarget | public enum APIShared.Presentation.TooltipTarget : int
+APIShared.Presentation.TooltipTarget | BuildingCompact = 1
+APIShared.Presentation.TooltipTarget | BuildingDetailed = 2
+APIShared.Presentation.TooltipTarget | Recruitment = 4
+APIShared.Presentation.TooltipTarget | Repair = 16
+APIShared.Presentation.TooltipTarget | SiegeConstruction = 8
+APIShared.Presentation.TooltipText | public sealed class APIShared.Presentation.TooltipText : APIShared.Presentation.TooltipSegment
+APIShared.Presentation.TooltipText | public .ctor(string text, uint? foregroundArgb = null)
+APIShared.Presentation.TooltipText | public string Text { get; }
+APIShared.Presentation.TooltipText | public uint? ForegroundArgb { get; }
 APIShared.Presentation.TroopActionHud | public static class APIShared.Presentation.TroopActionHud
 APIShared.Presentation.TroopActionHud | public const int CurrentLayoutVersion = 1
 APIShared.Presentation.TroopActionHud | public const string HostNamePrefix = "SerpTroopAction_"

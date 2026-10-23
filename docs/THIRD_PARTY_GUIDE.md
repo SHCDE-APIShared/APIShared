@@ -15,7 +15,7 @@ and [field/evidence reference](../src/NativeKnowledge/FELDKATALOG.md).
 ## Example package requirements
 
 The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
-APIShared 0.12.6 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
+APIShared 0.14.0 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
 [info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
 Install the complete APIShared package and reference its assemblies with
 `Private=false`. The example references both `APIShared.dll` and
@@ -1144,6 +1144,14 @@ For a cue that depends on one unit (for example a converted unit's kill sound), 
 acting unit's game ID and GlobalId, the killed victim for melee kill cues, and
 `TryReplaceSound`. See [exact-unit cue replacement](AUDIO.md#exact-unit-cue-replacement).
 
+## General in-game tooltip extensions
+
+Use `APIShared.Presentation.TooltipPresentation.TryRegisterText` for literal strings,
+or `TryRegisterContent` for immutable text/image segments. Registration is owner-bound
+and Unity-thread-only. The [tooltip guide](TOOLTIPS.md) defines targets, semantic
+placements, ordering, inactive contexts, lifetime and migration. The
+[standalone example](../examples/ThirdPartyMod/TooltipExample.cs) demonstrates both paths.
+
 ## Building tooltip text
 
 APIShared 0.9.0 provides `APIShared.Presentation.BuildingTooltipPresentation`.
@@ -1243,3 +1251,38 @@ than claiming compatibility. The analysis runs once at startup, not on simulatio
 Tests do not execute native game memory or prove in-game Mono,
 editor, save/load or real multiplayer acceptance. The adapter is permanent and statically
 rooted; startup component destruction never removes it.
+
+## Plague standing-height policies
+
+`ApiShared.ForMod(yourGuid).TryGetPlagueHeight(...)` acquires the optional
+`IPlagueHeightCapability` after native readiness. Acquisition alone changes nothing.
+Call `TrySetPolicy(active, categories, maximumHeightDifference, out diagnostic)` on
+the main thread before or after simulation. Consumers own mission authorization,
+host settings and identical configuration on multiplayer peers. No callbacks or
+additional event transport are involved; existing Script Extender projectile-damage
+Pre/Post events retain their original meaning and ordering.
+
+Categories are `Walls`, `Gates`, `Towers`, `Keeps` or combinations. Tolerance is an
+inclusive integer difference of standing planes, 0..65534 native height units;
+the cloud's visual +20 offset is excluded. The range is the 16-bit packed native
+policy contract, not a gameplay recommendation. Unit-type immunity, damage tiers,
+apothecary resistance, treatment, lifetime and cadence remain native.
+
+Repeated acquisition with one GUID shares that owner's policy. Owners start inactive.
+Active policies are unioned, with the largest requested tolerance per category;
+ordinary ground uses the largest active tolerance. Disabling one owner cannot veto
+another. No active categories restores the complete original paths. Invalid input
+leaves the previous snapshot unchanged. Unknown native/backend contracts make only
+this capability unavailable with a diagnostic. Hooks and registrations persist until
+process exit; never dispose or patch executable code to toggle these rules.
+
+Building identity takes precedence over wall flags. Low/high walls and stairs,
+walkable gates, defensive towers and keep platforms can be controlled separately;
+mobile siege towers are excluded. Unrecognized elevated surfaces keep Vanilla
+exclusions. Destroyed platforms are reevaluated from the current tile/building data.
+See [the independent example](../examples/ThirdPartyMod/PlagueHeightExample.cs).
+
+Native implementation and validation: [update contract](../UpdateToNewDLL.md#plague-standing-heights).
+The executed fixtures cover original/modified paths, all category combinations,
+multiple owners, heights, full native damage semantics and ABI preservation. These
+checks do not replace in-game rendering, save roundtrips or a real multiplayer run.

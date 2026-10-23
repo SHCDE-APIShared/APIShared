@@ -359,7 +359,16 @@ internal sealed class SourceModel
             // Marshal.Write* also writes ordinary owned data (gatehouse state, buffers).
             // Its mere presence is not evidence of an executable-memory mutation.
             if (name is "VirtualProtect" or "FlushInstructionCache" || IsCall(call, "CodePatch", "Write"))
-                Require(owner == "FixesWheatMemory", "Executable writer outside the narrow wheat boundary: " + call.GetLocation().GetLineSpan());
+                Require(owner == "FixesWheatMemory" ||
+                    (owner == "PlagueNativeCode" && call.Ancestors().OfType<ConstructorDeclarationSyntax>().Any()),
+                    "Executable writer outside an audited preparation boundary: " + call.GetLocation().GetLineSpan());
+            // PlagueNativeCode prepares private RW memory once, before a published hook can reach
+            // it. This named boundary is intentional; it is not permission for runtime patching.
+            if (owner == "PlagueNativeCode" && name == "VirtualFree")
+                Require(call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Body?.Statements
+                    .OfType<IfStatementSyntax>().Any(i => Text(Unwrap(i.Condition)) == "published" &&
+                        i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any() && i.SpanStart < call.SpanStart) == true,
+                    "Published plague code can be freed: " + call.GetLocation().GetLineSpan());
             if (!Mutations.Contains(name) || !hookReceiver) continue;
             var method = call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
             // Other managed installers have legacy candidate cleanup in installation catches.

@@ -96,6 +96,43 @@ namespace APIShared.Economy
         }
         private static void Replay(Assembler a, ReadOnlySpan<Instruction> instructions)
         { foreach (var decoded in instructions) { var instruction = decoded; instruction.IP = 0; a.AddInstruction(instruction); } }
+        // Continuations of both spans and the shared sale epilog: the semantic contract the generators rely on.
+        internal static readonly int[] BoundaryRvas = { 0x3F202, 0x29732, SaleEpilog };
+        internal static readonly string[] BoundaryHex = { "443BCA7F16", "E859540A00", "488B6C2440488B5C2448488B7424504883C4305FC3" };
+
+        // Signatures and boundaries are proven on the unmodified load image, not on live code.
+        internal static void ValidatePristine(ReadOnlySpan<byte> memory)
+        {
+            for (int i = 0; i < Sites.Length; i++)
+                if (!MatchesAt(memory, Sites[i], Hex(OriginalHex[i])))
+                    throw new InvalidOperationException($"AI sell native contract differs at RVA=0x{Sites[i]:X}.");
+            for (int i = 0; i < BoundaryRvas.Length; i++)
+                if (!MatchesAt(memory, BoundaryRvas[i], Hex(BoundaryHex[i])))
+                    throw new InvalidOperationException($"AI sell native contract differs at RVA=0x{BoundaryRvas[i]:X}.");
+        }
+
+        // Live at an audited boundary another owner's hook may already begin (jmp rel32 / jmp [rip+disp32]);
+        // our code only jumps to that boundary and so enters it unchanged. Anything else is an overlap.
+        internal static bool AcceptsLiveBoundary(ReadOnlySpan<byte> live, byte[] original) =>
+            live.SequenceEqual(original) || live.Length >= 1 && live[0] == 0xE9 ||
+            live.Length >= 2 && live[0] == 0xFF && live[1] == 0x25;
+
+        // The backend contract at runtime instead of pinned backend files: the stub must be exactly this
+        // generator followed by the backend's continuation jump, assembled at the stub address.
+        internal static byte[] ExpectedStub(int index, ulong image, ulong stub, ulong state,
+            ulong reserveCallback, ulong quantityCallback)
+        {
+            ulong site = image + (uint)Sites[index], back = site + 15;
+            var assembler = new Assembler(64);
+            Generate(assembler, Decode(Hex(OriginalHex[index]), site), back, index, image, state,
+                reserveCallback, quantityCallback);
+            assembler.AddUnrestrictedJmp(back);
+            return Assemble(assembler, stub);
+        }
+
+        private static bool MatchesAt(ReadOnlySpan<byte> memory, int rva, byte[] expected) =>
+            rva >= 0 && rva <= memory.Length - expected.Length && memory.Slice(rva, expected.Length).SequenceEqual(expected);
+
         internal static Instruction[] Decode(byte[] bytes, ulong address)
         {
             var decoder = Decoder.Create(64, new ByteArrayCodeReader(bytes)); decoder.IP = address;

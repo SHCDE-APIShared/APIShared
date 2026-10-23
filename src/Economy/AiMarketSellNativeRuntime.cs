@@ -1,7 +1,5 @@
 using System;
-using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Threading;
 using BepInEx.Logging;
 using Iced.Intel;
@@ -25,7 +23,7 @@ namespace APIShared.Economy
         private static readonly Adjust QuantityCallback = Quantity;
         private static IntPtr module;
         private static ScanRegion region;
-        private static int moduleLength;
+        private static bool pristineValidated;
         private static string hash;
         private static ManualLogSource log;
         private static AiMarketSellNativeRuntime instance;
@@ -37,13 +35,22 @@ namespace APIShared.Economy
         private bool claimed;
         private readonly HookHandle<X64InlineHook>[] handles = new HookHandle<X64InlineHook>[2];
         internal readonly NativeHookPublicationState Publication = new NativeHookPublicationState();
-        internal static void Initialize(IntPtr moduleHandle, ScanRegion scanRegion, int length, string binaryHash, ManualLogSource logger)
+        internal static void Initialize(IntPtr moduleHandle, ScanRegion scanRegion, ReadOnlySpan<byte> memory, string binaryHash, ManualLogSource logger)
         {
             if (module != IntPtr.Zero && (module != moduleHandle || hash != binaryHash))
                 throw new InvalidOperationException("Sell runtime cannot change process image.");
-            module = moduleHandle; region = scanRegion; moduleLength = length; hash = binaryHash; log = logger;
+            module = moduleHandle; region = scanRegion; hash = binaryHash; log = logger;
             initializing = true;
-            try { EnsureInstalled(); }
+            try
+            {
+                // The load image is only available here; Install relies on this result.
+                if (hash == AiMarketSellAssembly.NativeHash)
+                {
+                    AiMarketSellAssembly.ValidatePristine(memory);
+                    pristineValidated = true;
+                }
+                EnsureInstalled();
+            }
             catch (Exception error) { initializationFailure = error; throw; }
             finally { initializing = false; }
         }
@@ -84,18 +91,18 @@ namespace APIShared.Economy
         { image = unchecked((ulong)module.ToInt64()); state = Marshal.AllocHGlobal(4); Marshal.WriteInt32(state, 0); }
         private void Install()
         {
-            VerifyBackend();
+            if (!pristineValidated) throw new InvalidOperationException("AI sell load-image contract was not validated.");
             if (sizeof(GamePlayerResources) != AiMarketSellAssembly.PlayerStride ||
                 Marshal.OffsetOf(typeof(GamePlayerResources), nameof(GamePlayerResources.r_TotalGoodsNull)).ToInt32() != 0x4D0 ||
                 Marshal.OffsetOf(typeof(GamePlayerResources), nameof(GamePlayerResources.r_TotalGoodsFoodAle)).ToInt32() != 0x508 ||
                 Marshal.OffsetOf(typeof(GamePlayerResources), nameof(GamePlayerResources.r_TotalGoodsGold)).ToInt32() != 0x50C ||
                 (int)eGoods.STORED_FOOD_ALE != 14 || (int)eGoods.STORED_GOLD != 15 || (int)eGoods.Count != 25)
                 throw new InvalidOperationException("AI sell player/goods layout differs from the audited contract.");
-            ValidateLive(0x3F202, "443BCA7F16"); ValidateLive(0x29732, "E859540A00");
-            ValidateLive(AiMarketSellAssembly.SaleEpilog, "488B6C2440488B5C2448488B7424504883C4305FC3");
+            for (int i = 0; i < AiMarketSellAssembly.BoundaryRvas.Length; i++)
+                ValidateLiveBoundary(AiMarketSellAssembly.BoundaryRvas[i], AiMarketSellAssembly.Hex(AiMarketSellAssembly.BoundaryHex[i]));
             for (int i = 0; i < handles.Length; i++)
             {
-                Resolve(AiMarketSellAssembly.Sites[i], AiMarketSellAssembly.Hex(AiMarketSellAssembly.OriginalHex[i]));
+                ValidateOwnSpan(AiMarketSellAssembly.Sites[i], AiMarketSellAssembly.Hex(AiMarketSellAssembly.OriginalHex[i]));
                 using (var probe = new X64InlineHook(image + (uint)AiMarketSellAssembly.Sites[i], 15))
                     if (probe.DisplacedByteCount != 15) throw new InvalidOperationException("AI sell backend displacement differs.");
                 var assembler = new Assembler(64);
@@ -123,6 +130,7 @@ namespace APIShared.Economy
                 if (!handles[i].Success || hook.IsInstalled || hook.DisplacedByteCount != 15 ||
                     hook.TargetAddress != image + (uint)AiMarketSellAssembly.Sites[i] || hook.StubAddress == IntPtr.Zero)
                     throw new InvalidOperationException("Prepared AI sell contract differs.");
+                ValidateStub(i, hook);
             }
             NativeHookPublication.Enable(transaction, result, Publication, this, ValidateInstalled);
             try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} AI sell policy hooks confirmed: 3F1F3..3F202, 29723..29732; 15/15; player stride=583C, goods=4D0/508/50C; initially inactive, process lifetime."); } catch { }
@@ -143,42 +151,34 @@ namespace APIShared.Economy
                     throw new InvalidOperationException("Installed AI sell jump/span contract differs.");
             }
         }
-        private void ValidateLive(int rva, string hex)
-        { if (!Matches(rva, AiMarketSellAssembly.Hex(hex))) throw new InvalidOperationException($"AI sell native contract differs at RVA=0x{rva:X}."); }
-        private void Resolve(int rva, byte[] expected)
+        // RedBird relocates the live bytes of the span, so our own span must be unchanged live.
+        private void ValidateOwnSpan(int rva, byte[] expected)
         {
-            bool direct = Matches(rva, expected);
-            if (!direct)
-            {
-                int pe = Marshal.ReadInt32(module, 0x3C), sections = (ushort)Marshal.ReadInt16(module, pe + 6);
-                int table = pe + 24 + (ushort)Marshal.ReadInt16(module, pe + 20), match = -1;
-                for (int i = 0; i < sections; i++)
-                {
-                    int section = table + i * 40;
-                    if ((Marshal.ReadInt32(module, section + 36) & 0x20000000) == 0) continue;
-                    int start = Marshal.ReadInt32(module, section + 12), length = Marshal.ReadInt32(module, section + 8);
-                    if (start < 0 || length < 0 || (long)start + length > moduleLength) throw new InvalidOperationException("Invalid sell PE section.");
-                    for (int p = start; p <= start + length - expected.Length; p++)
-                        if (Matches(p, expected)) { if (match >= 0) throw new InvalidOperationException("Ambiguous AI sell pattern."); match = p; }
-                }
-                if (match != rva) throw new InvalidOperationException($"AI sell site RVA=0x{rva:X} occupied/changed; hash-bound layout cannot move.");
-            }
+            if (!Live(rva, expected.Length).AsSpan().SequenceEqual(expected))
+                throw new InvalidOperationException($"AI sell site RVA=0x{rva:X} is occupied or changed.");
             try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} AI sell hook resolved: reference-rva=0x{rva:X}, span=15."); } catch { }
         }
-        private bool Matches(int rva, byte[] expected)
-        { for (int i = 0; i < expected.Length; i++) if (Marshal.ReadByte(module, rva + i) != expected[i]) return false; return true; }
-        private static void VerifyBackend()
+        private void ValidateLiveBoundary(int rva, byte[] original)
         {
-            foreach (var item in new[] {
-                new[] { typeof(X64InlineHook).Assembly.Location, "E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB" },
-                new[] { typeof(ScanRegion).Assembly.Location, "EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F" },
-                new[] { typeof(IHook).Assembly.Location, "339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E" },
-                new[] { typeof(Assembler).Assembly.Location, "CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F" } })
-            {
-                using (var stream = File.OpenRead(item[0])) using (var sha = SHA256.Create())
-                    if (BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "") != item[1])
-                        throw new InvalidOperationException("AI sell backend identity differs: " + item[0]);
-            }
+            if (!AiMarketSellAssembly.AcceptsLiveBoundary(Live(rva, original.Length), original))
+                throw new InvalidOperationException($"AI sell native boundary differs live at RVA=0x{rva:X}.");
+        }
+        private void ValidateStub(int index, X64InlineHook hook)
+        {
+            byte[] expected = AiMarketSellAssembly.ExpectedStub(index, image, unchecked((ulong)hook.StubAddress.ToInt64()),
+                unchecked((ulong)state.ToInt64()),
+                unchecked((ulong)Marshal.GetFunctionPointerForDelegate(ReserveCallback).ToInt64()),
+                unchecked((ulong)Marshal.GetFunctionPointerForDelegate(QuantityCallback).ToInt64()));
+            var actual = new byte[expected.Length];
+            Marshal.Copy(hook.StubAddress, actual, 0, actual.Length);
+            if (!actual.AsSpan().SequenceEqual(expected))
+                throw new InvalidOperationException("AI sell backend stub differs from the generated contract at site " + index + ".");
+        }
+        private static byte[] Live(int rva, int length)
+        {
+            var bytes = new byte[length];
+            Marshal.Copy(module + rva, bytes, 0, length);
+            return bytes;
         }
     }
 }

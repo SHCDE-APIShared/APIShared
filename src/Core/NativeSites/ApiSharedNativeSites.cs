@@ -18,6 +18,7 @@ namespace APIShared
         internal const string GatehouseAutomation = "Gatehouse.Automation";
         internal const string AivBuildStep = "Diagnostics.AivBuildStep";
         internal const string MarketPrices = "Economy.MarketPrices";
+        internal const string PlagueHeight = "Projectiles.PlagueHeight";
         internal const string AiMarketSell = "Economy.AiMarketSell";
         internal const string AssassinPath = "Pathfinding.AssassinPath";
         internal const string AssassinAttack = "Pathfinding.AssassinAttack";
@@ -70,6 +71,11 @@ namespace APIShared
 
         internal static NativeSiteSpan[] AivBuildStepSpans() =>
             new[] { Exclusive(AivBuildStepService.FunctionRva, AivPrologueLength) };
+
+        internal static NativeSiteSpan[] PlagueHeightSpans() => new[] {
+            Exclusive(PlagueHeightAssembly.Sites[0], 32), Exclusive(PlagueHeightAssembly.Sites[1], 26),
+            Exclusive(PlagueHeightAssembly.Sites[2], 26), Exclusive(PlagueHeightAssembly.Sites[3], 26)
+        };
 
         internal static NativeSiteSpan[] AiMarketSellSpans() => new[]
         {
@@ -152,6 +158,7 @@ namespace APIShared
             Group(GatehouseAutomation, GatehouseAutomationSpans()),
             Group(AivBuildStep, AivBuildStepSpans()),
             Group(MarketPrices, MarketPriceSpans()),
+            Group(PlagueHeight, PlagueHeightSpans()),
             Group(AiMarketSell, AiMarketSellSpans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),

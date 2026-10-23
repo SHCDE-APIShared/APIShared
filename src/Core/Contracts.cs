@@ -59,6 +59,8 @@ namespace APIShared
         public const string PlayerDefeat = "player-defeat";
         /// <summary>Capability for deterministic post-Vanilla mission-briefing gold presentation.</summary>
         public const string BriefingGoldPresentation = "briefing-gold-presentation";
+        /// <summary>Capability for opt-in native plague standing-height eligibility.</summary>
+        public const string PlagueHeight = "plague-height";
         /// <summary>Capability for complete building repair costs and repair HUD tooltips.</summary>
         public const string BuildingRepair = "building-repair";
         /// <summary>Capability for importing planned AI castles and custom Lord configurations at Coop Trail starts.</summary>
