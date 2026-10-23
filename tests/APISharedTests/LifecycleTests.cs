@@ -4,6 +4,112 @@ namespace APISharedTests
     public partial class RuntimeTests
     {
         [TestMethod] public void SavegameSettingsRoundTrip() => SavegameModSettingsTests.Run(Assert);
+        [TestMethod] public void SavegameSettingsReaderAcceptsTheCapturedPerModLimit() => SavegameModSettingsTests.RunPerModLimit(Assert);
+        [TestMethod] public void SaveReadinessPacketRoundTrip()
+        {
+            var packet = new APIShared.SavegameLoadPacket { Operation = 0, Lobby = 123,
+                Token = "01234567890123456789012345678901", SaveName = "coop-save", Fingerprint = new string('A', 64),
+                Roster = "101,102", Checksum = 17, Time = 29, Metadata = new byte[] { 1, 2 } };
+            var copy = MessagePack.MessagePackSerializer.Deserialize<APIShared.SavegameLoadPacket>(
+                MessagePack.MessagePackSerializer.Serialize(packet));
+            Assert(copy.Lobby == packet.Lobby && copy.Token == packet.Token && copy.SaveName == packet.SaveName &&
+                copy.Fingerprint == packet.Fingerprint && copy.Roster == packet.Roster &&
+                copy.Checksum == packet.Checksum && copy.Time == packet.Time && copy.Metadata[1] == 2,
+                "Save readiness packet lost identity or provenance.");
+        }
+        [TestMethod] public void CompiledSavePreparationPrecedesTheRootVanillaLoad()
+        {
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(APIShared.SavegameModSettings).Assembly.Location))
+            {
+                var lifecycle = assembly.MainModule.GetType("APIShared.MissionLifecycleService");
+                var run = System.Linq.Enumerable.Single(lifecycle.Methods, m => m.Name == "Run" && m.HasGenericParameters);
+                var code = run.Body.Instructions;
+                int prepare = -1, rootInvoke = -1;
+                for (int i = 0; i < code.Count; i++)
+                {
+                    var call = code[i].Operand as Mono.Cecil.MethodReference;
+                    if (call?.Name == "ApplyBeforeLoad") prepare = i;
+                    if (prepare >= 0 && call?.Name == "Invoke" && call.DeclaringType.FullName.StartsWith("System.Func"))
+                    { rootInvoke = i; break; }
+                }
+                Assert(prepare >= 0 && rootInvoke > prepare, "Root Vanilla load can precede prepared settings.");
+                var settings = assembly.MainModule.GetType("APIShared.SavegameModSettings");
+                var begin = System.Linq.Enumerable.Single(settings.Methods, m => m.Name == "BeginLoad");
+                bool validates = false, readsDirectly = false, trustsArchiveFlag = false;
+                foreach (var instruction in begin.Body.Instructions)
+                {
+                    var call = instruction.Operand as Mono.Cecil.MethodReference;
+                    validates |= call?.Name == "ValidateStart";
+                    readsDirectly |= call?.Name == "ReadRecord" || call?.Name == "ReadRecordForLoad";
+                    trustsArchiveFlag |= call?.Name == "get_IsSaveFile";
+                }
+                Assert(validates && readsDirectly && !trustsArchiveFlag,
+                    "Save entry trusts the misclassified archive callback or bypasses multiplayer admission.");
+            }
+        }
+        [TestMethod]
+        [DoNotParallelize]
+        public void DialogCleanupCannotRevokeCommittedSaveAdmission()
+        {
+            var type = typeof(APIShared.SavegameLoadCoordinator);
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var pending = type.GetField("pending", flags);
+            var released = type.GetField("released", flags);
+            var loading = type.GetField("loading", flags);
+            var owner = type.GetField("owner", flags);
+            object oldPending = pending.GetValue(null), oldReleased = released.GetValue(null), oldLoading = loading.GetValue(null);
+            object oldOwner = owner.GetValue(null);
+            try
+            {
+                var packet = new APIShared.SavegameLoadPacket { Token = "committed", SaveName = "save" };
+                pending.SetValue(null, packet); released.SetValue(null, true); loading.SetValue(null, false);
+                Assert(!APIShared.SavegameLoadCoordinator.CancelSelection() && ReferenceEquals(pending.GetValue(null), packet),
+                    "Dialog cleanup revoked the committed host request.");
+                released.SetValue(null, false); loading.SetValue(null, true);
+                Assert(!APIShared.SavegameLoadCoordinator.CancelSelection() && ReferenceEquals(pending.GetValue(null), packet),
+                    "Dialog cleanup revoked an executing save request.");
+                owner.SetValue(null, null); loading.SetValue(null, false);
+                Assert(APIShared.SavegameLoadCoordinator.CancelSelection() && pending.GetValue(null) == null,
+                    "Uncommitted cancellation kept the old transaction available for a later acknowledgement.");
+            }
+            finally { pending.SetValue(null, oldPending); released.SetValue(null, oldReleased); loading.SetValue(null, oldLoading); owner.SetValue(null, oldOwner); }
+        }
+        // Regression: an unreadable APIShared record (damaged appended ZIP, newer schema) aborted the
+        // whole save load. The save must load like a save without a record, with current settings.
+        [TestMethod]
+        [DoNotParallelize]
+        public void UnreadableSaveRecordStillLoadsWithCurrentSettings()
+        {
+            var type = typeof(APIShared.SavegameModSettings);
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var fields = new[] { "loaded", "legacyChoice", "chosenCurrent", "restoreFailed",
+                "activeCreatorRules", "activeTrailCustomizeAllowed" };
+            var saved = new object[fields.Length];
+            for (int i = 0; i < fields.Length; i++) saved[i] = type.GetField(fields[i], flags).GetValue(null);
+            string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                "apishared-badrecord-" + System.Guid.NewGuid().ToString("N").Substring(0, 8) + ".sav");
+            try
+            {
+                // Save payload followed by an identifiable but damaged appended ZIP.
+                System.IO.File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4, 0x50, 0x4B, 0x03, 0x04, 9, 9, 9,
+                    0x50, 0x4B, 0x05, 0x06, 0, 0 });
+                Assert(APIShared.SavegameModSettings.GetLoadChoiceState(path) == APIShared.SavegameLoadChoiceState.Invalid,
+                    "Fixture is not an unreadable record; the regression would not be exercised.");
+                // A non-null current choice keeps the test away from live host settings capture.
+                type.GetField("chosenCurrent", flags).SetValue(null,
+                    new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, byte[]>>());
+                type.GetField("legacyChoice", flags).SetValue(null, false);
+                type.GetMethod("BeginLoad", flags).Invoke(null, new object[] { path, false });
+                bool restored = APIShared.SavegameModSettings.TryGetRestoredMode(out var kind, out _, out bool locked);
+                Assert(!restored && kind == APIShared.GameModes.GameModeKind.Unknown && !locked,
+                    "Unreadable save record blocked the load or locked its settings instead of loading as legacy.");
+            }
+            finally
+            {
+                for (int i = 0; i < fields.Length; i++) type.GetField(fields[i], flags).SetValue(null, saved[i]);
+                try { System.IO.File.Delete(path); } catch { }
+            }
+        }
         [TestMethod] public void MarkedSelectionHarmonyContract() => MarkedSelectionHarmonyTests.Run(Assert);
     }
 }

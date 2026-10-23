@@ -7,6 +7,10 @@ $fake = Join-Path $fixture 'gh.exe'
 $previousPath = $env:PATH
 $previousCase = $env:APISHARED_RELEASE_TEST_CASE
 $previousLog = $env:APISHARED_RELEASE_TEST_LOG
+$previousTag = $env:APISHARED_RELEASE_TEST_TAG
+$fixtureVersion = [string]([IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../info.json')) | ConvertFrom-Json).Version
+$fixtureTag = 'APIShared/v' + $fixtureVersion
+$env:APISHARED_RELEASE_TEST_TAG = $fixtureTag
 function Check([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Write-Fixture([string]$Path, [string]$Text) {
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path))
@@ -41,6 +45,7 @@ public static class FakeReleaseCli {
             if (scenario == "access") { Console.Error.WriteLine("HTTP 403: Forbidden"); return 1; }
             return 0;
         }
+        if (args[0] == "release" && (args[1] == "create" || args[1] == "upload" || args[1] == "edit")) return 0;
         if (scenario == "missing") { Console.Error.WriteLine("release not found"); return 1; }
         if (scenario == "network") { Console.Error.WriteLine("connection timed out"); return 1; }
         if (scenario == "ambiguous") { Console.Error.WriteLine("release not found\nHTTP 401"); return 1; }
@@ -48,21 +53,21 @@ public static class FakeReleaseCli {
         if (scenario == "json") { Console.WriteLine("invalid json"); return 0; }
         string commit = scenario == "commit" ? "other" : "0123456789abcdef0123456789abcdef01234567";
         string draft = scenario == "mode" ? "true" : "false";
-        Console.WriteLine("{\"tagName\":\"APIShared/v0.7.1\",\"isDraft\":" + draft + ",\"targetCommitish\":\"" + commit + "\",\"assets\":[]}");
+        Console.WriteLine("{\"tagName\":\"" + Environment.GetEnvironmentVariable("APISHARED_RELEASE_TEST_TAG") + "\",\"isDraft\":" + draft + ",\"targetCommitish\":\"" + commit + "\",\"assets\":[]}");
         return 0;
     }
 }
 '@
     $env:APISHARED_RELEASE_TEST_LOG = Join-Path $fixture 'calls.log'
     $env:APISHARED_RELEASE_TEST_CASE = 'missing'
-    Check ($null -eq (Get-ApiGitHubRelease 'Fixture/APIShared' 'APIShared/v0.7.1' $fake)) 'Missing release did not reach the creation decision.'
+    Check ($null -eq (Get-ApiGitHubRelease 'Fixture/APIShared' $fixtureTag $fake)) 'Missing release did not reach the creation decision.'
     $env:APISHARED_RELEASE_TEST_CASE = 'existing'
-    $release = Get-ApiGitHubRelease 'Fixture/APIShared' 'APIShared/v0.7.1' $fake
+    $release = Get-ApiGitHubRelease 'Fixture/APIShared' $fixtureTag $fake
     Check ($release.targetCommitish -ceq '0123456789abcdef0123456789abcdef01234567') 'Existing release not returned.'
     foreach ($case in @('auth','access','network','ambiguous','json')) {
         $env:APISHARED_RELEASE_TEST_CASE = $case
         $rejected = $false
-        try { $null = Get-ApiGitHubRelease 'Fixture/APIShared' 'APIShared/v0.7.1' $fake } catch { $rejected = $true }
+        try { $null = Get-ApiGitHubRelease 'Fixture/APIShared' $fixtureTag $fake } catch { $rejected = $true }
         Check $rejected ('Failure accepted as missing release: ' + $case)
     }
     $env:APISHARED_RELEASE_TEST_CASE = 'large'
@@ -87,8 +92,12 @@ public static class FakeReleaseCli {
         Check ($guard.ExitCode -ne 0 -and ($guardOut.Result+$guardError.Result).Contains('PrepareOnly cannot publish')) 'PrepareOnly+Publish must reject before any release work.'
         Check ([IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG) -ceq $beforeGuard) 'PrepareOnly+Publish reached the GitHub CLI.'
     }finally{$guard.Dispose()}
-    $driverSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../Shared/Tools/Steam/Prepare-APISharedWorkshop.ps1'))
-    if (Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($driverSource))) {
+    $driverSource = $null
+    for ($ancestor = [IO.DirectoryInfo]$PSScriptRoot; $ancestor; $ancestor = $ancestor.Parent) {
+        $candidate = Join-Path $ancestor.FullName 'Shared/Tools/Steam/Prepare-APISharedWorkshop.ps1'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $driverSource = $candidate; break }
+    }
+    if ($driverSource) {
     # Run the actual preparation driver in an isolated workspace with inert dependencies.
     $workspace = Join-Path $fixture 'workspace with spaces'
     $driverDirectory = Join-Path $workspace 'Shared/Tools/Steam'
@@ -101,8 +110,17 @@ function Get-WorkshopConfiguration {
 }
 '@
     Write-Fixture (Join-Path $driverDirectory 'WorkshopConfiguration.ps1') $configuration
+    # Workspace driver policy is tested independently with real isolated worktrees.
+    # These fixtures isolate only the existing release/publication confirmation paths.
+    Write-Fixture (Join-Path $workspace 'Shared/Tools/ApiSharedRepository/MainSource.Common.ps1') @'
+function Get-ApiMainWorkspace($Workspace) { return $Workspace }
+function Resolve-ApiMainSelection($Workspace) { return 'fixture-main-selection' }
+function Get-WorkshopApiRoot($Workspace) { return (Join-Path $Workspace 'APIShared') }
+function Ensure-ApiMainBuild {}
+function Assert-ApiMainDeliveryIdentity($Workspace,$Identity) { return 'fixture-main-selection' }
+'@
     Write-Fixture (Join-Path $driverDirectory 'WorkshopWorkflow.Common.ps1') '# No platform-approval dependency.'
-    Write-Fixture (Join-Path $workspace 'APIShared/info.json') '{"GUID":"APIShared_Serp","Version":"0.7.1"}'
+    Write-Fixture (Join-Path $workspace 'APIShared/info.json') (@{GUID='APIShared_Serp';Version=$fixtureVersion}|ConvertTo-Json -Compress)
     Write-Fixture (Join-Path $workspace 'APIShared/tools/BuildProof.ps1') 'function Assert-ApiBuildProof {}'
     Write-Fixture (Join-Path $workspace 'APIShared/tools/Release/GitHubRelease.ps1') ([IO.File]::ReadAllText((Join-Path $PSScriptRoot '../Release/GitHubRelease.ps1')))
     Write-Fixture (Join-Path $workspace 'packager.exe') 'inert fixture'
@@ -113,11 +131,13 @@ function Get-WorkshopConfiguration {
     foreach ($case in @('missing','existing','commit','mode','auth','access','network')) {
         $env:APISHARED_RELEASE_TEST_CASE = $case
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$driver,'-ValidateOnly','1') $powershell
-        $expected = if ($case -in @('missing','existing')) { 0 } else { 1 }
+        # Validation never publishes: an absent release must fail before download or creation.
+        $expected = if ($case -eq 'existing') { 0 } else { 1 }
         Check ($result.ExitCode -eq $expected) ("Preparation /validate failed for ${case}: " + $result.Diagnostic)
         if ($expected -eq 0) { Check ($result.Output -match 'no release or build started') 'Validation did not exit before side effects.' }
+        if ($case -eq 'missing') { Check ($result.Diagnostic -match 'without /validate') 'Missing APIShared release did not explain how preparation creates it.' }
     }
-    # Stop at the existing human confirmation without accepting it or starting a release.
+    # A missing release is created only after the human confirmation; refusing it must stop before any release work.
     $confirmationDriver = Join-Path $fixture 'confirmation wrapper.ps1'
     Write-Fixture $confirmationDriver @'
 param([string]$Driver,[switch]$ValidateUpload)
@@ -133,7 +153,9 @@ exit $LASTEXITCODE
         if ($record -eq 'malformed') { Write-Fixture $platformPath 'invalid json' }
         $env:APISHARED_RELEASE_TEST_CASE = 'missing'
         $result = Invoke-ApiReleaseGitHub @('-NoProfile','-ExecutionPolicy','Bypass','-File',$confirmationDriver,'-Driver',$driver) $powershell
-        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'Fixture confirmation reached:\s*Type\s+VEROEFFENTLICHEN') ("Production preparation blocked by " + $record + " approval record: " + $result.Diagnostic)
+        Check ($result.ExitCode -eq 1 -and $result.Diagnostic -match 'Fixture confirmation reached: Type VEROEFFENTLICHEN') ("Missing-release preparation did not stop at the publication confirmation for " + $record + ": " + $result.Diagnostic)
+        $calls = [IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
+        Check ($calls -notmatch 'release\|(create|upload|edit|download)') 'Missing release reached a release mutation or download.'
     }
     # Exercise the actual upload driver with an inert publisher and isolated preparation state.
     $upload = Join-Path $driverDirectory 'Upload-Workshop.ps1'
@@ -150,7 +172,7 @@ function Get-WorkshopConfiguration {
 function Get-WorkshopFolder($Config,$Target,$Test) { return (Join-Path $Config.Root 'content') }
 function Assert-WorkshopPreparation {
     if ($env:APISHARED_RELEASE_TEST_CASE -eq 'proof') { throw 'Prepared file changed: APIShared.map' }
-    return @{Version='0.7.1';ReleaseNotes='Fixture';ReleaseTag='fixture';Files=@(@{Path='APIShared.map'})}
+    return @{Version=$env:APISHARED_RELEASE_TEST_TAG.Substring('APIShared/v'.Length);ReleaseNotes='Fixture';ReleaseTag='fixture';Files=@(@{Path='APIShared.map'})}
 }
 function Assert-WorkshopPublisherBuild {}
 function Get-WorkshopStateRoot($Config,$Test) { return (Join-Path $Config.Root 'state') }
@@ -161,6 +183,7 @@ function Write-SteamWorkshopJson($Path,$Value) { [IO.File]::WriteAllText($Path,(
     [void][IO.Directory]::CreateDirectory((Split-Path -Parent $publisher))
     Copy-Item -LiteralPath $fake -Destination $publisher
     Write-Fixture (Join-Path $workspace 'content/APIShared.map') 'inert map'
+    Write-Fixture (Join-Path $workspace '.release-output/SteamWorkshop/prepared/APIShared.json') '{"MainSource":{}}'
     foreach ($record in @('absent','outdated','malformed')) {
         if ($record -eq 'absent') { Remove-Item -LiteralPath $platformPath }
         elseif ($record -eq 'outdated') { Write-Fixture $platformPath '{"SchemaVersion":1,"Windows":false}' }
@@ -188,40 +211,27 @@ function Write-SteamWorkshopJson($Path,$Value) { [IO.File]::WriteAllText($Path,(
     Check ($result.ExitCode -eq 0 -and $result.Output -match 'without Steam initialization or upload') 'Upload /validate failed.'
     $validationCalls = [IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
     Check ($validationCalls -match '--validate' -and $validationCalls -notmatch '--inspect|--publish') 'Upload /validate contacted Steam.'
-    foreach ($relative in @('WorkshopWorkflow.Common.ps1','Prepare-APISharedWorkshop.ps1','Create-SteamModPack.ps1','Upload-Workshop.ps1')) {
-        $source = [IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) $relative))
-        Check ($source -notmatch 'Assert-WorkshopPlatformProof|workshop-platform-tests.json') ("Approval dependency retained in " + $relative)
-    }
     $calls = [IO.File]::ReadAllText($env:APISHARED_RELEASE_TEST_LOG)
     Check ($calls -notmatch 'release\|(create|upload|edit|download)') 'Read-only test attempted a release mutation.'
     Write-Host 'PASS: maintainer preparation/upload drivers and production confirmations.'
     } else {
         Write-Host 'INFO: maintainer workspace drivers are unavailable in this standalone checkout; their extra integration tests run locally.'
     }
-    $releaseDriver = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../Release/Release.ps1'))
-    Check ($releaseDriver -match 'Get-ApiGitHubRelease \$repository \$tag' -and $releaseDriver -notmatch 'gh release view') 'Standalone release driver bypasses the shared probe.'
-    # Execute the actual publication decision with mutation commands replaced by an inert function.
-    # No build or packaging prefix of Release.ps1 is executed by this test.
-    $tokens = $null; $errors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../Release/Release.ps1'), [ref]$tokens, [ref]$errors)
-    $decision = @($ast.FindAll({ param($node)
-        $node -is [Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -match '\$PSCmdlet.ShouldProcess'
-    }, $true))
-    Check ($decision.Count -eq 1 -and -not $errors) 'Standalone publication decision not found.'
-    $body = $decision[0].Clauses[0].Item2.Extent.Text
-    $publication = [scriptblock]::Create($body.Substring(1, $body.Length - 2))
-    $repository = 'Fixture/APIShared'; $tag = 'APIShared/v0.7.1'
+    # Exercise the production publication function, independently of Release.ps1's
+    # AST, formatting, variable names, branch layout or packaging prefix.
+    $repository = 'Fixture/APIShared'; $tag = $fixtureTag
     $commit = '0123456789abcdef0123456789abcdef01234567'
     $assets = @(); $notes = 'inert notes'; $Publish = $false
     $arguments = @('release','create',$tag)
-    function gh { $script:mutations += [string]$args[1]; $global:LASTEXITCODE = 0 }
     foreach ($case in @('missing','mode','existing','commit','auth','access','network')) {
         $env:APISHARED_RELEASE_TEST_CASE = $case
-        $script:mutations = @(); $rejected = $false
-        try { & $publication } catch { $rejected = $true }
-        if ($case -eq 'missing') { Check (-not $rejected -and ($script:mutations -join ',') -ceq 'create') 'First release did not select creation.' }
-        elseif ($case -eq 'mode') { Check (-not $rejected -and ($script:mutations -join ',') -ceq 'upload,edit') 'Matching draft did not resume.' }
-        else { Check ($rejected -and $script:mutations.Count -eq 0) ('Standalone release mutated after failure: ' + $case) }
+        [IO.File]::WriteAllText($env:APISHARED_RELEASE_TEST_LOG, '')
+        $rejected = $false
+        try { Invoke-ApiReleasePublication -Repository $repository -Tag $tag -Commit $commit -Assets $assets -Notes $notes -Publish $Publish -CreationArguments $arguments -Executable $fake } catch { $rejected = $true }
+        $mutations = @([IO.File]::ReadAllLines($env:APISHARED_RELEASE_TEST_LOG) | Where-Object { $_ -match '^release\|(create|upload|edit)\|' } | ForEach-Object { ($_ -split '\|')[1] })
+        if ($case -eq 'missing') { Check (-not $rejected -and ($mutations -join ',') -ceq 'create') 'First release did not select creation.' }
+        elseif ($case -eq 'mode') { Check (-not $rejected -and ($mutations -join ',') -ceq 'upload,edit') 'Matching draft did not resume.' }
+        else { Check ($rejected -and $mutations.Count -eq 0) ('Standalone release mutated after failure: ' + $case) }
     }
     Write-Host ('PASS: PS 5.1 standalone release probe/publication decision, missing/existing releases, authentication/access/network failures, strict missing detection, pipe capture, argument quoting and commit/mode conflicts. Fixtures: ' + $fixture)
 } finally {
@@ -229,4 +239,5 @@ function Write-SteamWorkshopJson($Path,$Value) { [IO.File]::WriteAllText($Path,(
     $env:PATH = $previousPath
     $env:APISHARED_RELEASE_TEST_CASE = $previousCase
     $env:APISHARED_RELEASE_TEST_LOG = $previousLog
+    $env:APISHARED_RELEASE_TEST_TAG = $previousTag
 }

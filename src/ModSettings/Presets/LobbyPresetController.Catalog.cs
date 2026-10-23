@@ -15,22 +15,32 @@ namespace APIShared.ModSettings
     /// <summary>Personal preset discovery, publication, deletion and migration; stable identities and format validation.</summary>
     internal sealed partial class LobbyPresetController
     {
+        private readonly List<PublishedModSettingsPreset> personalPresetCopies = new List<PublishedModSettingsPreset>();
+
+        private void ValidateCatalogPreset(PublishedModSettingsPreset preset)
+        {
+            // Keep shadowed and locally duplicated copies for an explicit delete action.
+            if (preset.SourceKind == ModSettingsPresetSourceKind.Personal) personalPresetCopies.Add(preset);
+            ValidatePublishedPreset(preset);
+        }
+
         public void RefreshCatalog()
         {
+            personalPresetCopies.Clear();
             if (persistedProperties.Length == 0)
             {
                 publishedPresets.Clear();
                 return;
             }
 
-            Directory.CreateDirectory(personalPresetDirectory);
+            EnsurePersonalDirectory();
             var refreshed = new List<PublishedModSettingsPreset>();
             foreach (PublishedModSettingsPreset preset in ModSettingsPresetCatalog.Discover(
                 targetGuid,
                 targetVersion,
                 pluginDirectory,
                 personalPresetDirectory,
-                log))
+                log, legacyPersonalPresetDirectory, ValidateCatalogPreset))
             {
                 try
                 {
@@ -114,7 +124,7 @@ namespace APIShared.ModSettings
                 targetGuid);
             if (!Directory.Exists(staged))
                 return true;
-            Directory.CreateDirectory(personalPresetDirectory);
+            EnsurePersonalDirectory();
             bool succeeded = true;
             foreach (string source in Directory.GetFiles(staged, "preset_*.json", SearchOption.TopDirectoryOnly))
             {
@@ -142,7 +152,7 @@ namespace APIShared.ModSettings
             string name,
             Dictionary<string, byte[]> snapshot)
         {
-            Directory.CreateDirectory(personalPresetDirectory);
+            EnsurePersonalDirectory();
             string path = Path.Combine(personalPresetDirectory, "preset_" + id + ".json");
             var settings = new Dictionary<string, PublishedPresetSetting>(StringComparer.Ordinal);
             foreach (PresetPropertyAccessor property in persistedProperties)
@@ -243,6 +253,9 @@ namespace APIShared.ModSettings
             string path = Path.Combine(
                 personalPresetDirectory,
                 "preset_" + safeId + ".json");
+            if (!overwrite && publishedPresets.Any(item => item.SourceKind == ModSettingsPresetSourceKind.Personal &&
+                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase)))
+                throw new PresetSaveFileExistsException(path);
             PublishPresetJson(path, json, overwrite);
             RefreshCatalog();
             LogRoutine(
@@ -257,6 +270,9 @@ namespace APIShared.ModSettings
             string safeId = string.Concat(imported.Id.Split(Path.GetInvalidFileNameChars()));
             if (string.IsNullOrWhiteSpace(safeId)) throw new InvalidDataException("Invalid preset id.");
             string path = Path.Combine(personalPresetDirectory, "preset_" + safeId + ".json");
+            if (publishedPresets.Any(item => item.SourceKind == ModSettingsPresetSourceKind.Personal &&
+                string.Equals(item.Id, imported.Id, StringComparison.OrdinalIgnoreCase)))
+                throw new PresetSaveFileExistsException(path);
             PublishPresetJson(path, ModSettingsPresetJson.Serialize(targetGuid, imported.Id, imported.Name,
                 imported.Description, imported.MinimumTargetVersion, imported.MaximumTargetVersion, imported.Settings), false);
             RefreshCatalog();
@@ -286,15 +302,35 @@ namespace APIShared.ModSettings
             }
 
             string path = Path.GetFullPath(preset.SourcePath ?? string.Empty);
-            ModSettingsPresetCatalog.ValidatePersonalWritePath(
-                pluginDirectory,
-                personalPresetDirectory,
-                path);
+            ValidatePersonalSourcePath(path);
             if (!File.Exists(path))
                 throw new FileNotFoundException("The selected personal preset no longer exists.", path);
 
             string stableId = preset.StableId;
-            File.Delete(path);
+            var copies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path };
+            foreach (PublishedModSettingsPreset copy in personalPresetCopies)
+                if (string.Equals(copy.StableId, stableId, StringComparison.OrdinalIgnoreCase))
+                    copies.Add(copy.SourcePath);
+            var failures = new List<Exception>();
+            foreach (string copy in copies)
+            {
+                try
+                {
+                    ValidatePersonalSourcePath(copy);
+                    PublishedModSettingsPreset current = ModSettingsPresetJson.Parse(
+                        File.ReadAllText(copy), "personal:" + targetGuid, "Personal", targetGuid, copy);
+                    if (!string.Equals(current.StableId, stableId, StringComparison.OrdinalIgnoreCase))
+                        throw new IOException("Personal preset identity changed since discovery: " + copy);
+                    File.Delete(copy);
+                }
+                catch (FileNotFoundException) { }
+                catch (DirectoryNotFoundException) { }
+                catch (Exception exception) { failures.Add(exception); }
+            }
+            RefreshCatalog();
+            if (failures.Count != 0)
+                throw new IOException("Could not delete all personal copies of preset [" + stableId + "].",
+                    new AggregateException(failures));
 
             bool metadataChanged = false;
             if (string.Equals(basedOnStableId, stableId, StringComparison.OrdinalIgnoreCase))
@@ -322,22 +358,46 @@ namespace APIShared.ModSettings
             LogRoutine($"[{modName}] Deleted personal preset [{SanitizeLogValue(stableId)}].");
         }
 
+        private void ValidatePersonalSourcePath(string path)
+        {
+            string prefix = Path.GetFullPath(personalPresetDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            bool isNew = Path.GetFullPath(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            ModSettingsPresetCatalog.ValidatePersonalWritePath(
+                isNew ? personalStorageRoot : pluginDirectory,
+                isNew ? personalPresetDirectory : legacyPersonalPresetDirectory, path);
+        }
+
+        private void EnsurePersonalDirectory()
+        {
+            string probe = Path.Combine(personalPresetDirectory, "preset_path-validation.json");
+            ModSettingsPresetCatalog.ValidatePersonalWritePath(personalStorageRoot, personalPresetDirectory, probe);
+            Directory.CreateDirectory(personalPresetDirectory);
+            ModSettingsPresetCatalog.ValidatePersonalWritePath(personalStorageRoot, personalPresetDirectory, probe);
+        }
+
         private void PublishPresetJson(string path, string json, bool overwrite)
         {
             string directory = Path.GetDirectoryName(path);
-            ModSettingsPresetCatalog.ValidatePersonalWritePath(
-                pluginDirectory,
-                personalPresetDirectory,
-                path);
-            Directory.CreateDirectory(directory);
-            ModSettingsPresetCatalog.ValidatePersonalWritePath(
-                pluginDirectory,
-                personalPresetDirectory,
-                path);
-            string temporaryPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            // Keep staging names independent of preset names and reserve them without overwriting another writer.
+            string temporaryPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
+            bool ownsTemporaryFile = false;
+            string stage = "validate-target";
             try
             {
-                File.WriteAllText(temporaryPath, json, new System.Text.UTF8Encoding(false));
+                ModSettingsPresetCatalog.ValidatePersonalWritePath(personalStorageRoot, personalPresetDirectory, path);
+                stage = "create-directory";
+                Directory.CreateDirectory(directory);
+                stage = "validate-created-directory";
+                ModSettingsPresetCatalog.ValidatePersonalWritePath(personalStorageRoot, personalPresetDirectory, path);
+                stage = "write-staging-file";
+                using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    ownsTemporaryFile = true;
+                    using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
+                        writer.Write(json);
+                }
+                stage = overwrite ? "replace-existing-preset" : "publish-new-preset";
                 if (!overwrite)
                 {
                     try
@@ -357,11 +417,23 @@ namespace APIShared.ModSettings
                     if (!publish.Succeeded) throw publish.Error;
                 }
             }
+            catch (PresetSaveFileExistsException) { throw; } // Expected UI conflict retains its typed contract.
+            catch (Exception error)
+            {
+                try { DebugLogHelper.LogError(log, $"[{modName}] " + DescribePublicationFailure(stage, path, temporaryPath, error)); }
+                catch { /* Preserve the original publication exception if a logger fails. */ }
+                throw;
+            }
             finally
             {
-                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+                if (ownsTemporaryFile && File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
         }
+
+        internal static string DescribePublicationFailure(string stage, string targetPath, string temporaryPath, Exception error) =>
+            $"PRESET_PUBLICATION_FAILED: stage={stage}, targetPath={targetPath}, targetPathLength={targetPath?.Length ?? 0}, " +
+            $"temporaryPath={temporaryPath}, temporaryPathLength={temporaryPath?.Length ?? 0}, " +
+            $"errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}; {error.Message}";
 
     }
 }

@@ -24,17 +24,23 @@ public sealed class WorkshopRecoveryTests
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, text);
     }
-    [TestMethod] public void RepairReportsExtraAssembliesWithoutDeletingSettingsOrFiles()
+    [TestMethod] public void CleanRepairRemovesForeignAssembliesButKeepsSettingsDataAndOtherMods()
     {
         Write(game, Target, "current payload");
         Write(game, "BepInEx/plugins/Example/obsolete.dll", "old dll");
         Write(game, "BepInEx/plugins/Example/unknown.DLL", "unknown dll");
         Write(game, "BepInEx/plugins/Example/config/helper.dll", "user data");
+        Write(game, "BepInEx/plugins/Example/presets.json", "user data");
         Write(game, "BepInEx/plugins/Other/other.dll", "other mod");
-        var package = new WorkshopPackage { Roots = new[] { "BepInEx/plugins/Example" }, Files = new[] { new WorkshopFile(Target, 0, new string('a', 64)) } };
-        CollectionAssert.AreEqual(new[] { "BepInEx/plugins/Example/obsolete.dll", "BepInEx/plugins/Example/unknown.DLL" }, WorkshopRecovery.PreservedAssemblies(game, package));
+        var keep = new HashSet<string>(new[] { Target }, StringComparer.OrdinalIgnoreCase);
+        CollectionAssert.AreEqual(new[] { "BepInEx/plugins/Example/obsolete.dll", "BepInEx/plugins/Example/unknown.DLL" },
+            WorkshopRepairPlanner.Cleanup(game, "BepInEx/plugins/Example", keep, null, null).ToArray());
+        // Interrupted targets are covered even when already absent; earlier files only when present.
+        CollectionAssert.Contains(WorkshopRepairPlanner.Cleanup(game, "BepInEx/plugins/Example", keep,
+            new[] { "BepInEx/plugins/Example/gone.txt" }, new[] { "BepInEx/plugins/Example/partial.txt" }).ToArray(), "BepInEx/plugins/Example/partial.txt");
+        CollectionAssert.DoesNotContain(WorkshopRepairPlanner.Cleanup(game, "BepInEx/plugins/Example", keep,
+            new[] { "BepInEx/plugins/Example/gone.txt" }, null).ToArray(), "BepInEx/plugins/Example/gone.txt");
         Assert.AreEqual("user data", File.ReadAllText(Path.Combine(game, "BepInEx/plugins/Example/config/helper.dll")));
-        Assert.AreEqual("old dll", File.ReadAllText(Path.Combine(game, "BepInEx/plugins/Example/obsolete.dll")));
     }
     [TestMethod] public void RecoveryButtonsKeepTheirExplicitActionsAndCancelIsSafe()
     {

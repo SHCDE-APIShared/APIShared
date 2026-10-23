@@ -85,8 +85,11 @@ namespace APIShared.Commands
     /// <summary>One process-owned hook for EngineInterface.GameAction(GameActionCommand, int, int, int).</summary>
     public static class GameActionEvents
     {
-        private delegate int Call(Enums.GameActionCommand command, int structure, int state, int value2);
+        internal delegate int Call(Enums.GameActionCommand command, int structure, int state, int value2);
         private static readonly ManagedInterceptionHook<Call> hook = new ManagedInterceptionHook<Call>();
+        // Static factory with explicit context: an observed call creates no closure or delegate.
+        private static readonly Func<Completion, object, GameActionPostEventArgs> PostFactory =
+            (completion, ownerState) => new GameActionPostEventArgs(completion.Pre, completion.Result, ownerState);
         internal static readonly InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs> Registry =
             new InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs>(() => hook.Install(typeof(EngineInterface),
                 nameof(EngineInterface.GameAction), typeof(int),
@@ -102,21 +105,29 @@ namespace APIShared.Commands
         private static int Dispatch(Enums.GameActionCommand command, int structure, int state, int value2)
         {
             if (!Registry.CanNotify) return hook.Original(command, structure, state, value2);
-            return DispatchObserved(command, structure, state, value2);
+            return DispatchObserved(Registry, command, structure, state, value2, hook.Original);
         }
-        private static int DispatchObserved(Enums.GameActionCommand command, int structure, int state, int value2)
+        // Production observed path; contract tests pass their own registry and original.
+        internal static int DispatchObserved(InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs> registry,
+            Enums.GameActionCommand command, int structure, int state, int value2, Call original)
         {
-            var invocation = Registry.Begin(new GameActionPreEventArgs(command, structure, state, value2));
+            var invocation = registry.Begin(new GameActionPreEventArgs(command, structure, state, value2));
             var pre = invocation.Pre;
             int result = 0;
             if (!pre.SkipOriginalFunction)
             {
                 invocation.NotifyAccepted();
-                result = hook.Original(command, pre.StructureId, pre.ActionState, pre.Value2);
+                result = original(command, pre.StructureId, pre.ActionState, pre.Value2);
             }
             if (invocation.HasPostObservers)
-                invocation.Complete(ownerState => new GameActionPostEventArgs(pre, result, ownerState));
+                invocation.Complete(new Completion(pre, result), PostFactory);
             return result;
+        }
+        private readonly struct Completion
+        {
+            internal readonly GameActionPreEventArgs Pre;
+            internal readonly int Result;
+            internal Completion(GameActionPreEventArgs pre, int result) { Pre = pre; Result = result; }
         }
     }
 }

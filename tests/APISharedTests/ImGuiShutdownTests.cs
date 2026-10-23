@@ -4,6 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MonoMod.Cil;
 using MonoMod.Utils;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -19,6 +20,13 @@ namespace APISharedTests
     public unsafe class ImGuiShutdownTests
     {
         private static readonly List<ILContext> generatedContexts = new List<ILContext>();
+        [TestInitialize]
+        public void ResetNativeObservations()
+        {
+            while (Fixture.PresentArguments.TryDequeue(out _)) { }
+            while (Fixture.ResizeArguments.TryDequeue(out _)) { }
+            Fixture.NativeCalls = Fixture.ResizeNativeCalls = 0;
+        }
         [TestCleanup]
         public void ReleaseGeneratedTestReferences()
         {
@@ -87,11 +95,15 @@ namespace APISharedTests
                     Assert.AreEqual(new IntPtr(77), wnd(IntPtr.Zero, 16, IntPtr.Zero, IntPtr.Zero));
                     Assert.AreEqual(new IntPtr(77), wnd(IntPtr.Zero, 256, IntPtr.Zero, IntPtr.Zero));
                     // A new Present uses the native-only path and never waits on the render callback.
-                    Assert.AreEqual(14, present(new IntPtr(9), 2, 3));
+                    Assert.AreEqual(35, present(new IntPtr(17), 7, 11));
                 } finally { release.Set(); }
                 Assert.IsTrue(running.Wait(5000));
                 Assert.AreEqual(14, running.Result);
                 Assert.AreEqual(2, Fixture.NativeCalls);
+                var received = Fixture.PresentArguments.ToArray();
+                Assert.AreEqual(2, received.Length);
+                CollectionAssert.AreEqual(new long[] { 17, 7, 11 }, received[0]);
+                CollectionAssert.AreEqual(new long[] { 9, 2, 3 }, received[1]);
             }
             Assert.AreEqual(0, destructiveWindows);
             Assert.AreEqual(3, originalWindows);
@@ -104,6 +116,26 @@ namespace APISharedTests
             var resize = Generate<Func<IntPtr, uint, uint, uint, uint, uint, int>>(nameof(Fixture.Resize),
                 il => ImGuiShutdownIl.GuardRender(il, () => true, "idxgiswapchain_resizebuffers_trampoline_fp", 6));
             Assert.AreEqual(21, resize(new IntPtr(1), 2, 3, 4, 5, 6));
+            Assert.AreEqual(1, Fixture.ResizeNativeCalls);
+            CollectionAssert.AreEqual(new long[] { 1, 2, 3, 4, 5, 6 }, Fixture.ResizeArguments.Single());
+        }
+
+        [TestMethod]
+        public void UnmodifiedRenderCopiesPreserveAllNativeArguments()
+        {
+            int renders = 0;
+            Fixture.Render = () => renders++;
+            // Even an unedited Debug fixture loses its first native argument with the
+            // desktop default DMD generator. Exercise the production compiler without a guard.
+            var present = Generate<Func<IntPtr, uint, uint, int>>(nameof(Fixture.Present), _ => { });
+            var resize = Generate<Func<IntPtr, uint, uint, uint, uint, uint, int>>(nameof(Fixture.Resize), _ => { });
+            Assert.AreEqual(14, present(new IntPtr(9), 2, 3));
+            Assert.AreEqual(21, resize(new IntPtr(1), 2, 3, 4, 5, 6));
+            Assert.AreEqual(2, renders);
+            Assert.AreEqual(1, Fixture.NativeCalls);
+            Assert.AreEqual(1, Fixture.ResizeNativeCalls);
+            CollectionAssert.AreEqual(new long[] { 9, 2, 3 }, Fixture.PresentArguments.Single());
+            CollectionAssert.AreEqual(new long[] { 1, 2, 3, 4, 5, 6 }, Fixture.ResizeArguments.Single());
         }
 
         [TestMethod]
@@ -218,7 +250,9 @@ namespace APISharedTests
                 var context = new ILContext(definition.Definition) { ReferenceBag = RuntimeILReferenceBag.Instance };
                 generatedContexts.Add(context);
                 context.Invoke(edit);
-                return (T)definition.Generate().CreateDelegate(typeof(T));
+                // Match the runtime's scoped MethodBuilder compiler; the default desktop
+                // DMD backend miscompiles these Debug calli fixtures (issue #35).
+                return (T)ImGuiShutdownCompiler.GenerateAudited(definition, method).CreateDelegate(typeof(T));
             }
         }
 
@@ -246,8 +280,18 @@ namespace APISharedTests
             public delegate int PresentNative(IntPtr h, uint a, uint b);
             [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
             public delegate int ResizeNative(IntPtr h, uint a, uint b, uint c, uint d, uint e);
-            private static readonly PresentNative presentNative = (h, a, b) => { Interlocked.Increment(ref NativeCalls); return (int)h + (int)a + (int)b; };
-            private static readonly ResizeNative resizeNative = (h, a, b, c, d, e) => (int)h + (int)a + (int)b + (int)c + (int)d + (int)e;
+            public static readonly ConcurrentQueue<long[]> PresentArguments = new ConcurrentQueue<long[]>();
+            public static readonly ConcurrentQueue<long[]> ResizeArguments = new ConcurrentQueue<long[]>();
+            private static readonly PresentNative presentNative = (h, a, b) => {
+                PresentArguments.Enqueue(new long[] { h.ToInt64(), a, b });
+                Interlocked.Increment(ref NativeCalls);
+                return (int)h + (int)a + (int)b;
+            };
+            private static readonly ResizeNative resizeNative = (h, a, b, c, d, e) => {
+                ResizeArguments.Enqueue(new long[] { h.ToInt64(), a, b, c, d, e });
+                Interlocked.Increment(ref ResizeNativeCalls);
+                return (int)h + (int)a + (int)b + (int)c + (int)d + (int)e;
+            };
             public static delegate* unmanaged[Thiscall]<IntPtr, uint, uint, int> idxgiswapchain_present_trampoline_fp =
                 (delegate* unmanaged[Thiscall]<IntPtr, uint, uint, int>)(void*)Marshal.GetFunctionPointerForDelegate(presentNative);
             public static delegate* unmanaged[Thiscall]<IntPtr, uint, uint, uint, uint, uint, int> idxgiswapchain_resizebuffers_trampoline_fp =
@@ -255,7 +299,7 @@ namespace APISharedTests
             public static Action Render, NativeCleanup, DestructiveWindow;
             public static readonly Fixture Global = new Fixture();
             public Context currentContext;
-            public static int NativeCalls;
+            public static int NativeCalls, ResizeNativeCalls;
             public IntPtr Previous { get; set; }
             public static int Present(IntPtr h, uint a, uint b) { try { Render(); } catch { throw; } return idxgiswapchain_present_trampoline_fp(h, a, b); }
             public static int Resize(IntPtr h, uint a, uint b, uint c, uint d, uint e) { Render(); return idxgiswapchain_resizebuffers_trampoline_fp(h, a, b, c, d, e); }

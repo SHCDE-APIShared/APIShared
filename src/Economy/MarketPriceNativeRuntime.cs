@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using BepInEx.Logging;
 using Iced.Intel;
 using RedBird.Abstractions.Hooks;
@@ -27,9 +28,7 @@ namespace APIShared.Economy
         private static ScanRegion region;
         private static string hash;
         private static ManualLogSource log;
-        private static HookTransaction transaction;
-        private static DetourHandle<PriceCall> buy, sell;
-        private static bool published;
+        private static readonly Installation installation = new Installation();
         internal static void Initialize(IntPtr moduleHandle, ScanRegion scanRegion, string binaryHash, ManualLogSource logger)
         {
             if (module != IntPtr.Zero)
@@ -74,36 +73,89 @@ namespace APIShared.Economy
         }
         internal static void EnsureInstalled()
         {
-            if (published) return;
+            installation.Publication.ThrowIfUnavailable();
+            if (installation.Publication.IsReady) return;
             if (module == IntPtr.Zero || region == null || !string.Equals(hash, AuditedHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Native market events require the audited CrusaderDE image and LibraryLoaded initialization.");
             VerifyBytes(module + BuyRva, BuyBytes);
             VerifyBytes(module + SellRva, SellBytes);
-            buy = new DetourHandle<PriceCall>(); sell = new DetourHandle<PriceCall>();
+            NativeOwnershipRegistry sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.MarketPrices, ApiSharedNativeSites.MarketPriceSpans(),
+                reason => new InvalidOperationException(reason));
+            var buy = new DetourHandle<PriceCall>();
+            var sell = new DetourHandle<PriceCall>();
             HookTransaction pending = null;
             try
             {
+                // InstallOnCommit = false: Commit attaches both originals before either patch is written,
+                // so Buy and Sell always find theirs (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true, Backend = Backend });
+                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
+                        InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(Backend) });
                 pending.AddDetour(buy, HookTarget.FromAddress(unchecked((ulong)(module + BuyRva).ToInt64())), (PriceCall)Buy);
                 pending.AddDetour(sell, HookTarget.FromAddress(unchecked((ulong)(module + SellRva).ToInt64())), (PriceCall)Sell);
-                if (!pending.Commit().IsCompleteSuccess || !buy.Success || !sell.Success)
-                    throw new InvalidOperationException("Both native market hooks must install atomically.");
-                Validate(buy.Hook, module + BuyRva, BuyBytes);
-                Validate(sell.Hook, module + SellRva, SellBytes);
-                transaction = pending;
-                published = true; // Static hooks, delegates, transaction and registry root every callback for the process.
+                installation.Install(pending, buy, sell, () =>
+                {
+                    Validate(buy.Hook, module + BuyRva, BuyBytes);
+                    Validate(sell.Hook, module + SellRva, SellBytes);
+                });
             }
             catch
             {
-                if (!published) { pending?.Dispose(); buy = null; sell = null; }
+                installation.Publication.RollbackUnpublished(pending,
+                    () => ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.MarketPrices));
                 throw;
             }
             try { log?.LogInfo("Shared native market price events installed: CEB10/CEB90, Indirect/10; process lifetime."); } catch { }
         }
-        private static int Buy(IntPtr manager, int playerId, int good, int amount) =>
-            MarketPriceEvents.Dispatch(MarketPriceDirection.Buy, manager, playerId, good, amount, buy.Original);
-        private static int Sell(IntPtr manager, int playerId, int good, int amount) =>
-            MarketPriceEvents.Dispatch(MarketPriceDirection.Sell, manager, playerId, good, amount, sell.Original);
+        private static int Buy(IntPtr manager, int playerId, int good, int amount) => installation.Buy(manager, playerId, good, amount);
+        private static int Sell(IntPtr manager, int playerId, int good, int amount) => installation.Sell(manager, playerId, good, amount);
+
+        // The production owner is separate from image resolution so simulated-backend tests can
+        // exercise the actual commit/publication/validation failure paths without native game code.
+        internal sealed class Installation
+        {
+            internal readonly NativeHookPublicationState Publication = new NativeHookPublicationState();
+            private HookTransaction transaction;
+            private DetourHandle<PriceCall> buy, sell;
+
+            internal void Install(HookTransaction pending, DetourHandle<PriceCall> buyCandidate,
+                DetourHandle<PriceCall> sellCandidate, Action validate)
+            {
+                Publication.ThrowIfUnavailable();
+                if (Publication.IsReady) return;
+                try
+                {
+                    CommitResult result = pending.Commit();
+                    if (!result.IsCompleteSuccess || !buyCandidate.Success || !sellCandidate.Success)
+                        throw new InvalidOperationException("Both native market hooks must prepare successfully.");
+                    Volatile.Write(ref buy, buyCandidate);
+                    Volatile.Write(ref sell, sellCandidate);
+                    transaction = pending;
+                    NativeHookPublication.Enable(pending, result, Publication, this, validate);
+                }
+                catch
+                {
+                    Publication.RollbackUnpublished(pending, () =>
+                    {
+                        Volatile.Write(ref buy, null); Volatile.Write(ref sell, null); transaction = null;
+                    });
+                    throw;
+                }
+            }
+
+            internal int Buy(IntPtr manager, int playerId, int good, int amount)
+            {
+                PriceCall original = Volatile.Read(ref buy).Original;
+                return !Publication.IsReady ? original(manager, playerId, good, amount) :
+                    MarketPriceEvents.Dispatch(MarketPriceDirection.Buy, manager, playerId, good, amount, original);
+            }
+            internal int Sell(IntPtr manager, int playerId, int good, int amount)
+            {
+                PriceCall original = Volatile.Read(ref sell).Original;
+                return !Publication.IsReady ? original(manager, playerId, good, amount) :
+                    MarketPriceEvents.Dispatch(MarketPriceDirection.Sell, manager, playerId, good, amount, original);
+            }
+        }
     }
 }

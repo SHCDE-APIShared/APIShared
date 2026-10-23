@@ -23,11 +23,11 @@ namespace APIShared
 {
     internal sealed unsafe class BuildingRepairService
     {
-        private const int CanRepairRva = 0xD51A0;
+        internal const int CanRepairRva = 0xD51A0;
         private const int WoodCostOffset = 0x31B824;
         private const int StoneCostOffset = 0x31B828;
         private const string BigButtonId = "APIShared.VanillaRepairButton";
-        private static readonly byte[] CanRepairEntry =
+        internal static readonly byte[] CanRepairEntry =
         {
             0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30,
             0x48, 0x63, 0x1D, 0xE3, 0x31, 0x71, 0x06
@@ -77,8 +77,66 @@ namespace APIShared
                 new IntPtr(checked(moduleBase + CanRepairRva)));
         }
 
+        // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
+        internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::CrusaderDE.HUD_Buildings), "RefButtonRepair", typeof(global::Noesis.Button))
+            .Field(typeof(global::CrusaderDE.MainViewModel), "HUDBuildingPanel", typeof(global::CrusaderDE.HUD_Buildings))
+            .Field(typeof(global::CrusaderDE.MainViewModel), "HUDmain", typeof(global::CrusaderDE.HUD_Main))
+            .Field(typeof(global::CrusaderDE.MainViewModel), "viewModelLoaded", typeof(bool))
+            .Field(typeof(global::EngineInterface.PlayState), "app_mode", typeof(int))
+            .Field(typeof(global::EngineInterface.PlayState), "app_sub_mode", typeof(int))
+            .Field(typeof(global::EngineInterface.PlayState), "building_hps_for_repair", typeof(short))
+            .Field(typeof(global::EngineInterface.PlayState), "building_maxhps_for_repair", typeof(short))
+            .Field(typeof(global::EngineInterface.PlayState), "can_do_repairs", typeof(short))
+            .Field(typeof(global::EngineInterface.PlayState), "game_type", typeof(byte))
+            .Field(typeof(global::EngineInterface.PlayState), "in_structure", typeof(int))
+            .Field(typeof(global::EngineInterface.PlayState), "in_structure_type", typeof(int))
+            .Field(typeof(global::EngineInterface.PlayState), "keep_storage", typeof(int[]))
+            .Field(typeof(global::EngineInterface.PlayState), "repair_stone_needed", typeof(int))
+            .Field(typeof(global::EngineInterface.PlayState), "repair_wood_needed", typeof(int))
+            .Field(typeof(global::EngineInterface.PlayState), "resources", typeof(int[]))
+            .Field(typeof(global::SHCDESE.EventAPI.BuildingR3EventHooks), "OnBuildingRepair", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs>))
+            .Field(typeof(global::SHCDESE.Interop.GameBuilding), "r_AliveState", typeof(global::SHCDESE.Interop.Enums.AliveState))
+            .Field(typeof(global::SHCDESE.Interop.GameBuilding), "r_BuildingType", typeof(global::SHCDESE.Interop.eStructs))
+            .Field(typeof(global::SHCDESE.Interop.GameBuilding), "r_CurrentHealth", typeof(short))
+            .Field(typeof(global::SHCDESE.Interop.GameBuilding), "r_GlobalId", typeof(uint))
+            .Field(typeof(global::SHCDESE.Interop.GameBuilding), "r_MaxHealth", typeof(ushort))
+            .Field(typeof(global::SHCDESE.Interop.GameBuilding), "r_PlayerIdOwner", typeof(ushort))
+            .Method(typeof(global::CrusaderDE.DelegateCommand), "Execute", typeof(void), typeof(object))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_ButtonRepairMouseEnterCommand", typeof(global::CrusaderDE.DelegateCommand))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_ButtonRepairMouseLeaveCommand", typeof(global::CrusaderDE.DelegateCommand))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_Instance", typeof(global::CrusaderDE.MainViewModel))
+            .Method(typeof(global::GameData), "get_Instance", typeof(global::GameData))
+            .Method(typeof(global::GameData), "get_lastGameState", typeof(global::EngineInterface.PlayState))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GameBuildingManagerAPI))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetBuildingManager", typeof(global::RedBird.Core.Memory.NativePointer<global::SHCDESE.Interop.GameBuildingManager>))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetGoldCost", typeof(int), typeof(global::SHCDESE.Interop.eStructs))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetIronIngotCost", typeof(int), typeof(global::SHCDESE.Interop.eStructs))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetRawPitchCost", typeof(int), typeof(global::SHCDESE.Interop.eStructs))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "TryGetBuildingById", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.GameBuilding*).MakeByRefType())
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "AddPlayerGold", typeof(bool), typeof(int), typeof(int))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GamePlayerManagerAPI))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "GetGoodAmount", typeof(int), typeof(int), typeof(global::SHCDESE.Interop.eGoods))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "GetLocalPlayerId", typeof(int))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "HasGoodsAmount", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.eGoods), typeof(int))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "RemoveGood", typeof(void), typeof(int), typeof(global::SHCDESE.Interop.eGoods), typeof(int), typeof(bool))
+            .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "TryGetPlayerResourcesById", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.GamePlayerResources*).MakeByRefType())
+            .Method(typeof(global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs), "get_BuildingGlobalId", typeof(int))
+            .Method(typeof(global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs), "get_BuildingId", typeof(int))
+            .Method(typeof(global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs), "get_PlayerId", typeof(int))
+            .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "get_Phase", typeof(global::SHCDESE.EventAPI.EventHookPhase))
+            .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "get_SkipOriginalFunction", typeof(bool))
+            .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "set_SkipOriginalFunction", typeof(void), typeof(bool))
+            .Method(typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs>), "get_Observable", typeof(global::R3.Observable<global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs>));
+
         internal static bool TryCreate(string hash, long moduleBase, ManualLogSource log,
             RepairTooltipViewModel tooltipViewModel,
+            out BuildingRepairService service, out NativeCapabilityDiagnostic diagnostic) =>
+            TryCreate(hash, moduleBase, log, tooltipViewModel, null, out service, out diagnostic);
+
+        // ownership receives the validated, called entry (null: not registered).
+        internal static bool TryCreate(string hash, long moduleBase, ManualLogSource log,
+            RepairTooltipViewModel tooltipViewModel, NativeOwnershipRegistry ownership,
             out BuildingRepairService service, out NativeCapabilityDiagnostic diagnostic)
         {
             service = null;
@@ -89,6 +147,8 @@ namespace APIShared
                     NativeCapabilityState.UnsupportedBuild, hash, "The installed native repair build is not verified.");
                 return false;
             }
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.BuildingRepair, log, out diagnostic))
+                return false;
 
             Hook candidateCopy = null;
             IDisposable candidateSubscription = null;
@@ -99,6 +159,8 @@ namespace APIShared
                 for (int index = 0; index < actual.Length; index++)
                     if (actual[index] != CanRepairEntry[index])
                         throw new InvalidOperationException("Native repair entry does not match the audited function.");
+                ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.BuildingRepair, ApiSharedNativeSites.BuildingRepairSpans(),
+                    reason => new InvalidOperationException(reason));
 
                 BuildingRepairService candidate = new BuildingRepairService(moduleBase, log, tooltipViewModel);
                 MethodInfo copyTarget = FindMethod(typeof(EngineInterface), "CopyPlayStateStruct",
@@ -124,6 +186,7 @@ namespace APIShared
                 try { candidateSubscription?.Dispose(); } catch { }
                 try { candidateCopy?.Undo(); } catch { }
                 try { candidateCopy?.Dispose(); } catch { }
+                ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.BuildingRepair);
                 diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingRepair,
                     NativeCapabilityState.ValidationFailed, hash, ex.Message);
                 NativeApiLog.Error(log, $"Building repair capability unavailable: {ex}");
@@ -453,6 +516,7 @@ namespace APIShared
                 return;
             }
             tooltip.Show(quote);
+            TooltipPresentation.EnsureRepairPresentation();
         }
 
         private sealed class OwnerView : IBuildingRepairCapability
@@ -497,6 +561,7 @@ namespace APIShared
         public event PropertyChangedEventHandler PropertyChanged;
         /// <summary>Extra resource costs after Vanilla's wood and stone.</summary>
         public ObservableCollection<RepairTooltipEntry> Costs { get; } = new ObservableCollection<RepairTooltipEntry>();
+        internal IReadOnlyList<TooltipLine> Lines { get; private set; } = Array.Empty<TooltipLine>();
         /// <summary>Visibility of the extra inline costs.</summary>
         public Noesis.Visibility Visibility
         {
@@ -522,6 +587,13 @@ namespace APIShared
             Add(eGoods.STORED_PITCH_RAW, quote.Pitch, quote.AvailablePitch);
             Add(eGoods.STORED_GOLD, quote.Gold, quote.AvailableGold);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Costs)));
+            var segments = new List<TooltipSegment>(Costs.Count * 3);
+            foreach (var cost in Costs)
+            {
+                segments.Add(new TooltipText(cost.Required)); segments.Add(new TooltipSymbol(cost.Icon));
+                segments.Add(new TooltipText(cost.Available));
+            }
+            Lines = new[] { new TooltipLine(segments.ToArray()) };
             Visibility = Noesis.Visibility.Visible;
         }
 
@@ -539,6 +611,7 @@ namespace APIShared
         /// <summary>Hides the extra inline costs.</summary>
         public void Clear()
         {
+            Lines = Array.Empty<TooltipLine>();
             if (Visibility == Noesis.Visibility.Collapsed) return;
             signature = null;
             Visibility = Noesis.Visibility.Collapsed;

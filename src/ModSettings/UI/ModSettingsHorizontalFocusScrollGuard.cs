@@ -176,6 +176,7 @@ namespace APIShared.ModSettings
                     $"{acceptedHorizontalOffset:0.###}.");
             }
 
+            // API_SHARED_DIAGNOSTICS: caller's per-page switch plus APIShared's explicit opt-in.
             private bool ShouldLog => diagnosticsEnabled && log != null && DebugLogHelper.IsDebugEnabled();
 
             private void Log(string message) =>

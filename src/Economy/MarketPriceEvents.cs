@@ -61,9 +61,12 @@ namespace APIShared.Economy
     /// <summary>Shared process owner of the two audited native price helpers. Consumer-specific player/setting policies remain in consumers.</summary>
     public static class MarketPriceEvents
     {
+        // Static factory with explicit context: an observed query creates no closure or delegate.
+        private static readonly Func<Completion, object, MarketPricePostEventArgs> PostFactory =
+            (completion, state) => new MarketPricePostEventArgs(completion.Pre, completion.Result, state);
         internal static readonly InterceptionEvent<MarketPricePreEventArgs, MarketPricePostEventArgs> Registry =
             new InterceptionEvent<MarketPricePreEventArgs, MarketPricePostEventArgs>(MarketPriceNativeRuntime.EnsureInstalled);
-        /// <summary>Registers on the startup thread after the extender LibraryLoaded event. Requires the audited native image; unknown images or occupied helper entries fail closed. Installs both permanent hooks on first use. Runs on the actual native caller thread, ordered by order/ordinal owner/ID, without replay. Pre vetoes are sticky; failing Pre mutations roll back. Post observes executed and vetoed queries. Recursive queries from callbacks use the original without notifications. Use the same deterministic policy on every multiplayer peer and across planning and execution; the sell helper also values ally transfers. Returns false with a diagnostic on duplicate identity or installation failure.</summary>
+        /// <summary>Registers on the startup thread after the extender LibraryLoaded event. Requires the audited native image; unknown images or occupied helper entries fail closed. Installs both permanent hooks on first use. An activation or post-write validation failure keeps any published hooks and originals alive, disables notifications, and prevents installation retries until process exit. Runs on the actual native caller thread, ordered by order/ordinal owner/ID, without replay. Pre vetoes are sticky; failing Pre mutations roll back. Post observes executed and vetoed queries. Recursive queries from callbacks use the original without notifications. Use the same deterministic policy on every multiplayer peer and across planning and execution; the sell helper also values ally transfers. Returns false with a diagnostic on duplicate identity or installation failure.</summary>
         public static bool TryRegister(string ownerGuid, string registrationId, Action<MarketPricePreEventArgs> pre,
             Action<MarketPricePostEventArgs> post, out string reason, int order = 0) =>
             Registry.TryRegister(ownerGuid, registrationId, pre, post, out reason, order);
@@ -75,16 +78,23 @@ namespace APIShared.Economy
             MarketPriceNativeRuntime.PriceCall original)
         {
             if (!Registry.CanNotify) return original(manager, playerId, good, amount);
-            return DispatchObserved(direction, manager, playerId, good, amount, original);
+            return DispatchObserved(Registry, direction, manager, playerId, good, amount, original);
         }
-        private static int DispatchObserved(MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount,
-            MarketPriceNativeRuntime.PriceCall original)
+        // Production observed path; contract tests pass their own registry.
+        internal static int DispatchObserved(InterceptionEvent<MarketPricePreEventArgs, MarketPricePostEventArgs> registry,
+            MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount, MarketPriceNativeRuntime.PriceCall original)
         {
-            var invocation = Registry.Begin(new MarketPricePreEventArgs(direction, manager, playerId, good, amount));
+            var invocation = registry.Begin(new MarketPricePreEventArgs(direction, manager, playerId, good, amount));
             int result = invocation.Pre.SkipOriginalFunction ? invocation.Pre.ReplacementTotal : original(manager, playerId, good, amount);
             if (invocation.HasPostObservers)
-                invocation.Complete(state => new MarketPricePostEventArgs(invocation.Pre, result, state));
+                invocation.Complete(new Completion(invocation.Pre, result), PostFactory);
             return result;
+        }
+        private readonly struct Completion
+        {
+            internal readonly MarketPricePreEventArgs Pre;
+            internal readonly int Result;
+            internal Completion(MarketPricePreEventArgs pre, int result) { Pre = pre; Result = result; }
         }
     }
 }

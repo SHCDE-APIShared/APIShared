@@ -18,15 +18,6 @@ namespace APIShared.Workshop
     // shutdown, deletion and deployment. Installed files are never changed here.
     internal static class WorkshopCleanupRuntime
     {
-        // Lowercase SHA-256 of each audited SHCDESE.dll. An unlisted binary never gets the hook,
-        // whatever its version. Add entries only through the audit in UpdateToNewDLL.md;
-        // tools/Validation/Verify-WorkshopContracts.ps1 reads this list from here.
-        private static readonly string[] AuditedExtenderHashes =
-        {
-            "e5d78fdf2ea9701336c398f7d29410f206d141fc01aa8099f30c824e6ab8a0b3", // local build of tag v2.14.1 (5908e1f)
-            "b170f163e69f7e8f64bda5874d282f4eb5ae5d9d1852e985ed6bef194c80d780", // official 2.14.1+db7415d5
-            "ef943914b24cf1eec313ff427e9f34f7cbe8711d1437bc106ab853e4638dea9b", // official 2.14.0+6ff6b7f4
-        };
         private static ILHook hook;
         private static ManualLogSource logger;
         private static bool reported;
@@ -35,28 +26,51 @@ namespace APIShared.Workshop
         {
             if (hook != null) return;
             logger = log;
+            string stage = "validate-staging-contract";
             try
             {
                 MethodInfo method = ValidateExtender(typeof(MapArchive).Assembly);
+                stage = "install-staging-hook";
                 hook = new ILHook(method, Modify);
                 logger.LogInfo("Workshop cleanup installed; process-lifetime staging callback, no plugin lifecycle scheduling.");
             }
-            catch (Exception ex) { logger.LogWarning("Workshop cleanup unavailable: " + ex.Message); }
+            catch (Exception ex) { logger.LogWarning("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " +
+                DescribeRejection(typeof(MapArchive).Assembly, stage, ex)); }
         }
 
-        internal static bool IsAuditedExtender(string sha256) => Array.IndexOf(AuditedExtenderHashes, sha256) >= 0;
+        internal static string DescribeRejection(Assembly assembly, string stage, Exception error)
+        {
+            string hash;
+            try { hash = WorkshopInventory.Hash(assembly.Location); }
+            catch (Exception hashError) { hash = "unreadable:" + hashError.GetType().Name; }
+            return $"WORKSHOP_CLEANUP_UNAVAILABLE: stage={stage}, extender={assembly.FullName}, path={assembly.Location}, " +
+                $"sha256={hash}, errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}; " +
+                $"automatic obsolete-file cleanup was not installed; original Extender staging remains unchanged. Reason: {error}";
+        }
 
-        // Everything Initialize checks before publishing the hook: audited hash, exact
-        // signature, then a dry transformation and compilation of the loaded method.
+        // Validate the loaded contract rather than a release number or whole-assembly hash.
+        // Everything Initialize checks before publishing the hook: exact signature,
+        // managed body, then a dry transformation and compilation of the loaded method.
         // Throws when any check fails; publishes nothing.
         internal static MethodInfo ValidateExtender(Assembly assembly)
         {
-            if (!IsAuditedExtender(WorkshopInventory.Hash(assembly.Location)))
-                throw new InvalidOperationException("unsupported Script Extender binary; automatic cleanup was not installed");
             Type type = assembly.GetType("SHCDESE.API.Components.Archive.MapModManager", true);
             MethodInfo method = type.GetMethod("TryStageModUpdate", BindingFlags.NonPublic | BindingFlags.Instance,
                 null, new[] { typeof(string), typeof(MapArchive) }, null);
-            if (method == null || method.ReturnType != typeof(bool)) throw new MissingMethodException(type.FullName, "TryStageModUpdate");
+            ValidateStagingMethod(method);
+            return method;
+        }
+
+        internal static void ValidateStagingMethod(MethodInfo method)
+        {
+            if (method == null) throw new MissingMethodException("MapModManager.TryStageModUpdate");
+            var parameters = method.GetParameters();
+            if (method.IsStatic || method.IsPublic || method.ContainsGenericParameters ||
+                method.ReturnType != typeof(bool) || parameters.Length != 2 ||
+                parameters[0].ParameterType != typeof(string) || parameters[1].ParameterType != typeof(MapArchive))
+                throw new InvalidOperationException("Incompatible Workshop staging method signature: " + method);
+            if (method.GetMethodBody() == null)
+                throw new InvalidOperationException("Workshop staging method has no managed body: " + method);
             using (var definition = new DynamicMethodDefinition(method))
             {
                 using (var context = new ILContext(definition.Definition))
@@ -65,7 +79,6 @@ namespace APIShared.Workshop
                     GC.KeepAlive(CompileCopy(definition, method));
                 }
             }
-            return method;
         }
 
         internal static Delegate CompileCopy(DynamicMethodDefinition definition, MethodInfo source)
@@ -99,7 +112,7 @@ namespace APIShared.Workshop
             if (WorkshopRuntime.IsExternallyManaged) return staged;
             try
             {
-                if (!reported) { reported = true; logger.LogInfo("Workshop cleanup callback active after startup cleanup."); }
+                if (!reported) { reported = true; logger.LogDebug("Workshop cleanup callback active after startup cleanup."); }
                 string guid = archive.Info?.GUID, version = archive.Info?.Version;
                 // The Extender owns every foreign map package. Only our own historical
                 // deliveries retain the explicitly supported inventory cleanup.

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>APIShared.Content</AssemblyName>
+    <RootNamespace>APIShared</RootNamespace>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>1591</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/ModSettings/Internal/DependencyFreeJson.cs" Link="Internal/DependencyFreeJson.cs" />
+  </ItemGroup>
+</Project>

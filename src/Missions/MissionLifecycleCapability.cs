@@ -12,7 +12,7 @@ using System.Threading;
 
 namespace APIShared
 {
-    internal sealed class MissionLifecycleService
+    internal sealed partial class MissionLifecycleService
     {
         private delegate void CreateMap(EditorDirector self, int size, Enums.GameModes mode, bool siege, bool multiplayer);
         private delegate bool EditorLoad(EditorDirector self, string file, string name);
@@ -71,6 +71,8 @@ namespace APIShared
             internal int? Size, Difficulty;
             internal bool SiegeThatEditor;
             internal bool Multiplayer, Restart, NativeFailed, NativeSucceeded, ManagedSucceeded;
+            internal long? RestartedFrom;
+            internal GameModeSnapshot? RestartMode;
             internal EngineInterface.LoadMapReturnData? Data;
         }
 
@@ -81,11 +83,40 @@ namespace APIShared
             state = new MissionLifecycleState(ex => Report(ex));
         }
 
+        // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
+        internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
+            .Field(typeof(global::CrusaderDE.MainViewModel), "CurrentScreenNo", typeof(global::Enums.SceneIDS))
+            .Field(typeof(global::EditorDirector), "instance", typeof(global::EditorDirector))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "coopMissionID", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "difficulty_level", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "errorCode", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "mapSize", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "mission_level", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "multiplayerMap", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "playerID", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "siege_or_invasion", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "skirmishTrail", typeof(int))
+            .Field(typeof(global::EngineInterface.LoadMapReturnData), "skirmishTrailLevel", typeof(int))
+            .Field(typeof(global::FatControler), "currentScene", typeof(global::Enums.SceneIDS))
+            .Field(typeof(global::FileHeader), "filePath", typeof(string))
+            .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnStartMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>))
+            .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnUnloadMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>))
+            .Method(typeof(global::Platform_Multiplayer), "get_Instance", typeof(global::Platform_Multiplayer))
+            .Method(typeof(global::Platform_Multiplayer), "IsGameMemberHost", typeof(bool))
+            .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "get_Phase", typeof(global::SHCDESE.EventAPI.EventHookPhase))
+            .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_bMultiplayerSave", typeof(byte))
+            .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_CampaignMapId", typeof(int))
+            .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_ReturnValue", typeof(ulong))
+            .Method(typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>), "get_Observable", typeof(global::R3.Observable<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>))
+            .Method(typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>), "get_Observable", typeof(global::R3.Observable<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>));
+
         internal static bool TryCreate(ManualLogSource log, out MissionLifecycleService service,
             out NativeCapabilityDiagnostic diagnostic)
         {
-            var candidate = new MissionLifecycleService(log);
             service = null;
+            if (!ManagedMemberContracts.TryValidate(NativeCapabilityIds.MissionLifecycle, log, out diagnostic))
+                return false;
+            var candidate = new MissionLifecycleService(log);
             try
             {
                 candidate.Prepare();
@@ -123,6 +154,7 @@ namespace APIShared
 
         private void Prepare()
         {
+            PrepareRestartMenu();
             create = Hook<CreateMap>(typeof(EditorDirector), nameof(EditorDirector.createNewMap), (self, size, mode, siege, multi) =>
                 Run(new Operation { Kind = MissionStartKind.EditorCreated, Intent = GameModeKind.MapEditor, Size = size, SiegeThatEditor = siege },
                     () => { create(self, size, mode, siege, multi); MarkManaged(); }));
@@ -139,7 +171,7 @@ namespace APIShared
                 Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomTrail, Name = name, MissionIndex = id - 1, Difficulty = difficulty }, () => customTrail(self, name, id, difficulty)));
             save = Hook<Save>(typeof(EditorDirector), nameof(EditorDirector.loadSaveGame), (self, file, name, header) =>
             {
-                SavegameModSettings.BeginLoad();
+                SavegameModSettings.BeginLoad(file, false);
                 Run(Seed(MissionStartKind.LoadedSave, GameModeKind.Unknown, file, name), () => save(self, file, name, header));
             });
             standalone = Hook<Standalone>(typeof(FRONT_StandaloneMission), nameof(FRONT_StandaloneMission.StartMap), info =>
@@ -147,7 +179,15 @@ namespace APIShared
             skirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), "StartSkirmishGame", (self, info) =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.CustomGame), () => skirmish(self, info)));
             restartSkirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), nameof(FRONT_Multiplayer.RestartSkirmishGame), (self, info) =>
-                Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true }, () => restartSkirmish(self, info)));
+            {
+                // Only a ready gameplay mission on the Unity thread is a lifecycle restart. The editor or a
+                // foreign thread starts a tracked new attempt instead of throwing inside Vanilla's path.
+                if (IsLifecycleRestart(executing != null, state.Current,
+                        Thread.CurrentThread.ManagedThreadId == unityThread))
+                    Restart(() => restartSkirmish(self, info));
+                else
+                    Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true }, () => restartSkirmish(self, info));
+            });
             tutorial = Hook<Tutorial>(typeof(HUD_Tutorial), nameof(HUD_Tutorial.StartTutorial), self =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
             multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), (self, setup, map, coop, mission) =>
@@ -155,7 +195,7 @@ namespace APIShared
                     () => multiplayerNew(self, setup, map, coop, mission)));
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
-                SavegameModSettings.BeginLoad();
+                SavegameModSettings.BeginLoad(map?.filePath, true);
                 Run(new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true },
                     () => multiplayerSave(self, setup, map));
             });
@@ -168,6 +208,9 @@ namespace APIShared
                     if (coop > 0) { executing.Intent = GameModeKind.CoopTrail; executing.MissionIndex = mission; }
                     else if (custom && executing.Intent == GameModeKind.CustomGame) executing.Intent = GameModeKind.CustomTrail;
                 });
+                // Vanilla's Coop branch uploads AI castles right after this call; collect the plans first.
+                if (executing != null && coop > 0)
+                    Safe(() => CoopAiStartImportService.NotifyCoopInitialization(coop, mission));
                 return multiplayerInit(skirmishGame, restart, coop, mission, test, custom, extreme);
             });
             message = Hook<Message>(typeof(Platform_Multiplayer), "processMessage", ProcessMessage);
@@ -216,6 +259,7 @@ namespace APIShared
             try { mode = GameModeHelper.CaptureMission(op.Multiplayer, op.Kind == MissionStartKind.LoadedSave, op.Campaign, op.Trail,
                 op.Intent == GameModeKind.MapEditor, op.Data, op.Intent, op.CoopTrail); }
             catch (Exception ex) { Report(ex); mode = default; } // Unknown evidence never opens a mode gate.
+            if (op.RestartMode.HasValue) mode = mode.WithRestartProvenance(op.RestartMode.Value);
             var data = op.Data;
             int? player = data.HasValue && data.Value.playerID >= 1 && data.Value.playerID <= 8 ? data.Value.playerID : (int?)null;
             bool? host = null;
@@ -245,7 +289,8 @@ namespace APIShared
                 data.HasValue && data.Value.difficulty_level >= 0 ? data.Value.difficulty_level : op.Difficulty, player,
                 mission, host,
                 data.HasValue ? MapType(data.Value.siege_or_invasion) : MissionMapType.Unknown,
-                data.HasValue ? data.Value.multiplayerMap != 0 : (bool?)null, op.SiegeThatEditor);
+                data.HasValue ? data.Value.multiplayerMap != 0 : (bool?)null, op.SiegeThatEditor)
+                .AsRestartOf(op.RestartedFrom);
         }
 
         // LoadMapReturnData uses the native serialized subtype order, not Enums.GameModes values.
@@ -271,10 +316,15 @@ namespace APIShared
             waiting = null;
             bool normal = false;
             Safe(() => op.Id = state.Begin(Capture(op)));
-            try { T result = original(); normal = true; return result; }
+            try
+            {
+                if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
+                T result = original(); normal = true; return result;
+            }
             finally
             {
                 executing = null;
+                Safe(CoopAiStartImportService.NotifyAttemptFinished);
                 if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
                     !op.NativeFailed && op.ManagedSucceeded)
                 {
@@ -315,20 +365,30 @@ namespace APIShared
                 if (!normal)
                 {
                     waiting = null;
-                    try { Safe(() => state.End(MissionEndReason.Exception, op.Id)); }
-                    finally { SavegameModSettings.FinishLoad(); }
+                    FailDeferredMessage(op);
                 }
                 else if (op.ManagedSucceeded)
                 {
                     waiting = null;
-                    Safe(() => CompleteDeferredRestore(
-                        () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
-                        () => state.Ready(op.Id, Capture(op)),
-                        SavegameModSettings.FinishLoad,
-                        error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
+                    CompleteDeferredMessage(op);
                 }
             }
         }
+
+        // Runs for every multiplayer message: the lambdas capturing op live in these slow-path
+        // methods, so the common path allocates no closure on entry.
+        private void FailDeferredMessage(Operation op)
+        {
+            try { Safe(() => state.End(MissionEndReason.Exception, op.Id)); }
+            finally { SavegameModSettings.FinishLoad(); }
+        }
+
+        private void CompleteDeferredMessage(Operation op) =>
+            Safe(() => CompleteDeferredRestore(
+                () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
+                () => state.Ready(op.Id, Capture(op)),
+                SavegameModSettings.FinishLoad,
+                error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
 
         internal static void CompleteDeferredRestore(Action restore, Action ready,
             Action cleanup, Action<Exception> reportRestoreError)

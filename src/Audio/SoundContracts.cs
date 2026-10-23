@@ -46,7 +46,10 @@ namespace APIShared.Audio
         /// <summary>Soldier wall demolition.</summary>
         WallDemolition,
         /// <summary>Tunneler collapse sequence.</summary>
-        TunnelCollapse
+        TunnelCollapse,
+        /// <summary>Weapon cue chosen by the attacker type after a melee hit reduced the victim's health to zero.
+        /// Reported by <see cref="SoundSourceEvents"/> only; Unity playback records of these calls stay Unknown.</summary>
+        MeleeKill
     }
     /// <summary>Evidence for this particular source and unit type, not every use of the situation enum.</summary>
     public enum SituationEvidence
@@ -220,7 +223,11 @@ namespace APIShared.Audio
         internal readonly object ActivationSync = new object();
         internal int EnabledValue = 1;
         internal SoundDemand Demand;
-        internal SoundRegistration() { }
+        internal SoundRegistration() : this(null) { }
+        internal SoundRegistration(SoundSourceSelection sources) { Sources = sources ?? SoundSourceSelection.All; }
+        /// <summary>Catalog sources this registration needs: <see cref="SoundSourceSelection.All"/> unless a
+        /// selection was passed at registration. Fixed for the handle's lifetime.</summary>
+        public SoundSourceSelection Sources { get; }
         /// <summary>Logical activation. In-flight invocations keep their captured observers through Post.</summary>
         public bool Enabled => Volatile.Read(ref EnabledValue) != 0;
         /// <summary>May be called from any thread; affects subsequent notification snapshots.</summary>

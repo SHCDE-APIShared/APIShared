@@ -235,12 +235,13 @@ namespace APIShared.GateRouting.Native
 
             assembler.push(r9);
             assembler.push(r11);
+            // EAX is dead before the original producer overwrites it.
             assembler.mov(r11d, __dword_ptr.gs[0x48]);
+            assembler.mov(r9d, r11d);
             assembler.and(r11d, ThreadSlotCount - 1);
             assembler.shl(r11, ThreadSlotStrideShift);
-            assembler.mov(r9, slots);
-            assembler.add(r11, r9);
-            assembler.mov(r9d, __dword_ptr.gs[0x48]);
+            assembler.mov(rax, slots);
+            assembler.add(r11, rax);
             assembler.cmp(__dword_ptr[r11 + SlotOwnerOffset], r9d);
             assembler.jne(noContext);
             assembler.mov(r9, __qword_ptr[r11 + SlotMaskOffset]);
@@ -301,15 +302,16 @@ namespace APIShared.GateRouting.Native
             Label unchanged = assembler.CreateLabel();
 
             assembler.push(rax);
-            assembler.push(r9);
             assembler.push(r10);
+            // R11 is the original producer's destination; it can carry the TID
+            // until that load. R9 was never modified by this adapter.
             assembler.mov(r10d, __dword_ptr.gs[0x48]);
+            assembler.mov(r11d, r10d);
             assembler.and(r10d, ThreadSlotCount - 1);
             assembler.shl(r10, ThreadSlotStrideShift);
             assembler.mov(rax, slots);
             assembler.add(r10, rax);
-            assembler.mov(eax, __dword_ptr.gs[0x48]);
-            assembler.cmp(__dword_ptr[r10 + SlotOwnerOffset], eax);
+            assembler.cmp(__dword_ptr[r10 + SlotOwnerOffset], r11d);
             assembler.jne(noContext);
             assembler.mov(rax, __qword_ptr[r10 + SlotMaskOffset]);
             assembler.test(rax, rax);
@@ -336,7 +338,6 @@ namespace APIShared.GateRouting.Native
             assembler.add(rsp, 8);
             assembler.Label(ref unfiltered);
             assembler.pop(r10);
-            assembler.pop(r9);
             assembler.pop(rax);
             for (int index = 1; index < original.Length; index++)
                 assembler.AddInstruction(original[index]);
@@ -356,13 +357,15 @@ namespace APIShared.GateRouting.Native
             assembler.push(r9);
             assembler.push(r10);
             assembler.push(r11);
+            // At site 5 RCX is the native image base until the displaced load
+            // overwrites it. R9 is saved and can retain the TID on both sites.
             assembler.mov(r11d, __dword_ptr.gs[0x48]);
+            assembler.mov(r9d, r11d);
             assembler.and(r11d, ThreadSlotCount - 1);
             assembler.shl(r11, ThreadSlotStrideShift);
             assembler.mov(r10, slots);
             assembler.add(r11, r10);
-            assembler.mov(r10d, __dword_ptr.gs[0x48]);
-            assembler.cmp(__dword_ptr[r11 + SlotOwnerOffset], r10d);
+            assembler.cmp(__dword_ptr[r11 + SlotOwnerOffset], r9d);
             assembler.jne(noContext);
             assembler.mov(r10, __qword_ptr[r11 + SlotMaskOffset]);
             assembler.test(r10, r10);
@@ -421,12 +424,12 @@ namespace APIShared.GateRouting.Native
             assembler.push(r10);
             assembler.push(r11);
             assembler.mov(r11d, __dword_ptr.gs[0x48]);
+            assembler.mov(ecx, r11d);
             assembler.and(r11d, ThreadSlotCount - 1);
             assembler.shl(r11, ThreadSlotStrideShift);
             assembler.mov(r10, slots);
             assembler.add(r11, r10);
-            assembler.mov(r10d, __dword_ptr.gs[0x48]);
-            assembler.cmp(__dword_ptr[r11 + SlotOwnerOffset], r10d);
+            assembler.cmp(__dword_ptr[r11 + SlotOwnerOffset], ecx);
             assembler.jne(noContext);
             assembler.mov(r10, __qword_ptr[r11 + SlotMaskOffset]);
             assembler.test(r10, r10);

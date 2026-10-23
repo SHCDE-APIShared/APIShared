@@ -3,13 +3,55 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.9.2",
+  "Version": "0.14.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.14.0",
+      "Changes": [
+        "Add an owner-bound plague-height capability for independent wall, gate, tower and keep policies with configurable height tolerance. Native hooks and a common standing-height helper avoid managed callbacks for damage candidates.",
+        "Compose active owners by surface and maximum tolerance; with no active policy, all four hooks retain the complete Vanilla path. Hooks remain installed for the process lifetime and unsupported native images disable only this capability."
+      ]
+    },
+    {
+      "Version": "0.13.0",
+      "Changes": [
+        "Add general multi-mod tooltip contributions with literal strings, text/image segments and semantic placements for buildings, recruitment, siege construction and repair. Preserve existing Vanilla controls and collapse empty content completely.",
+        "Keep the existing building-text and repair binding contracts compatible; centralize rendering, hover context and mission/HUD retirement."
+      ]
+    },
+    {
+      "Version": "0.12.6",
+      "Changes": [
+        "Add shared AI market reserve and pre-booking quantity policies, with composable native stock safety, ordered optional callbacks and process-lifetime hook ownership. The hook backend is verified at run time (displaced span, generated stub, jump form) instead of by pinned backend file hashes, so Script Extender updates keep the policies; another mod's hook at an audited continuation boundary is accepted.",
+        "Public provider APIs instead of friend internals: RouteSearchEvents.BeginSearch with a public RouteSearchContext, AssassinPathAPI.BeginRouteOutput, EnemyBridgeDiagnosticBridge.PublishTopologyOwner and GateRoutingNativeLayout (run-time values instead of compiled-in constants); BugfixesAndQoL no longer has InternalsVisibleTo access.",
+        "Fixes: ModSettings search ignores unresolvable markup extensions and reads {}-escaped text, Workshop startup retries a subscription list that changes during Steam initialization, recruitment variant buttons attach their hover handlers once, search case folding no longer depends on the current culture, and a Workshop upload whose Unity dispatcher is gone fails instead of staying active."
+      ]
+    },
+    {
+      "Version": "0.12.5",
+      "Changes": [
+        "First public release since 0.9.2; summarizes the unreleased development versions 0.10.0 to 0.12.4.",
+        "Multiplayer: every player needs the same APIShared version. A peer with an older save-readiness protocol blocks loading a save with a message naming both versions; update APIShared and the mods for all players together.",
+        "Savegames: prepare and verify host settings before loading (including Solo Multiplayer and Coop provenance) with authenticated peer readiness; own the load checkbox; load saves whose settings record is damaged or newer with the current settings instead of aborting.",
+        "Versioned per-mod save records (VersionedSaveData) with multiplayer comparison of simulation records, plus UnitSettledEvents, attributed SoundSourceEvents with source selection, the cooperative native-site registry, rounded fear popularity and MissionRestart.Run.",
+        "ModSettings presets: stored under Documents/SHCDE/APIShared so long game paths no longer prevent saving; reflected settings apply independently, a rejected value falls back to its default, and mission exit retries a failing setter at most three times; snapshots keep their ownership, Customize drafts and omitted nullable values.",
+        "Lobby settings arrive through the Unity main-thread FIFO with sender authority rechecked at delivery; personal settings wait for late player assignments; the applied settings of every registered mod are logged once per mission start as compact JSON.",
+        "Mission settings authoring, preparation and session services, immutable mod-data access, Trail-container extraction and the separate APIShared.Content library; mission restarts keep origin, active presets and author rules.",
+        "Coop AI start import: owner-bound plans for custom castles and AICs, a start preview (ICoopAiStartPreviewCapability) for start-button checks, and CoopAiSlotPlan.ConfirmedCandidateCount so a partly confirmed castle list yields to a synchronized complete one.",
+        "New shared services: RecruitmentAvailability, TroopActionHud, load/save requester coordination and explicit managed ModSettings search catalogs (with Unicode and emoji repair).",
+        "Optional Fixes mod: the wheat-sale hook correction is derived from the actual game and Fixes code instead of file hashes, versions or fixed addresses; the Script Extender popularity display and interpolate-event reuse are corrected safely.",
+        "Workshop: complete repair as a clean reinstallation, early dependency bootstrap, and Script Extender cleanup accepted by signature and IL validation instead of binary hashes.",
+        "Logging: warnings and errors as throttled MOD_WARNING/MOD_FAILURE lines with feature and cause; Info is always written and kept to one-time markers; Debug output is opt-in.",
+        "Robustness: managed capability members are checked at startup with isolated initialization; skirmish restarts in the editor, from another thread or without a tracked mission keep Vanilla's restart.",
+        "Performance: faster startup (no thread suspension during the library-load run, cached fingerprints and pattern checks), fewer allocations in broker, audio, HUD and selection paths, optimized Release build, and cheaper assassin drawbridge route reconstruction.",
+        "Supports long installation paths and isolated working-tree builds; public API compatibility baselines and regression tests are maintained separately from in-game acceptance."
+      ]
+    },
     {
       "Version": "0.9.2",
       "Changes": [

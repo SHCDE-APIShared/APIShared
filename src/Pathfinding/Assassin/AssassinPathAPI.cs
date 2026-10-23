@@ -38,6 +38,7 @@ namespace APIShared
         private static ManualLogSource log;
         private static bool supported;
         private static HookTransaction transaction;
+        private static readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private static DetourHandle<AssassinPathBuilder> builderHook;
         private static HookHandle<X64InlineHook>[] endpointHooks;
         private static readonly IntPtr policyFlags = Marshal.AllocHGlobal(sizeof(int));
@@ -46,13 +47,14 @@ namespace APIShared
         private static string gateOwner;
         private static int flags;
         private static int callbackLogged;
+        private static int builderFailureLogged;
         internal static readonly NativeDetourBackend Backend = new NativeDetourBackend(
             new NativeDetourOptions { AllowedSchemes = DetourScheme.Indirect, FollowJumps = false });
 
         static AssassinPathAPI() { Marshal.WriteInt32(policyFlags, 0); }
 
         /// <summary>Whether the sole shared hook transaction has been published successfully.</summary>
-        public static bool IsInstalled => builderHook != null && builderHook.Success && builderHook.IsInstalled;
+        public static bool IsInstalled => publication.IsReady;
         /// <summary>Whether a test consumer currently enables direct gatehouse climb eligibility.</summary>
         public static bool DirectGatehouseClimbingEnabled => (Volatile.Read(ref flags) & 2) != 0;
 
@@ -74,6 +76,14 @@ namespace APIShared
         /// once before any optional replacement, and handle its own correction/diagnostic errors.
         /// The delegate remains rooted until process exit.
         /// </summary>
+        /// <remarks>The handler runs synchronously inside the native Assassin builder. An exception it
+        /// throws never reaches native code: APIShared catches it, logs the first such failure of the
+        /// process once, and answers the call with Vanilla's field, never a partially replaced one. If the
+        /// handler had completed RunVanillaBuilder and left the field unchanged (the generation int at
+        /// context+4 is the same), that result is returned and Vanilla does not run again. If Vanilla had
+        /// not run, it runs once. If the handler had changed the field, Vanilla rebuilds it with a fresh
+        /// search (continuation 0). A route the handler staged for the request is dropped. A handler that
+        /// writes the field must advance the generation first, as Vanilla does.</remarks>
         public static void RegisterWeightedBuilder(string ownerGuid, AssassinPathBuilder handler)
         {
             if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));
@@ -92,11 +102,76 @@ namespace APIShared
         public static int RunVanillaBuilder(IntPtr context, int startX, int startY,
             int targetX, int targetY, int maximumNodes, int continuation)
         {
-            if (!IsInstalled) throw new InvalidOperationException("Shared Assassin path hooks are unavailable.");
-            return builderHook.Original(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            // The handle is published with its original before the patch is written (EnsureInstalled), so a
+            // native call cannot outrun it; IsInstalled becomes true only after whole-feature validation.
+            DetourHandle<AssassinPathBuilder> published = Volatile.Read(ref builderHook);
+            if (published == null || !published.TryGetOriginal(out AssassinPathBuilder original))
+                throw new InvalidOperationException("Shared Assassin path hooks are unavailable.");
+            int result = original(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            BuildFrame frame = buildFrame;
+            if (frame != null && frame.Depth != 0 && frame.Context == context) frame.Complete(result, ReadGeneration(context));
+            return result;
         }
 
+        // Vanilla 0xD9C40 starts every new search (continuation == 0) by incrementing the int at context+4
+        // (D9D00) and stamps each tile it writes with it (D9F47); a stamp equal to the generation marks a
+        // valid distance. Past 32000 it resets the generation to 1 and clears the stamp array (D9D0C-D9D26).
+        // A consumer that writes the field must advance the generation first, as Vanilla does.
+        private const int GenerationOffset = 4;
+
+        private static unsafe int ReadGeneration(IntPtr context) =>
+            context == IntPtr.Zero ? 0 : *(int*)((byte*)context + GenerationOffset);
+
+        // Per thread that runs Build (the native pathfinding caller): whether the handler of the current
+        // Build call completed Vanilla, its result and the generation right after it. Nested Build calls
+        // keep the outer call's record (Enter/Leave).
+        private sealed class BuildFrame
+        {
+            internal IntPtr Context;
+            internal int Depth, VanillaResult, VanillaGeneration;
+            internal bool VanillaCompleted;
+
+            internal readonly struct Saved
+            {
+                internal readonly IntPtr Context;
+                internal readonly int VanillaResult, VanillaGeneration;
+                internal readonly bool VanillaCompleted;
+                internal Saved(BuildFrame frame)
+                {
+                    Context = frame.Context; VanillaResult = frame.VanillaResult;
+                    VanillaGeneration = frame.VanillaGeneration; VanillaCompleted = frame.VanillaCompleted;
+                }
+            }
+
+            internal Saved Enter(IntPtr context)
+            {
+                var outer = new Saved(this);
+                Context = context; VanillaCompleted = false; Depth++;
+                return outer;
+            }
+
+            internal void Leave(Saved outer)
+            {
+                Depth--;
+                Context = outer.Context; VanillaResult = outer.VanillaResult;
+                VanillaGeneration = outer.VanillaGeneration; VanillaCompleted = outer.VanillaCompleted;
+            }
+
+            internal void Complete(int result, int generation)
+            {
+                VanillaCompleted = true; VanillaResult = result; VanillaGeneration = generation;
+            }
+        }
+
+        [ThreadStatic] private static BuildFrame buildFrame;
+
+        // Cold path: the first Build on a thread.
+        private static BuildFrame CreateFrame() => buildFrame = new BuildFrame();
+
         /// <summary>Publishes the weighted builder's existing reconstruction relaxation as logical data only.</summary>
+        /// <remarks>While this or <see cref="SetDirectGatehouseClimbing"/> is enabled, Assassin reconstruction also
+        /// accepts an ordinary step by the start-side tile's connection bit, as the distance field and the physical
+        /// step already do; a one-way connection no longer fails the route and triggers the full-map repair.</remarks>
         public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled)
         {
             lock (Sync)
@@ -108,6 +183,7 @@ namespace APIShared
         }
 
         /// <summary>Enables or disables the registered experiment's gatehouse endpoint rule without repatching code.</summary>
+        /// <remarks>Also enables the reconstruction connection rule described at <see cref="SetWeightedReconstructionEnabled"/>.</remarks>
         public static void SetDirectGatehouseClimbing(string ownerGuid, bool enabled)
         {
             if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));
@@ -203,33 +279,126 @@ namespace APIShared
         /// <summary>A single-unit builder is active; failed staging must preserve its native field.</summary>
         public static bool HasSingleUnitRoutePublication => AssassinRouteHandoff.HasFrame;
 
+        /// <summary>
+        /// Opens the single-unit route output frame around one synchronous native tile-path builder call.
+        /// </summary>
+        /// <remarks>
+        /// Only the mod that owns the movement path-builder detour opens frames; the registered weighted builder
+        /// stages routes into the innermost frame through <see cref="TryStageWeightedRoute(string, IntPtr, int, int, int, int, int, byte[], int, Func{bool})"/>.
+        /// Open the frame on the builder's thread before calling the original builder, pass its result to
+        /// <see cref="AssassinRouteOutputFrame.Complete"/>, and always call <see cref="AssassinRouteOutputFrame.Leave"/>
+        /// in a finally block. Frames nest per thread and must be left in reverse order. A frame without
+        /// <paramref name="identityValid"/> or <paramref name="publish"/> only shadows an outer frame: staging into it
+        /// is declined, so a nested unrelated builder can never publish an outer unit's route. The callbacks run
+        /// synchronously on that thread; <paramref name="publish"/> writes the staged directions into the native output
+        /// and returns the builder result to report.
+        /// </remarks>
+        /// <param name="context">The native path manager passed to the builder.</param>
+        /// <param name="startX">The request's starting tile X coordinate.</param>
+        /// <param name="startY">The request's starting tile Y coordinate.</param>
+        /// <param name="targetX">The request's destination tile X coordinate.</param>
+        /// <param name="targetY">The request's destination tile Y coordinate.</param>
+        /// <param name="playerId">The one-based player game ID a staged route must name.</param>
+        /// <param name="identityValid">Proves that the request still belongs to the same unit and output buffer.</param>
+        /// <param name="publish">Writes packed directions (bytes, count) into the native output; returns the result.</param>
+        /// <param name="controlPlayer">The unit's full control word for TryGetCurrentWeightedRequest; -1 when unknown.</param>
+        /// <param name="speedDelay">The unit's movement delay for TryGetCurrentWeightedRequest; -1 when unknown.</param>
+        /// <param name="reportStage">Optional diagnostic sink (stage, result, detail); its failures are isolated.</param>
+        /// <returns>The opened frame, already the current frame of this thread.</returns>
+        public static AssassinRouteOutputFrame BeginRouteOutput(IntPtr context, int startX, int startY,
+            int targetX, int targetY, int playerId, Func<bool> identityValid, Func<byte[], int, int> publish,
+            int controlPlayer = -1, int speedDelay = -1, Action<string, string, string> reportStage = null) =>
+            new AssassinRouteOutputFrame(new AssassinRouteHandoff(context, startX, startY, targetX, targetY,
+                playerId, identityValid, publish, controlPlayer, speedDelay, reportStage));
+
         private static int Build(IntPtr context, int startX, int startY, int targetX,
             int targetY, int maximumNodes, int continuation)
         {
-            if (Interlocked.Exchange(ref callbackLogged, 1) == 0)
-                NativeApiLog.Debug(log, "Assassin shared runtime hook confirmed after startup; " +
-                    $"source=({startX},{startY}), target=({targetX},{targetY}), limit={maximumNodes}, continuation={continuation}.");
-            AssassinPathBuilder handler = Volatile.Read(ref weightedBuilder);
-            return handler == null
-                ? RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, continuation)
-                : handler(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            // Native boundary (issue #11): no managed exception may unwind into the native pathfinder, from
+            // the handler, the first-call log or the frame setup. The success path adds only these protected
+            // regions and the per-thread frame record; all failure work is in BuilderFailed.
+            try
+            {
+                if (!publication.IsReady)
+                    return RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+                if (Interlocked.Exchange(ref callbackLogged, 1) == 0)
+                    NativeApiLog.Debug(log, "Assassin shared runtime hook confirmed after startup; " +
+                        $"source=({startX},{startY}), target=({targetX},{targetY}), limit={maximumNodes}, continuation={continuation}.");
+                BuildFrame frame = buildFrame ?? CreateFrame();
+                BuildFrame.Saved outer = frame.Enter(context);
+                try
+                {
+                    AssassinPathBuilder handler = Volatile.Read(ref weightedBuilder);
+                    return handler == null
+                        ? RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, continuation)
+                        : handler(context, startX, startY, targetX, targetY, maximumNodes, continuation);
+                }
+                catch (Exception error)
+                {
+                    return BuilderFailed(error, frame, context, startX, startY, targetX, targetY, maximumNodes, continuation);
+                }
+                finally { frame.Leave(outer); }
+            }
+            catch (Exception error)
+            {
+                return BuilderFailed(error, null, context, startX, startY, targetX, targetY, maximumNodes, continuation);
+            }
+        }
+
+        // Cold path of Build (issue #36). Logs the first failure of the process, then answers this native call
+        // without ever returning a partially replaced field:
+        // - the handler completed Vanilla and the generation is unchanged since: Vanilla's field is intact, so
+        //   its first result is returned and Vanilla does not run again;
+        // - Vanilla did not run: it runs once, with the call's arguments;
+        // - the handler changed the field after Vanilla: the field is rebuilt by a fresh search
+        //   (continuation 0), because a resumed search cannot be replayed (Vanilla continues its queue in
+        //   the context), while a fresh search from the same state rebuilds the same field.
+        // A route the handler staged for this request is dropped, so the frame publishes none.
+        // Besides the field, a Vanilla run only increments the generation and a per-run counter at
+        // context+0xBC (D9D50) and, every 32000 searches, clears the stamp array; it draws no random
+        // numbers and raises no events.
+        private static int BuilderFailed(Exception error, BuildFrame frame, IntPtr context, int startX, int startY,
+            int targetX, int targetY, int maximumNodes, int continuation)
+        {
+            if (Volatile.Read(ref builderFailureLogged) == 0 && Interlocked.Exchange(ref builderFailureLogged, 1) == 0)
+            {
+                try { NativeApiLog.Error(log, "Assassin path callback failed; Vanilla result returned. Later failures are not logged: " + error); }
+                catch { }
+            }
+            try
+            {
+                AssassinRouteHandoff.DiscardStaged(context);
+                bool completed = frame != null && frame.VanillaCompleted && frame.Context == context;
+                if (completed && ReadGeneration(context) == frame.VanillaGeneration) return frame.VanillaResult;
+                return RunVanillaBuilder(context, startX, startY, targetX, targetY, maximumNodes, completed ? 0 : continuation);
+            }
+            catch
+            {
+                return 0; // Last resort: Vanilla itself failed, and nothing may unwind into native code.
+            }
         }
 
         private static void EnsureInstalled()
         {
+            publication.ThrowIfUnavailable();
             if (IsInstalled) return;
             if (!supported || module == IntPtr.Zero || region == null)
                 throw new InvalidOperationException("Shared Assassin hooks require the audited native hash and loaded library.");
             var memory = new ReadOnlySpan<byte>(module.ToPointer(), memoryLength);
             AssassinPathNativeDefinition.Validate(memory, unchecked((ulong)module.ToInt64()), log);
+            NativeOwnershipRegistry sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.AssassinPath, ApiSharedNativeSites.AssassinPathSpans(),
+                reason => new InvalidOperationException(reason));
             var pendingBuilder = new DetourHandle<AssassinPathBuilder>();
-            var pendingEndpoints = new HookHandle<X64InlineHook>[4];
+            var pendingEndpoints = new HookHandle<X64InlineHook>[AssassinPathNativeDefinition.Sites.Length];
             HookTransaction pending = null;
             try
             {
+                // InstallOnCommit = false: builderHook is published with its original before any patch
+                // is written, so Build never runs before RunVanillaBuilder can (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow,
-                        OwnsHooks = true, Backend = Backend });
+                        OwnsHooks = true, InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(Backend) });
                 ulong nativeBase = unchecked((ulong)module.ToInt64());
                 for (int index = 0; index < pendingEndpoints.Length; index++)
                 {
@@ -237,32 +406,49 @@ namespace APIShared
                     pendingEndpoints[index] = new HookHandle<X64InlineHook>();
                     pending.AddInline(pendingEndpoints[index],
                         HookTarget.FromAddress(nativeBase + (uint)AssassinPathNativeDefinition.Sites[index]),
-                        (assembler, instructions, returnAddress) => AssassinEndpointEmitter.Emit(
-                            assembler, instructions, nativeBase, unchecked((ulong)policyFlags.ToInt64()), site),
+                        (assembler, instructions, returnAddress) =>
+                        {
+                            ulong flagsAddress = unchecked((ulong)policyFlags.ToInt64());
+                            if (site == AssassinPathNativeDefinition.ReverseConnectionSite)
+                                AssassinEndpointEmitter.EmitReverseConnection(assembler, instructions, nativeBase, flagsAddress);
+                            else
+                                AssassinEndpointEmitter.Emit(assembler, instructions, nativeBase, flagsAddress, site);
+                        },
                         hookSize: 14);
                 }
                 pending.AddDetour(pendingBuilder, HookTarget.FromAddress(nativeBase + 0xD9C40), (AssassinPathBuilder)Build);
                 CommitResult result = pending.Commit();
                 if (!result.IsCompleteSuccess || !pendingBuilder.Success)
                     throw new InvalidOperationException("Shared Assassin hook transaction failed.");
-                AssassinPathNativeDefinition.ValidateInstalledDetour(pendingBuilder.Hook, nativeBase);
                 for (int index = 0; index < pendingEndpoints.Length; index++)
-                    if (!pendingEndpoints[index].Success || !pendingEndpoints[index].IsInstalled ||
+                    if (!pendingEndpoints[index].Success || pendingEndpoints[index].IsInstalled ||
                         pendingEndpoints[index].Hook.DisplacedByteCount != AssassinPathNativeDefinition.Lengths[index])
-                        throw new InvalidOperationException("Shared Assassin endpoint displacement mismatch at site " + index);
+                        throw new InvalidOperationException("Prepared Assassin endpoint displacement mismatch at site " + index);
+                Volatile.Write(ref builderHook, pendingBuilder);
                 transaction = pending;
                 endpointHooks = pendingEndpoints;
-                builderHook = pendingBuilder; // Publication; no cleanup path can dispose this transaction.
-                NativeApiLog.Debug(log, "Assassin shared hooks installed; owner=APIShared, builder=0xD9C40, " +
-                    "scheme=Indirect/displaced=10, endpoints=0xD9F0C/16,0xD9F1C/15,0xE19D8/18,0xE19F9/23.");
+                NativeHookPublication.Enable(pending, result, publication, null, () =>
+                {
+                    AssassinPathNativeDefinition.ValidateInstalledDetour(pendingBuilder.Hook, nativeBase);
+                    for (int index = 0; index < pendingEndpoints.Length; index++)
+                        if (!pendingEndpoints[index].Success || !pendingEndpoints[index].IsInstalled ||
+                            pendingEndpoints[index].Hook.DisplacedByteCount != AssassinPathNativeDefinition.Lengths[index])
+                            throw new InvalidOperationException("Shared Assassin endpoint displacement mismatch at site " + index);
+                });
             }
             catch (Exception ex)
             {
-                if (builderHook == pendingBuilder) throw; // Published hooks must never be rolled back.
-                pending?.Dispose(); // Unpublished installation candidate only.
-                NativeApiLog.Error(log, "Shared Assassin hooks unavailable; Vanilla retained: " + ex);
+                publication.RollbackUnpublished(pending, () =>
+                {
+                    Volatile.Write(ref builderHook, null);
+                    transaction = null; endpointHooks = null;
+                    ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.AssassinPath);
+                });
+                try { NativeApiLog.Error(log, "Shared Assassin hooks unavailable; Vanilla retained: " + ex); } catch { }
                 throw;
             }
+            try { NativeApiLog.Debug(log, "Assassin shared hooks installed; owner=APIShared, builder=0xD9C40, " +
+                "scheme=Indirect/displaced=10, endpoints=0xD9F0C/16,0xD9F1C/15,0xE19D8/18,0xE19F9/23, reconstruction-connection=0xE19C0/14."); } catch { }
         }
     }
 }

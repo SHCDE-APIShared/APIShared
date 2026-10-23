@@ -7,7 +7,7 @@ function Initialize-ApiBuildEnvironment([string]$Root) {
     if (-not $env:SHCDE_GAME_DIR -and (Test-Path -LiteralPath $proofPath)) {
         try { $proof = [IO.File]::ReadAllText($proofPath) | ConvertFrom-Json }
         catch { throw 'Local build paths are unreadable. Set SHCDE_GAME_DIR explicitly or correct .local/build-proof.json.' }
-        if ($proof.SchemaVersion -ne 1) { throw 'Unsupported local build paths. Set SHCDE_GAME_DIR explicitly.' }
+        if ($proof.SchemaVersion -notin @(1,2)) { throw 'Unsupported local build paths. Set SHCDE_GAME_DIR explicitly.' }
     }
     $game = if ($env:SHCDE_GAME_DIR) { $env:SHCDE_GAME_DIR }
         elseif ($proof -and $proof.PSObject.Properties['GameDir']) { [string]$proof.GameDir }
@@ -42,12 +42,33 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     $files = @(Get-ChildItem -LiteralPath (Join-Path $Root 'src'),(Join-Path $Root 'Properties'),(Join-Path $Root 'Patches') -Recurse -File |
         Where-Object { $_.Extension -in @('.cs','.xaml') })
     $files += @(Get-ChildItem -LiteralPath $Root -File | Where-Object { $_.Name -match '^Directory\..*\.(props|targets)$|^APIShared\.csproj$|^info\.json$' })
+    $contentRoot = Join-Path $Root 'Content'
+    if ([IO.Directory]::Exists($contentRoot)) {
+        $files += @(Get-ChildItem -LiteralPath $contentRoot -Recurse -File | Where-Object {
+            $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and $_.Extension -in @('.cs','.csproj','.props','.targets')
+        })
+    }
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Build.ps1'),(Join-Path $Root 'tools/BuildProof.ps1'),(Join-Path $Root 'tools/WorkshopPackage.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Workshop') -Recurse -File)
     if ([IO.Directory]::Exists((Join-Path $Root 'Override'))) { $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Override') -Recurse -File) }
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Prepare-WorkshopPackage.ps1'),(Join-Path $Root 'tools/New-WorkshopBootstrap.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'tools/WorkshopUploader') -File | Where-Object { $_.Extension -in @('.cs','.csproj','.ps1','.bat','.sh','.config','.manifest') })
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/PublisherPackage.ps1'))
+    $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'bootstrap/src') -Recurse -File -Filter '*.cs')
+    $files += Get-Item -LiteralPath (Join-Path $Root 'bootstrap/APIShared.DependencyBootstrap.csproj')
+    $files += Get-Item -LiteralPath (Join-Path $Root 'build.bat')
+    $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1'),(Join-Path $Root 'tools/Remove-DependencyBootstrap.ps1'))
+    # A successful build also attests that its checks ran. Changes to their
+    # maintained inputs invalidate that evidence even when plugin bytes match.
+    foreach ($directory in @('tests','tools')) {
+        $inputRoot = Join-Path $Root $directory
+        if (-not [IO.Directory]::Exists($inputRoot)) { continue }
+        $files += @(Get-ChildItem -LiteralPath $inputRoot -Recurse -File | Where-Object {
+            $relative = $_.FullName.Substring($Root.Length + 1)
+            $relative -notmatch '[\\/](bin|obj|BepInEx|\.git|\.local|\.work|\.release-output)[\\/]' -and
+                $_.Extension -in @('.cs','.csproj','.ps1','.bat','.sh','.props','.targets','.runsettings','.txt','.json')
+        })
+    }
     foreach ($file in $files | Sort-Object FullName -Unique) {
         $relative = $file.FullName.Substring($Root.Length + 1).Replace('\','/')
         $rows.Add($relative + ':' + (Get-ApiFileHash $file.FullName))
@@ -58,6 +79,9 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     }
     [xml]$project = [IO.File]::ReadAllText((Join-Path $Root 'APIShared.csproj'))
     foreach ($node in $project.SelectNodes('//*[local-name()="HintPath"]')) {
+        # Content is built from attested repository sources, not an external SDK input.
+        # Its output is covered by the package hashes and bootstrap ContentSHA256.
+        if ($node.ParentNode.Include -ceq 'APIShared.Content') { continue }
         $path = $node.InnerText.Replace('$(GameDir)',$GameDir).Replace('$(ExtenderDir)',$ExtenderDir)
         if ($path.Contains('$(')) { throw "Unresolved build reference: $path" }
         if (-not [IO.Path]::IsPathRooted($path)) { $path = Join-Path $Root $path }
@@ -78,12 +102,15 @@ function Get-ApiPackageFiles([string]$Root) {
         [pscustomobject]@{ Path=$_.FullName.Substring($package.Length+1).Replace('\','/'); Sha256=(Get-ApiFileHash $_.FullName) }
     })
 }
-function Write-ApiBuildProof([string]$Root, [string]$GameDir, [string]$ExtenderDir, [string]$MSBuild, $InitialState) {
+function Write-ApiBuildProof([string]$Root, [string]$GameDir, [string]$ExtenderDir, [string]$MSBuild, $InitialState, [ValidateSet('full','quick','none')][string]$TestMode = 'full') {
     $final = Get-ApiInputState $Root $GameDir $ExtenderDir $MSBuild
     if ($InitialState.Fingerprint -ne $final.Fingerprint) { throw 'APIShared inputs changed during the build. Build again.' }
     $commit = (& git -C $Root rev-parse HEAD 2>$null)
     if ($LASTEXITCODE -ne 0) { $commit = $null }
-    $proof = [ordered]@{ SchemaVersion=1; Commit=$commit; CreatedUtc=[DateTime]::UtcNow.ToString('o'); GameDir=$GameDir; ExtenderDir=$ExtenderDir; MSBuild=$MSBuild; Fingerprint=$final.Fingerprint; Inputs=$final.Inputs; Files=(Get-ApiPackageFiles $Root); PublisherFiles=(Get-ApiPublisherProofFiles $Root) }
+    . (Join-Path $Root 'tools/WorkshopPackage.ps1')
+    . (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1')
+    Assert-ApiBootstrapPair $Root
+    $proof = [ordered]@{ SchemaVersion=2; TestMode=$TestMode; BootstrapFiles=@(Get-ApiBootstrapRecords $Root); Commit=$commit; CreatedUtc=[DateTime]::UtcNow.ToString('o'); GameDir=$GameDir; ExtenderDir=$ExtenderDir; MSBuild=$MSBuild; Fingerprint=$final.Fingerprint; Inputs=$final.Inputs; Files=(Get-ApiPackageFiles $Root); PublisherFiles=(Get-ApiPublisherProofFiles $Root) }
     $directory = Join-Path $Root '.local'
     [IO.Directory]::CreateDirectory($directory) | Out-Null
     [IO.File]::WriteAllText((Join-Path $directory 'build-proof.json'),(($proof | ConvertTo-Json -Depth 6).Replace("`r`n","`n").Replace("`n","`r`n") + "`r`n"),[Text.UTF8Encoding]::new($false))
@@ -92,7 +119,15 @@ function Assert-ApiBuildProof([string]$Root, [switch]$Release) {
     $path = Join-Path $Root '.local/build-proof.json'
     if (-not (Test-Path -LiteralPath $path)) { throw 'APIShared build evidence is missing. Run APIShared/build.bat /nopause first.' }
     $proof = [IO.File]::ReadAllText($path) | ConvertFrom-Json
-    if ($proof.SchemaVersion -ne 1) { throw 'Unsupported APIShared build evidence. Build APIShared again.' }
+    if ($proof.SchemaVersion -ne 2) { throw 'Unsupported APIShared build evidence. Build APIShared again.' }
+    if (-not $proof.PSObject.Properties['TestMode'] -or $proof.TestMode -cne 'full') {
+        throw 'APIShared SDK evidence requires /tests:full. The last build used reduced or unknown checks; run a full build first.'
+    }
+    . (Join-Path $Root 'tools/WorkshopPackage.ps1')
+    . (Join-Path $Root 'tools/DependencyBootstrapPackage.ps1')
+    Assert-ApiBootstrapPair $Root
+    $bootstrap = @(Get-ApiBootstrapRecords $Root)
+    if (-not $proof.PSObject.Properties['BootstrapFiles'] -or @($proof.BootstrapFiles).Count -ne 1 -or $proof.BootstrapFiles[0].Path -cne $bootstrap[0].Path -or $proof.BootstrapFiles[0].Sha256 -cne $bootstrap[0].Sha256) { throw 'Bootstrap build evidence missing or stale.' }
     $state = Get-ApiInputState $Root $proof.GameDir $proof.ExtenderDir $proof.MSBuild
     if ($state.Fingerprint -ne $proof.Fingerprint) { throw 'APIShared package is stale. Run APIShared/build.bat /nopause first.' }
     Assert-ApiPublisherEvidence $Root $proof

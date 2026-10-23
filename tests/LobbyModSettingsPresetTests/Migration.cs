@@ -39,8 +39,7 @@ namespace LobbyModSettingsPresetTests
                         !payload.ContainsKey(Preset1Key) &&
                         !payload.ContainsKey(Preset2Key),
                     "Migrated MessagePack still contains retired slot storage.");
-                string personalDirectory = Path.Combine(
-                    root, "LobbyModSettings", "Presets", "Override", TargetGuid);
+                string personalDirectory = PersonalDirectory(root);
                 string legacyOnePath = Path.Combine(personalDirectory, "preset_legacy-preset-1.json");
                 Assert(File.Exists(legacyOnePath), "Legacy values were not published as a personal preset file.");
                 PublishedModSettingsPreset legacyOne = ModSettingsPresetJson.Parse(
@@ -95,7 +94,7 @@ namespace LobbyModSettingsPresetTests
                 Assert(MessagePackSerializer.Deserialize<string>(dualPayload[BasedOnPresetKey]).EndsWith(
                         "\n" + TargetGuid + "\nold-published", StringComparison.Ordinal),
                     "The migrated published preset did not retain its new stable source identity.");
-                string dualPersonal = Path.Combine(dualRoot, "LobbyModSettings", "Presets", "Override", TargetGuid);
+                string dualPersonal = PersonalDirectory(dualRoot);
                 Assert(File.Exists(Path.Combine(dualPersonal, "preset_legacy-preset-1.json")) &&
                         File.Exists(Path.Combine(dualPersonal, "preset_legacy-preset-2.json")),
                     "Both populated legacy slots were not preserved as personal JSON presets.");
@@ -151,8 +150,7 @@ namespace LobbyModSettingsPresetTests
                     stagedAssembly,
                     Path.Combine(stagedRoot, "LobbyModSettings", ModName + ".msgpack"),
                     () => false);
-                string stagedDestination = Path.Combine(
-                    stagedRoot, "LobbyModSettings", "Presets", "Override", TargetGuid, "preset_old-export.json");
+                string stagedDestination = Path.Combine(PersonalDirectory(stagedRoot), "preset_old-export.json");
                 Assert(File.Exists(stagedSource) && File.Exists(stagedDestination),
                     "Legacy PresetExports file was not copied into personal presets without deleting the source.");
                 File.Delete(stagedDestination);
@@ -191,8 +189,8 @@ namespace LobbyModSettingsPresetTests
                     $"Corrupt metadata did not recover the last safe top-level working values " +
                     $"(EnableMod={recovered.EnableMod}, Number={recovered.Number}).");
                 Assert(Directory.GetFiles(
-                    Path.GetDirectoryName(settingsPath),
-                    ModName + ".msgpack.corrupt-*").Length > 0,
+                    Path.GetDirectoryName(CurrentFile(settingsPath)),
+                    "settings.msgpack.corrupt-*").Length > 0,
                     "Corrupt preset data was not backed up.");
         }
 

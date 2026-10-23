@@ -41,6 +41,13 @@ installed native contracts and reserves one owner GUID/registration ID. It does
 not install hooks. This low-level backend is for a routing provider, not ordinary
 rule contributors. `EnemyGatePathPolicyBridge.TryRegister` is passive.
 
+`GateRoutingNativeLayout` publishes the audited addresses, lengths, patterns and
+capturer-record offsets that such a provider reads around these callbacks, plus
+`ValidateComparisonSites` and `ValidateMovementSites` for its own preflight. The
+values are run-time properties of the DLL named by `ReferenceSha256`, so an
+APIShared update alone refreshes a provider after a game update. They are valid
+only once `TryRequest` or those validations succeeded for the loaded image.
+
 The explicitly invoked `InstallComparisons`, `InstallMovement` and `InstallDescent`
 methods own their audited native spans permanently. They retain delegates and
 transactions; installation must not be retried after a failed publication.
@@ -77,6 +84,6 @@ remain authoritative. Unknown builds fail acquisition.
 Independent registry tests cover ordering, duplicate keys, passive registration,
 invalid identities, per-contributor failures and invalidation. Consumer fixtures
 cover immutable masks, cache identities, inline register/flag preservation and
-native execution. These APIs are present in the checked workspace assembly 0.9.0.
+native execution. These APIs are available since APIShared 0.9.0.
 Before distribution, declare the minimum published release containing them;
 a matching local development version alone does not establish package availability.

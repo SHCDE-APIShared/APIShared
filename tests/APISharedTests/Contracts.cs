@@ -25,172 +25,12 @@ namespace APISharedTests
 
         private static void TestPublicSurface()
         {
-            var imageSlots = (UnitHudImageSlot[])Enum.GetValues(typeof(UnitHudImageSlot));
-            Assert(imageSlots.Length >= 7 &&
-                imageSlots[0] == UnitHudImageSlot.UIBuildingsO011 &&
-                imageSlots[1] == UnitHudImageSlot.UIBuildingsO012 &&
-                imageSlots[2] == UnitHudImageSlot.UIButtonsK007 &&
-                imageSlots[3] == UnitHudImageSlot.UIButtonsK008 &&
-                imageSlots[4] == UnitHudImageSlot.UIButtonsO016 &&
-                imageSlots[5] == UnitHudImageSlot.UIButtonsO017 &&
-                imageSlots[6] == UnitHudImageSlot.UIButtonsO018,
-                "existing unit-HUD image slots retain their ordinal prefix; additional slots are allowed");
-            var expected = new HashSet<string>(StringComparer.Ordinal)
-            {
-                "APIShared.UnitLookupFailure",
-                "APIShared.UnitAccess",
-                "APIShared.AssassinPathBuilder",
-                "APIShared.AssassinPathAPI",
-                "APIShared.AssassinTransitionKind",
-                "APIShared.AssassinGateTransitionPolicy",
-                "APIShared.IEnemyGateClimbRoutePolicySnapshot",
-                "APIShared.MissionStartKind",
-                "APIShared.MissionMapType",
-                "APIShared.MissionLifecycleKind",
-                "APIShared.MissionInitializationPhase",
-                "APIShared.MissionEndReason",
-                "APIShared.MissionContext",
-                "APIShared.MissionLifecycleNotification",
-                "APIShared.IMissionLifecycleCapability",
-                "APIShared.GameModes.GameModeKind",
-                "APIShared.GameModes.GameModeLaunchVariant",
-                "APIShared.GameModes.GameTrailType",
-                "APIShared.GameModes.GameModeSnapshot",
-                "APIShared.GameModes.GameModeHelper",
-                "APIShared.GameModes.GameplayModAllowedContext",
-                "APIShared.GameModes.GameplayModActivationProfile",
-                "APIShared.GameModes.GameplayModModePolicy",
-                "APIShared.ModSettings.ModSettingsSearchMatcher",
-                "APIShared.ModSettings.ModSettingsSearch",
-                "APIShared.ModSettings.ModSettingsSearchVisibilityConverter",
-                "APIShared.ModSettings.ModSettingsSearchEntry",
-                "APIShared.ModSettings.PerPlayerLobbySettingsBuilder",
-                "APIShared.ModSettings.PerPlayerLobbySnapshot",
-                "APIShared.ModSettings.PresetLocalAttribute",
-                "APIShared.ModSettings.PresetLobbyModSettingsViewModel",
-                "APIShared.ModSettings.LobbyModSettingsPresetRegistration",
-                "APIShared.ModSettings.LobbyModSettingsPresetRegistration+PreparedExternalSettings",
-                "APIShared.ModSettings.IModSettingsPresetEndpoint",
-                "APIShared.ModSettings.IModSettingsMissionSourceEndpoint",
-                "APIShared.ModSettings.IModSettingsWorkingCopyEndpoint",
-                "APIShared.ModSettings.ModSettingsWorkingSourceKind",
-                "APIShared.ModSettings.ModSettingsWorkingSource",
-                "APIShared.ModSettings.IModSettingsWorkingSourceProvider",
-                "APIShared.ModSettings.ModSettingsWorkingSourceRegistry",
-                "APIShared.ModSettings.PublishedPresetValueMode",
-                "APIShared.ModSettings.PresetSaveBulkMode",
-                "APIShared.ModSettings.PresetSettingScope",
-                "APIShared.ModSettings.PresetSettingDescriptor",
-                "APIShared.ModSettings.DynamicPresetSetting",
-                "APIShared.ModSettings.RequiresRestartAttribute",
-                "APIShared.ModSettings.IModSettingsApplicationBackend", "APIShared.ModSettings.INetworkModSettingsApplicationBackend",
-                "APIShared.ModSettings.ModSettingsApplication",
-                "APIShared.ModSettings.IDynamicPresetSettingsProvider",
-                "APIShared.ModSettings.PresetSaveSelection",
-                "APIShared.ModSettings.PresetSaveSettingViewModel",
-                "APIShared.ModSettings.ModSettingsPresetSourceKind",
-                "APIShared.ModSettings.ModSettingsPresetListEntry",
-                "APIShared.ModSettings.ModSettingsPresetSaveTarget",
-                "APIShared.ModSettings.PublishedPresetSetting",
-                "APIShared.ModSettings.PublishedModSettingsPreset",
-                "APIShared.ModSettings.ModSettingsPresetJson",
-                "APIShared.GatehouseFootprintCandidate",
-                "APIShared.GatehouseDrawbridgeCoupling",
-                "APIShared.GatehouseDistanceOrigin",
-                "APIShared.GatehouseTimingSettings",
-                "APIShared.GatehouseTimingValues",
-                "APIShared.IGatehouseDistanceOriginCapability",
-                "APIShared.IGatehouseTimingCapability",
-                "APIShared.IGatehouseAutomationCapability",
-                "APIShared.IUnitHudPresentationCapability",
-                "APIShared.HudExtrasButtonContext",
-                "APIShared.HudExtrasButtonDefinition",
-                "APIShared.IHudExtrasButtonRegistration",
-                "APIShared.IHudExtrasButtonsCapability",
-                "APIShared.IUnitHudActivationCapability",
-                "APIShared.IAivBuildStepCapability",
-                "APIShared.ILobbyStateCapability",
-                "APIShared.LobbyStateSnapshot",
-                "APIShared.LocalSelectionAPI",
-                "APIShared.LocalSelectionSnapshot",
-                "APIShared.IPlayerDefeatCapability",
-                "APIShared.IBriefingGoldPresentationCapability",
-                "APIShared.IBuildingRepairCapability",
-                "APIShared.BuildingRepairQuote",
-                "APIShared.RepairTooltipEntry",
-                "APIShared.RepairTooltipViewModel",
-                "APIShared.BriefingGoldAdjustmentStage",
-                "APIShared.BriefingGoldContext",
-                "APIShared.BriefingGoldAdjuster",
-                "APIShared.PlayerLordDeathNotification",
-                "APIShared.PlayerDefeatNotification",
-                "APIShared.IAivBuildStepObserver",
-                "APIShared.IAivBuildStepInvocation",
-                "APIShared.AivBuildStepContext",
-                "APIShared.AivBuildStepCompletion",
-                "APIShared.SavegameModSettingsRecord",
-                "APIShared.TrailCreatorRule",
-                "APIShared.SavegameLoadChoiceState",
-                "APIShared.SavegameModSettingsRecordFormatter",
-                "APIShared.SavegameModSettings",
-                "APIShared.IApiShared",
-                "APIShared.NativeApiState",
-                "APIShared.LobbyPreparationOverride",
-                "APIShared.ElevatedMoatAiState",
-                "APIShared.ElevatedMoatAiCapability",
-                "APIShared.NativeCapabilityDiagnostic",
-                "APIShared.NativeCapabilityIds",
-                "APIShared.NativeCapabilityState",
-                "APIShared.UnitHudSurface",
-                "APIShared.UnitHudMouseButton",
-                "APIShared.UnitHudImageSlot",
-                "APIShared.UnitHudTint",
-                "APIShared.UnitHudUnitSnapshot",
-                "APIShared.UnitHudCategoryMatcher",
-                "APIShared.UnitHudCategoryImageResolver",
-                "APIShared.UnitHudTextKind",
-                "APIShared.UnitHudTextResolver",
-                "APIShared.UnitHudTextProfile",
-                "APIShared.UnitHudCategoryDefinition",
-                "APIShared.UnitHudRecruitmentTicket",
-                "APIShared.UnitHudRecruitmentHandler",
-                "APIShared.UnitHudCategorySnapshot",
-                "APIShared.UnitHudSlotSnapshot",
-                "APIShared.UnitHudControlGroupSnapshot",
-                "APIShared.UnitHudInteractionContext",
-                "APIShared.UnitHudInteractionHandler",
-                "APIShared.UnitHudImageOverrideContext",
-                "APIShared.UnitHudImageOverrideResolver",
-                "APIShared.UnitHudImageOverrideDefinition",
-                "APIShared.ApiShared",
-                "APIShared.MarkedUnitSelectionSnapshot",
-                "APIShared.MarkedUnitSelectionAPI",
-                "APIShared.PlayerPerspectiveAPI",
-                "APIShared.EnemyGateSearchKind",
-                "APIShared.IEnemyGatePathPolicy",
-                "APIShared.IEnemyGateRegionPairObserver",
-                "APIShared.IEnemyGateAssassinObserver",
-                "APIShared.IEnemyGateRoutePolicyProvider",
-                "APIShared.IEnemyGateRoutePolicySnapshot",
-                "APIShared.EnemyGatePathPolicyBridge",
-                "APIShared.IEnemyBridgePathObserver",
-                "APIShared.EnemyBridgeDiagnosticBridge", "APIShared.TemporaryGateRouteAcceptanceBridge", "APIShared.ITemporaryGateRouteAcceptanceObserver",
-                // BepInEx discovers the plugin type; it is public but is not a consumer service.
-                "APIShared.APISharedPlugin"
-            };
-
-            MethodInfo referenceLifeHelper = typeof(UnitAccess).GetMethod("IsReallyAlive",
-                new[] { typeof(SHCDESE.Interop.GameUnit).MakeByRefType() });
-            MethodInfo pointerLifeHelper = typeof(UnitAccess).GetMethod("IsReallyAlive",
-                new[] { typeof(SHCDESE.Interop.GameUnit).MakePointerType() });
-            Assert(referenceLifeHelper != null && referenceLifeHelper.IsStatic && referenceLifeHelper.ReturnType == typeof(bool) &&
-                pointerLifeHelper != null && pointerLifeHelper.IsStatic && pointerLifeHelper.ReturnType == typeof(bool),
-                "UnitAccess retains the required reference/pointer bool life helpers; additional overloads are allowed");
+            // Exact public identities, signatures and constants are checked by
+            // ApiCompatibilityTests.PublicSurfaceMatchesTheBaseline. This test owns
+            // the independent policy against exposing unaudited native types.
             Type[] exported = typeof(IApiShared).Assembly.GetExportedTypes();
             foreach (Type type in exported)
             {
-                // Required existing contracts must survive; additive public API extensions are allowed.
-                expected.Remove(type.FullName);
                 foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                 {
                     if (!IsAuditedGateNativeType(type, method, null))
@@ -212,7 +52,8 @@ namespace APISharedTests
                         if ((type == typeof(AssassinPathBuilder) &&
                                 (method.Name == "Invoke" || method.Name == "BeginInvoke") ||
                              type == typeof(AssassinPathAPI) && (method.Name == "RunVanillaBuilder" ||
-                                method.Name == "TryStageWeightedRoute" || method.Name == "TryGetCurrentWeightedRequest")) &&
+                                method.Name == "TryStageWeightedRoute" || method.Name == "TryGetCurrentWeightedRequest" ||
+                                method.Name == "BeginRouteOutput")) &&
                             parameter.Name == "context" && parameter.ParameterType == typeof(IntPtr))
                             continue;
                         if (!IsAuditedGateNativeType(type, method, parameter))
@@ -228,43 +69,6 @@ namespace APISharedTests
                 foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                     AssertSafePublicType(field.FieldType, $"{type.FullName}.{field.Name} field type");
             }
-
-            foreach (string missing in expected)
-                Assert(false, $"expected exported API type is missing: {missing}");
-
-            var expectedAcquisitionMethods = new HashSet<string>(StringComparer.Ordinal)
-            {
-                "TryGetGatehouseDistanceOrigin",
-                "TryGetGatehouseTiming",
-                "TryGetUnitHudPresentation",
-                "TryGetAivBuildStep",
-                "TryGetLobbyState",
-                "TryGetMissionLifecycle",
-                "TryGetPlayerDefeat",
-                "TryGetBriefingGoldPresentation",
-                "TryGetBuildingRepair"
-            };
-            foreach (MethodInfo method in typeof(IApiShared).GetMethods())
-                expectedAcquisitionMethods.Remove(method.Name);
-            foreach (string missing in expectedAcquisitionMethods)
-                Assert(false, $"expected capability acquisition method is missing: IApiShared.{missing}");
-
-            Assert(NativeCapabilityIds.GatehouseDistanceOrigin == "gatehouse-distance-origin",
-                "distance-origin capability ID must remain stable");
-            Assert(NativeCapabilityIds.GatehouseTiming == "gatehouse-timing",
-                "gatehouse-timing capability ID must remain stable");
-            Assert(NativeCapabilityIds.UnitHudPresentation == "unit-hud-presentation",
-                "unit-HUD capability ID must remain stable");
-            Assert(NativeCapabilityIds.AivBuildStep == "aiv-build-step",
-                "AIV build-step capability ID must remain stable");
-            Assert(NativeCapabilityIds.LobbyState == "lobby-state",
-                "lobby-state capability ID must remain stable");
-            Assert(NativeCapabilityIds.PlayerDefeat == "player-defeat",
-                "player-defeat capability ID must remain stable");
-            Assert(NativeCapabilityIds.BriefingGoldPresentation == "briefing-gold-presentation",
-                "briefing-gold capability ID must remain stable");
-            Assert(NativeCapabilityIds.BuildingRepair == "building-repair",
-                "building-repair capability ID must remain stable");
         }
         // Explicitly audited advanced native API. No namespace-wide pointer exemption.
         private static bool IsAuditedGateNativeType(Type owner, MethodInfo method, ParameterInfo parameter)
@@ -395,6 +199,81 @@ namespace APISharedTests
                 missingHash.State == NativeCapabilityState.UnsupportedBuild, "missing hash is unsupported for gatehouse");
             Assert(!runtime.TryGetGatehouseDistanceOrigin("owner", out _, out NativeCapabilityDiagnostic missingOriginHash) &&
                 missingOriginHash.State == NativeCapabilityState.UnsupportedBuild, "missing hash is unsupported for distance origin");
+        }
+        [TestMethod]
+        [TestCategory("Contracts")]
+        public void VerifyFailedInitializationStepsStillCompleteReadiness() => TestFailedInitializationSteps();
+
+        // Issue #5: a throwing LibraryLoaded step must not leave the API Pending or skip later steps.
+        private static void TestFailedInitializationSteps()
+        {
+            byte[] image = CreatePeImage(0x4000, true);
+            var runtime = new ApiSharedRuntime();
+            int early = 0, later = 0, failedCallbacks = 0;
+            runtime.WhenReady(_ => early++);
+            runtime.RunNativeInitialization(null,
+                new NativeInitializationStep("repair tooltip binding",
+                    () => throw new InvalidOperationException("binding failed"), runtime.FaultBuildingRepair),
+                new NativeInitializationStep("savegame settings handler",
+                    () => throw new InvalidOperationException("handler already exists"),
+                    _ => { failedCallbacks++; throw new InvalidOperationException("failure handler"); }),
+                new NativeInitializationStep("later step", () => later++),
+                new NativeInitializationStep("native API publication",
+                    () => runtime.Initialize(ModuleBase, image, "UNKNOWN", new FakeMemory(), null, null, false)));
+            Assert(later == 1 && failedCallbacks == 1, "a failed step skipped a later independent step");
+            Assert(runtime.State == NativeApiState.Ready && early == 1,
+                "a failed step before publication left WhenReady pending");
+            Assert(!runtime.TryGetBuildingRepair("owner", out _, out NativeCapabilityDiagnostic repair) &&
+                repair.State == NativeCapabilityState.Faulted && repair.Reason.Contains("repair tooltip binding") &&
+                repair.Reason.Contains("binding failed"), "the failed step's capability did not report Faulted with its reason");
+            Assert(!runtime.TryGetGatehouseTiming("owner", out _, out NativeCapabilityDiagnostic gate) &&
+                gate.State == NativeCapabilityState.UnsupportedBuild, "a failed step changed an independent capability");
+            runtime.RunNativeInitialization(null,
+                new NativeInitializationStep("native API publication", () => throw new InvalidOperationException("again")));
+            Assert(runtime.State == NativeApiState.Ready && early == 1, "a repeated run replaced the terminal state");
+
+            runtime = new ApiSharedRuntime();
+            NativeApiState observed = NativeApiState.Pending;
+            runtime.WhenReady(api => observed = api.State);
+            var failingLogger = new BepInEx.Logging.ManualLogSource("InitializationBoundaryFixture");
+            failingLogger.LogEvent += (_, __) => throw new InvalidOperationException("test log listener");
+            runtime.RunNativeInitialization(failingLogger,
+                new NativeInitializationStep("native API publication", () => throw new InvalidOperationException("publication failed")));
+            Assert(runtime.State == NativeApiState.Unavailable && observed == NativeApiState.Unavailable,
+                "a throwing publication did not complete WhenReady with Unavailable");
+            Assert(!runtime.TryGetGatehouseTiming("owner", out _, out NativeCapabilityDiagnostic faulted) &&
+                faulted.State == NativeCapabilityState.Faulted && faulted.Reason.Contains("publication failed"),
+                "native capabilities did not report the publication failure");
+            Assert(!runtime.TryGetBuildingRepair("owner", out _, out NativeCapabilityDiagnostic unavailableRepair) &&
+                unavailableRepair.State == NativeCapabilityState.Faulted, "on-demand capability ignored Unavailable");
+            int late = 0;
+            runtime.WhenReady(_ => late++);
+            Assert(late == 1, "late callback after a failed initialization was not synchronous");
+
+            runtime = new ApiSharedRuntime();
+            runtime.RunNativeInitialization(null, new NativeInitializationStep("no publication", () => { }));
+            Assert(runtime.State == NativeApiState.Unavailable, "initialization without publication stayed Pending");
+        }
+        [TestMethod]
+        [TestCategory("Contracts")]
+        public void VerifyLibraryLoadedStepsRunInsideTheErrorBoundary()
+        {
+            // Every initialization call of OnLibraryLoaded must sit in a step lambda; a direct call
+            // would run outside RunNativeInitialization's error boundary again (issue #5).
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
+            {
+                var plugin = assembly.MainModule.GetType("APIShared.APISharedPlugin");
+                var handler = plugin.Methods.Single(m => m.Name == "OnLibraryLoaded");
+                // ldftn of a step delegate is not a call; only call and callvirt run code here.
+                var calls = handler.Body.Instructions
+                    .Where(i => i.OpCode.Code == Mono.Cecil.Cil.Code.Call || i.OpCode.Code == Mono.Cecil.Cil.Code.Callvirt)
+                    .Select(i => (Mono.Cecil.MethodReference)i.Operand).ToArray();
+                Assert(calls.Any(m => m.Name == "RunNativeInitialization"),
+                    "OnLibraryLoaded must run its steps through RunNativeInitialization");
+                Assert(!calls.Any(m => m.Name == "Initialize" || m.Name == "InitializeNative" ||
+                    m.Name == "Bind" || m.Name == "RegisterBinding" || m.Name == "ComputeInstalledHash"),
+                    "an OnLibraryLoaded initialization step runs outside the error boundary");
+            }
         }
         [TestMethod]
         [TestCategory("Contracts")]

@@ -9,7 +9,8 @@ namespace APIShared.Audio
         internal const int RecordWords = 21;
         private static int ready;
         internal static bool Active => Volatile.Read(ref ready) != 0;
-        internal static void SetReady(bool value) => Volatile.Write(ref ready, value ? 1 : 0);
+        // Readiness is one input of the native demand bytes; republish them on every change.
+        internal static void SetReady(bool value) { Volatile.Write(ref ready, value ? 1 : 0); SoundNativeDemand.Refresh(); }
         internal static bool MatchesSource(SoundSource source, int type, int state, short unitX, short unitY, short x, short y, int sound, int flag)
             => source != null && source.UnitType == type && source.Flag == flag && source.Situation(sound) != SoundSituation.Unknown &&
                 unitX == x && unitY == y && (source.ReturnRva != 0x1700D2 || state == 1);

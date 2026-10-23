@@ -8,6 +8,7 @@
 *.suo
 /.vs/
 /.local/
+/.release-output/
 *.log
 
 TestResults/

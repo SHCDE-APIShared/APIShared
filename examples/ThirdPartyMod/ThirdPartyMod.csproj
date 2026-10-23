@@ -23,20 +23,31 @@
     <Reference Include="MessagePack.Annotations"><HintPath>$(ExtenderDir)\MessagePack.Annotations.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="System.Memory"><HintPath>$(ExtenderDir)\System.Memory.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="APIShared"><HintPath>$(ApiSharedDir)\APIShared.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="APIShared.Content"><HintPath>$(ApiSharedDir)\APIShared.Content.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Noesis.NoesisGUI"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\Noesis.NoesisGUI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)\SHCDESE.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="SettingsSearchExample.cs"/>
+    <Compile Include="NativeFieldExample.cs" />
+    <Compile Include="AiMarketSellExample.cs"/>
     <Compile Include="ExamplePlugin.cs" /><Compile Include="InterceptionExample.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" /><Compile Include="NetworkingExample.cs" />
     <Compile Include="WorkshopExample.cs" />
     <Compile Include="SoundExample.cs" />
+    <Compile Include="PopularityExample.cs" />
     <Compile Include="BuildingTooltipExample.cs" />
+    <Compile Include="PathfindingReplacementExample.cs" />
+    <Compile Include="SaveDataExample.cs" />
+    <Compile Include="ModDataExample.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(ApiSharedDir)\APIShared.dll')" Text="The freshly built APIShared.dll is required." />
   </Target>
+  <ItemGroup><Compile Include="TooltipExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="GateAccessExample.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="UnitSettledExample.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="NativeSiteExample.cs" /></ItemGroup>
 </Project>

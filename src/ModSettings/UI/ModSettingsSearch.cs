@@ -17,7 +17,7 @@ namespace APIShared.ModSettings
     /// <summary>Pure matching policy shared by runtime filtering and isolated tests.</summary>
     public static class ModSettingsSearchMatcher
     {
-        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case and diacritics.</summary>
+        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case (culture-invariant) and diacritics.</summary>
         public static bool IsMatch(
             string filterText,
             bool includeToolTips,
@@ -37,7 +37,7 @@ namespace APIShared.ModSettings
                 string.Empty);
         }
 
-        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case and diacritics.</summary>
+        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case (culture-invariant) and diacritics.</summary>
         public static bool IsMatch(
             string filterText,
             bool includeToolTips,
@@ -89,16 +89,77 @@ namespace APIShared.ModSettings
 
         private static string Fold(string value)
         {
-            string decomposed = Normalize(value).Normalize(NormalizationForm.FormD);
+            string decomposed = ModSettingsSearchText.RepairNormalizationInput(Normalize(value)).Normalize(NormalizationForm.FormD);
             var result = new StringBuilder(decomposed.Length);
             foreach (char character in decomposed)
             {
                 if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
-                    result.Append(char.ToLower(character, CultureInfo.CurrentCulture));
+                    result.Append(char.ToLowerInvariant(character));
             }
             return result.ToString().Normalize(NormalizationForm.FormC);
         }
     }
+    // Kept with the pure matcher so the legacy preset harness tests production text handling too.
+    internal static class ModSettingsSearchText
+    {
+        internal static string RepairNormalizationInput(string value)
+        {
+            StringBuilder repaired = null;
+            for (int index = 0; index < value.Length; index++)
+            {
+                char character = value[index];
+                if (char.IsHighSurrogate(character) && index + 1 < value.Length && char.IsLowSurrogate(value[index + 1]))
+                {
+                    int scalar = char.ConvertToUtf32(character, value[index + 1]);
+                    if ((scalar & 0xFFFF) >= 0xFFFE)
+                    {
+                        if (repaired == null) repaired = new StringBuilder(value.Length).Append(value, 0, index);
+                        repaired.Append('\uFFFD');
+                    }
+                    else if (repaired != null) repaired.Append(character).Append(value[index + 1]);
+                    index++;
+                    continue;
+                }
+                // CLR normalization rejects Unicode noncharacters on supported runtime variants.
+                // Repair comparison input only; never rewrite displayed text or exact keys.
+                if (char.IsSurrogate(character) || character >= '\uFFFE' ||
+                    (character >= '\uFDD0' && character <= '\uFDEF'))
+                {
+                    if (repaired == null) repaired = new StringBuilder(value.Length).Append(value, 0, index);
+                    repaired.Append('\uFFFD');
+                }
+                else if (repaired != null) repaired.Append(character);
+            }
+            return repaired == null ? value : repaired.ToString();
+        }
+
+        internal static string FirstSentence(string text)
+        {
+            string normalized = (text ?? string.Empty).Trim();
+            int end = normalized.IndexOfAny(new[] { '.', '!', '?', '\r', '\n' });
+            if (end >= 0) normalized = normalized.Substring(0, end + 1);
+            if (normalized.Length <= 120) return normalized;
+            int length = 117;
+            if (char.IsHighSurrogate(normalized[length - 1]) && char.IsLowSurrogate(normalized[length])) length--;
+            return normalized.Substring(0, length) + "...";
+        }
+
+        internal static uint StableHash(string value)
+        {
+            unchecked
+            {
+                uint hash = 2166136261;
+                foreach (char character in value ?? string.Empty)
+                {
+                    hash ^= character;
+                    hash *= 16777619;
+                }
+                return hash;
+            }
+        }
+
+    }
+
 }
 
 #if !API_SHARED_PRESET_TESTS
@@ -110,9 +171,6 @@ namespace APIShared.ModSettings
     /// </summary>
     public static class ModSettingsSearch
     {
-        private static readonly Dictionary<object, SearchSource> Sources =
-            new Dictionary<object, SearchSource>(ReferenceEqualityComparer.Instance);
-
         /// <summary>Noesis attached property for stable exact setting key; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty KeyProperty =
             DependencyProperty.RegisterAttached(
@@ -311,7 +369,7 @@ namespace APIShared.ModSettings
 
         /// <summary>
         /// Registers the immutable XAML catalog used by the optional SerpsModsHost. Each mod
-        /// remains standalone because the host consumes only the reflection-friendly data shape.
+        /// remains standalone. New integrations can use ModSettingsSearchCatalog directly without initializing Noesis attached properties.
         /// </summary>
         public static void RegisterSource(
             object viewModel,
@@ -321,7 +379,7 @@ namespace APIShared.ModSettings
         {
             if (viewModel == null || string.IsNullOrWhiteSpace(absoluteXamlPath))
                 return;
-            Sources[viewModel] = new SearchSource(absoluteXamlPath, log, modName);
+            ModSettingsSearchCatalog.RegisterSourceCore(viewModel, absoluteXamlPath, log, modName);
         }
 
         /// <summary>Exports registered XAML catalog entries, falling back to a supplied realized view only without a catalog. Read on the Unity thread; a registered catalog avoids native traversal during tab transitions.</summary>
@@ -331,12 +389,12 @@ namespace APIShared.ModSettings
         {
             // Registered settings pages use the immutable XAML catalog exclusively. Traversing a
             // realized Noesis tree during or after a tab transition can crash in native code.
-            if (viewModel != null && Sources.TryGetValue(viewModel, out SearchSource source))
-                return source.GetEntries(viewModel);
+            if (ModSettingsSearchCatalog.TryGetEntries(viewModel, out IReadOnlyList<ModSettingsSearchEntry> catalog))
+                return catalog;
 
             var realizedEntries = new List<ModSettingsSearchEntry>();
             var keys = new HashSet<string>(StringComparer.Ordinal);
-            var identities = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+            var identities = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
             var visited = new HashSet<DependencyObject>();
             var structuralParents = new Dictionary<DependencyObject, DependencyObject>();
             Visit(view, realizedEntries, keys, identities, visited, structuralParents, null, 0);
@@ -350,9 +408,9 @@ namespace APIShared.ModSettings
             bool includeToolTips,
             string exactKey)
         {
-            if (viewModel == null || !Sources.TryGetValue(viewModel, out SearchSource source))
+            if (!ModSettingsSearchCatalog.TryGetEntries(viewModel, out IReadOnlyList<ModSettingsSearchEntry> catalog))
                 return true;
-            return source.GetEntries(viewModel).Any(entry => ModSettingsSearchMatcher.IsMatch(
+            return catalog.Any(entry => ModSettingsSearchMatcher.IsMatch(
                 filterText,
                 includeToolTips,
                 exactKey,
@@ -488,19 +546,7 @@ namespace APIShared.ModSettings
             return "auto:" + StableHash(seed).ToString("x8", CultureInfo.InvariantCulture);
         }
 
-        internal static uint StableHash(string value)
-        {
-            unchecked
-            {
-                uint hash = 2166136261;
-                foreach (char character in value ?? string.Empty)
-                {
-                    hash ^= character;
-                    hash *= 16777619;
-                }
-                return hash;
-            }
-        }
+        internal static uint StableHash(string value) => ModSettingsSearchText.StableHash(value);
 
         private static string FindAutomaticTitle(
             FrameworkElement element,
@@ -566,14 +612,7 @@ namespace APIShared.ModSettings
             return string.Empty;
         }
 
-        internal static string FirstSentence(string text)
-        {
-            string normalized = (text ?? string.Empty).Trim();
-            int end = normalized.IndexOfAny(new[] { '.', '!', '?', '\r', '\n' });
-            if (end >= 0)
-                normalized = normalized.Substring(0, end + 1);
-            return normalized.Length <= 120 ? normalized : normalized.Substring(0, 117) + "...";
-        }
+        internal static string FirstSentence(string text) => ModSettingsSearchText.FirstSentence(text);
 
         private static string ReadToolTip(DependencyObject element)
         {
@@ -623,345 +662,5 @@ namespace APIShared.ModSettings
                 : string.Empty;
     }
 
-    /// <summary>
-    /// Public APIShared export shape used by the optional global settings-search host.
-    /// </summary>
-    public sealed class ModSettingsSearchEntry
-    {
-        /// <summary>Creates immutable search metadata; null section fields become empty. Callers should supply non-null setting key/title/tooltip for export consumers.</summary>
-        public ModSettingsSearchEntry(string key, string title, string toolTip)
-            : this(key, title, toolTip, string.Empty, string.Empty, false)
-        {
-        }
-
-        /// <summary>Creates immutable search metadata; null section fields become empty. Callers should supply non-null setting key/title/tooltip for export consumers.</summary>
-        public ModSettingsSearchEntry(
-            string key,
-            string title,
-            string toolTip,
-            string sectionKey,
-            string sectionTitle,
-            bool isSection)
-        {
-            Key = key;
-            Title = title;
-            ToolTip = toolTip;
-            SectionKey = sectionKey ?? string.Empty;
-            SectionTitle = sectionTitle ?? string.Empty;
-            IsSection = isSection;
-        }
-
-        /// <summary>Stable exact setting key; may be empty when only visible title matching is available.</summary>
-        public string Key { get; }
-        /// <summary>Localized visible setting title used for free-text search.</summary>
-        public string Title { get; }
-        /// <summary>Localized explanatory text searched only when tooltip inclusion is enabled.</summary>
-        public string ToolTip { get; }
-        /// <summary>Stable enclosing section identity used for exact targeting.</summary>
-        public string SectionKey { get; }
-        /// <summary>Localized enclosing title included in free-text matching.</summary>
-        public string SectionTitle { get; }
-        /// <summary>Whether this entry describes a whole section instead of an individual setting.</summary>
-        public bool IsSection { get; }
-    }
-
-    internal sealed class SearchSource
-    {
-        private readonly string path;
-        private readonly BepInEx.Logging.ManualLogSource log;
-        private readonly string modName;
-        private object cachedViewModel;
-        private IReadOnlyList<ModSettingsSearchEntry> cachedEntries;
-
-        public SearchSource(
-            string path,
-            BepInEx.Logging.ManualLogSource log,
-            string modName)
-        {
-            this.path = path;
-            this.log = log;
-            this.modName = modName ?? string.Empty;
-        }
-
-        public IReadOnlyList<ModSettingsSearchEntry> GetEntries(object viewModel)
-        {
-            if (ReferenceEquals(cachedViewModel, viewModel) && cachedEntries != null)
-                return cachedEntries;
-            try
-            {
-                cachedEntries = BuildCatalog(path, viewModel);
-                cachedViewModel = viewModel;
-                return cachedEntries;
-            }
-            catch (Exception ex)
-            {
-                DebugLogHelper.LogWarning(
-                    log,
-                    $"[{modName}] Could not build the preloaded mod-settings search catalog from [{System.IO.Path.GetFileName(path)}]: {ex.Message}");
-                cachedEntries = Array.Empty<ModSettingsSearchEntry>();
-                cachedViewModel = viewModel;
-                return cachedEntries;
-            }
-        }
-
-        private static IReadOnlyList<ModSettingsSearchEntry> BuildCatalog(
-            string path,
-            object rootViewModel)
-        {
-            XDocument document = XDocument.Load(path, LoadOptions.None);
-            var result = new List<ModSettingsSearchEntry>();
-            var keys = new HashSet<string>(StringComparer.Ordinal);
-            var identities = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
-            foreach (XElement element in document.Descendants())
-            {
-                if (IsExcluded(element))
-                    continue;
-                string localName = element.Name.LocalName;
-                bool interactive = localName == "Button" || localName == "CheckBox" ||
-                    localName == "ComboBox" || localName == "Slider" || localName == "TextBox";
-                XAttribute keyAttribute = FindAttribute(element, "Key");
-                XAttribute titleAttribute = FindAttribute(element, "Title");
-                bool isSection = string.Equals(
-                    FindAttribute(element, "IsSection")?.Value,
-                    "True",
-                    StringComparison.OrdinalIgnoreCase);
-                bool hasExplicitAncestor = element.Ancestors().Any(value =>
-                    FindAttribute(value, "Key") != null || FindAttribute(value, "Title") != null);
-                if (interactive && keyAttribute == null && titleAttribute == null && hasExplicitAncestor)
-                    continue;
-                if (!isSection && !interactive && keyAttribute == null && titleAttribute == null)
-                    continue;
-
-                foreach (object dataContext in ResolveDataContexts(element, rootViewModel))
-                {
-                    XElement sectionOwner = FindSectionOwner(element);
-                    object sectionDataContext = IsInsideDataTemplate(sectionOwner)
-                        ? dataContext
-                        : rootViewModel;
-                    string sectionKey = ResolveValue(
-                        FindAttribute(sectionOwner, "SectionKey")?.Value,
-                        sectionDataContext);
-                    string sectionTitle = ResolveValue(
-                        FindAttribute(sectionOwner, "SectionTitle")?.Value,
-                        sectionDataContext);
-                    if (isSection)
-                    {
-                        if (sectionKey.Length == 0 || sectionTitle.Length == 0 || !keys.Add(sectionKey))
-                            continue;
-                        result.Add(new ModSettingsSearchEntry(
-                            sectionKey,
-                            sectionTitle,
-                            string.Empty,
-                            sectionKey,
-                            sectionTitle,
-                            true));
-                        continue;
-                    }
-
-                    string title = ResolveValue(titleAttribute?.Value, dataContext);
-                    if (title.Length == 0)
-                        title = ResolveElementContent(element, dataContext);
-                    string toolTip = ResolveValue(FindAttribute(element, "ToolTipText")?.Value, dataContext);
-                    if (toolTip.Length == 0)
-                        toolTip = ResolveToolTip(element, dataContext);
-                    if (title.Length == 0)
-                        title = FindNearbyTitle(element, dataContext);
-                    if (title.Length == 0 && toolTip.Length > 0)
-                        title = ModSettingsSearch.FirstSentence(toolTip);
-                    if (title.Length == 0 || toolTip.Length == 0)
-                        continue;
-
-                    string key = ResolveValue(keyAttribute?.Value, dataContext);
-                    if (key.Length == 0)
-                    {
-                        string toolTipPath = ReadBindingPath(FindAttribute(element, "ToolTip")?.Value);
-                        string seed = toolTipPath.Length > 0
-                            ? toolTipPath + ":" + title
-                            : title + ":" + toolTip;
-                        key = "auto:" + ModSettingsSearch.StableHash(seed).ToString("x8", CultureInfo.InvariantCulture);
-                    }
-                    string identity = title + "\u001f" + toolTip;
-                    if (!identities.Add(identity))
-                        continue;
-                    string uniqueKey = key;
-                    int suffix = 2;
-                    while (!keys.Add(uniqueKey))
-                        uniqueKey = key + ":" + suffix++;
-                    result.Add(new ModSettingsSearchEntry(
-                        uniqueKey,
-                        title,
-                        toolTip,
-                        sectionKey,
-                        sectionTitle,
-                        false));
-                }
-            }
-            return result;
-        }
-
-        private static IEnumerable<object> ResolveDataContexts(XElement element, object root)
-        {
-            XElement template = element.Ancestors().FirstOrDefault(value =>
-                value.Name.LocalName == "DataTemplate");
-            if (template == null)
-                return new[] { root };
-            XElement itemsControl = template.Ancestors().FirstOrDefault(value =>
-                value.Name.LocalName == "ItemsControl");
-            string path = ReadBindingPath(FindAttribute(itemsControl, "ItemsSource")?.Value);
-            object items = ReadPropertyPath(root, path);
-            if (items is System.Collections.IEnumerable enumerable && !(items is string))
-                return enumerable.Cast<object>().Where(value => value != null).ToArray();
-            return Array.Empty<object>();
-        }
-
-        private static XElement FindSectionOwner(XElement element) =>
-            element?.AncestorsAndSelf().FirstOrDefault(value =>
-                FindAttribute(value, "SectionKey") != null ||
-                FindAttribute(value, "SectionTitle") != null);
-
-        private static bool IsInsideDataTemplate(XElement element) =>
-            element != null && element.AncestorsAndSelf().Any(value =>
-                value.Name.LocalName == "DataTemplate");
-
-        private static bool IsExcluded(XElement element) =>
-            element.AncestorsAndSelf().Any(value =>
-                string.Equals(FindAttribute(value, "Exclude")?.Value, "True", StringComparison.OrdinalIgnoreCase));
-
-        private static string ResolveToolTip(XElement element, object dataContext)
-        {
-            string result = ResolveValue(FindAttribute(element, "ToolTip")?.Value, dataContext);
-            if (result.Length > 0)
-                return result;
-            XElement property = element.Elements().FirstOrDefault(value =>
-                value.Name.LocalName.EndsWith(".ToolTip", StringComparison.Ordinal));
-            if (property == null)
-                return string.Empty;
-            foreach (XElement value in property.DescendantsAndSelf())
-            {
-                result = ResolveValue(FindAttribute(value, "Text")?.Value, dataContext);
-                if (result.Length > 0)
-                    return result;
-                result = ResolveValue(FindAttribute(value, "Content")?.Value, dataContext);
-                if (result.Length > 0)
-                    return result;
-            }
-            return string.Empty;
-        }
-
-        private static string ResolveElementContent(XElement element, object dataContext)
-        {
-            string result = ResolveValue(FindAttribute(element, "Content")?.Value, dataContext);
-            if (result.Length > 0)
-                return result;
-
-            IEnumerable<XElement> candidates = element.Elements().Where(value =>
-                value.Name.LocalName == "TextBlock" ||
-                value.Name.LocalName.EndsWith(".Content", StringComparison.Ordinal));
-            foreach (XElement container in candidates)
-            {
-                foreach (XElement candidate in container.DescendantsAndSelf())
-                {
-                    if (candidate.Name.LocalName != "TextBlock")
-                        continue;
-                    result = ResolveValue(FindAttribute(candidate, "Text")?.Value, dataContext);
-                    if (result.Length > 0)
-                        return result;
-                }
-            }
-            return string.Empty;
-        }
-
-        private static string FindNearbyTitle(XElement element, object dataContext)
-        {
-            string row = FindAttribute(element, "Row")?.Value ?? "0";
-            XElement current = element;
-            for (int level = 0; level < 4 && current.Parent != null; level++)
-            {
-                XElement parent = current.Parent;
-                foreach (XElement sibling in parent.Elements())
-                {
-                    if (ReferenceEquals(sibling, current))
-                        continue;
-                    string siblingRow = FindAttribute(sibling, "Row")?.Value ?? "0";
-                    if (parent.Name.LocalName == "Grid" && siblingRow != row)
-                        continue;
-                    foreach (XElement candidate in sibling.DescendantsAndSelf())
-                    {
-                        if (candidate.Name.LocalName != "TextBlock")
-                            continue;
-                        string text = ResolveValue(FindAttribute(candidate, "Text")?.Value, dataContext);
-                        if (text.Length > 0)
-                            return text;
-                    }
-                }
-                current = parent;
-                row = FindAttribute(current, "Row")?.Value ?? "0";
-            }
-            return string.Empty;
-        }
-
-        private static XAttribute FindAttribute(XElement element, string localName) =>
-            element?.Attributes().FirstOrDefault(attribute =>
-                attribute.Name.LocalName == localName ||
-                attribute.Name.LocalName.EndsWith("." + localName, StringComparison.Ordinal));
-
-        private static string ResolveValue(string xamlValue, object dataContext)
-        {
-            if (string.IsNullOrWhiteSpace(xamlValue))
-                return string.Empty;
-            string path = ReadBindingPath(xamlValue);
-            if (xamlValue.TrimStart().StartsWith("{Binding", StringComparison.Ordinal) &&
-                path.Length == 0)
-            {
-                return string.Empty;
-            }
-            if (path.Length == 0)
-                return xamlValue.Trim();
-            return ReadPropertyPath(dataContext, path)?.ToString()?.Trim() ?? string.Empty;
-        }
-
-        private static string ReadBindingPath(string value)
-        {
-            string text = value?.Trim() ?? string.Empty;
-            if (!text.StartsWith("{Binding", StringComparison.Ordinal) ||
-                !text.EndsWith("}", StringComparison.Ordinal))
-                return string.Empty;
-            text = text.Substring(8, text.Length - 9).Trim();
-            foreach (string part in text.Split(','))
-            {
-                string token = part.Trim();
-                if (token.StartsWith("Path=", StringComparison.OrdinalIgnoreCase))
-                    return token.Substring(5).Trim();
-                if (token.Length > 0 && token.IndexOf('=') < 0)
-                    return token;
-            }
-            return string.Empty;
-        }
-
-        private static object ReadPropertyPath(object instance, string path)
-        {
-            object current = instance;
-            foreach (string segment in (path ?? string.Empty).Split('.'))
-            {
-                if (current == null || segment.Length == 0)
-                    return null;
-                PropertyInfo property = current.GetType().GetProperty(
-                    segment,
-                    BindingFlags.Instance | BindingFlags.Public);
-                if (property == null || !property.CanRead)
-                    return null;
-                current = property.GetValue(current, null);
-            }
-            return current;
-        }
-    }
-
-    internal sealed class ReferenceEqualityComparer : IEqualityComparer<object>
-    {
-        public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
-        public new bool Equals(object x, object y) => ReferenceEquals(x, y);
-        public int GetHashCode(object value) =>
-            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
-    }
 }
 #endif

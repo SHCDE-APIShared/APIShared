@@ -12,7 +12,7 @@ using System.Reflection;
 namespace LobbyModSettingsPresetTests
 {
     [TestClass, DoNotParallelize]
-    public class LobbyPresetControllerTests
+    public partial class LobbyPresetControllerTests
     {
         private string directory;
         private LobbyModSettingsChangeOrigin previousOrigin;
@@ -23,6 +23,7 @@ namespace LobbyModSettingsPresetTests
         {
             directory = Path.Combine(Path.GetTempPath(), "APIShared-PresetController-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
+            PersonalSettingsPaths.TestDocumentsDirectory = _ => Path.Combine(directory, "Documents");
             previousOrigin = GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin;
             SetOrigin(LobbyModSettingsChangeOrigin.Local);
         }
@@ -30,6 +31,7 @@ namespace LobbyModSettingsPresetTests
         public void Cleanup()
         {
             SetOrigin(previousOrigin);
+            PersonalSettingsPaths.TestDocumentsDirectory = null;
             string prefix = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "APIShared-PresetController-");
             Assert.IsTrue(Path.GetFullPath(directory).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             if (Directory.Exists(directory)) Directory.Delete(directory, true);
@@ -47,7 +49,7 @@ namespace LobbyModSettingsPresetTests
             controller.Activate();
             return controller;
         }
-        private string SettingsPath => Path.Combine(directory, "LobbyModSettings", Name + ".msgpack");
+        private string SettingsPath => new PersonalSettingsPaths(Path.Combine(directory, "Example.dll"), "Foreign.Author.Example").SettingsFile;
         private Dictionary<string, byte[]> Read() =>
             MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(File.ReadAllBytes(SettingsPath));
 
@@ -120,28 +122,80 @@ namespace LobbyModSettingsPresetTests
             CollectionAssert.AreEqual(expected, controller.CreateCurrentMissionSnapshot()[nameof(Settings.HostAmount)]);
             Assert.AreEqual(17, host.Target.HostAmount);
         }
+        [TestMethod]
+        public void NestedSnapshotCannotPublishAPartiallyAppliedOuterPreset()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            int writes = controller.TestWriteCount;
+            bool nested = false;
+            host.Target.Changed = name =>
+            {
+                if (!nested && name == nameof(Settings.HostAmount))
+                {
+                    nested = true;
+                    controller.ApplyWorkingSnapshot(new Dictionary<string, byte[]>
+                    {
+                        [nameof(Settings.HostAmount)] = MessagePackSerializer.Serialize(31),
+                        [nameof(Settings.LocalAmount)] = MessagePackSerializer.Serialize(5)
+                    });
+                    Assert.IsTrue(controller.IsApplyingSnapshot, "Nested application cleared the outer snapshot guard.");
+                }
+                controller.AfterPropertyChanged(name);
+            };
+            controller.ApplyWorkingSnapshot(new Dictionary<string, byte[]>
+            {
+                [nameof(Settings.HostAmount)] = MessagePackSerializer.Serialize(31),
+                [nameof(Settings.LocalAmount)] = MessagePackSerializer.Serialize(43)
+            });
+            Assert.IsTrue(nested);
+            Assert.IsFalse(controller.IsApplyingSnapshot);
+            Assert.AreEqual(writes + 2, controller.TestWriteCount, "A setter published an intermediate snapshot.");
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(43, host.Target.LocalAmount);
+        }
+
         private sealed class Host : ILobbyPresetHost
         {
             internal readonly Settings Target = new Settings();
+            internal object SettingsTargetOverride;
             internal int Notifications;
-            public object SettingsTarget => Target;
+            internal Action SnapshotApplied;
+            internal readonly System.Collections.Generic.List<string> Publications = new System.Collections.Generic.List<string>();
+            public object SettingsTarget => SettingsTargetOverride ?? Target;
             public IDynamicPresetSettingsProvider DynamicSettingsProvider => null;
             public IModSettingsApplicationBackend SettingsApplicationBackend => null;
             public bool IsLocalHost { get; set; } = true;
+            public bool CanRestorePersonalHostSettings { get; set; } = true;
             public bool HasMissionContext { get; set; }
             public bool MissionPresetEditable { get; set; }
             public bool IsMissionPresetSelected => HasMissionContext && SelectedPreset == 1;
             public int SelectedPreset { get; private set; }
             public bool IsRetiredPresetProperty(string name) => false;
             public void SetSelectedPresetCore(int value) { SelectedPreset = value; }
-            public void OnSettingsSnapshotApplied() { Notifications++; }
+            public void OnSettingsSnapshotApplied() { Notifications++; SnapshotApplied?.Invoke(); }
+            public void PublishSettingsSnapshot(System.Collections.Generic.IReadOnlyList<string> properties) { Publications.AddRange(properties); }
         }
         public sealed class Settings
         {
             internal Action<string> Changed;
-            private int hostAmount = 17, localAmount = 5;
+            private int hostAmount = 17, secondHostAmount = 19, localAmount = 5;
+            internal bool FailSecondHostSetter;
+            internal int? RejectSecondHostValue;
             [SyncHostOnly]
             public int HostAmount { get => hostAmount; set { hostAmount = value; Changed?.Invoke(nameof(HostAmount)); } }
+            [SyncHostOnly]
+            public int SecondHostAmount
+            {
+                get => secondHostAmount;
+                set
+                {
+                    if (FailSecondHostSetter) throw new InvalidOperationException("Injected second setter failure");
+                    if (value == RejectSecondHostValue) throw new ArgumentOutOfRangeException(nameof(value), "Injected value rejection");
+                    secondHostAmount = value;
+                    Changed?.Invoke(nameof(SecondHostAmount));
+                }
+            }
             [PresetLocal]
             public int LocalAmount { get => localAmount; set { localAmount = value; Changed?.Invoke(nameof(LocalAmount)); } }
         }

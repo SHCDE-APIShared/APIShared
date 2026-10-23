@@ -21,12 +21,14 @@ namespace APIShared
         private GatehouseTimingService gatehouse;
         private UnitHudPresentationService unitHudPresentation;
         private HudExtrasButtonsService hudExtrasButtons;
+        private NativeCapabilityDiagnostic hudExtrasDiagnostic; // Set only when its member check failed.
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
         private MissionLifecycleService missionLifecycle;
         private BriefingGoldPresentationService briefingGoldPresentation;
         private BuildingRepairService buildingRepair;
+        private CoopAiStartImportService coopAiStartImport;
         internal RepairTooltipViewModel RepairTooltip { get; } = new RepairTooltipViewModel();
         private NativeCapabilityDiagnostic buildingRepairDiagnostic = Pending(NativeCapabilityIds.BuildingRepair);
         private long nativeModuleBase;
@@ -38,6 +40,7 @@ namespace APIShared
         private NativeCapabilityDiagnostic lobbyStateDiagnostic = Pending(NativeCapabilityIds.LobbyState);
         private NativeCapabilityDiagnostic playerDefeatDiagnostic = Pending(NativeCapabilityIds.PlayerDefeat);
         private NativeCapabilityDiagnostic briefingGoldDiagnostic = Pending(NativeCapabilityIds.BriefingGoldPresentation);
+        private NativeCapabilityDiagnostic coopAiStartImportDiagnostic = Pending(NativeCapabilityIds.CoopAiStartImport);
         private ManualLogSource log;
 
         internal NativeOwnershipRegistry NativeOwnership { get; } = new NativeOwnershipRegistry();
@@ -80,14 +83,25 @@ namespace APIShared
                     NativeApiLog.Error(logger, "Shared event callback failed: " + registration + ": " + error);
                 Audio.SoundRuntime.InitializeManaged(logger);
                 MarkedUnitSelectionAPI.Initialize(logger);
+                Presentation.TroopActionHud.Initialize(logger);
                 PlayerPerspectiveAPI.Initialize(logger);
-                if (hudExtrasButtons == null)
+                if (hudExtrasButtons == null && hudExtrasDiagnostic == null &&
+                    ManagedMemberContracts.TryValidate(NativeCapabilityIds.HudExtrasButtons, logger, out hudExtrasDiagnostic))
                 {
                     hudExtrasButtons = new HudExtrasButtonsService(logger);
                     hudExtrasButtons.Start();
                 }
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
+                if (coopAiStartImportDiagnostic.State == NativeCapabilityState.Pending)
+                {
+                    // Plans are bound to lifecycle start attempts; without them nothing could be planned safely.
+                    if (missionLifecycle == null)
+                        coopAiStartImportDiagnostic = Faulted(NativeCapabilityIds.CoopAiStartImport,
+                            "The mission lifecycle is unavailable.");
+                    else
+                        CoopAiStartImportService.TryCreate(logger, out coopAiStartImport, out coopAiStartImportDiagnostic);
+                }
                 if (briefingGoldDiagnostic.State == NativeCapabilityState.Pending)
                     BriefingGoldPresentationService.TryCreate(
                         logger,
@@ -133,6 +147,9 @@ namespace APIShared
                 nativeModuleBase = moduleBase;
                 log = logger;
             }
+            // Idempotent; the process plugin binds earlier in its own LibraryLoaded step.
+            if (nativeMemory != null && memory.Length > 0)
+                NativeOwnership.BindModule(moduleBase, memory.Length, nativeMemory.ReadByte);
 
             NativeApiState terminalState = NativeApiState.Ready;
             try
@@ -180,6 +197,7 @@ namespace APIShared
                         memory,
                         nativeRegion,
                         log,
+                        NativeOwnership,
                         out aivBuildStep,
                         out aivBuildStepDiagnostic);
                 }
@@ -217,6 +235,72 @@ namespace APIShared
                 readyCallbacks.Clear();
             }
             NativeApiLog.Debug(log, $"APIShared initialized: state={terminalState}, build={binaryHash}, lobbyState={lobbyStateDiagnostic.State}, playerDefeat={playerDefeatDiagnostic.State}, briefingGold={briefingGoldDiagnostic.State}, gatehouseDistanceOrigin={gatehouseDistanceOriginDiagnostic.State}, gatehouseTiming={gatehouseDiagnostic.State}, unitHudPresentation={unitHudDiagnostic.State}, aivBuildStep={aivBuildStepDiagnostic.State}.");
+            foreach (Action<IApiShared> callback in callbacks)
+            {
+                InvokeReadyCallback(callback);
+            }
+        }
+
+        // Error boundary of the LibraryLoaded initialization (issue #5). Steps run in order on the
+        // caller's thread and are independent: a throw is logged, handed to that step's Failed callback
+        // and never stops a later step. One step is expected to call Initialize. If no step published
+        // a terminal state, the API publishes Unavailable here, so WhenReady callbacks always complete.
+        // Nothing is rethrown to the Script Extender's LibraryLoaded publisher or to Awake.
+        internal void RunNativeInitialization(ManualLogSource logger, params NativeInitializationStep[] steps)
+        {
+            string lastFailure = null;
+            foreach (NativeInitializationStep step in steps)
+            {
+                try { step.Run(); }
+                catch (Exception ex)
+                {
+                    lastFailure = $"Initialization step '{step.Name}' failed: {ex.GetType().Name}: {ex.Message}";
+                    try { Internal.RuntimeHealth.Failure(logger, "initialization:" + step.Name, true, $"{lastFailure}; independent steps continue. {ex}"); }
+                    catch { }
+                    try { step.Failed?.Invoke(lastFailure); }
+                    catch { }
+                }
+            }
+            if (State == NativeApiState.Pending)
+                PublishInitializationFailure(lastFailure ?? "Native initialization did not publish a terminal state.", logger);
+        }
+
+        // A failed repair-tooltip binding leaves the on-demand repair capability Faulted with that reason
+        // instead of creating it later without its HUD tooltip.
+        internal void FaultBuildingRepair(string reason)
+        {
+            lock (sync)
+            {
+                if (buildingRepair == null && buildingRepairDiagnostic.State == NativeCapabilityState.Pending)
+                    buildingRepairDiagnostic = Faulted(NativeCapabilityIds.BuildingRepair, reason);
+            }
+        }
+
+        // Terminal fallback when Initialize was not reached or threw before publishing: the same
+        // Unavailable outcome as Initialize's own global failure, with the step's reason.
+        private void PublishInitializationFailure(string reason, ManualLogSource logger)
+        {
+            Action<IApiShared>[] callbacks;
+            lock (sync)
+            {
+                if (state != NativeApiState.Pending)
+                    return;
+                if (log == null)
+                    log = logger;
+                gatehouseDistanceOrigin = null;
+                gatehouse = null;
+                unitHudPresentation = null;
+                aivBuildStep = null;
+                gatehouseDistanceOriginDiagnostic = Faulted(NativeCapabilityIds.GatehouseDistanceOrigin, reason);
+                gatehouseDiagnostic = Faulted(NativeCapabilityIds.GatehouseTiming, reason);
+                unitHudDiagnostic = Faulted(NativeCapabilityIds.UnitHudPresentation, reason);
+                aivBuildStepDiagnostic = Faulted(NativeCapabilityIds.AivBuildStep, reason);
+                state = NativeApiState.Unavailable;
+                callbacks = readyCallbacks.ToArray();
+                readyCallbacks.Clear();
+            }
+            try { NativeApiLog.Error(log, $"APIShared initialization failed globally: build={binaryHash}, error={reason}"); }
+            catch { }
             foreach (Action<IApiShared> callback in callbacks)
             {
                 InvokeReadyCallback(callback);
@@ -290,6 +374,7 @@ namespace APIShared
             }
             lock (sync)
             {
+                if (hudExtrasButtons == null && hudExtrasDiagnostic != null) { diagnostic = hudExtrasDiagnostic; return false; }
                 diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.HudExtrasButtons,
                     hudExtrasButtons == null ? NativeCapabilityState.Pending : NativeCapabilityState.Available, string.Empty,
                     hudExtrasButtons == null ? "Managed presentation is not initialized." : "Independent side-HUD presentation is available.");
@@ -334,6 +419,21 @@ namespace APIShared
                 diagnostic = missionLifecycleDiagnostic;
                 if (missionLifecycle == null) return false;
                 capability = missionLifecycle.Bind(ownerGuid);
+                return true;
+            }
+        }
+
+        internal bool TryGetCoopAiStartImport(string ownerGuid, out ICoopAiStartImportCapability capability,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            capability = null;
+            if (!ValidateOwner(ownerGuid, NativeCapabilityIds.CoopAiStartImport, out diagnostic))
+                return false;
+            lock (sync)
+            {
+                diagnostic = coopAiStartImportDiagnostic;
+                if (coopAiStartImport == null) return false;
+                capability = coopAiStartImport.Bind(ownerGuid);
                 return true;
             }
         }
@@ -432,7 +532,7 @@ namespace APIShared
                     if (state != NativeApiState.Ready)
                         buildingRepairDiagnostic = Faulted(NativeCapabilityIds.BuildingRepair, "APIShared is unavailable.");
                     else
-                        BuildingRepairService.TryCreate(binaryHash, nativeModuleBase, log, RepairTooltip,
+                        BuildingRepairService.TryCreate(binaryHash, nativeModuleBase, log, RepairTooltip, NativeOwnership,
                             out buildingRepair, out buildingRepairDiagnostic);
                 }
                 diagnostic = buildingRepairDiagnostic;
@@ -471,5 +571,21 @@ namespace APIShared
             new NativeCapabilityDiagnostic(capabilityId, NativeCapabilityState.Faulted, binaryHash, reason);
         private static NativeCapabilityDiagnostic Pending(string capabilityId) =>
             new NativeCapabilityDiagnostic(capabilityId, NativeCapabilityState.Pending, string.Empty, "APIShared has not completed native initialization.");
+    }
+
+    // One independent step of ApiSharedRuntime.RunNativeInitialization. Failed receives the logged
+    // reason when Run throws; its own exceptions are ignored.
+    internal sealed class NativeInitializationStep
+    {
+        internal NativeInitializationStep(string name, Action run, Action<string> failed = null)
+        {
+            Name = name;
+            Run = run ?? throw new ArgumentNullException(nameof(run));
+            Failed = failed;
+        }
+
+        internal string Name { get; }
+        internal Action Run { get; }
+        internal Action<string> Failed { get; }
     }
 }

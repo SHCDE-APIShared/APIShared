@@ -2,8 +2,8 @@
 param([string]$XmlDocumentation)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$documents = @(Get-ChildItem -LiteralPath $root -File -Filter '*.md') +
-    @(Get-ChildItem -LiteralPath (Join-Path $root 'docs') -Recurse -File -Filter '*.md')
+. (Join-Path $PSScriptRoot '../BuildChecks.ps1')
+$documents = @(Get-ApiMaintainedFiles $root | Where-Object Extension -EQ '.md')
 $links = 0
 foreach ($document in $documents) {
     $text = [regex]::Replace([IO.File]::ReadAllText($document.FullName), '(?ms)^```.*?^```[^\r\n]*', '')
@@ -24,6 +24,8 @@ foreach ($document in $documents) {
                 $title = $heading.Groups[1].Value.Trim().ToLowerInvariant()
                 [regex]::Replace($title, '[^\p{L}\p{Nd}_ -]', '').Replace(' ', '-')
             })
+            # Field/evidence catalogs also use explicit stable HTML anchors, independent of display headings.
+            $anchors += @([regex]::Matches([IO.File]::ReadAllText($target), '<a\s+id="([^"]+)"\s*>') | ForEach-Object { $_.Groups[1].Value })
             if ([Uri]::UnescapeDataString($parts[1]) -notin $anchors) { throw "Broken heading link: $reference ($($document.Name))" }
         }
         $links++

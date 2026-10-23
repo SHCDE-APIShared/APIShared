@@ -63,6 +63,45 @@ namespace APIShared.ModSettings
         private SettingsMenuContext settingsMenuContext;
         private bool isRealMultiplayer;
         private bool isLocalHost = true;
+#if API_SHARED_PRESET_TESTS
+        internal Func<bool> System_TestPersonalHostRestoreAllowed;
+#endif
+        internal bool CanRestorePersonalHostSettings
+        {
+            get
+            {
+#if API_SHARED_PRESET_TESTS
+                return System_TestPersonalHostRestoreAllowed?.Invoke() ?? isLocalHost;
+#else
+                var lobby = Platform_Multiplayer.Instance?.activeLobby;
+                if (lobby != null) return lobby.isHost;
+                var mission = APIShared.MissionLifecycleService.ActiveContext;
+                return mission == null || !mission.Mode.IsRealMultiplayer || mission.IsHost == true;
+#endif
+            }
+        }
+
+        private void PublishSettingsSnapshot(IReadOnlyList<string> properties)
+        {
+            bool publishPersonal = false;
+            foreach (string name in properties)
+            {
+                var property = GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (property?.GetCustomAttribute<SyncHostOnlyAttribute>() != null)
+                {
+                    // Revalidate transport authority after the complete transaction.
+                    // The existing host publisher defers until the lobby slot is ready.
+#if API_SHARED_PRESET_TESTS
+                    if (isLocalHost) base.System_TriggerUpdate(name);
+#else
+                    if (GameNetworkAPI.IsLocalHost()) base.System_TriggerUpdate(name);
+#endif
+                }
+                else if (property?.GetCustomAttribute<SyncPerPlayerAttribute>() != null)
+                    publishPersonal = true;
+            }
+            if (publishPersonal) perPlayerSettingsCoordinator?.RequestPublish();
+        }
         private PerPlayerLobbySettingsCoordinator perPlayerSettingsCoordinator;
 #if !API_SHARED_PRESET_TESTS
         private string modSettingsSearchText = string.Empty;
@@ -142,6 +181,14 @@ namespace APIShared.ModSettings
             get => presetController?.ClientSettingsEnabled ?? false;
             set => presetController?.SetClientSettingsEnabled(value);
         }
+
+        /// <summary>Opacity for the host options content: 0.65 when its activation switch is off, otherwise 1. Bind only the content container, leaving activation and preset actions outside it.</summary>
+        /// <remarks>Presentation only; does not change editing rights, setting values or runtime activation. A schema without a host activation switch remains fully opaque. Read on the Unity UI thread.</remarks>
+        public float HostSettingsOpacity => HasHostSettingsActivation && !HostSettingsEnabled ? 0.65f : 1f;
+
+        /// <summary>Opacity for the personal options content: 0.65 when its activation switch is off, otherwise 1. Bind only the content container, leaving activation and preset actions outside it.</summary>
+        /// <remarks>Presentation only; does not change editing rights, setting values or runtime activation. A schema without a client activation switch remains fully opaque. Read on the Unity UI thread.</remarks>
+        public float ClientSettingsOpacity => HasClientSettingsActivation && !ClientSettingsEnabled ? 0.65f : 1f;
 
         /// <summary>Whether the latest observed context identifies this peer as settings host.</summary>
         public bool IsLocalSettingsHost => isLocalHost;
@@ -814,6 +861,8 @@ namespace APIShared.ModSettings
         }
 #endif
 
+        internal void LoadInitialPresetSettings() => presetController?.LoadInitialSettings();
+
         internal void ActivatePresets()
         {
             if (presetController == null)
@@ -848,6 +897,9 @@ namespace APIShared.ModSettings
                 ownerGuid,
                 builder.Build(),
                 logRoutineActivity);
+#if !API_SHARED_PRESET_TESTS
+            PerPlayerLobbyBroadcastGuard.Register(this, perPlayerSettingsCoordinator);
+#endif
         }
 
         internal void ActivatePerPlayerLobbySettings()
@@ -1025,16 +1077,28 @@ namespace APIShared.ModSettings
             RaiseAccessProperties();
         }
 
-        /// <summary>Leaves temporary mission settings and restores the personal preset context.</summary>
+        /// <summary>Leaves temporary mission settings and restores the personal preset context.
+        /// If restoration throws, the context remains active so Exit can be retried.</summary>
         public void System_ExitMissionPreset()
         {
             if (!missionPresetContext || presetController == null)
                 return;
 
+            bool wasEditable = missionPresetEditable;
+            bool hadExplicitSettings = missionPresetHasExplicitSettings;
             missionPresetContext = false;
             missionPresetEditable = false;
             missionPresetHasExplicitSettings = false;
-            presetController.ExitMissionPreset();
+            try { presetController.ExitMissionPreset(); }
+            catch
+            {
+                // The controller needs personal scope during restoration. A failed restore
+                // must remain reachable by a later Exit rather than looking already complete.
+                missionPresetContext = true;
+                missionPresetEditable = wasEditable;
+                missionPresetHasExplicitSettings = hadExplicitSettings;
+                throw;
+            }
             RaiseAccessProperties();
         }
 
@@ -1062,6 +1126,7 @@ namespace APIShared.ModSettings
             if (isLocalHost == currentIsHost && isRealMultiplayer == currentIsRealMultiplayer &&
                 settingsMenuContext == currentMenuContext)
             {
+                presetController?.RestorePersonalHostIfPending();
                 RefreshModeAvailability();
                 return;
             }
@@ -1069,6 +1134,7 @@ namespace APIShared.ModSettings
             isLocalHost = currentIsHost;
             isRealMultiplayer = currentIsRealMultiplayer;
             settingsMenuContext = currentMenuContext;
+            presetController?.RestorePersonalHostIfPending();
             RaiseAccessProperties();
         }
 
@@ -1146,9 +1212,15 @@ namespace APIShared.ModSettings
                 base.OnPropertyChanged(name);
 
                 if (presetController?.IsHostSettingsActivationProperty(name) == true)
+                {
                     base.OnPropertyChanged(nameof(HostSettingsEnabled));
+                    base.OnPropertyChanged(nameof(HostSettingsOpacity));
+                }
                 if (presetController?.IsClientSettingsActivationProperty(name) == true)
+                {
                     base.OnPropertyChanged(nameof(ClientSettingsEnabled));
+                    base.OnPropertyChanged(nameof(ClientSettingsOpacity));
+                }
             }
             finally
             {
@@ -1180,6 +1252,8 @@ namespace APIShared.ModSettings
             base.OnPropertyChanged(nameof(HasClientSettingsActivation));
             base.OnPropertyChanged(nameof(HostSettingsEnabled));
             base.OnPropertyChanged(nameof(ClientSettingsEnabled));
+            base.OnPropertyChanged(nameof(HostSettingsOpacity));
+            base.OnPropertyChanged(nameof(ClientSettingsOpacity));
             base.OnPropertyChanged(nameof(MissionPresetEditable));
             base.OnPropertyChanged(nameof(IsMissionPresetSelected));
             base.OnPropertyChanged(nameof(CanEditHostSettings));

@@ -16,6 +16,20 @@ namespace APIShared
     {
         private delegate int LocalPlayerIdCall(GamePlayerManagerAPI self);
 
+        private static readonly PlayerPerspectiveChangeHub changes = new PlayerPerspectiveChangeHub();
+
+        /// <summary>
+        /// Observes committed API perspective transactions, in registration and process sequence order.
+        /// No replay or implicit UI dispatch: read GetViewedPlayerId for the initial snapshot. Callbacks
+        /// run outside the transition lock on the thread draining the FIFO (possibly another caller
+        /// during concurrent transactions). Reentrant changes are queued. Exceptions are isolated.
+        /// Owner GUID and owner-local ID must be nonempty and unique while registered. Dispose stops
+        /// future captures; already queued immutable deliveries can still arrive. Native view writes
+        /// made outside this API are not observed. Clear is signalled even if the native view is equal.
+        /// </summary>
+        public static IDisposable SubscribeChanges(string ownerGuid, string registrationId,
+            Action<PlayerPerspectiveChange> callback) => changes.Subscribe(ownerGuid, registrationId, callback);
+
         private static Hook localPlayerIdHook;
         private static LocalPlayerIdCall originalLocalPlayerId;
         private static readonly object viewChangeGate = new object();
@@ -46,6 +60,7 @@ namespace APIShared
                 candidate.Apply();
                 localPlayerIdHook = candidate;
                 transitionLog = log;
+                changes.OnError = error => log.LogError("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] PLAYER_PERSPECTIVE_OBSERVER_FAILED: " + error);
             }
             catch (Exception error)
             {
@@ -120,6 +135,13 @@ namespace APIShared
         internal static bool TryChangeView(int playerId, Func<int> readNativeView,
             Action<int> setNativeView, out string failure)
         {
+            try { return TryChangeViewCore(playerId, readNativeView, setNativeView, out failure); }
+            finally { changes.Drain(); }
+        }
+
+        private static bool TryChangeViewCore(int playerId, Func<int> readNativeView,
+            Action<int> setNativeView, out string failure)
+        {
             failure = null;
             if (playerId < 1 || playerId > 8 || readNativeView == null || setNativeView == null)
             {
@@ -160,6 +182,7 @@ namespace APIShared
                         Volatile.Write(ref selectedSpectatorPlayerId, playerId);
                         Volatile.Write(ref viewUncertain, 0);
                         Volatile.Write(ref transitionActive, 0);
+                        changes.Enqueue(Volatile.Read(ref transitionViewPlayerId), playerId, PlayerPerspectiveChangeReason.Selected);
                         return true;
                     }
                 }
@@ -177,6 +200,8 @@ namespace APIShared
                 Volatile.Write(ref viewUncertain, restored ? previousUncertain : 1);
                 if (restored) Volatile.Write(ref identityOverrideActive, previousOverride);
                 Volatile.Write(ref transitionActive, 0);
+                if (!restored && previousUncertain == 0)
+                    changes.Enqueue(Volatile.Read(ref transitionViewPlayerId), -1, PlayerPerspectiveChangeReason.Uncertain);
                 failure = "Native view " + playerId + " was not confirmed; rollback=" +
                     (restored ? "verified" : "failed") +
                     (changeError == null ? string.Empty : ", changeError=" + changeError) +
@@ -190,11 +215,16 @@ namespace APIShared
         {
             lock (viewChangeGate)
             {
+                int previous = Volatile.Read(ref viewUncertain) != 0 ? -1 :
+                    Volatile.Read(ref selectedSpectatorPlayerId);
+                bool hadOverride = previous != 0 || Volatile.Read(ref identityOverrideActive) != 0;
                 Volatile.Write(ref selectedSpectatorPlayerId, 0);
                 Volatile.Write(ref viewUncertain, 0);
                 Volatile.Write(ref transitionActive, 0);
                 Volatile.Write(ref identityOverrideActive, 0);
+                if (hadOverride) changes.Enqueue(previous, -1, PlayerPerspectiveChangeReason.Cleared);
             }
+            changes.Drain();
         }
     }
 }

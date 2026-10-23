@@ -38,6 +38,14 @@ namespace APIShared.Events
         private readonly Func<bool> hasDemand;
         private bool installed;
         private long failures;
+        private FilteredSnapshot lastFiltered;
+        private sealed class FilteredSnapshot
+        {
+            internal FilteredSnapshot(Registration[] source, ulong mask, Registration[] result) { Source = source; Mask = mask; Result = result; }
+            internal readonly Registration[] Source;
+            internal readonly ulong Mask;
+            internal readonly Registration[] Result;
+        }
         [ThreadStatic] private static int notificationDepth;
         // Cached demand is opt-in and requires ownership of every activation transition.
         internal InterceptionEvent(Action install = null, Func<bool> hasDemand = null) { this.install = install; this.hasDemand = hasDemand; }
@@ -86,24 +94,40 @@ namespace APIShared.Events
             Registration[] snapshot = notificationDepth == 0 ? Volatile.Read(ref registrations) : Array.Empty<Registration>();
             // Only internal service subscriptions can be dormant. Freeze demand with the
             // invocation so enabling/disabling during Pre cannot mismatch Accepted/Post.
-            Registration[] filtered = null;
-            int activeCount = 0;
-            for (int index = 0; index < snapshot.Length; index++)
+            // Each predicate runs exactly once, in registration order. A dormant service
+            // registration would otherwise force a new filtered array on every call of a frequent
+            // publisher; an identical (registration array, active set) reuses the previously
+            // built immutable result. Invocations never mutate their snapshot array.
+            int count = snapshot.Length;
+            if (count != 0)
             {
-                Registration entry = snapshot[index];
-                if (entry.IsActive == null || entry.IsActive())
+                Span<bool> active = count <= 256 ? stackalloc bool[count] : new bool[count];
+                int activeCount = 0;
+                ulong activeMask = 0;
+                for (int index = 0; index < count; index++)
                 {
-                    if (filtered != null) filtered[activeCount] = entry;
+                    Registration entry = snapshot[index];
+                    active[index] = entry.IsActive == null || entry.IsActive();
+                    if (!active[index]) continue;
                     activeCount++;
+                    if (index < 64) activeMask |= 1UL << index;
                 }
-                else if (filtered == null)
+                if (activeCount == 0) snapshot = Array.Empty<Registration>();
+                else if (activeCount != count)
                 {
-                    filtered = new Registration[snapshot.Length];
-                    Array.Copy(snapshot, filtered, index);
+                    FilteredSnapshot cached = count <= 64 ? Volatile.Read(ref lastFiltered) : null;
+                    if (cached != null && ReferenceEquals(cached.Source, snapshot) && cached.Mask == activeMask)
+                        snapshot = cached.Result;
+                    else
+                    {
+                        var filtered = new Registration[activeCount];
+                        for (int index = 0, next = 0; index < count; index++)
+                            if (active[index]) filtered[next++] = snapshot[index];
+                        if (count <= 64) Volatile.Write(ref lastFiltered, new FilteredSnapshot(snapshot, activeMask, filtered));
+                        snapshot = filtered;
+                    }
                 }
             }
-            if (activeCount == 0) snapshot = Array.Empty<Registration>();
-            else if (filtered != null) { Array.Resize(ref filtered, activeCount); snapshot = filtered; }
             var invocation = new Invocation(this, snapshot, args);
             notificationDepth++;
             try

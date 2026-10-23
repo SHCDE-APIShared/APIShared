@@ -19,18 +19,16 @@ $extender = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $ExtenderDi
 $zip = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $ExtenderDir 'ICSharpCode.SharpZipLib.dll'))
 $steam = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data/Managed/com.rlabrecque.steamworks.net.dll'))
 try {
-    # One allow-list: the runtime gate's AuditedExtenderHashes in WorkshopCleanupRuntime.cs.
-    $runtime = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../src/Workshop/WorkshopCleanupRuntime.cs'))
-    $list = [regex]::Match($runtime, 'AuditedExtenderHashes\s*=\s*\{(?<list>[^}]*)\}')
-    $audited = @([regex]::Matches($list.Groups['list'].Value, '"(?<hash>[0-9a-f]{64})"') | ForEach-Object { $_.Groups['hash'].Value })
-    if (-not $list.Success -or $audited.Count -eq 0) { throw 'Missing AuditedExtenderHashes in WorkshopCleanupRuntime.cs.' }
-    $hash = Get-WorkshopFileHash (Join-Path $ExtenderDir 'SHCDESE.dll')
-    if ($audited -cnotcontains $hash) { throw "Workshop hook audit must be renewed for this installed Extender (SHA-256 $hash)." }
-    Write-Host "Verified audited Extender binary: $hash"
+    # Installation depends on actual contracts, never a complete SE DLL hash or release list.
+    # WorkshopHookTests also exercise the runtime's dry transformation and compilation.
     Assert-WorkshopMethod $game 'Platform_Workshop' 'get_Instance' 'Platform_Workshop' @() $true $true
     Assert-WorkshopMethod $game 'Platform_Workshop' 'GetListOfSubscribedItemsPaths' 'System.Collections.Generic.List`1<System.String>' @() $true $false
     $map = 'SHCDESE.API.Components.Archive.MapArchive'
     Assert-WorkshopMethod $extender 'SHCDESE.API.Components.Archive.MapModManager' 'TryStageModUpdate' 'System.Boolean' @('System.String',$map) $false $false
+    $staging = $extender.MainModule.GetType('SHCDESE.API.Components.Archive.MapModManager').Methods | Where-Object Name -CEQ 'TryStageModUpdate'
+    if (-not $staging.HasBody -or -not @($staging.Body.Instructions | Where-Object { $_.OpCode.Code -eq [Mono.Cecil.Cil.Code]::Ret }).Count) {
+        throw 'Workshop staging method requires a managed body with return sites.'
+    }
     Assert-WorkshopMethod $extender $map '.ctor' 'System.Void' @('System.String') $true $false
     Assert-WorkshopMethod $extender $map 'TryReadTextFile' 'System.String' @('System.String','System.Boolean') $true $false
     Assert-WorkshopMethod $extender $map 'get_Info' 'SHCDESE.API.Components.ModManager.ModInfo' @() $true $false
@@ -83,18 +81,9 @@ try {
         if ($member.Count -ne 1) { throw 'SteamManager reflective contract changed.' }
         Write-Host ('Verified encapsulated SteamManager reflection: '+$field[0])
     }
-    $sourceRoot = Join-Path $PSScriptRoot '../../src/Workshop'
-    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot,(Join-Path $PSScriptRoot '../WorkshopUploader') -File -Filter '*.cs') {
-        $source = [IO.File]::ReadAllText($file.FullName)
-        foreach ($call in [regex]::Matches($source,'\b(SteamUGC|SteamUser|SteamFriends)\.(\w+)\(')) {
-            $type=$steam.MainModule.GetType('Steamworks.'+$call.Groups[1].Value)
-            $methods=@($type.Methods | Where-Object { $_.Name -ceq $call.Groups[2].Value -and $_.IsPublic -and $_.IsStatic })
-            if ($methods.Count -ne 1) { throw ('Unavailable or ambiguous installed Steam method: '+$call.Value) }
-            Write-Host ('Verified installed Steam signature: '+$methods[0].FullName)
-        }
-        foreach ($constant in [regex]::Matches($source,'\b(E\w+)\.(k_\w+)')) {
-            $type=$steam.MainModule.GetType('Steamworks.'+$constant.Groups[1].Value)
-            if (-not $type -or -not @($type.Fields | Where-Object Name -CEQ $constant.Groups[2].Value).Count) { throw ('Missing Steam enum member: '+$constant.Value) }
-        }
-    }
+    # Statically bound Steam calls/constants are checked by compiling the selected
+    # plugin and publisher against these real assemblies. A source-word scan would
+    # duplicate that check and wrongly reject harmless overloads or comments.
+    # Keep the explicit reflective/interop signatures above: compilation alone
+    # cannot validate those runtime member contracts.
 } finally { $steam.Dispose(); $zip.Dispose(); $extender.Dispose(); $game.Dispose() }

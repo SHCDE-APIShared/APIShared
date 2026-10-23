@@ -141,14 +141,15 @@ namespace APIShared
                 archerVariantNext = next;
                 archerVariantPrevious.PreviewMouseDown += OnRecruitmentPreviousMouseDown;
                 archerVariantNext.PreviewMouseDown += OnRecruitmentNextMouseDown;
+                // Hover handlers are bound once per button instance, like the click handlers.
+                foreach (Button button in new[] { previous, next })
+                {
+                    ToolTipService.SetIsEnabled(button, false);
+                    button.MouseEnter += (sender, args) => ShowRecruitmentHover(button);
+                    button.MouseLeave += (sender, args) => recruitmentHover.Close(button);
+                }
             }
             recruitmentHover.Close();
-            foreach (Button button in new[] { previous, next })
-            {
-                ToolTipService.SetIsEnabled(button, false);
-                button.MouseEnter += (sender, args) => ShowRecruitmentHover(button);
-                button.MouseLeave += (sender, args) => recruitmentHover.Close(button);
-            }
             archerVariantHost = host;
             archerVariantTint = tint;
             recruitmentPanel = main.HUDBuildingPanel;

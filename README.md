@@ -18,12 +18,22 @@ If your mod pack already includes APIShared, use that copy. SerpsModsHost is not
 
 ## Use
 
+The central package also includes `APIShared.Content.dll`, a game-independent
+.NET Standard 2.0 library for GUID namespace data and schema-3 mission settings.
+See [content integration](docs/THIRD_PARTY_GUIDE.md#game-independent-content).
+
 Reference APIShared with `Private=false` and declare the minimum APIShared and
 Script Extender versions your mod needs. Consumer mods must not bundle the DLL.
 Documentation describes this source checkout. Confirm that the installed release
 contains each API you use; source-checkout features can precede a published package.
 See the [mod author guide](docs/THIRD_PARTY_GUIDE.md) for registration, lifetime,
 settings and packaging contracts.
+
+APIShared also provides **Use current mod settings** in the Load Game dialog,
+independently of ExtendedData. Its last choice is remembered across saves and game
+restarts; initially it is off. Without a usable checkbox, automatic loads use current
+supported settings, while saved mission restrictions and fixed creator rules remain
+in force. See [load/save integration](docs/THIRD_PARTY_GUIDE.md#loadsave-requester-integration).
 
 ## Documentation
 

@@ -17,7 +17,8 @@ $good = @('! running || return 1', 'if ! a; then b; fi', 'while ! a; do b; done'
 foreach ($line in $bad) { if (-not (Test-BareNegation $line)) { throw "Shell lint missed a bare negation: $line" } }
 foreach ($line in $good) { if (Test-BareNegation $line) { throw "Shell lint rejected a valid form: $line" } }
 $findings = @()
-foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.sh' | Where-Object FullName -NotMatch '[\\/](bin|obj|BepInEx|\.git|\.local)[\\/]') {
+. (Join-Path $PSScriptRoot '../BuildChecks.ps1')
+foreach ($file in Get-ApiMaintainedFiles $root | Where-Object Extension -EQ '.sh') {
     $number = 0
     foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
         $number++

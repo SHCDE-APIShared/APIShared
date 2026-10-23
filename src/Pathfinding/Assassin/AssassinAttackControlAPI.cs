@@ -28,6 +28,7 @@ namespace APIShared
         private static ManualLogSource log;
         private static bool supported;
         private static HookTransaction transaction;
+        private static readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private static DetourHandle<AssassinAttackNativeContract.UpdateDelegate> hook;
         private static Func<int, bool> guard;
         private static AssassinObstacleCompletionMode completionMode;
@@ -35,6 +36,7 @@ namespace APIShared
         private static string owner;
         private static readonly object Sync = new object();
         private static int errorLogged;
+        private static NativeOwnershipRegistry Sites => ApiSharedRuntime.ProcessInstance.NativeOwnership;
         internal static void Initialize(IntPtr nativeModule, ScanRegion nativeRegion, string hash, ManualLogSource logger)
         {
             module = nativeModule; region = nativeRegion; log = logger;
@@ -61,14 +63,29 @@ namespace APIShared
                 throw new ArgumentOutOfRangeException(nameof(mode));
             lock (Sync)
             {
+                publication.ThrowIfUnavailable();
                 if (owner != null) throw new InvalidOperationException("Assassin attack guard already belongs to " + owner);
-                if (mode == AssassinObstacleCompletionMode.NativeRetarget)
+                bool retargetClaimed = false;
+                try
                 {
-                    if (!supported || module == IntPtr.Zero) throw new InvalidOperationException("Native retarget image unavailable.");
-                    AssassinAttackNativeContract.ValidateRetargetEntry(module + 0x122800);
-                    retarget = Marshal.GetDelegateForFunctionPointer<AssassinAttackNativeContract.RetargetDelegate>(module + 0x122800);
+                    if (mode == AssassinObstacleCompletionMode.NativeRetarget)
+                    {
+                        if (!supported || module == IntPtr.Zero) throw new InvalidOperationException("Native retarget image unavailable.");
+                        AssassinAttackNativeContract.ValidateRetargetEntry(module + 0x122800);
+                        // The retarget call relies on the validated pristine entry.
+                        ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.AssassinRetarget,
+                            ApiSharedNativeSites.AssassinRetargetSpans(), reason => new InvalidOperationException(reason));
+                        retargetClaimed = true;
+                        retarget = Marshal.GetDelegateForFunctionPointer<AssassinAttackNativeContract.RetargetDelegate>(module + 0x122800);
+                    }
+                    EnsureInstalled();
                 }
-                EnsureInstalled();
+                catch
+                {
+                    if (retargetClaimed && !publication.HasStarted)
+                        ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinRetarget);
+                    throw;
+                }
                 completionMode = mode;
                 owner = ownerGuid;
                 Volatile.Write(ref guard, callback); // Publishes mode/delegate together on the simulation thread.
@@ -77,6 +94,7 @@ namespace APIShared
 
         private static void DispatchAssassinUpdate()
         {
+            if (!publication.IsReady) { Volatile.Read(ref hook).Original(); return; }
             try
             {
                 int unitId = *(int*)((byte*)module + 0x9302C4);
@@ -93,38 +111,52 @@ namespace APIShared
                 if (Interlocked.Exchange(ref errorLogged, 1) == 0)
                     log?.LogError("Assassin attack guard failed; original update retained: " + ex);
             }
-            hook.Original(); // Full original housekeeping and state machine, exactly once.
+            // Full original housekeeping and state machine, exactly once. The handle is published before
+            // the patch is written (EnsureInstalled), so it is set whenever this callback can run.
+            Volatile.Read(ref hook).Original();
         }
 
         private static void EnsureInstalled()
         {
-            if (hook != null) return;
+            publication.ThrowIfUnavailable();
+            if (publication.IsReady) return;
             if (!supported || module == IntPtr.Zero || region == null)
                 throw new InvalidOperationException("Assassin update requires the audited native image.");
             byte[] expected = { 0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10 };
             IntPtr target = module + 0x16CD70;
             for (int i=0;i<expected.Length;i++)
                 if (Marshal.ReadByte(target,i) != expected[i]) throw new InvalidOperationException("Assassin update prologue changed or occupied.");
+            ApiSharedNativeSites.Claim(Sites, ApiSharedNativeSites.AssassinAttack, ApiSharedNativeSites.AssassinAttackSpans(),
+                reason => new InvalidOperationException(reason));
             var candidate = new DetourHandle<AssassinAttackNativeContract.UpdateDelegate>();
             HookTransaction pending = null;
             try
             {
+                // InstallOnCommit = false: the handle is attached and published before the patch goes
+                // live, so DispatchAssassinUpdate always finds its original (NativeHookPublication).
                 pending = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true, Backend = AssassinAttackNativeContract.Backend });
+                    new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
+                        InstallOnCommit = false, Backend = NativeStartupPatchWindow.Backend(AssassinAttackNativeContract.Backend) });
                 pending.AddDetour(candidate, HookTarget.FromAddress(unchecked((ulong)target.ToInt64())), (AssassinAttackNativeContract.UpdateDelegate)DispatchAssassinUpdate);
-                if (!pending.Commit().IsCompleteSuccess || !candidate.Success)
+                CommitResult result = pending.Commit();
+                if (!result.IsCompleteSuccess || !candidate.Success)
                     throw new InvalidOperationException("Assassin update transaction failed.");
-                AssassinAttackNativeContract.Validate(candidate.Hook, target);
+                Volatile.Write(ref hook, candidate);
                 transaction = pending;
-                hook = candidate; // Publication: process lifetime; no reachable teardown.
-                log?.LogInfo("Assassin attack guard installed; APIShared owner, RVA=0x16CD70, Indirect/10, continuation=0x16CD7A.");
+                NativeHookPublication.Enable(pending, result, publication, null,
+                    () => AssassinAttackNativeContract.Validate(candidate.Hook, target));
             }
             catch
             {
-                if (hook == candidate) throw;
-                pending?.Dispose(); // Unpublished failed candidate only.
+                publication.RollbackUnpublished(pending, () =>
+                {
+                    Volatile.Write(ref hook, null);
+                    transaction = null;
+                    ApiSharedNativeSites.Release(Sites, ApiSharedNativeSites.AssassinAttack);
+                });
                 throw;
             }
+            try { log?.LogInfo("Assassin attack guard installed; APIShared owner, RVA=0x16CD70, Indirect/10, continuation=0x16CD7A."); } catch { }
         }
     }
 }

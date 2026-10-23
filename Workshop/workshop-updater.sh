@@ -365,7 +365,8 @@ for ((index=0; index<${#targets[@]}; index++)); do
     if [[ ${kinds[$index]} == *write ]]; then
         new=$(inside "$transaction" "New/$index"); [[ $(hash "$new") == "${afters[$index]}" ]]; mkdir -p -- "$(dirname -- "$target")"; target=$(inside "$game" "${targets[$index]}"); cp -- "$new" "$target"
     else [[ ! -f $target ]] || rm -- "$target"; fi
-    [[ $(hash "$target") == "${afters[$index]}" ]]; sync -f "$(dirname -- "$target")"; record $'done\t'"$index"
+    # A delete of an already absent target may name a folder that does not exist (clean repair).
+    [[ $(hash "$target") == "${afters[$index]}" ]]; [[ ! -d $(dirname -- "$target") ]] || sync -f "$(dirname -- "$target")"; record $'done\t'"$index"
 done
 if [[ -n $supersedes_hash ]]; then [[ $(hash "$transaction/supersedes.tsv") == "$supersedes_hash" ]]; fi
 publish_activity committing; record committed; publish_activity completed; trap - ERR

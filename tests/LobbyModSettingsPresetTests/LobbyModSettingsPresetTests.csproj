@@ -9,8 +9,12 @@
     <DefineConstants>$(DefineConstants);API_SHARED_PRESET_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Content\APIShared.Content.csproj" />
+    <Compile Include="..\..\src\ModSettings\MissionModSettingsPreparation.cs" />
+    <Compile Include="..\..\src\ModSettings\MissionModSettingsSession.cs" />
     <Compile Include="..\..\src\Missions\MissionLifecycleContracts.cs" />
     <Compile Include="..\..\src\Missions\MissionLifecycleState.cs" />
+    <Compile Include="..\..\src\Savegames\SavegameMissionPresetLease.cs" />
     <Reference Include="R3"><HintPath>$(ExtenderDir)\R3.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\Assembly-CSharp.dll</HintPath><Private>true</Private></Reference>
@@ -35,8 +39,11 @@
     <Compile Include="..\..\src\GameModes\GameplayModModePolicy.cs"><Link>APIShared\GameplayModModePolicy.cs</Link></Compile>
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.cs"><Link>APIShared\PresetLobbyModSettingsViewModel.cs</Link></Compile>
     <Compile Include="..\..\src\ModSettings\Lobby\PerPlayerLobbySettings.cs" />
+    <Compile Include="..\..\src\ModSettings\Lobby\HostLobbySettingsPublisher.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetAtomicFilePublisher.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.cs" />
+    <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.RuntimeLog.cs" />
+    <Compile Include="..\..\src\ModSettings\ModSettingsStartLog.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Catalog.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Persistence.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Mission.cs" />
@@ -44,11 +51,14 @@
     <Compile Include="..\..\src\ModSettings\Presets\ILobbyPresetHost.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.PresetIntegration.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetStorage.cs" />
+    <Compile Include="..\..\src\ModSettings\Presets\PersonalSettingsPaths.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.Sources.cs" />
     <Compile Include="..\..\src\ModSettings\UI\ModSettingsHorizontalFocusScrollGuard.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyModSettingsPresetRegistration.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\AtomicFileReplacement.cs" />
+    <Compile Include="..\..\src\ModSettings\Internal\LobbySettingsRestoreScope.cs" />
     <Compile Include="..\..\src\Core\Internal\DebugLogHelper.cs" />
+    <Compile Include="..\..\src\Core\Internal\RuntimeHealth.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs" />
     <Compile Include="..\..\src\GameModes\Internal\PlayerIdentityHelper.cs" />
     <Compile Include="..\..\src\Missions\Internal\MissionEventRelay.cs" />

@@ -69,6 +69,14 @@ namespace APIShared
         public bool TryGetBriefingGoldPresentation(out IBriefingGoldPresentationCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetBriefingGoldPresentation(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Acquires Coop Trail AI castle and custom-AIC import planning for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="ICoopAiStartImportCapability"/> for timing, thread and failure contracts.</summary>
+        public bool TryGetCoopAiStartImport(out ICoopAiStartImportCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetCoopAiStartImport(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires the optional native plague standing-height service. No policy is activated by acquisition.</summary>
+        public bool TryGetPlagueHeight(out IPlagueHeightCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            PlagueHeightService.TryGet(OwnerGuid, out capability, out diagnostic);
+
         /// <summary>Acquires building repair quotes and tooltip presentation for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IBuildingRepairCapability"/> for operation/thread contracts.</summary>
         public bool TryGetBuildingRepair(out IBuildingRepairCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetBuildingRepair(OwnerGuid, out capability, out diagnostic);

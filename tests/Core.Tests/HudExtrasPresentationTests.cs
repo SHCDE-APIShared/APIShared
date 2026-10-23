@@ -93,5 +93,40 @@ namespace Core.Tests
             standard.SetTooltip(""); Tick(service); Assert.IsNull(a.ToolTip);
             retry.RequestContentRefresh(); Tick(service); Assert.AreEqual(3, Visible(host).Length); Assert.AreEqual(2, calls);
         }
+        [TestMethod]
+        public void HostIsSearchedOnlyWhenTheHudTreeCanHaveChanged()
+        {
+            var service = new HudExtrasButtonsService(null); var api = service.Bind("mod"); var host = Host(); var views = GameXAMLManagerAPI.Instance;
+            // A direct delegate keeps reflection allocations out of the per-frame measurement.
+            var frame = (Action)Delegate.CreateDelegate(typeof(Action), service, typeof(HudExtrasButtonsService)
+                .GetMethod("OnBeforeRender", BindingFlags.Instance | BindingFlags.NonPublic)!);
+            api.TryRegisterButton(new HudExtrasButtonDefinition("one", new Command(), "Blueprints", _ => new Button()), out _, out _);
+            int searches = views.Searches;
+            for (int i = 0; i < 100; i++) frame();
+            Assert.AreEqual(searches + 1, views.Searches); Assert.AreEqual(1, Visible(host).Length);
+            long allocated = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++) frame();
+            Assert.AreEqual(allocated, GC.GetAllocatedBytesForCurrentThread(), "Shown steady-state frames must not allocate.");
+            MainViewModel.Instance!.Show_HUD_Extras = false;
+            frame(); Assert.IsFalse(host.IsVisible);
+            allocated = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++) frame();
+            Assert.AreEqual(allocated, GC.GetAllocatedBytesForCurrentThread(), "Hidden frames must not allocate.");
+            MainViewModel.Instance.Show_HUD_Extras = true; MainViewModel.Instance.Raise(nameof(MainViewModel.Show_HUD_Extras)); frame();
+            Assert.AreEqual(searches + 1, views.Searches); Assert.AreEqual(1, Visible(host).Length);
+            // The cached host leaving its view triggers one search that adopts the replacement.
+            var replacement = Host(); frame(); frame();
+            Assert.AreEqual(searches + 2, views.Searches); Assert.AreEqual(0, host.Children.Count); Assert.AreEqual(1, Visible(replacement).Length);
+            // A rebuilt HUD comes with a new MainViewModel instance.
+            MainViewModel.Instance = new MainViewModel(); frame(); frame();
+            Assert.AreEqual(searches + 3, views.Searches); Assert.AreEqual(1, Visible(replacement).Length);
+            // A missing host has no change notification: shown frames keep searching, hidden frames do not.
+            views.Element = null; frame(); frame();
+            Assert.AreEqual(searches + 5, views.Searches); Assert.IsFalse(replacement.IsVisible);
+            MainViewModel.Instance.Show_HUD_Extras = false; frame(); Assert.AreEqual(searches + 5, views.Searches);
+            var restored = Host(); frame(); Assert.AreEqual(searches + 5, views.Searches); Assert.AreEqual(0, Visible(restored).Length);
+            MainViewModel.Instance.Show_HUD_Extras = true; frame(); frame();
+            Assert.AreEqual(searches + 6, views.Searches); Assert.AreEqual(1, Visible(restored).Length);
+        }
     }
 }

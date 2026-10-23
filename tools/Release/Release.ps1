@@ -1,5 +1,5 @@
 [CmdletBinding(SupportsShouldProcess)]
-param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [switch]$TestRelease, [switch]$PrepareOnly)
+param([switch]$Publish, [string]$WorkshopPackagerPath, [string]$PreviewPath, [switch]$TestRelease, [switch]$PrepareOnly, [switch]$HistoricalWorkshopHotfixAudit)
 $ErrorActionPreference = 'Stop'
 if ($PrepareOnly -and $Publish) { throw 'PrepareOnly cannot publish a release.' }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -16,7 +16,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the repository Git state.' }
 if ($status.Count -ne 0) { throw 'Commit the reviewed source changes before preparing a release.' }
 $manifest = [IO.File]::ReadAllText((Join-Path $root 'info.json')) | ConvertFrom-Json
 $version = [string]$manifest.Version
-if ($version -eq '0.9.2') { & (Join-Path $root 'tools/Validation/Test-WorkshopHotfixBoundaries.ps1') }
+if ($HistoricalWorkshopHotfixAudit) { & (Join-Path $root 'tools/Validation/Test-WorkshopHotfixBoundaries.ps1') }
 $parsed = $null
 if (-not [version]::TryParse($version, [ref]$parsed)) { throw 'Invalid APIShared version.' }
 $parsed = [version]::new($parsed.Major, $parsed.Minor, [Math]::Max(0, $parsed.Build), [Math]::Max(0, $parsed.Revision))
@@ -27,16 +27,20 @@ if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShar
 $tag = "APIShared/v$version"
 if ($TestRelease) { if ($Publish) { throw 'Test releases must remain drafts.' }; $tag = "APIShared/test/v$version-$($commit.Substring(0,12))" }
 if (-not $PrepareOnly) {
-    & (Join-Path $root 'build.bat') /nopause /noinstall
+    $previousBranchPinned = $env:SHCDE_BRANCH_PINNED
+    try {
+        $env:SHCDE_BRANCH_PINNED = $commit
+        & (Join-Path $root 'build.bat') /nopause /noinstall
+    } finally { $env:SHCDE_BRANCH_PINNED = $previousBranchPinned }
     if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
 }
 . (Join-Path $root 'tools/BuildProof.ps1')
-$null = Assert-ApiBuildProof $root -Release
+$buildEvidence = Assert-ApiBuildProof $root -Release
 $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
 $dll = Join-Path $package 'APIShared.dll'
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Version -ne $parsed) { throw 'Assembly and manifest versions differ.' }
 $forbidden = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object {
-    ($_.Extension -in @('.dll', '.exe') -and $_.Name -ne 'APIShared.dll') -or $_.Name -match '(?i)credential|token|secret'
+    ($_.Extension -in @('.dll', '.exe') -and $_.Name -notin @('APIShared.dll','APIShared.Content.dll')) -or $_.Name -match '(?i)credential|token|secret'
 })
 if ($forbidden.Count -ne 0) { throw 'The package contains unexpected runtime dependencies or sensitive files.' }
 $output = Join-Path $root ('.local\release\v' + $version)
@@ -46,9 +50,13 @@ $staging = Join-Path $output ('APIShared-v' + $version + '-' + [Guid]::NewGuid()
 $pluginTarget = Join-Path $staging 'BepInEx\plugins\APIShared_Serp'
 [IO.Directory]::CreateDirectory($pluginTarget) | Out-Null
 Copy-Item -Path (Join-Path $package '*') -Destination $pluginTarget -Recurse
+. (Join-Path $PSScriptRoot 'DiagnosticSummary.ps1')
+Write-ApiDiagnosticSummary -Directory $pluginTarget -CecilPath (Join-Path $buildEvidence.GameDir 'BepInEx/core/Mono.Cecil.dll')
 $asset = Join-Path $output "APIShared-v$version.zip"
  . (Join-Path $root 'tools/WorkshopPackage.ps1')
 Assert-ApiWorkshopInventory -Directory $pluginTarget
+. (Join-Path $root 'tools/DependencyBootstrapPackage.ps1')
+Copy-ApiBootstrapPayload $root $staging
 . (Join-Path $root 'tools/PublisherPackage.ps1')
 $publisherSource=Join-Path $root 'BepInEx/tools/APISharedWorkshopPublisher'
 Assert-ApiPublisherPackage $publisherSource (Join-Path $root '.local/WorkshopUploader')
@@ -105,12 +113,5 @@ if ($PrepareOnly) {
     return
 }
 if ($PSCmdlet.ShouldProcess("$repository / $tag", 'Create release with the validated APIShared asset')) {
-    $existing = Get-ApiGitHubRelease $repository $tag
-    if ($null -ne $existing) {
-        if (-not $existing.isDraft -or $existing.targetCommitish -ne $commit) { throw 'An existing published or different-source release must never be replaced.' }
-        & gh release upload $tag @assets --repo $repository --clobber
-        if ($LASTEXITCODE -ne 0) { throw 'Could not resume the matching draft assets.' }
-        & gh release edit $tag --repo $repository --notes-file $notes --draft=$(-not $Publish)
-    } else { & gh @arguments }
-    if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed; the validated local artifact was preserved.' }
+    Invoke-ApiReleasePublication -Repository $repository -Tag $tag -Commit $commit -Assets $assets -Notes $notes -Publish ([bool]$Publish) -CreationArguments $arguments
 }

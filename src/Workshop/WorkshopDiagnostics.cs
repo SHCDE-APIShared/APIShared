@@ -25,6 +25,9 @@ namespace APIShared.Workshop
             return exception;
         }
         internal static WorkshopDiagnosticLevel Level(Exception exception) => exception.Data.Contains(BlockKey) ? WorkshopDiagnosticLevel.Warning : WorkshopDiagnosticLevel.Error;
+        // Startup shows a modal notice only for error-level failures. Blocked conditions
+        // (pending downloads, Extender staging, active mission, external management)
+        // are routine, logged as warnings and retried on the next start.
         internal static bool UserVisible(Exception exception) => Level(exception) == WorkshopDiagnosticLevel.Error;
         internal static void Failure(Action<WorkshopDiagnosticLevel, string> write, string context, Exception exception)
         {

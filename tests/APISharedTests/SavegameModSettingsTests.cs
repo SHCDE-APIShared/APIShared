@@ -19,6 +19,7 @@ namespace APISharedTests
 
         private sealed class PresetEndpointFixture : IModSettingsPresetEndpoint
         {
+            public int UnreadablePersonal { get => throw new InvalidOperationException("personal read failed"); set { } }
             public bool IsMissionPresetActive { get; private set; }
             public int ExitCount { get; private set; }
             public bool FailExit { get; set; }
@@ -36,6 +37,26 @@ namespace APISharedTests
 
         internal static void Run(Action<bool, string> check)
         {
+            var settingsType = typeof(SavegameModSettings);
+            var privateFlags = BindingFlags.NonPublic | BindingFlags.Static;
+            var participantType = settingsType.GetNestedType("CompatibleMod", BindingFlags.NonPublic);
+            var participant = Activator.CreateInstance(participantType, true);
+            var personalFixture = new PresetEndpointFixture();
+            participantType.GetField("Endpoint", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, personalFixture);
+            participantType.GetField("Properties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, Array.Empty<PropertyInfo>());
+            participantType.GetField("PersonalProperties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant,
+                new[] { typeof(PresetEndpointFixture).GetProperty(nameof(PresetEndpointFixture.UnreadablePersonal)) });
+            var failureField = settingsType.GetField("restoreFailed", privateFlags);
+            object previousFailure = failureField.GetValue(null);
+            try
+            {
+                bool rejected = false;
+                try { settingsType.GetMethod("ResolveStartupSnapshot", privateFlags).Invoke(null,
+                    new object[] { "foreign.fixture", participant, null, null, null, false }); }
+                catch (TargetInvocationException error) { rejected = error.InnerException is System.IO.InvalidDataException; }
+                check(rejected, "an unreadable personal setting silently fell back instead of blocking preparation");
+            }
+            finally { failureField.SetValue(null, previousFailure); }
             var lease = new SavegameMissionPresetLease();
             var first = new PresetEndpointFixture();
             var second = new PresetEndpointFixture { FailExit = true };
@@ -60,6 +81,20 @@ namespace APISharedTests
             lease.ReleaseOnEnd(43, (_, __) => exitErrors++);
             check(!replacement.IsMissionPresetActive && replacement.ExitCount == 1,
                 "replacement session retained its savegame preset");
+
+            var restarted = new PresetEndpointFixture();
+            restarted.System_EnterMissionPreset(null, "Savegame", false);
+            lease.Track(51, "restart", restarted);
+            lease.Transfer(51, 52);
+            lease.Transfer(52, 53);
+            lease.ReleaseOnEnd(51, (_, __) => exitErrors++);
+            lease.ReleaseOnEnd(52, (_, __) => exitErrors++);
+            check(restarted.IsMissionPresetActive && restarted.ExitCount == 0 && lease.Contains(53),
+                "repeated restart restored personal settings before the new mission ended");
+            lease.ReleaseOnEnd(53, (_, __) => exitErrors++);
+            lease.ReleaseOnEnd(53, (_, __) => exitErrors++);
+            check(!restarted.IsMissionPresetActive && restarted.ExitCount == 1 && !lease.Contains(53),
+                "restarted new-game session did not release inherited savegame settings exactly once");
 
             var record = new SavegameModSettingsRecord
             {
@@ -241,6 +276,36 @@ namespace APISharedTests
             check(kind == GameModeKind.Campaign && conflict && variant == GameModeLaunchVariant.Standard,
                 "mismatched mission metadata unlocked a campaign");
 
+            foreach (GameModeKind saved in Enum.GetValues(typeof(GameModeKind)))
+            {
+                if (saved == GameModeKind.Unknown) continue;
+                foreach (GameModeLaunchVariant savedVariant in Enum.GetValues(typeof(GameModeLaunchVariant)))
+                {
+                    kind = saved; variant = GameModeLaunchVariant.Standard; conflict = false;
+                    GameModeHelper.ReconcileRestoredSaveMode(saved, true, saved, savedVariant, false,
+                        ref kind, ref variant, ref conflict);
+                    check(kind == saved && variant == savedVariant && !conflict,
+                        "matching saved mode/variant was not preserved: " + saved + "/" + savedVariant);
+                }
+            }
+            kind = GameModeKind.SandsOfTime;
+            variant = GameModeLaunchVariant.Customized;
+            conflict = false;
+            GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true,
+                GameModeKind.CustomGame, GameModeLaunchVariant.Standard, false,
+                ref kind, ref variant, ref conflict);
+            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard && !conflict,
+                "stale Customize presentation displaced an exact native/saved mode match");
+            foreach (var saved in new[] { GameModeKind.CoopTrail, GameModeKind.CustomTrail,
+                GameModeKind.VanillaTrail, GameModeKind.SandsOfTime })
+            {
+                kind = GameModeKind.CustomGame; variant = GameModeLaunchVariant.Standard; conflict = false;
+                GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true, saved,
+                    GameModeLaunchVariant.RestoredCustomizedSave, false, ref kind, ref variant, ref conflict);
+                check(kind == saved && variant == GameModeLaunchVariant.RestoredCustomizedSave && !conflict,
+                    "generic native save family lost Trail provenance: " + saved);
+            }
+
             int ready = 0, cleaned = 0, reported = 0;
             MissionLifecycleService.CompleteDeferredRestore(
                 () => throw new InvalidOperationException("restore failed"),
@@ -255,6 +320,63 @@ namespace APISharedTests
             }
             catch (InvalidOperationException) { }
             check(cleaned == 2, "deferred client Ready failure skipped cleanup");
+        }
+
+        // Issue #10: the reader accepts every per-mod count the writer captures (16384) and rejects
+        // one more with the same InvalidDataException reasons as the former 2048 bound.
+        internal static void RunPerModLimit(Action<bool, string> check)
+        {
+            const int limit = 16384;
+            byte[] written = SavegameModSettings.SerializeWithinLimit(LimitRecord(1, limit, limit));
+            check(SavegameModSettings.TryDeserialize(written, out SavegameModSettingsRecord restored) &&
+                restored.Mods["mod.0"].Count == limit && restored.CreatorRules["mod.0"].Count == limit &&
+                !restored.LockedByConflict &&
+                MessagePackSerializer.Deserialize<int>(restored.Mods["mod.0"]["S16383"]) == 16383,
+                "a record at the per-mod limit did not round-trip");
+            check(ReaderRejects(LimitRecord(1, limit + 1, 0), "Too many savegame properties."),
+                "a mod over the settings limit was not rejected by the reader");
+            check(ReaderRejects(LimitRecord(1, 0, limit + 1), "Too many Trail rules."),
+                "a mod over the Trail rule limit was not rejected by the reader");
+            check(SavegameModSettings.TryDeserialize(MessagePackSerializer.Serialize(LimitRecord(1024, 1, 0)), out _),
+                "a record at the mod limit was rejected");
+            check(ReaderRejects(LimitRecord(1025, 0, 0), "Too many savegame mods."),
+                "a record over the mod limit was not rejected by the reader");
+        }
+
+        private static SavegameModSettingsRecord LimitRecord(int mods, int settings, int rules)
+        {
+            var record = new SavegameModSettingsRecord
+            {
+                Version = 3,
+                Kind = (int)GameModeKind.CoopTrail,
+                Variant = (int)GameModeLaunchVariant.Customized,
+                Mods = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal),
+                CreatorRules = new Dictionary<string, Dictionary<string, TrailCreatorRule>>(StringComparer.Ordinal),
+            };
+            for (int m = 0; m < mods; m++)
+            {
+                var values = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                for (int i = 0; i < settings; i++) values["S" + i] = MessagePackSerializer.Serialize(i);
+                record.Mods["mod." + m] = values;
+                if (rules == 0) continue;
+                var modRules = new Dictionary<string, TrailCreatorRule>(StringComparer.Ordinal);
+                for (int i = 0; i < rules; i++) modRules["S" + i] = new TrailCreatorRule { Mode = 1 };
+                record.CreatorRules["mod." + m] = modRules;
+            }
+            return record;
+        }
+
+        private static bool ReaderRejects(SavegameModSettingsRecord record, string reason)
+        {
+            byte[] bytes = MessagePackSerializer.Serialize(record);
+            if (SavegameModSettings.TryDeserialize(bytes, out _)) return false;
+            try { MessagePackSerializer.Deserialize<SavegameModSettingsRecord>(bytes); }
+            catch (Exception error)
+            {
+                for (Exception inner = error; inner != null; inner = inner.InnerException)
+                    if (inner is System.IO.InvalidDataException && inner.Message == reason) return true;
+            }
+            return false;
         }
     }
 }

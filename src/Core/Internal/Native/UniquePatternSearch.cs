@@ -43,6 +43,17 @@ namespace APIShared
             return new CompiledBytePattern(values, wildcards, anchorIndex);
         }
 
+        // For callers already bound to an audited binary hash: a match at the audited reference RVA
+        // is accepted without scanning (for that hash the full scan proved it unique; a full scan of
+        // the mapped image costs ~70 ms at startup). Any other bytes keep the full FindUnique result.
+        internal int FindUniqueAtReference(ReadOnlySpan<byte> memory, int referenceRva)
+        {
+            if (referenceRva >= 0 && referenceRva <= memory.Length - values.Length &&
+                FindUnique(memory.Slice(referenceRva, values.Length)) == 0)
+                return referenceRva;
+            return FindUnique(memory);
+        }
+
         internal int FindUnique(ReadOnlySpan<byte> memory)
         {
             if (memory.Length < values.Length)
