@@ -45,8 +45,11 @@ public sealed class ReportTests
     [Microsoft.VisualStudio.TestTools.UnitTesting.TestMethod]
     public void AllCases()
     {
-        var rows=Regex.Matches(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Cases.txt")), "new PopularityParameter\\(\"(\\w+)\", \"\\w+\", (-?\\d+), (\\d+),");
-        Check(rows.Count==41,"All parameters covered");
+        string fixture=File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Cases.txt"));
+        var rows=Regex.Matches(fixture, "new PopularityParameter\\(\"(\\w+)\", \"\\w+\", (-?\\d+), (\\d+),");
+        // This fixture uses one case per nonempty line; verify complete parsing without pinning a feature count.
+        int lines=fixture.Split(new[]{'\r','\n'},StringSplitOptions.RemoveEmptyEntries).Count(line=>!string.IsNullOrWhiteSpace(line));
+        Check(rows.Count>0 && rows.Count==lines,"Every nonempty parameter fixture row must parse");
         foreach (Match row in rows)
         {
             string key=row.Groups[1].Value; int vanilla=int.Parse(row.Groups[2].Value)*25, limit=int.Parse(row.Groups[3].Value)*25;
@@ -88,7 +91,7 @@ public sealed class ReportTests
         Check(fear.Correct(One("GoodBadThingPopModifierMultiplier",-50)).Total==250,"signed fear multiplication");
         var fair=Base(); fair.Fairs=400; fair.Events=fair.Total=0;
         Check(fair.Correct(One("FairsPopularityEventModifier",0)).Events==-400,"event cancellation preserves other events");
-        Console.WriteLine("PASS: "+checks+" presentation assertions; all 41 sources, boundaries, signed values, preview, identity and no accumulation.");
+        Console.WriteLine("PASS: "+checks+" presentation assertions; "+rows.Count+" fixture sources, boundaries, signed values, preview, identity and no accumulation.");
         PresentationFixture.Run(Check);
         Console.WriteLine("PASS: production presentation callback fixture; total assertions="+checks);
 

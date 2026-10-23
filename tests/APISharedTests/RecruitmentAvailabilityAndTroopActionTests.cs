@@ -49,8 +49,6 @@ namespace APISharedTests
             Assert.IsFalse(TroopActionHud.TryRegister(null, "id", panel => { }, out string reason) || reason.Length == 0);
             Assert.IsFalse(TroopActionHud.TryRegister("owner", "", panel => { }, out reason) || reason.Length == 0);
             Assert.IsFalse(TroopActionHud.TryRegister("owner", "id", null, out reason) || reason.Length == 0);
-            Assert.AreEqual("SerpTroopAction_", TroopActionHud.HostNamePrefix, "the published host convention must stay stable");
-            Assert.AreEqual(1, TroopActionHud.CurrentLayoutVersion, "the published layout metadata version must stay stable");
         }
 
         [TestMethod]

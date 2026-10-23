@@ -62,6 +62,7 @@ exit 0
     foreach ($name in @('BranchBuild.Common.ps1','Invoke-BranchBuild.ps1')) {
         Write-BranchText (Join-Path $repo ('tools/BranchBuild/'+$name)) ([IO.File]::ReadAllText((Join-Path $PSScriptRoot $name)))
     }
+    Write-BranchText (Join-Path $repo 'tools/BuildChecks.ps1') ([IO.File]::ReadAllText((Join-Path $actual 'tools/BuildChecks.ps1')))
     foreach ($relative in @('build.bat','tools/WorkshopUploader/build.bat')) {
         $entry = [IO.File]::ReadAllText((Join-Path $actual $relative))
         # Execute the whole maintained entrypoint. Only its build boundary is a
@@ -82,6 +83,21 @@ exit 0
     $output = Run-Fixture 'tools/WorkshopUploader/build.bat' @('/branch:develop','/nopause') 0
     Assert-Fixture ($output -match 'API_DEVELOP_COMMIT' -and $output -notmatch 'DIRTY_MUST_NOT_BUILD') 'Standalone publisher selected working sources'
     Assert-Fixture (((Invoke-BranchGit $repo @('branch','--show-current')) -join '') -ceq 'develop') 'Standalone working branch moved'
+    $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause','/tests:quick','/noinstall') 1
+    Assert-Fixture ($output -match 'does not support /tests:quick' -and $output -notmatch '\r?\nAPI_DEVELOP_COMMIT\r?\n') 'Old selected driver silently ignored quick mode'
+    # The branch fixture now supports mode forwarding. Only fixture sources are committed.
+    Write-BranchText (Join-Path $repo 'source.txt') 'API_DEVELOP_COMMIT'
+    Write-BranchText (Join-Path $repo 'build.bat') ([IO.File]::ReadAllText((Join-Path $actual 'build.bat')))
+    $fixtureBuild = [IO.File]::ReadAllText((Join-Path $repo 'tools/Build.ps1'))
+    $fixtureBuild = $fixtureBuild.Replace('param([int]$NoInstall)', 'param([int]$NoInstall, [switch]$WorkspaceBuild, [Parameter(ValueFromRemainingArguments)][string[]]$DriverArguments)')
+    $fixtureBuild = $fixtureBuild.Replace("$" + "ErrorActionPreference = 'Stop'", ". (Join-Path $" + "PSScriptRoot 'BuildChecks.ps1')`r`nWrite-Host ('TEST_MODE=' + (Get-ApiBuildTestMode 'build.bat' $" + "DriverArguments))`r`n$" + "ErrorActionPreference = 'Stop'")
+    Write-BranchText (Join-Path $repo 'tools/Build.ps1') $fixtureBuild
+    Git-Fixture @('add','.')
+    Git-Fixture @('commit','-m','Mode-aware build fixture')
+    foreach ($mode in @('full','quick','none')) {
+        $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause','/noinstall',"/tests:$mode") 0
+        Assert-Fixture ($output -match "TEST_MODE=$mode") 'Committed branch lost test mode'
+    }
     Write-Host "PASS: $cases standalone APIShared/publisher, source isolation, no-install and development installation cases."
     Write-Host "Fixture evidence retained: $fixture"
 } finally { $env:SHCDE_GAME_DIR = $previousGame }

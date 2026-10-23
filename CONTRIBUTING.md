@@ -150,6 +150,34 @@ current working tree. Release and internal child builds retain their pinned inpu
 install the built package; close the game before installation. The parent APIShared
 driver handles installation, while the publisher helper only prepares local artifacts.
 
+### Selecting build checks
+
+`build.bat` supports `/tests:full` (the default), `/tests:quick` and `/tests:none`,
+independently of source selection and `/noinstall`. For example:
+
+```powershell
+& './build.bat' /source:working /tests:quick /nopause /noinstall
+```
+
+`full` runs all maintained build checks. `quick` checks current runtime/JSON/lifecycle,
+dependency metadata, standalone source/project boundaries, XAML, permanent hooks and
+installed interop contracts, including compiled popularity references. It skips the
+regression suites, native test programs, process/Workshop fixtures and consumer-example
+builds. `none` skips those checks as well as test compilation. All modes still compile
+and prepare the runtime, Content library, bootstrap and publisher; toolchain,
+package-integrity and installation boundaries remain enforced.
+
+Conflicting or invalid modes are errors. An explicit mode cannot silently select an
+older branch driver without mode support. Direct `tools/Build.ps1` calls accept the
+equivalent `-TestMode full|quick|none` parameter. Standalone validation defaults to
+full checks; `-CheckMode quick` selects its source/interop subset.
+
+Step logs include millisecond timestamps, durations and explicit skips. The local
+`.local/build-steps.json` records the mode and individual results. Build evidence also
+records the mode; only `full` is accepted as a tested SDK for cache reuse or release.
+Reduced builds still retain machine paths for the next build. After updating the
+evidence format, an older proof needs one fresh full build.
+
 ### Results and build evidence
 
 The full build driver writes TRX results to `.local/test-results` and records a
