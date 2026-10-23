@@ -50,17 +50,6 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void MissingIdentityDiagnosticNamesTheInputMessageAndPreservedBehavior()
-        {
-            string diagnostic = LordMediaResolverRuntime.DescribeMissingIdentity(null, default);
-            StringAssert.Contains(diagnostic, "input=null");
-            StringAssert.Contains(diagnostic, "messageType=");
-            StringAssert.Contains(diagnostic, "original native media paths retained");
-            StringAssert.Contains(diagnostic, "once per process");
-            StringAssert.Contains(LordMediaResolverRuntime.DescribeMissingIdentity("", default), "input=empty");
-        }
-
-        [TestMethod]
         public void InstalledExtenderEntryPassesTheProductionInstallationChecks()
         {
             MethodInfo target = typeof(GameAIManagerAPI).GetMethod("TryGetVideoAndAudio", BindingFlags.NonPublic | BindingFlags.Instance);

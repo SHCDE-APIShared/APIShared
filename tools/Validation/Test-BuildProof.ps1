@@ -43,6 +43,18 @@ try {
     Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $null=Assert-ApiBuildProof $proofRoot -Release
+    foreach ($mode in @('quick','none')) {
+        Write-ApiBuildProof $proofRoot '' '' $compiler $state -TestMode $mode
+        foreach ($releaseCheck in @($false,$true)) {
+            $failed=$false
+            try { $null=Assert-ApiBuildProof $proofRoot -Release:$releaseCheck } catch { $failed=$_.Exception.Message -match '/tests:full' }
+            Check $failed 'Reduced checks were accepted as a fully tested SDK or release'
+        }
+        $reduced=[IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json'))|ConvertFrom-Json
+        Check ($reduced.TestMode -ceq $mode) 'Reduced build mode was not recorded'
+    }
+    Write-ApiBuildProof $proofRoot '' '' $compiler $state
+    $null=Assert-ApiBuildProof $proofRoot
     Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'changed content input'
     $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed Content source accepted'
     Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'content input'
@@ -106,6 +118,12 @@ try {
         Check ($env:SHCDE_GAME_DIR -ceq $game -and $env:SHCDESE_EXTENDER_DIR -ceq $extender -and $env:SHCDE_MSBUILD -ceq $compiler) 'Local paths were not restored for child builds'
         $childOutput=& powershell.exe -NoProfile -Command '[Console]::Write($env:SHCDE_GAME_DIR)'
         Check (($childOutput -join '') -ceq $game) 'Child process did not inherit game path'
+        foreach ($mode in @('quick','none')) {
+            Write-Fixture $path (@{SchemaVersion=2;TestMode=$mode;GameDir=$game;ExtenderDir=$extender;MSBuild=$compiler}|ConvertTo-Json)
+            $env:SHCDE_GAME_DIR='';$env:SHCDESE_EXTENDER_DIR='';$env:SHCDE_MSBUILD=''
+            Initialize-ApiBuildEnvironment $localRoot
+            Check ($env:SHCDE_GAME_DIR -ceq $game -and $env:SHCDESE_EXTENDER_DIR -ceq $extender -and $env:SHCDE_MSBUILD -ceq $compiler) 'Reduced build lost reusable machine paths'
+        }
         Write-Fixture $path 'invalid json'
         Initialize-ApiBuildEnvironment $localRoot
         Check ($env:SHCDE_GAME_DIR -ceq $game) 'Explicit environment must take precedence over unreadable evidence'

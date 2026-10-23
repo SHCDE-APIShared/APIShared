@@ -2,9 +2,8 @@
 param([string]$XmlDocumentation)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$documents = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.md' | Where-Object {
-    ('\' + $_.FullName.Substring($root.Length).TrimStart('\','/')) -notmatch '[\\/](bin|obj|BepInEx|\.git|\.local|\.work|\.release-output)[\\/]'
-})
+. (Join-Path $PSScriptRoot '../BuildChecks.ps1')
+$documents = @(Get-ApiMaintainedFiles $root | Where-Object Extension -EQ '.md')
 $links = 0
 foreach ($document in $documents) {
     $text = [regex]::Replace([IO.File]::ReadAllText($document.FullName), '(?ms)^```.*?^```[^\r\n]*', '')

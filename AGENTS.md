@@ -107,3 +107,17 @@ These notes add no prescribed folder layout or AI-specific workflow.
 - Review related documents and examples after a change. Run the documentation-link
   check in fresh Windows PowerShell and verify CRLF for affected text files. Keep
   repository links portable and do not depend on the maintainer's workspace paths.
+
+## Useful tests and stable contracts
+
+- Add a test only for a concrete relevant regression or binding contract that is
+  not adequately covered already. Identify its inputs, observable result and
+  plausible failure; weigh runtime, complexity and maintenance against that risk.
+  Extend a suitable existing test before adding another suite or checker.
+- Test behavior and required safety invariants. Do not prescribe internal folder
+  layouts, private names, source wording, feature counts or current version
+  literals unless their exact form is necessary to the contract being checked.
+  Document that necessity and the limits of the check beside the test.
+- Equivalent refactoring must not fail tests without a contractual reason.
+  Source heuristics are limited guardrails, not proof of runtime behavior. Preserve
+  meaningful backend, error-path and process-context coverage when removing duplicates.

@@ -1,5 +1,6 @@
 # Build orchestration: explicit source selection wins; automated default is the working tree.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../BuildChecks.ps1')
 function Write-BranchMessage([string]$Message) {
     Write-Host ('[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}' -f [DateTime]::Now, $Message)
 }
@@ -237,6 +238,11 @@ function Invoke-SelectedBranchBuild {
     $selection = if ($SourceSelection) { $SourceSelection } else { New-BranchSource $Repository $Branch }
     $selectedDriver = Join-Path $selection.Root $Driver
     if (-not (Test-Path -LiteralPath $selectedDriver -PathType Leaf)) { throw "Driver $Driver does not exist on $Branch ($($selection.Commit))." }
+    $testMode = Get-ApiBuildTestMode $Driver $DriverArguments
+    if (@($DriverArguments | Where-Object { $_ -match '^/tests(?::|$)' }).Count -and
+        -not [IO.File]::ReadAllText($selectedDriver).Contains('SHCDE_TEST_MODES: full quick none')) {
+        throw "The selected source does not support /tests:$testMode. Select /source:working or a branch containing the new driver."
+    }
     $overrides = @(Set-BranchBuildTools $selection $ControllerRoot -Api:$Api -DriverArguments $DriverArguments)
     $oldEnvironment = @{}
     $names = @('SHCDE_BRANCH_SOURCE_ROOT','SHCDE_BRANCH_INSTALL_SUFFIX','SHCDE_BRANCH_NOINSTALL','SHCDE_BRANCH_API_ROOT','SHCDE_BRANCH_API_COMMIT',
@@ -336,7 +342,7 @@ function Invoke-SelectedBranchBuild {
         & $selectedDriver @arguments | Out-Host
         $code = $LASTEXITCODE
         $record = [ordered]@{ SchemaVersion=1; Branch=$Branch; Commit=$selection.Commit; Driver=$Driver; SourceRoot=$selection.Root;
-            ApiShared=$sdk; InstallationTargets=$targets; NoInstall=($env:SHCDE_BRANCH_NOINSTALL -eq '1'); ExitCode=$code;
+            TestMode=$testMode; ApiShared=$sdk; InstallationTargets=$targets; NoInstall=($env:SHCDE_BRANCH_NOINSTALL -eq '1'); ExitCode=$code;
             CreatedUtc=[DateTime]::UtcNow.ToString('o'); BuildToolOverrides=$overrides }
         $recordPath = $selection.Root + '.build.json'
         Write-BranchText $recordPath (($record | ConvertTo-Json -Depth 8) + "`r`n")

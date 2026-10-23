@@ -7,6 +7,7 @@ param(
 )
 . (Join-Path $PSScriptRoot 'BranchBuild.Common.ps1')
 try {
+    $null = Get-ApiBuildTestMode $Driver $DriverArguments
     $branch = Get-BranchChoice $DriverArguments
     if ($branch -eq 'working') {
         $root = [IO.Path]::GetFullPath($Repository).TrimEnd('\','/')

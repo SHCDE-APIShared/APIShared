@@ -1,5 +1,6 @@
 @echo off
 setlocal EnableExtensions
+rem SHCDE_TEST_MODES: full quick none
 rem Source selection and installation are independent choices.
 set "API_WORKSPACE=0"
 set "API_BRANCH_ARG=0"
@@ -60,7 +61,7 @@ for %%A in (%*) do (
 for %%A in (%*) do if /I "%%~A"=="/nopause" set "NO_PAUSE=1"
 for %%A in (%*) do if /I "%%~A"=="/noinstall" set "NO_INSTALL=1"
 echo [%date% %time%] PowerShell checks / build step
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Build.ps1" -NoInstall %NO_INSTALL% %WORKSPACE_BUILD%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Build.ps1" -NoInstall %NO_INSTALL% %WORKSPACE_BUILD% %*
 set "RESULT=%ERRORLEVEL%"
 exit /b %RESULT%
 
