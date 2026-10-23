@@ -10,7 +10,7 @@ namespace ThirdPartyMod
 {
     [BepInPlugin(Guid, "APIShared Example", "1.0.0")]
     [BepInDependency("000shcdese", "2.14.0")]
-    [BepInDependency("APIShared_Serp", "0.13.0")]
+    [BepInDependency("APIShared_Serp", "0.14.0")]
     public sealed class ExamplePlugin : BaseUnityPlugin
     {
         public const string Guid = "Example.Author.APISharedDemo";

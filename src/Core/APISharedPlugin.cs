@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.13.0";
+        public const string PluginVersion = "0.14.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -81,6 +81,7 @@ namespace APIShared
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
+                new NativeInitializationStep("plague heights", () => PlagueHeightService.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
                     context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),

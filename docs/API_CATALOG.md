@@ -576,3 +576,10 @@ Vanilla costs, repair extras and backgrounds are preserved. See the
 `GateAccessRules` supplies passive, ordered access contributions. The explicitly requested
 `GateRoutingNativeHooks` backend coordinates the permanent native routing adapters.
 See [gate routing contracts](GATE_ROUTING.md) for scope, ownership and limitations.
+
+## Plague standing heights
+
+Owner-bound [plague height policies](THIRD_PARTY_GUIDE.md#plague-standing-height-policies)
+share four permanent native sites. Obtain `IPlagueHeightCapability` through
+`ModApiClient.TryGetPlagueHeight`; no active owner means Vanilla. Consumers retain
+their settings and multiplayer authorization. Existing projectile events are not duplicated.

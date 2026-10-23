@@ -97,6 +97,15 @@ public sealed class SourceGuardrailTests
     }
 
     [TestMethod]
+    public void PreparedPlagueCodeCannotBeReprotectedOrFreedAfterPublication()
+    {
+        // The audited private allocation may become executable only in its constructor.
+        Model("class PlagueNativeCode { bool published; PlagueNativeCode() { VirtualProtect(p,n,x,out old); FlushInstructionCache(p,n,x); } void Rollback() { if (published) throw new Exception(); VirtualFree(p,n,x); } }").CheckHooks();
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class PlagueNativeCode { void Later() { VirtualProtect(p,n,x,out old); } }").CheckHooks());
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class PlagueNativeCode { void Later() { VirtualFree(p,n,x); } }").CheckHooks());
+    }
+
+    [TestMethod]
     public void LifecycleChecksDeclarationsRatherThanCommentsOrFileNeighbors()
     {
         Model("class Service { void Update() {} } class Plugin : BaseUnityPlugin { void Awake() { Log(\"Update() StartCoroutine()\"); } }").CheckLifecycle();

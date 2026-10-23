@@ -399,3 +399,96 @@ penalties -> final 0..10000 clamp/history/speech. Report producer 0x19D960 indep
 uses the signed fear level; public report correction consumes the same rounded result.
 Native game/report ABI changes still require their own audit. CLI fixtures validate
 rewriting and JIT preparation; actual Mono/game and multiplayer acceptance are separate.
+
+# Plague standing heights
+
+Reference image: SHA-256 FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+Revalidated 2026-10-23 against the installed DLL and installed RedBird/Iced binaries.
+This service is hash-bound: matching individual instructions cannot establish its
+manager, field, grid and table contracts on a different image. Unsupported images
+disable only this capability. There is no unverified pattern-only layout fallback.
+
+## Native flow and sites
+
+Natural D17D0 and catapult impact 9C730 create Disease (22) through 9B2B0. Slots
+use E8-byte records and sentinel 0. 9F960 advances movement; 9C730 visits the native
+tile-linked unit lists (head grid 4C559B0, next-unit manager offset 8FA), including
+roof occupants. Its center/eight-neighbor/outer-ring classifications feed 192750.
+That function takes unit manager, one-based unit ID, projectile slot and radius.
+The shared hooks relax only surface/building eligibility and compare standing planes;
+type immunity table 32BC40, damage 400/200/150, player resistance, HP/death and health
+bar updates remain native. Existing Extender projectile-damage entry events remain intact.
+Treatment A0470, aging/fade 9A080 and terminal/removal A0540/9F2D0 are unmodified.
+
+| Behavior | RVA / displaced bytes | Continuations |
+|---|---|---|
+| Cloud standing-plane update | 9FDB8 / 32 | 9FDD8; slot EDX, projectile manager RBX, image RSI |
+| Disease eligibility | 192809 / 26 | accepted 192861, rejected 1929D0, original 192823; unit stride RSI, unit manager R15, projectile stride R13 |
+| Eight neighbors | 9CB6F / 26 | accepted 9CB89, rejected 9CB9D; projectile stride R13 |
+| Outer ring | 9CC3D / 26 | accepted 9CC57, rejected 9CC6A; projectile stride R14 |
+
+Full containing functions and hash-matching baseline Xrefs establish no external
+entry into the spans. Verify pristine bytes, every instruction boundary, outgoing
+branches and actual RedBird displacement; compare own live spans before committing.
+Pristine context.Memory is a snapshot, not evidence of live bytes. C07C0 and its
+jump tables through C087F must also remain unmodified live.
+
+## Data and ABI
+
+Image-relative data: projectile manager 2F7A680; byte height grid 4DDD350,
+uint properties 48F71B0, signed-short building IDs 4B6AA50 (320800 tiles).
+Building manager 64CCBB0 has 1..3999 IDs, stride 32C, type +12E, base height +148;
+the corresponding GameBuilding header is 5C, fields +D2/+EC. Unit manager 67E8400
+has stride 490 and header 65C; signed base/additive height +712/+714 are unit
+fields +B6/+B8. Current unit tile is manager+unitStride+72C (unit field +D0), the
+same address used by the displaced original query. Validate current Extender sizes,
+offsets and actual manager bases before installation.
+
+Source-plane helper follows 184FD0 precedence: stairs raw+12; building-backed
+wall raw+40; bare wall raw; IsBuilding raw+2; Elevated building base+C07C0;
+otherwise raw. Unit-specific movement/tunnel offsets are not applied to clouds;
+the actual target's signed stored heights remain authoritative. Visual cloud
+height is standing plane+20. Invalid tiles/buildings reject affected damage and
+retain the original visual update, with one error marker.
+
+C07C0 clobbers only RAX/RCX/RDX/flags, with no SIMD or mutable-memory effects.
+Helpers preserve RBX and Windows x64 alignment/shadow space. Wrappers preserve all
+live volatile/nonvolatile GPRs, SIMD and flags; cloud update restores original
+RAX/RCX output semantics. Neighbor hooks retain arithmetic and the alive comparison.
+Repeated original blocks use Iced instructions with cleared identity IPs, retaining
+absolute branch targets. Decode and execute emitted code with the installed backend.
+
+Target building identity takes precedence over wall/stair flags. The emitter uses
+Extender eStructs for keep variants/doors, gates and their pieces, defensive towers,
+editor prototypes and collapsed tower variants. Mobile siege towers are not included.
+Unrecognized elevated surfaces replay Vanilla exclusions; disabled categories do the
+same. The source plane still follows its surface independently of target policy.
+
+The aligned qword at state+64 contains four unsigned 16-bit tolerance+1 lanes in
+Walls/Gates/Towers/Keeps order; zero means no active owner. One Volatile.Write
+publishes the complete aggregated policy. Each category uses its largest active
+owner tolerance, ground the largest overall; zero snapshot replays all four original
+blocks. No per-candidate managed callback, allocation, new RNG or global scan.
+
+## Ownership, publication and verification
+
+APIShared claims all four spans in its native site registry, prepares the complete
+transaction with InstallOnCommit=false, validates handles and uses NativeHookPublication
+before the first executable write. Partial/failed publication permanently retains the
+candidate, helper, data and claims with a zero policy; no late retry or rollback.
+Private helper memory is written RW once and changed to RX before publication.
+Only unpublished candidates can be rolled back. Published hooks never use Unity
+teardown; OnTick is a durable, isolated support-diagnostic subscriber.
+
+The API extension is additive: IApiShared is unchanged, preserving external interface
+implementations. Contracts and composition: docs/THIRD_PARTY_GUIDE.md. Tests in
+tests/PlagueHeight.NativeTests execute production generators and the complete native
+damage routine, backend displacement, all 16 masks, signed tolerance boundaries,
+configured tolerances, live surface changes, independent owners and ABI preservation.
+The normal build driver runs them against the selected installed references.
+Workspace baseline audit: _inspect/PlagueHeightAudit.py (not a runtime dependency).
+Public consumer example: examples/ThirdPartyMod/PlagueHeightExample.cs.
+
+Prior user game evidence covers cloud-edge movement, wall demolition and tower collapse.
+New category UI, real multiplayer and full save/treatment roundtrips require game
+acceptance; isolated execution tests do not establish these outcomes.

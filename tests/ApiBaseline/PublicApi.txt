@@ -695,6 +695,8 @@ APIShared.ILobbyStateCapability | public bool TryRegisterObserver(string registr
 APIShared.IMissionLifecycleCapability | public interface APIShared.IMissionLifecycleCapability
 APIShared.IMissionLifecycleCapability | public APIShared.MissionContext Current { get; }
 APIShared.IMissionLifecycleCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.MissionLifecycleNotification> onStart, System.Action<APIShared.MissionLifecycleNotification> onEnd, System.Action<APIShared.MissionLifecycleNotification> onInitialization, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IPlagueHeightCapability | public interface APIShared.IPlagueHeightCapability
+APIShared.IPlagueHeightCapability | public bool TrySetPolicy(bool active, APIShared.PlagueSurfaceCategory categories, int maximumHeightDifference, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlayerDefeatCapability | public interface APIShared.IPlayerDefeatCapability
 APIShared.IPlayerDefeatCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.PlayerLordDeathNotification> onLordDied, System.Action<APIShared.PlayerDefeatNotification> onDefeated, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ITemporaryAssassinGateObserver | public interface APIShared.ITemporaryAssassinGateObserver
@@ -830,6 +832,7 @@ APIShared.ModApiClient | public bool TryGetGatehouseTiming(out APIShared.IGateho
 APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudExtrasButtonsCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetUnitHudPresentation(out APIShared.IUnitHudPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public string OwnerGuid { get; }
@@ -1381,6 +1384,7 @@ APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse
 APIShared.NativeCapabilityIds | public const string HudExtrasButtons = "hud-extras-buttons"
 APIShared.NativeCapabilityIds | public const string LobbyState = "lobby-state"
 APIShared.NativeCapabilityIds | public const string MissionLifecycle = "mission-lifecycle"
+APIShared.NativeCapabilityIds | public const string PlagueHeight = "plague-height"
 APIShared.NativeCapabilityIds | public const string PlayerDefeat = "player-defeat"
 APIShared.NativeCapabilityIds | public const string UnitHudPresentation = "unit-hud-presentation"
 APIShared.NativeCapabilityState | public enum APIShared.NativeCapabilityState : int
@@ -1727,6 +1731,13 @@ APIShared.Pathfinding.RouteSearchTerrain | public enum APIShared.Pathfinding.Rou
 APIShared.Pathfinding.RouteSearchTerrain | DiagnosticMoat = 2
 APIShared.Pathfinding.RouteSearchTerrain | FriendlyMoat = 1
 APIShared.Pathfinding.RouteSearchTerrain | GroundOnly = 0
+APIShared.PlagueSurfaceCategory | public enum APIShared.PlagueSurfaceCategory : int
+APIShared.PlagueSurfaceCategory | All = 15
+APIShared.PlagueSurfaceCategory | Gates = 2
+APIShared.PlagueSurfaceCategory | Keeps = 8
+APIShared.PlagueSurfaceCategory | None = 0
+APIShared.PlagueSurfaceCategory | Towers = 4
+APIShared.PlagueSurfaceCategory | Walls = 1
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }
