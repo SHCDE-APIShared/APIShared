@@ -1234,11 +1234,30 @@ Registration starts inactive. Set null at your mission end or when disabled; do 
 unhook or unregister. Among active registrations, the last in ascending order, ordinal
 owner GUID and local ID wins. `SetMultiplier` is thread-safe; synchronized settings,
 mode permissions and activation boundaries remain the consumer's responsibility.
-When every handle is inactive, original SE multiplication, including other mods'
+When no registration applies to the current level, original SE multiplication, including other mods'
 integer coefficients, remains intact. Overflow preserves the SE simulation contribution
 and logs once; the report's existing error boundary preserves its original display.
 Use sensible bounds in the consumer. The API accepts decimal coefficients; UI ranges
 and step sizes belong to the consumer.
+
+Since 0.15.0, `handle.SetLevelContributions(IReadOnlyDictionary<int, int>)` accepts
+absolute whole report points for exact signed input levels. For example,
+`{ [-1] = -2, [-2] = -4, [-3] = -6, [-4] = -8, [-5] = -10 }` doubles the Vanilla
+negative contributions while leaving positive levels to earlier registrations or SE.
+Output signs do not select the side: the key always names the original fear level.
+Zero-valued contributions are active overrides; key zero is rejected so the neutral
+level stays neutral. Other Int32 keys are allowed even though Vanilla produces -5..5.
+The caller's map is copied; any invalid key, duplicate entry or overflowing points*25
+conversion throws before publication and preserves the preceding configuration.
+Null or an empty map disables the handle. Each setter replaces that handle's entire
+configuration: a table never retains a previous multiplier or old table keys.
+Among registrations the last applicable one wins separately for each level, using
+the same order/GUID/ID ordering as uniform coefficients. A later uniform coefficient
+covers every level; a later sparse table changes only its listed levels. The
+published snapshot is immutable and read without locks or per-calculation allocations.
+Simulation and the report correction share it. Existing multiplier callers retain
+their rounding, overflow and logical-disable behavior; no new native or managed hook
+is installed for tables.
 
 See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
 The pure popularity tests cover rounding, ownership and matching display deltas;

@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.14.0",
+  "Version": "0.15.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.15.0",
+      "Changes": [
+        "Add FearPopularityRegistration.SetLevelContributions for fixed whole popularity points per signed fear level. Positive and negative levels can be configured independently, including zero-valued contributions; the neutral fear level remains unchanged.",
+        "Compose per-level tables with existing multiplier registrations using the established order, owner GUID and registration ID. Unspecified levels retain earlier applicable policies or the original Script Extender calculation. Input tables are copied, setters replace the registration's complete configuration, and invalid or overflowing updates preserve its previous state.",
+        "Keep simulation and the popularity report on the same selected fear contribution. When an override replaces a foreign Script Extender coefficient, the report no longer evaluates that unused coefficient first, avoiding unrelated overflow."
+      ]
+    },
     {
       "Version": "0.14.0",
       "Changes": [

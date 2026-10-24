@@ -34,8 +34,10 @@ namespace APIShared.ScriptExtenderFixes
             if (Buildings == 50 || Buildings == 75) result.Buildings += Value(active, "CathedralPopModifier", 50) - 50;
             string ale = Tier(AlePercent, 100, AleKeys);
             result.Ale = Value(active, ale, Ale);
-            if (active.TryGetValue("GoodBadThingPopModifierMultiplier", out int fear)) result.Fear = checked(fear * FearLevel);
+            // A selected contribution replaces the SE product completely. Do not
+            // evaluate an irrelevant foreign coefficient (which may overflow) first.
             if (Economy.FearPopularity.TryCalculate(FearLevel, out int roundedFear)) result.Fear = roundedFear;
+            else if (active.TryGetValue("GoodBadThingPopModifierMultiplier", out int fear)) result.Fear = checked(fear * FearLevel);
             if (Fairs != 0) result.Fairs = Value(active, "FairsPopularityEventModifier", Fairs);
             result.Events = Events + result.Fairs - Fairs;
             result.Total = checked(Total + result.Food - Food + result.Tax - Tax + result.Crowding - Crowding +

@@ -1,5 +1,6 @@
 using APIShared.Economy;
 using System;
+using System.Collections.Generic;
 
 namespace ThirdPartyMod
 {
@@ -10,8 +11,11 @@ namespace ThirdPartyMod
         {
             if (!FearPopularity.TryRegister(pluginGuid, "fear-coefficient", out var handle, out var diagnostic))
                 throw new InvalidOperationException(diagnostic);
-            handle.SetMultiplier(1.1m);
-            // Retain the handle; call SetMultiplier(null) at mission end or logical disable.
+            handle.SetLevelContributions(new Dictionary<int, int>
+            { [-1]=-2, [-2]=-4, [-3]=-6, [-4]=-8, [-5]=-10 });
+            // Positive levels are unspecified and retain the preceding registration/SE calculation.
+            // SetMultiplier(1.1m) remains available and replaces this handle's table completely.
+            // Retain the handle; call SetLevelContributions(null) at mission end or logical disable.
             return handle;
         }
     }
