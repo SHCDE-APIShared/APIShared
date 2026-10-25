@@ -1069,25 +1069,34 @@ APIShared.ModSettings.ModSettingsPresetSourceKind | External = 2
 APIShared.ModSettings.ModSettingsPresetSourceKind | Mission = 3
 APIShared.ModSettings.ModSettingsPresetSourceKind | Personal = 0
 APIShared.ModSettings.ModSettingsSearch | public static class APIShared.ModSettings.ModSettingsSearch
+APIShared.ModSettings.ModSettingsSearch | public static APIShared.ModSettings.ModSettingsSearchStateFilter GetStateFilter(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsSearchEntry> Export(object viewModel, Noesis.FrameworkElement view)
 APIShared.ModSettings.ModSettingsSearch | public static bool GetExclude(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static bool GetIncludeToolTips(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static bool GetIsSection(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static bool HasMatches(object viewModel, string filterText, bool includeToolTips, string exactKey)
+APIShared.ModSettings.ModSettingsSearch | public static bool HasMatches(object viewModel, string filterText, bool includeToolTips, string exactKey, APIShared.ModSettings.ModSettingsSearchStateFilter stateFilter)
 APIShared.ModSettings.ModSettingsSearch | public static int GetFocusRequest(Noesis.DependencyObject value)
+APIShared.ModSettings.ModSettingsSearch | public static int GetStateRevision(Noesis.DependencyObject value)
+APIShared.ModSettings.ModSettingsSearch | public static object GetSourceModel(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty ExactKeyProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty ExcludeProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty FilterTextProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty FocusRequestProperty
+APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty InactiveValuesProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty IncludeToolTipsProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty IsSectionProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty KeyProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty SectionKeyProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty SectionTitleProperty
+APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty SourceModelProperty
+APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty StateFilterProperty
+APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty StateRevisionProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty TitleProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty ToolTipTextProperty
 APIShared.ModSettings.ModSettingsSearch | public static string GetExactKey(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static string GetFilterText(Noesis.DependencyObject value)
+APIShared.ModSettings.ModSettingsSearch | public static string GetInactiveValues(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static string GetKey(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static string GetSectionKey(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static string GetSectionTitle(Noesis.DependencyObject value)
@@ -1098,18 +1107,24 @@ APIShared.ModSettings.ModSettingsSearch | public static void SetExactKey(Noesis.
 APIShared.ModSettings.ModSettingsSearch | public static void SetExclude(Noesis.DependencyObject value, bool excluded)
 APIShared.ModSettings.ModSettingsSearch | public static void SetFilterText(Noesis.DependencyObject value, string text)
 APIShared.ModSettings.ModSettingsSearch | public static void SetFocusRequest(Noesis.DependencyObject value, int request)
+APIShared.ModSettings.ModSettingsSearch | public static void SetInactiveValues(Noesis.DependencyObject value, string text)
 APIShared.ModSettings.ModSettingsSearch | public static void SetIncludeToolTips(Noesis.DependencyObject value, bool enabled)
 APIShared.ModSettings.ModSettingsSearch | public static void SetIsSection(Noesis.DependencyObject value, bool isSection)
 APIShared.ModSettings.ModSettingsSearch | public static void SetKey(Noesis.DependencyObject value, string key)
 APIShared.ModSettings.ModSettingsSearch | public static void SetSectionKey(Noesis.DependencyObject value, string key)
 APIShared.ModSettings.ModSettingsSearch | public static void SetSectionTitle(Noesis.DependencyObject value, string title)
+APIShared.ModSettings.ModSettingsSearch | public static void SetSourceModel(Noesis.DependencyObject value, object model)
+APIShared.ModSettings.ModSettingsSearch | public static void SetStateFilter(Noesis.DependencyObject value, APIShared.ModSettings.ModSettingsSearchStateFilter filter)
+APIShared.ModSettings.ModSettingsSearch | public static void SetStateRevision(Noesis.DependencyObject value, int revision)
 APIShared.ModSettings.ModSettingsSearch | public static void SetTitle(Noesis.DependencyObject value, string title)
 APIShared.ModSettings.ModSettingsSearch | public static void SetToolTipText(Noesis.DependencyObject value, string text)
 APIShared.ModSettings.ModSettingsSearchCatalog | public static class APIShared.ModSettings.ModSettingsSearchCatalog
+APIShared.ModSettings.ModSettingsSearchCatalog | public static APIShared.ModSettings.ModSettingsSearchState GetState(object viewModel, string key)
 APIShared.ModSettings.ModSettingsSearchCatalog | public static bool IsRegistered(object viewModel)
 APIShared.ModSettings.ModSettingsSearchCatalog | public static bool TryGetEntries(object viewModel, out System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsSearchEntry> entries)
 APIShared.ModSettings.ModSettingsSearchCatalog | public static bool TryNavigate(object viewModel, string key)
 APIShared.ModSettings.ModSettingsSearchCatalog | public static event System.Action<object> SourceChanged
+APIShared.ModSettings.ModSettingsSearchCatalog | public static event System.Action<object> StateChanged
 APIShared.ModSettings.ModSettingsSearchCatalog | public static void RegisterSource(object viewModel, string absoluteXamlPath, BepInEx.Logging.ManualLogSource log, string modName, System.Func<string, string, bool> navigate = null)
 APIShared.ModSettings.ModSettingsSearchEntry | public sealed class APIShared.ModSettings.ModSettingsSearchEntry
 APIShared.ModSettings.ModSettingsSearchEntry | public .ctor(string key, string title, string toolTip)
@@ -1125,6 +1140,20 @@ APIShared.ModSettings.ModSettingsSearchMatcher | public static bool IsMatch(stri
 APIShared.ModSettings.ModSettingsSearchMatcher | public static bool IsMatch(string filterText, bool includeToolTips, string exactKey, string key, string title, string toolTip, string sectionKey, string sectionTitle)
 APIShared.ModSettings.ModSettingsSearchMatcher | public static bool IsSectionTitleMatch(string filterText, string sectionTitle)
 APIShared.ModSettings.ModSettingsSearchMatcher | public static string Normalize(string value)
+APIShared.ModSettings.ModSettingsSearchState | public enum APIShared.ModSettings.ModSettingsSearchState : int
+APIShared.ModSettings.ModSettingsSearchState | Active = 1
+APIShared.ModSettings.ModSettingsSearchState | Inactive = 2
+APIShared.ModSettings.ModSettingsSearchState | Unknown = 0
+APIShared.ModSettings.ModSettingsSearchStateFilter | public enum APIShared.ModSettings.ModSettingsSearchStateFilter : int
+APIShared.ModSettings.ModSettingsSearchStateFilter | Active = 1
+APIShared.ModSettings.ModSettingsSearchStateFilter | All = 0
+APIShared.ModSettings.ModSettingsSearchStateFilter | Inactive = 2
+APIShared.ModSettings.ModSettingsSearchStateMatcher | public static class APIShared.ModSettings.ModSettingsSearchStateMatcher
+APIShared.ModSettings.ModSettingsSearchStateMatcher | public static bool IsMatch(APIShared.ModSettings.ModSettingsSearchStateFilter filter, APIShared.ModSettings.ModSettingsSearchState state)
+APIShared.ModSettings.ModSettingsSearchStateVisibilityConverter | public sealed class APIShared.ModSettings.ModSettingsSearchStateVisibilityConverter : Noesis.IMultiValueConverter
+APIShared.ModSettings.ModSettingsSearchStateVisibilityConverter | public .ctor()
+APIShared.ModSettings.ModSettingsSearchStateVisibilityConverter | public object Convert(object[] values, System.Type targetType, object parameter, System.Globalization.CultureInfo culture)
+APIShared.ModSettings.ModSettingsSearchStateVisibilityConverter | public object[] ConvertBack(object value, System.Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
 APIShared.ModSettings.ModSettingsSearchVisibilityConverter | public sealed class APIShared.ModSettings.ModSettingsSearchVisibilityConverter : Noesis.IMultiValueConverter
 APIShared.ModSettings.ModSettingsSearchVisibilityConverter | public .ctor()
 APIShared.ModSettings.ModSettingsSearchVisibilityConverter | public object Convert(object[] values, System.Type targetType, object parameter, System.Globalization.CultureInfo culture)
@@ -1184,6 +1213,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected void SetModDef
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public APIShared.ModSettings.ModSettingsModeAvailability System_ModeAvailability { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public APIShared.ModSettings.ModSettingsPresetListEntry System_SelectedPresetLoadEntry { get; set; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public APIShared.ModSettings.ModSettingsPresetSaveTarget System_SelectedPresetSaveTarget { get; set; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public APIShared.ModSettings.ModSettingsSearchStateFilter System_ModSettingsSearchStateFilter { get; set; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public APIShared.ModSettings.ModSettingsWorkingSource System_SelectedSettingsSource { get; set; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.ComboBoxItem[] System_PresetSaveBulkModeOptions { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility ActionsScopeNoticeVisibility { get; }
@@ -1264,6 +1294,8 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ModSe
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public float ClientSettingsOpacity { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public float HostSettingsOpacity { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public int System_ModSettingsSearchFocusRequest { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public int System_ModSettingsSearchStateFilterIndex { get; set; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public int System_ModSettingsSearchStateRevision { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public int System_PresetSaveBulkModeIndex { get; set; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public object System_ReadDescribedValue(string key)
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string ActionsScopeNoticeText { get; }
@@ -1291,6 +1323,8 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_Mod
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchIncludeToolTipsText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchLabelText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchNoResultsText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchStateHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchStateLabelText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchText { get; set; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModSettingsSearchToggleHelpText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModeNoticeText { get; }
@@ -1323,6 +1357,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_Set
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_SettingsSourceLoadText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_SettingsSourceText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_TrailSourceNoticeText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string[] System_ModSettingsSearchStateFilters { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public void System_ApplyMissionPresetSnapshot(System.Collections.Generic.Dictionary<string, byte[]> snapshot, string label)
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public void System_ApplyWorkingSnapshot(System.Collections.Generic.Dictionary<string, byte[]> snapshot)
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public void System_CommitConfiguration()

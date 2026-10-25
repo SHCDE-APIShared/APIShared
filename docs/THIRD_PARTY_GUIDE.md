@@ -772,6 +772,46 @@ metadata. Item collections are snapshots, not live UI subscriptions.
 Re-register the source to refresh changed language text or dynamic items. This
 replaces the source and optional callback and invalidates its cached entries.
 
+Configured-value filtering is independent of text metadata and parent activation.
+`ModSettingsSearchCatalog.GetState(model, key)` reads current public checkbox/slider
+bindings on the Unity thread. `ModSettingsSearchState` is a flags enum: `Unknown`,
+`Active`, `Inactive`; a logical row with mixed values contains both flags and matches
+both status filters. Unsupported bindings, non-numeric values and failed value
+getters remain unknown without invalidating the catalog. Associated text editors
+do not add a second value. Recursive reads of the same state key return unknown
+at the recursive boundary. The old text-only APIs and converter inputs are unchanged.
+
+Checkboxes use their checked state. Sliders default to inactive at exactly -1 or 0.
+Declare context-specific neutral values directly on a slider, for example
+`shared:ModSettingsSearch.InactiveValues="1"` for a multiplier or `"100"` for a
+percentage. This literal metadata **replaces** the default rule: with `"1"`, zero
+is active. Multiple values use semicolons (`"-1;100"`); inclusive numeric ranges
+are supported (`"0..1"`). Numbers use invariant decimal notation. Invalid metadata
+produces unknown state. Declare neutral semantics explicitly; neither labels nor
+initial/default values are used to guess them.
+
+The catalog starts observing value paths when state is queried. `StateChanged`
+publishes the registered root model on the Unity thread, including changes to
+observed nested objects; foreign-thread notifications use APIShared's existing
+Unity dispatcher and are drained in a coalesced callback. Defaults resets, preset
+snapshots and configuration commits internally batch derived search updates per
+model: the outer operation publishes one final `StateChanged` if an observed value
+changed, including when an operation exits with an exception. Individual edits
+still publish synchronously on the Unity thread. Original setting notifications,
+storage and network publication are not suppressed. Explicit `GetState` reads
+remain live even inside a batch; presentation-only reuse ends with its notification.
+Leaf changes do not rebuild the observation graph. Replaced intermediate objects
+rewire only their affected paths. Local status presentation does no value refresh
+for All; source replacement and text filtering retain their normal behavior.
+Source replacement detaches the old managed observers. Dynamic
+item collections still require re-registration; item metadata remains a snapshot.
+Custom hosts can combine `ModSettingsSearchStateMatcher.IsMatch(filter, state)`
+with the existing text matcher. Preset pages expose session-only
+`System_ModSettingsSearchStateFilter` and selector index/labels. A status-aware
+local converter prefixes the old inputs with root model, status filter and revision,
+provided by the inherited `SourceModel`, `StateFilter`, `StateRevision` properties.
+Exact navigation and the clear command reset the local status filter to All.
+
 `IsRegistered(model)` checks support without reading consumer properties.
 `TryGetEntries(model, out entries)` returns false only for an unregistered model;
 a registered empty or failed catalog returns true with zero entries. Snapshots

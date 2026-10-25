@@ -22,6 +22,9 @@ namespace ThirdPartyMod
             // The same model and source belong to the catalog and the registered tab.
             // Optional navigation updates only the mod's own filter properties.
             ModSettingsSearchCatalog.RegisterSource(settings, path, log, modName, applyLocalFilter);
+            // Optional configured-value filtering uses GetState(settings, entry.Key) and StateChanged.
+            // Declare slider neutral values in XAML: shared:ModSettingsSearch.InactiveValues="1"
+            // for a multiplier, or "100" for a percentage. This replaces the default -1/0 rule.
             GameXAMLManagerAPI.Instance.RegisterLobbyModSettings(plugin, modName, settings, relativeXamlPath);
         }
     }

@@ -263,5 +263,198 @@ namespace APISharedTests
             try { File.WriteAllText(path, xaml); action(path); }
             finally { File.Delete(path); }
         }
+
+        public sealed class StateFixture : System.ComponentModel.INotifyPropertyChanged
+        {
+            public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+            private double value;
+            public int ValueReads;
+            public Action OnRead;
+            public double Value { get { ValueReads++; OnRead?.Invoke(); return value; } set { this.value = value; } }
+            public StateFixture Child { get; set; }
+            public bool Enabled { get; set; }
+            public double Broken => throw new InvalidOperationException("state getter failed");
+            public double Recursive
+            {
+                get
+                {
+                    Assert.AreEqual(ModSettingsSearchState.Unknown, ModSettingsSearchCatalog.GetState(this, "recursive"));
+                    return Value;
+                }
+            }
+            public void Changed() => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Value)));
+            public void Changed(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+        }
+
+        [TestMethod]
+        public void StateMetadataIsLiveIsolatedAndSupportsPerSliderNeutralValues()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Grid s:Key='row' s:Title='Row' s:ToolTipText='Help'>" +
+                "<CheckBox IsChecked='{Binding Enabled}'/><Slider Value='{Binding Value}' s:InactiveValues='1;100'/>" +
+                "<Slider Value='{Binding Broken}'/></Grid>" +
+                "<Slider s:Key='range' s:Title='Range' ToolTip='Help' Value='{Binding Value}' s:InactiveValues='0..1'/>" +
+                "<Slider s:Key='default' s:Title='Default' ToolTip='Default' Value='{Binding Value}'/></Grid>", path => {
+                var model = new StateFixture { Value = 1 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "independent.state.fixture");
+                ModSettingsSearchCatalog.TryGetEntries(model, out var metadata);
+                Assert.AreEqual(ModSettingsSearchState.Inactive, ModSettingsSearchCatalog.GetState(model, "row"));
+                model.Value = 0;
+                Assert.AreEqual(ModSettingsSearchState.Active | ModSettingsSearchState.Inactive, ModSettingsSearchCatalog.GetState(model, "row"));
+                model.Value = 100;
+                Assert.AreEqual(ModSettingsSearchState.Inactive, ModSettingsSearchCatalog.GetState(model, "row"));
+                model.Value = 0.5;
+                Assert.AreEqual(ModSettingsSearchState.Inactive, ModSettingsSearchCatalog.GetState(model, "range"));
+                foreach (double value in new[] { -1d, 0d, 1d, 100d, -2d })
+                {
+                    model.Value = value;
+                    Assert.AreEqual(value == -1 || value == 0 ? ModSettingsSearchState.Inactive : ModSettingsSearchState.Active,
+                        ModSettingsSearchCatalog.GetState(model, "default"));
+                }
+                model.Value = double.NaN;
+                Assert.AreEqual(ModSettingsSearchState.Unknown, ModSettingsSearchCatalog.GetState(model, "default"));
+                int notifications = 0;
+                Action<object> handler = owner => { if (ReferenceEquals(owner, model)) notifications++; };
+                ModSettingsSearchCatalog.StateChanged += handler;
+                try { model.Value = 2; model.Changed(); Assert.AreEqual(1, notifications); }
+                finally { ModSettingsSearchCatalog.StateChanged -= handler; }
+                ModSettingsSearchCatalog.TryGetEntries(model, out var current);
+                Assert.AreSame(metadata, current, "Value changes must not rebuild immutable metadata.");
+            });
+        }
+
+        [TestMethod]
+        public void LocalStateConverterCombinesSectionTextAndLiveValuesWithoutHidingMixedRows()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Grid s:IsSection='True' s:SectionKey='section' s:SectionTitle='Group'/>" +
+                "<Grid s:Key='row' s:Title='Row' s:ToolTipText='Help' s:SectionKey='section' s:SectionTitle='Group'>" +
+                "<CheckBox IsChecked='{Binding Enabled}'/><Slider Value='{Binding Value}'/></Grid></Grid>", path => {
+                var model = new StateFixture { Enabled = false, Value = 2 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "local.state.fixture");
+                var converter = new ModSettingsSearchStateVisibilityConverter();
+                object[] values = { model, ModSettingsSearchStateFilter.Active, 0, "group", false, "", "section", "Group", "", "section", "Group" };
+                Assert.AreEqual(Noesis.Visibility.Visible, converter.Convert(values, typeof(Noesis.Visibility), null, null));
+                values[1] = ModSettingsSearchStateFilter.Inactive;
+                Assert.AreEqual(Noesis.Visibility.Visible, converter.Convert(values, typeof(Noesis.Visibility), null, null));
+                model.Enabled = true;
+                Assert.AreEqual(Noesis.Visibility.Collapsed, converter.Convert(values, typeof(Noesis.Visibility), null, null));
+                values[3] = "missing";
+                Assert.AreEqual(Noesis.Visibility.Collapsed, converter.Convert(values, typeof(Noesis.Visibility), null, null));
+                values[1] = ModSettingsSearchStateFilter.All;
+                values[3] = "group";
+                Assert.AreEqual(Noesis.Visibility.Visible, converter.Convert(values, typeof(Noesis.Visibility), null, null));
+            });
+        }
+
+        [TestMethod]
+        public void RecursiveStatusGettersAreBoundedAndAutomaticDuplicateEditorsShareState()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Slider s:Key='recursive' s:Title='Recursive' ToolTip='Recursive' Value='{Binding Recursive}'/>" +
+                "<Grid><TextBlock Text='Number'/><TextBox Text='{Binding Value}' ToolTip='Shared help'/>" +
+                "<Slider Value='{Binding Value}' ToolTip='Shared help'/></Grid></Grid>", path => {
+                var model = new StateFixture { Value = 2 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "recursive.state.fixture");
+                Assert.AreEqual(ModSettingsSearchState.Active, ModSettingsSearchCatalog.GetState(model, "recursive"));
+                ModSettingsSearchCatalog.TryGetEntries(model, out var entries);
+                var automatic = entries.Where(entry => entry.Title == "Number").ToArray();
+                Assert.AreEqual(1, automatic.Length);
+                Assert.AreEqual(ModSettingsSearchState.Active, ModSettingsSearchCatalog.GetState(model, automatic[0].Key),
+                    "The associated text editor must not hide the slider's state when discovered first.");
+            });
+        }
+
+        [TestMethod]
+        public void UnsupportedBindingContextsNeverClassifyAnUnrelatedRootProperty()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Grid DataContext='{Binding Other}'>" +
+                "<Slider s:Key='context' s:Title='Other context' ToolTip='Other' Value='{Binding Value}'/></Grid>" +
+                "<Slider s:Key='source' s:Title='External source' ToolTip='Source' Value='{Binding Value, Source = other}'/>" +
+                "<Slider s:Key='converter' s:Title='Converter' ToolTip='Converter' Value='{Binding Value, Converter = custom}'/>" +
+                "<Slider s:Key='normal' s:Title='Normal' ToolTip='Normal' Value='{Binding Value, UpdateSourceTrigger=PropertyChanged}'/></Grid>", path => {
+                var model = new StateFixture { Value = 2 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "binding.state.fixture");
+                foreach (string key in new[] { "context", "source", "converter" })
+                    Assert.AreEqual(ModSettingsSearchState.Unknown, ModSettingsSearchCatalog.GetState(model, key), key);
+                Assert.AreEqual(ModSettingsSearchState.Active, ModSettingsSearchCatalog.GetState(model, "normal"));
+            });
+        }
+
+        [TestMethod]
+        public void NestedBatchesPublishOnlyTheCompletedStateAndUnwindAfterFailure()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Slider s:Key='value' s:Title='Value' ToolTip='Help' Value='{Binding Value}'/></Grid>", path => {
+                var model = new StateFixture { Value = 2 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "batch.fixture");
+                ModSettingsSearchCatalog.GetState(model, "value");
+                int notifications = 0;
+                Action<object> listener = owner => { if (ReferenceEquals(owner, model)) notifications++; };
+                ModSettingsSearchCatalog.StateChanged += listener;
+                try
+                {
+                    try
+                    {
+                        using (ModSettingsSearchUpdateScope.Begin(model))
+                        {
+                            model.Value = 0; model.Changed();
+                            using (ModSettingsSearchUpdateScope.Begin(model)) { model.Value = 4; model.Changed(); }
+                            Assert.AreEqual(0, notifications);
+                            Assert.AreEqual(ModSettingsSearchState.Active, ModSettingsSearchCatalog.GetState(model, "value"));
+                            throw new InvalidOperationException("setter failure");
+                        }
+                    }
+                    catch (InvalidOperationException) { }
+                    Assert.AreEqual(1, notifications);
+                    model.Value = 0; model.Changed();
+                    Assert.AreEqual(2, notifications, "A failed operation must not suppress subsequent single edits.");
+                }
+                finally { ModSettingsSearchCatalog.StateChanged -= listener; }
+            });
+        }
+
+        [TestMethod]
+        public void PresentationReusesValuesOnlyDuringItsNotificationWhilePublicQueriesStayLive()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Slider s:Key='value' s:Title='Value' ToolTip='Help' s:SectionKey='section' s:SectionTitle='Group' Value='{Binding Value}'/></Grid>", path => {
+                var model = new StateFixture { Value = 2 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "presentation.fixture");
+                ModSettingsSearchCatalog.GetState(model, "value");
+                var converter = new ModSettingsSearchStateVisibilityConverter();
+                object[] inputs = { model, ModSettingsSearchStateFilter.Active, 0, "", false, "", "section", "Group", "", "section", "Group" };
+                bool allVisible = true;
+                int readsDuringNotification = -1;
+                ModSettingsSearchState directState = ModSettingsSearchState.Unknown;
+                Action<object> listener = owner => {
+                    if (!ReferenceEquals(owner, model)) return;
+                    model.ValueReads = 0;
+                    for (int index = 0; index < 3; index++) allVisible &= Equals(Noesis.Visibility.Visible, converter.Convert(inputs, typeof(Noesis.Visibility), null, null));
+                    readsDuringNotification = model.ValueReads;
+                    model.Value = 0; // Explicit non-notifying changes remain visible to public live queries.
+                    directState = ModSettingsSearchCatalog.GetState(model, "value");
+                };
+                ModSettingsSearchCatalog.StateChanged += listener;
+                try { model.Changed(); }
+                finally { ModSettingsSearchCatalog.StateChanged -= listener; }
+                Assert.IsTrue(allVisible);
+                Assert.AreEqual(1, readsDuringNotification, "Section and row queries must share the notification snapshot.");
+                Assert.AreEqual(ModSettingsSearchState.Inactive, directState);
+                Assert.AreEqual(Noesis.Visibility.Collapsed, converter.Convert(inputs, typeof(Noesis.Visibility), null, null), "No value cache may survive its notification.");
+            });
+        }
+
+        [TestMethod]
+        public void SourceReplacementFromAValueGetterCannotReattachTheRetiredObserver()
+        {
+            WithFile("<Grid xmlns:s='urn:search'><Slider s:Key='value' s:Title='Value' ToolTip='Help' Value='{Binding Value}'/></Grid>", path => {
+                var model = new StateFixture { Value = 2 };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "old.fixture");
+                model.OnRead = () => { model.OnRead = null; ModSettingsSearchCatalog.RegisterSource(model, path, null, "new.fixture"); };
+                Assert.AreEqual(ModSettingsSearchState.Unknown, ModSettingsSearchCatalog.GetState(model, "value"));
+                Assert.AreEqual(ModSettingsSearchState.Active, ModSettingsSearchCatalog.GetState(model, "value"));
+                int notifications = 0;
+                Action<object> listener = owner => { if (ReferenceEquals(owner, model)) notifications++; };
+                ModSettingsSearchCatalog.StateChanged += listener;
+                try { model.Value = 0; model.Changed(); Assert.AreEqual(1, notifications); }
+                finally { ModSettingsSearchCatalog.StateChanged -= listener; }
+            });
+        }
     }
 }

@@ -13,6 +13,32 @@ namespace LobbyModSettingsPresetTests
 {
     public partial class LobbyPresetControllerTests
     {
+        [TestMethod]
+        public void DefaultsAndWorkingSnapshotsDeferSearchUntilTheWholeApplicationCompletes()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.Target.HostAmount = 99;
+            host.Target.LocalAmount = 42;
+            int refreshes = 0;
+            bool allDeferred = true;
+            Action refresh = () => refreshes++;
+            host.Target.Changed = name => {
+                controller.AfterPropertyChanged(name);
+                allDeferred &= ModSettingsSearchUpdateScope.TryDefer(host.SettingsTarget, refresh);
+            };
+            int writes = controller.TestWriteCount;
+            controller.ApplyDefaultsAsWorkingCopy();
+            Assert.IsTrue(allDeferred, "Every reflected setter must stay inside the search update scope.");
+            Assert.AreEqual(1, refreshes);
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(5, host.Target.LocalAmount);
+            Assert.AreEqual(writes + 1, controller.TestWriteCount, "Search batching must not change persistence.");
+            controller.ApplyWorkingSnapshot(Values(31, 32, 43));
+            Assert.AreEqual(2, refreshes);
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(43, host.Target.LocalAmount);
+        }
         public sealed class OptionalSettings
         {
             [PresetLocal] public string Name { get; set; }

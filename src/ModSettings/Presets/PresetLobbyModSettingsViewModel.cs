@@ -142,6 +142,8 @@ namespace APIShared.ModSettings
 #if !API_SHARED_PRESET_TESTS
             System_ToggleModSettingsSearchCommand = new RelayCommand(ToggleModSettingsSearch);
             System_ClearModSettingsSearchCommand = new RelayCommand(ClearModSettingsSearch);
+            ModSettingsSearchCatalog.StateChanged += OnModSettingsSearchStateChanged;
+            ModSettingsSearchCatalog.SourceChanged += OnModSettingsSearchSourceChanged;
             System_OpenPresetLoadCommand = new RelayCommand(OpenPresetLoad);
             System_ConfirmPresetLoadCommand = new RelayCommand(ConfirmPresetLoad);
             System_DeletePresetCommand = new RelayCommand(DeleteSelectedPreset);
@@ -355,11 +357,14 @@ namespace APIShared.ModSettings
         /// <summary>Applies an explicitly confirmed selection. Overrides may add deferred application.</summary>
         protected virtual void ApplyConfirmedPresetSelection(PublishedModSettingsPreset preset)
         {
-            if (presetController == null) throw new InvalidOperationException("Preset controller is not initialized.");
-            if (SettingsApplicationBackend != null)
-                SettingsApplicationBackend.ReplaceDesiredValues(SettingsApplicationBackend.ReadOwnValues());
-            presetController.LoadPreset(preset);
-            System_CommitConfiguration();
+            using (ModSettingsSearchUpdateScope.Begin(this))
+            {
+                if (presetController == null) throw new InvalidOperationException("Preset controller is not initialized.");
+                if (SettingsApplicationBackend != null)
+                    SettingsApplicationBackend.ReplaceDesiredValues(SettingsApplicationBackend.ReadOwnValues());
+                presetController.LoadPreset(preset);
+                System_CommitConfiguration();
+            }
         }
 
         private string ResolveSettingsUiTextSafe(string key, string fallback)
@@ -492,8 +497,11 @@ namespace APIShared.ModSettings
         /// <summary>Commits the current working configuration through the shared application coordinator and updates the restart notice.</summary>
         public void System_CommitConfiguration()
         {
-            bool restart = ModSettingsApplication.Commit(presetController.TargetGuid);
-            ReportConfigurationResult(restart);
+            using (ModSettingsSearchUpdateScope.Begin(this))
+            {
+                bool restart = ModSettingsApplication.Commit(presetController.TargetGuid);
+                ReportConfigurationResult(restart);
+            }
         }
         internal void ReportConfigurationResult(bool restart) => SetConfigurationNotice(restart
             ? ResolveSettingsUiTextSafe("Common.RestartRequired", "Settings prepared. Restart the game to apply them.") : "");
@@ -959,37 +967,40 @@ namespace APIShared.ModSettings
         /// <summary>Loads defaults into the current working settings and commits application state; may stage a restart through the backend. Requires prepared registration and respects editable scope.</summary>
         public void System_LoadModDefaults()
         {
-            SetConfigurationNotice("");
-            var backend = SettingsApplicationBackend;
-            var activeBefore = backend?.ReadActiveValues();
-            var pendingBefore = backend?.ReadPendingValues();
-            if (IsMissionPresetSelected)
-                ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, ModSettingsWorkingSourceRegistry.ModDefaultsId);
-            else
-                presetController?.ApplyDefaultsAsWorkingCopy();
-            System_CommitConfiguration();
-            if (backend != null)
+            using (ModSettingsSearchUpdateScope.Begin(this))
             {
-                var desired = backend.ReadDesiredValues();
-                var pendingAfter = backend.ReadPendingValues();
-                bool activeMatches = ConfigurationValuesEqual(desired, backend.ReadActiveValues());
-                if (pendingBefore != null && pendingAfter == null && activeMatches)
-                    SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetDiscarded",
-                        "Previous preparation discarded. Mod defaults are active. No restart needed."));
-                else if (pendingBefore != null && !ConfigurationValuesEqual(pendingBefore, pendingAfter) && pendingAfter != null)
-                    SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetReplaced",
-                        "Previous preparation replaced with mod defaults.") + " " + (activeMatches
-                            ? ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive", "Prepared for future starts. Current values already match; no restart needed.")
-                            : ResolveSettingsUiTextSafe("Common.RestartRequired", "Settings prepared. Restart the game to apply them.")));
-                else if (activeMatches && pendingAfter != null)
-                    SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive",
-                        "Prepared for future starts. Current values already match; no restart needed."));
-                else if (activeMatches)
-                    SetConfigurationNotice(ConfigurationValuesEqual(activeBefore, desired)
-                        ? ResolveSettingsUiTextSafe("Common.DefaultResetUnchanged", "Settings already match the mod defaults. No restart needed.")
-                        : ResolveSettingsUiTextSafe("Common.DefaultResetApplied", "Mod defaults applied. No restart needed."));
+                SetConfigurationNotice("");
+                var backend = SettingsApplicationBackend;
+                var activeBefore = backend?.ReadActiveValues();
+                var pendingBefore = backend?.ReadPendingValues();
+                if (IsMissionPresetSelected)
+                    ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, ModSettingsWorkingSourceRegistry.ModDefaultsId);
+                else
+                    presetController?.ApplyDefaultsAsWorkingCopy();
+                System_CommitConfiguration();
+                if (backend != null)
+                {
+                    var desired = backend.ReadDesiredValues();
+                    var pendingAfter = backend.ReadPendingValues();
+                    bool activeMatches = ConfigurationValuesEqual(desired, backend.ReadActiveValues());
+                    if (pendingBefore != null && pendingAfter == null && activeMatches)
+                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetDiscarded",
+                            "Previous preparation discarded. Mod defaults are active. No restart needed."));
+                    else if (pendingBefore != null && !ConfigurationValuesEqual(pendingBefore, pendingAfter) && pendingAfter != null)
+                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetReplaced",
+                            "Previous preparation replaced with mod defaults.") + " " + (activeMatches
+                                ? ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive", "Prepared for future starts. Current values already match; no restart needed.")
+                                : ResolveSettingsUiTextSafe("Common.RestartRequired", "Settings prepared. Restart the game to apply them.")));
+                    else if (activeMatches && pendingAfter != null)
+                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive",
+                            "Prepared for future starts. Current values already match; no restart needed."));
+                    else if (activeMatches)
+                        SetConfigurationNotice(ConfigurationValuesEqual(activeBefore, desired)
+                            ? ResolveSettingsUiTextSafe("Common.DefaultResetUnchanged", "Settings already match the mod defaults. No restart needed.")
+                            : ResolveSettingsUiTextSafe("Common.DefaultResetApplied", "Mod defaults applied. No restart needed."));
+                }
+                RaiseAccessProperties();
             }
-            RaiseAccessProperties();
         }
 
         private static bool ConfigurationValuesEqual(Dictionary<string, object> left, Dictionary<string, object> right) =>
