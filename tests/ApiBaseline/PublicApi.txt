@@ -310,6 +310,7 @@ APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLev
 APIShared.Economy.FearPopularityRegistration | public sealed class APIShared.Economy.FearPopularityRegistration
 APIShared.Economy.FearPopularityRegistration | public void SetLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, int> contributions)
 APIShared.Economy.FearPopularityRegistration | public void SetMultiplier(decimal? multiplier)
+APIShared.Economy.FearPopularityRegistration | public void SetTargetedLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityOverrideValues> contributions)
 APIShared.Economy.MarketPriceDirection | public enum APIShared.Economy.MarketPriceDirection : int
 APIShared.Economy.MarketPriceDirection | Buy = 0
 APIShared.Economy.MarketPriceDirection | Sell = 1
@@ -333,6 +334,55 @@ APIShared.Economy.MarketPricePreEventArgs | public int Amount { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int Good { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int PlayerId { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int ReplacementTotal { get; set; }
+APIShared.Economy.PopularityOverrideRegistration | public sealed class APIShared.Economy.PopularityOverrideRegistration
+APIShared.Economy.PopularityOverrideRegistration | public void SetContributions(System.Collections.Generic.IReadOnlyDictionary<APIShared.Economy.PopularitySource, APIShared.Economy.PopularityOverrideValues> contributions)
+APIShared.Economy.PopularityOverrideValues | public struct APIShared.Economy.PopularityOverrideValues
+APIShared.Economy.PopularityOverrideValues | public .ctor(int? humanPoints, int? aiPoints)
+APIShared.Economy.PopularityOverrideValues | public int? AIPoints { get; }
+APIShared.Economy.PopularityOverrideValues | public int? HumanPoints { get; }
+APIShared.Economy.PopularityOverrides | public static class APIShared.Economy.PopularityOverrides
+APIShared.Economy.PopularityOverrides | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.PopularityOverrideRegistration registration, out string diagnostic, int order = 0)
+APIShared.Economy.PopularitySource | public enum APIShared.Economy.PopularitySource : int
+APIShared.Economy.PopularitySource | AlePopModifierTierFour = 38
+APIShared.Economy.PopularitySource | AlePopModifierTierOne = 35
+APIShared.Economy.PopularitySource | AlePopModifierTierThree = 37
+APIShared.Economy.PopularitySource | AlePopModifierTierTwo = 36
+APIShared.Economy.PopularitySource | CathedralPopModifier = 34
+APIShared.Economy.PopularitySource | ChurchPopModifier = 33
+APIShared.Economy.PopularitySource | FairsPopularityEventModifier = 39
+APIShared.Economy.PopularitySource | FoodVarietyPopModifierFourTypes = 9
+APIShared.Economy.PopularitySource | FoodVarietyPopModifierThreeTypes = 8
+APIShared.Economy.PopularitySource | FoodVarietyPopModifierTwoTypes = 7
+APIShared.Economy.PopularitySource | OverpopulationPopModifierTierFive = 14
+APIShared.Economy.PopularitySource | OverpopulationPopModifierTierFour = 13
+APIShared.Economy.PopularitySource | OverpopulationPopModifierTierOne = 10
+APIShared.Economy.PopularitySource | OverpopulationPopModifierTierThree = 12
+APIShared.Economy.PopularitySource | OverpopulationPopModifierTierTwo = 11
+APIShared.Economy.PopularitySource | RationsPopModifierDouble = 4
+APIShared.Economy.PopularitySource | RationsPopModifierExtra = 3
+APIShared.Economy.PopularitySource | RationsPopModifierFull = 2
+APIShared.Economy.PopularitySource | RationsPopModifierHalf = 1
+APIShared.Economy.PopularitySource | RationsPopModifierNoPopulation = 6
+APIShared.Economy.PopularitySource | RationsPopModifierNoPreferredFood = 5
+APIShared.Economy.PopularitySource | RationsPopModifierNone = 0
+APIShared.Economy.PopularitySource | ReligionPopModifierTierFour = 32
+APIShared.Economy.PopularitySource | ReligionPopModifierTierOne = 29
+APIShared.Economy.PopularitySource | ReligionPopModifierTierThree = 31
+APIShared.Economy.PopularitySource | ReligionPopModifierTierTwo = 30
+APIShared.Economy.PopularitySource | TaxPopModifierBigDonation = 16
+APIShared.Economy.PopularitySource | TaxPopModifierCruel = 24
+APIShared.Economy.PopularitySource | TaxPopModifierCruellest = 26
+APIShared.Economy.PopularitySource | TaxPopModifierHigh = 21
+APIShared.Economy.PopularitySource | TaxPopModifierHugeDonation = 15
+APIShared.Economy.PopularitySource | TaxPopModifierLow = 19
+APIShared.Economy.PopularitySource | TaxPopModifierMean = 22
+APIShared.Economy.PopularitySource | TaxPopModifierModerate = 20
+APIShared.Economy.PopularitySource | TaxPopModifierMostCruel = 25
+APIShared.Economy.PopularitySource | TaxPopModifierNone = 18
+APIShared.Economy.PopularitySource | TaxPopModifierSmallDonation = 17
+APIShared.Economy.PopularitySource | TaxPopModifierUnaffordableDonation = 27
+APIShared.Economy.PopularitySource | TaxPopModifierUnknownMode = 28
+APIShared.Economy.PopularitySource | TaxPopModifierUsurious = 23
 APIShared.ElevatedMoatAiCapability | public static class APIShared.ElevatedMoatAiCapability
 APIShared.ElevatedMoatAiCapability | public static APIShared.ElevatedMoatAiState Current { get; }
 APIShared.ElevatedMoatAiCapability | public static event System.Action<APIShared.ElevatedMoatAiState> Changed

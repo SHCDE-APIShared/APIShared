@@ -12,8 +12,9 @@ namespace APIShared.ScriptExtenderFixes
         {
             internal readonly string Name;
             internal readonly int Vanilla;
+            internal readonly int Source;
             internal readonly Func<int> Read;
-            internal Entry(string name, int vanilla, Func<int> read) { Name=name; Vanilla=vanilla; Read=read; }
+            internal Entry(string name, int vanilla, Func<int> read) { Name=name; Vanilla=vanilla; Read=read; Source=Enum.TryParse(name,out Economy.PopularitySource source)?(int)source:-1; }
         }
         private readonly Entry[] entries;
         private readonly GameGlobalsManager globals;
@@ -66,14 +67,17 @@ namespace APIShared.ScriptExtenderFixes
             };
         }
         internal IReadOnlyDictionary<string, int> Refresh()
+            => Refresh(Economy.PopularitySelection.Legacy);
+        internal IReadOnlyDictionary<string, int> Refresh(Economy.PopularitySelection selection)
         {
             changed.Clear();
             foreach (var entry in entries)
             {
                 int value = entry.Read();
-                if (value != entry.Vanilla) changed.Add(entry.Name, value);
+                if(entry.Source>=0) value=Economy.PopularitySelection.Resolve(value,selection,entry.Source);
+                if (value != entry.Vanilla || (entry.Source>=0 && selection?.Sources!=null && selection.Sources[entry.Source].HasValue)) changed.Add(entry.Name, value);
             }
-            if (Economy.FearPopularity.HasActive)
+            if (selection?.Fear!=null)
                 changed["GoodBadThingPopModifierMultiplier"] = globals.GoodBadThingPopModifierMultiplier.GetValue();
             return changed;
         }

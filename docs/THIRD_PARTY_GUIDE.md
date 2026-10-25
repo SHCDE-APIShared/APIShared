@@ -1259,6 +1259,47 @@ Simulation and the report correction share it. Existing multiplier callers retai
 their rounding, overflow and logical-disable behavior; no new native or managed hook
 is installed for tables.
 
+### Human and AI contributions
+
+Since 0.16.0, `Economy.PopularityOverrides.TryRegister(ownerGuid, registrationId,
+out handle, out diagnostic, order)` creates an inactive ordinary-source policy.
+Call `handle.SetContributions(IReadOnlyDictionary<PopularitySource,
+PopularityOverrideValues>)` at synchronized mission boundaries. The enum names the
+SE parameters for rations, food variety, crowding, taxes, religion, ale and fairs.
+`new PopularityOverrideValues(humanPoints, aiPoints)` contains independent nullable
+whole report points: null leaves that player type untouched; zero is an explicit
+contribution. Human covers every human participant; AI includes allied and enemy
+AI lords. Invalid, empty or unresolved player slots receive no targeted policy.
+
+Fear handles add `SetTargetedLevelContributions(IReadOnlyDictionary<int,
+PopularityOverrideValues>)`. This distinct name preserves unambiguous legacy null
+calls. Every fear setter replaces the complete configuration of its handle. Old
+uniform multipliers and fixed level tables retain binary/source compatibility,
+rounding, ordering, overflow and availability semantics. Mixed registrations select
+the last non-null applicable value separately for each source, player type and
+fear input level. Missing values reveal earlier policies and then the effective SE
+global value, including foreign stack overrides. No global stack swaps are used.
+
+Setters defensively copy and validate all keys and checked points*25 conversions
+before publication. Invalid updates throw without changing active configuration.
+Null or empty tables deactivate; unknown source enum values and fear key zero are
+rejected. Handles remain owner-bound until process exit. Register after native
+initialization, check diagnostics and keep synchronized settings, host authority
+and mission activation in the consumer. Setters are thread-safe and may run on
+any thread; no user callbacks execute under registry locks.
+
+One immutable role/source/fear snapshot is captured per successful calculation
+from the same R15 player ID used to resolve its resources. Eligibility follows
+the audited native keep/keep-door gate, then the public SE `IsAIPlayer` query.
+The permanent adapter validates resource and source-read provenance before editing
+the actual installed SE method. Unsupported player flows disable new policies
+with diagnostics while preserving the independent legacy fear adapter. Component
+arithmetic, strongest penalty, religion bookkeeping, events and final clamping
+remain in the original method. Reports and previews select the viewed player's
+same policy; no native pointers escape the capture. There are no new locks,
+allocations or roster searches in calculation reads. Gameplay and Mono rendering
+still require in-game acceptance after the installed-method and behavior fixtures.
+
 See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
 The pure popularity tests cover rounding, ownership and matching display deltas;
 installed-assembly tests validate and generate the actual edited SE callback and reject

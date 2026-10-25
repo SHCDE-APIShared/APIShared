@@ -35,12 +35,13 @@ namespace APIShared.ScriptExtenderFixes
         }
         private void Started(MissionLifecycleNotification note) => Interlocked.Exchange(ref session, note.Context.SessionId);
         private void Ended(MissionLifecycleNotification note) => Interlocked.CompareExchange(ref session, 0, note.Context.SessionId);
-        private KeyValuePair<long, IReadOnlyDictionary<string, int>> Capture()
+        private PopularityDisplayCapture Capture()
         {
             long current = Interlocked.Read(ref session);
             if (current == 0) return default;
             if (parameters == null) parameters = new PopularityParameters(GameGlobalsManager.Instance);
-            return new KeyValuePair<long, IReadOnlyDictionary<string, int>>(current, parameters.Refresh());
+            var selection=Economy.PopularityPlayerRuntime.CaptureReport(PlayerPerspectiveAPI.GetViewedPlayerId());
+            return new PopularityDisplayCapture(current,parameters.Refresh(selection),selection);
         }
         private static string Stamp(string text) => "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + text;
     }

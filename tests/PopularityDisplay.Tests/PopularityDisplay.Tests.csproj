@@ -2,6 +2,7 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Economy/FearPopularity.cs" Link="Production/FearPopularity.cs" />
+    <Compile Include="../../src/Economy/PopularityOverrides.cs" Link="Production/PopularityOverrides.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/PopularityReport.cs" Link="Production/PopularityReport.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/PopularityPresentation.cs" Link="Production/PopularityPresentation.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/PopularityParameters.cs" Link="Production/PopularityParameters.cs" />
