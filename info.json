@@ -15,7 +15,9 @@
       "Changes": [
         "Add owner-bound PopularityOverrides registrations and immutable PopularityOverrideValues for independent nullable Human/AI report-point contributions across ordinary popularity sources.",
         "Add FearPopularityRegistration.SetTargetedLevelContributions while retaining all existing multiplier and uniform level-table APIs. Compose by source, role and level; copy and validate complete updates before atomic publication.",
-        "Capture the audited player/resource identity once per Extender calculation; select each contribution before its original arithmetic. Reports and previews use the same viewed-player policy, preserving foreign global values and independent legacy fear availability."
+        "Capture the audited player/resource identity once per Extender calculation; select each contribution before its original arithmetic. Reports and previews use the same viewed-player policy, preserving foreign global values and independent legacy fear availability.",
+        "Add live Active/Inactive state filtering to registered local and global ModSettings searches, including safe checkbox and slider classification, explicit inactive values, inherited filter context and state-change notifications.",
+        "Keep preset snapshots, search catalogs and state filters consistent after setting restoration; preserve host authority, mission locks and existing text-only search behavior."
       ]
     },
     {
