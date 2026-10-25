@@ -772,6 +772,46 @@ metadata. Item collections are snapshots, not live UI subscriptions.
 Re-register the source to refresh changed language text or dynamic items. This
 replaces the source and optional callback and invalidates its cached entries.
 
+Configured-value filtering is independent of text metadata and parent activation.
+`ModSettingsSearchCatalog.GetState(model, key)` reads current public checkbox/slider
+bindings on the Unity thread. `ModSettingsSearchState` is a flags enum: `Unknown`,
+`Active`, `Inactive`; a logical row with mixed values contains both flags and matches
+both status filters. Unsupported bindings, non-numeric values and failed value
+getters remain unknown without invalidating the catalog. Associated text editors
+do not add a second value. Recursive reads of the same state key return unknown
+at the recursive boundary. The old text-only APIs and converter inputs are unchanged.
+
+Checkboxes use their checked state. Sliders default to inactive at exactly -1 or 0.
+Declare context-specific neutral values directly on a slider, for example
+`shared:ModSettingsSearch.InactiveValues="1"` for a multiplier or `"100"` for a
+percentage. This literal metadata **replaces** the default rule: with `"1"`, zero
+is active. Multiple values use semicolons (`"-1;100"`); inclusive numeric ranges
+are supported (`"0..1"`). Numbers use invariant decimal notation. Invalid metadata
+produces unknown state. Declare neutral semantics explicitly; neither labels nor
+initial/default values are used to guess them.
+
+The catalog starts observing value paths when state is queried. `StateChanged`
+publishes the registered root model on the Unity thread, including changes to
+observed nested objects; foreign-thread notifications use APIShared's existing
+Unity dispatcher and are drained in a coalesced callback. Defaults resets, preset
+snapshots and configuration commits internally batch derived search updates per
+model: the outer operation publishes one final `StateChanged` if an observed value
+changed, including when an operation exits with an exception. Individual edits
+still publish synchronously on the Unity thread. Original setting notifications,
+storage and network publication are not suppressed. Explicit `GetState` reads
+remain live even inside a batch; presentation-only reuse ends with its notification.
+Leaf changes do not rebuild the observation graph. Replaced intermediate objects
+rewire only their affected paths. Local status presentation does no value refresh
+for All; source replacement and text filtering retain their normal behavior.
+Source replacement detaches the old managed observers. Dynamic
+item collections still require re-registration; item metadata remains a snapshot.
+Custom hosts can combine `ModSettingsSearchStateMatcher.IsMatch(filter, state)`
+with the existing text matcher. Preset pages expose session-only
+`System_ModSettingsSearchStateFilter` and selector index/labels. A status-aware
+local converter prefixes the old inputs with root model, status filter and revision,
+provided by the inherited `SourceModel`, `StateFilter`, `StateRevision` properties.
+Exact navigation and the clear command reset the local status filter to All.
+
 `IsRegistered(model)` checks support without reading consumer properties.
 `TryGetEntries(model, out entries)` returns false only for an unregistered model;
 a registered empty or failed catalog returns true with zero entries. Snapshots
@@ -1234,11 +1274,71 @@ Registration starts inactive. Set null at your mission end or when disabled; do 
 unhook or unregister. Among active registrations, the last in ascending order, ordinal
 owner GUID and local ID wins. `SetMultiplier` is thread-safe; synchronized settings,
 mode permissions and activation boundaries remain the consumer's responsibility.
-When every handle is inactive, original SE multiplication, including other mods'
+When no registration applies to the current level, original SE multiplication, including other mods'
 integer coefficients, remains intact. Overflow preserves the SE simulation contribution
 and logs once; the report's existing error boundary preserves its original display.
 Use sensible bounds in the consumer. The API accepts decimal coefficients; UI ranges
 and step sizes belong to the consumer.
+
+Since 0.15.0, `handle.SetLevelContributions(IReadOnlyDictionary<int, int>)` accepts
+absolute whole report points for exact signed input levels. For example,
+`{ [-1] = -2, [-2] = -4, [-3] = -6, [-4] = -8, [-5] = -10 }` doubles the Vanilla
+negative contributions while leaving positive levels to earlier registrations or SE.
+Output signs do not select the side: the key always names the original fear level.
+Zero-valued contributions are active overrides; key zero is rejected so the neutral
+level stays neutral. Other Int32 keys are allowed even though Vanilla produces -5..5.
+The caller's map is copied; any invalid key, duplicate entry or overflowing points*25
+conversion throws before publication and preserves the preceding configuration.
+Null or an empty map disables the handle. Each setter replaces that handle's entire
+configuration: a table never retains a previous multiplier or old table keys.
+Among registrations the last applicable one wins separately for each level, using
+the same order/GUID/ID ordering as uniform coefficients. A later uniform coefficient
+covers every level; a later sparse table changes only its listed levels. The
+published snapshot is immutable and read without locks or per-calculation allocations.
+Simulation and the report correction share it. Existing multiplier callers retain
+their rounding, overflow and logical-disable behavior; no new native or managed hook
+is installed for tables.
+
+### Human and AI contributions
+
+Since 0.16.0, `Economy.PopularityOverrides.TryRegister(ownerGuid, registrationId,
+out handle, out diagnostic, order)` creates an inactive ordinary-source policy.
+Call `handle.SetContributions(IReadOnlyDictionary<PopularitySource,
+PopularityOverrideValues>)` at synchronized mission boundaries. The enum names the
+SE parameters for rations, food variety, crowding, taxes, religion, ale and fairs.
+`new PopularityOverrideValues(humanPoints, aiPoints)` contains independent nullable
+whole report points: null leaves that player type untouched; zero is an explicit
+contribution. Human covers every human participant; AI includes allied and enemy
+AI lords. Invalid, empty or unresolved player slots receive no targeted policy.
+
+Fear handles add `SetTargetedLevelContributions(IReadOnlyDictionary<int,
+PopularityOverrideValues>)`. This distinct name preserves unambiguous legacy null
+calls. Every fear setter replaces the complete configuration of its handle. Old
+uniform multipliers and fixed level tables retain binary/source compatibility,
+rounding, ordering, overflow and availability semantics. Mixed registrations select
+the last non-null applicable value separately for each source, player type and
+fear input level. Missing values reveal earlier policies and then the effective SE
+global value, including foreign stack overrides. No global stack swaps are used.
+
+Setters defensively copy and validate all keys and checked points*25 conversions
+before publication. Invalid updates throw without changing active configuration.
+Null or empty tables deactivate; unknown source enum values and fear key zero are
+rejected. Handles remain owner-bound until process exit. Register after native
+initialization, check diagnostics and keep synchronized settings, host authority
+and mission activation in the consumer. Setters are thread-safe and may run on
+any thread; no user callbacks execute under registry locks.
+
+One immutable role/source/fear snapshot is captured per successful calculation
+from the same R15 player ID used to resolve its resources. Eligibility follows
+the audited native keep/keep-door gate, then the public SE `IsAIPlayer` query.
+The permanent adapter validates resource and source-read provenance before editing
+the actual installed SE method. Unsupported player flows disable new policies
+with diagnostics while preserving the independent legacy fear adapter. Component
+arithmetic, strongest penalty, religion bookkeeping, events and final clamping
+remain in the original method. Reports and previews select the viewed player's
+same policy; no native pointers escape the capture. There are no new locks,
+allocations or roster searches in calculation reads. Gameplay and Mono rendering
+still require in-game acceptance after the installed-method and behavior fixtures.
 
 See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
 The pure popularity tests cover rounding, ownership and matching display deltas;

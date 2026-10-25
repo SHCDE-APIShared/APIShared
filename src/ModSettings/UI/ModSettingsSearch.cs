@@ -14,6 +14,56 @@ using System.Xml.Linq;
 
 namespace APIShared.ModSettings
 {
+    // UI-only transaction boundary. Settings setters, persistence and authority retain
+    // their original notifications; only derived search refreshes wait for completion.
+    internal static class ModSettingsSearchUpdateScope
+    {
+        [ThreadStatic] private static System.Collections.Generic.Dictionary<object, Batch> batches;
+
+        internal static IDisposable Begin(object model)
+        {
+            if (batches == null) batches = new System.Collections.Generic.Dictionary<object, Batch>(new IdentityComparer());
+            if (!batches.TryGetValue(model, out Batch batch)) batches.Add(model, batch = new Batch());
+            batch.Depth++;
+            return new Lease(model, batch);
+        }
+
+        internal static bool TryDefer(object model, Action refresh)
+        {
+            if (batches == null || !batches.TryGetValue(model, out Batch batch)) return false;
+            if (batch.Refreshes == null) batch.Refreshes = new System.Collections.Generic.HashSet<Action>();
+            batch.Refreshes.Add(refresh);
+            return true;
+        }
+
+        private sealed class Batch
+        {
+            internal int Depth;
+            internal System.Collections.Generic.HashSet<Action> Refreshes;
+        }
+        private sealed class Lease : IDisposable
+        {
+            private readonly object model;
+            private Batch batch;
+            internal Lease(object model, Batch batch) { this.model = model; this.batch = batch; }
+            public void Dispose()
+            {
+                Batch current = batch;
+                if (current == null) return;
+                batch = null;
+                if (--current.Depth != 0) return;
+                batches.Remove(model);
+                // Remove the scope before callbacks so a reentrant change starts a new operation.
+                if (current.Refreshes != null) foreach (Action refresh in current.Refreshes) refresh();
+            }
+        }
+        private sealed class IdentityComparer : System.Collections.Generic.IEqualityComparer<object>
+        {
+            public new bool Equals(object left, object right) => ReferenceEquals(left, right);
+            public int GetHashCode(object value) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
+        }
+    }
+
     /// <summary>Pure matching policy shared by runtime filtering and isolated tests.</summary>
     public static class ModSettingsSearchMatcher
     {
@@ -171,6 +221,37 @@ namespace APIShared.ModSettings
     /// </summary>
     public static class ModSettingsSearch
     {
+        /// <summary>Optional slider metadata: semicolon-separated invariant numbers or inclusive ranges (e.g. 0..1) classified as inactive, replacing the default -1 and 0. Invalid metadata yields unknown state. Specify on the slider itself; no inference from defaults or labels.</summary>
+        public static readonly DependencyProperty InactiveValuesProperty = DependencyProperty.RegisterAttached(
+            "InactiveValues", typeof(string), typeof(ModSettingsSearch), new PropertyMetadata((object)null));
+        /// <summary>Gets optional slider-specific inactive values on the Unity thread.</summary>
+        public static string GetInactiveValues(DependencyObject value) => value?.GetValue(InactiveValuesProperty) as string;
+        /// <summary>Sets optional slider-specific inactive values on the Unity thread.</summary>
+        public static void SetInactiveValues(DependencyObject value, string text) => value?.SetValue(InactiveValuesProperty, text);
+
+        /// <summary>Registered root settings model inherited by local search rows, including template rows.</summary>
+        public static readonly DependencyProperty SourceModelProperty = DependencyProperty.RegisterAttached(
+            "SourceModel", typeof(object), typeof(ModSettingsSearch), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.Inherits));
+        /// <summary>Gets the inherited root model on the Unity thread.</summary>
+        public static object GetSourceModel(DependencyObject value) => value?.GetValue(SourceModelProperty);
+        /// <summary>Sets the inherited root model on the Unity thread.</summary>
+        public static void SetSourceModel(DependencyObject value, object model) => value?.SetValue(SourceModelProperty, model);
+        /// <summary>Additional local status filter; All preserves text-only filtering.</summary>
+        public static readonly DependencyProperty StateFilterProperty = DependencyProperty.RegisterAttached(
+            "StateFilter", typeof(ModSettingsSearchStateFilter), typeof(ModSettingsSearch),
+            new FrameworkPropertyMetadata(ModSettingsSearchStateFilter.All, FrameworkPropertyMetadataOptions.Inherits));
+        /// <summary>Gets the inherited status filter on the Unity thread.</summary>
+        public static ModSettingsSearchStateFilter GetStateFilter(DependencyObject value) =>
+            value?.GetValue(StateFilterProperty) is ModSettingsSearchStateFilter filter ? filter : ModSettingsSearchStateFilter.All;
+        /// <summary>Sets the inherited status filter on the Unity thread.</summary>
+        public static void SetStateFilter(DependencyObject value, ModSettingsSearchStateFilter filter) => value?.SetValue(StateFilterProperty, filter);
+        /// <summary>Local binding refresh token for configured-value changes; not persisted.</summary>
+        public static readonly DependencyProperty StateRevisionProperty = DependencyProperty.RegisterAttached(
+            "StateRevision", typeof(int), typeof(ModSettingsSearch), new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.Inherits));
+        /// <summary>Gets the inherited state revision on the Unity thread.</summary>
+        public static int GetStateRevision(DependencyObject value) => value?.GetValue(StateRevisionProperty) is int revision ? revision : 0;
+        /// <summary>Sets the inherited state revision on the Unity thread.</summary>
+        public static void SetStateRevision(DependencyObject value, int revision) => value?.SetValue(StateRevisionProperty, revision);
         /// <summary>Noesis attached property for stable exact setting key; set on the logical setting container or search control on the Unity thread.</summary>
         public static readonly DependencyProperty KeyProperty =
             DependencyProperty.RegisterAttached(
@@ -421,6 +502,17 @@ namespace APIShared.ModSettings
                 entry.SectionTitle));
         }
 
+        /// <summary>Checks text/exact-target and live configured state together. With a status constraint only individual settings count; an empty/unsupported catalog cannot manufacture a status match.</summary>
+        public static bool HasMatches(object viewModel, string filterText, bool includeToolTips, string exactKey,
+            ModSettingsSearchStateFilter stateFilter)
+        {
+            if (stateFilter == ModSettingsSearchStateFilter.All) return HasMatches(viewModel, filterText, includeToolTips, exactKey);
+            return ModSettingsSearchCatalog.TryGetEntries(viewModel, out IReadOnlyList<ModSettingsSearchEntry> catalog) &&
+                catalog.Any(entry => !entry.IsSection && ModSettingsSearchStateMatcher.IsMatch(stateFilter,
+                    ModSettingsSearchCatalog.GetState(viewModel, entry.Key)) && ModSettingsSearchMatcher.IsMatch(
+                    filterText, includeToolTips, exactKey, entry.Key, entry.Title, entry.ToolTip, entry.SectionKey, entry.SectionTitle));
+        }
+
         private static void Visit(
             DependencyObject current,
             List<ModSettingsSearchEntry> entries,
@@ -628,13 +720,16 @@ namespace APIShared.ModSettings
     {
         /// <summary>Returns Visible or Collapsed from the search bindings; incomplete input (fewer than six values) is Collapsed. Bind filter, tooltip inclusion, exact key, then entry key/title/tooltip and optional section key/title.</summary>
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+            => ConvertCore(values, 0);
+
+        internal static object ConvertCore(object[] values, int offset)
         {
-            string filterText = ReadString(values, 0);
-            bool includeToolTips = values != null && values.Length > 1 && values[1] is bool value && value;
-            string exactKey = ReadString(values, 2);
-            if (values == null || values.Length < 6)
+            string filterText = ReadString(values, offset);
+            bool includeToolTips = values != null && values.Length > offset + 1 && values[offset + 1] is bool value && value;
+            string exactKey = ReadString(values, offset + 2);
+            if (values == null || values.Length < offset + 6)
                 return Visibility.Collapsed;
-            for (int index = 3; index + 2 < values.Length; index += 5)
+            for (int index = offset + 3; index + 2 < values.Length; index += 5)
             {
                 if (ModSettingsSearchMatcher.IsMatch(
                     filterText,
@@ -660,6 +755,28 @@ namespace APIShared.ModSettings
             values != null && index < values.Length && values[index] != null
                 ? values[index].ToString()
                 : string.Empty;
+    }
+
+    /// <summary>Status-aware local visibility converter. Prefix the existing converter inputs with root model, state filter and state revision; the original converter and tuple layout remain compatible.</summary>
+    public sealed class ModSettingsSearchStateVisibilityConverter : IMultiValueConverter
+    {
+        /// <summary>Combines the original text filter with current checkbox/slider state. Section rows remain visible only when a child setting matches both constraints.</summary>
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (values == null || values.Length < 9) return Visibility.Collapsed;
+            ModSettingsSearchStateFilter filter = values[1] is ModSettingsSearchStateFilter selected ? selected : ModSettingsSearchStateFilter.All;
+            if (filter == ModSettingsSearchStateFilter.All)
+                return ModSettingsSearchVisibilityConverter.ConvertCore(values, 3);
+            object model = values[0];
+            for (int index = 6; index + 2 < values.Length; index += 5)
+            {
+                if (ModSettingsSearchCatalog.MatchesPresentation(model, values[index]?.ToString(), values[3]?.ToString(),
+                    values[4] is bool tips && tips, values[5]?.ToString(), filter)) return Visibility.Visible;
+            }
+            return Visibility.Collapsed;
+        }
+        /// <summary>Reverse conversion is unsupported.</summary>
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
     }
 
 }

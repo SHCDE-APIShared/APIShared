@@ -57,6 +57,7 @@
     <Compile Include="..\..\src\ModSettings\Presets\LobbyModSettingsPresetRegistration.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\AtomicFileReplacement.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\LobbySettingsRestoreScope.cs" />
+    <Compile Include="..\..\src\ModSettings\UI\ModSettingsSearch.cs" />
     <Compile Include="..\..\src\Core\Internal\DebugLogHelper.cs" />
     <Compile Include="..\..\src\Core\Internal\RuntimeHealth.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs" />
