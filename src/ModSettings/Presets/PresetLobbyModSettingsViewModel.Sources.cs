@@ -397,11 +397,63 @@ namespace APIShared.ModSettings
         /// <summary>Exact target key used by external search navigation, independent of free-text matching.</summary>
         public string System_ModSettingsSearchExactKey => modSettingsSearchExactKey;
 
+        private ModSettingsSearchStateFilter searchStateFilter;
+        private int searchStateRevision;
+        /// <summary>Session-only configured-value filter; changing it clears external exact targeting.</summary>
+        public ModSettingsSearchStateFilter System_ModSettingsSearchStateFilter
+        {
+            get => searchStateFilter;
+            set
+            {
+                if (searchStateFilter == value || !Enum.IsDefined(typeof(ModSettingsSearchStateFilter), value)) return;
+                searchStateFilter = value;
+                modSettingsSearchExactKey = string.Empty;
+                RaiseModSettingsSearchProperties();
+            }
+        }
+        /// <summary>Index binding for the All/Active/Inactive selector.</summary>
+        public int System_ModSettingsSearchStateFilterIndex
+        {
+            get => (int)searchStateFilter;
+            set { if (value >= 0 && value <= 2) System_ModSettingsSearchStateFilter = (ModSettingsSearchStateFilter)value; }
+        }
+        /// <summary>Localized status choices, in All/Active/Inactive order.</summary>
+        public string[] System_ModSettingsSearchStateFilters => new[] {
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateAll", "All"),
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateActive", "Active"),
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateInactive", "Inactive") };
+        /// <summary>Localized label for the configured-value filter.</summary>
+        public string System_ModSettingsSearchStateLabelText => ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateLabel", "Status");
+        /// <summary>Localized explanation of per-slider neutral values and mixed rows.</summary>
+        public string System_ModSettingsSearchStateHelpText => ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateHelp",
+            "Filter configured values. Checkboxes use their check mark; sliders use their declared inactive values (otherwise -1 and 0). Mixed rows appear in both filters. Parent switches are ignored.");
+        /// <summary>UI refresh token for observed value changes. Not a saved setting.</summary>
+        public int System_ModSettingsSearchStateRevision => searchStateRevision;
+
+        private void OnModSettingsSearchStateChanged(object model)
+        {
+            if (!ReferenceEquals(model, this) || searchStateFilter == ModSettingsSearchStateFilter.All) return;
+            RaiseModSettingsSearchStateRevision();
+        }
+
+        private void OnModSettingsSearchSourceChanged(object model)
+        {
+            if (ReferenceEquals(model, this)) RaiseModSettingsSearchStateRevision();
+        }
+
+        private void RaiseModSettingsSearchStateRevision()
+        {
+            unchecked { searchStateRevision++; }
+            base.OnPropertyChanged(nameof(System_ModSettingsSearchStateRevision));
+            base.OnPropertyChanged(nameof(System_ModSettingsSearchNoResultsVisibility));
+        }
+
         /// <summary>Incrementing focus token for the attached FocusRequest binding.</summary>
         public int System_ModSettingsSearchFocusRequest => modSettingsSearchFocusRequest;
 
         /// <summary>Whether either free-text filtering or exact-key targeting is active.</summary>
         public bool System_ModSettingsSearchHasActiveFilter =>
+            searchStateFilter != ModSettingsSearchStateFilter.All ||
             modSettingsSearchExactKey.Length > 0 ||
             !string.IsNullOrWhiteSpace(modSettingsSearchText);
 
@@ -420,7 +472,8 @@ namespace APIShared.ModSettings
                 this,
                 modSettingsSearchText,
                 modSettingsSearchIncludeToolTips,
-                modSettingsSearchExactKey)
+                modSettingsSearchExactKey,
+                searchStateFilter)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
@@ -564,26 +617,29 @@ namespace APIShared.ModSettings
 
         private void LoadSelectedSettingsSource()
         {
-            ModSettingsWorkingSource source = selectedSettingsSource;
-            if (source == null || !System_CanLoadSettingsSource) return;
-            try
+            using (ModSettingsSearchUpdateScope.Begin(this))
             {
-                System_RefreshOwnConfiguration();
-                if (string.Equals(source.Id, ModSettingsWorkingSourceRegistry.ModDefaultsId, StringComparison.Ordinal))
+                ModSettingsWorkingSource source = selectedSettingsSource;
+                if (source == null || !System_CanLoadSettingsSource) return;
+                try
                 {
-                    System_LoadModDefaults();
+                    System_RefreshOwnConfiguration();
+                    if (string.Equals(source.Id, ModSettingsWorkingSourceRegistry.ModDefaultsId, StringComparison.Ordinal))
+                    {
+                        System_LoadModDefaults();
+                    }
+                    else
+                    {
+                        ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, source.Id);
+                        System_CommitConfiguration();
+                    }
+                    DismissPresetStatus();
+                    RaiseAccessProperties();
                 }
-                else
+                catch (Exception exception)
                 {
-                    ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, source.Id);
-                    System_CommitConfiguration();
+                    SetPresetStatus(ResolveSettingsUiTextSafe("Common.SettingsSourceLoadFailed", "Could not reset settings") + ": " + exception.Message, true);
                 }
-                DismissPresetStatus();
-                RaiseAccessProperties();
-            }
-            catch (Exception exception)
-            {
-                SetPresetStatus(ResolveSettingsUiTextSafe("Common.SettingsSourceLoadFailed", "Could not reset settings") + ": " + exception.Message, true);
             }
         }
 
@@ -924,6 +980,7 @@ namespace APIShared.ModSettings
                 return false;
 
             modSettingsSearchText = title ?? string.Empty;
+            searchStateFilter = ModSettingsSearchStateFilter.All;
             modSettingsSearchExactKey = normalizedKey;
             modSettingsSearchExpanded = true;
             RaiseModSettingsSearchProperties();
@@ -948,6 +1005,7 @@ namespace APIShared.ModSettings
 
         private void ClearModSettingsSearch()
         {
+            searchStateFilter = ModSettingsSearchStateFilter.All;
             modSettingsSearchText = string.Empty;
             modSettingsSearchExactKey = string.Empty;
             RaiseModSettingsSearchProperties();
@@ -955,6 +1013,8 @@ namespace APIShared.ModSettings
 
         private void RaiseModSettingsSearchProperties()
         {
+            base.OnPropertyChanged(nameof(System_ModSettingsSearchStateFilter));
+            base.OnPropertyChanged(nameof(System_ModSettingsSearchStateFilterIndex));
             base.OnPropertyChanged(nameof(System_ModSettingsSearchText));
             base.OnPropertyChanged(nameof(System_ModSettingsSearchIncludeToolTips));
             base.OnPropertyChanged(nameof(System_ModSettingsSearchExactKey));

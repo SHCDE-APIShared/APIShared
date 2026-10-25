@@ -397,6 +397,10 @@ Native flow: scheduler 0xD1AD0 -> updater 0xCB090 (eligibility, fixed-mode and s
 population bypasses retained) -> SE contribution calculation -> remaining timed event
 penalties -> final 0..10000 clamp/history/speech. Report producer 0x19D960 independently
 uses the signed fear level; public report correction consumes the same rounded result.
+The additive fixed-level contribution API (0.15.0) selects absolute report points at
+this same boundary. It does not alter the IL/native site, signed input provenance,
+worst-source ordering or hook lifetime; unlisted levels retain the original SE path
+unless an earlier applicable registration supplies a contribution.
 Native game/report ABI changes still require their own audit. CLI fixtures validate
 rewriting and JIT preparation; actual Mono/game and multiplayer acceptance are separate.
 

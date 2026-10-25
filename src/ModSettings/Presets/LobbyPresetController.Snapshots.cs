@@ -275,32 +275,35 @@ namespace APIShared.ModSettings
         private SnapshotApplicationResult ApplyPreparedValues(Dictionary<PresetPropertyAccessor, byte[]> prepared,
             Action<SnapshotApplicationResult> commit, bool publish)
         {
-            var result = new SnapshotApplicationResult();
-            bool previousApplying = applying;
-            applying = true;
-            try
+            using (ModSettingsSearchUpdateScope.Begin(owner.SettingsTarget))
             {
-                LobbySettingsRestoreScope.Execute(() =>
+                var result = new SnapshotApplicationResult();
+                bool previousApplying = applying;
+                applying = true;
+                try
                 {
-                    if (dynamicProvider != null || owner.SettingsApplicationBackend != null) ApplyDynamicValues(prepared);
-                    else foreach (var entry in prepared)
-                        ApplyReflectedValue(entry.Key, entry.Value, result);
-                    commit(result);
-                    // Preserve the protected callback contract: the outer snapshot is
-                    // complete, while its notifications still cannot escape to storage.
+                    LobbySettingsRestoreScope.Execute(() =>
+                    {
+                        if (dynamicProvider != null || owner.SettingsApplicationBackend != null) ApplyDynamicValues(prepared);
+                        else foreach (var entry in prepared)
+                            ApplyReflectedValue(entry.Key, entry.Value, result);
+                        commit(result);
+                        // Preserve the protected callback contract: the outer snapshot is
+                        // complete, while its notifications still cannot escape to storage.
+                        applying = previousApplying;
+                        owner.OnSettingsSnapshotApplied();
+                    });
+                }
+                finally
+                {
                     applying = previousApplying;
-                    owner.OnSettingsSnapshotApplied();
-                });
-            }
-            finally
-            {
-                applying = previousApplying;
-            }
+                }
 
-            ReportApplicationFailures(result);
-            if (publish && !previousApplying)
-                owner.PublishSettingsSnapshot(prepared.Keys.Select(property => property.Name).ToArray());
-            return result;
+                ReportApplicationFailures(result);
+                if (publish && !previousApplying)
+                    owner.PublishSettingsSnapshot(prepared.Keys.Select(property => property.Name).ToArray());
+                return result;
+            }
         }
 
         private void ApplyReflectedValue(PresetPropertyAccessor property, byte[] bytes, SnapshotApplicationResult result)

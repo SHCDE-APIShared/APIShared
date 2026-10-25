@@ -5,13 +5,23 @@ using System.Collections.Generic;
 
 namespace APIShared.ScriptExtenderFixes
 {
+    internal readonly struct PopularityDisplayCapture
+    {
+        internal readonly long Key;
+        internal readonly IReadOnlyDictionary<string,int> Value;
+        internal readonly Economy.PopularitySelection Selection;
+        internal PopularityDisplayCapture(long session,IReadOnlyDictionary<string,int> values,Economy.PopularitySelection selection)
+        {Key=session;Value=values;Selection=selection;}
+    }
     internal sealed class PopularityPresentation
     {
-        private readonly Func<KeyValuePair<long, IReadOnlyDictionary<string, int>>> capture;
+        private readonly Func<PopularityDisplayCapture> capture;
         private readonly Action<string> info, error;
         private long loggedSession;
         private int failures;
         internal PopularityPresentation(Func<KeyValuePair<long, IReadOnlyDictionary<string, int>>> capture, Action<string> info, Action<string> error)
+            : this(()=>{var c=capture();return new PopularityDisplayCapture(c.Key,c.Value,Economy.PopularitySelection.Legacy);},info,error) { }
+        internal PopularityPresentation(Func<PopularityDisplayCapture> capture,Action<string> info,Action<string> error)
         { this.capture = capture; this.info = info; this.error = error; }
         internal void Register()
         {
@@ -29,7 +39,7 @@ namespace APIShared.ScriptExtenderFixes
                 var state = GameData.Instance?.lastGameState;
                 if (vm.HUDmain == null || vm.HUDBuildingPanel == null || state == null) return;
                 var original = Capture(state);
-                var corrected = original.Correct(active.Value);
+                var corrected = original.Correct(active.Value,active.Selection);
                 Apply(vm, state, original, corrected);
                 if (loggedSession != active.Key)
                 {

@@ -15,6 +15,45 @@ using System.Linq;
 public sealed class FearPopularityIlTests
 {
     [TestMethod]
+    public void InstalledPlayerContextAndAllSourceReadsCompile()
+    {
+        var method=FearPopularityRuntime.FindTarget(typeof(CrusaderLibrary).Assembly);
+        using(var definition=new DynamicMethodDefinition(method))
+        using(var context=new ILContext(definition.Definition)) {
+            context.Invoke(il=>{
+                var plan=FearPopularityIl.PlayerSites(il);
+                CollectionAssert.AreEquivalent(Enum.GetValues(typeof(PopularitySource)),plan.Reads.Values.Distinct().ToArray());
+                Assert.IsTrue(PopularityPlayerIl.Apply(il));
+            });
+            var generated=definition.Generate();
+            var signature=(method.IsStatic?Enumerable.Empty<Type>():new[]{method.DeclaringType})
+                .Concat(method.GetParameters().Select(p=>p.ParameterType)).Concat(new[]{method.ReturnType}).ToArray();
+            var callback=generated.CreateDelegate(System.Linq.Expressions.Expression.GetDelegateType(signature));
+            System.Runtime.CompilerServices.RuntimeHelpers.PrepareDelegate(callback);
+        }
+    }
+    [TestMethod]
+    public void UnknownPlayerContextDisablesOnlyTargetedPoliciesBeforeEditing()
+    {
+        var method=FearPopularityRuntime.FindTarget(typeof(CrusaderLibrary).Assembly);
+        using(var definition=new DynamicMethodDefinition(method))
+        using(var context=new ILContext(definition.Definition)) {
+            context.Invoke(il=>{
+                var original=il.Body.Instructions.First(i=>i.Operand is FieldReference f && f.Name=="R15");
+                var field=(FieldReference)original.Operand;
+                original.Operand=new FieldReference("R14",field.FieldType,field.DeclaringType);
+                var before=il.Body.Instructions.ToArray();
+                var sites=FearPopularityIl.Sites(il);
+                Assert.Throws<InvalidOperationException>(()=>FearPopularityIl.PlayerSites(il));
+                string diagnostic=null;
+                Assert.IsFalse(PopularityPlayerIl.Apply(il,message=>diagnostic=message));
+                Assert.IsFalse(string.IsNullOrWhiteSpace(diagnostic));
+                CollectionAssert.AreEqual(before,il.Body.Instructions.ToArray(),"Legacy fallback adds no player/source interception");
+                foreach(var site in sites) Assert.AreEqual("Multiply",((MethodReference)site.Operand).Name);
+            });
+        }
+    }
+    [TestMethod]
     public void InstalledSignedBranchesAreRewrittenWithoutChangingTheirConsumers()
     {
         var method = FearPopularityRuntime.FindTarget(typeof(CrusaderLibrary).Assembly);

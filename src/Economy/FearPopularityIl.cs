@@ -333,6 +333,59 @@ namespace APIShared.Economy
             return contract;
         }
         internal static List<Instruction> Sites(ILContext context) => Analyze(context).Sites.Keys.ToList();
+        internal static PopularityPlayerIl.Contract PlayerSites(ILContext context)
+        {
+            var fear=Analyze(context);var frames=Flow(context.Method);
+            var origins=fear.Sites.Values.SelectMany(s=>s.Resource).Distinct().ToArray();
+            if(origins.Length!=1||!(origins[0] is Instruction resolve)||!(resolve.Operand is MethodReference method)||
+                method.Name!="TryGetPlayerResourcesById"||method.DeclaringType.FullName!="SHCDESE.API.GamePlayerManagerAPI"||
+                method.Parameters.Count!=2||method.Parameters[0].ParameterType.MetadataType!=MetadataType.Int32||!method.Parameters[1].ParameterType.IsByReference)
+                throw Unsupported("No unique player-to-resource resolver.");
+            var before=frames[resolve];var output=before.Stack.Last();var id=before.Stack[before.Stack.Count-2];
+            if(output.Kind!=Kind.LocalAddress||output.Origins.Count!=1||!(output.Origins.First() is VariableDefinition resources)||
+                !resources.VariableType.IsPointer||resources.VariableType.GetElementType().FullName!="SHCDESE.Interop.GamePlayerResources")
+                throw Unsupported("Player resources must be the resolved native pointer.");
+            if(id.Origins.Count!=1||!(id.Origins.First() is Instruction readId)||!(readId.Operand is FieldReference register)||
+                register.Name!="R15"||!register.DeclaringType.FullName.EndsWith("X64SmartCPUContext",StringComparison.Ordinal))
+                throw Unsupported("Player identity is not the audited native R15 input.");
+            var pointer=frames[readId].Stack.Last();
+            if(pointer.Origins.Count!=1||!(pointer.Origins.First() is Instruction readPointer)||
+                !((readPointer.Operand is MethodReference accessor && accessor.Name=="get_Pointer") ||
+                  (readPointer.OpCode==OpCodes.Ldfld && readPointer.Operand is FieldReference pointerField && pointerField.Name=="Pointer")))
+                throw Unsupported("Native player register has no context provenance.");
+            var receiver=frames[readPointer].Stack.Last();
+            if(receiver.Origins.Count!=1||!(receiver.Origins.First() is ParameterDefinition argument)||
+                !(argument.ParameterType is GenericInstanceType generic)||generic.ElementType.FullName!="RedBird.Core.Memory.NativePointer`1"||
+                !generic.GenericArguments[0].FullName.EndsWith("X64SmartCPUContext",StringComparison.Ordinal))
+                throw Unsupported("Native context is not the callback argument.");
+            var ids=context.Body.Variables.Where(v=>v.VariableType.MetadataType==MetadataType.Int32&&
+                before.Locals[v.Index].Origins.SetEquals(id.Origins)).ToArray();
+            if(ids.Length==0)throw Unsupported("Player ID local is ambiguous.");
+            var plan=new PopularityPlayerIl.Contract{Resolve=resolve,Player=ids[0],Resources=resources};
+            var covered=new HashSet<PopularitySource>();
+            foreach(var instruction in context.Body.Instructions) {
+                if(!frames.TryGetValue(instruction,out var frame))continue;
+                if(instruction.Operand is FieldReference field&&field.DeclaringType.FullName=="SHCDESE.Interop.GamePlayerResources"&&
+                    (instruction.OpCode==OpCodes.Ldfld||instruction.OpCode==OpCodes.Ldflda||instruction.OpCode==OpCodes.Stfld)) {
+                    var resource=frame.Stack[frame.Stack.Count-(instruction.OpCode==OpCodes.Stfld?2:1)];
+                    if(!resource.Origins.SetEquals(origins))throw Unsupported("Calculation accesses a different resource identity.");
+                }
+                if(!(instruction.Operand is MethodReference call)||call.Name!="GetValue"||!IsManagedInt(call.DeclaringType))continue;
+                var handle=frame.Stack.Last();
+                var sourceGetters=handle.Origins.OfType<Instruction>().Where(i=>i.Operand is MethodReference getter&&
+                    getter.DeclaringType.FullName=="SHCDESE.GameGlobals.GameGlobalsManager"&&getter.Name.StartsWith("get_",StringComparison.Ordinal)&&
+                    Enum.TryParse(getter.Name.Substring(4),out PopularitySource source)&&Enum.IsDefined(typeof(PopularitySource),source)).ToArray();
+                if(sourceGetters.Length==0)continue;
+                if(sourceGetters.Length!=1||handle.Origins.Count!=1||!frame.Locals[resources.Index].Origins.SetEquals(origins)||
+                    !frame.Locals[plan.Player.Index].Origins.SetEquals(id.Origins))throw Unsupported("Source read has ambiguous player/resource provenance.");
+                var getterMethod=(MethodReference)sourceGetters[0].Operand;
+                if(!IsManagedInt(getterMethod.ReturnType)||getterMethod.Parameters.Count!=0||call.Parameters.Count!=0)throw Unsupported("Source getter signature changed.");
+                var value=(PopularitySource)Enum.Parse(typeof(PopularitySource),getterMethod.Name.Substring(4));
+                plan.Reads.Add(instruction,value);covered.Add(value);
+            }
+            if(!covered.SetEquals(Enum.GetValues(typeof(PopularitySource)).Cast<PopularitySource>()))throw Unsupported("Not every declared popularity source is covered.");
+            return plan;
+        }
         internal static void Apply(ILContext context)
         {
             var contract=Analyze(context); // Validate all paths before either/all edits.

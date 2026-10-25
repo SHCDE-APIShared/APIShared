@@ -16,6 +16,8 @@ namespace APIShared.Economy
         private static ManualLogSource log;
         private static int overflowReported, appliedReported;
         internal static bool Available => hook != null;
+        internal static bool TargetedAvailable { get; private set; }
+        internal static string TargetedDiagnostic { get; private set; }
         internal static string Diagnostic { get; private set; } = "Native initialization has not completed.";
         internal static void Initialize(string nativeHash, ManualLogSource logger)
         {
@@ -40,7 +42,11 @@ namespace APIShared.Economy
                     ValidateSites(target);
                     RememberTarget(assembly, target);
                 }
-                hook = new ILHook(target, FearPopularityIl.Apply);
+                bool targeted=false;
+                hook = new ILHook(target, il=>targeted=PopularityPlayerIl.Apply(il,
+                    reason=>{TargetedDiagnostic=reason;NativeApiLog.Info(log,"POPULARITY_PLAYER_UNAVAILABLE "+reason);}));
+                TargetedAvailable=targeted;
+                if(targeted) NativeApiLog.Info(log,"POPULARITY_PLAYER_READY validated player/resource identity and all declared source reads");
             }
             catch (Exception ex) { Diagnostic = ex.Message; throw; }
             Diagnostic = null;
