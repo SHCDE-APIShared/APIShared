@@ -99,14 +99,14 @@ namespace APIShared.Workshop
                 var catalog = new List<WorkshopCatalogItem>();
                 var receipts = new Dictionary<ulong, WorkshopReceipt>();
                 try { foreach (var receipt in WorkshopInstallation.Receipts(game)) receipts.Add(WorkshopPackageCodec.Id(receipt.WorkshopId), receipt); }
-                catch (Exception ex) { catalog.Add(new WorkshopCatalogItem { Status = "Receipt diagnostic: " + ex.Message, Title = "Installation state", DiagnosticError = ex }); }
+                catch (Exception ex) { catalog.Add(new WorkshopCatalogItem { Status = APIShared.Localization.UiText.Get("Workshop.Catalog.ReceiptDiagnostic") + ex.Message, Title = APIShared.Localization.UiText.Get("Workshop.Catalog.InstallationState"), DiagnosticError = ex }); }
                 foreach (var item in snapshot)
                 {
                     receipts.TryGetValue(item.Id, out var receipt);
                     string manifest = item.Root == null ? null : WorkshopPaths.Inside(item.Root, WorkshopPackage.ManifestFileName);
                     if (manifest != null && Stable(item) && !File.Exists(manifest) && receipt == null) continue; // SE-only maps stay outside our catalog.
                     var entry = new WorkshopCatalogItem { WorkshopId = item.Id, Title = receipt?.PackageId ?? item.Id.ToString(), ContentRoot = item.Root,
-                        InstalledVersion = receipt?.Version, Receipt = receipt, IsSubscribed = true, Status = "Download or installation information unavailable" };
+                        InstalledVersion = receipt?.Version, Receipt = receipt, IsSubscribed = true, Status = APIShared.Localization.UiText.Get("Workshop.Catalog.DownloadOrInstallationInformationUnavailable") };
                     try {
                         if (Stable(item) && manifest != null && File.Exists(manifest)) {
                             byte[] bytes = File.ReadAllBytes(manifest);
@@ -115,14 +115,14 @@ namespace APIShared.Workshop
                             using (var reader = new StreamReader(new MemoryStream(bytes))) entry.Package = WorkshopPackageCodec.Read(reader.ReadToEnd());
                             entry.Title = entry.Package.PackageId;
                             entry.CanInstall = !IsExternallyManaged;
-                            entry.Status = IsExternallyManaged ? WorkshopText.External : receipt == null ? "Installation / adoption available" :
-                                WorkshopPackageCodec.Version(entry.Package.Version) > WorkshopPackageCodec.Version(receipt.Version) ? "Update available" : "Receipt current; local files are not inspected";
+                            entry.Status = IsExternallyManaged ? APIShared.Localization.UiText.Get("Workshop.ExternallyManaged") : receipt == null ? APIShared.Localization.UiText.Get("Workshop.Catalog.InstallationAdoptionAvailable") :
+                                WorkshopPackageCodec.Version(entry.Package.Version) > WorkshopPackageCodec.Version(receipt.Version) ? APIShared.Localization.UiText.Get("Workshop.Catalog.UpdateAvailable") : APIShared.Localization.UiText.Get("Workshop.Catalog.ReceiptCurrentLocalFilesAreNot");
                         }
                     } catch (Exception ex) { entry.Status = ex.Message; entry.DiagnosticError = ex; }
                     catalog.Add(entry); receipts.Remove(item.Id);
                 }
                 foreach (var receipt in receipts.Values) catalog.Add(new WorkshopCatalogItem { WorkshopId = WorkshopPackageCodec.Id(receipt.WorkshopId), Title = receipt.PackageId,
-                    InstalledVersion = receipt.Version, Status = IsExternallyManaged ? WorkshopText.External : "Unsubscribed; removal available", IsSubscribed = false });
+                    InstalledVersion = receipt.Version, Status = IsExternallyManaged ? APIShared.Localization.UiText.Get("Workshop.ExternallyManaged") : APIShared.Localization.UiText.Get("Workshop.Catalog.UnsubscribedRemovalAvailable"), IsSubscribed = false });
                 return catalog.AsReadOnly();
             });
         }
@@ -159,7 +159,7 @@ namespace APIShared.Workshop
                 var item = catalog.FirstOrDefault(c => c.WorkshopId == id);
                 if (item != null && item.IsSubscribed) {
                     if (item.Package == null)
-                        throw WorkshopDiagnostics.Blocked(WorkshopText.Pick("Workshop item is not ready in Steam: ", "Workshop-Element ist in Steam noch nicht bereit: ") +
+                        throw WorkshopDiagnostics.Blocked(APIShared.Localization.UiText.Get("Workshop.WorkshopItemIsNotReadyIn") +
                             item.Title + " (" + item.Status + ")");
                     WorkshopReceipt receipt = null;
                     try { receipt = WorkshopInstallation.ReadReceipt(game, id); }
@@ -348,7 +348,7 @@ namespace APIShared.Workshop
         {
             RequireSteam();
             if (plan == null || plan.Owner != owner || plan.GameRoot != Path.GetFullPath(Paths.GameRootPath)) throw new ArgumentException("This client does not own the plan.");
-            if (IsExternallyManaged) throw new InvalidOperationException(WorkshopText.External);
+            if (IsExternallyManaged) throw new InvalidOperationException(APIShared.Localization.UiText.Get("Workshop.ExternallyManaged"));
             if (startupDownloadPending || Directory.Exists(WorkshopPaths.Inside(Paths.GameRootPath, "_SE/.staging"))) throw new InvalidOperationException("Extender startup work takes precedence. Restart before applying this plan.");
             if (MissionLifecycleService.HasContext) throw new InvalidOperationException("Return to the menu before applying Workshop changes.");
             var subscriptions = Subscriptions(); var subscription = subscriptions.FirstOrDefault(x => x.Id == plan.WorkshopId);

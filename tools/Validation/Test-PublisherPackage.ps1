@@ -10,7 +10,11 @@ $publisher=Join-Path $stage 'BepInEx/tools/APISharedWorkshopPublisher'
 $plugin=Join-Path $stage 'BepInEx/plugins/APIShared_Serp'
 [void][IO.Directory]::CreateDirectory($publisher)
 [void][IO.Directory]::CreateDirectory($plugin)
-foreach ($name in Get-ApiPublisherNames) { [IO.File]::WriteAllText((Join-Path $publisher $name),'fixture '+$name) }
+foreach ($name in Get-ApiPublisherNames) {
+    $file = Join-Path $publisher $name
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($file))
+    [IO.File]::WriteAllText($file,'fixture '+$name)
+}
 $record=[ordered]@{ SchemaVersion=1; Guid='APISharedWorkshopPublisher'; Version='1.0.0'; Files=@(Get-ApiPublisherFiles $publisher) }
 [IO.File]::WriteAllText((Join-Path $publisher 'publisher-files.json'),($record | ConvertTo-Json -Depth 5))
 Assert-ApiPublisherPackage $publisher

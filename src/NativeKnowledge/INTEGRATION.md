@@ -1,5 +1,13 @@
 # Native field knowledge
 
+## Native function-name knowledge
+
+The [function reference](FUNKTIONEN.md) and `functions.json` add separately reviewed,
+hash-bound function identities, reconstructed names and evidence for offline tools.
+They are authoring metadata, not loaded by the runtime and not a callable API.
+The C# field catalog and reader keep their existing contracts. Function names can
+be confirmed while the exact source-level ABI remains deliberately unasserted.
+
 This directory belongs to APIShared's runtime source tree. Its public namespace is
 `APIShared.NativeKnowledge`; the existing source glob includes it automatically.
 It uses only System/System.Core/System.Memory, without Unity, BepInEx, SHCDESE,

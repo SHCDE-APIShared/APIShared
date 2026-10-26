@@ -218,7 +218,14 @@ namespace APISharedTests
                 Assert.IsTrue(restarted.Value);
                 restarted.Set(false);
                 Assert.IsFalse(new SavegameLoadPreference(new ConfigFile(path, false), _ => { }).Value);
-                Assert.AreEqual("only by APIShared supported modsettings", options.UseCurrentSavegameSettingsHelp);
+                Assert.AreEqual("Only mod settings supported by APIShared.", options.UseCurrentSavegameSettingsHelp);
+                APIShared.Localization.UiText.Configure(() => "de-DE");
+                try
+                {
+                    Assert.AreEqual("Nur von APIShared unterstützte Modsettings.", options.UseCurrentSavegameSettingsHelp);
+                    Assert.AreEqual("Aktuelle Modsettings verwenden", options.UseCurrentSavegameSettingsText);
+                }
+                finally { APIShared.Localization.UiText.Configure(() => "en-US"); }
             }
             finally { Directory.Delete(folder, true); }
         }

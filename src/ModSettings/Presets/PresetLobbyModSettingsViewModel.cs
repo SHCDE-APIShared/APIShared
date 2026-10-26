@@ -235,8 +235,7 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.TrailSourceReadOnlyNotice; English fallback: These settings come from the selected Trail and are read-only here. Use Customize to change them.</summary>
         public string System_TrailSourceNoticeText =>
-            ResolveSettingsUiTextSafe("Common.TrailSourceReadOnlyNotice",
-                "These settings come from the selected Trail and are read-only here. Use Customize to change them.");
+            ResolveSettingsUiTextSafe("Common.TrailSourceReadOnlyNotice", APIShared.Localization.UiText.English("Common.TrailSourceReadOnlyNotice"));
 
         /// <summary>Whether host-owned fields may be edited in the current authority and mission context; use as an XAML gate as well as guarding setters.</summary>
         public bool CanEditHostSettings =>
@@ -283,27 +282,27 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.HostOptions; English fallback: HOST OPTIONS</summary>
         public string HostOptionsText =>
-            ResolveSettingsUiTextSafe("Common.HostOptions", "HOST OPTIONS");
+            ResolveSettingsUiTextSafe("Common.HostOptions", APIShared.Localization.UiText.English("Common.HostOptions"));
 
         /// <summary>Localized XAML caption/help for Common.ClientOptions; English fallback: LOCAL CLIENT OPTIONS</summary>
         public string ClientOptionsText =>
-            ResolveSettingsUiTextSafe("Common.ClientOptions", "LOCAL CLIENT OPTIONS");
+            ResolveSettingsUiTextSafe("Common.ClientOptions", APIShared.Localization.UiText.English("Common.ClientOptions"));
 
         /// <summary>Localized XAML caption/help for Common.Preset; English fallback: Preset</summary>
         public string PresetText =>
-            ResolveSettingsUiTextSafe("Common.Preset", "Preset");
+            ResolveSettingsUiTextSafe("Common.Preset", APIShared.Localization.UiText.English("Common.Preset"));
 
         /// <summary>Localized XAML caption/help for Common.EnableMod; English fallback: Enable Mod</summary>
         public string ModEnabledText =>
-            ResolveSettingsUiTextSafe("Common.EnableMod", "Enable Mod");
+            ResolveSettingsUiTextSafe("Common.EnableMod", APIShared.Localization.UiText.English("Common.EnableMod"));
 
         /// <summary>Localized XAML caption/help for Common.HostActivationLabel; English fallback: (Host-)</summary>
         public string HostActivationLabelText =>
-            ResolveSettingsUiTextSafe("Common.HostActivationLabel", "(Host-)");
+            ResolveSettingsUiTextSafe("Common.HostActivationLabel", APIShared.Localization.UiText.English("Common.HostActivationLabel"));
 
         /// <summary>Localized XAML caption/help for Common.ClientActivationLabel; English fallback: (Client settings)</summary>
         public string ClientActivationLabelText =>
-            ResolveSettingsUiTextSafe("Common.ClientActivationLabel", "(Client settings)");
+            ResolveSettingsUiTextSafe("Common.ClientActivationLabel", APIShared.Localization.UiText.English("Common.ClientActivationLabel"));
 
         /// <summary>Shows the notice that shared actions affect only the locally editable scope.</summary>
         public Visibility ActionsScopeNoticeVisibility =>
@@ -314,32 +313,28 @@ namespace APIShared.ModSettings
         /// <summary>Localized XAML caption/help for Common.ActionsScopeHost; English fallback: Loading a preset or resetting settings affects host settings and your local client settings.</summary>
         public string ActionsScopeNoticeText =>
             HasHostSettings && isLocalHost
-                ? ResolveSettingsUiTextSafe(
-                    "Common.ActionsScopeHost",
-                    "Loading a preset or resetting settings affects host settings and your local client settings.")
-                : ResolveSettingsUiTextSafe(
-                    "Common.ActionsScopeClient",
-                    "Loading a preset or resetting settings affects only your local client settings.");
+                ? ResolveSettingsUiTextSafe("Common.ActionsScopeHost", APIShared.Localization.UiText.English("Common.ActionsScopeHost"))
+                : ResolveSettingsUiTextSafe("Common.ActionsScopeClient", APIShared.Localization.UiText.English("Common.ActionsScopeClient"));
 
         /// <summary>Localized XAML caption/help for Common.HostReadOnly; English fallback: Values from host - read-only</summary>
         public string HostReadOnlyNoticeText =>
-            ResolveSettingsUiTextSafe("Common.HostReadOnly", "Values from host - read-only");
+            ResolveSettingsUiTextSafe("Common.HostReadOnly", APIShared.Localization.UiText.English("Common.HostReadOnly"));
 
         /// <summary>Localized XAML caption/help for Common.EnableModHelp; English fallback: Enables or disables this mod for the match.</summary>
         public string EnableModHelpText =>
-            ResolveSettingsUiTextSafe("Common.EnableModHelp", "Enables or disables this mod for the match.");
+            ResolveSettingsUiTextSafe("Common.EnableModHelp", APIShared.Localization.UiText.English("Common.EnableModHelp"));
 
         /// <summary>Localized XAML caption/help for Common.HostSettingsActivationHelp; English fallback: Enables or disables all host-controlled settings of this mod.</summary>
         public string HostSettingsActivationHelpText =>
-            ResolveSettingsUiTextSafe("Common.HostSettingsActivationHelp", "Enables or disables all host-controlled settings of this mod.");
+            ResolveSettingsUiTextSafe("Common.HostSettingsActivationHelp", APIShared.Localization.UiText.English("Common.HostSettingsActivationHelp"));
 
         /// <summary>Localized XAML caption/help for Common.ClientSettingsActivationHelp; English fallback: Enables or disables all local and personal client settings of this mod.</summary>
         public string ClientSettingsActivationHelpText =>
-            ResolveSettingsUiTextSafe("Common.ClientSettingsActivationHelp", "Enables or disables all local and personal client settings of this mod.");
+            ResolveSettingsUiTextSafe("Common.ClientSettingsActivationHelp", APIShared.Localization.UiText.English("Common.ClientSettingsActivationHelp"));
 
         /// <summary>Localized XAML caption/help for Common.PresetHelp; English fallback: Loads saved settings as an editable working copy.</summary>
         public string PresetHelpText =>
-            ResolveSettingsUiTextSafe("Common.PresetHelp", "Loads saved settings as an editable working copy.");
+            ResolveSettingsUiTextSafe("Common.PresetHelp", APIShared.Localization.UiText.English("Common.PresetHelp"));
 
 
 
@@ -352,7 +347,7 @@ namespace APIShared.ModSettings
         public bool IsMissionPresetActive => missionPresetContext;
 
         /// <summary>Override to translate common UI keys; return fallback for unknown keys. Called by Unity-thread bindings; the safe wrapper tolerates empty results and exceptions.</summary>
-        protected virtual string ResolveSettingsUiText(string key, string fallback) => fallback;
+        protected virtual string ResolveSettingsUiText(string key, string fallback) => APIShared.Localization.UiText.GetOrDefault(key, fallback);
 
         /// <summary>Applies an explicitly confirmed selection. Overrides may add deferred application.</summary>
         protected virtual void ApplyConfirmedPresetSelection(PublishedModSettingsPreset preset)
@@ -369,65 +364,15 @@ namespace APIShared.ModSettings
 
         private string ResolveSettingsUiTextSafe(string key, string fallback)
         {
-            string resolved = ResolveSettingsUiText(key, fallback);
+            string resolved;
+            try { resolved = ResolveSettingsUiText(key, fallback); }
+            catch { resolved = null; } // A consumer's broken translation must not break the shared UI.
             return string.IsNullOrWhiteSpace(resolved) || string.Equals(resolved, key, StringComparison.Ordinal)
-                ? ResolveApiSharedFallback(key, fallback)
+                ? APIShared.Localization.UiText.GetOrDefault(key, fallback)
                 : resolved;
         }
 
-        private static string ResolveApiSharedFallback(string key, string english)
-        {
-            string language = string.Empty;
-#if !API_SHARED_PRESET_TESTS
-            try { language = GameAssetManagerAPI.Instance.CurrentLanguage ?? string.Empty; }
-            catch { }
-#endif
-            if (!language.StartsWith("de", StringComparison.OrdinalIgnoreCase))
-                return english;
-            switch (key)
-            {
-                case "Common.InactiveModeSettingsNotice": return "Im gewählten Spielmodus inaktive Einstellungen sind farbig hinterlegt. Änderungen bleiben für spätere Partien gespeichert.";
-                case "Common.PresetLoad": return "Preset laden";
-                case "Common.PresetSave": return "Preset speichern";
-                case "Common.PresetBasedOn": return "Basiert auf";
-                case "Common.PresetModified": return "geändert";
-                case "Common.PresetLoadConfirm": return "Laden";
-                case "Common.PresetLoadCancel": return "Abbrechen";
-                case "Common.PresetDelete": return "Löschen";
-                case "Common.PresetDeleteTitle": return "Eigenes Preset löschen";
-                case "Common.PresetDeleteConfirm": return "Das eigene Preset wird endgültig gelöscht. Fortfahren?";
-                case "Common.PresetDeleteFailedTitle": return "Preset konnte nicht gelöscht werden";
-                case "Common.PresetSaveTarget": return "Speichern als";
-                case "Common.PresetSaveNew": return "Neues persönliches Preset";
-                case "Common.PresetSaveName": return "Presetname";
-                case "Common.PresetSaveDescription": return "Beschreibung (optional)";
-                case "Common.PresetSaveBulkMode": return "Alle Modi setzen";
-                case "Common.PresetSaveBulkModeHelp": return "Standard: Mod-Standard verwenden. Spieler: aktuellen Spielerwert behalten. Fest: gespeicherten Wert anwenden. Host fest: Hostwerte festlegen, Spieler-/lokale Werte behalten.";
-                case "Common.PresetLoadSelectionHelp": return "Die Auswahl ändert noch nichts. Erst Laden wendet das Preset an.";
-                case "Common.PresetSaveCancel": return "Abbrechen";
-                case "Common.PresetSourcePersonal": return "Eigene Presets";
-                case "Common.PresetSourceBundled": return "Mit diesem Mod geliefert";
-                case "Common.PresetSourceExternal": return "Externe Presets";
-                case "Common.PresetSaveConfirm": return "Speichern";
-                case "Common.PresetSaveNameRequired": return "Vor dem Speichern einen Presetnamen eingeben.";
-                case "Common.PresetModeHostFixed": return "Host fest";
-                case "Common.PresetSaveOverwriteTitle": return "Eigenes Preset überschreiben";
-                case "Common.PresetSaveOverwrite": return "Das gewählte eigene Preset wird vollständig ersetzt. Fortfahren?";
-                case "Common.PresetSaveFailedTitle": return "Preset konnte nicht gespeichert werden";
-                case "Common.PresetLoadFailedTitle": return "Preset konnte nicht geladen werden";
-                case "Common.SettingsSource": return "Einstellungen zurücksetzen auf";
-                case "Common.SettingsSourceLoad": return "Zurücksetzen";
-                case "Common.SettingsSourceHelp": return "Setzt die Einstellungen dieser Mod auf die gewählte Quelle zurück. Eigene Presets bleiben unverändert. Im Mehrspieler kann nur der Host die Host-Einstellungen zurücksetzen.";
-                case "Common.SettingsSourceDefaults": return "Mod-Standards";
-                case "Common.SettingsSourceTrail": return "Trail-Einstellungen";
-                case "Common.SettingsSourceMap": return "Map-Einstellungen";
-                case "Common.SettingsSourceLoadFailed": return "Einstellungen konnten nicht zurückgesetzt werden";
-                case "Common.TrailSourceReadOnlyNotice": return "Diese Werte stammen aus dem gewählten Trail und sind hier schreibgeschützt. Zum Ändern „Customize“ wählen.";
-                case "Common.PresetConfirm": return "Bestätigen";
-                case "Common.PresetStatusDismiss": return "Schließen";
-                default: return english;
-            }
-        }
+
 
         /// <summary>Whether the controller is applying a whole snapshot; use to avoid reentrant partial persistence in custom setters.</summary>
         protected bool IsApplyingSettingsSnapshot =>
@@ -504,7 +449,7 @@ namespace APIShared.ModSettings
             }
         }
         internal void ReportConfigurationResult(bool restart) => SetConfigurationNotice(restart
-            ? ResolveSettingsUiTextSafe("Common.RestartRequired", "Settings prepared. Restart the game to apply them.") : "");
+            ? ResolveSettingsUiTextSafe("Common.RestartRequired", APIShared.Localization.UiText.English("Common.RestartRequired")) : "");
         /// <summary>Updates the application notice and dependent UI bindings; null clears the message.</summary>
         protected void SetConfigurationNotice(string message)
         {
@@ -984,20 +929,17 @@ namespace APIShared.ModSettings
                     var pendingAfter = backend.ReadPendingValues();
                     bool activeMatches = ConfigurationValuesEqual(desired, backend.ReadActiveValues());
                     if (pendingBefore != null && pendingAfter == null && activeMatches)
-                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetDiscarded",
-                            "Previous preparation discarded. Mod defaults are active. No restart needed."));
+                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetDiscarded", APIShared.Localization.UiText.English("Common.DefaultResetDiscarded")));
                     else if (pendingBefore != null && !ConfigurationValuesEqual(pendingBefore, pendingAfter) && pendingAfter != null)
-                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetReplaced",
-                            "Previous preparation replaced with mod defaults.") + " " + (activeMatches
-                                ? ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive", "Prepared for future starts. Current values already match; no restart needed.")
-                                : ResolveSettingsUiTextSafe("Common.RestartRequired", "Settings prepared. Restart the game to apply them.")));
+                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetReplaced", APIShared.Localization.UiText.English("Common.DefaultResetReplaced")) + " " + (activeMatches
+                                ? ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive", APIShared.Localization.UiText.English("Common.DefaultResetPreparedActive"))
+                                : ResolveSettingsUiTextSafe("Common.RestartRequired", APIShared.Localization.UiText.English("Common.RestartRequired"))));
                     else if (activeMatches && pendingAfter != null)
-                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive",
-                            "Prepared for future starts. Current values already match; no restart needed."));
+                        SetConfigurationNotice(ResolveSettingsUiTextSafe("Common.DefaultResetPreparedActive", APIShared.Localization.UiText.English("Common.DefaultResetPreparedActive")));
                     else if (activeMatches)
                         SetConfigurationNotice(ConfigurationValuesEqual(activeBefore, desired)
-                            ? ResolveSettingsUiTextSafe("Common.DefaultResetUnchanged", "Settings already match the mod defaults. No restart needed.")
-                            : ResolveSettingsUiTextSafe("Common.DefaultResetApplied", "Mod defaults applied. No restart needed."));
+                            ? ResolveSettingsUiTextSafe("Common.DefaultResetUnchanged", APIShared.Localization.UiText.English("Common.DefaultResetUnchanged"))
+                            : ResolveSettingsUiTextSafe("Common.DefaultResetApplied", APIShared.Localization.UiText.English("Common.DefaultResetApplied")));
                 }
                 RaiseAccessProperties();
             }

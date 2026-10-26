@@ -221,13 +221,21 @@ namespace APIShared.ModSettings
     /// </summary>
     public static class ModSettingsSearch
     {
-        /// <summary>Optional slider metadata: semicolon-separated invariant numbers or inclusive ranges (e.g. 0..1) classified as inactive, replacing the default -1 and 0. Invalid metadata yields unknown state. Specify on the slider itself; no inference from defaults or labels.</summary>
+        /// <summary>Optional numeric-state metadata for a slider or a TextBox with StateValue: semicolon-separated invariant numbers or inclusive ranges (e.g. 0..1) classified as inactive, replacing the default -1 and 0. Invalid metadata yields unknown state. Specify on the control itself; no inference from defaults or labels.</summary>
         public static readonly DependencyProperty InactiveValuesProperty = DependencyProperty.RegisterAttached(
             "InactiveValues", typeof(string), typeof(ModSettingsSearch), new PropertyMetadata((object)null));
         /// <summary>Gets optional slider-specific inactive values on the Unity thread.</summary>
         public static string GetInactiveValues(DependencyObject value) => value?.GetValue(InactiveValuesProperty) as string;
         /// <summary>Sets optional slider-specific inactive values on the Unity thread.</summary>
         public static void SetInactiveValues(DependencyObject value, string text) => value?.SetValue(InactiveValuesProperty, text);
+
+        /// <summary>Opt-in TextBox state binding to its authoritative numeric model property, e.g. StateValue="{Binding Amount}". The catalog reads this path on the Unity thread and observes managed PropertyChanged; it never parses display text. Converters, alternate sources, nonnumeric and missing values yield Unknown. TextBoxes without this metadata retain Unknown state. Use InactiveValues on the same TextBox to customize neutral values.</summary>
+        public static readonly DependencyProperty StateValueProperty = DependencyProperty.RegisterAttached(
+            "StateValue", typeof(object), typeof(ModSettingsSearch), new PropertyMetadata((object)null));
+        /// <summary>Gets an opt-in TextBox's authoritative search-state value on the Unity thread.</summary>
+        public static object GetStateValue(DependencyObject value) => value?.GetValue(StateValueProperty);
+        /// <summary>Sets an opt-in TextBox's authoritative search-state value on the Unity thread; normal XAML usage binds a numeric model property.</summary>
+        public static void SetStateValue(DependencyObject value, object state) => value?.SetValue(StateValueProperty, state);
 
         /// <summary>Registered root settings model inherited by local search rows, including template rows.</summary>
         public static readonly DependencyProperty SourceModelProperty = DependencyProperty.RegisterAttached(

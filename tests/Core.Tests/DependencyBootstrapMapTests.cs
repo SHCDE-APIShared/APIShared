@@ -23,7 +23,8 @@ public sealed class DependencyBootstrapMapTests
     public void ActualMapValidatorChecksExactPairAndPreservesHistoricalPackages()
     {
         foreach (string scenario in new[] { "valid", "historical", "missing", "mixed", "foreign", "schema", "wrong-version", "duplicate",
-            "content-valid", "content-missing", "content-mixed", "content-unclaimed", "content-unpaired" })
+            "content-valid", "content-missing", "content-mixed", "content-unclaimed", "content-unpaired",
+            "publisher-directories", "publisher-extra", "publisher-missing-catalog", "publisher-mixed-catalog", "publisher-missing-helper", "publisher-foreign-directory" })
         {
             string root = Path.Combine(AppContext.BaseDirectory, "bootstrap-map-fixtures", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -39,17 +40,30 @@ public sealed class DependencyBootstrapMapTests
             files.Add(Plugin + "apishared-workshop-files.json", Inventory("APIShared_Serp", plugin));
             files.Add("info.json", plugin["info.json"]);
             var publisher = new[] { "UploadMod.bat", "UploadMod-linux.sh", "WorkshopUploader.exe", "WorkshopUploader.exe.config", "com.rlabrecque.steamworks.net.dll", "ICSharpCode.SharpZipLib.dll", "steam_api64.dll", "UnityEngine.CoreModule.dll", "UnityEngine.SharedInternalsModule.dll" }.ToDictionary(n => n, _ => "fixture");
+            if (scenario != "historical")
+            {
+                publisher.Add("PublisherText.ps1", "fixture helper");
+                // Use the actual distributed catalogs so new resources cannot silently be omitted by both validator and fixture.
+                foreach (string path in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Locales"), "*.txt"))
+                    publisher.Add("Locales/" + Path.GetFileName(path), File.ReadAllText(path));
+            }
+            if (scenario == "publisher-extra") publisher.Add("Locales/foreign.txt", "undeclared locale");
+            if (scenario == "publisher-missing-helper") publisher.Remove("PublisherText.ps1");
             foreach (var file in publisher) files.Add(Tools + file.Key, file.Value);
             files.Add(Tools + "publisher-files.json", Inventory("APISharedWorkshopPublisher", publisher));
+            if (scenario == "publisher-missing-catalog") files.Remove(Tools + "Locales/en-US.txt");
+            if (scenario == "publisher-mixed-catalog") files[Tools + "Locales/en-US.txt"] = "changed after inventory";
             if (scenario != "historical" && scenario != "missing" && scenario != "content-unpaired") files.Add(Bootstrap, scenario == "mixed" ? "wrong bytes" : "bootstrap bytes");
             if (scenario == "foreign") files.Add("BepInEx/patchers/Foreign.dll", "foreign");
             using (var zip = ZipFile.Open(Path.Combine(root, "APIShared.map"), ZipArchiveMode.Create))
             {
                 foreach (var file in files) { using var writer = new StreamWriter(zip.CreateEntry(file.Key).Open(), new UTF8Encoding(false)); writer.Write(file.Value); }
                 if (scenario == "duplicate") { using var writer = new StreamWriter(zip.CreateEntry(Bootstrap.ToUpperInvariant()).Open()); writer.Write("duplicate"); }
+                if (scenario == "publisher-directories") zip.CreateEntry(Tools + "Locales/");
+                if (scenario == "publisher-foreign-directory") zip.CreateEntry(Tools + "Foreign/");
             }
             var package = new WorkshopPackage { PackageId = "APIShared_Serp", Version = "1.2.3" };
-            if (scenario == "valid" || scenario == "historical" || scenario == "content-valid") WorkshopMapPackage.Verify(package, root);
+            if (scenario == "valid" || scenario == "historical" || scenario == "content-valid" || scenario == "publisher-directories") WorkshopMapPackage.Verify(package, root);
             else Assert.ThrowsExactly<InvalidDataException>(() => WorkshopMapPackage.Verify(package, root), scenario);
         }
     }

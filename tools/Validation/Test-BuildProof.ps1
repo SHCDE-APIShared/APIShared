@@ -9,7 +9,8 @@ function Commit-Fixture([string]$Directory,[string]$Message) {
 }
 try {
     $proofRoot=Join-Path $temp 'proof'
-    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools','bootstrap')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
+    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools','bootstrap','Locales')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
+    Write-Fixture (Join-Path $proofRoot 'Locales/en-US.txt') 'Title=Fixture'
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'actual input'
     Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'content input'
     Write-Fixture (Join-Path $proofRoot 'APIShared.csproj') '<Project />'

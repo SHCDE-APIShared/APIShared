@@ -37,25 +37,23 @@ namespace APIShared.ModSettings
 #if !API_SHARED_PRESET_TESTS
         /// <summary>Localized XAML caption/help for Common.PresetLoad; English fallback: Load preset</summary>
         public string System_PresetLoadText =>
-            ResolveSettingsUiTextSafe("Common.PresetLoad", "Load preset");
+            ResolveSettingsUiTextSafe("Common.PresetLoad", APIShared.Localization.UiText.English("Common.PresetLoad"));
 
         /// <summary>Localized XAML caption/help for Common.PresetSave; English fallback: Save preset</summary>
         public string System_PresetSaveText =>
-            ResolveSettingsUiTextSafe("Common.PresetSave", "Save preset");
+            ResolveSettingsUiTextSafe("Common.PresetSave", APIShared.Localization.UiText.English("Common.PresetSave"));
 
         /// <summary>Localized XAML caption/help for Common.SettingsSource; English fallback: Reset settings to</summary>
         public string System_SettingsSourceText =>
-            ResolveSettingsUiTextSafe("Common.SettingsSource", "Reset settings to");
+            ResolveSettingsUiTextSafe("Common.SettingsSource", APIShared.Localization.UiText.English("Common.SettingsSource"));
 
         /// <summary>Localized XAML caption/help for Common.SettingsSourceLoad; English fallback: Reset</summary>
         public string System_SettingsSourceLoadText =>
-            ResolveSettingsUiTextSafe("Common.SettingsSourceLoad", "Reset");
+            ResolveSettingsUiTextSafe("Common.SettingsSourceLoad", APIShared.Localization.UiText.English("Common.SettingsSourceLoad"));
 
         /// <summary>Localized XAML caption/help for Common.SettingsSourceHelp; English fallback: Resets this mod&apos;s settings to the selected source. Personal presets are not changed. In multiplayer, only the host can reset host settings.</summary>
         public string System_SettingsSourceHelpText =>
-            ResolveSettingsUiTextSafe(
-                "Common.SettingsSourceHelp",
-                "Resets this mod's settings to the selected source. Personal presets are not changed. In multiplayer, only the host can reset host settings.");
+            ResolveSettingsUiTextSafe("Common.SettingsSourceHelp", APIShared.Localization.UiText.English("Common.SettingsSourceHelp"));
 
         /// <summary>Live observable choices for resetting working settings; bind but do not mutate the collection.</summary>
         public ObservableCollection<ModSettingsWorkingSource> System_SettingsSources => settingsSources;
@@ -83,11 +81,11 @@ namespace APIShared.ModSettings
 
         /// <summary>Application notice or the current source/modified description.</summary>
         public string System_PresetStatusText => !string.IsNullOrEmpty(System_ApplicationNotice) ? System_ApplicationNotice : presetController?.GetStatusText(
-            ResolveSettingsUiTextSafe("Common.PresetBasedOn", "Based on"),
-            ResolveSettingsUiTextSafe("Common.PresetModified", "modified"),
-            ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", "Personal presets"),
-            ResolveSettingsUiTextSafe("Common.PresetSourceBundled", "Bundled with this mod"),
-            ResolveSettingsUiTextSafe("Common.PresetSourceExternal", "External presets")) ?? string.Empty;
+            ResolveSettingsUiTextSafe("Common.PresetBasedOn", APIShared.Localization.UiText.English("Common.PresetBasedOn")),
+            ResolveSettingsUiTextSafe("Common.PresetModified", APIShared.Localization.UiText.English("Common.PresetModified")),
+            ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", APIShared.Localization.UiText.English("Common.PresetSourcePersonal")),
+            ResolveSettingsUiTextSafe("Common.PresetSourceBundled", APIShared.Localization.UiText.English("Common.PresetSourceBundled")),
+            ResolveSettingsUiTextSafe("Common.PresetSourceExternal", APIShared.Localization.UiText.English("Common.PresetSourceExternal"))) ?? string.Empty;
 
         /// <summary>Shows nonempty source/application status.</summary>
         public Visibility System_PresetStatusVisibility =>
@@ -117,15 +115,15 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.PresetLoadConfirm; English fallback: Load</summary>
         public string System_PresetLoadConfirmText =>
-            ResolveSettingsUiTextSafe("Common.PresetLoadConfirm", "Load");
+            ResolveSettingsUiTextSafe("Common.PresetLoadConfirm", APIShared.Localization.UiText.English("Common.PresetLoadConfirm"));
 
         /// <summary>Localized XAML caption/help for Common.PresetLoadCancel; English fallback: Cancel</summary>
         public string System_PresetLoadCancelText =>
-            ResolveSettingsUiTextSafe("Common.PresetLoadCancel", "Cancel");
+            ResolveSettingsUiTextSafe("Common.PresetLoadCancel", APIShared.Localization.UiText.English("Common.PresetLoadCancel"));
 
         /// <summary>Localized XAML caption/help for Common.PresetDelete; English fallback: Delete</summary>
         public string System_PresetDeleteText =>
-            ResolveSettingsUiTextSafe("Common.PresetDelete", "Delete");
+            ResolveSettingsUiTextSafe("Common.PresetDelete", APIShared.Localization.UiText.English("Common.PresetDelete"));
 
         /// <summary>Whether the selected row is a personal preset that may be deleted.</summary>
         public bool System_CanDeleteSelectedPreset =>
@@ -167,7 +165,7 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveTarget; English fallback: Save as</summary>
         public string System_PresetSaveTargetText =>
-            ResolveSettingsUiTextSafe("Common.PresetSaveTarget", "Save as");
+            ResolveSettingsUiTextSafe("Common.PresetSaveTarget", APIShared.Localization.UiText.English("Common.PresetSaveTarget"));
 
         /// <summary>Visibility of the personal-preset authoring panel.</summary>
         public Visibility System_PresetSavePanelVisibility =>
@@ -207,38 +205,34 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveName; English fallback: Preset name</summary>
         public string System_PresetSaveNameText =>
-            ResolveSettingsUiTextSafe("Common.PresetSaveName", "Preset name");
+            ResolveSettingsUiTextSafe("Common.PresetSaveName", APIShared.Localization.UiText.English("Common.PresetSaveName"));
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveDescription; English fallback: Description (optional)</summary>
         public string System_PresetSaveDescriptionText =>
-            ResolveSettingsUiTextSafe("Common.PresetSaveDescription", "Description (optional)");
+            ResolveSettingsUiTextSafe("Common.PresetSaveDescription", APIShared.Localization.UiText.English("Common.PresetSaveDescription"));
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveBulkMode; English fallback: Set all modes</summary>
         public string System_PresetSaveBulkModeText =>
-            ResolveSettingsUiTextSafe("Common.PresetSaveBulkMode", "Set all modes");
+            ResolveSettingsUiTextSafe("Common.PresetSaveBulkMode", APIShared.Localization.UiText.English("Common.PresetSaveBulkMode"));
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveBulkModeHelp; English fallback: Default: use the mod default. Player: keep the player&apos;s current value. Fixed: apply the saved value. Host Fixed: fix host settings and keep player/local values.</summary>
         public string System_PresetSaveBulkModeHelpText =>
-            ResolveSettingsUiTextSafe(
-                "Common.PresetSaveBulkModeHelp",
-                "Default: use the mod default. Player: keep the player's current value. Fixed: apply the saved value. Host Fixed: fix host settings and keep player/local values.");
+            ResolveSettingsUiTextSafe("Common.PresetSaveBulkModeHelp", APIShared.Localization.UiText.English("Common.PresetSaveBulkModeHelp"));
 
         /// <summary>Localized XAML caption/help for Common.PresetLoadSelectionHelp; English fallback: Selecting a preset changes nothing until you choose Load.</summary>
         public string System_PresetLoadSelectionHelpText =>
-            ResolveSettingsUiTextSafe(
-                "Common.PresetLoadSelectionHelp",
-                "Selecting a preset changes nothing until you choose Load.");
+            ResolveSettingsUiTextSafe("Common.PresetLoadSelectionHelp", APIShared.Localization.UiText.English("Common.PresetLoadSelectionHelp"));
 
         /// <summary>Localized Default, Player, Fixed, Host Fixed and nonselectable Mixed choices in enum order.</summary>
         public ComboBoxItem[] System_PresetSaveBulkModeOptions => new[]
         {
-            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeDefault", "Default") },
-            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModePlayer", "Player") },
-            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeFixed", "Fixed") },
-            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeHostFixed", "Host Fixed") },
+            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeDefault", APIShared.Localization.UiText.English("Common.PresetModeDefault")) },
+            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModePlayer", APIShared.Localization.UiText.English("Common.PresetModePlayer")) },
+            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeFixed", APIShared.Localization.UiText.English("Common.PresetModeFixed")) },
+            new ComboBoxItem { Content = ResolveSettingsUiTextSafe("Common.PresetModeHostFixed", APIShared.Localization.UiText.English("Common.PresetModeHostFixed")) },
             new ComboBoxItem
             {
-                Content = ResolveSettingsUiTextSafe("Common.PresetModeMixed", "Mixed"),
+                Content = ResolveSettingsUiTextSafe("Common.PresetModeMixed", APIShared.Localization.UiText.English("Common.PresetModeMixed")),
                 IsEnabled = false,
             },
         };
@@ -288,7 +282,7 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveConfirm; English fallback: Save</summary>
         public string System_PresetSaveConfirmText =>
-            ResolveSettingsUiTextSafe("Common.PresetSaveConfirm", "Save");
+            ResolveSettingsUiTextSafe("Common.PresetSaveConfirm", APIShared.Localization.UiText.English("Common.PresetSaveConfirm"));
 
         /// <summary>Whether a nonblank name permits save confirmation; persistence still validates the resulting preset.</summary>
         public bool System_CanConfirmPresetSave =>
@@ -297,11 +291,11 @@ namespace APIShared.ModSettings
         /// <summary>Save caption when a name exists, otherwise the localized missing-name explanation.</summary>
         public string System_PresetSaveConfirmHelpText => System_CanConfirmPresetSave
             ? System_PresetSaveConfirmText
-            : ResolveSettingsUiTextSafe("Common.PresetSaveNameRequired", "Enter a preset name before saving.");
+            : ResolveSettingsUiTextSafe("Common.PresetSaveNameRequired", APIShared.Localization.UiText.English("Common.PresetSaveNameRequired"));
 
         /// <summary>Localized XAML caption/help for Common.PresetSaveCancel; English fallback: Cancel</summary>
         public string System_PresetSaveCancelText =>
-            ResolveSettingsUiTextSafe("Common.PresetSaveCancel", "Cancel");
+            ResolveSettingsUiTextSafe("Common.PresetSaveCancel", APIShared.Localization.UiText.English("Common.PresetSaveCancel"));
 
         /// <summary>Opens and populates the preset chooser; does not immediately apply a selection.</summary>
         public RelayCommand System_OpenPresetLoadCommand { get; }
@@ -344,9 +338,9 @@ namespace APIShared.ModSettings
         public Visibility System_PresetInlineConfirmationVisibility =>
             pendingDeletePreset != null || pendingOverwriteId != null ? Visibility.Visible : Visibility.Collapsed;
         /// <summary>Localized XAML caption/help for Common.PresetConfirm; English fallback: Confirm</summary>
-        public string System_PresetInlineConfirmText => ResolveSettingsUiTextSafe("Common.PresetConfirm", "Confirm");
+        public string System_PresetInlineConfirmText => ResolveSettingsUiTextSafe("Common.PresetConfirm", APIShared.Localization.UiText.English("Common.PresetConfirm"));
         /// <summary>Localized XAML caption/help for Common.PresetSaveCancel; English fallback: Cancel</summary>
-        public string System_PresetInlineCancelText => ResolveSettingsUiTextSafe("Common.PresetSaveCancel", "Cancel");
+        public string System_PresetInlineCancelText => ResolveSettingsUiTextSafe("Common.PresetSaveCancel", APIShared.Localization.UiText.English("Common.PresetSaveCancel"));
         /// <summary>Most recent preset operation message.</summary>
         public string System_PresetOperationStatusText => presetOperationStatus;
         /// <summary>Shows a nonempty failed-operation message; successful operations do not leave a persistent banner.</summary>
@@ -361,7 +355,7 @@ namespace APIShared.ModSettings
         public Visibility System_PresetOperationSuccessVisibility =>
             Visibility.Collapsed;
         /// <summary>Localized XAML caption/help for Common.PresetStatusDismiss; English fallback: Close</summary>
-        public string System_PresetStatusDismissText => ResolveSettingsUiTextSafe("Common.PresetStatusDismiss", "Close");
+        public string System_PresetStatusDismissText => ResolveSettingsUiTextSafe("Common.PresetStatusDismiss", APIShared.Localization.UiText.English("Common.PresetStatusDismiss"));
 
         /// <summary>Editable free-text filter; changing it clears exact-key targeting.</summary>
         public string System_ModSettingsSearchText
@@ -419,14 +413,13 @@ namespace APIShared.ModSettings
         }
         /// <summary>Localized status choices, in All/Active/Inactive order.</summary>
         public string[] System_ModSettingsSearchStateFilters => new[] {
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateAll", "All"),
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateActive", "Active"),
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateInactive", "Inactive") };
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateAll", APIShared.Localization.UiText.English("Common.ModSettingsSearchStateAll")),
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateActive", APIShared.Localization.UiText.English("Common.ModSettingsSearchStateActive")),
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateInactive", APIShared.Localization.UiText.English("Common.ModSettingsSearchStateInactive")) };
         /// <summary>Localized label for the configured-value filter.</summary>
-        public string System_ModSettingsSearchStateLabelText => ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateLabel", "Status");
+        public string System_ModSettingsSearchStateLabelText => ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateLabel", APIShared.Localization.UiText.English("Common.ModSettingsSearchStateLabel"));
         /// <summary>Localized explanation of per-slider neutral values and mixed rows.</summary>
-        public string System_ModSettingsSearchStateHelpText => ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateHelp",
-            "Filter configured values. Checkboxes use their check mark; sliders use their declared inactive values (otherwise -1 and 0). Mixed rows appear in both filters. Parent switches are ignored.");
+        public string System_ModSettingsSearchStateHelpText => ResolveSettingsUiTextSafe("Common.ModSettingsSearchStateHelp", APIShared.Localization.UiText.English("Common.ModSettingsSearchStateHelp"));
         /// <summary>UI refresh token for observed value changes. Not a saved setting.</summary>
         public int System_ModSettingsSearchStateRevision => searchStateRevision;
 
@@ -479,31 +472,31 @@ namespace APIShared.ModSettings
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchLabel; English fallback: Search</summary>
         public string System_ModSettingsSearchLabelText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchLabel", "Search");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchLabel", APIShared.Localization.UiText.English("Common.ModSettingsSearchLabel"));
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchHelp; English fallback: Search setting titles. Optionally include tooltips.</summary>
         public string System_ModSettingsSearchHelpText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchHelp", "Search setting titles. Optionally include tooltips.");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchHelp", APIShared.Localization.UiText.English("Common.ModSettingsSearchHelp"));
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchToggleHelp; English fallback: Show or hide the settings search.</summary>
         public string System_ModSettingsSearchToggleHelpText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchToggleHelp", "Show or hide the settings search.");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchToggleHelp", APIShared.Localization.UiText.English("Common.ModSettingsSearchToggleHelp"));
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchIncludeToolTips; English fallback: Search tooltips</summary>
         public string System_ModSettingsSearchIncludeToolTipsText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchIncludeToolTips", "Search tooltips");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchIncludeToolTips", APIShared.Localization.UiText.English("Common.ModSettingsSearchIncludeToolTips"));
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchIncludeToolTipsHelp; English fallback: Also search the explanatory tooltips of settings.</summary>
         public string System_ModSettingsSearchIncludeToolTipsHelpText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchIncludeToolTipsHelp", "Also search the explanatory tooltips of settings.");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchIncludeToolTipsHelp", APIShared.Localization.UiText.English("Common.ModSettingsSearchIncludeToolTipsHelp"));
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchClearHelp; English fallback: Clear the settings filter.</summary>
         public string System_ModSettingsSearchClearHelpText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchClearHelp", "Clear the settings filter.");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchClearHelp", APIShared.Localization.UiText.English("Common.ModSettingsSearchClearHelp"));
 
         /// <summary>Localized XAML caption/help for Common.ModSettingsSearchNoResults; English fallback: No matching settings found.</summary>
         public string System_ModSettingsSearchNoResultsText =>
-            ResolveSettingsUiTextSafe("Common.ModSettingsSearchNoResults", "No matching settings found.");
+            ResolveSettingsUiTextSafe("Common.ModSettingsSearchNoResults", APIShared.Localization.UiText.English("Common.ModSettingsSearchNoResults"));
 
         /// <summary>Expands or collapses settings search and requests focus when opening.</summary>
         public RelayCommand System_ToggleModSettingsSearchCommand { get; }
@@ -543,7 +536,7 @@ namespace APIShared.ModSettings
             catch (Exception exception)
             {
                 SetPresetStatus(
-                    ResolveSettingsUiTextSafe("Common.PresetLoadFailedTitle", "Preset load failed") + ": " + exception.Message,
+                    ResolveSettingsUiTextSafe("Common.PresetLoadFailedTitle", APIShared.Localization.UiText.English("Common.PresetLoadFailedTitle")) + ": " + exception.Message,
                     true);
             }
         }
@@ -560,14 +553,12 @@ namespace APIShared.ModSettings
             if (preset == null || !System_CanDeleteSelectedPreset)
                 return;
 
-            string message = ResolveSettingsUiTextSafe(
-                "Common.PresetDeleteConfirm",
-                "The personal preset will be permanently deleted. Continue?") +
+            string message = ResolveSettingsUiTextSafe("Common.PresetDeleteConfirm", APIShared.Localization.UiText.English("Common.PresetDeleteConfirm")) +
                 Environment.NewLine + Environment.NewLine + preset.Name;
             pendingDeletePreset = preset;
             pendingOverwriteId = null;
             pendingOverwriteSelections = null;
-            presetInlineConfirmationTitle = ResolveSettingsUiTextSafe("Common.PresetDeleteTitle", "Delete personal preset");
+            presetInlineConfirmationTitle = ResolveSettingsUiTextSafe("Common.PresetDeleteTitle", APIShared.Localization.UiText.English("Common.PresetDeleteTitle"));
             presetInlineConfirmationMessage = message;
             RaisePresetInlineProperties();
         }
@@ -581,7 +572,7 @@ namespace APIShared.ModSettings
             {
                 Id = ModSettingsWorkingSourceRegistry.ModDefaultsId,
                 Kind = ModSettingsWorkingSourceKind.ModDefault,
-                DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceDefaults", "Mod defaults"),
+                DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceDefaults", APIShared.Localization.UiText.English("Common.SettingsSourceDefaults")),
             });
             foreach (ModSettingsWorkingSource source in ModSettingsWorkingSourceRegistry.GetProviderSources(presetController.TargetGuid))
             {
@@ -589,9 +580,9 @@ namespace APIShared.ModSettings
                     !string.Equals(source.Id, ModSettingsWorkingSourceRegistry.ModDefaultsId, StringComparison.Ordinal))
                 {
                     if (source.Kind == ModSettingsWorkingSourceKind.Trail)
-                        source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceTrail", "Trail settings");
+                        source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceTrail", APIShared.Localization.UiText.English("Common.SettingsSourceTrail"));
                     else if (source.Kind == ModSettingsWorkingSourceKind.Map)
-                        source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceMap", "Map settings");
+                        source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceMap", APIShared.Localization.UiText.English("Common.SettingsSourceMap"));
                     settingsSources.Add(source);
                 }
             }
@@ -638,7 +629,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    SetPresetStatus(ResolveSettingsUiTextSafe("Common.SettingsSourceLoadFailed", "Could not reset settings") + ": " + exception.Message, true);
+                    SetPresetStatus(ResolveSettingsUiTextSafe("Common.SettingsSourceLoadFailed", APIShared.Localization.UiText.English("Common.SettingsSourceLoadFailed")) + ": " + exception.Message, true);
                 }
             }
         }
@@ -657,7 +648,7 @@ namespace APIShared.ModSettings
             catch (Exception exception)
             {
                 presetController?.LogPresetOperationFailure("delete", preset?.Id, exception);
-                SetPresetStatus(ResolveSettingsUiTextSafe("Common.PresetDeleteFailedTitle", "Preset deletion failed") + ": " + exception.Message, true);
+                SetPresetStatus(ResolveSettingsUiTextSafe("Common.PresetDeleteFailedTitle", APIShared.Localization.UiText.English("Common.PresetDeleteFailedTitle")) + ": " + exception.Message, true);
             }
         }
 
@@ -683,7 +674,7 @@ namespace APIShared.ModSettings
             presetSaveTargets.Clear();
             presetSaveTargets.Add(new ModSettingsPresetSaveTarget
             {
-                DisplayText = ResolveSettingsUiTextSafe("Common.PresetSaveNew", "New personal preset"),
+                DisplayText = ResolveSettingsUiTextSafe("Common.PresetSaveNew", APIShared.Localization.UiText.English("Common.PresetSaveNew")),
             });
 
             foreach (PublishedModSettingsPreset preset in presetController?.PublishedPresets ??
@@ -693,13 +684,13 @@ namespace APIShared.ModSettings
                 switch (preset.SourceKind)
                 {
                     case ModSettingsPresetSourceKind.Personal:
-                        sourceLabel = ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", "Personal presets");
+                        sourceLabel = ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", APIShared.Localization.UiText.English("Common.PresetSourcePersonal"));
                         break;
                     case ModSettingsPresetSourceKind.Bundled:
-                        sourceLabel = ResolveSettingsUiTextSafe("Common.PresetSourceBundled", "Bundled with this mod");
+                        sourceLabel = ResolveSettingsUiTextSafe("Common.PresetSourceBundled", APIShared.Localization.UiText.English("Common.PresetSourceBundled"));
                         break;
                     default:
-                        sourceLabel = ResolveSettingsUiTextSafe("Common.PresetSourceExternal", "External presets") +
+                        sourceLabel = ResolveSettingsUiTextSafe("Common.PresetSourceExternal", APIShared.Localization.UiText.English("Common.PresetSourceExternal")) +
                             ": " + preset.ProviderName;
                         break;
                 }
@@ -755,9 +746,9 @@ namespace APIShared.ModSettings
             presetSaveSettings.Clear();
             string[] modeOptions =
             {
-                ResolveSettingsUiTextSafe("Common.PresetModeDefault", "Default"),
-                ResolveSettingsUiTextSafe("Common.PresetModePlayer", "Player"),
-                ResolveSettingsUiTextSafe("Common.PresetModeFixed", "Fixed"),
+                ResolveSettingsUiTextSafe("Common.PresetModeDefault", APIShared.Localization.UiText.English("Common.PresetModeDefault")),
+                ResolveSettingsUiTextSafe("Common.PresetModePlayer", APIShared.Localization.UiText.English("Common.PresetModePlayer")),
+                ResolveSettingsUiTextSafe("Common.PresetModeFixed", APIShared.Localization.UiText.English("Common.PresetModeFixed")),
             };
             foreach (PresetSettingDescriptor descriptor in System_GetPresetSettingDescriptors())
             {
@@ -765,7 +756,7 @@ namespace APIShared.ModSettings
                     descriptor,
                     ResolvePresetSettingScopeText(descriptor.Scope),
                     modeOptions);
-                setting.RestartHelp = ResolveSettingsUiTextSafe("Common.RestartRequiredOption", "Restart required");
+                setting.RestartHelp = ResolveSettingsUiTextSafe("Common.RestartRequiredOption", APIShared.Localization.UiText.English("Common.RestartRequiredOption"));
                 setting.PropertyChanged += OnPresetSaveSettingPropertyChanged;
                 presetSaveSettings.Add(setting);
             }
@@ -801,11 +792,11 @@ namespace APIShared.ModSettings
             switch (scope)
             {
                 case PresetSettingScope.Host:
-                    return ResolveSettingsUiTextSafe("Common.PresetScopeHost", "Host");
+                    return ResolveSettingsUiTextSafe("Common.PresetScopeHost", APIShared.Localization.UiText.English("Common.PresetScopeHost"));
                 case PresetSettingScope.Player:
-                    return ResolveSettingsUiTextSafe("Common.PresetScopePlayer", "Player");
+                    return ResolveSettingsUiTextSafe("Common.PresetScopePlayer", APIShared.Localization.UiText.English("Common.PresetScopePlayer"));
                 case PresetSettingScope.Local:
-                    return ResolveSettingsUiTextSafe("Common.PresetScopeLocal", "Local");
+                    return ResolveSettingsUiTextSafe("Common.PresetScopeLocal", APIShared.Localization.UiText.English("Common.PresetScopeLocal"));
                 default:
                     return scope.ToString();
             }
@@ -822,8 +813,8 @@ namespace APIShared.ModSettings
                     pendingDeletePreset = null;
                     pendingOverwriteId = existing.Id;
                     pendingOverwriteSelections = selections;
-                    presetInlineConfirmationTitle = ResolveSettingsUiTextSafe("Common.PresetSaveOverwriteTitle", "Overwrite personal preset");
-                    presetInlineConfirmationMessage = ResolveSettingsUiTextSafe("Common.PresetSaveOverwrite", "The selected personal preset will be completely replaced. Continue?");
+                    presetInlineConfirmationTitle = ResolveSettingsUiTextSafe("Common.PresetSaveOverwriteTitle", APIShared.Localization.UiText.English("Common.PresetSaveOverwriteTitle"));
+                    presetInlineConfirmationMessage = ResolveSettingsUiTextSafe("Common.PresetSaveOverwrite", APIShared.Localization.UiText.English("Common.PresetSaveOverwrite"));
                     RaisePresetInlineProperties();
                     return;
                 }
@@ -878,7 +869,7 @@ namespace APIShared.ModSettings
 
         private void ShowPresetSaveError(Exception exception)
         {
-            SetPresetStatus(ResolveSettingsUiTextSafe("Common.PresetSaveFailedTitle", "Preset save failed") + ": " + exception.Message, true);
+            SetPresetStatus(ResolveSettingsUiTextSafe("Common.PresetSaveFailedTitle", APIShared.Localization.UiText.English("Common.PresetSaveFailedTitle")) + ": " + exception.Message, true);
         }
 
         private void ConfirmPresetInlineAction()

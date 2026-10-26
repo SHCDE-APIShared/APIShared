@@ -1,9 +1,9 @@
 # The tool is deliberately outside BepInEx/plugins. This private inventory does
 # not alter the public plugin inventory or permit arbitrary runtime binaries.
 function Get-ApiPublisherNames {
-    return @('UploadMod.bat','UploadMod-linux.sh','WorkshopUploader.exe','WorkshopUploader.exe.config',
+    return @('UploadMod.bat','UploadMod-linux.sh','PublisherText.ps1','WorkshopUploader.exe','WorkshopUploader.exe.config',
         'com.rlabrecque.steamworks.net.dll','ICSharpCode.SharpZipLib.dll','steam_api64.dll',
-        'UnityEngine.CoreModule.dll','UnityEngine.SharedInternalsModule.dll')
+        'UnityEngine.CoreModule.dll','UnityEngine.SharedInternalsModule.dll') + @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '../Locales') -File -Filter '*.txt' | Sort-Object Name | ForEach-Object { 'Locales/' + $_.Name })
 }
 function Get-ApiPublisherFiles([string]$Directory,[switch]$Installed) {
     Assert-ApiWorkshopUnlinkedPath $Directory
@@ -15,7 +15,8 @@ function Get-ApiPublisherFiles([string]$Directory,[switch]$Installed) {
         $actual = @(Get-ChildItem -LiteralPath $Directory -Recurse -File -Force | Where-Object Name -ne 'publisher-files.json')
         if ($actual.Count -ne $names.Count) { throw 'Incomplete or unexpected generated publisher contents.' }
         foreach ($file in $actual) {
-            if ($file.DirectoryName -cne [IO.Path]::GetFullPath($Directory).TrimEnd('\') -or $file.Name -cnotin $names) { throw "Unexpected publisher payload: $($file.FullName)" }
+            $relative = $file.FullName.Substring([IO.Path]::GetFullPath($Directory).TrimEnd('\').Length+1).Replace('\','/')
+            if ($relative -cnotin $names) { throw "Unexpected publisher payload: $($file.FullName)" }
         }
     }
     foreach ($name in $names) { Assert-ApiWorkshopUnlinkedPath (Join-Path $Directory $name) }
@@ -44,8 +45,12 @@ function Sync-ApiPublisherPackage([string]$Root) {
     [void][IO.Directory]::CreateDirectory($target)
     Assert-ApiWorkshopUnlinkedTree $target
     # Remove generated output only, after checking the complete build evidence.
-    foreach ($file in Get-ChildItem -LiteralPath $target -File -Force) { Remove-Item -LiteralPath $file.FullName -Force }
-    foreach ($name in Get-ApiPublisherNames) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $target }
+    foreach ($file in Get-ChildItem -LiteralPath $target -Recurse -File -Force) { Remove-Item -LiteralPath $file.FullName -Force }
+    foreach ($name in Get-ApiPublisherNames) {
+        $destination = Join-Path $target $name
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination))
+        Copy-Item -LiteralPath (Join-Path $source $name) -Destination $destination
+    }
     $record = [ordered]@{ SchemaVersion=1; Guid='APISharedWorkshopPublisher'; Version=([IO.File]::ReadAllText((Join-Path $Root 'info.json')) | ConvertFrom-Json).Version; Files=@(Get-ApiPublisherFiles $target) }
     $text = ($record | ConvertTo-Json -Depth 6).Replace("`r`n","`n").Replace("`n","`r`n") + "`r`n"
     [IO.File]::WriteAllText((Join-Path $target 'publisher-files.json'),$text,[Text.UTF8Encoding]::new($false))
