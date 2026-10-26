@@ -539,6 +539,16 @@ an incompatible resolver is skipped independently. No consumer registration is n
 `SE_LORD_MEDIA` names the missing input and message category, or the exact installation
 stage and observed method entry when its dependency contract is rejected.
 
+The Lord script diagnostics in `ScriptExtenderFixes/LordScripts` only log. Script
+Extender runs a custom Lord's `init.lua` per player slot by the slot's local Lord name,
+only while its local `AllowScriptedLords` option is on, and checks only `NetworkMode: 1`
+packages when a player joins a lobby. Once per real multiplayer match, APIShared logs
+`SE_LORD_SCRIPTS` with every scripted Lord (player, package GUID and version,
+NetworkMode, a short `init.lua` hash and the local option) so players' logs can be
+compared, and a warning when a scripted Lord's package is client-side or unregistered,
+or when scripts are disabled locally. Matches without scripted Lords log nothing.
+Nothing is blocked, sent or changed; the Lord author is responsible for NetworkMode 1.
+
 The lobby mismatch correction in `ScriptExtenderFixes/LobbyMismatch` replaces only
 the audited popup call inside SE's `GameNetworkAPI.RejectLobby`. It installs once
 at managed startup, survives Unity's startup cleanup, and needs no consumer registration.
