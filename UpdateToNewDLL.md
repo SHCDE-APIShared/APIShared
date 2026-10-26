@@ -66,6 +66,19 @@ Only unpublished failures clean up. Tests and public limits:
 
 ## Fixes wheat-sale startup correction
 
+**2026-10-26 contract extension:** the supported division-based emitter receives
+one bounded in-place prefix replacement during the same verified startup window.
+The full prefix must match a freshly assembled contract; its replacement loads
+the player from the derived stack home, bounds the flag index and retains ECX's
+category result. Existing allocation, native jump, displaced instructions and
+continuation retain their addresses. Observed Fixes 1.29.1: 61-byte prefix,
+94-byte complete stub, corrected body 47 bytes plus 14 NOPs. These lengths are
+observations; fitting and full pre/post validation are mandatory. No version or
+hash bypass, late retry or rollback is introduced. Legacy one-byte repair remains
+supported. Existing native execution and memory/error tests cover both forms.
+The historical identities and exact layouts below remain historical evidence;
+see the current [contract](docs/FIXES_COMPATIBILITY.md#native-validation-and-write).
+
 Owner: internal `Compatibility/FixesWheatStartup`; foreign hook ownership stays
 with Fixes. See [startup safety, behavior and test limits](docs/FIXES_COMPATIBILITY.md).
 
@@ -97,8 +110,8 @@ succeeds; a refusal names the violated rule. The pre-2026-10-22 text follows unc
 Fixes/SHCDESE rows record audited installations, not runtime version/hash allowlists.
 Their full loaded/disk assembly identities and MVIDs must agree. The native
 game rows remain pinned to the audited machine contracts. The RedBird and Iced
-rows record the audited installation only: the AI market sell hooks prove the
-backend contract at run time (displaced span, generated stub bytes, jump form)
+rows record the audited installation only: the AI market sell and plague-height hooks
+prove the backend contract at run time (displaced span, generated stub bytes, jump form)
 instead of pinning those files. Unsupported hook bytes and startup evidence are
 always refused.
 
@@ -408,7 +421,10 @@ rewriting and JIT preparation; actual Mono/game and multiplayer acceptance are s
 
 Reference image: SHA-256 FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
 Revalidated 2026-10-23 against the installed DLL and installed RedBird/Iced binaries.
-This service is hash-bound: matching individual instructions cannot establish its
+The RedBird/Iced backend is not pinned by file hash: before publication every prepared
+stub must equal the production generator plus the continuation jump, assembled at the
+stub address, besides the displacement and jump-form checks.
+The native service is hash-bound: matching individual instructions cannot establish its
 manager, field, grid and table contracts on a different image. Unsupported images
 disable only this capability. There is no unverified pattern-only layout fallback.
 

@@ -66,27 +66,44 @@ namespace APIShared.Compatibility
             return Read(address, (int)Math.Min((ulong)maximum, regionEnd - address), executable);
         }
 
-        internal static void WriteOperand(ulong address, byte value)
+        // The injectable OS calls exercise denial/restoration/cache failures against the same
+        // production writer. Production always supplies the real Win32 functions below.
+        internal delegate bool ProtectMemory(IntPtr address, UIntPtr size, uint protection, out uint old);
+
+        internal static void WriteRange(ulong address, byte[] expected, byte[] replacement) =>
+            WriteRangeCore(address, expected, replacement, VirtualProtect,
+                (pointer, length) => FlushInstructionCache(GetCurrentProcess(), pointer, length));
+
+        internal static void WriteRangeCore(ulong address, byte[] expected, byte[] replacement,
+            ProtectMemory protect, Func<IntPtr, UIntPtr, bool> flush)
         {
-            uint observed = Check(address, 1, true);
+            if (expected == null || replacement == null || expected.Length == 0 || expected.Length > 256 ||
+                expected.Length != replacement.Length || protect == null || flush == null)
+                throw new InvalidOperationException("Invalid bounded wheat write plan");
+            int length = expected.Length;
+            uint observed = Check(address, length, true);
+            FixesWheatAnalysis.RequireEqual(Read(address, length), expected, "wheat write preimage");
             IntPtr pointer = new IntPtr((long)address);
-            if (!VirtualProtect(pointer, (UIntPtr)1, 0x40, out uint old))
+            if (!protect(pointer, (UIntPtr)length, 0x40, out uint old))
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "VirtualProtect refused before write");
             bool restored = false, flushed = false;
             try
             {
                 if (old != observed) throw new InvalidOperationException("Memory protection changed during preflight");
-                Marshal.WriteByte(pointer, value);
+                FixesWheatAnalysis.RequireEqual(Read(address, length), expected, "wheat write preimage under protection");
+                Marshal.Copy(replacement, 0, pointer, length);
             }
             finally
             {
-                restored = VirtualProtect(pointer, (UIntPtr)1, old, out _);
-                flushed = FlushInstructionCache(GetCurrentProcess(), pointer, (UIntPtr)1);
+                // Even a failing restore must not skip instruction-cache synchronization.
+                try { restored = protect(pointer, (UIntPtr)length, old, out _); }
+                finally { flushed = flush(pointer, (UIntPtr)length); }
                 if (!restored || !flushed)
                     throw new InvalidOperationException("Post-write protection/cache failure; bytes may be corrected, protection is NOT confirmed; restored=" + restored + ", flushed=" + flushed);
             }
-            if (Check(address, 1, true) != old)
+            if (Check(address, length, true) != old)
                 throw new InvalidOperationException("Post-write protection differs; protection is NOT confirmed");
+            FixesWheatAnalysis.RequireEqual(Read(address, length), replacement, "wheat write read-back");
         }
     }
 }

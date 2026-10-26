@@ -93,15 +93,15 @@ namespace APISharedTests
                         .Concat(BitConverter.GetBytes(continuation)).ToArray();
                     // Semantic analysis of the actual installed emitter, not a byte template of one Fixes version.
                     var analysis = FixesWheatAnalysis.AnalyzeStub(complete, stub, fixtureFlags.Address, displaced,
-                        continuation, 0x68);
-                    Assert.AreEqual((byte)0x78, analysis.Required);
+                        continuation, 0x68, fixtureFlags.Length);
+                    Assert.AreEqual(0x78, analysis.PlayerDisplacement);
                     FixesWheatExecutionFixture.Run(generated, fixtureFlags);
                     int writes = 0;
                     Func<byte[], FixesWheatAnalysis.WheatStub> analyze = bytes => FixesWheatAnalysis.AnalyzeStub(bytes,
-                        stub, fixtureFlags.Address, displaced, continuation, 0x68);
+                        stub, fixtureFlags.Address, displaced, continuation, 0x68, fixtureFlags.Length);
                     Assert.AreEqual(!analysis.IsCorrect, FixesWheatAnalysis.Correct(() => (byte[])complete.Clone(),
-                        (offset, value) => { complete[offset] = value; writes++; }, analyze));
-                    Assert.IsFalse(FixesWheatAnalysis.Correct(() => (byte[])complete.Clone(), (_, __) => writes++, analyze));
+                        (offset, expected, replacement) => { Array.Copy(replacement, 0, complete, offset, replacement.Length); writes++; }, analyze));
+                    Assert.IsFalse(FixesWheatAnalysis.Correct(() => (byte[])complete.Clone(), (_, __, ___) => writes++, analyze));
                     Assert.AreEqual(analysis.IsCorrect ? 0 : 1, writes);
                 }
             }

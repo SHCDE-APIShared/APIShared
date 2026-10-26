@@ -35,8 +35,11 @@ Game or Extender version numbers alone are not evidence of native compatibility.
 ## Hook backend contracts
 
 The single audited exception is the [Fixes wheat-sale startup correction](FIXES_COMPATIBILITY.md):
-one validated displacement byte during synchronous pre-game initialization under
-the engine lock. It permits no general repatching, later retry or teardown undo.
+one validated displacement byte for the legacy prefix, or one fully validated
+prefix replacement for the division variant, during synchronous pre-game
+initialization under the engine lock. The user-authorized extension of 2026-10-26
+retains the allocation, native entry, displaced code and return. It permits no
+general repatching, later retry or teardown undo.
 
 Published hooks remain installed for the process lifetime. Activation changes are
 logical gates; inactive callbacks preserve the original behavior. Installation

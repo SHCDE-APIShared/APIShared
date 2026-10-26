@@ -530,14 +530,22 @@ namespace APIShared
 
         private static Dictionary<string, Dictionary<string, byte[]>> CaptureCompatibleHostSettings()
         {
-            var result = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
             Dictionary<string, CompatibleMod> participants;
             try { participants = FindParticipants(); }
             catch (Exception error)
             {
                 NativeApiLog.Error(log, "Could not enumerate savegame settings participants: " + error);
-                return result;
+                return new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
             }
+            return CaptureCompatibleHostSettings(participants);
+        }
+
+        // Callers that already enumerated the participants reuse them: discovery calls every
+        // lobby endpoint's disabled-snapshot factory.
+        private static Dictionary<string, Dictionary<string, byte[]>> CaptureCompatibleHostSettings(
+            Dictionary<string, CompatibleMod> participants)
+        {
+            var result = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, CompatibleMod> participant in participants
                 .OrderBy(item => item.Key, StringComparer.Ordinal).Take(MaximumMods))
             {

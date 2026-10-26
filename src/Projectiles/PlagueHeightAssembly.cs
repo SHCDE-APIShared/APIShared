@@ -79,6 +79,23 @@ namespace APIShared
             a.AddUnrestrictedJmp(back);
         }
 
+        // Runtime backend contract instead of pinned backend files: the committed stub must be exactly
+        // this generator followed by the backend's continuation jump, assembled at the stub address.
+        internal static byte[] ExpectedStub(int index, ulong module, ulong stub, ulong state, ulong surface)
+        {
+            ulong site = module + (uint)Sites[index], back = site + (uint)(index == 0 ? 32 : 26);
+            var assembler = new Assembler(64);
+            GenerateHook(assembler, Decode(Hex(OriginalHex[index]), site), back, index, module, state, surface);
+            assembler.AddUnrestrictedJmp(back);
+            return Assemble(assembler, stub);
+        }
+        private static byte[] Hex(string text)
+        {
+            var result = new byte[text.Length / 2];
+            for (int i = 0; i < result.Length; i++) result[i] = Convert.ToByte(text.Substring(i * 2, 2), 16);
+            return result;
+        }
+
         private static void Save(Assembler a)
         {
             a.pushfq(); a.push(rax); a.push(rcx); a.push(rdx);

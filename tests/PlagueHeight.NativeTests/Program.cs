@@ -34,13 +34,6 @@ internal static class Program
     private static void Main(string[] args)
     {
         if (IntPtr.Size != 8) throw new Exception("Tests require x64.");
-        foreach (var item in new[] {
-            (typeof(X64InlineHook).Assembly, "E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB"),
-            (typeof(RedBird.Core.Memory.ScanRegion).Assembly, "EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F"),
-            (typeof(RedBird.Abstractions.Hooks.IHook).Assembly, "339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E"),
-            (typeof(Assembler).Assembly, "CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F") })
-            Check(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(item.Item1.Location))) == item.Item2,
-                "actual loaded backend assembly: " + item.Item1.GetName().Name);
         var published = publishedProof = new PlagueNativeCode(a => { a.mov(eax, 42); a.ret(); });
         var publishedCall = Marshal.GetDelegateForFunctionPointer<Invoke>(published.Address);
         Check(publishedCall() == 42, "private executable helper prepared"); published.Publish();
@@ -105,6 +98,22 @@ internal static class Program
                             Check(probe.DisplacedByteCount == bytes.Length && !probe.IsInstalled, "installed X64InlineHook decode-only " + index);
                     }
                     finally { Marshal.FreeHGlobal(probeMemory); }
+                    // Runtime backend contract (replaces pinned backend file hashes): the actual installed
+                    // backend writes exactly the production generator plus its continuation jump.
+                    Marshal.Copy(bytes, 0, module + site, bytes.Length);
+                    using (var hook = new X64InlineHook(image + (uint)site, bytes.Length))
+                    {
+                        Check(hook.DisplacedByteCount == bytes.Length, "actual installed RedBird span " + index);
+                        hook.Generate((a, displaced, back) => PlagueHeightAssembly.GenerateHook(a, displaced, back, index, image, data,
+                            (ulong)helper.Address.ToInt64()));
+                        hook.Enable();
+                        byte[] expected = PlagueHeightAssembly.ExpectedStub(index, image, (ulong)hook.StubAddress.ToInt64(), data,
+                            (ulong)helper.Address.ToInt64());
+                        var actual = new byte[expected.Length]; Marshal.Copy(hook.StubAddress, actual, 0, actual.Length);
+                        Check(actual.SequenceEqual(expected), "actual backend stub equals generated contract " + index);
+                        actual[actual.Length / 2] ^= 0xFF;
+                        Check(!actual.SequenceEqual(expected), "stub comparison detects a changed byte " + index);
+                    }
                     var original = PlagueHeightAssembly.Decode(bytes, image + (uint)site);
                     var stub = new PlagueNativeCode(a => PlagueHeightAssembly.GenerateHook(a, original, image + (uint)site + (uint)bytes.Length,
                         index, image, data, (ulong)helper.Address.ToInt64()));

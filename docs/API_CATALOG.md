@@ -56,7 +56,7 @@ Internal snapshot application suppresses intermediate transport/storage, isolate
 failing reflected setters (code-default fallback) and retains failed cleanup for a
 bounded retry. The managed Extender settings receiver dispatches copied
 packets to the shared Unity FIFO with lobby/session invalidation and original sender
-validation. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
+validation; a multiplayer start applies them before its map loads. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 `MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
 materialization. See [mission application](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 
@@ -68,7 +68,8 @@ an independent, pair-validated bootstrap companion. It adds no public API and ha
 not yet passed the transferred assembly's game/package-lifecycle acceptance.
 
 The internal [Fixes wheat-sale compatibility correction](FIXES_COMPATIBILITY.md)
-runs once at verified startup, after the optional Fixes plugin. It adds no public
+runs once at verified startup, after the optional Fixes plugin. It repairs the
+supported legacy stack load and division-based prefix in place. It adds no public
 API and refuses unknown binary/startup contracts independently of public services.
 
 Opt-in [Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md)
@@ -608,3 +609,9 @@ See [integration and lifetime](THIRD_PARTY_GUIDE.md#multiplayer-map-lookup-and-l
 `APIShared.Lobby.LobbyChatPresentation` registers owner-bound predicates that classify
 received lobby text as a system hint. It preserves the original renderer and never
 sends packets, changes text or authorizes gameplay. Registrations are process-lived.
+
+`APIShared.Lobby.LobbyLaunchStatus` collects owner-bound launch status providers and
+announces deduplicated "please wait", "start blocked" and "ready" lobby messages, so
+players learn why Start is unavailable. The host is the only sender of automatic
+announcements; lobby members show their own entries locally unless an entry is marked
+`LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.

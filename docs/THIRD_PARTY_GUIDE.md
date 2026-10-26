@@ -96,6 +96,8 @@ APIShared optionally loads after Fixes for its audited
 [wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
 is required. Check its explicit outcome log; APIShared being present does not
 prove that an unknown Fixes binary was corrected.
+Supported legacy stack-load and division-based wheat hooks are corrected inside
+their existing allocations; no consumer adapter or settings migration is needed.
 
 Unused observation services do not scan or prepare events. Register player-defeat
 observers before the first simulation tick if early transitions matter: the first
@@ -276,8 +278,12 @@ The process-lifetime managed Extender receive hook copies packet data and transp
 sender on the raw callback and posts to the validated Unity FIFO also used by
 `Network.TryPostPresentation`. Application rechecks lobby/session identity and calls
 the original Extender receiver, preserving its sender checks and join protocol.
-Stale queued work is discarded. Missing dispatch never falls back to the network
-thread. Registration requires the signature-checked hook to be available. This
+Stale queued work is discarded: leaving the lobby or ending/replacing a mission
+invalidates it, while starting a mission from the same lobby keeps it current.
+Inside a multiplayer start (new game or save) the queued settings are applied on the
+Unity thread after Vanilla received its last lobby packets and before the map loads,
+as the Extender's synchronous receiver would; their dispatcher turns then do nothing.
+Missing dispatch never falls back to the network thread. Registration requires the signature-checked hook to be available. This
 changes incoming Extender settings delivery to queued Unity execution, including
 settings registered directly with the Extender; outbound formats and direct
 registration ownership remain unchanged.
@@ -532,6 +538,16 @@ exceptions. This does not reconstruct lost Lord identities or recover custom med
 an incompatible resolver is skipped independently. No consumer registration is needed.
 `SE_LORD_MEDIA` names the missing input and message category, or the exact installation
 stage and observed method entry when its dependency contract is rejected.
+
+The Lord script diagnostics in `ScriptExtenderFixes/LordScripts` only log. Script
+Extender runs a custom Lord's `init.lua` per player slot by the slot's local Lord name,
+only while its local `AllowScriptedLords` option is on, and checks only `NetworkMode: 1`
+packages when a player joins a lobby. Once per real multiplayer match, APIShared logs
+`SE_LORD_SCRIPTS` with every scripted Lord (player, package GUID and version,
+NetworkMode, a short `init.lua` hash and the local option) so players' logs can be
+compared, and a warning when a scripted Lord's package is client-side or unregistered,
+or when scripts are disabled locally. Matches without scripted Lords log nothing.
+Nothing is blocked, sent or changed; the Lord author is responsible for NetworkMode 1.
 
 The lobby mismatch correction in `ScriptExtenderFixes/LobbyMismatch` replaces only
 the audited popup call inside SE's `GameNetworkAPI.RejectLobby`. It installs once
@@ -1489,3 +1505,45 @@ text and display name are not authenticated gameplay authority.
 
 Vanilla truncates each displayed lobby message at 300 characters. Consumers must
 split longer support reports before sending them and prevent receive/send loops.
+
+`APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
+Mods that enforce their own Ready/Start checks register a provider with
+`TryRegisterProvider(owner, id, provider, out diagnostic)`. The provider receives a
+`LobbyLaunchStatusQuery` (lobby ID, host role and the Vanilla view, valid only during
+the call) and returns the current `LobbyLaunchStatusItem` entries: localized `Text`,
+`Kind`, a log-only `Detail` and a `Scope` for lobby members. Use `Loading` for expected transitional states, such as
+a joining player still loading the selected mission; use `Blocking` for conditions
+that require action; use `Waiting` for an obvious open-ended wait, such as a missing
+second player, which is never announced but suppresses the "ready" message while it
+lasts. Call `RequestRefresh()` from any thread when a provider input
+changes, and `ReportAttempt(owner, operation, item)` right after rejecting a
+Ready/Start command (calls from other threads are marshalled to the Unity thread). The service never blocks a command itself.
+
+The host is the only sender of automatic announcements for the whole lobby, so its
+provider should report every player's state (for example, which players still load).
+On a lobby member, `LobbyLaunchStatusScope.Local` entries (the default) are only shown
+in the member's own lobby chat as Vanilla system hints, without network traffic and
+also in muted chat. Mark an entry `LobbyLaunchStatusScope.Lobby` when it describes a
+local condition the host cannot detect, such as a missing file or a required restart;
+it is then sent to everyone. A line another player sent within the last five seconds
+is not sent or shown again, so several members with the same problem in the same
+language produce one line. In a Coop lobby, whose chat Vanilla keeps collapsed, a
+received or locally shown announcement opens the chat like Vanilla's chat button;
+ordinary chat messages keep Vanilla's behavior.
+
+Providers run synchronously on the Unity thread in ordinal owner/ID order, only in
+an active Steam multiplayer lobby outside a mission; failures are isolated and
+logged. A loading phase is announced once as a neutral wait hint after it has lasted
+1.5 seconds, so short synchronizations such as browsing missions stay silent;
+each loading entry that persists for 20 seconds is announced once as blocking. Blocking entries are announced when they first appear;
+an unchanged or shrinking set sends nothing, a reappearing entry is announced again.
+After any host announcement, one "ready" message follows once no entry has remained
+for 1.5 seconds; lobby members never announce "ready". Every rejected command is sent
+to the lobby by the rejecting player immediately, so a click that did nothing is
+always explained; it is not repeated by the next refresh (neither as block nor as
+wait hint) and does not arm "ready" by itself. Messages are split into numbered parts of at most
+280 characters at word boundaries, start with a fixed marker recognized by
+`IsAnnouncement`, and are classified as lobby system hints on every receiver with
+APIShared. Logs record loading as info, automatic blocks as warnings and rejected
+commands as errors, each with the complete detail. Text is sent in the sender's
+language and conveys no gameplay authority.

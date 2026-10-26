@@ -1,8 +1,6 @@
 using System;
-using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Threading;
 using BepInEx.Logging;
 using Iced.Intel;
@@ -35,7 +33,6 @@ namespace APIShared
             for (int i = 0; i < 72; i += 8) Marshal.WriteInt64(state, i, 0);
             try
             {
-                VerifyBackend();
                 int tiles = GameTileManagerAPI.Instance.GetHeightLayer().Length;
                 int buildings = GameBuildingManagerAPI.Instance.GetBuildingsAsSpan().Length;
                 if (tiles != 320800 || buildings != 3999 || sizeof(GameProjectile) != 0xE8 ||
@@ -91,8 +88,12 @@ namespace APIShared
                 var result = transaction.Commit();
                 if (!result.IsCompleteSuccess) throw new InvalidOperationException("Incomplete plague hook transaction.");
                 for (int i = 0; i < hooks.Length; i++)
+                {
                     if (!hooks[i].Success || hooks[i].Hook.IsInstalled || hooks[i].Hook.DisplacedByteCount != (i == 0 ? 32 : 26))
                         throw new InvalidOperationException("Prepared plague hook contract differs.");
+                    // The installed RedBird/Iced backend is proven here, not by pinned file hashes.
+                    ValidateStub(i, hooks[i].Hook, module, helper);
+                }
                 NativeHookPublication.Enable(transaction, result, publication, this, ValidateInstalled);
                 surface.Publish();
                 GameTimeManagerAPI.Instance.OnTick += OnTick;
@@ -157,16 +158,15 @@ namespace APIShared
             for (int i = 0; i < result.Length; i++) result[i] = Convert.ToByte(text.Substring(i * 2, 2), 16);
             return result;
         }
-        private static void VerifyBackend()
+        // The prepared stub must be exactly our generator plus the backend's continuation jump.
+        private void ValidateStub(int index, X64InlineHook hook, ulong module, ulong helper)
         {
-            foreach (var entry in new[] {
-                new[] { typeof(X64InlineHook).Assembly.Location, "E085B83B2B87B5D2142C980090D8D9EC616A90A443BD125C17B41E0BB47A44EB" },
-                new[] { typeof(RedBird.Core.Memory.ScanRegion).Assembly.Location, "EE4B036C486077F7D8898AE054F124EDDE73E6AE1A059E8991C361E2B720D29F" },
-                new[] { typeof(IHook).Assembly.Location, "339CECE116F66F59ECC7DA5E9A5C0B2DFE24F4E7A5E7EFC005864FA77C027A1E" },
-                new[] { typeof(Assembler).Assembly.Location, "CC915D1C2E7BE60933C5B129842CA3D08D1FE3CDA6C6D6ADE8824DCDDE16191F" } })
-                using (var input = File.OpenRead(entry[0])) using (var sha = SHA256.Create())
-                    if (BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "") != entry[1])
-                        throw new InvalidOperationException("Installed backend differs: " + entry[0]);
+            byte[] expected = PlagueHeightAssembly.ExpectedStub(index, module, unchecked((ulong)hook.StubAddress.ToInt64()),
+                unchecked((ulong)state.ToInt64()), helper);
+            var actual = new byte[expected.Length];
+            Marshal.Copy(hook.StubAddress, actual, 0, actual.Length);
+            if (!actual.AsSpan().SequenceEqual(expected))
+                throw new InvalidOperationException("Plague backend stub differs from the generated contract at site " + index + ".");
         }
     }
 }
