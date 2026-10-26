@@ -22,12 +22,15 @@ namespace APISharedTests
         public void JoiningPlayerIsAnnouncedAsLoadingAndThenAsReadyWithoutBlockMessages()
         {
             var state = new LobbyLaunchAnnouncementState();
-            var first = Observe(state, 0, Loading("Loading for: Guest"));
+            Assert.AreEqual(0, state.Observe("lobby", new[] { Loading("Loading for: Guest") }, Start, true, out DateTime? due).Count,
+                "a loading phase was announced before its grace period");
+            Assert.AreEqual(Start + LobbyLaunchAnnouncementState.LoadingGrace, due, "the wait hint was not scheduled");
+            var first = Observe(state, 1.5, Loading("Loading for: Guest"));
             Assert.AreEqual(1, first.Count);
             Assert.AreEqual(LobbyLaunchAnnouncementKind.Loading, first[0].Kind);
             CollectionAssert.AreEqual(new[] { "Loading for: Guest" }, first[0].Texts);
-            Assert.AreEqual(0, Observe(state, 1, Loading("Loading for: Guest")).Count, "an unchanged wait hint was repeated");
-            Assert.AreEqual(0, Observe(state, 2, Loading("Lord data pending for: Guest")).Count,
+            Assert.AreEqual(0, Observe(state, 2, Loading("Loading for: Guest")).Count, "an unchanged wait hint was repeated");
+            Assert.AreEqual(0, Observe(state, 2.5, Loading("Lord data pending for: Guest")).Count,
                 "a changed loading text within the same loading phase was announced again");
             Assert.AreEqual(0, Observe(state, 3).Count, "ready did not wait for a stable empty state");
             var ready = Observe(state, 4.5);
@@ -36,6 +39,22 @@ namespace APISharedTests
             Assert.AreEqual(0, Observe(state, 6).Count, "ready was announced twice");
             Assert.AreEqual(0, new LobbyLaunchAnnouncementState().Observe("lobby", new LobbyLaunchStatusItem[0], Start, true, out _).Count,
                 "a lobby without previous announcements claimed readiness");
+        }
+
+        // Regression for the 2026-10-26 21:44 lobby log: browsing missions produced a "please wait" and a "ready"
+        // line per click although each synchronization finished within about a second.
+        [TestMethod]
+        public void ShortSynchronizationsStaySilent()
+        {
+            var state = new LobbyLaunchAnnouncementState();
+            for (int click = 0; click < 8; click++)
+            {
+                double at = click * 3;
+                Assert.AreEqual(0, Observe(state, at, Loading("Player 2 has not applied the selected Lord data.")).Count);
+                Assert.AreEqual(0, Observe(state, at + 0.8, Loading("Player 2 has not applied the selected Lord data.")).Count);
+                Assert.AreEqual(0, Observe(state, at + 1.2).Count, "a silent synchronization was followed by a message");
+                Assert.AreEqual(0, Observe(state, at + 2.9).Count, "a silent synchronization armed a ready message");
+            }
         }
 
         [TestMethod]
@@ -47,7 +66,8 @@ namespace APISharedTests
             Assert.IsNull(due, "a waiting entry escalated");
             Assert.AreEqual(0, Observe(state, 60, waiting).Count, "a waiting entry escalated after the loading delay");
             Observe(state, 61, Loading("Loading for: Guest"));
-            Assert.AreEqual(0, Observe(state, 62, waiting).Count, "a player who left while loading produced a ready message");
+            Assert.AreEqual(LobbyLaunchAnnouncementKind.Loading, Observe(state, 62.5, Loading("Loading for: Guest")).Single().Kind);
+            Assert.AreEqual(0, Observe(state, 63, waiting).Count, "a player who left while loading produced a ready message");
             Observe(state, 70, Loading("Loading for: Guest"));
             Assert.AreEqual(0, Observe(state, 72).Count);
             Assert.AreEqual(LobbyLaunchAnnouncementKind.Ready, Observe(state, 73.5).Single().Kind);
@@ -58,6 +78,9 @@ namespace APISharedTests
         {
             var state = new LobbyLaunchAnnouncementState();
             state.Observe("lobby", new[] { Loading("Waiting for: Guest") }, Start, true, out DateTime? due);
+            Assert.AreEqual(Start + LobbyLaunchAnnouncementState.LoadingGrace, due);
+            Assert.AreEqual(LobbyLaunchAnnouncementKind.Loading,
+                state.Observe("lobby", new[] { Loading("Waiting for: Guest") }, due.Value, true, out due).Single().Kind);
             Assert.AreEqual(Start + LobbyLaunchAnnouncementState.LoadingEscalation, due);
             Assert.AreEqual(0, state.Observe("lobby", new[] { Loading("Waiting for: Guest") }, Start.AddSeconds(19), true, out due).Count);
             var escalated = state.Observe("lobby", new[] { Loading("Waiting for: Guest") }, due.Value, true, out due);
@@ -84,10 +107,8 @@ namespace APISharedTests
         {
             var state = new LobbyLaunchAnnouncementState();
             Observe(state, 0, Blocking("a"));
-            Assert.IsTrue(state.ShouldAnnounceAttempt("lobby", "x", Start.AddSeconds(1)));
+            state.MarkAnnounced("lobby", "x");
             Assert.AreEqual(0, Observe(state, 1, Blocking("a"), Blocking("x")).Count, "the click reason was sent twice");
-            Assert.IsFalse(state.ShouldAnnounceAttempt("lobby", "x", Start.AddSeconds(2)), "click throttle missing");
-            Assert.IsTrue(state.ShouldAnnounceAttempt("lobby", "x", Start.AddSeconds(4)), "an explicit retry stayed hidden");
             Observe(state, 5);
             Assert.AreEqual(LobbyLaunchAnnouncementKind.Ready, Observe(state, 6.5).Single().Kind,
                 "the provider entry announced before the click did not end with ready");
@@ -104,22 +125,23 @@ namespace APISharedTests
         public void RejectedClickAloneNeverClaimsReadinessAndReadyNeedsAStableEmptyState()
         {
             var state = new LobbyLaunchAnnouncementState();
-            Assert.IsTrue(state.ShouldAnnounceAttempt("lobby", "x", Start));
+            state.MarkAnnounced("lobby", "x");
             Assert.AreEqual(0, Observe(state, 0.004).Count, "an empty refresh after a rejected click claimed readiness");
             Assert.AreEqual(0, Observe(state, 30).Count, "a rejected click armed a later ready message");
 
             Observe(state, 40, Loading("l"));
-            Assert.AreEqual(0, state.Observe("lobby", new LobbyLaunchStatusItem[0], Start.AddSeconds(41), true, out DateTime? due).Count);
-            Assert.AreEqual(Start.AddSeconds(41) + LobbyLaunchAnnouncementState.ReadyDelay, due, "the ready check was not scheduled");
+            Assert.AreEqual(LobbyLaunchAnnouncementKind.Loading, Observe(state, 41.5, Loading("l")).Single().Kind);
+            Assert.AreEqual(0, state.Observe("lobby", new LobbyLaunchStatusItem[0], Start.AddSeconds(42), true, out DateTime? due).Count);
+            Assert.AreEqual(Start.AddSeconds(42) + LobbyLaunchAnnouncementState.ReadyDelay, due, "the ready check was not scheduled");
             var waiting = new LobbyLaunchStatusItem("partner", LobbyLaunchStatusKind.Waiting);
-            Assert.AreEqual(0, Observe(state, 42, waiting).Count);
-            Assert.AreEqual(0, Observe(state, 42.6).Count, "a flickering entry did not restart the stable period");
-            Assert.AreEqual(0, Observe(state, 43.5).Count, "ready was announced before the restarted period ended");
-            Assert.AreEqual(LobbyLaunchAnnouncementKind.Ready, Observe(state, 44.1).Single().Kind);
+            Assert.AreEqual(0, Observe(state, 43, waiting).Count);
+            Assert.AreEqual(0, Observe(state, 43.6).Count, "a flickering entry did not restart the stable period");
+            Assert.AreEqual(0, Observe(state, 44.5).Count, "ready was announced before the restarted period ended");
+            Assert.AreEqual(LobbyLaunchAnnouncementKind.Ready, Observe(state, 45.1).Single().Kind);
 
-            // The provider confirms the rejected reason as a transitional state: no second message with the same
-            // reason, but its end is announced.
-            Assert.IsTrue(state.ShouldAnnounceAttempt("lobby", "Player 2 has not applied the Lord data.", Start.AddSeconds(50)));
+            // The provider confirms the rejected reason as a short transitional state: no second message with the
+            // same reason, but its end is announced because the players saw the reason with their click.
+            state.MarkAnnounced("lobby", "Player 2 has not applied the Lord data.");
             Assert.AreEqual(0, Observe(state, 50.01, Loading("Player 2 has not applied the Lord data.")).Count,
                 "the rejected reason was repeated as a wait hint");
             Assert.AreEqual(0, Observe(state, 50.3).Count);
@@ -158,9 +180,10 @@ namespace APISharedTests
         public void BlockingAndLoadingWithTheSameTextAreShownOnceAsBlocking()
         {
             var state = new LobbyLaunchAnnouncementState();
-            var result = Observe(state, 0, Loading("same"), Blocking("same"), Loading("other"));
-            CollectionAssert.AreEqual(new[] { "other" }, result.Single(item => item.Kind == LobbyLaunchAnnouncementKind.Loading).Texts);
-            CollectionAssert.AreEqual(new[] { "same" }, result.Single(item => item.Kind == LobbyLaunchAnnouncementKind.Blocked).Texts);
+            var blocked = Observe(state, 0, Loading("same"), Blocking("same"), Loading("other"));
+            CollectionAssert.AreEqual(new[] { "same" }, blocked.Single(item => item.Kind == LobbyLaunchAnnouncementKind.Blocked).Texts);
+            var hint = Observe(state, 1.5, Loading("same"), Blocking("same"), Loading("other"));
+            CollectionAssert.AreEqual(new[] { "other" }, hint.Single(item => item.Kind == LobbyLaunchAnnouncementKind.Loading).Texts);
         }
 
         [TestMethod]

@@ -94,12 +94,13 @@ namespace APIShared.Lobby
     /// sent to everyone. Lobby members never announce "ready". A line that another player sent within the last five
     /// seconds is not sent or shown again. In a Coop lobby, a received or locally shown announcement opens the
     /// collapsed Coop chat the way Vanilla's chat button does; other chat messages keep Vanilla's behavior.</para>
-    /// <para>Timing: a loading phase is announced once as a wait hint when it begins; each loading entry is announced
-    /// once more as blocking after 20 seconds; blocking entries are announced when they first appear; waiting entries
-    /// are never announced. On the host, a single "ready" announcement follows once every previously announced entry
-    /// has disappeared, no waiting entry remains and that state has lasted 1.5 seconds. A rejected command reported
-    /// through <see cref="ReportAttempt"/> does not arm "ready". Identical texts are announced once per lobby until
-    /// they disappear. Each refresh sends at most one message per category; long messages are split into numbered
+    /// <para>Timing: a loading phase is announced once as a wait hint when it has lasted 1.5 seconds, so short
+    /// synchronizations (for example browsing missions) stay silent; each loading entry is announced once more as
+    /// blocking after 20 seconds; blocking entries are announced when they first appear; waiting entries are never
+    /// announced. On the host, a single "ready" announcement follows once every communicated entry has disappeared,
+    /// no waiting entry remains and that state has lasted 1.5 seconds. Every command rejected through
+    /// <see cref="ReportAttempt"/> is announced; a rejected command alone does not arm "ready". Identical automatic
+    /// texts are announced once per lobby until they disappear. Each refresh sends at most one message per category; long messages are split into numbered
     /// parts of at most 280 characters at word boundaries. Received announcements are classified as lobby system
     /// hints. There is no replay or teardown.</para>
     /// </remarks>
@@ -140,8 +141,9 @@ namespace APIShared.Lobby
         /// <summary>Reports a Ready/Start command the owner has just rejected.</summary>
         /// <remarks>Call it where the command was rejected, normally the Unity thread; other threads are marshalled.
         /// The entry is always logged as an error. In an active lobby the rejecting player sends it to the whole lobby
-        /// without waiting for a refresh, unless the same text was sent within the last two seconds; the item's scope
-        /// is ignored. It counts as already announced for later automatic refreshes but does not arm "ready".</remarks>
+        /// without waiting for a refresh, for every rejected click (players must always learn why a command did
+        /// nothing); the item's scope is ignored. It counts as already announced for later automatic refreshes but
+        /// does not arm "ready".</remarks>
         public static void ReportAttempt(string ownerGuid, LobbyLaunchOperation operation, LobbyLaunchStatusItem item)
         {
             if (item == null || item.Text.Length == 0) return;
@@ -161,12 +163,13 @@ namespace APIShared.Lobby
             try
             {
                 DateTime now = DateTime.UtcNow;
-                if (TryGetLobby(out ulong lobbyId, out bool isHost, out _) &&
-                    Broadcast.ShouldAnnounceAttempt(Scope(lobbyId, isHost), item.Text, now))
+                if (TryGetLobby(out ulong lobbyId, out bool isHost, out _))
                 {
+                    Broadcast.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
                     LocalOnly.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
+                    // A rejected click is always answered, even if another player has just sent the same line.
                     Send(LobbyLaunchChat.Format(Prefix(LobbyLaunchAnnouncementKind.Blocked) + " (" + OperationText(operation) + ")",
-                        new[] { item.Text }), now);
+                        new[] { item.Text }), now, deduplicate: false);
                 }
             }
             catch (Exception error) { Report(false, "LOBBY_LAUNCH_ATTEMPT_FAILED: " + error, null); }
@@ -311,14 +314,14 @@ namespace APIShared.Lobby
             }
         }
 
-        private static void Send(IEnumerable<string> messages, DateTime now)
+        private static void Send(IEnumerable<string> messages, DateTime now, bool deduplicate = true)
         {
             try
             {
                 foreach (string message in messages)
                 {
                     // Another player has just sent the same line, e.g. two members with the same local problem.
-                    if (Received.Contains(message, now)) continue;
+                    if (deduplicate && Received.Contains(message, now)) continue;
                     Received.ExpectEcho(message, now);
                     Platform_Multiplayer.Instance.SendLobbyChatMessage(message);
                 }
@@ -377,32 +380,24 @@ namespace APIShared.Lobby
     internal sealed class LobbyLaunchAnnouncementState
     {
         internal static readonly TimeSpan LoadingEscalation = TimeSpan.FromSeconds(20);
-        internal static readonly TimeSpan AttemptThrottle = TimeSpan.FromSeconds(2);
+        internal static readonly TimeSpan LoadingGrace = TimeSpan.FromSeconds(1.5);
         internal static readonly TimeSpan ReadyDelay = TimeSpan.FromSeconds(1.5);
         private string scope = string.Empty;
         private readonly Dictionary<string, DateTime> loadingSince = new Dictionary<string, DateTime>(StringComparer.Ordinal);
         private readonly HashSet<string> announcedBlocking = new HashSet<string>(StringComparer.Ordinal);
-        private readonly Dictionary<string, DateTime> attempts = new Dictionary<string, DateTime>(StringComparer.Ordinal);
-        private bool readyPending, loadingPhase;
-        private DateTime? emptySince;
+        // Loading phase: hintSent = wait hint announced; phaseCommunicated = hint sent or a loading text the players
+        // already saw as a rejected command, so the phase's end is worth a "ready".
+        private bool readyPending, hintSent, phaseCommunicated;
+        private DateTime? loadingPhaseSince, emptySince;
 
         internal void Reset()
         {
             scope = string.Empty; loadingSince.Clear(); announcedBlocking.Clear();
-            attempts.Clear(); readyPending = loadingPhase = false; emptySince = null;
+            readyPending = hintSent = phaseCommunicated = false; loadingPhaseSince = emptySince = null;
         }
 
-        internal bool ShouldAnnounceAttempt(string currentScope, string text, DateTime now)
-        {
-            EnterScope(currentScope);
-            if (attempts.TryGetValue(text, out DateTime last) && now - last < AttemptThrottle) return false;
-            attempts[text] = now;
-            if (attempts.Count > 128) { attempts.Clear(); attempts[text] = now; }
-            // A rejected command does not arm "ready": only provider entries describe a state that can end.
-            announcedBlocking.Add(text);
-            return true;
-        }
-
+        // A rejected command was announced: later refreshes do not repeat its text. It does not arm "ready" by
+        // itself; only provider entries describe a state that can end.
         internal void MarkAnnounced(string currentScope, string text)
         {
             EnterScope(currentScope);
@@ -435,23 +430,28 @@ namespace APIShared.Lobby
             var currentBlocking = blocking.Concat(due).ToList();
             var result = new List<LobbyLaunchAnnouncement>();
             var pendingLoading = loading.Except(due, StringComparer.Ordinal).ToArray();
-            // One wait hint per loading phase: texts that change while players load are not repeated. A reason the
-            // players have just seen as a rejected command is not repeated as a wait hint either.
-            if (pendingLoading.Length != 0 && !loadingPhase)
+            if (loading.Count == 0) { loadingPhaseSince = null; hintSent = phaseCommunicated = false; }
+            else if (!loadingPhaseSince.HasValue) loadingPhaseSince = now;
+            if (loading.Any(text => announcedBlocking.Contains(text))) phaseCommunicated = true;
+            // One wait hint per loading phase, only once it has lasted LoadingGrace: short synchronizations stay
+            // silent, and texts that change while players load are not repeated. A reason the players have just seen
+            // as a rejected command is not repeated as a wait hint either.
+            if (pendingLoading.Length != 0 && !hintSent && now - loadingPhaseSince.Value >= LoadingGrace)
             {
+                hintSent = phaseCommunicated = true;
                 string[] hint = pendingLoading.Where(text => !announcedBlocking.Contains(text)).ToArray();
                 if (hint.Length != 0) result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Loading, hint));
             }
-            loadingPhase = loading.Count != 0;
             announcedBlocking.IntersectWith(currentBlocking);
             if (currentBlocking.Any(text => !announcedBlocking.Contains(text)))
                 result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Blocked, currentBlocking.ToArray()));
             announcedBlocking.UnionWith(currentBlocking);
 
-            // Every loading or blocking entry has been communicated, by this state or as a rejected command, so its
-            // end is announced. A rejected command alone (no provider entry) never arms "ready".
+            // Only a communicated state earns a "ready": blocking entries (always announced) and loading phases whose
+            // hint was sent or whose reason the players saw as a rejected command. A silent short synchronization and
+            // a rejected command alone (no provider entry) never arm it.
             bool reported = loading.Count != 0 || blocking.Count != 0;
-            if (reported && announceReady) readyPending = true;
+            if (announceReady && (currentBlocking.Count != 0 || loading.Count != 0 && phaseCommunicated)) readyPending = true;
             if (reported || waiting || !readyPending) emptySince = null;
             else
             {
@@ -465,6 +465,11 @@ namespace APIShared.Lobby
             }
 
             nextDue = emptySince.HasValue ? emptySince.Value + ReadyDelay : (DateTime?)null;
+            if (pendingLoading.Length != 0 && !hintSent)
+            {
+                DateTime hintDue = loadingPhaseSince.Value + LoadingGrace;
+                if (!nextDue.HasValue || hintDue < nextDue.Value) nextDue = hintDue;
+            }
             foreach (string text in pendingLoading)
             {
                 DateTime candidate = loadingSince[text] + LoadingEscalation;

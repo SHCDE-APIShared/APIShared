@@ -1523,14 +1523,15 @@ ordinary chat messages keep Vanilla's behavior.
 
 Providers run synchronously on the Unity thread in ordinal owner/ID order, only in
 an active Steam multiplayer lobby outside a mission; failures are isolated and
-logged. A loading phase is announced once as a neutral wait hint when it begins;
+logged. A loading phase is announced once as a neutral wait hint after it has lasted
+1.5 seconds, so short synchronizations such as browsing missions stay silent;
 each loading entry that persists for 20 seconds is announced once as blocking. Blocking entries are announced when they first appear;
 an unchanged or shrinking set sends nothing, a reappearing entry is announced again.
 After any host announcement, one "ready" message follows once no entry has remained
-for 1.5 seconds; lobby members never announce "ready". A rejected command is sent to
-the lobby by the rejecting player immediately (at most every two seconds per text),
-is not repeated by the next refresh (neither as block nor as wait hint) and does not
-arm "ready" by itself. Messages are split into numbered parts of at most
+for 1.5 seconds; lobby members never announce "ready". Every rejected command is sent
+to the lobby by the rejecting player immediately, so a click that did nothing is
+always explained; it is not repeated by the next refresh (neither as block nor as
+wait hint) and does not arm "ready" by itself. Messages are split into numbered parts of at most
 280 characters at word boundaries, start with a fixed marker recognized by
 `IsAnnouncement`, and are classified as lobby system hints on every receiver with
 APIShared. Logs record loading as info, automatic blocks as warnings and rejected
