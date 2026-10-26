@@ -798,7 +798,9 @@ APIShared.Lobby.LobbyLaunchStatus | public static void ReportAttempt(string owne
 APIShared.Lobby.LobbyLaunchStatus | public static void RequestRefresh()
 APIShared.Lobby.LobbyLaunchStatusItem | public sealed class APIShared.Lobby.LobbyLaunchStatusItem
 APIShared.Lobby.LobbyLaunchStatusItem | public .ctor(string text, APIShared.Lobby.LobbyLaunchStatusKind kind = (APIShared.Lobby.LobbyLaunchStatusKind)0, string detail = null)
+APIShared.Lobby.LobbyLaunchStatusItem | public .ctor(string text, APIShared.Lobby.LobbyLaunchStatusKind kind, string detail, APIShared.Lobby.LobbyLaunchStatusScope scope)
 APIShared.Lobby.LobbyLaunchStatusItem | public APIShared.Lobby.LobbyLaunchStatusKind Kind { get; }
+APIShared.Lobby.LobbyLaunchStatusItem | public APIShared.Lobby.LobbyLaunchStatusScope Scope { get; }
 APIShared.Lobby.LobbyLaunchStatusItem | public string Detail { get; }
 APIShared.Lobby.LobbyLaunchStatusItem | public string Text { get; }
 APIShared.Lobby.LobbyLaunchStatusKind | public enum APIShared.Lobby.LobbyLaunchStatusKind : int
@@ -809,6 +811,9 @@ APIShared.Lobby.LobbyLaunchStatusQuery | public sealed class APIShared.Lobby.Lob
 APIShared.Lobby.LobbyLaunchStatusQuery | public CrusaderDE.FRONT_Multiplayer Lobby { get; }
 APIShared.Lobby.LobbyLaunchStatusQuery | public bool IsHost { get; }
 APIShared.Lobby.LobbyLaunchStatusQuery | public ulong LobbyId { get; }
+APIShared.Lobby.LobbyLaunchStatusScope | public enum APIShared.Lobby.LobbyLaunchStatusScope : int
+APIShared.Lobby.LobbyLaunchStatusScope | Lobby = 1
+APIShared.Lobby.LobbyLaunchStatusScope | Local = 0
 APIShared.LobbyPreparationOverride | public static class APIShared.LobbyPreparationOverride
 APIShared.LobbyPreparationOverride | public static bool Begin(CrusaderDE.FRONT_Multiplayer lobby)
 APIShared.LobbyPreparationOverride | public static bool IsActive { get; }

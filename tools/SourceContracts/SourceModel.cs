@@ -227,7 +227,7 @@ internal sealed class SourceModel
             foreach (var method in helperMethods)
                 if (!startupGuards.Contains(method) && Calls(method).Any(c => Target(c) is { } target && startupGuards.Contains(target))) changed |= startupGuards.Add(method);
         } while (changed);
-        foreach (var writer in wheatCalls.Where(c => IsCall(c, "FixesWheatMemory", "WriteOperand"))) {
+        foreach (var writer in wheatCalls.Where(c => IsCall(c, "FixesWheatMemory", "WriteRange"))) {
             var block = writer.Ancestors().OfType<BlockSyntax>().First();
             Require(Calls(block).Any(c => c.SpanStart < writer.SpanStart && Target(c) is { } target && startupGuards.Contains(target)),
                 "Wheat operand writer lost its startup-context recheck.");
@@ -240,52 +240,74 @@ internal sealed class SourceModel
     static readonly HashSet<string> Lifecycle = new() { "OnDestroy", "OnDisable", "OnApplicationQuit", "Update", "LateUpdate", "FixedUpdate" };
     internal void CheckWheatMemory()
     {
-        var writers = Parts("FixesWheatMemory").SelectMany(Calls).Where(c => c.Expression is MemberAccessExpressionSyntax a &&
-            Text(a.Expression).EndsWith("Marshal", StringComparison.Ordinal) && Name(c).StartsWith("Write", StringComparison.Ordinal)).ToArray();
-        // One byte-writing site is the explicitly audited exception, not a feature count.
-        Require(writers.Length == 1 && Name(writers[0]) == "WriteByte", "Wheat exception must contain exactly one byte writer.");
+        static bool ToNative(InvocationExpressionSyntax c) => c.Expression is MemberAccessExpressionSyntax a &&
+            Text(a.Expression).EndsWith("Marshal", StringComparison.Ordinal) &&
+            (Name(c).StartsWith("Write", StringComparison.Ordinal) ||
+             Name(c) == "Copy" && c.ArgumentList.Arguments.Count == 4 &&
+             c.ArgumentList.Arguments[1].Expression is LiteralExpressionSyntax zero && zero.Token.ValueText == "0");
+        var writers = Parts("FixesWheatMemory").SelectMany(Calls).Where(ToNative).ToArray();
+        Require(writers.Length == 1 && Name(writers[0]) == "Copy", "Wheat must have one bounded native range writer.");
         var write = writers[0];
-        var guarded = write.Ancestors().OfType<TryStatementSyntax>().FirstOrDefault();
-        Require(guarded?.Finally != null, "Wheat writer must restore protection/cache in finally.");
-        var restore = Calls(guarded!.Finally!).SingleOrDefault(c => Name(c) == "VirtualProtect");
-        var flush = Calls(guarded.Finally!).SingleOrDefault(c => Name(c) == "FlushInstructionCache");
-        Require(restore != null && flush != null, "Wheat writer lost protection/cache restoration.");
-        static bool One(ExpressionSyntax e) => e is CastExpressionSyntax cast ? One(cast.Expression) :
-            e is LiteralExpressionSyntax literal && Convert.ToInt64(literal.Token.Value) == 1;
-        Require(One(restore!.ArgumentList.Arguments[1].Expression) && One(flush!.ArgumentList.Arguments[2].Expression), "Wheat restoration escaped its one-byte range.");
         var method = write.Ancestors().OfType<MethodDeclarationSyntax>().First();
-        var protect = Calls(method).FirstOrDefault(c => Name(c) == "VirtualProtect" && c.SpanStart < guarded.SpanStart);
-        Require(protect != null && One(protect.ArgumentList.Arguments[1].Expression), "Wheat write lost its one-byte protection preflight.");
+        var parameters = method.ParameterList.Parameters;
+        string protectName = parameters.Single(p => p.Type is IdentifierNameSyntax n && n.Identifier.ValueText == "ProtectMemory").Identifier.ValueText;
+        string flushName = parameters.Single(p => p.Type is GenericNameSyntax n && n.Identifier.ValueText == "Func").Identifier.ValueText;
+        string pointer = Text(write.ArgumentList.Arguments[2].Expression), length = Text(write.ArgumentList.Arguments[3].Expression);
+        string RangeSize(ExpressionSyntax node) => Text(node is CastExpressionSyntax cast ? cast.Expression : node);
+        bool SameRange(InvocationExpressionSyntax call) => Text(call.ArgumentList.Arguments[0].Expression) == pointer &&
+            RangeSize(call.ArgumentList.Arguments[1].Expression) == length;
+        var guarded = write.Ancestors().OfType<TryStatementSyntax>().FirstOrDefault(t => t.Finally != null);
+        Require(guarded != null, "Wheat writer must restore protection/cache in finally.");
+        var restore = Calls(guarded!.Finally!).SingleOrDefault(c => Name(c) == protectName);
+        var flush = Calls(guarded.Finally!).SingleOrDefault(c => Name(c) == flushName);
+        Require(restore != null && flush != null && SameRange(restore) && SameRange(flush), "Wheat restoration/cache escaped the write range.");
+        Require(flush!.Ancestors().OfType<FinallyClauseSyntax>().Any(f => f != guarded.Finally), "Restore failure must still synchronize the instruction cache.");
+        var protect = Calls(method).FirstOrDefault(c => Name(c) == protectName && c.SpanStart < guarded.SpanStart);
+        Require(protect != null && SameRange(protect), "Missing bounded protection preflight.");
         var protectionGate = protect!.Ancestors().OfType<IfStatementSyntax>().FirstOrDefault();
-        Require(protectionGate != null && Unwrap(protectionGate.Condition) is PrefixUnaryExpressionSyntax negate && negate.IsKind(SyntaxKind.LogicalNotExpression) && Unwrap(negate.Operand) == protect &&
-            protectionGate.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any(), "Denied memory protection does not prevent the write.");
-        var old = protect!.ArgumentList.Arguments[3].Expression;
+        Require(protectionGate != null && Unwrap(protectionGate.Condition) is PrefixUnaryExpressionSyntax negate &&
+            negate.IsKind(SyntaxKind.LogicalNotExpression) && Unwrap(negate.Operand) == protect &&
+            protectionGate.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any(), "Denied protection does not prevent writing.");
+        var old = protect.ArgumentList.Arguments[3].Expression;
         string oldName = old is DeclarationExpressionSyntax declaration ? Text(declaration.Designation) : Text(old);
-        Require(Text(restore!.ArgumentList.Arguments[2].Expression) == oldName, "Wheat restoration does not use the observed original protection.");
+        Require(Text(restore!.ArgumentList.Arguments[2].Expression) == oldName, "Restore must use the original protection.");
         var observed = method.DescendantNodes().OfType<VariableDeclaratorSyntax>().FirstOrDefault(v =>
             v.Initializer?.Value is InvocationExpressionSyntax c && Name(c) == "Check" && c.SpanStart < protect.SpanStart &&
-            c.ArgumentList.Arguments.Count == 3 && One(c.ArgumentList.Arguments[1].Expression) && c.ArgumentList.Arguments[2].Expression.IsKind(SyntaxKind.TrueLiteralExpression));
+            RangeSize(c.ArgumentList.Arguments[1].Expression) == length &&
+            c.ArgumentList.Arguments[2].Expression.IsKind(SyntaxKind.TrueLiteralExpression));
         Require(observed != null && guarded.Block.DescendantNodes().OfType<IfStatementSyntax>().Any(i =>
             Different(i.Condition, oldName, observed.Identifier.ValueText) && i.SpanStart < write.SpanStart &&
-            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()), "Wheat write lacks the observed-protection race check.");
+            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()), "Missing observed-protection race check.");
         Require(method.DescendantNodes().OfType<IfStatementSyntax>().Any(i => i.SpanStart > guarded.Span.End &&
-            i.Condition is BinaryExpressionSyntax compare && compare.IsKind(SyntaxKind.NotEqualsExpression) && Text(compare.Right) == oldName &&
-            compare.Left is InvocationExpressionSyntax check && Name(check) == "Check" &&
-            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()), "Wheat writer lost post-write protection verification.");
-        var pointer = Text(write.ArgumentList.Arguments[0].Expression);
-        Require(Text(protect.ArgumentList.Arguments[0].Expression) == pointer && Text(restore.ArgumentList.Arguments[0].Expression) == pointer &&
-            Text(flush!.ArgumentList.Arguments[1].Expression) == pointer, "Wheat protection/cache targets differ from its byte writer.");
+            i.Condition is BinaryExpressionSyntax compare && compare.IsKind(SyntaxKind.NotEqualsExpression) &&
+            Text(compare.Right) == oldName && compare.Left is InvocationExpressionSyntax check && Name(check) == "Check" &&
+            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()), "Missing post-write protection check.");
         var restored = restore.Ancestors().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
         var flushed = flush.Ancestors().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
         Require(restored != null && flushed != null && guarded.Finally!.DescendantNodes().OfType<IfStatementSyntax>().Any(i =>
-            Unwrap(i.Condition) is BinaryExpressionSyntax disjunction && disjunction.IsKind(SyntaxKind.LogicalOrExpression) &&
-            (Not(disjunction.Left, Text(restored.Left)) && Not(disjunction.Right, Text(flushed.Left)) || Not(disjunction.Right, Text(restored.Left)) && Not(disjunction.Left, Text(flushed.Left))) &&
-            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()),
-            "Wheat restoration/cache failure is not rejected.");
+            Unwrap(i.Condition) is BinaryExpressionSyntax either && either.IsKind(SyntaxKind.LogicalOrExpression) &&
+            (Not(either.Left, Text(restored.Left)) && Not(either.Right, Text(flushed.Left)) ||
+             Not(either.Right, Text(restored.Left)) && Not(either.Left, Text(flushed.Left))) &&
+            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()), "Restoration/cache failure is not rejected.");
+        Require(Calls(method).Count(c => IsCall(c, "FixesWheatAnalysis", "RequireEqual") && c.SpanStart < write.SpanStart) >= 2 &&
+            Calls(method).Any(c => IsCall(c, "FixesWheatAnalysis", "RequireEqual") && c.SpanStart > guarded.Span.End),
+            "Missing preimage/recheck/read-back validation.");
+        Require(method.DescendantNodes().OfType<VariableDeclaratorSyntax>().Any(v =>
+            v.Identifier.ValueText == length && v.Initializer?.Value is MemberAccessExpressionSyntax member &&
+            member.Name.Identifier.ValueText == "Length"), "Write length must come from the approved byte range.");
+        var bounded = method.Body!.Statements.OfType<IfStatementSyntax>().First();
+        Require(bounded.SpanStart < protect.SpanStart && bounded.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any() &&
+            bounded.Condition.DescendantNodesAndSelf().OfType<BinaryExpressionSyntax>().Any(b =>
+                b.IsKind(SyntaxKind.GreaterThanExpression) && b.Left is MemberAccessExpressionSyntax m &&
+                m.Name.Identifier.ValueText == "Length" && b.Right is LiteralExpressionSyntax n && n.Token.ValueText == "256"),
+            "Missing maximum validated-stub write bound.");
+        foreach (var call in Roots.SelectMany(Calls).Where(c => IsCall(c, "FixesWheatMemory", "WriteRangeCore") || Name(c) == "WriteRangeCore" && Owner(c)?.Identifier.ValueText == "FixesWheatMemory"))
+            Require(Owner(call)?.Identifier.ValueText == "FixesWheatMemory" &&
+                call.ArgumentList.Arguments.Any(a => Text(a.Expression) == "VirtualProtect") &&
+                Calls(call).Any(c => Name(c) == "FlushInstructionCache"), "Production range writer must use real OS protection/cache operations.");
         foreach (var type in Types.Where(t => t.Identifier.ValueText.StartsWith("FixesWheat", StringComparison.Ordinal) && t.Identifier.ValueText != "FixesWheatMemory"))
-            Require(!Calls(type).Any(c => Name(c) is "VirtualProtect" or "FlushInstructionCache" ||
-                c.Expression is MemberAccessExpressionSyntax a && Text(a.Expression).EndsWith("Marshal", StringComparison.Ordinal) && Name(c).StartsWith("Write", StringComparison.Ordinal)),
-                "Wheat executable writer escaped its memory owner.");
+            Require(!Calls(type).Any(c => Name(c) is "VirtualProtect" or "FlushInstructionCache" || ToNative(c)),
+                "Executable writer escaped its memory owner.");
     }
     internal void CheckLifecycle()
     {

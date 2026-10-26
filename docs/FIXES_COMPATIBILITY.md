@@ -2,35 +2,31 @@
 
 ## Behavior and limits
 
-APIShared has an optional `fixes` BepInEx dependency. With the audited Fixes
-installation, it corrects the wheat-sale inline hook's player-ID load once during
-synchronous plugin initialization. Fixes remains optional; no public API, new
-consumer dependency, simulation callback or configuration switch is introduced.
-Fixes' settings and per-player flags retain their meaning.
+APIShared optionally loads after Fixes and repairs supported wheat-sale inline
+hooks once during synchronous pre-game initialization. The legacy stack-load
+variant receives its derived one-byte operand correction. The division-based
+variant observed in Fixes 1.29.1 receives a corrected prefix inside the existing
+stub allocation. No public API, dependency requirement, setting or later callback
+is introduced. Fixes retains its hook, settings, flag storage and per-player flags.
 
-The incorrect load uses the saved caller RDI as a flag-array index. A managed
-detour can legitimately keep a profile pointer there, exposing an out-of-range
-read. The correction loads the actual player argument instead. This protects
-all callers reaching this particular hook, without changing their calling code.
+The legacy load indexed the flag array using saved caller RDI. The newer emitter
+has three separate defects: R9 has already become the previous good's stock when
+the seller reaches wheat; unsigned division puts the remainder in RDX, which is
+then used as the flag index; and restoring saved RCX discards the Resource category.
+The correction obtains the true player argument from its independently derived
+seller stack slot and retains the intended category result.
 
-Only `CORRECTED` and `ALREADY-CORRECT` confirm the fully validated stub.
-`NOT-NEEDED` means Fixes or its wheat hook was absent; it is not a protection
-claim. `REFUSED/UNCONFIRMED` means no confirmed protection, including errors after
-a write. Every outcome includes a timestamp with milliseconds. Other APIShared
-services continue. Unsupported native/game/backend contracts, unavailable startup
-evidence or memory access failures cause refusal, never a relaxed signature search
-or later retry. Since 2026-10-22 no component has an exact-version, maximum-version,
-whole-file-hash or fixed-address gate here: neither the game, Fixes, Script Extender,
-BepInEx, Unity, RedBird, Iced nor MonoMod. Loaded/disk module identities must agree,
-and the actual code must satisfy the derived contract below, so updates keep the
-correction working while that contract holds and refuse it when it does not.
+Only CORRECTED and ALREADY-CORRECT confirm the complete supported contract.
+NOT-NEEDED means Fixes or its hook was absent. REFUSED/UNCONFIRMED confirms no
+protection, including after a write whose protection/cache/read-back checks failed.
+Unknown implementations remain unchanged and other APIShared services continue.
+The error gives the global Fixes option to disable and requires a fresh process.
+No config, disk DLL or per-player flag is rewritten automatically.
 
-This is a deliberately narrow exception to permanent-hook immutability: one
-validated displacement byte of one known foreign stub, before normal game
-initialization. No disk DLL is changed. There is no rollback, teardown or
-map/settings-dependent executable mutation. The Fixes hook and its native state
-remain owned by Fixes. APIShared's native-site registry describes module RVAs;
-it does not misrepresent this dynamically allocated foreign stub as an owned RVA.
+The 2026-10-26 user-authorized exception extends the previous single-operand
+exception to one bounded prefix write in this one foreign hook, exclusively during
+the existing verified synchronous startup. It permits no other repatching, retry,
+rollback, teardown write or map/settings-dependent code mutation.
 
 ## Startup safety and lifecycle
 
@@ -77,57 +73,77 @@ readiness/capability contracts; no public timing guarantee is added.
 
 ## Native validation and write
 
-Derived contract (2026-10-22, `Compatibility/FixesWheatAnalysis`):
+The hook handle supplies the actual site, original displaced snapshot and stub.
+The loaded/disk module identities must agree. No exact version, whole-file hash
+or fixed address is an acceptance gate. The actual code determines support:
 
-- The hook site is the target of Fixes' own `c_game_ai_sell_item_handler_hook`; it
-  must lie in an executable section of the loaded CrusaderDE.dll. The backend's
-  displaced snapshot must equal the disk bytes at that site and decode to complete,
-  branch-free, non-RIP-relative and stack-neutral instructions. The live entry is the
-  backend's `jmp qword [rip+0]` to the stub plus NOP padding.
-- The seller is the function whose x64 unwind entry (`.pdata`) contains the site,
-  following chained fragments to the primary entry. Fragments may only save
-  registers; no frame register is allowed. The stack allocation comes from the
-  unwind codes and must equal the decoded prolog, which must store the untouched EDX
-  (second argument, the player) in its entry home slot `+0x10` exactly once. No
-  instruction of the seller or its fragments may write that slot or take its
-  address. The live prolog must equal the disk prolog (no foreign entry detour).
-- The Fixes stub is decoded up to its absolute jump back to `site + displaced`,
-  which must be preceded by the displaced instructions. It must contain balanced
-  push/pop pairs, exactly one stack load, a 32-bit `mov reg,[rsp+disp8]`, and that
-  register must index `cmp byte [flags+reg],0` after `mov flags, imm64` with the
-  actual `wheatSaleCategoryFlagArray` address (at least 9 flags). The required
-  displacement is the stub's pushed bytes plus allocation plus `0x10`; only that one
-  operand byte is written, and only when it differs.
+- The site must be executable, its live jump must target the handle's actual stub,
+  and its displaced snapshot must equal disk code and decode into complete,
+  branch-free, position-independent, stack-neutral instructions.
+- PE unwind information and decoded seller prolog derive the frame and player
+  home slot; writes overlapping any of its four bytes, indexed stack writes and
+  stack-address aliases are refused. The live prolog
+  must equal disk code. Existing startup/lock/provenance checks remain mandatory.
+- Decode at most 256 bytes through the absolute continuation to site + displaced.
+  The displaced instructions must immediately precede that return.
+- Reassemble each supported complete prefix using the actual stub address, flag
+  pointer, flag-array length, derived stack slot and installed Extender enums/layout.
+  Compare every byte, including branches, register operations and constant operands.
+  A plausible stack load or recognizable flag access alone never suffices.
+- A supported legacy prefix may vary its stack displacement; only its single
+  displacement byte changes. Already-correct legacy code receives no write.
+- The supported division prefix is replaced with a bounded stack-load prefix.
+  It preserves RDX/R8, tests wheat, loads EDX from player-home + 16, rejects
+  unsigned indices at or beyond the flag-array length, tests that player's flag,
+  and sets ECX to Resource only when enabled. RCX is deliberately not restored.
+  R9 is untouched and no division is performed.
+- The replacement must fit the existing prefix. Pad the remaining prefix bytes
+  with NOPs; retain displaced instructions and the return at their original
+  addresses. The same validated replacement is recognized without writing again.
 
-The audited installation and its earlier exact byte contracts remain documented in
-[UpdateToNewDLL](../UpdateToNewDLL.md#fixes-wheat-sale-startup-correction) as observations.
-The paragraph below records the state before 2026-10-22.
-The tested installation uses Fixes 1.26.5 and Script Extender 2.14.2. These are
-observations, not accepted-version limits. The installed Fixes emitter still
-loads the wrong stack slot. An emitter already using the audited correct slot is
-also supported and must cause no write. Unity byte-loaded Assembly-CSharp and
-UnityEngine.CoreModule use their canonical GameRootPath images, including
-SHA-256, full assembly name and loaded/disk MVID, rather than their empty Location.
-The native module is obtained from its loaded module handle and hashed at that
-module's path. Game and backend identities are hash-bound; Fixes/Extender module
-provenance uses full assembly name and disk/loaded MVID agreement. The Fixes
-static HookHandle and NativeFlagArray are obtained by
-exact typed reflection; no Fixes assembly reference is linked.
+The observed 1.29.1 emitter has a 61-byte prefix and a 94-byte complete stub.
+The corrected prefix uses 47 bytes with the current frame/flag length, leaving
+14 NOP bytes. These are dated observations, not fixed runtime capacities.
 
-Validation covers the backend's installed state, resolved/target address,
-displaced byte count and original snapshot; live entry jump and padding; Vanilla
-prolog; flag-array length/address; and all 75 stub bytes, including both branches,
-push/pop pairs, displaced instructions and absolute return. Only the flag pointer,
-return address and the two explicitly allowed displacement values vary. The
-first two must match their independently verified objects/addresses.
+The internal analysis returns full before/after snapshots and exactly one allowed
+write range. Before writing, recheck startup, native entry/prolog and the full
+snapshot. The memory owner accepts equal nonempty expected/replacement ranges of
+at most 256 bytes, within one committed readable executable VirtualQuery region.
+It compares the preimage before and under writable protection. Only that range is
+copied; finally restores the exact original protection and synchronizes the same
+instruction-cache range, even if restoration fails. Verify protection and read
+back the replacement, then compare the complete snapshot and corrected contract.
 
-VirtualQuery requires committed, readable ranges and executable code ranges,
-without guard pages or region crossings. VirtualProtect changes only the page
-containing the operand, with the exact previous protection restored in finally;
-FlushInstructionCache follows. The complete stub is read back and compared with
-the original snapshot except for the single permitted byte. Entry/prolog are
-revalidated. Restoration/cache errors never report success and never trigger a
-second write or undo. The code has no later hot-path overhead.
+Failures after the write boundary report unconfirmed protection. They never
+trigger a second correction or attempt to restore published executable code.
+Production always uses real Win32 protection/cache operations; a narrow internal
+OS-call seam lets the existing private-memory tests cover errors and exceptions.
+There is no new game hook, executable allocation or managed simulation work.
+
+## Current verification and acceptance
+
+The existing integration test invokes a private copy of the installed Fixes
+emitter with only its flag-address provider substituted. It applies production
+analysis/writing and executes the corrected machine code in private memory.
+Historical wrong/correct stack emitters and the current division emitter are
+covered, including players 1..8, independent flags, non-wheat goods, unrelated old
+stack slots/R9 stocks, invalid indices for the bounded prefix, stack/GPR/XMM
+sentinels, replayed original instructions and repeat no-op behavior.
+
+Negative cases cover changed prefix instructions/padding, flag pointers, return
+and displaced bytes, truncated/unsupported bodies, changed preimages, denied
+protection, region crossings and protection/cache/read-back failures. Source
+guardrails retain single startup ownership and one bounded native writer.
+
+These are offline/native-fixture guarantees, not Unity or real-peer acceptance.
+Fresh-process startup, repeated save loading, editor, actual AI wheat trades and
+matching-build host/client behavior still require gameplay acceptance. No successful
+offline build or menu startup substitutes for these cases.
+
+## Historical integration notes
+
+The following records describe the earlier implementation and its pending work
+at that time. They do not override the current contract and verification above.
 
 ## Integration review and pending acceptance
 

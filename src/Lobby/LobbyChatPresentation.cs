@@ -61,6 +61,14 @@ namespace APIShared.Lobby
             try { Hook.Original(self, name, text, colour, Dispatch.Classify(name, text, system)); }
             finally { classifying = false; }
         }
+        // Renders a local system hint through Vanilla's receiver without network traffic or reclassification.
+        // Vanilla's receiver only appends to the lobby chat list, flags the Coop chat and refreshes the view.
+        internal static bool TryShowLocal(FRONT_Multiplayer view, string text)
+        {
+            if (!IsAvailable || ReferenceEquals(view, null) || Thread.CurrentThread.ManagedThreadId != mainThread) return false;
+            Hook.Original(view, string.Empty, text, -1, true);
+            return true;
+        }
         private static void Report(string detail) => NativeApiLog.Error(log, "Lobby system message: " + detail);
     }
     internal sealed class LobbyChatPresentationDispatch

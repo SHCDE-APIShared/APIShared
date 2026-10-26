@@ -66,6 +66,19 @@ Only unpublished failures clean up. Tests and public limits:
 
 ## Fixes wheat-sale startup correction
 
+**2026-10-26 contract extension:** the supported division-based emitter receives
+one bounded in-place prefix replacement during the same verified startup window.
+The full prefix must match a freshly assembled contract; its replacement loads
+the player from the derived stack home, bounds the flag index and retains ECX's
+category result. Existing allocation, native jump, displaced instructions and
+continuation retain their addresses. Observed Fixes 1.29.1: 61-byte prefix,
+94-byte complete stub, corrected body 47 bytes plus 14 NOPs. These lengths are
+observations; fitting and full pre/post validation are mandatory. No version or
+hash bypass, late retry or rollback is introduced. Legacy one-byte repair remains
+supported. Existing native execution and memory/error tests cover both forms.
+The historical identities and exact layouts below remain historical evidence;
+see the current [contract](docs/FIXES_COMPATIBILITY.md#native-validation-and-write).
+
 Owner: internal `Compatibility/FixesWheatStartup`; foreign hook ownership stays
 with Fixes. See [startup safety, behavior and test limits](docs/FIXES_COMPATIBILITY.md).
 

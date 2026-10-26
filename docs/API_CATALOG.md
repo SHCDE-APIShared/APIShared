@@ -68,7 +68,8 @@ an independent, pair-validated bootstrap companion. It adds no public API and ha
 not yet passed the transferred assembly's game/package-lifecycle acceptance.
 
 The internal [Fixes wheat-sale compatibility correction](FIXES_COMPATIBILITY.md)
-runs once at verified startup, after the optional Fixes plugin. It adds no public
+runs once at verified startup, after the optional Fixes plugin. It repairs the
+supported legacy stack load and division-based prefix in place. It adds no public
 API and refuses unknown binary/startup contracts independently of public services.
 
 Opt-in [Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md)
@@ -611,4 +612,6 @@ sends packets, changes text or authorizes gameplay. Registrations are process-li
 
 `APIShared.Lobby.LobbyLaunchStatus` collects owner-bound launch status providers and
 announces deduplicated "please wait", "start blocked" and "ready" lobby messages, so
-players learn why Start is unavailable. Consumers keep their checks and enforcement.
+players learn why Start is unavailable. The host is the only sender of automatic
+announcements; lobby members show their own entries locally unless an entry is marked
+`LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.

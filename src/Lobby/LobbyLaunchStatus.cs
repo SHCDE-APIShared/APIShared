@@ -24,6 +24,16 @@ namespace APIShared.Lobby
         Waiting = 2,
     }
 
+    /// <summary>Who sees an entry reported while the local player is a lobby member rather than the host.</summary>
+    /// <remarks>The host always announces its entries to the whole lobby.</remarks>
+    public enum LobbyLaunchStatusScope
+    {
+        /// <summary>Shown only in the local lobby chat. Use it for states the host already reports for every player.</summary>
+        Local = 0,
+        /// <summary>Sent to the whole lobby. Use it for local conditions the host cannot detect, such as a missing file.</summary>
+        Lobby = 1,
+    }
+
     /// <summary>The lobby command a consumer rejected; APIShared supplies the localized label.</summary>
     public enum LobbyLaunchOperation
     {
@@ -36,13 +46,18 @@ namespace APIShared.Lobby
     /// <summary>One immutable, player-facing launch status entry.</summary>
     public sealed class LobbyLaunchStatusItem
     {
-        /// <summary>Creates an entry. <paramref name="text"/> is sent to lobby chat in the sender's language;
-        /// <paramref name="detail"/> is written only to the local log.</summary>
+        /// <summary>Creates a <see cref="LobbyLaunchStatusScope.Local"/> entry. <paramref name="text"/> is shown in lobby
+        /// chat in the sender's language; <paramref name="detail"/> is written only to the local log.</summary>
         public LobbyLaunchStatusItem(string text, LobbyLaunchStatusKind kind = LobbyLaunchStatusKind.Blocking, string detail = null)
+            : this(text, kind, detail, LobbyLaunchStatusScope.Local) { }
+
+        /// <summary>Creates an entry with an explicit audience; <paramref name="scope"/> applies to lobby members.</summary>
+        public LobbyLaunchStatusItem(string text, LobbyLaunchStatusKind kind, string detail, LobbyLaunchStatusScope scope)
         {
             Text = (text ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
             Kind = kind;
             Detail = detail ?? string.Empty;
+            Scope = scope;
         }
         /// <summary>Localized text; its ordinal value identifies the entry for deduplication.</summary>
         public string Text { get; }
@@ -50,6 +65,8 @@ namespace APIShared.Lobby
         public LobbyLaunchStatusKind Kind { get; }
         /// <summary>Technical log detail; never sent to other players.</summary>
         public string Detail { get; }
+        /// <summary>Audience of the entry while the local player is a lobby member; ignored on the host.</summary>
+        public LobbyLaunchStatusScope Scope { get; }
     }
 
     /// <summary>Lobby passed to providers during one refresh.</summary>
@@ -70,21 +87,31 @@ namespace APIShared.Lobby
     /// Consumers keep their own launch checks and enforcement; this service only explains them. Providers are
     /// permanent owner/ID registrations that run synchronously on the Unity thread in ordinal owner/ID order whenever
     /// a coalesced refresh runs, and only while the local player is in an active Steam multiplayer lobby outside a
-    /// mission. Provider exceptions are isolated and logged. A loading phase is announced once as a wait hint when it
-    /// begins; each loading entry is announced
+    /// mission. Provider exceptions are isolated and logged.
+    /// <para>Audience: the host is the only sender of automatic announcements for the whole lobby. On a lobby member,
+    /// <see cref="LobbyLaunchStatusScope.Local"/> entries are only shown in the local lobby chat as Vanilla system
+    /// hints (no network traffic, visible in muted chat), and <see cref="LobbyLaunchStatusScope.Lobby"/> entries are
+    /// sent to everyone. Lobby members never announce "ready". A line that another player sent within the last five
+    /// seconds is not sent or shown again. In a Coop lobby, a received or locally shown announcement opens the
+    /// collapsed Coop chat the way Vanilla's chat button does; other chat messages keep Vanilla's behavior.</para>
+    /// <para>Timing: a loading phase is announced once as a wait hint when it begins; each loading entry is announced
     /// once more as blocking after 20 seconds; blocking entries are announced when they first appear; waiting entries
-    /// are never announced. A single "ready" announcement follows when every previously announced entry has
-    /// disappeared and no waiting entry remains. Identical texts are
-    /// announced once per lobby until they disappear. Each refresh sends at most one message per category; long
-    /// messages are split into numbered parts of at most 280 characters at word boundaries. Received announcements
-    /// are classified as lobby system hints. There is no replay or teardown.
+    /// are never announced. On the host, a single "ready" announcement follows once every previously announced entry
+    /// has disappeared, no waiting entry remains and that state has lasted 1.5 seconds. A rejected command reported
+    /// through <see cref="ReportAttempt"/> does not arm "ready". Identical texts are announced once per lobby until
+    /// they disappear. Each refresh sends at most one message per category; long messages are split into numbered
+    /// parts of at most 280 characters at word boundaries. Received announcements are classified as lobby system
+    /// hints. There is no replay or teardown.</para>
     /// </remarks>
     public static class LobbyLaunchStatus
     {
         internal const string Marker = "[Mods] ";
         private static readonly OwnedCallbacks<Func<LobbyLaunchStatusQuery, IEnumerable<LobbyLaunchStatusItem>>> Providers =
             new OwnedCallbacks<Func<LobbyLaunchStatusQuery, IEnumerable<LobbyLaunchStatusItem>>>();
-        private static readonly LobbyLaunchAnnouncementState State = new LobbyLaunchAnnouncementState();
+        // Broadcast: host entries, or a member's Lobby-scope entries. LocalOnly: a member's Local-scope entries.
+        private static readonly LobbyLaunchAnnouncementState Broadcast = new LobbyLaunchAnnouncementState();
+        private static readonly LobbyLaunchAnnouncementState LocalOnly = new LobbyLaunchAnnouncementState();
+        private static readonly LobbyLaunchReceivedLines Received = new LobbyLaunchReceivedLines();
         private static readonly object TimerGate = new object();
         private static ManualLogSource log;
         private static Timer dueTimer;
@@ -112,9 +139,9 @@ namespace APIShared.Lobby
 
         /// <summary>Reports a Ready/Start command the owner has just rejected.</summary>
         /// <remarks>Call it where the command was rejected, normally the Unity thread; other threads are marshalled.
-        /// The entry is always logged as an error. In an active lobby it is announced without waiting for a refresh
-        /// unless the same text was sent within the last two seconds, and it counts as already announced for later
-        /// automatic refreshes.</remarks>
+        /// The entry is always logged as an error. In an active lobby the rejecting player sends it to the whole lobby
+        /// without waiting for a refresh, unless the same text was sent within the last two seconds; the item's scope
+        /// is ignored. It counts as already announced for later automatic refreshes but does not arm "ready".</remarks>
         public static void ReportAttempt(string ownerGuid, LobbyLaunchOperation operation, LobbyLaunchStatusItem item)
         {
             if (item == null || item.Text.Length == 0) return;
@@ -133,10 +160,14 @@ namespace APIShared.Lobby
         {
             try
             {
-                if (TryGetLobby(out ulong lobbyId, out _, out _) &&
-                    State.ShouldAnnounceAttempt(lobbyId.ToString(), item.Text, DateTime.UtcNow))
+                DateTime now = DateTime.UtcNow;
+                if (TryGetLobby(out ulong lobbyId, out bool isHost, out _) &&
+                    Broadcast.ShouldAnnounceAttempt(Scope(lobbyId, isHost), item.Text, now))
+                {
+                    LocalOnly.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
                     Send(LobbyLaunchChat.Format(Prefix(LobbyLaunchAnnouncementKind.Blocked) + " (" + OperationText(operation) + ")",
-                        new[] { item.Text }));
+                        new[] { item.Text }), now);
+                }
             }
             catch (Exception error) { Report(false, "LOBBY_LAUNCH_ATTEMPT_FAILED: " + error, null); }
             RequestRefresh();
@@ -160,6 +191,8 @@ namespace APIShared.Lobby
         {
             if (!IsAnnouncement(message.Message)) return false;
             DateTime now = DateTime.UtcNow;
+            Received.Note(message.Message, now);
+            RevealCoopChat();
             // Multi-part announcements and duplicate deliveries are logged once.
             if (message.Message != lastReceived || (now - lastReceivedUtc).TotalSeconds >= 2)
             {
@@ -176,7 +209,9 @@ namespace APIShared.Lobby
             {
                 if (!TryGetLobby(out ulong lobbyId, out bool isHost, out FRONT_Multiplayer view))
                 {
-                    State.Reset();
+                    Broadcast.Reset();
+                    LocalOnly.Reset();
+                    Received.Clear();
                     Schedule(null);
                     return;
                 }
@@ -191,30 +226,80 @@ namespace APIShared.Lobby
                     }
                     catch (Exception error) { Report(true, "LOBBY_LAUNCH_PROVIDER_FAILED " + entry.Owner + "/" + entry.Id + ": " + error, null); }
                 }
-                IReadOnlyList<LobbyLaunchAnnouncement> announcements =
-                    State.Observe(lobbyId.ToString(), items, DateTime.UtcNow, out DateTime? due);
-                foreach (LobbyLaunchAnnouncement announcement in announcements)
-                {
-                    string context = "lobby=" + lobbyId + ", role=" + (isHost ? "host" : "client");
-                    if (announcement.Kind == LobbyLaunchAnnouncementKind.Ready)
-                        NativeApiLog.Info(log, "LOBBY_LAUNCH_READY " + context);
-                    else
-                        foreach (string text in announcement.Texts)
-                        {
-                            string detail = string.Join("; ", items.Where(item => item.Text == text && item.Detail.Length != 0)
-                                .Select(item => item.Detail).Distinct(StringComparer.Ordinal));
-                            if (announcement.Kind == LobbyLaunchAnnouncementKind.Loading)
-                                NativeApiLog.Info(log, "LOBBY_LAUNCH_LOADING " + context + ": " + text + (detail.Length == 0 ? "" : "; " + detail));
-                            else Report(false, "LOBBY_LAUNCH_BLOCKED " + context + ": " + text, detail);
-                        }
-                    Send(announcement.Kind == LobbyLaunchAnnouncementKind.Ready
-                        ? new[] { Marker + UiText.Get("LobbyLaunch.Ready") }
-                        : LobbyLaunchChat.Format(Prefix(announcement.Kind), announcement.Texts));
-                }
-                Schedule(due);
+                string scope = Scope(lobbyId, isHost);
+                string context = "lobby=" + lobbyId + ", role=" + (isHost ? "host" : "client");
+                DateTime now = DateTime.UtcNow;
+                // The host reports every player's state; members only send what the host cannot detect.
+                List<LobbyLaunchStatusItem> shared = isHost ? items : items.Where(item => item.Scope == LobbyLaunchStatusScope.Lobby).ToList();
+                List<LobbyLaunchStatusItem> local = isHost ? new List<LobbyLaunchStatusItem>() :
+                    items.Where(item => item.Scope == LobbyLaunchStatusScope.Local).ToList();
+                Publish(Broadcast.Observe(scope, shared, now, isHost, out DateTime? sharedDue), items, context, null, now);
+                Publish(LocalOnly.Observe(scope, local, now, false, out DateTime? localDue), items, context + ", audience=local", view, now);
+                Schedule(!sharedDue.HasValue || localDue.HasValue && localDue.Value < sharedDue.Value ? localDue : sharedDue);
             }
             catch (Exception error) { Report(true, "LOBBY_LAUNCH_REFRESH_FAILED: " + error, null); }
         }
+
+        // localView == null sends to the lobby; otherwise the lines are shown only in the local lobby chat.
+        private static void Publish(IReadOnlyList<LobbyLaunchAnnouncement> announcements, List<LobbyLaunchStatusItem> items,
+            string context, FRONT_Multiplayer localView, DateTime now)
+        {
+            foreach (LobbyLaunchAnnouncement announcement in announcements)
+            {
+                if (announcement.Kind == LobbyLaunchAnnouncementKind.Ready)
+                    NativeApiLog.Info(log, "LOBBY_LAUNCH_READY " + context);
+                else
+                    foreach (string text in announcement.Texts)
+                    {
+                        string detail = string.Join("; ", items.Where(item => item.Text == text && item.Detail.Length != 0)
+                            .Select(item => item.Detail).Distinct(StringComparer.Ordinal));
+                        if (announcement.Kind == LobbyLaunchAnnouncementKind.Loading)
+                            NativeApiLog.Info(log, "LOBBY_LAUNCH_LOADING " + context + ": " + text + (detail.Length == 0 ? "" : "; " + detail));
+                        else Report(false, "LOBBY_LAUNCH_BLOCKED " + context + ": " + text, detail);
+                    }
+                string[] lines = announcement.Kind == LobbyLaunchAnnouncementKind.Ready
+                    ? new[] { Marker + UiText.Get("LobbyLaunch.Ready") }
+                    : LobbyLaunchChat.Format(Prefix(announcement.Kind), announcement.Texts);
+                if (ReferenceEquals(localView, null)) Send(lines, now);
+                else ShowLocal(localView, lines, now);
+            }
+        }
+
+        private static void ShowLocal(FRONT_Multiplayer view, IEnumerable<string> lines, DateTime now)
+        {
+            try
+            {
+                foreach (string line in lines)
+                {
+                    if (Received.Contains(line, now)) continue;
+                    if (LobbyChatPresentation.TryShowLocal(view, line)) RevealCoopChat();
+                    else Report(false, "LOBBY_LAUNCH_LOCAL_UNAVAILABLE: " + line, null);
+                }
+            }
+            catch (Exception error)
+            {
+                LocalOnly.Reset();
+                Report(false, "LOBBY_LAUNCH_LOCAL_FAILED: " + error, null);
+            }
+        }
+
+        // Coop lobbies collapse their chat by default and only flag new messages. An announcement opens it exactly like
+        // Vanilla's "ChatToggle" button (visible flag set, new-message flag cleared). Where Vanilla offers no Coop
+        // chat (Show_CoopConnectedChat false), nothing changes.
+        private static void RevealCoopChat()
+        {
+            try
+            {
+                MainViewModel model = MainViewModel.Instance;
+                if (!FRONT_Multiplayer.coopGame || ReferenceEquals(model, null) || !model.Show_CoopConnectedChat ||
+                    model._show_CoopConnectedChatVisible) return;
+                model.Show_CoopConnectedChatVisible = true;
+                model.CoopNewChatVis = false;
+            }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_CHAT_REVEAL_FAILED: " + error, null); }
+        }
+
+        private static string Scope(ulong lobbyId, bool isHost) => lobbyId + (isHost ? ":host" : ":member");
 
         private static void Schedule(DateTime? dueUtc)
         {
@@ -226,16 +311,22 @@ namespace APIShared.Lobby
             }
         }
 
-        private static void Send(IEnumerable<string> messages)
+        private static void Send(IEnumerable<string> messages, DateTime now)
         {
             try
             {
-                foreach (string message in messages) Platform_Multiplayer.Instance.SendLobbyChatMessage(message);
+                foreach (string message in messages)
+                {
+                    // Another player has just sent the same line, e.g. two members with the same local problem.
+                    if (Received.Contains(message, now)) continue;
+                    Received.ExpectEcho(message, now);
+                    Platform_Multiplayer.Instance.SendLobbyChatMessage(message);
+                }
             }
             catch (Exception error)
             {
                 // A later refresh announces the current state again instead of assuming delivery.
-                State.Reset();
+                Broadcast.Reset();
                 Report(false, "LOBBY_LAUNCH_SEND_FAILED: " + error, null);
             }
         }
@@ -287,16 +378,18 @@ namespace APIShared.Lobby
     {
         internal static readonly TimeSpan LoadingEscalation = TimeSpan.FromSeconds(20);
         internal static readonly TimeSpan AttemptThrottle = TimeSpan.FromSeconds(2);
+        internal static readonly TimeSpan ReadyDelay = TimeSpan.FromSeconds(1.5);
         private string scope = string.Empty;
         private readonly Dictionary<string, DateTime> loadingSince = new Dictionary<string, DateTime>(StringComparer.Ordinal);
         private readonly HashSet<string> announcedBlocking = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<string, DateTime> attempts = new Dictionary<string, DateTime>(StringComparer.Ordinal);
         private bool readyPending, loadingPhase;
+        private DateTime? emptySince;
 
         internal void Reset()
         {
             scope = string.Empty; loadingSince.Clear(); announcedBlocking.Clear();
-            attempts.Clear(); readyPending = loadingPhase = false;
+            attempts.Clear(); readyPending = loadingPhase = false; emptySince = null;
         }
 
         internal bool ShouldAnnounceAttempt(string currentScope, string text, DateTime now)
@@ -305,13 +398,19 @@ namespace APIShared.Lobby
             if (attempts.TryGetValue(text, out DateTime last) && now - last < AttemptThrottle) return false;
             attempts[text] = now;
             if (attempts.Count > 128) { attempts.Clear(); attempts[text] = now; }
+            // A rejected command does not arm "ready": only provider entries describe a state that can end.
             announcedBlocking.Add(text);
-            readyPending = true;
             return true;
         }
 
+        internal void MarkAnnounced(string currentScope, string text)
+        {
+            EnterScope(currentScope);
+            announcedBlocking.Add(text);
+        }
+
         internal IReadOnlyList<LobbyLaunchAnnouncement> Observe(string currentScope, IEnumerable<LobbyLaunchStatusItem> items,
-            DateTime now, out DateTime? nextDue)
+            DateTime now, bool announceReady, out DateTime? nextDue)
         {
             EnterScope(currentScope);
             var loading = new List<string>();
@@ -334,26 +433,38 @@ namespace APIShared.Lobby
             // Escalated loading entries are announced as blocking and tracked like blocking entries.
             var due = loading.Where(text => now - loadingSince[text] >= LoadingEscalation).ToList();
             var currentBlocking = blocking.Concat(due).ToList();
-            announcedBlocking.IntersectWith(currentBlocking);
-
             var result = new List<LobbyLaunchAnnouncement>();
             var pendingLoading = loading.Except(due, StringComparer.Ordinal).ToArray();
-            // One wait hint per loading phase: texts that change while players load are not repeated.
+            // One wait hint per loading phase: texts that change while players load are not repeated. A reason the
+            // players have just seen as a rejected command is not repeated as a wait hint either.
             if (pendingLoading.Length != 0 && !loadingPhase)
-                result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Loading, pendingLoading));
+            {
+                string[] hint = pendingLoading.Where(text => !announcedBlocking.Contains(text)).ToArray();
+                if (hint.Length != 0) result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Loading, hint));
+            }
             loadingPhase = loading.Count != 0;
+            announcedBlocking.IntersectWith(currentBlocking);
             if (currentBlocking.Any(text => !announcedBlocking.Contains(text)))
                 result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Blocked, currentBlocking.ToArray()));
             announcedBlocking.UnionWith(currentBlocking);
 
-            if (result.Count != 0) readyPending = true;
-            else if (readyPending && !waiting && loading.Count == 0 && blocking.Count == 0)
+            // Every loading or blocking entry has been communicated, by this state or as a rejected command, so its
+            // end is announced. A rejected command alone (no provider entry) never arms "ready".
+            bool reported = loading.Count != 0 || blocking.Count != 0;
+            if (reported && announceReady) readyPending = true;
+            if (reported || waiting || !readyPending) emptySince = null;
+            else
             {
-                readyPending = false;
-                result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Ready, Array.Empty<string>()));
+                // A single empty refresh, e.g. right after a rejected click, must not claim readiness.
+                if (!emptySince.HasValue) emptySince = now;
+                if (now - emptySince.Value >= ReadyDelay)
+                {
+                    readyPending = false; emptySince = null;
+                    result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Ready, Array.Empty<string>()));
+                }
             }
 
-            nextDue = null;
+            nextDue = emptySince.HasValue ? emptySince.Value + ReadyDelay : (DateTime?)null;
             foreach (string text in pendingLoading)
             {
                 DateTime candidate = loadingSince[text] + LoadingEscalation;
@@ -367,6 +478,37 @@ namespace APIShared.Lobby
             if (string.Equals(scope, currentScope ?? string.Empty, StringComparison.Ordinal)) return;
             Reset();
             scope = currentScope ?? string.Empty;
+        }
+    }
+
+    // Announcement lines recently received from other players. Unity thread only.
+    internal sealed class LobbyLaunchReceivedLines
+    {
+        internal static readonly TimeSpan Window = TimeSpan.FromSeconds(5);
+        private const int Capacity = 64;
+        private readonly Dictionary<string, DateTime> received = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+        private readonly Dictionary<string, DateTime> echoes = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+
+        internal void Clear() { received.Clear(); echoes.Clear(); }
+
+        // Steam delivers a sent lobby line back to its sender; that echo must not suppress the sender's own retry.
+        internal void ExpectEcho(string line, DateTime now) => Put(echoes, line, now);
+
+        internal void Note(string line, DateTime now)
+        {
+            if (echoes.TryGetValue(line, out DateTime sent) && now - sent < Window) { echoes.Remove(line); return; }
+            Put(received, line, now);
+        }
+
+        internal bool Contains(string line, DateTime now) => received.TryGetValue(line, out DateTime at) && now - at < Window;
+
+        private static void Put(Dictionary<string, DateTime> lines, string line, DateTime now)
+        {
+            if (lines.Count >= Capacity)
+                foreach (string old in lines.Where(entry => now - entry.Value >= Window).Select(entry => entry.Key).ToArray())
+                    lines.Remove(old);
+            if (lines.Count >= Capacity) lines.Clear();
+            lines[line] = now;
         }
     }
 

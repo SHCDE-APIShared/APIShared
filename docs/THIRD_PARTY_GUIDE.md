@@ -96,6 +96,8 @@ APIShared optionally loads after Fixes for its audited
 [wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
 is required. Check its explicit outcome log; APIShared being present does not
 prove that an unknown Fixes binary was corrected.
+Supported legacy stack-load and division-based wheat hooks are corrected inside
+their existing allocations; no consumer adapter or settings migration is needed.
 
 Unused observation services do not scan or prepare events. Register player-defeat
 observers before the first simulation tick if early transitions matter: the first
@@ -1499,7 +1501,7 @@ Mods that enforce their own Ready/Start checks register a provider with
 `TryRegisterProvider(owner, id, provider, out diagnostic)`. The provider receives a
 `LobbyLaunchStatusQuery` (lobby ID, host role and the Vanilla view, valid only during
 the call) and returns the current `LobbyLaunchStatusItem` entries: localized `Text`,
-`Kind` and a log-only `Detail`. Use `Loading` for expected transitional states, such as
+`Kind`, a log-only `Detail` and a `Scope` for lobby members. Use `Loading` for expected transitional states, such as
 a joining player still loading the selected mission; use `Blocking` for conditions
 that require action; use `Waiting` for an obvious open-ended wait, such as a missing
 second player, which is never announced but suppresses the "ready" message while it
@@ -1507,14 +1509,28 @@ lasts. Call `RequestRefresh()` from any thread when a provider input
 changes, and `ReportAttempt(owner, operation, item)` right after rejecting a
 Ready/Start command (calls from other threads are marshalled to the Unity thread). The service never blocks a command itself.
 
+The host is the only sender of automatic announcements for the whole lobby, so its
+provider should report every player's state (for example, which players still load).
+On a lobby member, `LobbyLaunchStatusScope.Local` entries (the default) are only shown
+in the member's own lobby chat as Vanilla system hints, without network traffic and
+also in muted chat. Mark an entry `LobbyLaunchStatusScope.Lobby` when it describes a
+local condition the host cannot detect, such as a missing file or a required restart;
+it is then sent to everyone. A line another player sent within the last five seconds
+is not sent or shown again, so several members with the same problem in the same
+language produce one line. In a Coop lobby, whose chat Vanilla keeps collapsed, a
+received or locally shown announcement opens the chat like Vanilla's chat button;
+ordinary chat messages keep Vanilla's behavior.
+
 Providers run synchronously on the Unity thread in ordinal owner/ID order, only in
 an active Steam multiplayer lobby outside a mission; failures are isolated and
 logged. A loading phase is announced once as a neutral wait hint when it begins;
 each loading entry that persists for 20 seconds is announced once as blocking. Blocking entries are announced when they first appear;
 an unchanged or shrinking set sends nothing, a reappearing entry is announced again.
-After any announcement, one "ready" message follows when no entry remains. A rejected
-command is announced immediately (at most every two seconds per text) and is not
-repeated by the next refresh. Messages are split into numbered parts of at most
+After any host announcement, one "ready" message follows once no entry has remained
+for 1.5 seconds; lobby members never announce "ready". A rejected command is sent to
+the lobby by the rejecting player immediately (at most every two seconds per text),
+is not repeated by the next refresh (neither as block nor as wait hint) and does not
+arm "ready" by itself. Messages are split into numbered parts of at most
 280 characters at word boundaries, start with a fixed marker recognized by
 `IsAnnouncement`, and are classified as lobby system hints on every receiver with
 APIShared. Logs record loading as info, automatic blocks as warnings and rejected
