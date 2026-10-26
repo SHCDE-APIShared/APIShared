@@ -56,7 +56,7 @@ Internal snapshot application suppresses intermediate transport/storage, isolate
 failing reflected setters (code-default fallback) and retains failed cleanup for a
 bounded retry. The managed Extender settings receiver dispatches copied
 packets to the shared Unity FIFO with lobby/session invalidation and original sender
-validation. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
+validation; a multiplayer start applies them before its map loads. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 `MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
 materialization. See [mission application](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 
@@ -608,3 +608,7 @@ See [integration and lifetime](THIRD_PARTY_GUIDE.md#multiplayer-map-lookup-and-l
 `APIShared.Lobby.LobbyChatPresentation` registers owner-bound predicates that classify
 received lobby text as a system hint. It preserves the original renderer and never
 sends packets, changes text or authorizes gameplay. Registrations are process-lived.
+
+`APIShared.Lobby.LobbyLaunchStatus` collects owner-bound launch status providers and
+announces deduplicated "please wait", "start blocked" and "ready" lobby messages, so
+players learn why Start is unavailable. Consumers keep their checks and enforcement.
