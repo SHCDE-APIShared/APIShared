@@ -30,13 +30,13 @@ namespace APIShared.Workshop
         internal int Completed, Total;
         internal string LastCompleted, Pending;
 
-        internal string Describe(bool german)
+        internal string Describe(bool german) => Describe(german ? "de-DE" : "en-US");
+        internal string Describe(string locale)
         {
-            if (!Reliable) return german ? "Fortschritt nicht zuverlässig bestimmbar." : "Progress cannot be determined reliably.";
-            string text = german ? Completed + " von " + Total + " Operationen als abgeschlossen protokolliert."
-                : Completed + " of " + Total + " operations recorded as completed.";
-            if (LastCompleted != null) text += "\n" + (german ? "Zuletzt abgeschlossen: " : "Last completed: ") + LastCompleted;
-            if (Pending != null) text += "\n" + (german ? "Begonnen, ohne protokollierten Abschluss: " : "Started without a recorded completion: ") + Pending;
+            if (!Reliable) return Localization.UiText.ForLocale(locale, "Workshop.Recovery.Unreliable");
+            string text = Localization.UiText.ForLocale(locale, "Workshop.Recovery.Progress", "Completed", Completed, "Total", Total);
+            if (LastCompleted != null) text += "\n" + Localization.UiText.ForLocale(locale, "Workshop.Recovery.Last", "Value", LastCompleted);
+            if (Pending != null) text += "\n" + Localization.UiText.ForLocale(locale, "Workshop.Recovery.Pending", "Value", Pending);
             return text;
         }
     }
@@ -49,11 +49,9 @@ namespace APIShared.Workshop
             : answer == 6 ? Choice.CompleteRepair : Choice.Later;
 
         internal const string Protocol = "APISHARED-WORKSHOP-RECOVERY-1";
-        internal static string Describe(WorkshopInterruptedTransaction entry, bool german)
-        {
-            return (entry.Failure ?? (german ? "Unterbrochen ohne protokollierten Fehler." : "Interrupted without a recorded error."))
-                + "\n" + entry.Progress.Describe(german);
-        }
+        internal static string Describe(WorkshopInterruptedTransaction entry, bool german) => Describe(entry, german ? "de-DE" : "en-US");
+        internal static string Describe(WorkshopInterruptedTransaction entry, string locale) =>
+            (entry.Failure ?? Localization.UiText.ForLocale(locale, "Workshop.Recovery.Interrupted")) + "\n" + entry.Progress.Describe(locale);
 
         internal static WorkshopRecoveryProgress Progress(string[] journal, string[][] rows)
         {

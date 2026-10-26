@@ -46,12 +46,16 @@ namespace APIShared.Workshop
                 var publisher = WorkshopInventory.Read(map.ReadText(tools + "publisher-files.json"), "APISharedWorkshopPublisher", package.Version);
                 var allowed = new HashSet<string>(new[] { "UploadMod.bat", "UploadMod-linux.sh", "WorkshopUploader.exe", "WorkshopUploader.exe.config",
                     "com.rlabrecque.steamworks.net.dll", "ICSharpCode.SharpZipLib.dll", "steam_api64.dll", "UnityEngine.CoreModule.dll", "UnityEngine.SharedInternalsModule.dll" }, StringComparer.Ordinal);
-                if (!allowed.SetEquals(publisher.Files.Keys)) throw new InvalidDataException("Incomplete or unexpected publisher inventory.");
+                // Preserve complete released inventories; partial mixtures never authorize additional files.
+                bool historicalPublisher = allowed.SetEquals(publisher.Files.Keys);
+                allowed.Add("PublisherText.ps1");
+                foreach (string locale in Localization.LocaleSelection.SupportedLocales) allowed.Add("Locales/" + locale + ".txt");
+                if (!historicalPublisher && !allowed.SetEquals(publisher.Files.Keys)) throw new InvalidDataException("Incomplete or unexpected publisher inventory.");
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (ZipEntry entry in map.Archive) {
                     string name = entry.Name.TrimEnd('/'); WorkshopPaths.Relative(name);
                     if (!seen.Add(name) || (entry.ExternalFileAttributes >> 16 & 0xF000) == 0xA000) throw new InvalidDataException("Duplicate or linked map entry.");
-                    if (entry.IsDirectory) { if (name != "BepInEx" && name != "BepInEx/plugins" && name != "BepInEx/tools" && !(bootstrapHash != null && name == "BepInEx/patchers") && name != tools.TrimEnd('/') && name != root.TrimEnd('/') && !name.StartsWith(root, StringComparison.Ordinal)) throw new InvalidDataException("Foreign map directory."); continue; }
+                    if (entry.IsDirectory) { if (name != "BepInEx" && name != "BepInEx/plugins" && name != "BepInEx/tools" && !(bootstrapHash != null && name == "BepInEx/patchers") && name != tools.TrimEnd('/') && !(name == tools + "Locales" && !historicalPublisher) && name != root.TrimEnd('/') && !name.StartsWith(root, StringComparison.Ordinal)) throw new InvalidDataException("Foreign map directory."); continue; }
                     if (name == "info.json" || name == "preview.png") continue;
                     if (name == bootstrap && bootstrapHash != null) continue;
                     bool tool = name.StartsWith(tools, StringComparison.Ordinal);

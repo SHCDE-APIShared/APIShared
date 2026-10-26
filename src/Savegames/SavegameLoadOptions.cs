@@ -26,16 +26,8 @@ namespace APIShared
                 Changed(nameof(UseCurrentSavegameSettings));
             }
         }
-        public string UseCurrentSavegameSettingsText
-        {
-            get
-            {
-                string language = string.Empty;
-                try { language = GameAssetManagerAPI.Instance.CurrentLanguage ?? string.Empty; } catch { }
-                return language.StartsWith("de", StringComparison.OrdinalIgnoreCase) ? "Aktuelle Modsettings verwenden" : "Use current mod settings";
-            }
-        }
-        public string UseCurrentSavegameSettingsHelp => "only by APIShared supported modsettings";
+        public string UseCurrentSavegameSettingsText => APIShared.Localization.UiText.Get("Savegames.UseCurrentSettings");
+        public string UseCurrentSavegameSettingsHelp => APIShared.Localization.UiText.Get("Savegames.UseCurrentSettingsHelp");
         internal void Open() { active = true; Select(SavegameLoadChoiceState.Invalid); Changed(nameof(LoadOptionVisibility)); }
         internal void Select(SavegameLoadChoiceState state)
         {

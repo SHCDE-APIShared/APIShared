@@ -780,6 +780,13 @@ APIShared.IUnitHudPresentationCapability | public bool TryRegisterInteraction(st
 APIShared.IUnitHudPresentationCapability | public bool TryRegisterRecruitment(string categoryId, APIShared.UnitHudRecruitmentHandler handler, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IUnitHudPresentationCapability | public bool TryRemoveUnitFromControlGroups(int unitId, out int removedCount, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IUnitHudPresentationCapability | public void RequestRefresh()
+APIShared.Lobby.LobbyChatMessage | public sealed class APIShared.Lobby.LobbyChatMessage
+APIShared.Lobby.LobbyChatMessage | public bool IsSystemMessage { get; }
+APIShared.Lobby.LobbyChatMessage | public string Message { get; }
+APIShared.Lobby.LobbyChatMessage | public string Name { get; }
+APIShared.Lobby.LobbyChatPresentation | public static class APIShared.Lobby.LobbyChatPresentation
+APIShared.Lobby.LobbyChatPresentation | public static bool IsAvailable { get; }
+APIShared.Lobby.LobbyChatPresentation | public static bool TryRegisterSystemMessageRule(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyChatMessage, bool> rule, out string diagnostic)
 APIShared.LobbyPreparationOverride | public static class APIShared.LobbyPreparationOverride
 APIShared.LobbyPreparationOverride | public static bool Begin(CrusaderDE.FRONT_Multiplayer lobby)
 APIShared.LobbyPreparationOverride | public static bool IsActive { get; }
@@ -801,6 +808,22 @@ APIShared.LocalSelectionSnapshot | public sealed class APIShared.LocalSelectionS
 APIShared.LocalSelectionSnapshot | public SHCDESE.Interop.SelectedUnitInfo Item[int index] { get; }
 APIShared.LocalSelectionSnapshot | public int Count { get; }
 APIShared.LocalSelectionSnapshot | public int PlayerId { get; }
+APIShared.Maps.MultiplayerMapLookup | public static class APIShared.Maps.MultiplayerMapLookup
+APIShared.Maps.MultiplayerMapLookup | public static bool IsAvailable { get; }
+APIShared.Maps.MultiplayerMapLookup | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Maps.MultiplayerMapLookupResult> observer, out string diagnostic)
+APIShared.Maps.MultiplayerMapLookup | public static bool TryRegisterProvider(string ownerGuid, string registrationId, System.Func<APIShared.Maps.MultiplayerMapLookupRequest, FileHeader> provider, out string diagnostic)
+APIShared.Maps.MultiplayerMapLookupRequest | public sealed class APIShared.Maps.MultiplayerMapLookupRequest
+APIShared.Maps.MultiplayerMapLookupRequest | public int Crc { get; }
+APIShared.Maps.MultiplayerMapLookupRequest | public string FileName { get; }
+APIShared.Maps.MultiplayerMapLookupResult | public sealed class APIShared.Maps.MultiplayerMapLookupResult
+APIShared.Maps.MultiplayerMapLookupResult | public APIShared.Maps.MultiplayerMapLookupRequest Request { get; }
+APIShared.Maps.MultiplayerMapLookupResult | public APIShared.Maps.MultiplayerMapLookupStatus Status { get; }
+APIShared.Maps.MultiplayerMapLookupResult | public FileHeader Header { get; }
+APIShared.Maps.MultiplayerMapLookupResult | public string Diagnostic { get; }
+APIShared.Maps.MultiplayerMapLookupStatus | public enum APIShared.Maps.MultiplayerMapLookupStatus : int
+APIShared.Maps.MultiplayerMapLookupStatus | Conflict = 2
+APIShared.Maps.MultiplayerMapLookupStatus | Resolved = 1
+APIShared.Maps.MultiplayerMapLookupStatus | Vanilla = 0
 APIShared.MarkedUnitSelectionAPI | public static class APIShared.MarkedUnitSelectionAPI
 APIShared.MarkedUnitSelectionAPI | public static bool TryCapture(long expectedSessionId, out APIShared.MarkedUnitSelectionSnapshot result)
 APIShared.MarkedUnitSelectionAPI | public static bool TryRegisterObserver(string ownerAndId, System.Action<APIShared.MarkedUnitSelectionSnapshot> observer)
@@ -1079,6 +1102,7 @@ APIShared.ModSettings.ModSettingsSearch | public static bool HasMatches(object v
 APIShared.ModSettings.ModSettingsSearch | public static int GetFocusRequest(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static int GetStateRevision(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static object GetSourceModel(Noesis.DependencyObject value)
+APIShared.ModSettings.ModSettingsSearch | public static object GetStateValue(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty ExactKeyProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty ExcludeProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty FilterTextProperty
@@ -1092,6 +1116,7 @@ APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.Dependen
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty SourceModelProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty StateFilterProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty StateRevisionProperty
+APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty StateValueProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty TitleProperty
 APIShared.ModSettings.ModSettingsSearch | public static readonly Noesis.DependencyProperty ToolTipTextProperty
 APIShared.ModSettings.ModSettingsSearch | public static string GetExactKey(Noesis.DependencyObject value)
@@ -1116,6 +1141,7 @@ APIShared.ModSettings.ModSettingsSearch | public static void SetSectionTitle(Noe
 APIShared.ModSettings.ModSettingsSearch | public static void SetSourceModel(Noesis.DependencyObject value, object model)
 APIShared.ModSettings.ModSettingsSearch | public static void SetStateFilter(Noesis.DependencyObject value, APIShared.ModSettings.ModSettingsSearchStateFilter filter)
 APIShared.ModSettings.ModSettingsSearch | public static void SetStateRevision(Noesis.DependencyObject value, int revision)
+APIShared.ModSettings.ModSettingsSearch | public static void SetStateValue(Noesis.DependencyObject value, object state)
 APIShared.ModSettings.ModSettingsSearch | public static void SetTitle(Noesis.DependencyObject value, string title)
 APIShared.ModSettings.ModSettingsSearch | public static void SetToolTipText(Noesis.DependencyObject value, string text)
 APIShared.ModSettings.ModSettingsSearchCatalog | public static class APIShared.ModSettings.ModSettingsSearchCatalog

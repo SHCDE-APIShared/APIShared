@@ -50,6 +50,7 @@ function Get-ApiInputState([string]$Root, [string]$GameDir, [string]$ExtenderDir
     }
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Build.ps1'),(Join-Path $Root 'tools/BuildProof.ps1'),(Join-Path $Root 'tools/WorkshopPackage.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Workshop') -Recurse -File)
+    $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Locales') -File -Filter '*.txt')
     if ([IO.Directory]::Exists((Join-Path $Root 'Override'))) { $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'Override') -Recurse -File) }
     $files += @(Get-Item -LiteralPath (Join-Path $Root 'tools/Prepare-WorkshopPackage.ps1'),(Join-Path $Root 'tools/New-WorkshopBootstrap.ps1'))
     $files += @(Get-ChildItem -LiteralPath (Join-Path $Root 'tools/WorkshopUploader') -File | Where-Object { $_.Extension -in @('.cs','.csproj','.ps1','.bat','.sh','.config','.manifest') })

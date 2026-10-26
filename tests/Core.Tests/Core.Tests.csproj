@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
+    <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
+    <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
+    <Content Include="../../Locales/*.txt" Link="Locales/%(Filename)%(Extension)"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="../../src/Presentation/Tooltips/TooltipLayout.cs" Link="Production/TooltipLayout.cs" />
     <Compile Include="../../src/Presentation/Tooltips/TooltipContracts.cs" Link="Production/TooltipContracts.cs" />
     <Compile Include="../../src/Presentation/Tooltips/TooltipProviderAdapters.cs" Link="Production/TooltipProviderAdapters.cs" />

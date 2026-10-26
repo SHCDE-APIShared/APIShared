@@ -350,7 +350,7 @@ namespace APIShared
         private static void ShowBlocked(string reason)
         {
             NativeApiLog.Error(log, "SAVE_SETTINGS_LOAD_BLOCKED: " + reason);
-            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage("Save settings", () => { }, "The save could not be loaded safely: " + reason); }
+            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(APIShared.Localization.UiText.Get("Savegames.LoadTitle"), () => { }, APIShared.Localization.UiText.Get("Savegames.LoadFailed") + reason); }
             catch (Exception error) { NativeApiLog.Error(log, "Could not display save preparation failure: " + error); }
         }
         // The host names the players that have not confirmed: an older or newer APIShared build drops

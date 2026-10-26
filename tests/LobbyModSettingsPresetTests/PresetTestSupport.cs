@@ -226,6 +226,7 @@ namespace LobbyModSettingsPresetTests
         private string testRoot;
         [TestInitialize] public void CreateStorage()
         {
+            APIShared.Localization.UiText.Configure(() => "en-US");
             testRoot = Path.Combine(Path.GetTempPath(), "APIShared-Presets-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(testRoot);
             PersonalSettingsPaths.TestDocumentsDirectory = assembly => Path.Combine(Path.GetDirectoryName(assembly), "Documents");

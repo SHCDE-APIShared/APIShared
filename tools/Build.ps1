@@ -170,7 +170,12 @@ try {
     Assert-ApiWorkshopUnlinkedPath $toolTarget
     [void][IO.Directory]::CreateDirectory($toolTarget)
     Assert-ApiWorkshopUnlinkedTree $toolTarget
-    foreach ($file in Get-ChildItem -LiteralPath $toolSource -File) { Copy-Item -LiteralPath $file.FullName -Destination $toolTarget -Force }
+    foreach ($name in @((Get-ApiPublisherNames) + @('publisher-files.json'))) {
+        $fileTarget = Join-Path $toolTarget $name
+        Assert-ApiWorkshopUnlinkedPath $fileTarget
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($fileTarget))
+        Copy-Item -LiteralPath (Join-Path $toolSource $name) -Destination $fileTarget -Force
+    }
     Assert-ApiPublisherPackage $toolTarget $toolSource -Installed
     $succeeded = $true
     Write-Host ('APIShared built and installed successfully in {0:N1}s; tests:{1}.' -f $buildWatch.Elapsed.TotalSeconds,$TestMode)
