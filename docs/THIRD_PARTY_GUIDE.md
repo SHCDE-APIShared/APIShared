@@ -1584,3 +1584,90 @@ wait hint) and does not arm "ready" by itself. Messages are split into numbered 
 APIShared. Logs record loading as info, automatic blocks as warnings and rejected
 commands as errors, each with the complete detail. Text is sent in the sender's
 language and conveys no gameplay authority.
+
+## End-screen presentation
+
+`APIShared.Presentation.MissionOverEvents` coordinates three managed boundaries:
+`HUD_MissionOver.ButtonClicked`, `GameData.Scenarios.setGameOverState`, and only
+`OST_MP_GAME_OVER` entries of `OnScreenText.addOSTEntry`. This is presentation,
+not an authoritative defeat or mission lifecycle signal. Use the existing defeat
+and lifecycle services for those purposes.
+
+Register on Unity startup with an owner GUID and unique ID per operation. Hooks
+are installed on first demand and retained for the process lifetime. Without
+observers the original path remains unchanged. Callbacks run synchronously on the
+caller thread, outside registration locks, ordered by order/owner/ID. UI dispatch
+is the consumer's responsibility. There is no replay. Calls nested inside
+notifications bypass notifications.
+
+Pre may change `Result` for state/text, set private `State`, veto, or select button
+deferral. All other inputs remain unchanged. A failing Pre rolls back its own
+changes; successful vetoes are sticky. Accepted runs after all Pre only without
+veto; Post receives immutable original/final inputs, owner-private State, veto,
+deferral, synchronous completion and error information. Callback failures are
+isolated. Existing public APIs and their defaults are unchanged.
+
+For a preview close, veto the button original in Pre and close the owned preview
+in the matching Post after checking its generation. This also suppresses any
+selected lobby deferral regardless of registration order. Do not call the actual
+game-over state method to open a preview. Accepted positive state transitions let
+a preview revoke ownership before Vanilla reuses the view.
+
+`DeferOriginal(handler, isCurrent)` is available only for buttons. Supply a
+side-effect-free guard covering both session and HUD identity/generation. The
+last successful Pre selection wins. Its handler receives a continuation that may
+be retained. `TryInvoke()` runs only on the original caller thread, consumes an
+invalid context, and never retries an original, including one that throws. A
+wrong-thread attempt returns false without consuming it. Guard failures reject
+execution; handler failures attempt the guarded continuation once. Original
+exceptions propagate. Post completes when dispatch returns; it does not promise
+that a retained continuation has run. Consumers must guard their own delayed
+side effects as well as the continuation. Replaced views must never be restored
+from a stale preview snapshot.
+
+The service does not select a mod, decide who won, change player identity, grant
+spectator rights, return to a lobby or read consumer settings. Existing mods that
+do not register remain on their existing paths; consumers using this addition
+must require the APIShared package that supplies it.
+
+## Shared render and pause-menu presentation
+
+Available since 0.18.0; these are additive, opt-in services. Existing APIs retain
+signatures and defaults. Consumers need no knowledge of one another.
+
+`VisibleMapRenderEvents.TryRegister(owner, id, before, finallyCallback, out registration,
+out reason, order)` installs the shared visible-map entry only after APIShared's
+native-library initialization. Registrations start disabled. `SetEnabled` changes
+native demand data; executable hooks remain installed. With no enabled observer,
+the native guard jumps straight to the original trampoline without a CLR transition.
+Callbacks run synchronously on the native render caller thread, ordered by order,
+owner and ID; no UI dispatch, replay or cancellation occurs. The visible bounds and zoom are immutable; the borrowed native map pointer
+stays internal. All six original native inputs are forwarded unchanged. Each registration gets its own invocation `State`; set rollback state
+before changing temporary data. Cleanup runs in reverse order, even if preparation
+throws or the registration is disabled during the call. Callback exceptions are
+isolated and diagnosed once per registration. The original receives unchanged
+parameters exactly once; its exception is not swallowed and cleanup still runs.
+Recursive render calls get distinct state. Concurrent calls require consumer-owned
+synchronization for any shared mutable state. Unsupported images or occupied entry
+contracts reject registration without taking ownership of another hook.
+
+`IngameMenuActions.TryRegister(owner, id, stateProvider, execute, out reason, order)`
+registers a permanent optional action on the Unity thread. Return a localized
+`IngameMenuActionState` with visibility and enabled state. Hidden actions occupy no
+space. Visible actions are ordered by order/owner/ID next to the original Quit
+button; further actions get their own row. Without visible actions Quit retains its
+normal width and command. State is reevaluated while the menu is shown and before
+execution; exceptions hide only the failed action and are logged once. Consumers
+must still validate their session and gameplay permissions in the command. No
+mod-specific settings or presence checks belong to this service. Opening another
+view that should close the pause menu must use Vanilla `HUDIngameMenu.Close()` to
+restore its prior pause state; the shared service does not synthesize Quit commands.
+
+`apiui:SharedToolTipSizing.Enabled="True"` (namespace `APIShared.ModSettings`)
+opts an owned `ToolTip` into the common resolution presets: font sizes 23/30/45,
+width, padding and border thickness. Values are applied on the Unity thread at
+attachment and each opening. Its template must bind those properties. Use this
+scaler alone in the tooltip style, without a competing SE scaler setter. The
+behavior temporarily disables SE scaling for that tooltip and restores its prior
+opt-in when detached. It does not choose a template, colors or duration; consumers
+retain those. Unopted tooltips and Vanilla rollover text are unchanged.

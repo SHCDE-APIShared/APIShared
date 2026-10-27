@@ -512,3 +512,27 @@ Public consumer example: examples/ThirdPartyMod/PlagueHeightExample.cs.
 Prior user game evidence covers cloud-edge movement, wall demolition and tower collapse.
 New category UI, real multiplayer and full save/treatment roundtrips require game
 acceptance; isolated execution tests do not establish these outcomes.
+
+## Shared visible-map entry and pause-menu actions (0.18.0)
+
+Audited image SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`0x41D60`: Win64 void `(map, left, right, top, bottom, zoom)`, arguments 5/6 at
+entry RSP+0x28/+0x30. The first ten bytes are
+`48 89 5C 24 10 48 89 6C 24 18`; both MOV instructions save nonvolatile registers
+in home slots. Indirect/10 resumes at `0x41D6A`; validate pointer-slot jump, NOP
+padding, displaced bytes and resume target. APIShared exclusively owns this entry;
+consumers register observers rather than detours. The demand bridge tail-jumps
+without changing stack arguments, using only volatile RAX/flags. Its instructions
+and targets are validated after publication. Published failed hooks stay rooted
+with zero demand. `VisibleMapRenderTests` executes the production bridge and tests
+both demand paths, all six arguments, exact original count and cleanup failures.
+The complete original render function and its terminal drawing-list cleanup at
+`0x41D10` remain intact. Rendering temporarily changed spectator visibility must
+always be restored by consumer cleanup; the service makes no player changes.
+
+Managed presentation: public `HUD_IngameMenu.Init()` and `Close()` on the real
+Assembly-CSharp, and the `PresentationEvents.GuiChecks` post event. The XAML host
+wraps `ButtonQuitMission` while preserving its command, parameter 6, label binding,
+style and MouseEnter handler. Re-audit these on a managed/UI update. Popup sizing
+reads Unity screen height only on the UI thread; its opt-in disables the competing
+SE scaler only for that popup.

@@ -119,6 +119,9 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; host/per-player publication waits for the appropriate lobby/transport identity; personal persistence remains isolated ([guide](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost)) |
 | `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
+| `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
+| `APIShared.Presentation.IngameMenuActions` | Optional pause-menu actions beside the unchanged Vanilla Quit action | Unity-thread registration, state and commands; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
+| `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
@@ -287,7 +290,7 @@ The readiness packets are versioned (protocol 2); the host also compares every p
 stored copy of declared simulation-relevant save records, see
 [multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
 
-`APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread.
+`APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread. `SharedToolTipSizing.Enabled` explicitly applies these values whenever an owned popup opens; see [sizing ownership](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation).
 
 Apply `[APIShared.ModSettings.ExcludeFromSavegameModSettings]` to a plugin class
 when it owns a separate persistence protocol or its settings are not mission data.

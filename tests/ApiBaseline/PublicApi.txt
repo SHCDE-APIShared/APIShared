@@ -1498,6 +1498,10 @@ APIShared.ModSettings.SettingModeStatus | public enum APIShared.ModSettings.Sett
 APIShared.ModSettings.SettingModeStatus | Active = 1
 APIShared.ModSettings.SettingModeStatus | Inactive = 2
 APIShared.ModSettings.SettingModeStatus | Unknown = 0
+APIShared.ModSettings.SharedToolTipSizing | public static class APIShared.ModSettings.SharedToolTipSizing
+APIShared.ModSettings.SharedToolTipSizing | public static bool GetEnabled(Noesis.DependencyObject value)
+APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty EnabledProperty
+APIShared.ModSettings.SharedToolTipSizing | public static void SetEnabled(Noesis.DependencyObject value, bool enabled)
 APIShared.ModSettings.ToolTipPresentation | public static class APIShared.ModSettings.ToolTipPresentation
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
@@ -1929,6 +1933,48 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.IngameMenuActionState | public sealed class APIShared.Presentation.IngameMenuActionState
+APIShared.Presentation.IngameMenuActionState | public .ctor(string text, bool visible, bool enabled)
+APIShared.Presentation.IngameMenuActionState | public bool Enabled { get; }
+APIShared.Presentation.IngameMenuActionState | public bool Visible { get; }
+APIShared.Presentation.IngameMenuActionState | public string Text { get; }
+APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
+APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, out string reason, int order = 0)
+APIShared.Presentation.MissionOverContinuation | public sealed class APIShared.Presentation.MissionOverContinuation
+APIShared.Presentation.MissionOverContinuation | public bool TryInvoke()
+APIShared.Presentation.MissionOverEvents | public static class APIShared.Presentation.MissionOverEvents
+APIShared.Presentation.MissionOverEvents | public static bool TryRegister(APIShared.Presentation.MissionOverOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.MissionOverPreEventArgs> pre, System.Action<APIShared.Presentation.MissionOverPostEventArgs> post, out string reason, int order = 0, System.Action<APIShared.Presentation.MissionOverPreEventArgs> accepted = null)
+APIShared.Presentation.MissionOverOperation | public enum APIShared.Presentation.MissionOverOperation : int
+APIShared.Presentation.MissionOverOperation | Button = 0
+APIShared.Presentation.MissionOverOperation | State = 1
+APIShared.Presentation.MissionOverOperation | Text = 2
+APIShared.Presentation.MissionOverPostEventArgs | public sealed class APIShared.Presentation.MissionOverPostEventArgs
+APIShared.Presentation.MissionOverPostEventArgs | public APIShared.Presentation.MissionOverOperation Operation { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public System.Exception CompletionException { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public bool OriginalCompleted { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public bool WasDeferred { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public bool WasSkipped { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Data4 { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Data5 { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Date { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int OriginalResult { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Result { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Screen { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public object Receiver { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public object State { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public string Button { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public sealed class APIShared.Presentation.MissionOverPreEventArgs : APIShared.Events.InterceptionPreEventArgs
+APIShared.Presentation.MissionOverPreEventArgs | public APIShared.Presentation.MissionOverOperation Operation { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public CrusaderDE.HUD_MissionOver View { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Data4 { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Data5 { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Date { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int OriginalResult { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Result { get; set; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Screen { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public object Receiver { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public string Button { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public void DeferOriginal(System.Action<APIShared.Presentation.MissionOverContinuation> handler, System.Func<bool> isCurrent)
 APIShared.Presentation.PresentationEvents | public static class APIShared.Presentation.PresentationEvents
 APIShared.Presentation.PresentationEvents | public static bool TryRegister(APIShared.Presentation.PresentationOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.PresentationPreEventArgs> pre, System.Action<APIShared.Presentation.PresentationPostEventArgs> post, out string reason, int order = 0)
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)
@@ -2010,6 +2056,17 @@ APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ow
 APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
 APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
 APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
+APIShared.Presentation.VisibleMapRenderEventArgs | public sealed class APIShared.Presentation.VisibleMapRenderEventArgs : System.EventArgs
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Bottom { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Left { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Right { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Top { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Zoom { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public object State { get; set; }
+APIShared.Presentation.VisibleMapRenderEvents | public static class APIShared.Presentation.VisibleMapRenderEvents
+APIShared.Presentation.VisibleMapRenderEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Presentation.VisibleMapRenderEventArgs> before, System.Action<APIShared.Presentation.VisibleMapRenderEventArgs> finallyCallback, out APIShared.Presentation.VisibleMapRenderRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.VisibleMapRenderRegistration | public sealed class APIShared.Presentation.VisibleMapRenderRegistration
+APIShared.Presentation.VisibleMapRenderRegistration | public void SetEnabled(bool enabled)
 APIShared.Recruitment.RecruitmentAvailability | public static class APIShared.Recruitment.RecruitmentAvailability
 APIShared.Recruitment.RecruitmentAvailability | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Recruitment.RecruitmentAvailabilityContext, SHCDESE.Interop.eChimps, bool> isBlocked, System.Func<bool> isActive, out string reason)
 APIShared.Recruitment.RecruitmentAvailability | public static long CallbackFailures { get; }

@@ -3,13 +3,27 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.16.4",
+  "Version": "0.18.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.18.0",
+      "Changes": [
+        "Add opt-in visible-map render coordination with native dormant bypass and isolated preparation/cleanup callbacks.",
+        "Add shared pause-menu actions preserving Vanilla Quit, and opt-in popup sizing from the common resolution presets."
+      ]
+    },
+    {
+      "Version": "0.17.0",
+      "Changes": [
+        "Add shared end-screen Pre/Accepted/Post events for buttons, game-over state and game-over text without changing existing API contracts.",
+        "Coordinate preview cancellation and delayed exit through guarded, caller-thread, at-most-once original continuations with isolated consumer failures."
+      ]
+    },
     {
       "Version": "0.16.4",
       "Changes": [
