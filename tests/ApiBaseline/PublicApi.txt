@@ -1222,10 +1222,12 @@ APIShared.ModSettings.ModSettingsWorkingSource | public string PreferenceContext
 APIShared.ModSettings.ModSettingsWorkingSourceKind | public enum APIShared.ModSettings.ModSettingsWorkingSourceKind : int
 APIShared.ModSettings.ModSettingsWorkingSourceKind | Map = 2
 APIShared.ModSettings.ModSettingsWorkingSourceKind | ModDefault = 0
+APIShared.ModSettings.ModSettingsWorkingSourceKind | Personal = 3
 APIShared.ModSettings.ModSettingsWorkingSourceKind | Trail = 1
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public static class APIShared.ModSettings.ModSettingsWorkingSourceRegistry
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string MapId = "map"
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string ModDefaultsId = "mod-default"
+APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string PersonalSettingsId = "personal-settings"
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string TrailId = "trail"
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public static System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsWorkingSource> GetProviderSources(string targetGuid)
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public static bool HasProvider { get; }

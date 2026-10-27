@@ -759,6 +759,18 @@ The same agreement compares each player's stored copy of versioned save records 
 simulation-relevant and blocks the load with the mod and record named when they differ; see
 [multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
 
+The reset selector may also expose `ModSettingsWorkingSourceKind.Personal` with
+`ModSettingsWorkingSourceRegistry.PersonalSettingsId` (`personal-settings`) while
+Map/Trail sources are available. This copies the participant's personal snapshot
+into the editable temporary mission working copy; it neither exits that context
+nor writes personal settings or preset files. The mission source remains available
+for a later reset. Host/client ownership and read-only mission locks still apply.
+A provider offering this source must capture detached personal snapshots through
+`System_CreatePlayerMissionPresetSnapshot()` before applying any target, preserve
+authoring rules, and commit backend application within `Apply`/`ApplyMany` (including
+restart staging). The common UI deliberately skips its usual pre-refresh and second
+commit for this source so a failed reset can restore the original mission draft.
+
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 
 For an activation hint, bind the host/client content containers' `Opacity` to
@@ -799,6 +811,13 @@ MODSETTINGS {"schema":1,"session":12,"mod":"Foreign.Author.Mod","host":{"EnableM
 ```
 
 Each endpoint row identifies the target plugin by its exact GUID in `mod`.
+The optional `context` object describes the personal or temporary Map/Trail/Save
+working context, its existing source identity, selected preset, modified/editable
+state and persistence scope. Its storage path, successful/failed write counters,
+last outcome and pending-migration flag describe actual personal-file publication;
+temporary changes do not count as personal writes. Context display remains visible
+when a different preset or reset source is loaded into an editable mission copy.
+These fields reuse controller state and perform no additional file or world reads.
 `host`, `player` and `local` group the existing persistent setting scopes and use
 exact, case-sensitive code keys, ordered ordinally. Mods are ordered by GUID.
 All current values, including defaults and full arrays, are included; UI helpers,

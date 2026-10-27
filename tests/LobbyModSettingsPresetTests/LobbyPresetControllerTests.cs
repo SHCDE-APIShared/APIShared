@@ -40,9 +40,9 @@ namespace LobbyModSettingsPresetTests
             typeof(GameXAMLManagerAPI).GetProperty(nameof(GameXAMLManagerAPI.CurrentLobbyModSettingsChangeOrigin))
                 .GetSetMethod(true).Invoke(GameXAMLManagerAPI.Instance, new object[] { origin });
 
-        private LobbyPresetController Start(Host host)
+        private LobbyPresetController Start(Host host, BepInEx.Logging.ManualLogSource log = null)
         {
-            var controller = new LobbyPresetController(host, null, Path.Combine(directory, "Example.dll"),
+            var controller = new LobbyPresetController(host, log, Path.Combine(directory, "Example.dll"),
                 Name, "Foreign.Author.Example", new Version(1, 0), false);
             host.Target.Changed = controller.AfterPropertyChanged;
             controller.CaptureDefaults();

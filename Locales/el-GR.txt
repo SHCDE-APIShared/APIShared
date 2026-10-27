@@ -72,6 +72,7 @@ Common.PresetStatusDismiss=Close
 Common.RestartRequired=Settings prepared. Restart the game to apply them.
 Common.RestartRequiredOption=Restart required
 Common.SettingsSource=Reset settings to
+Common.SettingsSourcePersonal=Personal Settings
 Common.SettingsSourceDefaults=Mod defaults
 Common.SettingsSourceHelp=Resets this mod's settings to the selected source. Personal presets are not changed. In multiplayer, only the host can reset host settings.
 Common.SettingsSourceLoad=Reset

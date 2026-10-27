@@ -15,6 +15,10 @@ namespace APIShared.ModSettings
         private readonly string validationRoot;
         private readonly ManualLogSource log;
         private readonly string modName;
+        internal string FilePath => filePath;
+        internal long SuccessfulWrites { get; private set; }
+        internal long FailedWrites { get; private set; }
+        internal string LastWriteResult { get; private set; } = "not-attempted";
 
         internal LobbyPresetStorage(string filePath, ManualLogSource log, string modName,
             string legacyFilePath = null, string validationRoot = null)
@@ -69,18 +73,32 @@ namespace APIShared.ModSettings
                 publishAttempts = result.Attempts;
                 if (!result.Succeeded)
                 {
+                    FailedWrites++;
+                    LastWriteResult = "atomic-publish-failed";
                     DebugLogHelper.LogError(
                         log,
                         $"[{modName}] Could not atomically publish lobby-settings presets to [{filePath}] " +
                         $"after {result.Attempts} attempts; hresult=0x{result.Error.HResult:X8}: {result.Error}");
                 }
-#if API_SHARED_PRESET_TESTS
                 else
+                {
+                    bool report = SuccessfulWrites == 0 || LastWriteResult != "published";
+                    SuccessfulWrites++;
+                    LastWriteResult = "published";
+                    if (report)
+                        DebugLogHelper.LogInfo(log,
+                            $"SETTINGS_STORAGE: mod={modName}, result=published, path={filePath}, " +
+                            $"bytes={bytes.Length}, attempts={result.Attempts}, successfulWrites={SuccessfulWrites}, " +
+                            $"failedWrites={FailedWrites}; scope=personal. Subsequent successes are counted in the mission settings snapshot.");
+#if API_SHARED_PRESET_TESTS
                     TestWriteCount++;
 #endif
+                }
             }
             catch (Exception exception)
             {
+                FailedWrites++;
+                LastWriteResult = "write-failed:" + exception.GetType().FullName;
                 DebugLogHelper.LogError(
                     log,
                     $"[{modName}] Could not save lobby-settings presets to [{filePath}]; " +

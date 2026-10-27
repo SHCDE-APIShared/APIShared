@@ -75,6 +75,7 @@ namespace APIShared.ModSettings
             suspendedPresetDirty = presetDirty;
             activePublishedPreset = null;
             missionPresetLabel = label ?? string.Empty;
+            missionContextLabel = missionPresetLabel;
             missionBasedOnPreset = null;
             missionPresetDirty = false;
             missionExitFailures = 0;
@@ -83,12 +84,18 @@ namespace APIShared.ModSettings
             foreach (KeyValuePair<string, byte[]> entry in supplied)
                 missionPreset[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
             ApplySnapshot(missionPreset, MissionPresetIndex, writeLocalStorage: false);
-            LogRoutine($"[{modName}] Entered {(editable ? "editable" : "read-only")} mission preset.");
+            DebugLogHelper.LogInfo(log,
+                $"SETTINGS_CONTEXT: mod={targetGuid}, action=enter, context={SanitizeLogValue(missionContextLabel)}, " +
+                $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, editable={editable}, " +
+                $"snapshotProperties={missionPreset.Count}, host={owner.IsLocalHost}; persistence=temporary.");
         }
 
         public void ExitMissionPreset()
         {
             bool restoreHost = owner.CanRestorePersonalHostSettings;
+            string leavingPreset = missionBasedOnPreset?.StableId ?? "";
+            string leavingSourceLabel = missionPresetLabel;
+            bool leavingModified = missionPresetDirty;
             // Keep the entire mission and its source metadata until restoration
             // succeeds. The session retains failed owners and calls Exit again.
             // A setter that rejects even its default keeps the mission for a bounded number of
@@ -121,8 +128,13 @@ namespace APIShared.ModSettings
                 ? suspendedPublishedPreset
                 : null;
             suspendedPublishedPreset = null;
-            missionPresetLabel = string.Empty;
-            LogRoutine($"[{modName}] Left mission preset and restored the previous normal preset.");
+            DebugLogHelper.LogInfo(log,
+                $"SETTINGS_CONTEXT: mod={targetGuid}, action=exit, context={SanitizeLogValue(missionContextLabel)}, " +
+                $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, restoreHost={restoreHost}, " +
+                $"leavingPreset={SanitizeLogValue(leavingPreset)}, leavingSourceLabel={SanitizeLogValue(leavingSourceLabel)}, " +
+                $"leavingModified={leavingModified}, hostRestorePending={personalHostRestorePending}, " +
+                $"personalPreset={SanitizeLogValue(basedOnStableId)}, personalModified={presetDirty}; persistence=personal-values-preserved.");
+            missionPresetLabel = missionContextLabel = string.Empty;
         }
 
         public void AfterPropertyChanged(string propertyName)
@@ -159,8 +171,7 @@ namespace APIShared.ModSettings
                     (owner.IsLocalHost || IsClientProperty(property)))
                 {
                     StoreProperty(missionPreset, property);
-                    if (missionBasedOnPreset != null)
-                        missionPresetDirty = true;
+                    missionPresetDirty = true;
                 }
                 // Mission-owned values remain in memory until the normal preset is restored.
                 return;

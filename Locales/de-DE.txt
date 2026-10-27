@@ -72,6 +72,7 @@ Common.PresetStatusDismiss=Schließen
 Common.RestartRequired=Einstellungen vorbereitet. Starte das Spiel neu, um sie anzuwenden.
 Common.RestartRequiredOption=Neustart erforderlich
 Common.SettingsSource=Einstellungen zurücksetzen auf
+Common.SettingsSourcePersonal=Persönliche Einstellungen
 Common.SettingsSourceDefaults=Mod-Standards
 Common.SettingsSourceHelp=Setzt die Einstellungen dieser Mod auf die gewählte Quelle zurück. Eigene Presets bleiben unverändert. Im Mehrspieler kann nur der Host die Host-Einstellungen zurücksetzen.
 Common.SettingsSourceLoad=Zurücksetzen

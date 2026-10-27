@@ -157,6 +157,41 @@ namespace LobbyModSettingsPresetTests
         }
 
         [TestMethod]
+        public void RestartStatusDoesNotAccumulateContextPrefixes()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            const string status = "Map · Based on: My choice (modified)";
+            for (int round = 0; round < 4; round++)
+            {
+                controller.RestorePreparationLabel(round == 0 ? status : controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+                Assert.AreEqual(status, controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+            }
+        }
+
+        [TestMethod]
+        public void ExitSupportLogDescribesTheLeavingDraftBeforeRestoringPersonalMetadata()
+        {
+            using var log = new BepInEx.Logging.ManualLogSource("Draft support fixture");
+            var messages = new List<string>();
+            log.LogEvent += (_, e) => messages.Add(e.Data.ToString());
+            var host = new Host();
+            var controller = Start(host, log);
+            host.HasMissionContext = true;
+            host.MissionPresetEditable = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            host.Target.HostAmount = 99;
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            string exit = messages.Single(m => m.Contains("action=exit"));
+            Assert.IsTrue(exit.Contains("leavingSourceLabel=Map") && exit.Contains("leavingModified=True") &&
+                exit.Contains("personalModified=False"), "Exit conflated edited mission values with restored personal metadata.");
+            Assert.AreEqual(17, host.Target.HostAmount);
+        }
+
+        [TestMethod]
         public void RejectedValueFallsBackToItsDefaultWithoutBlockingOtherSettings()
         {
             var host = new Host();
