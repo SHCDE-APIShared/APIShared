@@ -3,13 +3,22 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.16.3",
+  "Version": "0.16.4",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.16.4",
+      "Changes": [
+        "Keep Map/Trail/Save source labels visible after loading personal presets and associate restored preset state with the correct mission working-copy session.",
+        "Add bounded settings-transition and persistence diagnostics with context/source/preset identities, dirty state, actual write results and target paths; include available exception type, HResult and exception details on failure.",
+        "Add Personal Settings as a reset source for editable Map and Trail working copies without leaving their context or overwriting personal settings and preset files.",
+        "Keep source selection, host/client ownership and backend restart handling consistent; prepare all target snapshots before a shared reset and preserve untouched backend state on failure."
+      ]
+    },
     {
       "Version": "0.16.3",
       "Changes": [
