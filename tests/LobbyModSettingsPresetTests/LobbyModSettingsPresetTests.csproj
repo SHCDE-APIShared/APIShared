@@ -9,6 +9,12 @@
     <DefineConstants>$(DefineConstants);API_SHARED_PRESET_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
+    <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
+    <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
+    <Content Include="../../Locales/*.txt" Link="Locales/%(Filename)%(Extension)"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\Content\APIShared.Content.csproj" />
     <Compile Include="..\..\src\ModSettings\MissionModSettingsPreparation.cs" />
     <Compile Include="..\..\src\ModSettings\MissionModSettingsSession.cs" />

@@ -532,8 +532,14 @@ namespace APISharedTests
 
         private sealed class PresetSaveTestViewModel : PresetLobbyModSettingsViewModel
         {
-            protected override string ResolveSettingsUiText(string key, string fallback) =>
-                key == "Common.ClientOptions" ? "Translated client options" : key;
+            internal bool FailTranslation;
+            internal string LastFallback;
+            protected override string ResolveSettingsUiText(string key, string fallback)
+            {
+                LastFallback = fallback;
+                if (FailTranslation) throw new InvalidOperationException("Consumer translation failed.");
+                return key == "Common.ClientOptions" ? "Translated client options" : key;
+            }
         }
 
         private sealed class DynamicDefaultTestViewModel : PresetLobbyModSettingsViewModel
@@ -616,6 +622,7 @@ namespace APISharedTests
         [AssemblyInitialize]
         public static void InitializeHost(TestContext context)
         {
+            APIShared.Localization.UiText.Configure(() => "en-US");
             typeof(BepInEx.Paths).GetProperty(nameof(BepInEx.Paths.ConfigPath))
                 .GetSetMethod(true).Invoke(null, new object[] { Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test-config") });
             // ConfigFile's static initializer uses the file path independently of ConfigPath.

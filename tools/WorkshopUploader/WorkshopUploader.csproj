@@ -13,6 +13,9 @@
     <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(GameDir)/BepInEx/plugins/000shcdese/ICSharpCode.SharpZipLib.dll</HintPath><Private>true</Private></Reference>
     <Compile Include="Program.cs" />
     <Compile Include="InteractivePublisher.cs" />
+    <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
+    <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
+    <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
     <Compile Include="../../src/Workshop/WorkshopSteamBackend.cs" Link="Shared/WorkshopSteamBackend.cs" />
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Shared/WorkshopContracts.cs" />
     <Compile Include="../../src/Workshop/WorkshopPackageCodec.cs" Link="Shared/WorkshopPackageCodec.cs" />

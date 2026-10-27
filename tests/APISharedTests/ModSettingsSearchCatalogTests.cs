@@ -273,6 +273,8 @@ namespace APISharedTests
             public double Value { get { ValueReads++; OnRead?.Invoke(); return value; } set { this.value = value; } }
             public StateFixture Child { get; set; }
             public bool Enabled { get; set; }
+            public int SignedValue { get; set; }
+            public string DisplayText { get; set; }
             public double Broken => throw new InvalidOperationException("state getter failed");
             public double Recursive
             {
@@ -284,6 +286,43 @@ namespace APISharedTests
             }
             public void Changed() => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Value)));
             public void Changed(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+        }
+
+        [TestMethod]
+        public void TextBoxStateIsExplicitNumericLiveAndDoesNotChangeLegacyTextFields()
+        {
+            WithFile("<Grid xmlns:s='urn:search'>" +
+                "<TextBox s:Key='signed' s:Title='Signed' ToolTip='Help' Text='{Binding DisplayText}' s:StateValue='{Binding SignedValue}' s:InactiveValues='0'/>" +
+                "<TextBox s:Key='legacy' s:Title='Legacy' ToolTip='Help' Text='{Binding SignedValue}' s:InactiveValues='0'/>" +
+                "<TextBox s:Key='string' s:Title='String' ToolTip='Help' s:StateValue='{Binding DisplayText}'/>" +
+                "<TextBox s:Key='missing' s:Title='Missing' ToolTip='Help' s:StateValue='{Binding Missing}'/>" +
+                "<TextBox s:Key='converted' s:Title='Converted' ToolTip='Help' s:StateValue='{Binding SignedValue, Converter=Anything}'/>" +
+                "<TextBox s:Key='external' s:Title='External' ToolTip='Help' s:StateValue='{Binding SignedValue, ElementName=Other}'/>" +
+                "</Grid>", path => {
+                var model = new StateFixture { DisplayText = "100 gold" };
+                ModSettingsSearchCatalog.RegisterSource(model, path, null, "independent.numeric.text.fixture");
+                ModSettingsSearchCatalog.TryGetEntries(model, out var metadata);
+                Assert.AreEqual(ModSettingsSearchState.Inactive, ModSettingsSearchCatalog.GetState(model, "signed"));
+                foreach (int number in new[] { -1, -25, 25, int.MinValue, int.MaxValue })
+                {
+                    model.SignedValue = number;
+                    Assert.AreEqual(ModSettingsSearchState.Active, ModSettingsSearchCatalog.GetState(model, "signed"));
+                }
+                foreach (string key in new[] { "legacy", "string", "missing", "converted", "external" })
+                    Assert.AreEqual(ModSettingsSearchState.Unknown, ModSettingsSearchCatalog.GetState(model, key), key);
+                int notifications = 0;
+                Action<object> changed = owner => { if (ReferenceEquals(owner, model)) notifications++; };
+                ModSettingsSearchCatalog.StateChanged += changed;
+                try
+                {
+                    model.SignedValue = 0; model.Changed(nameof(model.SignedValue));
+                    Assert.AreEqual(1, notifications);
+                    Assert.AreEqual(ModSettingsSearchState.Inactive, ModSettingsSearchCatalog.GetState(model, "signed"));
+                    ModSettingsSearchCatalog.TryGetEntries(model, out var current);
+                    Assert.AreSame(metadata, current);
+                }
+                finally { ModSettingsSearchCatalog.StateChanged -= changed; }
+            });
         }
 
         [TestMethod]

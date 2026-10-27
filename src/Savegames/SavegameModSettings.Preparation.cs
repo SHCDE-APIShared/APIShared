@@ -115,8 +115,8 @@ namespace APIShared
 
         internal static string CaptureHostFingerprint()
         {
-            var values = CaptureCompatibleHostSettings();
             var participants = FindParticipants();
+            var values = CaptureCompatibleHostSettings(participants);
             if (values.Count != participants.Count || participants.Any(p =>
                 !values.TryGetValue(p.Key, out var properties) || properties.Count != p.Value.Properties.Length))
                 throw new InvalidDataException("Incomplete host settings snapshot.");

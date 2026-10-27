@@ -192,7 +192,7 @@ function Assert-ApiWorkshopZipLayout {
                 throw "Unsafe or unexpected APIShared ZIP entry: $name"
             }
             if (-not $entry.Name -and $name -notin @('BepInEx/','BepInEx/plugins/',$prefix) -and
-                -not ($Guid -ceq 'APIShared_Serp' -and $name -cin @('BepInEx/tools/',$toolPrefix,'BepInEx/patchers/')) -and
+                -not ($Guid -ceq 'APIShared_Serp' -and $name -cin @('BepInEx/tools/',$toolPrefix,($toolPrefix+'Locales/'),'BepInEx/patchers/')) -and
                 -not $name.StartsWith($prefix, [StringComparison]::Ordinal)) { throw "Unexpected APIShared ZIP directory: $name" }
             if ($entry.Name -and $name.StartsWith($toolPrefix, [StringComparison]::Ordinal)) { $toolEntries.Add($name.Substring($toolPrefix.Length),$entry) }
         }

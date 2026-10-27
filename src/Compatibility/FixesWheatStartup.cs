@@ -60,7 +60,8 @@ namespace APIShared.Compatibility
             catch (Exception ex)
             {
                 SafeLog(log, LogLevel.Error, "REFUSED/UNCONFIRMED: " + ex.Message +
-                    "; no confirmed protection. No retry or rollback; other APIShared services continue.");
+                    "; no confirmed protection. No retry or rollback; other APIShared services continue. " +
+                    "If the Fixes wheat option is enabled, set [EnableWheatSaleCategoryFix] Enabled=false and restart before gameplay.");
             }
         }
 
@@ -147,22 +148,23 @@ namespace APIShared.Compatibility
             FixesWheatAnalysis.SellerFrame frame = FixesWheatAnalysis.AnalyzeSeller(disk, siteRva, original);
             ulong continuation = site + (uint)displacedLength;
             Func<byte[], FixesWheatAnalysis.WheatStub> analyze = bytes =>
-                FixesWheatAnalysis.AnalyzeStub(bytes, stub, flagAddress, original, continuation, frame.PlayerHome);
+                FixesWheatAnalysis.AnalyzeStub(bytes, stub, flagAddress, original, continuation, frame.PlayerHome, flags.Length);
             Func<byte[]> readStub = () => FixesWheatMemory.ReadAvailable(stub, 256);
             ValidateEntry(image, disk, frame, site, stub, displacedLength);
             FixesWheatAnalysis.WheatStub before = analyze(readStub());
             bool changed = FixesWheatAnalysis.Correct(readStub,
-                (offset, value) =>
+                (offset, expected, replacement) =>
                 {
                     RequireStartup();
                     ValidateEntry(image, disk, frame, site, stub, displacedLength);
-                    FixesWheatMemory.WriteOperand(stub + (uint)offset, value);
+                    FixesWheatMemory.WriteRange(stub + (uint)offset, expected, replacement);
                 }, analyze);
             ValidateEntry(image, disk, frame, site, stub, displacedLength);
             Report(log, (changed ? "CORRECTED" : "ALREADY-CORRECT") + ": derived from the actual code; stub=0x" +
                 stub.ToString("X") + " (" + before.Length + " bytes), siteRva=0x" + siteRva.ToString("X") +
                 ", sellerRva=0x" + frame.FunctionBegin.ToString("X") + ", frame=0x" + frame.Allocation.ToString("X") +
-                ", player displacement 0x" + before.Displacement.ToString("X") + "->0x" + before.Required.ToString("X") +
+                ", variant=" + before.Variant + ", player displacement=0x" + before.PlayerDisplacement.ToString("X") +
+                ", write range=+0x" + before.WriteOffset.ToString("X") + "/" + before.WriteLength +
                 "; flags/settings unchanged; startup-only, no later retry");
         }
 

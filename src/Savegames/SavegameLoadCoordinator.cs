@@ -20,6 +20,9 @@ namespace APIShared
     internal static class SavegameLoadCoordinator
     {
         private delegate void HostLoad(Platform_Multiplayer self, string name);
+        // Vanilla starts a released load asynchronously: HostLoadGame only publishes the lobby
+        // "start" data. The readiness deadline must not abort that window; it gets its own bound.
+        private const int StartWindowSeconds = 30;
         private static Hook hook;
         private static HostLoad original;
         private static MessageChannel<SavegameLoadPacket> channel;
@@ -227,7 +230,11 @@ namespace APIShared
             else if (pending?.Token == packet.Token && packet.Operation == 3)
                 Abort(string.IsNullOrEmpty(packet.Reason) ? "Host cancelled the save preparation." :
                     "Host cancelled the save preparation: " + packet.Reason, false);
-            else if (pending?.Token == packet.Token && packet.Operation == 2) released = true;
+            else if (pending?.Token == packet.Token && packet.Operation == 2)
+            {
+                if (!released) deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
+                released = true;
+            }
         }
 
         // Serializing and hashing every host setting each frame is too costly while peers
@@ -270,6 +277,7 @@ namespace APIShared
                     if (!FingerprintMatches(true))
                         throw new InvalidOperationException("Prepared host settings changed.");
                     released = true;
+                    deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
                     if (Humans(lobby).Length > 1) Send(Reply(2));
                     NativeApiLog.Debug(log, "SAVE_SETTINGS_CONFIRMED: all current human peers ready; releasing Vanilla load once.");
                     original(owner, pending.SaveName);
@@ -350,13 +358,15 @@ namespace APIShared
         private static void ShowBlocked(string reason)
         {
             NativeApiLog.Error(log, "SAVE_SETTINGS_LOAD_BLOCKED: " + reason);
-            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage("Save settings", () => { }, "The save could not be loaded safely: " + reason); }
+            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(APIShared.Localization.UiText.Get("Savegames.LoadTitle"), () => { }, APIShared.Localization.UiText.Get("Savegames.LoadFailed") + reason); }
             catch (Exception error) { NativeApiLog.Error(log, "Could not display save preparation failure: " + error); }
         }
         // The host names the players that have not confirmed: an older or newer APIShared build drops
         // packets it cannot read, so a missing confirmation is the only sign of it on this side.
         private static string TimeoutReason()
         {
+            if (released)
+                return "The confirmed save load did not start within " + StartWindowSeconds + " seconds after its release.";
             string waiting = owner?.activeLobby?.isHost == true && agreement != null
                 ? string.Join(", ", agreement.Unconfirmed.Select(Name)) : string.Empty;
             return waiting.Length == 0 ? "Save settings preparation timed out after 60 seconds." :

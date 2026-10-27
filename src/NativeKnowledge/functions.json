@@ -1,0 +1,366 @@
+{
+  "schemaVersion": 1,
+  "binaryHash": "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2",
+  "functions": [
+    {
+      "schemaVersion": 1,
+      "claimId": "fn-ai-get-buy-price",
+      "binaryHash": "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2",
+      "address": "0x1800CEB10",
+      "functionRva": "0xCEB10",
+      "functionEndRva": "0xCEB2F",
+      "functionRawHash": "5B45784D8B227D4BEB1AA822E6B12523BD9A0825EFA17764909A037E613C6C6A",
+      "canonicalName": "c_game_ai_get_buy_price",
+      "nameOrigin": "semantic-reconstruction",
+      "identityConfidence": "confirmed",
+      "semanticConfidence": "confirmed",
+      "abiConfidence": "confirmed",
+      "signature": "int (void* playerManager, int playerId, int good, int amount)",
+      "parameters": [
+        {
+          "ordinal": 0,
+          "location": "RCX",
+          "type": "void*",
+          "role": "playerManager",
+          "confidence": "confirmed"
+        },
+        {
+          "ordinal": 1,
+          "location": "EDX",
+          "type": "int",
+          "role": "playerId",
+          "confidence": "confirmed"
+        },
+        {
+          "ordinal": 2,
+          "location": "R8D",
+          "type": "int",
+          "role": "good",
+          "confidence": "confirmed"
+        },
+        {
+          "ordinal": 3,
+          "location": "R9D",
+          "type": "int",
+          "role": "amount",
+          "confidence": "confirmed"
+        }
+      ],
+      "return": {
+        "location": "EAX",
+        "type": "int",
+        "meaning": "signed total AI purchase price",
+        "range": "Int32 with unchecked overflow",
+        "confidence": "confirmed"
+      },
+      "fieldAccesses": [
+        {
+          "type": "player manager",
+          "offset": "0x1817B8",
+          "access": "read indexed by good",
+          "confidence": "confirmed"
+        }
+      ],
+      "sideEffects": [],
+      "flowReview": "complete",
+      "callerObservations": [
+        {
+          "callerRva": "0x3E000",
+          "callSiteRva": "0x3ED72",
+          "signature": "int (void* playerManager, int playerId, int good, int amount)"
+        },
+        {
+          "callerRva": "0x29000",
+          "callSiteRva": "0x29684",
+          "signature": "int (void* playerManager, int playerId, int good, int amount)"
+        }
+      ],
+      "evidence": [
+        {
+          "id": "buy-price-flow",
+          "chain": "complete-function-data-flow",
+          "kind": "data-flow",
+          "strength": "strong",
+          "source": "ExtraFeatures/src/AIMarketVanillaPriceHook.cs",
+          "sourceFileHash": "0BDD93736CB91F7671AA10F7239A069D74DD0444C4BA364DEBCE0D6F03780807",
+          "rva": "0xCEB10",
+          "summary": "The complete 31-byte function indexes the buy-price table, divides by five toward zero, multiplies by amount, and returns EAX."
+        },
+        {
+          "id": "buy-price-callers",
+          "chain": "transaction-callgraph",
+          "kind": "callgraph",
+          "strength": "strong",
+          "source": "ExtraFeatures/UpdateToNewDLL.md",
+          "sourceFileHash": "979F3D9EC115D3E77AFAEF31AFD8564BC3754172C8C0200D13AC78372BECB9D4",
+          "rva": "0xCEB10",
+          "summary": "Callers cover both the AI affordability decision and the actual purchase transaction."
+        },
+        {
+          "id": "buy-price-version",
+          "chain": "cross-version-audit",
+          "kind": "version",
+          "strength": "strong",
+          "source": "ExtraFeatures/UpdateToNewDLL.md",
+          "sourceFileHash": "979F3D9EC115D3E77AFAEF31AFD8564BC3754172C8C0200D13AC78372BECB9D4",
+          "rva": "0xCEB10",
+          "summary": "Complete bytes, ABI, detour span, incoming edges, and arithmetic were revalidated across audited builds."
+        }
+      ],
+      "counterEvidence": [],
+      "verifiedBy": [
+        "query.ps1 function 0xCEB10",
+        "query.ps1 callers 0xCEB10",
+        "ExtraFeatures native hook self-validation"
+      ],
+      "id": "nkfn-000001",
+      "knowledgeNote": "Offline naming/evidence metadata; no callable or automatically resolved runtime address."
+    },
+    {
+      "schemaVersion": 1,
+      "claimId": "fn-ai-get-sell-price",
+      "binaryHash": "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2",
+      "address": "0x1800CEB90",
+      "functionRva": "0xCEB90",
+      "functionEndRva": "0xCEBAF",
+      "functionRawHash": "D428FAE5C2A3BED0B48195B2661F56550E5B53F6E8EE9A603FADA56DAEE8F670",
+      "canonicalName": "c_game_ai_get_sell_price",
+      "nameOrigin": "semantic-reconstruction",
+      "identityConfidence": "confirmed",
+      "semanticConfidence": "confirmed",
+      "abiConfidence": "confirmed",
+      "signature": "int (void* playerManager, int playerId, int good, int amount)",
+      "parameters": [
+        {
+          "ordinal": 0,
+          "location": "RCX",
+          "type": "void*",
+          "role": "playerManager",
+          "confidence": "confirmed"
+        },
+        {
+          "ordinal": 1,
+          "location": "EDX",
+          "type": "int",
+          "role": "playerId",
+          "confidence": "confirmed"
+        },
+        {
+          "ordinal": 2,
+          "location": "R8D",
+          "type": "int",
+          "role": "good",
+          "confidence": "confirmed"
+        },
+        {
+          "ordinal": 3,
+          "location": "R9D",
+          "type": "int",
+          "role": "amount",
+          "confidence": "confirmed"
+        }
+      ],
+      "return": {
+        "location": "EAX",
+        "type": "int",
+        "meaning": "signed total AI sale proceeds",
+        "range": "Int32 with unchecked overflow",
+        "confidence": "confirmed"
+      },
+      "fieldAccesses": [
+        {
+          "type": "player manager",
+          "offset": "0x1817BC",
+          "access": "read indexed by good",
+          "confidence": "confirmed"
+        }
+      ],
+      "sideEffects": [],
+      "flowReview": "complete",
+      "callerObservations": [
+        {
+          "callerRva": "0x29000",
+          "callSiteRva": "0x29732",
+          "signature": "int (void* playerManager, int playerId, int good, int amount)"
+        }
+      ],
+      "evidence": [
+        {
+          "id": "sell-price-flow",
+          "chain": "complete-function-data-flow",
+          "kind": "data-flow",
+          "strength": "strong",
+          "source": "ExtraFeatures/src/AIMarketVanillaPriceHook.cs",
+          "sourceFileHash": "0BDD93736CB91F7671AA10F7239A069D74DD0444C4BA364DEBCE0D6F03780807",
+          "rva": "0xCEB90",
+          "summary": "The complete 31-byte function indexes the sell-price table, divides by five toward zero, multiplies by amount, and returns EAX."
+        },
+        {
+          "id": "sell-price-callers",
+          "chain": "transaction-callgraph",
+          "kind": "callgraph",
+          "strength": "strong",
+          "source": "ExtraFeatures/UpdateToNewDLL.md",
+          "sourceFileHash": "979F3D9EC115D3E77AFAEF31AFD8564BC3754172C8C0200D13AC78372BECB9D4",
+          "rva": "0xCEB90",
+          "summary": "The sale transaction consumes this helper result as the proceeds credited to AI gold."
+        },
+        {
+          "id": "sell-price-version",
+          "chain": "cross-version-audit",
+          "kind": "version",
+          "strength": "strong",
+          "source": "ExtraFeatures/UpdateToNewDLL.md",
+          "sourceFileHash": "979F3D9EC115D3E77AFAEF31AFD8564BC3754172C8C0200D13AC78372BECB9D4",
+          "rva": "0xCEB90",
+          "summary": "Complete bytes, ABI, detour span, incoming edges, and arithmetic were revalidated across audited builds."
+        }
+      ],
+      "counterEvidence": [],
+      "verifiedBy": [
+        "query.ps1 function 0xCEB90",
+        "query.ps1 callers 0xCEB90",
+        "ExtraFeatures native hook self-validation"
+      ],
+      "id": "nkfn-000002",
+      "knowledgeNote": "Offline naming/evidence metadata; no callable or automatically resolved runtime address."
+    },
+    {
+      "schemaVersion": 1,
+      "claimId": "fn-building-get-type-height-offset",
+      "binaryHash": "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2",
+      "address": "0x1800C07C0",
+      "functionRva": "0xC07C0",
+      "functionEndRva": "0xC0830",
+      "functionRawHash": "8F8E30DD29FD0E83F835A077EA16E98D45169BE6E3F727224616D47B5A98CD84",
+      "canonicalName": "c_game_building_get_type_height_offset",
+      "nameOrigin": "native-knowledge-double-review",
+      "identityConfidence": "confirmed",
+      "semanticConfidence": "confirmed",
+      "abiConfidence": "candidate",
+      "signature": null,
+      "parameters": [],
+      "fieldAccesses": [],
+      "sideEffects": [
+        "Read-only type-dependent building height offset; not absolute height, slot validation or a universal standing-plane query."
+      ],
+      "flowReview": "complete",
+      "callerObservations": [],
+      "evidence": [
+        {
+          "id": "complete-flow",
+          "chain": "complete-function-data-flow",
+          "kind": "data-flow",
+          "strength": "strong",
+          "source": "_inspect/CrusaderDE-Native-Baseline/sem/FBCB9319/knowledge/PLAGUE_HEIGHT.md",
+          "sourceFileHash": "97A692C541E487116E36966FA0DD63446F936752A60B27A49BFF34FA61771FAD",
+          "rva": "0xC07C0",
+          "summary": "Read-only type-dependent building height offset; not absolute height, slot validation or a universal standing-plane query. Full containing function and both helper leaves re-reviewed against original bytes."
+        },
+        {
+          "id": "caller-context",
+          "chain": "independent-native-callgraph",
+          "kind": "callgraph",
+          "strength": "strong",
+          "source": "_inspect/CrusaderDE-Native-Baseline/FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2/exports/xrefs.jsonl",
+          "sourceFileHash": "1F642B432B26D255323D40C8E8CAC1706774727E639468D0847DE9D8E1D9D72D",
+          "rva": "0xC07C0",
+          "summary": "Immutable original call/data xrefs: all direct call sites verified; additional data references to 184FD0 are retained, not claimed as proven indirect callers."
+        },
+        {
+          "id": "native-replay",
+          "chain": "isolated-original-machine-execution",
+          "kind": "runtime",
+          "strength": "strong",
+          "source": "_inspect/CrusaderDE-Native-Baseline/sem/FBCB9319/validation/function-name-native-execution.json",
+          "sourceFileHash": "A770E6D82FDACE535542EEB29183FB2FFF2ED014F019667E000694555196537F",
+          "rva": "0xC07C0",
+          "summary": "115546 isolated original-code comparisons; all raw type words and relevant standing-height branches. No game or multiplayer acceptance."
+        }
+      ],
+      "counterEvidence": [],
+      "verifiedBy": [
+        "Full static control/data flow review",
+        "Isolated pristine-byte native replay"
+      ],
+      "return": null,
+      "id": "nkfn-000003",
+      "knowledgeNote": "Offline naming/evidence metadata; no callable or automatically resolved runtime address."
+    },
+    {
+      "schemaVersion": 1,
+      "claimId": "fn-unit-update-standing-height",
+      "binaryHash": "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2",
+      "address": "0x180184FD0",
+      "functionRva": "0x184FD0",
+      "functionEndRva": "0x185185",
+      "functionRawHash": "D0E6CD911C2150EC892A2131A02641EDE59C81DC4F213579D7A468C9E6AC7B33",
+      "canonicalName": "c_game_unit_update_standing_height",
+      "nameOrigin": "native-knowledge-double-review",
+      "identityConfidence": "confirmed",
+      "semanticConfidence": "confirmed",
+      "abiConfidence": "candidate",
+      "signature": null,
+      "parameters": [],
+      "fieldAccesses": [
+        {
+          "type": "GameUnit",
+          "offset": "0xB6",
+          "access": "read-write",
+          "confidence": "confirmed"
+        },
+        {
+          "type": "GameUnit",
+          "offset": "0xB8",
+          "access": "write",
+          "confidence": "confirmed"
+        }
+      ],
+      "sideEffects": [
+        "Updates base standing elevation, signed correction, auxiliary word and transition state; includes independent selected-unit addition. Not a read-only getter."
+      ],
+      "flowReview": "complete",
+      "callerObservations": [],
+      "evidence": [
+        {
+          "id": "complete-flow",
+          "chain": "complete-function-data-flow",
+          "kind": "data-flow",
+          "strength": "strong",
+          "source": "_inspect/CrusaderDE-Native-Baseline/sem/FBCB9319/knowledge/PLAGUE_HEIGHT.md",
+          "sourceFileHash": "97A692C541E487116E36966FA0DD63446F936752A60B27A49BFF34FA61771FAD",
+          "rva": "0x184FD0",
+          "summary": "Updates base standing elevation, signed correction, auxiliary word and transition state; includes independent selected-unit addition. Not a read-only getter. Full containing function and both helper leaves re-reviewed against original bytes."
+        },
+        {
+          "id": "caller-context",
+          "chain": "independent-native-callgraph",
+          "kind": "callgraph",
+          "strength": "strong",
+          "source": "_inspect/CrusaderDE-Native-Baseline/FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2/exports/xrefs.jsonl",
+          "sourceFileHash": "1F642B432B26D255323D40C8E8CAC1706774727E639468D0847DE9D8E1D9D72D",
+          "rva": "0x184FD0",
+          "summary": "Immutable original call/data xrefs: all direct call sites verified; additional data references to 184FD0 are retained, not claimed as proven indirect callers."
+        },
+        {
+          "id": "native-replay",
+          "chain": "isolated-original-machine-execution",
+          "kind": "runtime",
+          "strength": "strong",
+          "source": "_inspect/CrusaderDE-Native-Baseline/sem/FBCB9319/validation/function-name-native-execution.json",
+          "sourceFileHash": "A770E6D82FDACE535542EEB29183FB2FFF2ED014F019667E000694555196537F",
+          "rva": "0x184FD0",
+          "summary": "115546 isolated original-code comparisons; all raw type words and relevant standing-height branches. No game or multiplayer acceptance."
+        }
+      ],
+      "counterEvidence": [],
+      "verifiedBy": [
+        "Full static control/data flow review",
+        "Isolated pristine-byte native replay"
+      ],
+      "return": null,
+      "id": "nkfn-000004",
+      "knowledgeNote": "Offline naming/evidence metadata; no callable or automatically resolved runtime address."
+    }
+  ]
+}

@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.16.0";
+        public const string PluginVersion = "0.16.3";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -28,11 +28,16 @@ namespace APIShared
         private void Awake()
         {
             Internal.DebugLogHelper.InitializeDiagnostics(Config, Logger);
+            Localization.GameLocale.Initialize();
+            var localizationLog = RuntimeLogger;
+            Localization.UiText.Configure(Localization.GameLocale.Current,
+                message => Internal.DebugLogHelper.LogWarning(localizationLog, "APIShared localization: " + message));
             Compatibility.FixesWheatStartup.Initialize(RuntimeLogger);
             Workshop.WorkshopCleanupRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
             ScriptExtenderFixes.LordMediaResolverRuntime.Initialize(RuntimeLogger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
+            ScriptExtenderFixes.LobbyMismatchRuntime.Initialize(RuntimeLogger);
             Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
@@ -40,6 +45,7 @@ namespace APIShared
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
             ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
+            ScriptExtenderFixes.LordScriptDiagnosticsRuntime.Initialize(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.
             CrusaderLibrary.Instance.LibraryLoaded += OnLibraryLoaded;
@@ -68,6 +74,9 @@ namespace APIShared
                 new NativeInitializationStep("building tooltip bindings", Presentation.BuildingTooltipPresentation.Bind),
                 new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame load dialog", () => Savegames.SaveLoadDialogEvents.Initialize(Config, RuntimeLogger)),
+                new NativeInitializationStep("multiplayer map lookup", () => Maps.MultiplayerMapLookup.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("lobby system messages", () => Lobby.LobbyChatPresentation.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
                 new NativeInitializationStep("native field knowledge", () => NativeKnowledge.NativeFieldReader.InitializeCurrent(hash)),

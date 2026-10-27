@@ -12,6 +12,9 @@ Callers own native pointer validity, the game-thread/lifetime contract and corre
 view origins. See the [complete usage contract and example](../src/NativeKnowledge/INTEGRATION.md)
 and [field/evidence reference](../src/NativeKnowledge/FELDKATALOG.md).
 
+For reverse engineering, see the separate [function-name reference](../src/NativeKnowledge/FUNKTIONEN.md).
+Its hash-bound authoring JSON is not consumed by the runtime and grants no native-call contract.
+
 ## Example package requirements
 
 The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
@@ -93,6 +96,8 @@ APIShared optionally loads after Fixes for its audited
 [wheat-sale startup correction](FIXES_COMPATIBILITY.md). No consumer registration
 is required. Check its explicit outcome log; APIShared being present does not
 prove that an unknown Fixes binary was corrected.
+Supported legacy stack-load and division-based wheat hooks are corrected inside
+their existing allocations; no consumer adapter or settings migration is needed.
 
 Unused observation services do not scan or prepare events. Register player-defeat
 observers before the first simulation tick if early transitions matter: the first
@@ -273,8 +278,12 @@ The process-lifetime managed Extender receive hook copies packet data and transp
 sender on the raw callback and posts to the validated Unity FIFO also used by
 `Network.TryPostPresentation`. Application rechecks lobby/session identity and calls
 the original Extender receiver, preserving its sender checks and join protocol.
-Stale queued work is discarded. Missing dispatch never falls back to the network
-thread. Registration requires the signature-checked hook to be available. This
+Stale queued work is discarded: leaving the lobby or ending/replacing a mission
+invalidates it, while starting a mission from the same lobby keeps it current.
+Inside a multiplayer start (new game or save) the queued settings are applied on the
+Unity thread after Vanilla received its last lobby packets and before the map loads,
+as the Extender's synchronous receiver would; their dispatcher turns then do nothing.
+Missing dispatch never falls back to the network thread. Registration requires the signature-checked hook to be available. This
 changes incoming Extender settings delivery to queued Unity execution, including
 settings registered directly with the Extender; outbound formats and direct
 registration ownership remain unchanged.
@@ -479,6 +488,34 @@ and replacement rules. An accepted overlap is not a compatibility guarantee. Mod
 overlap rules, when to use which, and limits: [Native sites](NATIVE_SITES.md); workflow:
 [compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
 
+## APIShared interface language
+
+APIShared's own UI uses `Locales/<locale>.txt`, not consumer/modpack resources.
+The internal reader is not a public localization service. Files are UTF-8 with
+`Key=Value` entries, `#` comments, named `{Placeholders}`, `\n` for line breaks and
+`\\` for a literal backslash. Values retain spaces and may contain `=`.
+English and German are maintained; other supported game catalogs currently contain
+the same keys with English substitutes. Duplicate/unknown keys, invalid UTF-8 and
+changed placeholder sets reject that external catalog with a diagnostic.
+
+In game, an explicit Extender language override wins, followed by Steam's game
+language, the Extender fallback and English. Main-thread UI calls publish the
+selected language for workers; catalogs are cached per language. Missing keys use
+English. The English file is also embedded in the assembly, so missing or damaged
+installed catalogs retain usable messages. The publisher uses the operating
+system's UI culture; its reader and English resource are compiled into the tool.
+Generated warning bootstraps compile their own reader, language selector and
+catalog resources and work before APIShared is installed. Launcher helpers read
+catalog data without executing it. Package/build evidence includes the catalogs.
+
+For preset consumers, continue overriding
+`ResolveSettingsUiText(string key, string fallback)` if needed. Existing `Common.*`
+keys and their English fallback values are retained; a nonempty consumer result
+that differs from the key takes precedence. Empty/key results or translation
+exceptions fall back to APIShared's selected catalog. APIShared does not replace
+Vanilla text or text supplied by consumers. Technical diagnostics, protocol values
+and mod identities are not translated.
+
 ## Script Extender bugfixes
 
 For explicitly called alternatives, see
@@ -501,6 +538,36 @@ exceptions. This does not reconstruct lost Lord identities or recover custom med
 an incompatible resolver is skipped independently. No consumer registration is needed.
 `SE_LORD_MEDIA` names the missing input and message category, or the exact installation
 stage and observed method entry when its dependency contract is rejected.
+
+The Lord script diagnostics in `ScriptExtenderFixes/LordScripts` only log. Script
+Extender runs a custom Lord's `init.lua` per player slot by the slot's local Lord name,
+only while its local `AllowScriptedLords` option is on, and checks only `NetworkMode: 1`
+packages when a player joins a lobby. Once per real multiplayer match, APIShared logs
+`SE_LORD_SCRIPTS` with every scripted Lord (player, package GUID and version,
+NetworkMode, a short `init.lua` hash and the local option) so players' logs can be
+compared, and a warning when a scripted Lord's package is client-side or unregistered,
+or when scripts are disabled locally. Matches without scripted Lords log nothing.
+Nothing is blocked, sent or changed; the Lord author is responsible for NetworkMode 1.
+
+The lobby mismatch correction in `ScriptExtenderFixes/LobbyMismatch` replaces only
+the audited popup call inside SE's `GameNetworkAPI.RejectLobby`. It installs once
+at managed startup, survives Unity's startup cleanup, and needs no consumer registration.
+The original rejection, logging, exception boundary, Multiplayer overlay and OK callback
+are retained. Changed signatures or popup-call structures skip this correction with an
+explicit `SE_LOBBY_MISMATCH` warning; no other APIShared service is disabled.
+
+The larger dialog shows at most two differences with bounded names and versions,
+identifies the side missing a mod, and always points to the client's
+`BepInEx\LogOutput.log`. Additional differences are announced in the dialog and
+the complete detected list (names, GUIDs and both version states) is logged once per
+rejected attempt, independently of development diagnostics. Diagnostic comparison
+uses SE's lobby metadata and asset-over-plugin precedence, case-insensitive GUIDs,
+ordinal version matching and client-only exemptions; it never makes the join decision.
+Missing/invalid metadata or capture failures are explicitly reported instead of claiming
+a complete comparison. The original SE reason remains in the log and is shown when
+no complete explanatory comparison is available. The localized title "Different mods"
+describes mod-list differences without claiming an incompatibility diagnosis. Text uses
+the [APIShared catalogs](#apishared-interface-language). Existing consumer lobby-chat warnings are unchanged.
 
 The popularity display correction reads the 41 direct SE popularity modifiers after
 successful `GuiChecks` execution during an active mission. It automatically replaces
@@ -789,6 +856,17 @@ is active. Multiple values use semicolons (`"-1;100"`); inclusive numeric ranges
 are supported (`"0..1"`). Numbers use invariant decimal notation. Invalid metadata
 produces unknown state. Declare neutral semantics explicitly; neither labels nor
 initial/default values are used to guess them.
+
+
+TextBoxes can opt in to numeric state filtering with APIShared 0.16.1:
+`shared:ModSettingsSearch.StateValue="{Binding Amount}"` binds the authoritative
+numeric property, independently of `Text="{Binding AmountValueText}"`. Put
+`shared:ModSettingsSearch.InactiveValues="0"` on the same TextBox when every
+nonzero amount, including -1, is active. The catalog reads and observes the
+numeric model path on the Unity thread; it never parses localized display text.
+Converters, alternate binding sources, missing paths and nonnumeric values remain
+unknown. TextBoxes without StateValue retain their prior unknown state. Existing
+checkbox/slider behavior and defaults are unchanged; no migration is required.
 
 The catalog starts observing value paths when state is queried. `StateChanged`
 publishes the registered root model on the Unity thread, including changes to
@@ -1386,3 +1464,86 @@ Native implementation and validation: [update contract](../UpdateToNewDLL.md#pla
 The executed fixtures cover original/modified paths, all category combinations,
 multiple owners, heights, full native damage semantics and ABI preservation. These
 checks do not replace in-game rendering, save roundtrips or a real multiplayer run.
+## Multiplayer map lookup and lobby system hints
+
+These runtime APIs are in APIShared.dll and require game references. They are
+independent of the Content assembly's map/Trail container reader. Check each
+service's `IsAvailable` after LibraryLoaded before enabling a dependent feature.
+Registrations can be queued earlier; their success alone does not prove availability.
+Register once with your own mod GUID and a stable owner-local ID. Providers,
+observers and rules remain registered until process exit; return null or false
+while inactive. No hook teardown or unregister is exposed.
+
+`APIShared.Maps.MultiplayerMapLookup.TryRegisterProvider(owner, id, callback, out diagnostic)`
+receives an immutable `MultiplayerMapLookupRequest` containing `FileName` and `Crc`.
+Return a borrowed `FileHeader` only for the current verified content context, with
+matching name/CRC and a nonempty local path. Keep the supplied header valid while
+that context can be queried; do not mutate a header while another caller uses it.
+The service changes no global catalog and performs no file or package validation.
+The provider retains active-lobby identity, mission selection, content integrity,
+multiplayer authority and activation policy. CRC matching alone is insufficient
+proof of package integrity. Comparison preserves Vanilla's name/CRC conventions.
+
+Callbacks execute synchronously on the validated Unity thread, in ordinal owner/ID
+order and outside registration locks. Other threads and recursive queries use the
+original lookup. With no claim, Vanilla runs once, with unchanged exception behavior.
+Distinct claimed header instances produce `Conflict` and a null header instead of
+choosing by registration order; the same header instance can be shared. Invalid
+proposals and callback failures are logged and isolated. Result observers registered
+through `TryRegisterObserver` receive `Vanilla`, `Resolved` or `Conflict`, the query,
+a borrowed header (possibly null) and a technical diagnostic. There is no replay.
+Registrations added during a query participate in the next query.
+
+Use `APIShared.Lobby.LobbyChatPresentation.TryRegisterSystemMessageRule(owner, id,
+rule, out diagnostic)` for recognizable local lobby hints. The predicate receives
+immutable name, text and original system classification; return true to OR the
+system-message flag. That retains the hint when ordinary chat is muted. It does
+not send a message, change its text or render it twice. Existing system messages
+remain system messages; unrelated chat retains Vanilla behavior. Rules have the
+same thread, ordering, error isolation and permanent-lifetime contract. Message
+text and display name are not authenticated gameplay authority.
+
+Vanilla truncates each displayed lobby message at 300 characters. Consumers must
+split longer support reports before sending them and prevent receive/send loops.
+
+`APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
+Mods that enforce their own Ready/Start checks register a provider with
+`TryRegisterProvider(owner, id, provider, out diagnostic)`. The provider receives a
+`LobbyLaunchStatusQuery` (lobby ID, host role and the Vanilla view, valid only during
+the call) and returns the current `LobbyLaunchStatusItem` entries: localized `Text`,
+`Kind`, a log-only `Detail` and a `Scope` for lobby members. Use `Loading` for expected transitional states, such as
+a joining player still loading the selected mission; use `Blocking` for conditions
+that require action; use `Waiting` for an obvious open-ended wait, such as a missing
+second player, which is never announced but suppresses the "ready" message while it
+lasts. Call `RequestRefresh()` from any thread when a provider input
+changes, and `ReportAttempt(owner, operation, item)` right after rejecting a
+Ready/Start command (calls from other threads are marshalled to the Unity thread). The service never blocks a command itself.
+
+The host is the only sender of automatic announcements for the whole lobby, so its
+provider should report every player's state (for example, which players still load).
+On a lobby member, `LobbyLaunchStatusScope.Local` entries (the default) are only shown
+in the member's own lobby chat as Vanilla system hints, without network traffic and
+also in muted chat. Mark an entry `LobbyLaunchStatusScope.Lobby` when it describes a
+local condition the host cannot detect, such as a missing file or a required restart;
+it is then sent to everyone. A line another player sent within the last five seconds
+is not sent or shown again, so several members with the same problem in the same
+language produce one line. In a Coop lobby, whose chat Vanilla keeps collapsed, a
+received or locally shown announcement opens the chat like Vanilla's chat button;
+ordinary chat messages keep Vanilla's behavior.
+
+Providers run synchronously on the Unity thread in ordinal owner/ID order, only in
+an active Steam multiplayer lobby outside a mission; failures are isolated and
+logged. A loading phase is announced once as a neutral wait hint after it has lasted
+1.5 seconds, so short synchronizations such as browsing missions stay silent;
+each loading entry that persists for 20 seconds is announced once as blocking. Blocking entries are announced when they first appear;
+an unchanged or shrinking set sends nothing, a reappearing entry is announced again.
+After any host announcement, one "ready" message follows once no entry has remained
+for 1.5 seconds; lobby members never announce "ready". Every rejected command is sent
+to the lobby by the rejecting player immediately, so a click that did nothing is
+always explained; it is not repeated by the next refresh (neither as block nor as
+wait hint) and does not arm "ready" by itself. Messages are split into numbered parts of at most
+280 characters at word boundaries, start with a fixed marker recognized by
+`IsAnnouncement`, and are classified as lobby system hints on every receiver with
+APIShared. Logs record loading as info, automatic blocks as warnings and rejected
+commands as errors, each with the complete detail. Text is sent in the sender's
+language and conveys no gameplay authority.

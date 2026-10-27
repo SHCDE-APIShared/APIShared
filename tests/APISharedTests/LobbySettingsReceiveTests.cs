@@ -67,5 +67,40 @@ namespace APISharedTests
                 (_, __) => Assert.Fail("Missing dispatcher used an inline fallback."), failures.Add);
             Assert.IsFalse(unavailable.Enqueue(packet, 77));
         }
+
+        // Regression: packets Vanilla receives inside Platform_Multiplayer.StartGame were queued and
+        // applied only after the map had loaded (or dropped). The start flushes them; their own
+        // dispatcher turns must then stay no-ops, and later packets keep their FIFO position.
+        [TestMethod]
+        public void FlushDeliversQueuedPacketsBeforeTheirTurnsWithoutShiftingLaterPackets()
+        {
+            var posted = new Queue<Action>();
+            var received = new List<int>();
+            bool flushInsidePost = false;
+            LobbySettingsReceiveQueue receiver = null;
+            receiver = new LobbySettingsReceiveQueue(action => {
+                    if (flushInsidePost) { receiver.Flush(); return false; }
+                    posted.Enqueue(action); return true;
+                },
+                generation => generation == receiver.Generation,
+                (packet, sender) => received.Add(packet.SourcePlayerId), error => Assert.Fail(error.ToString()));
+            var raw = new LobbyModSettingSyncPacket { SerializedValue = new byte[] { 1 } };
+            raw.SourcePlayerId = 1; receiver.Enqueue(raw, 77);
+            raw.SourcePlayerId = 2; receiver.Enqueue(raw, 77);
+            receiver.Flush();
+            CollectionAssert.AreEqual(new[] { 1, 2 }, received, "Flush did not deliver the queued packets in order.");
+            posted.Enqueue(() => received.Add(100));
+            raw.SourcePlayerId = 3; receiver.Enqueue(raw, 77);
+            while (posted.Count != 0) posted.Dequeue()();
+            CollectionAssert.AreEqual(new[] { 1, 2, 100, 3 }, received, "A flushed packet was repeated or a later packet moved.");
+
+            // A flush between queueing and a failed post delivers the packet; its unused credit is returned.
+            flushInsidePost = true;
+            raw.SourcePlayerId = 4; Assert.IsFalse(receiver.Enqueue(raw, 77));
+            flushInsidePost = false;
+            raw.SourcePlayerId = 5; receiver.Enqueue(raw, 77);
+            while (posted.Count != 0) posted.Dequeue()();
+            CollectionAssert.AreEqual(new[] { 1, 2, 100, 3, 4, 5 }, received, "A returned credit swallowed a later packet.");
+        }
     }
 }

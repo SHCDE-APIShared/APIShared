@@ -9,11 +9,6 @@ using System.Threading.Tasks;
 
 namespace APIShared.Workshop
 {
-    internal static class WorkshopText
-    {
-        internal static string Pick(string en, string de) => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de" ? de : en;
-        internal static string External => Pick("Managed by external mod manager", "Durch externen Modmanager verwaltet");
-    }
     // Steam can initialize more than once. One process-owned attempt prevents
     // repeated prompts; deferred/declined work is rediscovered on the next start.
     internal static class WorkshopStartup
@@ -31,7 +26,7 @@ namespace APIShared.Workshop
             try {
                 if (WorkshopRuntime.IsExternallyManaged) {
                     blocked = true; result = "blocked";
-                    WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop step=startup conditions; " + WorkshopText.External);
+                    WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop step=startup conditions; Managed by external mod manager");
                     return;
                 }
                 try { WorkshopPaths.CheckLinks(BepInEx.Paths.GameRootPath); }
@@ -45,8 +40,7 @@ namespace APIShared.Workshop
                 if (activity.Busy) {
                     blocked = true; result = "blocked";
                     if (activity.Active) {
-                        Notice(WorkshopText.Pick("A previously confirmed Workshop update is still running. This game start will close when you press OK. Wait for the updater to restart the game; do not start it again manually.",
-                            "Ein zuvor bestätigtes Workshop-Update läuft noch. Dieser Spielstart wird mit OK beendet. Bitte den Neustart durch den Updater abwarten und das Spiel nicht erneut manuell starten."));
+                        Notice(APIShared.Localization.UiText.Get("Workshop.APreviouslyConfirmedWorkshopUpdateIs"));
                         var currentActivity = await WorkshopUpdaterLauncher.Activity(BepInEx.Paths.GameRootPath);
                         if (!currentActivity.Active || currentActivity.Transaction != activity.Transaction || currentActivity.OperationsHash != activity.OperationsHash) {
                             WorkshopRuntime.Log("Workshop updater activity changed while the notice was open; no game exit requested and no startup changes planned.");
@@ -130,12 +124,11 @@ namespace APIShared.Workshop
                 if (plans.Count == 0) { result = WorkshopDiagnostics.NoChangesResult(blocked, failures); return; }
                 WorkshopRuntime.CheckBatch(plans, retained);
                 WorkshopRuntime.CheckStartupConditions();
-                string body = string.Join("\n", plans.Select(p => WorkshopStartupSummary.Describe(p, CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de") +
+                string body = string.Join("\n", plans.Select(p => WorkshopStartupSummary.Describe(p, APIShared.Localization.GameLocale.Current()) +
                     (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
-                body += "\n\n" + WorkshopText.Pick("Yes: apply these changes and restart.\nNo: continue playing without applying them.",
-                    "Ja: Diese Änderungen anwenden und neu starten.\nNein: Ohne diese Änderungen weiterspielen.");
+                body += "\n\n" + APIShared.Localization.UiText.Get("Workshop.YesApplyTheseChangesAndRestart");
                 step = "confirmation";
-                int decision = MessageBoxW(IntPtr.Zero, body, "APIShared Workshop", 0x4 | 0x30 | 0x100);
+                int decision = MessageBoxW(IntPtr.Zero, body, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), 0x4 | 0x30 | 0x100);
                 if (decision == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
                 if (decision != 6) {
                     result = "declined";
@@ -150,7 +143,7 @@ namespace APIShared.Workshop
                     else {
                         failures++;
                         WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Error, "Workshop step=" + step + "; operation=" + operation.OperationId + "; " + operation.Diagnostic);
-                        Notice(WorkshopText.Pick("Workshop update could not be started.\n", "Workshop-Update konnte nicht gestartet werden.\n") + operation.Diagnostic);
+                        Notice(APIShared.Localization.UiText.Get("Workshop.WorkshopUpdateCouldNotBeStarted") + operation.Diagnostic);
                     }
                 }
             } catch (Exception ex) {
@@ -159,12 +152,12 @@ namespace APIShared.Workshop
                 result = blocked && failures == 0 ? "blocked" : "failed";
                 WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=" + step, ex);
                 if (WorkshopDiagnostics.UserVisible(ex))
-                    Notice(WorkshopText.Pick("Workshop operation failed. No successful installation was recorded.\n", "Workshop-Vorgang fehlgeschlagen. Es wurde keine erfolgreiche Installation bestätigt.\n") + ex.Message);
+                    Notice(APIShared.Localization.UiText.Get("Workshop.WorkshopOperationFailedNoSuccessfulInstallation") + ex.Message);
             } finally { WorkshopDiagnostics.Outcome(WorkshopRuntime.WriteDiagnostic, result, blocked, failures); }
         }
 
         private static int Ask(string text, uint flags) {
-            int answer = MessageBoxW(IntPtr.Zero, text, "APIShared Workshop", flags | 0x30 | (flags == 0x3 ? 0x200u : flags == 0x4 ? 0x100u : 0u));
+            int answer = MessageBoxW(IntPtr.Zero, text, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), flags | 0x30 | (flags == 0x3 ? 0x200u : flags == 0x4 ? 0x100u : 0u));
             if (answer == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
             return answer;
         }
@@ -177,7 +170,7 @@ namespace APIShared.Workshop
             string game = BepInEx.Paths.GameRootPath;
             var entries = await Task.Run(() => WorkshopRecovery.Inspect(game));
             string root = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions");
-            bool german = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "de";
+            bool german = APIShared.Localization.GameLocale.Current() == "de-DE";
             // Unfinished transactions are logged in full; of the retained finished history
             // only the newest outcome, so the log does not repeat it on every start.
             if (Directory.Exists(root)) {
@@ -188,8 +181,8 @@ namespace APIShared.Workshop
                     WorkshopRuntime.Log("Workshop latest transaction=" + latest + "; outcome=" + WorkshopRecovery.Journal(latest).Last(x => x == "committed" || x == "restored"));
             }
             if (entries.Count == 0) return false;
-            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\nWorkshop: " + (x.Items.Length == 0 ? "?" : string.Join(", ", x.Items)) + "\n" +
-                WorkshopRecovery.Describe(x, german) + (x.CanRollback ? "" : "\nRollback: " + x.RollbackError)));
+            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\n" + APIShared.Localization.UiText.Get("Workshop.Recovery.Items", "Ids", x.Items.Length == 0 ? "?" : string.Join(", ", x.Items)) + "\n" +
+                WorkshopRecovery.Describe(x, APIShared.Localization.GameLocale.Current()) + (x.CanRollback ? "" : "\n" + APIShared.Localization.UiText.Get("Workshop.Recovery.NoRollback", "Reason", x.RollbackError))));
             // Show a failed external recovery/replacement attempt too: its
             // failure belongs to the request journal, not the original journal.
             bool attemptFailed = false;
@@ -200,7 +193,7 @@ namespace APIShared.Workshop
                 if (!File.Exists(references) || !File.ReadAllLines(references).Any(line => entries.Any(e => line.StartsWith(Path.GetFileName(e.Directory) + "\t", StringComparison.Ordinal)))) continue;
                 string failure = WorkshopRecovery.Journal(directory).LastOrDefault(line => line.StartsWith("failure ", StringComparison.Ordinal));
                 if (failure == null) continue;
-                details += "\n\n" + WorkshopText.Pick("Previous attempt: ", "Vorheriger Versuch: ") + directory + "\n" + failure;
+                details += "\n\n" + APIShared.Localization.UiText.Get("Workshop.PreviousAttempt") + directory + "\n" + failure;
                 attemptFailed = true;
                 break;
             }
@@ -208,10 +201,8 @@ namespace APIShared.Workshop
             // below is the fallback that is always available.
             bool rollback = !attemptFailed && entries.All(x => x.CanRollback);
             if (rollback) {
-                string choices = WorkshopText.Pick(
-                    "Yes: repair (restore first, restart and offer the current update).\nNo: rollback to the previous state and close the game. The next start offers updates again.\nCancel: later.",
-                    "Ja: Reparieren (zuerst wiederherstellen, neu starten und aktuelles Update anbieten).\nNein: Rollback auf den vorherigen Zustand und Spiel schließen. Beim nächsten Start werden Updates wieder angeboten.\nAbbrechen: Später.");
-                int decision = Ask(WorkshopText.Pick("An interrupted Workshop installation needs attention.\n\n", "Eine unterbrochene Workshop-Installation benötigt eine Reparatur.\n\n") + details + "\n\n" + choices, 0x3u);
+                string choices = APIShared.Localization.UiText.Get("Workshop.YesRepairRestoreFirstRestartAnd");
+                int decision = Ask(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationNeedsAttention") + details + "\n\n" + choices, 0x3u);
                 var choice = WorkshopRecovery.Decide(true, decision);
                 if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
                 await WorkshopRuntime.RollbackAsync(entries, choice == WorkshopRecovery.Choice.Repair, WorkshopStartupGate.AuthorizeConfirmedUpdate());
@@ -229,9 +220,8 @@ namespace APIShared.Workshop
             try { repair = await WorkshopRuntime.PrepareCleanRepairAsync(entries); }
             catch (Exception ex) {
                 WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=complete repair preparation", ex);
-                Notice(WorkshopText.Pick("An interrupted Workshop installation must be repaired by a clean reinstallation, which cannot be prepared yet:\n",
-                    "Eine unterbrochene Workshop-Installation muss sauber neu installiert werden. Das ist gerade noch nicht möglich:\n") + ex.Message + "\n\n" +
-                    WorkshopText.Pick("Nothing was changed. The repair is offered again on the next start.", "Es wurde nichts verändert. Die Reparatur wird beim nächsten Start erneut angeboten.") + "\n\n" + details);
+                Notice(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationMustBe") + ex.Message + "\n\n" +
+                    APIShared.Localization.UiText.Get("Workshop.NothingWasChangedTheRepairIs") + "\n\n" + details);
                 return true;
             }
             if (repair.Plans.Count == 0) {
@@ -240,13 +230,11 @@ namespace APIShared.Workshop
                 WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop unreadable transactions archived; no installed package is affected: " + string.Join(", ", moved.Select(x => x.Value)));
                 return false;
             }
-            string plans = string.Join("\n", repair.Plans.Select(p => WorkshopStartupSummary.Describe(p, german) + (p.RemovedFiles.Count == 0 ? "" :
-                WorkshopText.Pick(" (" + p.RemovedFiles.Count + " files removed with backup)", " (" + p.RemovedFiles.Count + " Dateien werden mit Sicherung entfernt)")) +
+            string plans = string.Join("\n", repair.Plans.Select(p => WorkshopStartupSummary.Describe(p, APIShared.Localization.GameLocale.Current()) + (p.RemovedFiles.Count == 0 ? "" :
+                APIShared.Localization.UiText.Get("Workshop.RemovedFiles", "Count", p.RemovedFiles.Count)) +
                 (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
-            string body = WorkshopText.Pick("An interrupted Workshop installation cannot be rolled back.\n\n", "Eine unterbrochene Workshop-Installation kann nicht zurückgesetzt werden.\n\n") + details + "\n\n" + plans + "\n\n" +
-                WorkshopText.Pick(
-                    "Yes: after the game closes, reinstall the affected mods cleanly from their Steam download and restart. Package files are rewritten, old or foreign DLLs and incomplete files in these mod folders are removed, and mods that are no longer subscribed are uninstalled. Every replaced or removed file is backed up first; settings are kept.\nNo: later.",
-                    "Ja: Nach dem Schließen des Spiels die betroffenen Mods sauber aus dem Steam-Download neu installieren und neu starten. Paketdateien werden neu geschrieben, alte oder fremde DLLs und unvollständige Dateien in diesen Mod-Ordnern entfernt und nicht mehr abonnierte Mods deinstalliert. Jede ersetzte oder entfernte Datei wird vorher gesichert; Einstellungen bleiben erhalten.\nNein: Später.");
+            string body = APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationCannotBe") + details + "\n\n" + plans + "\n\n" +
+                APIShared.Localization.UiText.Get("Workshop.YesAfterTheGameClosesReinstall");
             if (WorkshopRecovery.Decide(false, Ask(body, 0x4)) != WorkshopRecovery.Choice.CompleteRepair) {
                 WorkshopRuntime.Log("Workshop complete repair postponed; retained " + details);
                 return true;

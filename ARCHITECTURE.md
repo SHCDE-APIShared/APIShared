@@ -84,6 +84,11 @@ endpoint ownership and cleanup; author-rule capture/save materialization share o
 implementation. ExtendedData retains content lifecycle decisions, source registration
 and file ownership. Actual lifecycle adoption is explicit; no second registry is added.
 
+Runtime Maps owns the shared multiplayer name/CRC lookup site; content providers retain
+active-context selection and package integrity. Lobby system-message classification owns
+the local Vanilla renderer site without sending packets or changing gameplay authority.
+Both services use permanent owner-bound registrations and do not modify global catalogs.
+
 Directories help navigation; public namespaces define the contracts. Capabilities
 use `APIShared`; settings and general profiles use `APIShared.ModSettings` and
 `APIShared.GameModes`. Caller-defined profiles never constrain an unrelated mod.

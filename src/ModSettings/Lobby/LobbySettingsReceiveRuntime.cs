@@ -1,6 +1,7 @@
 using APIShared.Internal;
 using BepInEx.Logging;
 using MonoMod.RuntimeDetour;
+using R3;
 using SHCDESE.API;
 using SHCDESE.API.Components.Network;
 using Steamworks;
@@ -21,6 +22,7 @@ namespace APIShared.ModSettings
         private static ulong? lobbyId;
         private static long? missionId;
         private static int dispatchFailure;
+        private static IDisposable missionEnded;
 
         internal static void RequireAvailable()
         {
@@ -50,6 +52,10 @@ namespace APIShared.ModSettings
                 if (!ApiShared.Current.TryGetLobbyState(APISharedPlugin.PluginGuid, out var lobby, out var diagnostic) ||
                     !lobby.TryRegisterObserver("ModSettings.ReceiveContext", _ => RefreshContext(), out diagnostic))
                     throw new InvalidOperationException(diagnostic?.Reason ?? "Lobby-state receiver observation unavailable.");
+                // Record a mission end when it happens, so the first lobby packet afterwards is not
+                // mistaken for stale work of the ended mission. Process-lifetime subscription.
+                MissionEvents.SetOwner(APISharedPlugin.PluginGuid);
+                if (missionEnded == null) missionEnded = MissionEvents.Ended.Subscribe(_ => RefreshContext());
                 candidate = new Hook(target, (Receive)OnReceive,
                     new HookConfig { ManualApply = true, ID = "APIShared.ModSettings.Receive" });
                 original = candidate.GenerateTrampoline<Receive>();
@@ -75,11 +81,24 @@ namespace APIShared.ModSettings
                 DebugLogHelper.LogError(log, "Mod-settings receive dropped: Unity main-thread dispatch unavailable.");
             ulong? currentLobbyId = currentLobby?.id.m_SteamID;
             long? currentMission = MissionLifecycleService.ActiveContext?.SessionId;
-            if (ReferenceEquals(lobbyIdentity, currentLobby) && lobbyId == currentLobbyId && missionId == currentMission) return;
+            bool lobbyChanged = !ReferenceEquals(lobbyIdentity, currentLobby) || lobbyId != currentLobbyId;
+            // A start from this lobby keeps queued host values current: they are the values the
+            // host started with, and FlushBeforeMultiplayerStart applies them before the map loads.
+            // Leaving the lobby or a started/replaced mission makes queued values stale.
+            bool missionLeft = missionId.HasValue && missionId != currentMission;
             lobbyIdentity = currentLobby;
             lobbyId = currentLobbyId;
             missionId = currentMission;
-            queue?.Invalidate();
+            if (lobbyChanged || missionLeft) queue?.Invalidate();
+        }
+
+        // Called by the mission lifecycle on the Unity thread inside Platform_Multiplayer.StartGame/StartSave:
+        // Vanilla has received the last lobby packets (RefreshLobbyList) and has not loaded the map yet.
+        // Queued settings are applied now, as the Extender's synchronous receiver would have done.
+        internal static void FlushBeforeMultiplayerStart()
+        {
+            if (queue == null || !UnityMainThreadDispatch.IsMainThread) return;
+            queue.Flush();
         }
 
         private static void OnReceive(GameXAMLManagerAPI self, LobbyModSettingSyncPacket packet, CSteamID? sender)

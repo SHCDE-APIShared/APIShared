@@ -157,13 +157,14 @@ public sealed class SourceGuardrailTests
             t.ValueText is "pointer" or "restored" or "flushed" or "observed" or "old").ToArray();
         var renamed = source.ReplaceTokens(identifiers, (token, _) => SyntaxFactory.Identifier("renamed_" + token.ValueText).WithTriviaFrom(token));
         Model(renamed.NormalizeWhitespace().ToFullString()).CheckWheatMemory();
-        foreach (string operation in new[] { "FlushInstructionCache", "VirtualProtect" })
+        foreach (string operation in new[] { "flush", "protect" })
         {
             var call = source.DescendantNodes().OfType<FinallyClauseSyntax>().SelectMany(SourceModel.Calls).First(c => SourceModel.Name(c) == operation);
             var broken = source.ReplaceNode(call, SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression));
             Assert.ThrowsExactly<InvalidOperationException>(() => Model(broken.ToFullString()).CheckWheatMemory());
         }
-        var write = SourceModel.Calls(source).Single(c => SourceModel.Name(c) == "WriteByte");
+        var write = SourceModel.Calls(source).Single(c => SourceModel.Name(c) == "Copy" &&
+            c.ArgumentList.Arguments[1].Expression is LiteralExpressionSyntax zero && zero.Token.ValueText == "0");
         Assert.ThrowsExactly<InvalidOperationException>(() => Model(source.ReplaceNode(write,
             write.WithExpression(SyntaxFactory.ParseExpression("Marshal.WriteInt32"))).ToFullString()).CheckWheatMemory());
     }

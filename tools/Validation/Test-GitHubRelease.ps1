@@ -12,6 +12,30 @@ $fixtureVersion = [string]([IO.File]::ReadAllText((Join-Path $PSScriptRoot '../.
 $fixtureTag = 'APIShared/v' + $fixtureVersion
 $env:APISHARED_RELEASE_TEST_TAG = $fixtureTag
 function Check([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
+# Release notes must include every unpublished entry, even when intermediate versions
+# never had a GitHub release. Drafts and prereleases cannot advance that baseline.
+$notesManifest = @{ Version='2.1.3'; SerpChangelog=@(
+    @{Version='2.1.4';Changes=@('future')}, @{Version='2.1.1';Changes=@('first change')},
+    @{Version='2.1.3';Changes=@('latest change')}, @{Version='2.1.0';Changes=@('published change')}) }
+$prior = Get-ApiPreviousReleaseVersion @(
+    @{tagName='APIShared/v2.1.2';isDraft=$true;isPrerelease=$false},
+    @{tagName='APIShared/v2.1.1';isDraft=$false;isPrerelease=$true},
+    @{tagName='APIShared/v2.1.0';isDraft=$false;isPrerelease=$false},
+    @{tagName='Other/v9.0.0';isDraft=$false;isPrerelease=$false}) $notesManifest.Version
+Check ($prior -ceq '2.1.0') 'Release notes used a draft/prerelease/unrelated baseline.'
+$notes = Get-ApiReleaseChangeNotes $notesManifest $prior
+Check ($notes -ceq "### v2.1.3`r`n`r`n- latest change`r`n`r`n### v2.1.1`r`n`r`n- first change") 'Release notes lost, reordered or included already published/future changes.'
+Check ((Get-ApiReleaseChangeNotes $notesManifest '').Contains('published change')) 'Initial-release notes lost an existing change.'
+foreach ($invalid in @(
+    @{Version='2.1.3';SerpChangelog=@(@{Version='2.1.2';Changes=@('missing current')})},
+    @{Version='2.1.3';SerpChangelog=@(@{Version='2.1.3';Changes=@('one')},@{Version='2.1.3';Changes=@('duplicate')})},
+    @{Version='2.1.3';SerpChangelog=@(@{Version='2.1.3';Changes=@(' ')})},
+    @{Version='2.1.3';SerpChangelog=@(@{Version='2.1.3';Changes=@()})})) {
+    $rejected = $false
+    try { $null = Get-ApiReleaseChangeNotes $invalid '2.1.0' } catch { $rejected = $true }
+    Check $rejected 'Invalid changelog was accepted for publication.'
+}
+Write-Host 'PASS: release changelog range, ordering, initial release and invalid entries.'
 function Write-Fixture([string]$Path, [string]$Text) {
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path))
     [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))

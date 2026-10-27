@@ -110,7 +110,6 @@ namespace APIShared.Economy
         /// <remarks>Does not read game state or require initialization. Overflow throws; no coefficient is rounded before multiplication.</remarks>
         public static int CalculatePoints(int fearLevel, decimal multiplier)
             => checked((int)decimal.Round(fearLevel * multiplier, 0, MidpointRounding.AwayFromZero));
-        internal static bool HasActive => Volatile.Read(ref selected) != null || PopularitySelection.NeedsPlayer;
         internal static bool TryCalculate(int fearLevel, out int internalUnits)
         {
             return TryCalculate(Volatile.Read(ref selected),fearLevel,out internalUnits);

@@ -11,6 +11,10 @@ Uncertain meanings require explicit opt-in, which never bypasses unverified stor
 See the [integration contract](../src/NativeKnowledge/INTEGRATION.md) and the
 [human-readable field catalog](../src/NativeKnowledge/FELDKATALOG.md).
 
+Separately reviewed [native function names](../src/NativeKnowledge/FUNKTIONEN.md)
+are retained as offline authoring metadata in `functions.json`; they do not expose
+native invocation or address-resolution APIs.
+
 ## Game-independent content
 
 `APIShared.ModData.ModDataNamespaceReader.Read(json, modGuid, source)` in
@@ -52,7 +56,7 @@ Internal snapshot application suppresses intermediate transport/storage, isolate
 failing reflected setters (code-default fallback) and retains failed cleanup for a
 bounded retry. The managed Extender settings receiver dispatches copied
 packets to the shared Unity FIFO with lobby/session invalidation and original sender
-validation. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
+validation; a multiplayer start applies them before its map loads. See the [mission application contract](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 `MissionModSettingsCreatorRules` shares author-rule capture with savegame rule
 materialization. See [mission application](THIRD_PARTY_GUIDE.md#applying-and-leaving-a-mission-context).
 
@@ -64,7 +68,8 @@ an independent, pair-validated bootstrap companion. It adds no public API and ha
 not yet passed the transferred assembly's game/package-lifecycle acceptance.
 
 The internal [Fixes wheat-sale compatibility correction](FIXES_COMPATIBILITY.md)
-runs once at verified startup, after the optional Fixes plugin. It adds no public
+runs once at verified startup, after the optional Fixes plugin. It repairs the
+supported legacy stack load and division-based prefix in place. It adds no public
 API and refuses unknown binary/startup contracts independently of public services.
 
 Opt-in [Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md)
@@ -81,6 +86,16 @@ correction reuses SE's per-unit event object only while every subscriber provabl
 reads it synchronously; other subscribers keep SE's allocation.
 The Lord media correction treats absent custom Lord identities as unavailable optional
 media, retaining original native paths and reporting missing metadata once per process.
+
+APIShared-owned interface text comes from the private [language catalogs](THIRD_PARTY_GUIDE.md#apishared-interface-language),
+including presets, save/load, Workshop dialogs, the standalone publisher and generated bootstraps.
+Consumer translations and the protected preset localization contract retain precedence.
+
+The lobby mismatch correction replaces SE's generic "missing mods!" popup with up to
+two named differences and local/host versions, plus a permanent client-log hint.
+The client log contains every detected difference. Join decisions and client-only
+mod exemptions remain SE-owned; unavailable host metadata is reported explicitly.
+The title "Different mods" describes differing mod lists without asserting incompatibility.
 
 Capabilities are acquired through `ModApiClient` or `IApiShared`; shared event brokers also expose static registration methods. The command, presentation, recruitment and market entries below require APIShared 0.6.0 or later. The table describes the existing contracts, not a guarantee of support for every game build. Always inspect returned diagnostics. All unit/building/player game IDs are one-based where documented; array indices are not game IDs.
 
@@ -166,7 +181,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Selection and perspective | [Local selection](../src/Units/LocalSelectionAPI.cs), [marked units](../src/Units/MarkedUnitSelectionAPI.cs), [perspective](../src/Players/PlayerPerspectiveAPI.cs), [unit access](../src/Units/UnitAccess.cs) | Implementation in those files | â€” |
 | Modes and launch evidence | [Profiles](../src/GameModes/GameplayModModePolicy.cs), [mode capture](../src/GameModes/MissionModePolicy.cs), [origins](../src/GameModes/CustomizedLaunchOrigins.cs) | Implementation in those files | [Mission policy](../examples/ThirdPartyMod/MissionExample.cs), [launch origin](../examples/ThirdPartyMod/CustomizedLaunchExample.cs) |
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettings.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Personal storage](THIRD_PARTY_GUIDE.md#personal-files-and-previous-installations), [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
-| Settings search / tooltips | [Explicit catalog and live configured states](../src/ModSettings/UI/ModSettingsSearchCatalog.cs), [search and slider neutral-value metadata](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Managed catalog snapshots, All/Active/Inactive filtering with mixed-row flags; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [Opt-in contract](THIRD_PARTY_GUIDE.md#explicit-settings-search-support), [standalone search](../examples/ThirdPartyMod/SettingsSearchExample.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
+| Settings search / tooltips | [Explicit catalog and live configured states](../src/ModSettings/UI/ModSettingsSearchCatalog.cs), [search, slider neutral values and opt-in numeric TextBox StateValue metadata](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Managed catalog snapshots, All/Active/Inactive filtering with mixed-row flags; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [Opt-in contract](THIRD_PARTY_GUIDE.md#explicit-settings-search-support), [standalone search](../examples/ThirdPartyMod/SettingsSearchExample.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings activation presentation | `PresetLobbyModSettingsViewModel.HostSettingsOpacity` / `ClientSettingsOpacity` | Content-only opacity: inactive scopes use 0.65; editing rights and stored values are unchanged | [Settings UI integration](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost) |
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](THIRD_PARTY_GUIDE.md#mission-start-settings-log) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
@@ -583,3 +598,20 @@ Owner-bound [plague height policies](THIRD_PARTY_GUIDE.md#plague-standing-height
 share four permanent native sites. Obtain `IPlagueHeightCapability` through
 `ModApiClient.TryGetPlagueHeight`; no active owner means Vanilla. Consumers retain
 their settings and multiplayer authorization. Existing projectile events are not duplicated.
+## Multiplayer map lookup and lobby system hints
+
+`APIShared.Maps.MultiplayerMapLookup` is the single owner of the exact-name/CRC
+multiplayer map lookup hook. Owner-bound providers can supply a verified local
+`FileHeader` outside Vanilla catalogs; result observers receive the completed
+query. No provider means Vanilla; different claimed header instances fail closed.
+See [integration and lifetime](THIRD_PARTY_GUIDE.md#multiplayer-map-lookup-and-lobby-system-hints).
+
+`APIShared.Lobby.LobbyChatPresentation` registers owner-bound predicates that classify
+received lobby text as a system hint. It preserves the original renderer and never
+sends packets, changes text or authorizes gameplay. Registrations are process-lived.
+
+`APIShared.Lobby.LobbyLaunchStatus` collects owner-bound launch status providers and
+announces deduplicated "please wait", "start blocked" and "ready" lobby messages, so
+players learn why Start is unavailable. The host is the only sender of automatic
+announcements; lobby members show their own entries locally unless an entry is marked
+`LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.

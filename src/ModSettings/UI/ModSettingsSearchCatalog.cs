@@ -423,14 +423,16 @@ namespace APIShared.ModSettings
                 if (IsExcluded(control) || (control != owner && control.Ancestors().TakeWhile(value => value != owner).Any(value =>
                     value != owner && (FindAttribute(value, "Key") != null || FindAttribute(value, "Title") != null)))) continue;
                 string name = control.Name.LocalName;
-                if (name != "CheckBox" && name != "Slider") continue;
+                if (name != "CheckBox" && name != "Slider" && name != "TextBox") continue;
                 // A nested logical setting owns its own controls.
                 if (control != owner && (FindAttribute(control, "Key") != null || FindAttribute(control, "Title") != null)) continue;
                 XElement template = control.Ancestors().FirstOrDefault(value => value.Name.LocalName == "DataTemplate");
                 // Template item contexts are resolved by the catalog. Other context overrides
                 // are not inferred; never accidentally classify a same-named root property.
                 if (control.AncestorsAndSelf().TakeWhile(value => value != template).Any(value => FindAttribute(value, "DataContext") != null)) continue;
-                string expression = FindAttribute(control, name == "CheckBox" ? "IsChecked" : "Value")?.Value;
+                // Text boxes opt in explicitly through the authoritative numeric property;
+                // formatted Text bindings keep their previous unknown-state behavior.
+                string expression = FindAttribute(control, name == "TextBox" ? "StateValue" : name == "CheckBox" ? "IsChecked" : "Value")?.Value;
                 string bindingPath = ReadBindingPath(expression);
                 // Source/ElementName/RelativeSource and converters cannot be reproduced by reading the model.
                 if (bindingPath.Length == 0 || System.Text.RegularExpressions.Regex.IsMatch(expression,

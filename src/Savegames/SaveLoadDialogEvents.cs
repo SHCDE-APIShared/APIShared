@@ -191,7 +191,7 @@ namespace APIShared.Savegames
                 bool mp = !session.Trails && (session.Skirmish || session.Type == Enums.RequesterTypes.LoadMultiplayerGame || session.Type == Enums.RequesterTypes.LoadMultiplayerCoopGame);
                 model.Show_HUD_LoadSaveRequesterMP = mp;
                 model.Show_HUD_LoadSaveRequester = !session.Trails && !mp;
-                HUD_ConfirmationPopup.ShowConfirmationOKMessage("The selected operation is not ready. Check the mod log; restart the game if settings require a restart.", null, "Mod settings", false);
+                HUD_ConfirmationPopup.ShowConfirmationOKMessage(APIShared.Localization.UiText.Get("Savegames.OperationNotReady"), null, APIShared.Localization.UiText.Get("Savegames.SettingsTitle"), false);
             }
         }
 

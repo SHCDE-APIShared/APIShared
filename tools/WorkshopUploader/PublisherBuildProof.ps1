@@ -8,6 +8,8 @@ function Get-WorkshopPublisherInputs([string]$ApiRoot,[string]$GameDir){
     $paths=@($project,(Join-Path $ApiRoot 'tools/WorkshopUploader/Build.ps1'),(Join-Path $ApiRoot 'tools/WorkshopUploader/PublisherBuildProof.ps1'))
     $paths+=@((Join-Path $ApiRoot 'tools/WorkshopUploader/App.config'),(Join-Path $ApiRoot 'tools/WorkshopUploader/app.manifest'))
     $paths+=@((Join-Path $ApiRoot 'tools/WorkshopUploader/UploadMod.bat'),(Join-Path $ApiRoot 'tools/WorkshopUploader/UploadMod-linux.sh'))
+    $paths+=(Join-Path $ApiRoot 'tools/WorkshopUploader/PublisherText.ps1')
+    $paths+=@(Get-ChildItem -LiteralPath (Join-Path $ApiRoot 'Locales') -File -Filter '*.txt' | ForEach-Object {$_.FullName})
     $paths+=(Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/steam_api64.dll')
     $paths+=@(Get-ChildItem -LiteralPath $ApiRoot -File|Where-Object {$_.Name -match '^Directory\..*\.(props|targets)$'}|ForEach-Object {$_.FullName})
     foreach($entry in $xml.Project.ItemGroup.Compile){if($entry.Include){$paths+=[IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $project) $entry.Include))}}
