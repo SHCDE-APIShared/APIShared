@@ -14,7 +14,16 @@
       "Version": "0.16.3",
       "Changes": [
         "Add owner-bound multiplayer map lookup providers and result observers for verified content outside Vanilla map catalogs.",
-        "Add lobby system-message classification through the existing renderer; preserve ordinary chat and existing localization."
+        "Add lobby system-message classification through the existing renderer; preserve ordinary chat and existing localization.",
+        "Add owner-bound lobby launch-status providers with localized, deduplicated blocking and loading messages, local/lobby scopes and explicit rejected-command reporting; preserve Vanilla Ready/Start decisions.",
+        "Apply queued host settings on the Unity thread before multiplayer map initialization, preserving packet order and invalidating stale lobby or mission deliveries.",
+        "Support the current Fixes wheat-sale emitter as well as the historical stack-based variants; validate the complete bounded prefix, player identity and memory preimage before the single startup correction.",
+        "Log selected Custom Lord init.lua identities and warn when a package containing a script declares the local-only NetworkMode; preserve the Script Extender script-loading decision.",
+        "Correct lobby mismatch reporting and load-dialog integration while preserving consumer callbacks, cancellation and existing save/load behavior.",
+        "Include every changelog entry since the previous published stable APIShared release in GitHub release notes.",
+        "Give a confirmed multiplayer save load its own bounded 30-second start window and capture each participant snapshot once when checking host settings.",
+        "Validate the prepared plague-height backend stubs against the complete generated machine-code contract instead of fixed RedBird/Iced file hashes; reject incompatible output before activation.",
+        "Extend the hash-bound NativeKnowledge function annotations and integration reference without introducing a native invocation API."
       ]
     },
     {

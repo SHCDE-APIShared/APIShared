@@ -26,6 +26,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not determine the reviewed source commit
 if ($LASTEXITCODE -ne 0) { throw 'Push the reviewed source commit to the APIShared repository before preparing its release.' }
 $tag = "APIShared/v$version"
 if ($TestRelease) { if ($Publish) { throw 'Test releases must remain drafts.' }; $tag = "APIShared/test/v$version-$($commit.Substring(0,12))" }
+$releaseList = Invoke-ApiReleaseGitHub @('release', 'list', '--repo', $repository, '--limit', '1000', '--json', 'tagName,isDraft,isPrerelease')
+if ($releaseList.ExitCode -ne 0) { throw ('Could not determine the previous APIShared release. ' + $releaseList.Diagnostic) }
+$previousVersion = Get-ApiPreviousReleaseVersion ($releaseList.Output | ConvertFrom-Json -ErrorAction Stop) $version
+$changeNotes = Get-ApiReleaseChangeNotes $manifest $previousVersion
 if (-not $PrepareOnly) {
     $previousBranchPinned = $env:SHCDE_BRANCH_PINNED
     try {
@@ -105,6 +109,7 @@ $provenancePath = Join-Path $output "APIShared-v$version.provenance.json"
 $assets += $provenancePath
 $notes = Join-Path $staging 'release-notes.md'
 $text = "APIShared $version`r`n`r`nSource commit: $commit`r`nZIP SHA-256: $hash`r`n`r`nRequires Script Extender $($manifest.MinimumScriptExtenderVersion) or newer. Install one central copy; consumer mods must not bundle APIShared.`r`n"
+$text += "`r`n" + $changeNotes + "`r`n"
 [IO.File]::WriteAllText($notes, $text, [Text.UTF8Encoding]::new($false))
 $arguments = @('release', 'create', $tag) + $assets + @('--repo', $repository, '--target', $commit, '--title', "APIShared $version", '--notes-file', $notes)
 if (-not $Publish) { $arguments += '--draft' }
