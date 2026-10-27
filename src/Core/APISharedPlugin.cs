@@ -46,6 +46,7 @@ namespace APIShared
             ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordScriptDiagnosticsRuntime.Initialize(RuntimeLogger);
+            ScriptExtenderFixes.LordMediaRegistrationRuntime.Initialize(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.
             CrusaderLibrary.Instance.LibraryLoaded += OnLibraryLoaded;

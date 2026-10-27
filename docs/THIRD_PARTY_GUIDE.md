@@ -530,14 +530,32 @@ registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
 
 The Lord media correction validates the loaded internal resolver's signature and
-output-initialization/name-lookup entry before installing a process-lifetime managed
-hook. Null or empty Lord identities return false with empty outputs,
-so the native caller retains its original media paths. One warning per process explains
-the missing metadata. Nonempty identities retain the original lookup, results and
-exceptions. This does not reconstruct lost Lord identities or recover custom media;
-an incompatible resolver is skipped independently. No consumer registration is needed.
-`SE_LORD_MEDIA` names the missing input and message category, or the exact installation
-stage and observed method entry when its dependency contract is rejected.
+output-initialization, registration lookup and logging-only miss branch before installing
+a process-lifetime managed hook. Null/empty names and unregistered Lords return false
+with empty outputs, quietly retaining the original game media paths. These are normal
+for Vanilla Lords using a custom `.lordjson` AIC and for Vanilla-style custom packages
+without `lordmeta.json`. A generic native AI slot does not imply custom media.
+Registered Lords retain the original lookup, clip selection, subtitle effects, results
+and exceptions; an omitted optional message category does not produce a new warning.
+
+After managed mission initialization (including saves and editor starts), a separate
+Unity-thread lifecycle observer checks occupied custom AI slots against Vanilla's
+public Lord catalog and SE's registry. `SE_LORD_MEDIA` warns only when a used,
+unambiguously identified package has `lordmeta.json` but is not registered. This can
+happen because Vanilla accepts packages with valid AIC/AIV data independently of SE's
+registration: an absent `info.json` prevents registration, and invalid SE metadata can
+abort it without removing the Lord from Vanilla's catalog. Warnings identify the
+display/internal names, all affected player slots and package folder, distinguish a
+missing `info.json` from an otherwise unexplained registration failure, and suggest
+checking the package and earlier registration messages. They do not assert missing
+media files or successful fallback playback. Each package/cause is reported once per
+session; a later map or save is checked afresh. Stale queued sessions are ignored.
+Packages without SE metadata remain quiet. Video/audio files are not inspected.
+
+Neither diagnosis nor logging affects the media callback; no file/UI access occurs
+there. An incompatible resolver skips only this correction with an explanatory
+installation warning and technical contract details. No consumer registration is
+needed; this correction does not reconstruct lost Lord identities or recover media.
 
 The Lord script diagnostics in `ScriptExtenderFixes/LordScripts` only log. Script
 Extender runs a custom Lord's `init.lua` per player slot by the slot's local Lord name,
