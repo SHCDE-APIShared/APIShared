@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Presentation/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
+    <Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_IngameMenu.xaml" Link="MenuPatch.xaml"><CopyToOutputDirectory>Always</CopyToOutputDirectory></Content>
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
     <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
     <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>

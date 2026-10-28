@@ -174,3 +174,5 @@ Workshop.YesApplyTheseChangesAndRestart=Yes: apply these changes and restart.\nN
 Workshop.YesRepairRestoreFirstRestartAnd=Yes: repair (restore first, restart and offer the current update).\nNo: rollback to the previous state and close the game. The next start offers updates again.\nCancel: later.
 Workshop.Recovery.Items=Workshop items: {Ids}
 Workshop.Recovery.NoRollback=Rollback unavailable: {Reason}
+IngameMenu.AdditionalActions=Additional mod actions …
+IngameMenu.Back=Back

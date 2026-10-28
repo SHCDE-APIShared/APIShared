@@ -7,16 +7,16 @@ using System.Windows.Input;
 namespace Noesis
 {
     public enum Visibility { Visible, Hidden, Collapsed }
-    public enum HorizontalAlignment { Left, Center }
-    public enum VerticalAlignment { Bottom, Center }
+    public enum HorizontalAlignment { Left, Center, Stretch, Right }
+    public enum VerticalAlignment { Bottom, Center, Top, Stretch }
     public struct Thickness
     {
-        public double Bottom;
-        public Thickness(double all) { Bottom = all; }
-        public Thickness(double left, double top, double right, double bottom) { Bottom = bottom; }
+        public double Left, Top, Right, Bottom;
+        public Thickness(double all) { Left = Top = Right = Bottom = all; }
+        public Thickness(double left, double top, double right, double bottom) { Left = left; Top = top; Right = right; Bottom = bottom; }
     }
     public class Style { }
-    public class FrameworkElement
+    public partial class FrameworkElement
     {
         public FrameworkElement? Parent { get; internal set; }
         public double Width, Height; public Thickness Margin;
@@ -31,10 +31,10 @@ namespace Noesis
         public readonly Dictionary<string, object> Resources = new();
         public object? TryFindResource(object key) => Resources.TryGetValue((string)key, out var value) ? value : Parent?.TryFindResource(key);
     }
-    public class Grid : FrameworkElement
+    public class Panel : FrameworkElement
     {
         public ElementCollection Children;
-        public Grid() { Children = new ElementCollection(this); }
+        public Panel() { Children = new ElementCollection(this); }
     }
     public sealed class ElementCollection : Collection<FrameworkElement>
     {
@@ -44,16 +44,16 @@ namespace Noesis
         protected override void RemoveItem(int index) { this[index].Parent = null; base.RemoveItem(index); }
         protected override void ClearItems() { foreach (var item in this) item.Parent = null; base.ClearItems(); }
     }
-    public class Button : FrameworkElement
+    public partial class Button : FrameworkElement
     {
         public object? Content, CommandParameter, ToolTip; public ICommand? Command;
         public int Duration; public bool ToolTipEnabled = true;
         public event EventHandler? Click;
         public void Invoke() { Command?.Execute(CommandParameter); Click?.Invoke(this, EventArgs.Empty); }
     }
-    public class TextBlock : FrameworkElement { public string? Text; public float FontSize; }
-    public class ToolTip : FrameworkElement { public object? Content, Template; }
-    public static class ToolTipService
+    public partial class TextBlock : FrameworkElement { public string? Text; public float FontSize; }
+    public partial class ToolTip : FrameworkElement { public object? Content, Template; }
+    public static partial class ToolTipService
     {
         public static void SetIsEnabled(Button button, bool value) { button.ToolTipEnabled = value; }
         public static void SetToolTip(Button button, object? tip) { button.ToolTip = tip; }
@@ -62,7 +62,7 @@ namespace Noesis
 }
 namespace CrusaderDE
 {
-    public class MainViewModel
+    public partial class MainViewModel
     {
         public static bool viewModelLoaded;
         public static MainViewModel? Instance;

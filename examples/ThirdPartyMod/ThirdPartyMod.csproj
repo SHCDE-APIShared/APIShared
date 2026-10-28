@@ -50,4 +50,5 @@
   <ItemGroup><Compile Include="GateAccessExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="UnitSettledExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="NativeSiteExample.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="IngameMenuExample.cs" /></ItemGroup>
 </Project>

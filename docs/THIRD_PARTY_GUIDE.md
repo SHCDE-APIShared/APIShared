@@ -1651,17 +1651,102 @@ Recursive render calls get distinct state. Concurrent calls require consumer-own
 synchronization for any shared mutable state. Unsupported images or occupied entry
 contracts reject registration without taking ownership of another hook.
 
-`IngameMenuActions.TryRegister(owner, id, stateProvider, execute, out reason, order)`
-registers a permanent optional action on the Unity thread. Return a localized
-`IngameMenuActionState` with visibility and enabled state. Hidden actions occupy no
-space. Visible actions are ordered by order/owner/ID next to the original Quit
-button; further actions get their own row. Without visible actions Quit retains its
-normal width and command. State is reevaluated while the menu is shown and before
-execution; exceptions hide only the failed action and are logged once. Consumers
-must still validate their session and gameplay permissions in the command. No
-mod-specific settings or presence checks belong to this service. Opening another
-view that should close the pause menu must use Vanilla `HUDIngameMenu.Close()` to
-restore its prior pause state; the shared service does not synthesize Quit commands.
+### ESC menu rows and additional actions
+
+`IngameMenuActions` is the single owner of ESC menu positions. Register and query
+on the initialized Unity thread, using your mod GUID and a stable owner-local ID.
+Providers and commands execute on Unity; consumers retain gameplay/session/MP
+permission checks. Registrations and hooks last until process exit. Return null
+or an invisible `IngameMenuActionState` to hide an action and release its position.
+A visible disabled action still occupies its position.
+
+Use the overload with `IngameMenuActionOptions` and an output registration handle:
+
+```csharp
+IngameMenuActionRegistration menuAction;
+var slot = IngameMenuActions.GetRowState(IngameMenuRow.QuitMission).Left;
+// Claims includes hidden registrations; Current is the last-observed visible winner.
+// This query neither invokes providers nor reserves the position.
+if (!IngameMenuActions.TryRegister(MyGuid, "inspect", GetMenuState, OpenInspector,
+    new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left),
+    out menuAction, out string reason))
+    Log(reason);
+
+// Call from an actual settings/session/state-change event, never a timer or frame.
+menuAction?.Invalidate();
+```
+
+Rows have stable `IngameMenuRow` names independent of mode-specific visibility.
+Each has Left and Right; Vanilla is the Right fallback. A single visible button
+uses the normal full width; two share a row. A mod can activate a position even
+when its Vanilla row is hidden in the current mode. Right requires explicit
+`replaceVanilla: true`. Competing registered mod claims, including hidden claims,
+reject registration unless `replaceExisting: true` is specified. Registration
+checks and accepts the claim together; a preceding occupancy query is advisory.
+
+Buttons use Vanilla's unchanged `BTN_SH_GlowSDisable` style: a centered single
+button is 300 layout units wide; a pair uses 181.25 each with a gap of 5 in a
+367.5-wide row. Fonts, texture heights and state effects retain Vanilla geometry.
+Long labels use an ellipsis without wrapping or reducing the font; truncation
+does not automatically create a tooltip. The main menu keeps Vanilla's initialized height
+unless an additional visible row needs space; scrolling is bounded in local UI units.
+ESC tooltip text matches the button's rendered font size even when Noesis renders
+the popup in a separately scaled view. Width, padding and borders follow the same
+pixel ratio, with at most 420 menu units of width and a viewport bound. Only ESC
+popups use this view-owned sizing; other tooltip resolution presets are unchanged.
+Sizing runs on opening and layout events, without evaluating action providers.
+
+Tooltips are opt-in through `new IngameMenuActionState(text, visible, enabled, tooltip)`.
+The original three-argument constructor remains binary/source compatible and supplies
+no tooltip. Null, empty or whitespace-only tooltip text means no popup; nonempty text
+is shown exactly as supplied, without appending the button label or mod GUID. Supply
+localized text and notify ordinary `Invalidate()` when it changes. Removing a tooltip
+closes and detaches the owned popup. Earlier automatically generated label/owner
+tooltips are no longer provided. Vanilla tooltip objects, bindings and settings are
+untouched, including on the extra page; APIShared navigation buttons have no tooltip.
+
+The latest accepted explicit takeover wins among visible claims. Refreshing an
+older claim does not raise its priority. Hiding the winner reveals the preceding
+visible claim, ultimately Vanilla on Right. Takeover does not delete registrations.
+`GetRowState(row)` returns immutable Left/Right snapshots, their Current occupant
+and Claims in precedence order, including owner GUID/ID, Vanilla identity, cached
+state and effective ownership. Before first evaluation HasState can be false;
+closed-menu snapshots can be stale. Queries do not read native state or call mods.
+
+`new IngameMenuActionOptions()` registers exclusively for the additional-actions
+page. Every visible displaced mod or Vanilla action also appears there, once.
+Entries sort by order, ordinal owner GUID, then action ID. Invisible actions take
+no space; disabled actions remain listed. The extra-page button appears before
+Resume only while the page has entries. Both pages support bounded scrolling and
+two buttons per row, with a full-width final single button. Back returns to the
+main ESC page. Escape closes the entire menu using Vanilla's existing close/pause
+path; reopening starts on the main page. Vanilla buttons retain their actual
+objects, bindings, commands and confirmation dialogs when moved to the extra page.
+
+Providers are reevaluated on menu opening (including return from a confirmation),
+explicit invalidation while open, and command validation. A handle invalidates its
+action; `IngameMenuActions.Invalidate(ownerGuid)` invalidates all that owner's
+registrations, including legacy ones. Requests from other threads are posted and
+coalesced on the validated Unity dispatcher. Closed-menu invalidations defer
+provider work until opening. Do not issue invalidations on recurring ticks/frames.
+Invalidating from inside a provider defers that demand until the next external
+event, avoiding self-recursive refresh. Providers should be side-effect free.
+A provider exception hides only that action and is reported once; subsequent
+invalidation can retry it. Commands recheck visibility, enabled state, view identity
+and effective placement; exceptions are logged once and commands are not retried.
+A command opening another view owns whether to keep the pause menu, hide it for
+a confirmation, or call `HUDIngameMenu.Close()` to restore the previous pause state.
+
+**Migration from the original registration:** the existing
+`TryRegister(owner, id, stateProvider, execute, out reason, order)` signature and
+`IngameMenuActionState` constructor remain binary/source compatible. Its visible
+entries retain order/owner/ID sorting: the first supplies QuitMission/Left when
+no explicit visible claim occupies it; further entries appear on the extra page.
+This deliberately replaces the old unbounded extra rows. Providers are no longer
+polled by GuiChecks. Existing consumers whose state changes while the menu is open
+must notify `Invalidate(owner)` or use the new handle. Prefer named explicit slots
+for intentional placement. New consumers require an APIShared package containing
+this overload; do not infer its availability from an older package's version label.
 
 `apiui:SharedToolTipSizing.Enabled="True"` (namespace `APIShared.ModSettings`)
 opts an owned `ToolTip` into the common resolution presets: font sizes 23/30/45,

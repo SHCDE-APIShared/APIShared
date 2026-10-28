@@ -1933,13 +1933,55 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.IngameMenuActionInfo | public sealed class APIShared.Presentation.IngameMenuActionInfo
+APIShared.Presentation.IngameMenuActionInfo | public APIShared.Presentation.IngameMenuActionState State { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool HasState { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool IsEffective { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool IsVanilla { get; }
+APIShared.Presentation.IngameMenuActionInfo | public string Id { get; }
+APIShared.Presentation.IngameMenuActionInfo | public string OwnerGuid { get; }
+APIShared.Presentation.IngameMenuActionOptions | public sealed class APIShared.Presentation.IngameMenuActionOptions
+APIShared.Presentation.IngameMenuActionOptions | public .ctor()
+APIShared.Presentation.IngameMenuActionOptions | public .ctor(APIShared.Presentation.IngameMenuRow row, APIShared.Presentation.IngameMenuSlot slot, bool replaceExisting = false, bool replaceVanilla = false)
+APIShared.Presentation.IngameMenuActionOptions | public APIShared.Presentation.IngameMenuRow? Row { get; }
+APIShared.Presentation.IngameMenuActionOptions | public APIShared.Presentation.IngameMenuSlot Slot { get; }
+APIShared.Presentation.IngameMenuActionOptions | public bool ReplaceExisting { get; }
+APIShared.Presentation.IngameMenuActionOptions | public bool ReplaceVanilla { get; }
+APIShared.Presentation.IngameMenuActionRegistration | public sealed class APIShared.Presentation.IngameMenuActionRegistration
+APIShared.Presentation.IngameMenuActionRegistration | public void Invalidate()
 APIShared.Presentation.IngameMenuActionState | public sealed class APIShared.Presentation.IngameMenuActionState
 APIShared.Presentation.IngameMenuActionState | public .ctor(string text, bool visible, bool enabled)
+APIShared.Presentation.IngameMenuActionState | public .ctor(string text, bool visible, bool enabled, string tooltip)
 APIShared.Presentation.IngameMenuActionState | public bool Enabled { get; }
 APIShared.Presentation.IngameMenuActionState | public bool Visible { get; }
 APIShared.Presentation.IngameMenuActionState | public string Text { get; }
+APIShared.Presentation.IngameMenuActionState | public string Tooltip { get; }
 APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
+APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.IngameMenuRowState GetRowState(APIShared.Presentation.IngameMenuRow row)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
+APIShared.Presentation.IngameMenuRow | public enum APIShared.Presentation.IngameMenuRow : int
+APIShared.Presentation.IngameMenuRow | ExitStronghold = 7
+APIShared.Presentation.IngameMenuRow | Help = 4
+APIShared.Presentation.IngameMenuRow | Load = 1
+APIShared.Presentation.IngameMenuRow | Options = 3
+APIShared.Presentation.IngameMenuRow | QuitMission = 6
+APIShared.Presentation.IngameMenuRow | RestartMission = 5
+APIShared.Presentation.IngameMenuRow | Resume = 8
+APIShared.Presentation.IngameMenuRow | Save = 0
+APIShared.Presentation.IngameMenuRow | Workshop = 2
+APIShared.Presentation.IngameMenuRowState | public sealed class APIShared.Presentation.IngameMenuRowState
+APIShared.Presentation.IngameMenuRowState | public APIShared.Presentation.IngameMenuRow Row { get; }
+APIShared.Presentation.IngameMenuRowState | public APIShared.Presentation.IngameMenuSlotState Left { get; }
+APIShared.Presentation.IngameMenuRowState | public APIShared.Presentation.IngameMenuSlotState Right { get; }
+APIShared.Presentation.IngameMenuSlot | public enum APIShared.Presentation.IngameMenuSlot : int
+APIShared.Presentation.IngameMenuSlot | Left = 0
+APIShared.Presentation.IngameMenuSlot | Right = 1
+APIShared.Presentation.IngameMenuSlotState | public sealed class APIShared.Presentation.IngameMenuSlotState
+APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuActionInfo Current { get; }
+APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuSlot Slot { get; }
+APIShared.Presentation.IngameMenuSlotState | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.IngameMenuActionInfo> Claims { get; }
 APIShared.Presentation.MissionOverContinuation | public sealed class APIShared.Presentation.MissionOverContinuation
 APIShared.Presentation.MissionOverContinuation | public bool TryInvoke()
 APIShared.Presentation.MissionOverEvents | public static class APIShared.Presentation.MissionOverEvents
