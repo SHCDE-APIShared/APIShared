@@ -82,15 +82,7 @@ namespace APIShared.Presentation
                 // The popup joins a separate view lazily; Loaded/SizeChanged retries after attachment.
                 if (!tip.IsLoaded || !tip.IsVisible || !button.IsLoaded) return;
                 SHCDESE.UI.ToolTipResolutionScale.SetEnabled(tip, false);
-                Point origin = button.PointToScreen(new Point(0, 0));
-                Point unit = button.PointToScreen(new Point(100, 100));
-                Point popupOrigin = tip.PointToScreen(new Point(0, 0));
-                Point popupUnit = tip.PointToScreen(new Point(100, 100));
-                float menuX = unit.X - origin.X, menuY = unit.Y - origin.Y;
-                float popupX = popupUnit.X - popupOrigin.X, popupY = popupUnit.Y - popupOrigin.Y;
-                if (!Positive(menuX) || !Positive(menuY) || !Positive(popupX) || !Positive(popupY)) return;
-                float x = menuX / popupX, y = menuY / popupY;
-                if (!Positive(x) || !Positive(y)) return;
+                if (!PopupPixelScale.TryGet(button, tip, out float x, out float y, out float menuX)) return;
                 float labelFont = (button.Template?.FindName("CenterText", button) as TextBlock)?.FontSize ?? button.FontSize;
                 float font = labelFont * y;
                 float menuWidth = 420;

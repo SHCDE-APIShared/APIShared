@@ -619,3 +619,16 @@ announces deduplicated "please wait", "start blocked" and "ready" lobby messages
 players learn why Start is unavailable. The host is the only sender of automatic
 announcements; lobby members show their own entries locally unless an entry is marked
 `LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.
+
+## Lord statistic columns
+
+[`APIShared.Statistics.LordStatistics`](../src/Statistics/LordStatistics.cs) is a renderer-independent,
+process-lived catalog of third-party numeric columns. It performs no game reads or polling.
+The [contracts](../src/Statistics/LordStatisticColumns.cs) include immutable authorized-player requests,
+nullable decimal batches, logical activation, localized metadata and numeric formatting.
+See the [integration guide](THIRD_PARTY_GUIDE.md#lord-statistic-columns) and
+[example provider](../examples/ThirdPartyMod/StatisticsExample.cs).
+
+The opt-in [`SharedToolTipSizing`](../src/ModSettings/UI/SharedToolTipSizing.cs) also accepts
+`ReferenceElement` and `ReferenceFontSize`: opened popups match the source HUD's pixel scale.
+Consumers without a reference retain the established resolution presets.
