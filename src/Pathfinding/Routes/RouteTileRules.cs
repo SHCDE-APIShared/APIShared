@@ -45,6 +45,9 @@ namespace APIShared.Pathfinding
         /// <summary>Whether any rule set currently holds a tile effect.</summary>
         public static bool HasRules { get; private set; }
 
+        /// <summary>Whether any rule set with a <see cref="RouteTileRuleSet.ReplanPolicy"/> currently holds a tile effect.</summary>
+        public static bool HasReplanRules { get; private set; }
+
         /// <summary>Monotone count of effective tile changes, registrations and clears; the journal position.</summary>
         public static long Version => sequence;
 
@@ -91,6 +94,23 @@ namespace APIShared.Pathfinding
             return effect;
         }
 
+        /// <summary>
+        /// The replan policy for one player's unit whose remaining route enters one tile: the policy of the
+        /// first rule set (ordinal owner GUID, then registration ID) that has a policy and an effect on the
+        /// tile for that player; null when no such set exists.
+        /// </summary>
+        public static RouteReplanPolicy GetReplanPolicy(int tileX, int tileY, int playerId)
+        {
+            if (!HasReplanRules || !ValidTile(tileX, tileY) || playerId < 1 || playerId > 8) return null;
+            int key = Key(tileX, tileY); uint bit = 1U << playerId;
+            foreach (RouteTileRuleSet set in sets)
+            {
+                RouteReplanPolicy policy = set.ReplanPolicy;
+                if (policy != null && set.TryGet(key, out RouteTileRuleSet.Entry entry) && (entry.Players & bit) != 0) return policy;
+            }
+            return null;
+        }
+
         /// <summary>Copies the tiles changed since <paramref name="cursor"/> and advances it.</summary>
         /// <param name="cursor">The engine's journal position; start with <see cref="Version"/> after a full read.</param>
         /// <param name="tiles">Receives changed tiles packed as <c>y * MapSize + x</c>; a tile may repeat.</param>
@@ -111,9 +131,10 @@ namespace APIShared.Pathfinding
         {
             journal[sequence % JournalCapacity] = key;
             sequence++;
-            bool any = false;
-            foreach (RouteTileRuleSet set in sets) if (set.Count != 0) { any = true; break; }
-            HasRules = any;
+            bool any = false, replan = false;
+            foreach (RouteTileRuleSet set in sets)
+                if (set.Count != 0) { any = true; if (set.ReplanPolicy != null) replan = true; }
+            HasRules = any; HasReplanRules = replan;
         }
 
         internal static bool ValidTile(int tileX, int tileY) => (uint)tileX < MapSize && (uint)tileY < MapSize;
@@ -137,6 +158,26 @@ namespace APIShared.Pathfinding
         public string RegistrationId { get; }
         /// <summary>Number of tiles with an effect in this set.</summary>
         public int Count => entries.Count;
+
+        private RouteReplanPolicy replanPolicy;
+        /// <summary>
+        /// Optional rule for units whose already planned route meets this set's tiles later (for example
+        /// fire that starts after a move command); null (default) leaves such routes unchanged. Engines that
+        /// support it watch remaining routes and re-plan or stop units as the policy says. Changing it
+        /// journals every tile of this set, so engines re-read their effects.
+        /// </summary>
+        public RouteReplanPolicy ReplanPolicy
+        {
+            get => replanPolicy;
+            set
+            {
+                if (ReferenceEquals(replanPolicy, value)) return;
+                replanPolicy = value;
+                var keys = new List<int>(entries.Keys);
+                keys.Sort();
+                foreach (int key in keys) RouteTileRules.Changed(key);
+            }
+        }
 
         /// <summary>Sets this set's effect for one tile; <see cref="RouteTileEffect.None"/> clears it.</summary>
         /// <param name="tileX">Tile X coordinate.</param>
@@ -177,5 +218,59 @@ namespace APIShared.Pathfinding
         }
 
         internal bool TryGet(int key, out Entry entry) => entries.TryGetValue(key, out entry);
+    }
+
+    /// <summary>
+    /// Replan rule of one <see cref="RouteTileRuleSet"/> (see <see cref="RouteTileRuleSet.ReplanPolicy"/>): what an
+    /// engine does with a unit that is already moving when one of the set's tiles appears on its remaining
+    /// route. Immutable.
+    /// </summary>
+    /// <remarks>
+    /// Once the unit is at most <see cref="TriggerDistance"/> steps before such a tile, the engine plans a new
+    /// route to the unit's unchanged move target that avoids the rule tiles. It adopts that route when it is
+    /// at most <see cref="MaximumDetourPercent"/> percent, or at least up to <see cref="MinimumDetourTiles"/>
+    /// steps, longer than the remaining route. Otherwise the unit stops on its next tile and continues to the
+    /// same target once a route without such tiles exists or after <see cref="MaximumWaitTicks"/> simulation
+    /// ticks (0: no stop, the unit keeps its route). The unit's order, target and state stay unchanged; a new
+    /// order ends the wait. Engines decide on simulation ticks only, so peers with identical rules agree.
+    /// Engines may check units in intervals, share one decision among members of one group command and
+    /// skip units whose route they cannot read; a policy is a request, not a guarantee.
+    /// </remarks>
+    public sealed class RouteReplanPolicy
+    {
+        /// <summary>Largest <see cref="TriggerDistance"/>.</summary>
+        public const int MaximumTriggerDistance = 16;
+
+        /// <summary>Creates a policy; out-of-range arguments throw <see cref="ArgumentOutOfRangeException"/>.</summary>
+        /// <param name="triggerDistance">1..<see cref="MaximumTriggerDistance"/> route steps before a rule tile.</param>
+        /// <param name="maximumDetourPercent">0..1000 percent of the remaining route length.</param>
+        /// <param name="minimumDetourTiles">0..2000 extra steps that are always allowed.</param>
+        /// <param name="maximumWaitTicks">0..72000 simulation ticks (about 40 per second at normal speed).</param>
+        public RouteReplanPolicy(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
+        {
+            if (triggerDistance < 1 || triggerDistance > MaximumTriggerDistance) throw new ArgumentOutOfRangeException(nameof(triggerDistance));
+            if (maximumDetourPercent < 0 || maximumDetourPercent > 1000) throw new ArgumentOutOfRangeException(nameof(maximumDetourPercent));
+            if (minimumDetourTiles < 0 || minimumDetourTiles > 2000) throw new ArgumentOutOfRangeException(nameof(minimumDetourTiles));
+            if (maximumWaitTicks < 0 || maximumWaitTicks > 72000) throw new ArgumentOutOfRangeException(nameof(maximumWaitTicks));
+            TriggerDistance = triggerDistance; MaximumDetourPercent = maximumDetourPercent;
+            MinimumDetourTiles = minimumDetourTiles; MaximumWaitTicks = maximumWaitTicks;
+        }
+
+        /// <summary>Route steps before a rule tile at which the engine decides.</summary>
+        public int TriggerDistance { get; }
+        /// <summary>Allowed extra length of a new route, in percent of the remaining route.</summary>
+        public int MaximumDetourPercent { get; }
+        /// <summary>Extra steps a new route may always add, also for short remaining routes.</summary>
+        public int MinimumDetourTiles { get; }
+        /// <summary>Longest stop without an allowed route, in simulation ticks; 0 keeps the route instead.</summary>
+        public int MaximumWaitTicks { get; }
+
+        /// <summary>Whether a new route of <paramref name="replanned"/> steps may replace <paramref name="remaining"/> steps.</summary>
+        public bool AllowsDetour(int remaining, int replanned)
+        {
+            if (remaining < 0 || replanned < 0) return false;
+            long allowed = Math.Max((long)remaining * MaximumDetourPercent / 100, MinimumDetourTiles);
+            return replanned <= remaining + allowed;
+        }
     }
 }

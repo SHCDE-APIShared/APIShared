@@ -1840,6 +1840,14 @@ APIShared.Networking.NetworkSendStatus | Submitted = 0
 APIShared.Networking.NetworkSendStatus | TooLarge = 4
 APIShared.Networking.NetworkSendStatus | TransportFailed = 6
 APIShared.Networking.NetworkSendStatus | Unavailable = 1
+APIShared.Pathfinding.RouteReplanPolicy | public sealed class APIShared.Pathfinding.RouteReplanPolicy
+APIShared.Pathfinding.RouteReplanPolicy | public .ctor(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
+APIShared.Pathfinding.RouteReplanPolicy | public bool AllowsDetour(int remaining, int replanned)
+APIShared.Pathfinding.RouteReplanPolicy | public const int MaximumTriggerDistance = 16
+APIShared.Pathfinding.RouteReplanPolicy | public int MaximumDetourPercent { get; }
+APIShared.Pathfinding.RouteReplanPolicy | public int MaximumWaitTicks { get; }
+APIShared.Pathfinding.RouteReplanPolicy | public int MinimumDetourTiles { get; }
+APIShared.Pathfinding.RouteReplanPolicy | public int TriggerDistance { get; }
 APIShared.Pathfinding.RouteSearchContext | public sealed class APIShared.Pathfinding.RouteSearchContext
 APIShared.Pathfinding.RouteSearchContext | public .ctor(string sourceGuid, int playerId, int startX, int startY, int targetX, int targetY, APIShared.Pathfinding.RouteSearchTerrain terrain, int maximumEdges, long maximumEdgeCost)
 APIShared.Pathfinding.RouteSearchContext | public APIShared.Pathfinding.RouteSearchTerrain Terrain { get; }
@@ -1881,6 +1889,7 @@ APIShared.Pathfinding.RouteTileEffect | Forbidden = 2
 APIShared.Pathfinding.RouteTileEffect | None = 0
 APIShared.Pathfinding.RouteTileEffect | Penalty = 1
 APIShared.Pathfinding.RouteTileRuleSet | public sealed class APIShared.Pathfinding.RouteTileRuleSet
+APIShared.Pathfinding.RouteTileRuleSet | public APIShared.Pathfinding.RouteReplanPolicy ReplanPolicy { get; set; }
 APIShared.Pathfinding.RouteTileRuleSet | public bool Clear(int tileX, int tileY)
 APIShared.Pathfinding.RouteTileRuleSet | public bool Set(int tileX, int tileY, APIShared.Pathfinding.RouteTileEffect effect, int penalty = 0, uint players = 510)
 APIShared.Pathfinding.RouteTileRuleSet | public const uint AllPlayers = 510
@@ -1892,7 +1901,9 @@ APIShared.Pathfinding.RouteTileRules | public static class APIShared.Pathfinding
 APIShared.Pathfinding.RouteTileRules | public const int JournalCapacity = 65536
 APIShared.Pathfinding.RouteTileRules | public const int MapSize = 800
 APIShared.Pathfinding.RouteTileRules | public const int MaximumPenalty = 255
+APIShared.Pathfinding.RouteTileRules | public static APIShared.Pathfinding.RouteReplanPolicy GetReplanPolicy(int tileX, int tileY, int playerId)
 APIShared.Pathfinding.RouteTileRules | public static APIShared.Pathfinding.RouteTileEffect GetEffect(int tileX, int tileY, int playerId, out int penalty)
+APIShared.Pathfinding.RouteTileRules | public static bool HasReplanRules { get; }
 APIShared.Pathfinding.RouteTileRules | public static bool HasRules { get; }
 APIShared.Pathfinding.RouteTileRules | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Pathfinding.RouteTileRuleSet rules, out string reason)
 APIShared.Pathfinding.RouteTileRules | public static int ReadChanges(ref long cursor, int[] tiles)

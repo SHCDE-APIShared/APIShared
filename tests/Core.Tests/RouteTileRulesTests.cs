@@ -62,5 +62,43 @@ namespace Core.Tests
             Assert.AreEqual(-1, RouteTileRules.ReadChanges(ref pending, small), "a buffer smaller than the pending changes reports loss");
             fire.ClearAll();
         }
+
+        // Replan policies: the first set in identity order with a policy and an effect for the player
+        // answers; a policy change journals the set's tiles; the detour bound is percent or minimum steps.
+        [TestMethod]
+        public void ReplanPoliciesSelectionJournalAndDetourBound()
+        {
+            Assert.IsTrue(RouteTileRules.TryRegister("tests.replan.a", "fire", out RouteTileRuleSet first, out _));
+            Assert.IsTrue(RouteTileRules.TryRegister("tests.replan.b", "smoke", out RouteTileRuleSet second, out _));
+            var wait = new RouteReplanPolicy(3, 50, 10, 400);
+            var keep = new RouteReplanPolicy(2, 0, 0, 0);
+            Assert.IsTrue(first.Set(20, 20, RouteTileEffect.Penalty, 254, 1U << 3));
+            Assert.IsTrue(second.Set(20, 20, RouteTileEffect.Penalty, 10));
+            Assert.IsFalse(RouteTileRules.HasReplanRules, "no policy yet");
+            Assert.IsNull(RouteTileRules.GetReplanPolicy(20, 20, 3));
+
+            long cursor = RouteTileRules.Version;
+            second.ReplanPolicy = keep;
+            Assert.IsTrue(RouteTileRules.HasReplanRules);
+            var changes = new int[8];
+            Assert.AreEqual(1, RouteTileRules.ReadChanges(ref cursor, changes), "a policy change journals the set's tiles");
+            Assert.AreEqual(20 * 800 + 20, changes[0]);
+            first.ReplanPolicy = wait;
+            Assert.AreSame(wait, RouteTileRules.GetReplanPolicy(20, 20, 3), "the first set in identity order");
+            Assert.AreSame(keep, RouteTileRules.GetReplanPolicy(20, 20, 4), "players outside the first set's mask");
+            Assert.IsNull(RouteTileRules.GetReplanPolicy(21, 20, 3));
+            Assert.IsNull(RouteTileRules.GetReplanPolicy(20, 20, 0));
+
+            Assert.IsTrue(wait.AllowsDetour(40, 60)); Assert.IsFalse(wait.AllowsDetour(40, 61));
+            Assert.IsTrue(wait.AllowsDetour(4, 14), "the minimum extra steps apply to short routes"); Assert.IsFalse(wait.AllowsDetour(4, 15));
+            Assert.IsTrue(keep.AllowsDetour(7, 7)); Assert.IsFalse(keep.AllowsDetour(7, 8));
+            Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(() => new RouteReplanPolicy(0, 50, 10, 400));
+            Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(() => new RouteReplanPolicy(RouteReplanPolicy.MaximumTriggerDistance + 1, 50, 10, 400));
+            Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(() => new RouteReplanPolicy(3, -1, 10, 400));
+
+            first.ClearAll(); second.ClearAll();
+            Assert.IsFalse(RouteTileRules.HasReplanRules);
+            first.ReplanPolicy = null; second.ReplanPolicy = null;
+        }
     }
 }

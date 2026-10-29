@@ -369,6 +369,13 @@ transition the game forbids, never change unit speed and do not affect Vanilla's
 commands. Call everything on the simulation thread and derive rule data from deterministic game
 state; keep multiplayer peers on identical rule mods and settings.
 
+Rules that appear after a move was planned (fire on a route already walked) can carry a
+`RouteReplanPolicy` on their set (`rules.ReplanPolicy = new RouteReplanPolicy(trigger, percent,
+minimumSteps, waitTicks)`). Supporting engines then re-plan a unit that comes within `trigger`
+steps of such a tile, adopt the new route when it is at most `percent` (or `minimumSteps`) longer,
+and otherwise stop the unit until a clear route exists or `waitTicks` pass; the unit keeps its
+order and target. `RouteTileRules.GetReplanPolicy` and `HasReplanRules` are the engine side.
+
 Engines read `GetEffect(x, y, player, out penalty)` and follow changes with
 `ReadChanges(ref cursor, buffer)` (tiles packed as `y * MapSize + x`). A result of -1 means changes
 were lost (more than `JournalCapacity` behind or a too small buffer): re-read all rules and continue
