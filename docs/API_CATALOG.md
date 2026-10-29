@@ -357,6 +357,9 @@ executed calculation, also after an ordinary failure. Initial costs lie in
 
 ## Route tile rules
 
+Which pathfinding contract fits which rule (tiles, replanning, moat costs, gates, wall climbing):
+[Pathfinding rules for mods](PATHFINDING_RULES.md).
+
 `APIShared.Pathfinding.RouteTileRules.TryRegister(ownerGuid, registrationId, out rules, out reason)`
 gives a mod one rule set for route engines. `rules.Set(x, y, effect, penalty, players)` marks a
 tile `Forbidden` (engines do not route into it; a unit standing on it may leave) or `Penalty`
