@@ -191,6 +191,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
+| Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | â€” |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | â€” |
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | â€” |
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
@@ -353,6 +354,26 @@ Otherwise use the frozen `operation.Pre` costs, skip the calculation when
 `SkipOriginalFunction` is set, and call `operation.Complete(...)` once after an
 executed calculation, also after an ordinary failure. Initial costs lie in
 `1..MaximumEdgeCost`; the context validates its publisher GUID and bounds.
+
+## Route tile rules
+
+`APIShared.Pathfinding.RouteTileRules.TryRegister(ownerGuid, registrationId, out rules, out reason)`
+gives a mod one rule set for route engines. `rules.Set(x, y, effect, penalty, players)` marks a
+tile `Forbidden` (engines do not route into it; a unit standing on it may leave) or `Penalty`
+(entering costs 1..255 extra ground steps of the searching unit); `Clear` and `ClearAll` remove
+effects. Over all sets, Forbidden for a player wins, otherwise the largest penalty applies.
+
+Rules are passive: registration installs no hook, scans nothing and changes nothing without an
+engine that reads them. They only restrict or penalize engine routes; they never permit a
+transition the game forbids, never change unit speed and do not affect Vanilla's own searches or
+commands. Call everything on the simulation thread and derive rule data from deterministic game
+state; keep multiplayer peers on identical rule mods and settings.
+
+Engines read `GetEffect(x, y, player, out penalty)` and follow changes with
+`ReadChanges(ref cursor, buffer)` (tiles packed as `y * MapSize + x`). A result of -1 means changes
+were lost (more than `JournalCapacity` behind or a too small buffer): re-read all rules and continue
+from `Version`. `HasRules` lets engines skip the lookup while no set holds an effect. The current
+engine is MoatMove's anchor mode on the `dev/pathfinding` test line.
 
 ## Failure and registration rules
 

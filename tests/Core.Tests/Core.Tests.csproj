@@ -23,6 +23,7 @@
     <Compile Include="../../src/Compatibility/FixesWheatContract.cs" Link="Production/FixesWheatContract.cs" />
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs" />
     <Compile Include="../../src/Pathfinding/GateRoutes/GateAccessRules.cs" Link="Production/GateAccessRules.cs" />
+    <Compile Include="../../src/Pathfinding/Routes/RouteTileRules.cs" Link="Production/RouteTileRules.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipContracts.cs" Link="Production/BuildingTooltipContracts.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipSelection.cs" Link="Production/BuildingTooltipSelection.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipRegistry.cs" Link="Production/BuildingTooltipRegistry.cs" />
