@@ -1756,3 +1756,54 @@ scaler alone in the tooltip style, without a competing SE scaler setter. The
 behavior temporarily disables SE scaling for that tooltip and restores its prior
 opt-in when detached. It does not choose a template, colors or duration; consumers
 retain those. Unopted tooltips and Vanilla rollover text are unchanged.
+
+## Lord statistic columns
+
+Available since **0.19.0**. Register through `APIShared.Statistics.LordStatistics.TryRegister` on
+Unity's main thread after APIShared initialization. Use your own mod GUID and a stable owner-local ID.
+Duplicate identities are rejected with a reason. The persisted key is escaped GUID + `/` + escaped ID;
+never persist catalog positions or translated labels. The
+[example](../examples/ThirdPartyMod/StatisticsExample.cs) compiles against the public DLL only.
+
+A definition supplies localized name, tooltip, a shareable `Noesis.ImageSource` provider and a batch
+values provider. Optional themes are Economy, Military and PopulationMood; the default OtherMods
+appears under “Other mods”. Use `decimal?` for numeric values; null/missing means unknown.
+Optional formatting can add signs, precision or units; renderers sort the underlying decimal,
+not the formatted text. Provider exceptions are isolated to the column, with bounded diagnostics
+and a fallback for metadata/formatting. Later requests can recover. Results are copied and filtered.
+
+The registry owns no table or data source. A separate renderer (initially LordOverviewTest) owns
+sampling cadence, selected columns, UI and information rights. Without a renderer registrations
+remain idle. A renderer subscribes `CatalogChanged`, then reads `GetCatalog` on the same Unity
+thread. Catalog operations never call value providers. Catalog callbacks are synchronous, ordered
+by revision, isolated and outside registry locks; reentrant changes queue later revisions. There is
+no implicit replay. Callbacks and registration handles remain process-lived; deactivate through
+`SetActive`, and use `RefreshMetadata` for changed localized metadata. Do not remove persistent
+registrations during SHCDE's early plugin destruction.
+
+Only visible, selected columns should be read, using the current positive APIShared mission session
+and the authorized subset of player IDs. Treat custom columns as extended information by default.
+Pass no restricted IDs; never expose restricted values through tooltips or sorting. An empty roster,
+inactive provider, invalid session or recursive read does not call the provider. Callbacks execute
+on Unity's main thread outside registry locks, not under the renderer's engine lock. Providers acquire
+their appropriate native read lock and return a fresh snapshot, without mutating the game or HUD.
+The renderer revalidates session/activation after each callback. Retain missing selections as
+removable unknown entries; reconnect when the same key is available again.
+
+### Source-relative popup sizing
+
+For an owned custom popup with a template that binds FontSize, MaxWidth, Padding and BorderThickness:
+
+```csharp
+SharedToolTipSizing.SetReferenceElement(tip, sourceHudElement);
+SharedToolTipSizing.SetReferenceFontSize(tip, 16f); // source HUD logical font size
+SharedToolTipSizing.SetEnabled(tip, true);
+ToolTipService.SetShowDuration(ownerElement, 60000);
+```
+
+The source-reference mode uses measured source/popup screen transforms, including separate Noesis
+views. Sizes are absolute, updated on opening/loading and relevant size events, without frame polling.
+A popup that is not attached waits for its view. Closed popups release source/viewport listeners.
+Enabling takes exclusive sizing ownership from the Extender scaler; disabling restores its prior
+setting. A null reference retains the existing 23/30/45 resolution presets for existing consumers.
+The caller owns the dark/gold, white wrapped-text template and closes its popups when its HUD ends.

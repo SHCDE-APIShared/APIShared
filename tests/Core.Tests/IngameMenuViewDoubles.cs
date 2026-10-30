@@ -86,9 +86,10 @@ namespace Noesis
         public bool IsOpen
         {
             get => open;
-            set { if (open == value) return; open = value; if (value) Opened?.Invoke(this, new RoutedEventArgs()); }
+            set { if (open == value) return; open = value; if (value) Opened?.Invoke(this, new RoutedEventArgs()); else Closed?.Invoke(this,new RoutedEventArgs()); }
         }
         public event EventHandler<RoutedEventArgs>? Opened;
+        public event EventHandler<RoutedEventArgs>? Closed;
     }
     public static partial class ToolTipService
     {

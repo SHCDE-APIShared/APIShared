@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
+    <Compile Include="../../src/Statistics/LordStatisticColumns.cs" Link="Production/LordStatisticColumns.cs" />
+    <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
     <Compile Include="../../src/Presentation/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
     <Compile Include="../../src/Presentation/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
     <Compile Include="../../src/Presentation/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />

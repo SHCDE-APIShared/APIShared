@@ -1499,9 +1499,15 @@ APIShared.ModSettings.SettingModeStatus | Active = 1
 APIShared.ModSettings.SettingModeStatus | Inactive = 2
 APIShared.ModSettings.SettingModeStatus | Unknown = 0
 APIShared.ModSettings.SharedToolTipSizing | public static class APIShared.ModSettings.SharedToolTipSizing
+APIShared.ModSettings.SharedToolTipSizing | public static Noesis.FrameworkElement GetReferenceElement(Noesis.DependencyObject value)
 APIShared.ModSettings.SharedToolTipSizing | public static bool GetEnabled(Noesis.DependencyObject value)
+APIShared.ModSettings.SharedToolTipSizing | public static float GetReferenceFontSize(Noesis.DependencyObject value)
 APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty EnabledProperty
+APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty ReferenceElementProperty
+APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty ReferenceFontSizeProperty
 APIShared.ModSettings.SharedToolTipSizing | public static void SetEnabled(Noesis.DependencyObject value, bool enabled)
+APIShared.ModSettings.SharedToolTipSizing | public static void SetReferenceElement(Noesis.DependencyObject value, Noesis.FrameworkElement reference)
+APIShared.ModSettings.SharedToolTipSizing | public static void SetReferenceFontSize(Noesis.DependencyObject value, float size)
 APIShared.ModSettings.ToolTipPresentation | public static class APIShared.ModSettings.ToolTipPresentation
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
@@ -2317,6 +2323,42 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Statistics.LordStatisticCatalog | public sealed class APIShared.Statistics.LordStatisticCatalog
+APIShared.Statistics.LordStatisticCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Statistics.LordStatisticColumn> Columns { get; }
+APIShared.Statistics.LordStatisticCatalog | public long Revision { get; }
+APIShared.Statistics.LordStatisticColumn | public sealed class APIShared.Statistics.LordStatisticColumn
+APIShared.Statistics.LordStatisticColumn | public APIShared.Statistics.LordStatisticTheme Theme { get; }
+APIShared.Statistics.LordStatisticColumn | public Noesis.ImageSource GetIcon()
+APIShared.Statistics.LordStatisticColumn | public System.Collections.Generic.IReadOnlyDictionary<int, decimal?> Read(long sessionId, System.Collections.Generic.IEnumerable<int> authorizedPlayerIds)
+APIShared.Statistics.LordStatisticColumn | public bool IsActive { get; }
+APIShared.Statistics.LordStatisticColumn | public string Format(decimal value)
+APIShared.Statistics.LordStatisticColumn | public string GetName()
+APIShared.Statistics.LordStatisticColumn | public string GetTooltip()
+APIShared.Statistics.LordStatisticColumn | public string Key { get; }
+APIShared.Statistics.LordStatisticColumn | public string OwnerGuid { get; }
+APIShared.Statistics.LordStatisticColumn | public void RefreshMetadata()
+APIShared.Statistics.LordStatisticColumn | public void SetActive(bool active)
+APIShared.Statistics.LordStatisticColumnDefinition | public sealed class APIShared.Statistics.LordStatisticColumnDefinition
+APIShared.Statistics.LordStatisticColumnDefinition | public .ctor(string columnId, System.Func<string> name, System.Func<string> tooltip, System.Func<Noesis.ImageSource> icon, System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> values, APIShared.Statistics.LordStatisticTheme theme = (APIShared.Statistics.LordStatisticTheme)0, System.Func<decimal, string> format = null)
+APIShared.Statistics.LordStatisticColumnDefinition | public APIShared.Statistics.LordStatisticTheme Theme { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> Values { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<Noesis.ImageSource> Icon { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<decimal, string> Format { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<string> Name { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<string> Tooltip { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public string ColumnId { get; }
+APIShared.Statistics.LordStatisticRequest | public sealed class APIShared.Statistics.LordStatisticRequest
+APIShared.Statistics.LordStatisticRequest | public System.Collections.Generic.IReadOnlyList<int> PlayerIds { get; }
+APIShared.Statistics.LordStatisticRequest | public long SessionId { get; }
+APIShared.Statistics.LordStatisticTheme | public enum APIShared.Statistics.LordStatisticTheme : int
+APIShared.Statistics.LordStatisticTheme | Economy = 1
+APIShared.Statistics.LordStatisticTheme | Military = 2
+APIShared.Statistics.LordStatisticTheme | OtherMods = 0
+APIShared.Statistics.LordStatisticTheme | PopulationMood = 3
+APIShared.Statistics.LordStatistics | public static class APIShared.Statistics.LordStatistics
+APIShared.Statistics.LordStatistics | public static APIShared.Statistics.LordStatisticCatalog GetCatalog()
+APIShared.Statistics.LordStatistics | public static bool TryRegister(string ownerGuid, APIShared.Statistics.LordStatisticColumnDefinition definition, out APIShared.Statistics.LordStatisticColumn column, out string reason)
+APIShared.Statistics.LordStatistics | public static event System.Action<APIShared.Statistics.LordStatisticCatalog> CatalogChanged
 APIShared.TemporaryGateRouteAcceptanceBridge | public static class APIShared.TemporaryGateRouteAcceptanceBridge
 APIShared.TemporaryGateRouteAcceptanceBridge | public static APIShared.ITemporaryGateRouteAcceptanceObserver Current { get; }
 APIShared.TemporaryGateRouteAcceptanceBridge | public static APIShared.ITemporaryGateRouteAcceptanceObserver CurrentRequested { get; }
