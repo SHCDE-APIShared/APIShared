@@ -1,5 +1,35 @@
 # Third-party integration guide
 
+## Demand-driven engine readback
+
+After APIShared native initialization, call
+`Statistics.EngineReadbacks.TryRegister(ownerGuid, stableId, copyPreparedRawData, out registration)`.
+Registration is permanent and rejects duplicate owner/ID pairs. On the main thread,
+prepare private reusable buffers and immutable request identity, then call `Request()`.
+The existing `EngineInterface.run` / `MemoryBuffers.returnBuffer` publisher invokes
+requested readers in ordinal owner/ID order, after native execution and managed
+state copying but before the completed buffer is published. It additionally verifies
+current-thread ownership of `EngineInterface.threadLock`. Runs without a completed
+buffer retain demand. This is not proof that game time advanced.
+
+The callback may only copy bounded raw data into that request's prepared storage.
+Do not allocate, wait, log, call providers or touch Unity/Noesis/view models there.
+Publish completion atomically and consume it on the main thread. Keep a running
+buffer owned until completion; `Cancel()` drops queued demand but cannot interrupt
+an already executing callback. Recheck mission, HUD generation and information
+rights before publishing. Clear sensitive retired data after producer ownership
+ends. Never retain game-native pointers between callbacks.
+
+For example, prepare a buffer and set an atomic queued state on the main thread;
+let the registered callback claim that state once, copy native fields and release
+publish a completed state in `finally`. A main-thread zero-wait `Monitor.TryEnter`
+fallback may claim the same job while paused. Consume a completed state from an
+existing GUI publisher; avoid per-request dispatcher closures under the engine lock.
+Requests during a callback are retained for a later publication. Callback exceptions
+are isolated; use `TryTakeError(out error)` outside the critical section. The broker
+provides no refresh cadence, session validation, automatic retries or coherent UI
+snapshot: those are consumer responsibilities. Dormant registrations do no copying.
+
 ## Native field knowledge
 
 Use `APIShared.NativeKnowledge.NativeFieldCatalog.Default` for offline metadata and

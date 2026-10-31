@@ -1,5 +1,14 @@
 # API catalog
 
+## Demand-driven engine readback
+
+`APIShared.Statistics.EngineReadbacks` registers prepared raw-copy callbacks at the
+existing completed-run buffer publisher. Requests coalesce; the simulation caller
+already owns the engine monitor, so the GUI never waits for it. No automatic work,
+tick guarantee, UI dispatch or permission policy is provided. See the
+[usage and lifetime contract](THIRD_PARTY_GUIDE.md#demand-driven-engine-readback).
+This additive broker does not change existing selection observers or game results.
+
 ## Native field knowledge
 
 `APIShared.NativeKnowledge.NativeFieldCatalog.Default` exposes immutable field IDs,

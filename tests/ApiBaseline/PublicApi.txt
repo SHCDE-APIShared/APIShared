@@ -2323,6 +2323,13 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Statistics.EngineReadbackRegistration | public sealed class APIShared.Statistics.EngineReadbackRegistration
+APIShared.Statistics.EngineReadbackRegistration | public bool TryTakeError(out System.Exception exception)
+APIShared.Statistics.EngineReadbackRegistration | public void Cancel()
+APIShared.Statistics.EngineReadbackRegistration | public void Request()
+APIShared.Statistics.EngineReadbacks | public static class APIShared.Statistics.EngineReadbacks
+APIShared.Statistics.EngineReadbacks | public static bool IsAvailable { get; }
+APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string ownerGuid, string id, System.Action copy, out APIShared.Statistics.EngineReadbackRegistration registration)
 APIShared.Statistics.LordStatisticCatalog | public sealed class APIShared.Statistics.LordStatisticCatalog
 APIShared.Statistics.LordStatisticCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Statistics.LordStatisticColumn> Columns { get; }
 APIShared.Statistics.LordStatisticCatalog | public long Revision { get; }
