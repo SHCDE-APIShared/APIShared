@@ -48,7 +48,8 @@ namespace APIShared.Pathfinding
         /// <summary>Whether any rule set with a <see cref="RouteTileRuleSet.ReplanPolicy"/> currently holds a tile effect.</summary>
         public static bool HasReplanRules { get; private set; }
 
-        /// <summary>Monotone count of effective tile changes, registrations and clears; the journal position.</summary>
+        /// <summary>Monotone count of journaled tile changes (sets, clears and replan-policy changes); the journal position.
+        /// Registering an empty rule set does not advance it.</summary>
         public static long Version => sequence;
 
         /// <summary>Registers one process-lived rule set; a second registration of the same identity fails.</summary>

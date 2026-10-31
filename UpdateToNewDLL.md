@@ -569,9 +569,48 @@ The complete original render function and its terminal drawing-list cleanup at
 `0x41D10` remain intact. Rendering temporarily changed spectator visibility must
 always be restored by consumer cleanup; the service makes no player changes.
 
-Managed presentation: public `HUD_IngameMenu.Init()` and `Close()` on the real
-Assembly-CSharp, and the `PresentationEvents.GuiChecks` post event. The XAML host
-wraps `ButtonQuitMission` while preserving its command, parameter 6, label binding,
-style and MouseEnter handler. Re-audit these on a managed/UI update. Popup sizing
-reads Unity screen height only on the UI thread; its opt-in disables the competing
-SE scaler only for that popup.
+No unknown-image fallback is admitted for `0x41D60`: the ten-byte prologue is a
+generic register-save sequence that does not identify this render function, and the
+six-argument contract (including the two stack arguments read by consumers) was
+audited only for this image. Other hashes fail registration closed with a diagnostic;
+Vanilla rendering and unrelated services stay active. Re-audit the argument meaning,
+callers and the `0x41D10` cleanup before admitting a new image.
+
+Managed presentation (ESC menu): APIShared hooks only the public
+`HUD_IngameMenu.Init()` of the real Assembly-CSharp and observes
+`MainViewModel.PropertyChanged(Show_HUD_IngameMenu)`. After the original `Init`, it
+moves the existing `LeftPanel` into its own scrollable surface and reparents all nine
+named Vanilla buttons (`ButtonSave`, `ButtonLoad`, `ButtonWorkshop`, `ButtonOptions`,
+`ButtonHelp`, `ButtonRestartMission`, `ButtonQuitMission`, `ButtonExitStronghold`,
+`ButtonResume`) into row grids or a collapsed parking panel; their commands, bindings
+and style are unchanged. Re-audit on a managed/UI update: `LayoutRoot` (Grid),
+`LeftPanel` (StackPanel) and the nine buttons as its direct children, the style
+`BTN_SH_GlowSDisable`, the XAML patch adding `APISharedMenuTooltipStyle` to
+`UserControl.Resources`, `PropEx` text attachments, and that `Init()` resets
+`LayoutRoot.Height` (currently 400 before mode-specific changes) on every opening.
+A foreign layout that moved a button keeps the menu unchanged and reports the failure.
+Popup sizing reads Unity screen height only on the UI thread; its opt-in disables the
+competing SE scaler only for that popup.
+
+## Managed Script Extender and game targets of Lord presentation and move diagnostics (0.20.0)
+
+These are managed hooks; they claim no native site. Re-audit them after a Script
+Extender or managed game update.
+
+- `PackagedLordPresentation` (installed with the first registration; a failure
+  rejects that registration, already installed hooks pass through without entries):
+  `OnScreenText.getComputerName(int,int)`, `Platform_Multiplayer.getPlayerName(int,bool,bool)`,
+  `CustomisationFileManager.GetCustomLordText(string,int)` (IDs 34..41 are the nickname
+  titles), and the SE `GameAIManagerAPI` members `IsSupportedCustomLord`,
+  `TryGetDisplayName`, `TryGetLordTitle`, `TryGetLordDetails`, `TryGetFace`,
+  `TryGetJoinAudio`, `TryGetLeaveAudio`, `TryGetCurrentSpeechText`, `TryGetLuaInitPath`
+  and the internal `TryGetVideoAndAudio`. Portraits use the private
+  `GameAssetManagerAPI.TryLoadTexture(string, out Texture2D)` through reflection.
+  Clip selection must keep using `DeterministicRandom.Next(0, count)` exactly where SE does.
+- `CoopLordRestartPresentation`: IL edit of `Platform_Multiplayer.StartGame(MultiplayerSetupData,
+  FileHeader, int coopTrailID, int coopMissionID)`; requires exactly one call to
+  `HUD_IngameMenu.RestartMPInfo.encode()` and inserts the population before it.
+  Vanilla fills restart Lord names only when `coopTrailID == 0`.
+- `MoveCommandFailureRuntime`: IL edit of SE `GameTribeManagerAPI.IssueMoveHereCommand(int,int,int,bool,int,TribeMoveType)`;
+  requires exactly two `LogHelper.Error(string,string,string)` branches and one native
+  dispatch. A mismatch logs `SE_MOVE_FAILURE_CONTEXT` and keeps the original wrapper.

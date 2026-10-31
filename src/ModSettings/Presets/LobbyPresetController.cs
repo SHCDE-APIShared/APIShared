@@ -129,9 +129,42 @@ namespace APIShared.ModSettings
                 RefreshCatalog();
         }
 
+        // Restart preparations store the raw mission source state, never a rendered status line:
+        // rendering it again after the restart keeps the current language and avoids nesting.
+        internal bool TryCaptureMissionStatus(out string sourceLabel, out string presetId, out bool modified)
+        {
+            sourceLabel = presetId = string.Empty;
+            modified = false;
+            if (!owner.IsMissionPresetSelected) return false;
+            sourceLabel = missionBasedOnPreset?.Name ?? missionPresetLabel;
+            presetId = missionBasedOnPreset?.StableId ?? string.Empty;
+            modified = missionPresetDirty;
+            return true;
+        }
+
+        // Runs after EnterMissionPreset has restored the prepared snapshot of the same context.
+        internal void RestoreMissionStatus(string sourceLabel, string presetId, bool modified)
+        {
+            if (!owner.IsMissionPresetSelected) return;
+            PublishedModSettingsPreset preset = string.IsNullOrEmpty(presetId) ? null : publishedPresets.FirstOrDefault(item =>
+                string.Equals(item.StableId, presetId, StringComparison.OrdinalIgnoreCase));
+            missionBasedOnPreset = preset;
+            // An unavailable preset keeps its captured name as a plain source label.
+            if (preset == null && !string.IsNullOrWhiteSpace(sourceLabel)) missionPresetLabel = sourceLabel;
+            missionPresetDirty = modified;
+        }
+
+        // Journals written before the raw restart status contain only the English status line
+        // rendered by CaptureRestartSources. Its fixed " (modified)" suffix becomes the dirty state.
         internal void RestorePreparationLabel(string label)
         {
+            const string legacyModified = " (modified)";
             missionBasedOnPreset = null;
+            if (label.EndsWith(legacyModified, StringComparison.Ordinal))
+            {
+                label = label.Substring(0, label.Length - legacyModified.Length);
+                missionPresetDirty = true;
+            }
             missionPresetLabel = label;
         }
 
@@ -152,7 +185,7 @@ namespace APIShared.ModSettings
                 string context = missionContextLabel;
                 if (!string.Equals(context, missionPresetLabel, StringComparison.Ordinal) && missionPresetLabel.Length != 0)
                     context = context.Length != 0 && missionPresetLabel.StartsWith(context + " · ", StringComparison.Ordinal)
-                        ? missionPresetLabel // Restart preparation already captured the full status.
+                        ? missionPresetLabel // A legacy restart journal already captured the full status.
                         : context + " · " + (basedOnText ?? "Based on") + ": " + missionPresetLabel;
                 string modified = " (" + (modifiedText ?? "modified") + ")";
                 return context + (missionPresetDirty && !context.EndsWith(modified, StringComparison.Ordinal) ? modified : "");

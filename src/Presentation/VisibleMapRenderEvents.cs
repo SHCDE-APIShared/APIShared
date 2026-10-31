@@ -117,8 +117,9 @@ namespace APIShared.Presentation
                 throw new InvalidOperationException("Visible-map events require the audited native image and LibraryLoaded initialization.");
             var target = module + Rva;
             NativeIndirectEntry.VerifyBytes(target, Entry);
-            var claim = NativeSiteRegistry.Register(APISharedPlugin.PluginGuid, "visible-map-render", Rva, Entry.Length, NativeSiteMode.Exclusive);
-            if (!claim.Succeeded) throw new InvalidOperationException("Visible-map render entry is occupied: " + claim.Status);
+            var sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.VisibleMapRender, ApiSharedNativeSites.VisibleMapRenderSpans(),
+                reason => new InvalidOperationException("Visible-map render entry is occupied: " + reason));
             try
             {
                 var bridge = new VisibleMapRenderBridge(callback, demand);
@@ -138,7 +139,7 @@ namespace APIShared.Presentation
             catch (Exception error)
             {
                 installationFailure = error;
-                if (!publicationStarted) { hook?.Dispose(); hook = null; NativeSiteRegistry.Unregister(APISharedPlugin.PluginGuid, "visible-map-render"); }
+                if (!publicationStarted) { hook?.Dispose(); hook = null; ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.VisibleMapRender); }
                 throw;
             }
         }

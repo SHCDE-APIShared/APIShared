@@ -2343,6 +2343,7 @@ APIShared.Statistics.EngineReadbackRegistration | public void Request()
 APIShared.Statistics.EngineReadbacks | public static class APIShared.Statistics.EngineReadbacks
 APIShared.Statistics.EngineReadbacks | public static bool IsAvailable { get; }
 APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string ownerGuid, string id, System.Action copy, out APIShared.Statistics.EngineReadbackRegistration registration)
+APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string ownerGuid, string id, System.Action copy, out APIShared.Statistics.EngineReadbackRegistration registration, out string reason)
 APIShared.Statistics.LordStatisticCatalog | public sealed class APIShared.Statistics.LordStatisticCatalog
 APIShared.Statistics.LordStatisticCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Statistics.LordStatisticColumn> Columns { get; }
 APIShared.Statistics.LordStatisticCatalog | public long Revision { get; }

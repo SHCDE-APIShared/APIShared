@@ -14,14 +14,25 @@
       "Version": "0.20.0",
       "Changes": [
         "Add scoped packaged Lord presentation with complete lossless lordmeta.json, independent locale fallback, optional private media and synchronized speech selection.",
-        "Preserve claimed Coop AI names and portraits in the original restart object before serialization, without changing Lord gameplay types or Script Extender's global catalog."
+        "Preserve claimed Coop AI names and portraits in the original restart object before serialization, without changing Lord gameplay types or Script Extender's global catalog.",
+        "Behavior change for every Script Extender mod-data handler: synchronized multiplayer saves and autosaves now report SaveContext.IsSaveFile=true (FilePath unavailable), multiplayer-save loads are classified as saves and editor loads through the save loader as maps. Unsupported images keep the original save path.",
+        "Add the Script Extender move-command failure context (patrol, order and move type) to the existing error log without changing command behavior.",
+        "Clarify savegame ModSettings source and fallback diagnostics and skipped Workshop subscription diagnostics."
       ]
     },
     {
       "Version": "0.19.0",
       "Changes": [
+        "Add a Lord statistics column broker with owner-bound, renderer-demanded value providers, localized metadata and logical activation.",
+        "Add demand-driven engine readbacks that copy prepared raw data immediately before Vanilla publishes a completed run buffer, without an additional hook."
+      ]
+    },
+    {
+      "Version": "0.18.0",
+      "Changes": [
         "Add opt-in visible-map render coordination with native dormant bypass and isolated preparation/cleanup callbacks.",
-        "Add shared pause-menu actions preserving Vanilla Quit, and opt-in popup sizing from the common resolution presets."
+        "Add shared pause-menu actions preserving Vanilla Quit, and opt-in popup sizing from the common resolution presets.",
+        "Add passive route tile rules (Forbidden/Penalty per player) with a change journal and an optional replan policy for supporting route engines; Vanilla searches are unaffected."
       ]
     },
     {
@@ -37,7 +48,8 @@
         "Keep Map/Trail/Save source labels visible after loading personal presets and associate restored preset state with the correct mission working-copy session.",
         "Add bounded settings-transition and persistence diagnostics with context/source/preset identities, dirty state, actual write results and target paths; include available exception type, HResult and exception details on failure.",
         "Add Personal Settings as a reset source for editable Map and Trail working copies without leaving their context or overwriting personal settings and preset files.",
-        "Keep source selection, host/client ownership and backend restart handling consistent; prepare all target snapshots before a shared reset and preserve untouched backend state on failure."
+        "Keep source selection, host/client ownership and backend restart handling consistent; prepare all target snapshots before a shared reset and preserve untouched backend state on failure.",
+        "Lords without registered Script Extender metadata quietly keep the original game media; a mission-start diagnostic reports used Lord packages whose lordmeta.json was not registered by the Script Extender."
       ]
     },
     {

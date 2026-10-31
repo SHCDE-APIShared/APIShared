@@ -22,6 +22,8 @@ namespace APISharedTests
             check(EngineReadbacks.TryRegister(owner, "a", () => order.Add(1), out var a), "Register a prepared reader.");
             check(EngineReadbacks.TryRegister(owner, "b", () => order.Add(2), out var b), "Register an independent reader.");
             check(!EngineReadbacks.TryRegister(owner, "a", () => { }, out _), "Duplicate owner-local ID rejected.");
+            check(!EngineReadbacks.TryRegister(owner, "a", () => { }, out var duplicate, out string duplicateReason) &&
+                duplicate == null && !string.IsNullOrEmpty(duplicateReason), "A rejected registration reports its reason.");
             try
             {
                 a.Request(); a.Request(); b.Request();

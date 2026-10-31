@@ -476,10 +476,15 @@ namespace APIShared.ModSettings
 #if API_SHARED_PRESET_TESTS
             return new Dictionary<string, string>();
 #else
-            return new Dictionary<string, string> {
-                ["resetSource"] = selectedSettingsSource?.Id ?? "",
-                ["label"] = presetController?.GetStatusText("Based on", "modified", "Personal presets", "Bundled with this mod", "External presets") ?? ""
-            };
+            var sources = new Dictionary<string, string> { ["resetSource"] = selectedSettingsSource?.Id ?? "" };
+            // Raw mission status only; the status line is rendered again in the current language.
+            if (presetController != null && presetController.TryCaptureMissionStatus(out string sourceLabel, out string presetId, out bool modified))
+            {
+                sources["sourceLabel"] = sourceLabel;
+                sources["basedOnPreset"] = presetId;
+                sources["modified"] = modified ? "true" : "false";
+            }
+            return sources;
 #endif
         }
         internal void RestoreRestartSources(Dictionary<string, string> sources)
@@ -487,8 +492,12 @@ namespace APIShared.ModSettings
 #if !API_SHARED_PRESET_TESTS
             if (sources.TryGetValue("resetSource", out string selected))
                 System_SelectedSettingsSource = settingsSources.FirstOrDefault(x => x.Id == selected) ?? selectedSettingsSource;
-            if (sources.TryGetValue("label", out string label) && !string.IsNullOrWhiteSpace(label))
-                presetController?.RestorePreparationLabel(label);
+            if (sources.TryGetValue("sourceLabel", out string sourceLabel))
+                presetController?.RestoreMissionStatus(sourceLabel,
+                    sources.TryGetValue("basedOnPreset", out string presetId) ? presetId : "",
+                    sources.TryGetValue("modified", out string modified) && modified == "true");
+            else if (sources.TryGetValue("label", out string label) && !string.IsNullOrWhiteSpace(label))
+                presetController?.RestorePreparationLabel(label); // Journal written before the raw status keys.
             RaiseAccessProperties();
 #endif
         }

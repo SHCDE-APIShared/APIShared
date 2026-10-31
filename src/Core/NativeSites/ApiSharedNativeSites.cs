@@ -28,6 +28,12 @@ namespace APIShared
         internal const string GateDescent = "GateRouting.Descent";
         internal const string BuildingRepair = "Buildings.RepairQuote";
         internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
+        internal const string VisibleMapRender = "Presentation.VisibleMapRender";
+
+        // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
+        internal static NativeSiteSpan[] VisibleMapRenderSpans() => new[] {
+            Exclusive(Presentation.VisibleMapRenderEvents.Rva, Presentation.VisibleMapRenderEvents.Entry.Length)
+        };
 
         internal static NativeSiteSpan[] SynchronizedSaveSpans() => new[] {
             Exclusive(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva, ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength),
@@ -174,7 +180,8 @@ namespace APIShared
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
             Group(BuildingRepair, BuildingRepairSpans()),
-            Group(SynchronizedSave, SynchronizedSaveSpans())
+            Group(SynchronizedSave, SynchronizedSaveSpans()),
+            Group(VisibleMapRender, VisibleMapRenderSpans())
         };
 
         // Claims a group for APIShared before installation. Throws the service's own failure type

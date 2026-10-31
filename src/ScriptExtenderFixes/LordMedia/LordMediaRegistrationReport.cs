@@ -55,7 +55,9 @@ namespace APIShared.ScriptExtenderFixes
                             : "lordmeta.json is present, but Script Extender did not register this Lord. ";
                         string message = "Lord \"" + Clean(string.IsNullOrEmpty(lord.DisplayName) ? lord.Name : lord.DisplayName) +
                             "\" (internal name: \"" + Clean(lord.Name) + "\"; players: " + string.Join(", ", players) + "): " + reason +
-                            "Script Extender additions for this Lord were not loaded; original game media paths are retained. " +
+                            // A packaged presentation (e.g. Trail media) may still present the same name.
+                            "Script Extender additions for this Lord were not loaded; unless a packaged Lord presentation supplies them, " +
+                            "original game media paths are retained. " +
                             "Check this Lord package's info.json and lordmeta.json and the earlier registration messages. Package: " + Clean(lord.Path) +
                             "; session=" + expectedSession;
                         // A replacement can begin while capture or the file provider is running.

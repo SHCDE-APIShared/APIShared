@@ -43,8 +43,10 @@
 ## Demand-driven engine readback
 
 After APIShared native initialization, call
-`Statistics.EngineReadbacks.TryRegister(ownerGuid, stableId, copyPreparedRawData, out registration)`.
-Registration is permanent and rejects duplicate owner/ID pairs. On the main thread,
+`Statistics.EngineReadbacks.TryRegister(ownerGuid, stableId, copyPreparedRawData, out registration, out reason)`.
+Registration is permanent and rejects duplicate owner/ID pairs; `reason` names the
+unavailable publisher, missing argument or duplicate. The overload without `reason`
+has the same behavior. On the main thread,
 prepare private reusable buffers and immutable request identity, then call `Request()`.
 The existing `EngineInterface.run` / `MemoryBuffers.returnBuffer` publisher invokes
 requested readers in ordinal owner/ID order, after native execution and managed
