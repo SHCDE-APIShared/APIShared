@@ -1178,6 +1178,13 @@ namespace APIShared.ModSettings
             finally
             {
                 presetController?.AfterPropertyChanged(name);
+#if !API_SHARED_PRESET_TESTS
+                if (presetController?.IsPersistentSetting(name) == true)
+                {
+                    base.OnPropertyChanged(nameof(System_PresetStatusText));
+                    base.OnPropertyChanged(nameof(System_PresetStatusVisibility));
+                }
+#endif
                 System_RefreshSettingsAccess();
             }
         }

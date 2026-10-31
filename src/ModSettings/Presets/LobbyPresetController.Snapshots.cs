@@ -167,7 +167,11 @@ namespace APIShared.ModSettings
                 }
             }, publish: true);
             if (writeLocalStorage) WriteCombinedPayload();
-            LogRoutine($"[{modName}] Loaded editable preset [{preset.Name}] from [{preset.ProviderName}].");
+            DebugLogHelper.LogInfo(log, $"SETTINGS_PRESET: mod={targetGuid}, action=load, " +
+                $"context={SanitizeLogValue(owner.IsMissionPresetSelected ? missionContextLabel : "Personal")}, " +
+                $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, preset={SanitizeLogValue(preset.StableId)}, " +
+                $"modified={(owner.IsMissionPresetSelected ? missionPresetDirty : presetDirty)}, " +
+                $"persistence={(owner.IsMissionPresetSelected ? "temporary" : "personal")}.");
         }
 
         private static string SanitizeLogValue(string value) =>

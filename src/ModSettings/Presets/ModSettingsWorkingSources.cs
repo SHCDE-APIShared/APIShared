@@ -12,6 +12,8 @@ namespace APIShared.ModSettings
         Trail = 1,
         /// <summary>Read-only settings supplied by the current map.</summary>
         Map = 2,
+        /// <summary>Personal settings copied into the temporary mission working copy.</summary>
+        Personal = 3,
     }
 
     /// <summary>One source shown by the common ModSettings source selector.</summary>
@@ -21,7 +23,7 @@ namespace APIShared.ModSettings
         public string Id { get; set; } = string.Empty;
         /// <summary>Localized display label; persistent identity is independent of this text.</summary>
         public string DisplayName { get; set; } = string.Empty;
-        /// <summary>Default, trail or map origin shown by the common source selector.</summary>
+        /// <summary>Default, trail, map or personal origin shown by the common source selector.</summary>
         public ModSettingsWorkingSourceKind Kind { get; set; }
         /// <summary>Whether this source represents the provider's current mission context.</summary>
         public bool IsPreferred { get; set; }
@@ -53,6 +55,9 @@ namespace APIShared.ModSettings
         public const string TrailId = "trail";
         /// <summary>Stable selector ID for map-owned settings.</summary>
         public const string MapId = "map";
+        /// <summary>Stable selector ID for personal settings, applied without leaving the mission context or writing personal storage.</summary>
+        /// <remarks>Providers capture detached player snapshots before application, preserve authoring rules and commit backend application within Apply/ApplyMany. The common UI skips its pre-refresh and second commit for this reserved source.</remarks>
+        public const string PersonalSettingsId = "personal-settings";
         private static readonly object Sync = new object();
         private static IModSettingsWorkingSourceProvider provider;
         /// <summary>Synchronous invalidation on the notifying thread; no replay or dispatch. Subscriber exceptions propagate, so notify on the Unity thread for UI consumers.</summary>

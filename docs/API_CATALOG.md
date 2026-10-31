@@ -1,5 +1,19 @@
 # API catalog
 
+The internal [archive-context correction](THIRD_PARTY_GUIDE.md#script-extender-bugfixes)
+repairs save-only record persistence in synchronized saves and classifies multiplayer
+save/editor loads correctly. It requires no consumer registration and preserves
+settings author rules and existing serialization contracts.
+
+## Demand-driven engine readback
+
+`APIShared.Statistics.EngineReadbacks` registers prepared raw-copy callbacks at the
+existing completed-run buffer publisher. Requests coalesce; the simulation caller
+already owns the engine monitor, so the GUI never waits for it. No automatic work,
+tick guarantee, UI dispatch or permission policy is provided. See the
+[usage and lifetime contract](THIRD_PARTY_GUIDE.md#demand-driven-engine-readback).
+This additive broker does not change existing selection observers or game results.
+
 ## Native field knowledge
 
 `APIShared.NativeKnowledge.NativeFieldCatalog.Default` exposes immutable field IDs,
@@ -119,6 +133,9 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; host/per-player publication waits for the appropriate lobby/transport identity; personal persistence remains isolated ([guide](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost)) |
 | `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
+| `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
+| `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, explicit takeovers, cached occupancy, optional consumer-defined tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
+| `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
@@ -182,11 +199,13 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Modes and launch evidence | [Profiles](../src/GameModes/GameplayModModePolicy.cs), [mode capture](../src/GameModes/MissionModePolicy.cs), [origins](../src/GameModes/CustomizedLaunchOrigins.cs) | Implementation in those files | [Mission policy](../examples/ThirdPartyMod/MissionExample.cs), [launch origin](../examples/ThirdPartyMod/CustomizedLaunchExample.cs) |
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettings.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Personal storage](THIRD_PARTY_GUIDE.md#personal-files-and-previous-installations), [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings search / tooltips | [Explicit catalog and live configured states](../src/ModSettings/UI/ModSettingsSearchCatalog.cs), [search, slider neutral values and opt-in numeric TextBox StateValue metadata](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Managed catalog snapshots, All/Active/Inactive filtering with mixed-row flags; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [Opt-in contract](THIRD_PARTY_GUIDE.md#explicit-settings-search-support), [standalone search](../examples/ThirdPartyMod/SettingsSearchExample.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
+| Personal mission reset | `ModSettingsWorkingSourceKind.Personal`, `ModSettingsWorkingSourceRegistry.PersonalSettingsId` | Copies personal values into the editable Map/Trail context without personal persistence or changing authored source rules | [Reset source contract](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost) |
 | Settings activation presentation | `PresetLobbyModSettingsViewModel.HostSettingsOpacity` / `ClientSettingsOpacity` | Content-only opacity: inactive scopes use 0.65; editing rights and stored values are unchanged | [Settings UI integration](THIRD_PARTY_GUIDE.md#presets-without-serpsmodshost) |
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](THIRD_PARTY_GUIDE.md#mission-start-settings-log) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
+| Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | â€” |
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | â€” |
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
@@ -286,7 +305,7 @@ The readiness packets are versioned (protocol 2); the host also compares every p
 stored copy of declared simulation-relevant save records, see
 [multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
 
-`APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread.
+`APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread. `SharedToolTipSizing.Enabled` explicitly applies these values whenever an owned popup opens; see [sizing ownership](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation).
 
 Apply `[APIShared.ModSettings.ExcludeFromSavegameModSettings]` to a plugin class
 when it owns a separate persistence protocol or its settings are not mission data.
@@ -349,6 +368,36 @@ Otherwise use the frozen `operation.Pre` costs, skip the calculation when
 `SkipOriginalFunction` is set, and call `operation.Complete(...)` once after an
 executed calculation, also after an ordinary failure. Initial costs lie in
 `1..MaximumEdgeCost`; the context validates its publisher GUID and bounds.
+
+## Route tile rules
+
+Which pathfinding contract fits which rule (tiles, replanning, moat costs, gates, wall climbing):
+[Pathfinding rules for mods](PATHFINDING_RULES.md).
+
+`APIShared.Pathfinding.RouteTileRules.TryRegister(ownerGuid, registrationId, out rules, out reason)`
+gives a mod one rule set for route engines. `rules.Set(x, y, effect, penalty, players)` marks a
+tile `Forbidden` (engines do not route into it; a unit standing on it may leave) or `Penalty`
+(entering costs 1..255 extra ground steps of the searching unit); `Clear` and `ClearAll` remove
+effects. Over all sets, Forbidden for a player wins, otherwise the largest penalty applies.
+
+Rules are passive: registration installs no hook, scans nothing and changes nothing without an
+engine that reads them. They only restrict or penalize engine routes; they never permit a
+transition the game forbids, never change unit speed and do not affect Vanilla's own searches or
+commands. Call everything on the simulation thread and derive rule data from deterministic game
+state; keep multiplayer peers on identical rule mods and settings.
+
+Rules that appear after a move was planned (fire on a route already walked) can carry a
+`RouteReplanPolicy` on their set (`rules.ReplanPolicy = new RouteReplanPolicy(trigger, percent,
+minimumSteps, waitTicks)`). Supporting engines then re-plan a unit that comes within `trigger`
+steps of such a tile, adopt the new route when it is at most `percent` (or `minimumSteps`) longer,
+and otherwise stop the unit until a clear route exists or `waitTicks` pass; the unit keeps its
+order and target. `RouteTileRules.GetReplanPolicy` and `HasReplanRules` are the engine side.
+
+Engines read `GetEffect(x, y, player, out penalty)` and follow changes with
+`ReadChanges(ref cursor, buffer)` (tiles packed as `y * MapSize + x`). A result of -1 means changes
+were lost (more than `JournalCapacity` behind or a too small buffer): re-read all rules and continue
+from `Version`. `HasRules` lets engines skip the lookup while no set holds an effect. The current
+engine is MoatMove's anchor mode on the `dev/pathfinding` test line.
 
 ## Failure and registration rules
 
@@ -615,3 +664,20 @@ announces deduplicated "please wait", "start blocked" and "ready" lobby messages
 players learn why Start is unavailable. The host is the only sender of automatic
 announcements; lobby members show their own entries locally unless an entry is marked
 `LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.
+
+## Lord statistic columns
+
+[`APIShared.Statistics.LordStatistics`](../src/Statistics/LordStatistics.cs) is a renderer-independent,
+process-lived catalog of third-party numeric columns. It performs no game reads or polling.
+The [contracts](../src/Statistics/LordStatisticColumns.cs) include immutable authorized-player requests,
+nullable decimal batches, logical activation, localized metadata and numeric formatting.
+See the [integration guide](THIRD_PARTY_GUIDE.md#lord-statistic-columns) and
+[example provider](../examples/ThirdPartyMod/StatisticsExample.cs).
+
+The opt-in [`SharedToolTipSizing`](../src/ModSettings/UI/SharedToolTipSizing.cs) also accepts
+`ReferenceElement` and `ReferenceFontSize`: opened popups match the source HUD's pixel scale.
+Consumers without a reference retain the established resolution presets.
+
+## Packaged Lord presentation
+
+APIShared.Presentation.PackagedLordPresentation.TryRegister registers an owner-local presentation snapshot. See [integration contract](THIRD_PARTY_GUIDE.md#packaged-lord-presentation). APIShared.Content.Lords.LordMetadataDocument preserves complete lordmeta.json inputs, including unknown fields.

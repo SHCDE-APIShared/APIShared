@@ -13,6 +13,21 @@ namespace APIShared.ModSettings
         internal Dictionary<string, object> CaptureRuntimeLogSettings(Action<string, Exception> warning)
         {
             var result = new Dictionary<string, object>(StringComparer.Ordinal);
+            result["context"] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["kind"] = owner.HasMissionContext ? missionContextLabel : "Personal",
+                ["sourceIdentity"] = ModSettingsApplication.ContextId,
+                ["sourceLabel"] = owner.IsMissionPresetSelected ? missionPresetLabel : basedOnName,
+                ["preset"] = owner.IsMissionPresetSelected ? missionBasedOnPreset?.StableId ?? "" : basedOnStableId,
+                ["modified"] = owner.IsMissionPresetSelected ? missionPresetDirty : presetDirty,
+                ["editable"] = !owner.IsMissionPresetSelected || owner.MissionPresetEditable,
+                ["persistence"] = owner.IsMissionPresetSelected ? "temporary" : "personal",
+                ["storagePath"] = storage.FilePath,
+                ["successfulWrites"] = storage.SuccessfulWrites,
+                ["failedWrites"] = storage.FailedWrites,
+                ["lastWrite"] = storage.LastWriteResult,
+                ["migrationPending"] = legacyMigrationPending
+            };
             var errors = new List<object>();
             var read = new Dictionary<string, object>(StringComparer.Ordinal);
             var failed = new HashSet<string>(StringComparer.Ordinal);

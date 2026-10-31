@@ -1,5 +1,75 @@
 # Third-party integration guide
 
+**Contents**
+
+- [Demand-driven engine readback](#demand-driven-engine-readback)
+- [Native field knowledge](#native-field-knowledge)
+- [Example package requirements](#example-package-requirements)
+- [Game-independent content](#game-independent-content)
+- [Coop Trail AI start import](#coop-trail-ai-start-import)
+- [Mission settings preparation](#mission-settings-preparation)
+- [Settings participant diagnostics](#settings-participant-diagnostics)
+- [Diagnostic opt-in and observer demand](#diagnostic-opt-in-and-observer-demand)
+- [Multiplayer actions and messages](#multiplayer-actions-and-messages)
+- [Initialization and ownership](#initialization-and-ownership)
+- [Declaring native hook sites](#declaring-native-hook-sites)
+- [APIShared interface language](#apishared-interface-language)
+- [Script Extender bugfixes](#script-extender-bugfixes)
+- [Optional game-mode permissions](#optional-game-mode-permissions)
+- [Presets without SerpsModsHost](#presets-without-serpsmodshost)
+- [Namespaces and packaging](#namespaces-and-packaging)
+- [HUD integration](#hud-integration)
+- [Sharing action and HUD hooks](#sharing-action-and-hud-hooks)
+- [Sharing native market price queries](#sharing-native-market-price-queries)
+- [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
+- [Extending APIShared](#extending-apishared)
+- [Assassin obstacle completion](#assassin-obstacle-completion)
+- [Workshop package cleanup](#workshop-package-cleanup)
+- [Plugin entry points with optional APIShared](#plugin-entry-points-with-optional-apishared)
+- [Versioned save data](#versioned-save-data)
+- [Loose Workshop packages](#loose-workshop-packages)
+- [Situational sound rules](#situational-sound-rules)
+- [General in-game tooltip extensions](#general-in-game-tooltip-extensions)
+- [Building tooltip text](#building-tooltip-text)
+- [Gate access contributions](#gate-access-contributions)
+- [Rounded fear popularity](#rounded-fear-popularity)
+- [Plague standing-height policies](#plague-standing-height-policies)
+- [Multiplayer map lookup and lobby system hints](#multiplayer-map-lookup-and-lobby-system-hints)
+- [End-screen presentation](#end-screen-presentation)
+- [Shared render and pause-menu presentation](#shared-render-and-pause-menu-presentation)
+- [Lord statistic columns](#lord-statistic-columns)
+- [Packaged Lord presentation](#packaged-lord-presentation)
+
+## Demand-driven engine readback
+
+After APIShared native initialization, call
+`Statistics.EngineReadbacks.TryRegister(ownerGuid, stableId, copyPreparedRawData, out registration)`.
+Registration is permanent and rejects duplicate owner/ID pairs. On the main thread,
+prepare private reusable buffers and immutable request identity, then call `Request()`.
+The existing `EngineInterface.run` / `MemoryBuffers.returnBuffer` publisher invokes
+requested readers in ordinal owner/ID order, after native execution and managed
+state copying but before the completed buffer is published. It additionally verifies
+current-thread ownership of `EngineInterface.threadLock`. Runs without a completed
+buffer retain demand. This is not proof that game time advanced.
+
+The callback may only copy bounded raw data into that request's prepared storage.
+Do not allocate, wait, log, call providers or touch Unity/Noesis/view models there.
+Publish completion atomically and consume it on the main thread. Keep a running
+buffer owned until completion; `Cancel()` drops queued demand but cannot interrupt
+an already executing callback. Recheck mission, HUD generation and information
+rights before publishing. Clear sensitive retired data after producer ownership
+ends. Never retain game-native pointers between callbacks.
+
+For example, prepare a buffer and set an atomic queued state on the main thread;
+let the registered callback claim that state once, copy native fields and release
+publish a completed state in `finally`. A main-thread zero-wait `Monitor.TryEnter`
+fallback may claim the same job while paused. Consume a completed state from an
+existing GUI publisher; avoid per-request dispatcher closures under the engine lock.
+Requests during a callback are retained for a later publication. Callback exceptions
+are isolated; use `TryTakeError(out error)` outside the critical section. The broker
+provides no refresh cadence, session validation, automatic retries or coherent UI
+snapshot: those are consumer responsibilities. Dormant registrations do no copying.
+
 ## Native field knowledge
 
 Use `APIShared.NativeKnowledge.NativeFieldCatalog.Default` for offline metadata and
@@ -17,9 +87,11 @@ Its hash-bound authoring JSON is not consumed by the runtime and grants no nativ
 
 ## Example package requirements
 
-The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
-APIShared 0.14.0 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
-[info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
+The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) declares
+its required APIShared and Script Extender minimum versions in its BepInEx attributes
+and [info.json](../examples/ThirdPartyMod/info.json). Keep these declarations consistent
+in your own mod, choosing minimum versions for the APIs it actually uses. The complete
+example uses more APIs than the networking example alone; check their individual requirements.
 Install the complete APIShared package and reference its assemblies with
 `Private=false`. The example references both `APIShared.dll` and
 `APIShared.Content.dll`; neither is bundled in the consumer. Its GUID is
@@ -401,7 +473,33 @@ can override the package default and is not inferred from a release summary.
 
 ## Multiplayer actions and messages
 
-Declare APIShared 0.7.0 or newer and use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
+These networking APIs require APIShared 0.7.0 or newer; neither SerpsModsHost nor
+ExtendedData is required. Follow the [package requirements](#example-package-requirements)
+for dependency declarations, the complete central installation and `Private=false`
+references; never bundle your own APIShared DLL with the mod.
+
+### Chore quick start
+
+1. Define a packet with an explicit MessagePack formatter, stable global object IDs
+   and a desired state, such as `BuildingGlobalId` and `DesiredEnabled`.
+2. Obtain `ApiShared.ForMod(yourPluginGuid).Network` and register a Chore channel once
+   from the Unity-thread `LibraryLoaded` entry after Extender built-in registration.
+   Retain it in your process-owned runtime; register in the same order on every peer.
+3. Supply deterministic validation and execution callbacks. Check current session,
+   protocol and ownership; use synchronized state for `IsEnabled` and `Validate`.
+4. At the button/key action, call `channel.Send(packet)` and inspect its result.
+   Apply the effect only in the receiver, which also executes on the sender.
+5. Post copied UI/log snapshots with `Network.TryPostPresentation`; keep gameplay
+   execution synchronous in the Chore callback.
+
+Use the [compiled networking example](../examples/ThirdPartyMod/NetworkingExample.cs)
+as the starting point. Its helpers are not automatically wired into `ExamplePlugin`:
+call `NetworkingExample.Register` from your own initialization path above, supply your
+session/ownership checks and gameplay callback, and route your button to `OnButton`.
+
+### Registration and Chore execution
+
+Use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
 the validated Unity-thread `LibraryLoaded` entry, after Extender built-in packet
 registration. Registration must be unconditional and in identical order on every
 peer. Extender packet IDs depend on registration order; GUIDs do not negotiate IDs
@@ -442,6 +540,8 @@ The first such drop on each channel is reported once through the channel's
 not reported. `Send` checks `IsEnabled` on the caller and returns `Disabled`
 without submitting.
 
+### Submission limits and results
+
 `NetworkSendResult.Submitted` means local preflight and a normal return from the
 underlying send, not native execution or peer acknowledgement. The Extender public
 API returns void and retains its internal Steam fallback. APIShared blocks its
@@ -449,6 +549,8 @@ known missing-manager/oversize triggers before calling it, but does not claim an
 atomic native queue contract. There is no automatic retry, split, rollback or local
 fallback; acknowledgements and large synchronized batches require a consumer
 protocol. Pause does not justify replacing a Chore with a Steam packet.
+
+### Control-plane messages
 
 `RegisterMessage<T>(id, receive, options)` is for control-plane data and presentation,
 never simulation mutation. The raw callback deep-copies only the payload and
@@ -464,10 +566,6 @@ peers even during the lobby/map transition. `SendToSteamPeer` sends directly on
 reliable Steam channel 2 without resolving a stale game player. Broadcast excludes
 the sender. Sends require the initialized Unity thread and remain local results;
 partial broadcast failure cannot undo messages already submitted to other peers.
-
-See the [compiled networking example](../examples/ThirdPartyMod/NetworkingExample.cs)
-for registration, an explicit formatter and a button that only submits a desired
-state. Supply your own current-session and ownership validation and execution.
 
 ## Initialization and ownership
 
@@ -529,15 +627,55 @@ implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consu
 registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
 
+The archive-context correction fixes the shared Script Extender context before mod
+callbacks run. Synchronized native saves (including autosaves before the first manual
+save) now receive `SaveContext.IsSaveFile=true` and `IsMapEditorSave=false`.
+Their `FilePath` is null: the Extender's retained path can still name the source map,
+and the synchronized Chore does not supply a managed output filename. Consumers must
+continue accepting an unavailable path, as specified by the Extender context contract.
+Ordinary export saves, map/editor writes and Trail templates retain their original
+factory context. Multiplayer-save loads use `bMultiplayerSave`; editor loads use
+`LoadingEditorMap`, so their mod-data callbacks also receive the correct classification.
+The correction adds no public API or save format. It changes the previously incorrect
+context flags for every handler, including third-party save-only records. Handlers
+that accidentally relied on autosaves being maps must use their explicit context
+scope instead. Unsupported managed/native contracts log a failure and preserve the
+original save path; they do not force record writes. See the native update contract
+in [UpdateToNewDLL](../UpdateToNewDLL.md#synchronized-save-archive-context).
+
+This preserves the existing modsettings policy: eligible saved host settings form
+the selected base, then Trail author rules apply; personal/client values stay current.
+A missing or invalid settings record forces the existing current-host fallback and
+is reported as such, independently of the user's preferred checkbox state. Previously
+omitted records cannot be recovered from those old files by this correction.
+
 The Lord media correction validates the loaded internal resolver's signature and
-output-initialization/name-lookup entry before installing a process-lifetime managed
-hook. Null or empty Lord identities return false with empty outputs,
-so the native caller retains its original media paths. One warning per process explains
-the missing metadata. Nonempty identities retain the original lookup, results and
-exceptions. This does not reconstruct lost Lord identities or recover custom media;
-an incompatible resolver is skipped independently. No consumer registration is needed.
-`SE_LORD_MEDIA` names the missing input and message category, or the exact installation
-stage and observed method entry when its dependency contract is rejected.
+output-initialization, registration lookup and logging-only miss branch before installing
+a process-lifetime managed hook. Null/empty names and unregistered Lords return false
+with empty outputs, quietly retaining the original game media paths. These are normal
+for Vanilla Lords using a custom `.lordjson` AIC and for Vanilla-style custom packages
+without `lordmeta.json`. A generic native AI slot does not imply custom media.
+Registered Lords retain the original lookup, clip selection, subtitle effects, results
+and exceptions; an omitted optional message category does not produce a new warning.
+
+After managed mission initialization (including saves and editor starts), a separate
+Unity-thread lifecycle observer checks occupied custom AI slots against Vanilla's
+public Lord catalog and SE's registry. `SE_LORD_MEDIA` warns only when a used,
+unambiguously identified package has `lordmeta.json` but is not registered. This can
+happen because Vanilla accepts packages with valid AIC/AIV data independently of SE's
+registration: an absent `info.json` prevents registration, and invalid SE metadata can
+abort it without removing the Lord from Vanilla's catalog. Warnings identify the
+display/internal names, all affected player slots and package folder, distinguish a
+missing `info.json` from an otherwise unexplained registration failure, and suggest
+checking the package and earlier registration messages. They do not assert missing
+media files or successful fallback playback. Each package/cause is reported once per
+session; a later map or save is checked afresh. Stale queued sessions are ignored.
+Packages without SE metadata remain quiet. Video/audio files are not inspected.
+
+Neither diagnosis nor logging affects the media callback; no file/UI access occurs
+there. An incompatible resolver skips only this correction with an explanatory
+installation warning and technical contract details. No consumer registration is
+needed; this correction does not reconstruct lost Lord identities or recover media.
 
 The Lord script diagnostics in `ScriptExtenderFixes/LordScripts` only log. Script
 Extender runs a custom Lord's `init.lua` per player slot by the slot's local Lord name,
@@ -741,6 +879,18 @@ The same agreement compares each player's stored copy of versioned save records 
 simulation-relevant and blocks the load with the mod and record named when they differ; see
 [multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
 
+The reset selector may also expose `ModSettingsWorkingSourceKind.Personal` with
+`ModSettingsWorkingSourceRegistry.PersonalSettingsId` (`personal-settings`) while
+Map/Trail sources are available. This copies the participant's personal snapshot
+into the editable temporary mission working copy; it neither exits that context
+nor writes personal settings or preset files. The mission source remains available
+for a later reset. Host/client ownership and read-only mission locks still apply.
+A provider offering this source must capture detached personal snapshots through
+`System_CreatePlayerMissionPresetSnapshot()` before applying any target, preserve
+authoring rules, and commit backend application within `Apply`/`ApplyMany` (including
+restart staging). The common UI deliberately skips its usual pre-refresh and second
+commit for this source so a failed reset can restore the original mission draft.
+
 Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
 
 For an activation hint, bind the host/client content containers' `Opacity` to
@@ -781,6 +931,13 @@ MODSETTINGS {"schema":1,"session":12,"mod":"Foreign.Author.Mod","host":{"EnableM
 ```
 
 Each endpoint row identifies the target plugin by its exact GUID in `mod`.
+The optional `context` object describes the personal or temporary Map/Trail/Save
+working context, its existing source identity, selected preset, modified/editable
+state and persistence scope. Its storage path, successful/failed write counters,
+last outcome and pending-migration flag describe actual personal-file publication;
+temporary changes do not count as personal writes. Context display remains visible
+when a different preset or reset source is loaded into an editable mission copy.
+These fields reuse controller state and perform no additional file or world reads.
 `host`, `player` and `local` group the existing persistent setting scopes and use
 exact, case-sensitive code keys, ordered ordinally. Mods are ordered by GUID.
 All current values, including defaults and full arrays, are included; UI helpers,
@@ -1547,3 +1704,244 @@ wait hint) and does not arm "ready" by itself. Messages are split into numbered 
 APIShared. Logs record loading as info, automatic blocks as warnings and rejected
 commands as errors, each with the complete detail. Text is sent in the sender's
 language and conveys no gameplay authority.
+
+## End-screen presentation
+
+`APIShared.Presentation.MissionOverEvents` coordinates three managed boundaries:
+`HUD_MissionOver.ButtonClicked`, `GameData.Scenarios.setGameOverState`, and only
+`OST_MP_GAME_OVER` entries of `OnScreenText.addOSTEntry`. This is presentation,
+not an authoritative defeat or mission lifecycle signal. Use the existing defeat
+and lifecycle services for those purposes.
+
+Register on Unity startup with an owner GUID and unique ID per operation. Hooks
+are installed on first demand and retained for the process lifetime. Without
+observers the original path remains unchanged. Callbacks run synchronously on the
+caller thread, outside registration locks, ordered by order/owner/ID. UI dispatch
+is the consumer's responsibility. There is no replay. Calls nested inside
+notifications bypass notifications.
+
+Pre may change `Result` for state/text, set private `State`, veto, or select button
+deferral. All other inputs remain unchanged. A failing Pre rolls back its own
+changes; successful vetoes are sticky. Accepted runs after all Pre only without
+veto; Post receives immutable original/final inputs, owner-private State, veto,
+deferral, synchronous completion and error information. Callback failures are
+isolated. Existing public APIs and their defaults are unchanged.
+
+For a preview close, veto the button original in Pre and close the owned preview
+in the matching Post after checking its generation. This also suppresses any
+selected lobby deferral regardless of registration order. Do not call the actual
+game-over state method to open a preview. Accepted positive state transitions let
+a preview revoke ownership before Vanilla reuses the view.
+
+`DeferOriginal(handler, isCurrent)` is available only for buttons. Supply a
+side-effect-free guard covering both session and HUD identity/generation. The
+last successful Pre selection wins. Its handler receives a continuation that may
+be retained. `TryInvoke()` runs only on the original caller thread, consumes an
+invalid context, and never retries an original, including one that throws. A
+wrong-thread attempt returns false without consuming it. Guard failures reject
+execution; handler failures attempt the guarded continuation once. Original
+exceptions propagate. Post completes when dispatch returns; it does not promise
+that a retained continuation has run. Consumers must guard their own delayed
+side effects as well as the continuation. Replaced views must never be restored
+from a stale preview snapshot.
+
+The service does not select a mod, decide who won, change player identity, grant
+spectator rights, return to a lobby or read consumer settings. Existing mods that
+do not register remain on their existing paths; consumers using this addition
+must require the APIShared package that supplies it.
+
+## Shared render and pause-menu presentation
+
+Available since 0.18.0; these are additive, opt-in services. Existing APIs retain
+signatures and defaults. Consumers need no knowledge of one another.
+
+`VisibleMapRenderEvents.TryRegister(owner, id, before, finallyCallback, out registration,
+out reason, order)` installs the shared visible-map entry only after APIShared's
+native-library initialization. Registrations start disabled. `SetEnabled` changes
+native demand data; executable hooks remain installed. With no enabled observer,
+the native guard jumps straight to the original trampoline without a CLR transition.
+Callbacks run synchronously on the native render caller thread, ordered by order,
+owner and ID; no UI dispatch, replay or cancellation occurs. The visible bounds and zoom are immutable; the borrowed native map pointer
+stays internal. All six original native inputs are forwarded unchanged. Each registration gets its own invocation `State`; set rollback state
+before changing temporary data. Cleanup runs in reverse order, even if preparation
+throws or the registration is disabled during the call. Callback exceptions are
+isolated and diagnosed once per registration. The original receives unchanged
+parameters exactly once; its exception is not swallowed and cleanup still runs.
+Recursive render calls get distinct state. Concurrent calls require consumer-owned
+synchronization for any shared mutable state. Unsupported images or occupied entry
+contracts reject registration without taking ownership of another hook.
+
+### ESC menu rows and additional actions
+
+`IngameMenuActions` is the single owner of ESC menu positions. Register and query
+on the initialized Unity thread, using your mod GUID and a stable owner-local ID.
+Providers and commands execute on Unity; consumers retain gameplay/session/MP
+permission checks. Registrations and hooks last until process exit. Return null
+or an invisible `IngameMenuActionState` to hide an action and release its position.
+A visible disabled action still occupies its position.
+
+Use the overload with `IngameMenuActionOptions` and an output registration handle:
+
+```csharp
+IngameMenuActionRegistration menuAction;
+var slot = IngameMenuActions.GetRowState(IngameMenuRow.QuitMission).Left;
+// Claims includes hidden registrations; Current is the last-observed visible winner.
+// This query neither invokes providers nor reserves the position.
+if (!IngameMenuActions.TryRegister(MyGuid, "inspect", GetMenuState, OpenInspector,
+    new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left),
+    out menuAction, out string reason))
+    Log(reason);
+
+// Call from an actual settings/session/state-change event, never a timer or frame.
+menuAction?.Invalidate();
+```
+
+Rows have stable `IngameMenuRow` names independent of mode-specific visibility.
+Each has Left and Right; Vanilla is the Right fallback. A single visible button
+uses the normal full width; two share a row. A mod can activate a position even
+when its Vanilla row is hidden in the current mode. Right requires explicit
+`replaceVanilla: true`. Competing registered mod claims, including hidden claims,
+reject registration unless `replaceExisting: true` is specified. Registration
+checks and accepts the claim together; a preceding occupancy query is advisory.
+
+Buttons use Vanilla's unchanged `BTN_SH_GlowSDisable` style: a centered single
+button is 300 layout units wide; a pair uses 181.25 each with a gap of 5 in a
+367.5-wide row. Fonts, texture heights and state effects retain Vanilla geometry.
+Long labels use an ellipsis without wrapping or reducing the font; truncation
+does not automatically create a tooltip. The main menu keeps Vanilla's initialized height
+unless an additional visible row needs space; scrolling is bounded in local UI units.
+ESC tooltip text matches the button's rendered font size even when Noesis renders
+the popup in a separately scaled view. Width, padding and borders follow the same
+pixel ratio, with at most 420 menu units of width and a viewport bound. Only ESC
+popups use this view-owned sizing; other tooltip resolution presets are unchanged.
+Sizing runs on opening and layout events, without evaluating action providers.
+
+Tooltips are opt-in through `new IngameMenuActionState(text, visible, enabled, tooltip)`.
+The original three-argument constructor remains binary/source compatible and supplies
+no tooltip. Null, empty or whitespace-only tooltip text means no popup; nonempty text
+is shown exactly as supplied, without appending the button label or mod GUID. Supply
+localized text and notify ordinary `Invalidate()` when it changes. Removing a tooltip
+closes and detaches the owned popup. Earlier automatically generated label/owner
+tooltips are no longer provided. Vanilla tooltip objects, bindings and settings are
+untouched, including on the extra page; APIShared navigation buttons have no tooltip.
+
+The latest accepted explicit takeover wins among visible claims. Refreshing an
+older claim does not raise its priority. Hiding the winner reveals the preceding
+visible claim, ultimately Vanilla on Right. Takeover does not delete registrations.
+`GetRowState(row)` returns immutable Left/Right snapshots, their Current occupant
+and Claims in precedence order, including owner GUID/ID, Vanilla identity, cached
+state and effective ownership. Before first evaluation HasState can be false;
+closed-menu snapshots can be stale. Queries do not read native state or call mods.
+
+`new IngameMenuActionOptions()` registers exclusively for the additional-actions
+page. Every visible displaced mod or Vanilla action also appears there, once.
+Entries sort by order, ordinal owner GUID, then action ID. Invisible actions take
+no space; disabled actions remain listed. The extra-page button appears before
+Resume only while the page has entries. Both pages support bounded scrolling and
+two buttons per row, with a full-width final single button. Back returns to the
+main ESC page. Escape closes the entire menu using Vanilla's existing close/pause
+path; reopening starts on the main page. Vanilla buttons retain their actual
+objects, bindings, commands and confirmation dialogs when moved to the extra page.
+
+Providers are reevaluated on menu opening (including return from a confirmation),
+explicit invalidation while open, and command validation. A handle invalidates its
+action; `IngameMenuActions.Invalidate(ownerGuid)` invalidates all that owner's
+registrations, including legacy ones. Requests from other threads are posted and
+coalesced on the validated Unity dispatcher. Closed-menu invalidations defer
+provider work until opening. Do not issue invalidations on recurring ticks/frames.
+Invalidating from inside a provider defers that demand until the next external
+event, avoiding self-recursive refresh. Providers should be side-effect free.
+A provider exception hides only that action and is reported once; subsequent
+invalidation can retry it. Commands recheck visibility, enabled state, view identity
+and effective placement; exceptions are logged once and commands are not retried.
+A command opening another view owns whether to keep the pause menu, hide it for
+a confirmation, or call `HUDIngameMenu.Close()` to restore the previous pause state.
+
+**Migration from the original registration:** the existing
+`TryRegister(owner, id, stateProvider, execute, out reason, order)` signature and
+`IngameMenuActionState` constructor remain binary/source compatible. Its visible
+entries retain order/owner/ID sorting: the first supplies QuitMission/Left when
+no explicit visible claim occupies it; further entries appear on the extra page.
+This deliberately replaces the old unbounded extra rows. Providers are no longer
+polled by GuiChecks. Existing consumers whose state changes while the menu is open
+must notify `Invalidate(owner)` or use the new handle. Prefer named explicit slots
+for intentional placement. New consumers require an APIShared package containing
+this overload; do not infer its availability from an older package's version label.
+
+`apiui:SharedToolTipSizing.Enabled="True"` (namespace `APIShared.ModSettings`)
+opts an owned `ToolTip` into the common resolution presets: font sizes 23/30/45,
+width, padding and border thickness. Values are applied on the Unity thread at
+attachment and each opening. Its template must bind those properties. Use this
+scaler alone in the tooltip style, without a competing SE scaler setter. The
+behavior temporarily disables SE scaling for that tooltip and restores its prior
+opt-in when detached. It does not choose a template, colors or duration; consumers
+retain those. Unopted tooltips and Vanilla rollover text are unchanged.
+
+## Lord statistic columns
+
+Available since **0.19.0**. Register through `APIShared.Statistics.LordStatistics.TryRegister` on
+Unity's main thread after APIShared initialization. Use your own mod GUID and a stable owner-local ID.
+Duplicate identities are rejected with a reason. The persisted key is escaped GUID + `/` + escaped ID;
+never persist catalog positions or translated labels. The
+[example](../examples/ThirdPartyMod/StatisticsExample.cs) compiles against the public DLL only.
+
+A definition supplies localized name, tooltip, a shareable `Noesis.ImageSource` provider and a batch
+values provider. Optional themes are Economy, Military and PopulationMood; the default OtherMods
+appears under “Other mods”. Use `decimal?` for numeric values; null/missing means unknown.
+Optional formatting can add signs, precision or units; renderers sort the underlying decimal,
+not the formatted text. Provider exceptions are isolated to the column, with bounded diagnostics
+and a fallback for metadata/formatting. Later requests can recover. Results are copied and filtered.
+
+The registry owns no table or data source. A separate renderer (initially LordOverviewTest) owns
+sampling cadence, selected columns, UI and information rights. Without a renderer registrations
+remain idle. A renderer subscribes `CatalogChanged`, then reads `GetCatalog` on the same Unity
+thread. Catalog operations never call value providers. Catalog callbacks are synchronous, ordered
+by revision, isolated and outside registry locks; reentrant changes queue later revisions. There is
+no implicit replay. Callbacks and registration handles remain process-lived; deactivate through
+`SetActive`, and use `RefreshMetadata` for changed localized metadata. Do not remove persistent
+registrations during SHCDE's early plugin destruction.
+
+Only visible, selected columns should be read, using the current positive APIShared mission session
+and the authorized subset of player IDs. Treat custom columns as extended information by default.
+Pass no restricted IDs; never expose restricted values through tooltips or sorting. An empty roster,
+inactive provider, invalid session or recursive read does not call the provider. Callbacks execute
+on Unity's main thread outside registry locks, not under the renderer's engine lock. Providers acquire
+their appropriate native read lock and return a fresh snapshot, without mutating the game or HUD.
+The renderer revalidates session/activation after each callback. Retain missing selections as
+removable unknown entries; reconnect when the same key is available again.
+
+### Source-relative popup sizing
+
+For an owned custom popup with a template that binds FontSize, MaxWidth, Padding and BorderThickness:
+
+```csharp
+SharedToolTipSizing.SetReferenceElement(tip, sourceHudElement);
+SharedToolTipSizing.SetReferenceFontSize(tip, 16f); // source HUD logical font size
+SharedToolTipSizing.SetEnabled(tip, true);
+ToolTipService.SetShowDuration(ownerElement, 60000);
+```
+
+The source-reference mode uses measured source/popup screen transforms, including separate Noesis
+views. Sizes are absolute, updated on opening/loading and relevant size events, without frame polling.
+A popup that is not attached waits for its view. Closed popups release source/viewport listeners.
+Enabling takes exclusive sizing ownership from the Extender scaler; disabling restores its prior
+setting. A null reference retains the existing 23/30/45 resolution presets for existing consumers.
+The caller owns the dark/gold, white wrapped-text template and closes its popups when its HUD ends.
+
+## Packaged Lord presentation
+
+Register with PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason) on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.
+
+The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
+
+Omitting the provider GUID means metadata-only presentation. Set `allowGlobalMedia: true` only for an authenticated installed source using the Extender's legacy global asset mode; null alone must never opt into global file lookup. Missing optional media does not change synchronized message-clip selection. Asset providers must contain only verified presentation files and must not impersonate the source mod or register its scripts.
+
+The consumer must revalidate the player slot against the current selection before starting. Coop restart names use the claimed entry's current internal identity, which may be a verified peer-local alias of the host's selected package. This does not authorize a different gameplay selection or configuration.
+
+```csharp
+if (PackagedLordPresentation.TryRegister(pluginGuid, "mission-lords", out var presentation, out var reason))
+    presentation.SetEntries(new[] {
+        new PackagedLordPresentationEntry(3, selectedInternalName, authoredFallbackName, completeLordmetaJson)
+    });
+// Retain the registration and call presentation.SetEntries(null) when leaving this selection.
+```

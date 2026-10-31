@@ -66,6 +66,7 @@ namespace APIShared.ModSettings
         private string suspendedBasedOnSource = string.Empty;
         private bool suspendedPresetDirty;
         private string missionPresetLabel = string.Empty;
+        private string missionContextLabel = string.Empty;
         private PublishedModSettingsPreset missionBasedOnPreset;
         private bool missionPresetDirty;
 #if API_SHARED_PRESET_TESTS
@@ -147,7 +148,15 @@ namespace APIShared.ModSettings
         {
             bool missionSelected = owner.IsMissionPresetSelected;
             if (missionSelected && missionBasedOnPreset == null)
-                return missionPresetLabel;
+            {
+                string context = missionContextLabel;
+                if (!string.Equals(context, missionPresetLabel, StringComparison.Ordinal) && missionPresetLabel.Length != 0)
+                    context = context.Length != 0 && missionPresetLabel.StartsWith(context + " · ", StringComparison.Ordinal)
+                        ? missionPresetLabel // Restart preparation already captured the full status.
+                        : context + " · " + (basedOnText ?? "Based on") + ": " + missionPresetLabel;
+                string modified = " (" + (modifiedText ?? "modified") + ")";
+                return context + (missionPresetDirty && !context.EndsWith(modified, StringComparison.Ordinal) ? modified : "");
+            }
             string sourceName = missionSelected ? missionBasedOnPreset.Name : basedOnName;
             if (string.IsNullOrWhiteSpace(sourceName))
                 return string.Empty;
@@ -164,8 +173,10 @@ namespace APIShared.ModSettings
                 status += " · " + localizedSource;
             if (missionSelected ? missionPresetDirty : presetDirty)
                 status += " (" + (modifiedText ?? "modified") + ")";
-            return status;
+            return missionSelected && missionContextLabel.Length != 0 ? missionContextLabel + " · " + status : status;
         }
+
+        internal bool IsPersistentSetting(string name) => name != null && persistedPropertiesByName.ContainsKey(name);
 
         public int MissionPresetIndex => 1;
 

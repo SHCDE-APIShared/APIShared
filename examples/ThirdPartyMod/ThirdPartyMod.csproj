@@ -31,6 +31,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="SettingsSearchExample.cs"/>
+    <Compile Include="StatisticsExample.cs"/>
     <Compile Include="NativeFieldExample.cs" />
     <Compile Include="AiMarketSellExample.cs"/>
     <Compile Include="ExamplePlugin.cs" /><Compile Include="InterceptionExample.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" /><Compile Include="NetworkingExample.cs" />
@@ -47,7 +48,8 @@
     <Error Condition="!Exists('$(ApiSharedDir)\APIShared.dll')" Text="The freshly built APIShared.dll is required." />
   </Target>
   <ItemGroup><Compile Include="TooltipExample.cs" /></ItemGroup>
-  <ItemGroup><Compile Include="GateAccessExample.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="GateAccessExample.cs" /><Compile Include="RouteTileRulesExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="UnitSettledExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="NativeSiteExample.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="IngameMenuExample.cs" /></ItemGroup>
 </Project>

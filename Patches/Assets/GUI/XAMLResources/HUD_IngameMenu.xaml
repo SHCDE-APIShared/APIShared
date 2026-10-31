@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:CrusaderDE" xmlns:seui="clr-namespace:SHCDESE.UI;assembly=SHCDESE">
+  <!-- The broker reparents original Vanilla controls at Init; no Vanilla button is replaced. -->
+  <Operation Type="Add" XPath="//n:UserControl.Resources"><Content>
+    <!-- Retain the resource key without overriding any Vanilla template or metrics. -->
+    <Style x:Key="APISharedMenuActionButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BTN_SH_GlowSDisable}" />
+  </Content></Operation>
+  <Operation Type="Add" XPath="//n:UserControl.Resources"><Content>
+    <Style x:Key="APISharedMenuTooltipStyle" TargetType="{x:Type ToolTip}">
+      <!-- IngameMenuTooltips matches the actual button/popup transforms; no competing preset scaler. -->
+      <Setter Property="seui:ToolTipResolutionScale.Enabled" Value="False"/>
+      <Setter Property="FontSize" Value="16"/><Setter Property="MaxWidth" Value="420"/>
+      <Setter Property="Background" Value="#FF1D1710"/><Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderBrush" Value="#FFF2D48A"/><Setter Property="BorderThickness" Value="1.5"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type ToolTip}">
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" MaxWidth="{TemplateBinding MaxWidth}">
+          <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" TextWrapping="Wrap"/>
+        </Border>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+  </Content></Operation>
+</Patch>

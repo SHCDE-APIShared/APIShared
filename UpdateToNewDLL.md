@@ -1,5 +1,44 @@
 # Native binary update contracts
 
+## Synchronized-save archive context
+
+Owner: `ScriptExtenderFixes.SynchronizedSaveRuntime`, registry group
+`Savegames.SynchronizedSaveContext`. Native reference SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+The Chore 39 handler at RVA `0x13030` is a no-argument, void Win64 function;
+both its serialize and execute phases are enclosed in a thread-local scope with
+`finally` cleanup. Only the execute phase calls the synchronous writer `0x52B0`.
+The factory observes that scope at SE's existing archive append hook (`0x5A4C`);
+APIShared does not patch or claim that existing SE site.
+
+The only admitted backend is NativeX64 `Indirect`, six displaced bytes:
+`48 89 5C 24 08` (`mov [rsp+8],rbx`, five bytes), `57` (`push rdi`, one byte).
+Resume at `0x13036`: `mov eax,0x1D40`, then `call 0x1A6990` (`chkstk`) and
+`sub rsp,rax`. The 19-byte pristine prefix and live entry/continuation are checked;
+prepared and installed hooks validate scheme, span, target, pointer slot, relocated
+bytes and trampoline continuation. Full 1102-byte body branch/call and xref audit
+found no incoming target inside `(0x13030,0x13036)`. Local SE, Fixes and APIShared
+site inventories contain no competing entry owner. Never undo a published hook.
+
+No unknown-image fallback is admitted: the whole Chore phase/protocol and synchronous
+writer relationship were audited for this image, not established by a prologue
+pattern alone. Unknown hashes fail this correction closed and retain original
+saving; their save-only data may still be omitted. Re-audit scheduler `0x1F6E0`,
+Chore dispatch/phase, `0x13030`, all `0x52B0` callers (`0x13030`, `0x816B0` Trail
+template export, `0x86F80` DLL_SaveSaveGame) and SE's append/factory contracts before
+adding an image. In particular `0x52B0` argument 3 being zero does not prove a
+gameplay save, since Trail templates use that value too.
+
+The three managed transformations validate the loaded IL before publication:
+one `SaveContext(bool,bool,string)` constructor before mod-data dispatch in
+`PrepareMapArchiveAndGetBytes`, one Boolean field assignment before archive load
+in each of `OnLoadMap` and `OnLoadSave`. The latter use the public event-argument
+getters; no private game member is accessed. All transformations are generated in
+a dry run first. Partial publication stays rooted; the native scope is enabled
+only after the complete managed group is ready. Tests execute the actual backend
+and the transformed factory/SE dispatch with real appended ZIP records. Unity
+timer/metadata serialization and real multiplayer execution need game acceptance.
+
 ## Native field knowledge
 
 Owner: `src/NativeKnowledge`. This area installs no hook and resolves no executable
@@ -512,3 +551,27 @@ Public consumer example: examples/ThirdPartyMod/PlagueHeightExample.cs.
 Prior user game evidence covers cloud-edge movement, wall demolition and tower collapse.
 New category UI, real multiplayer and full save/treatment roundtrips require game
 acceptance; isolated execution tests do not establish these outcomes.
+
+## Shared visible-map entry and pause-menu actions (0.18.0)
+
+Audited image SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`0x41D60`: Win64 void `(map, left, right, top, bottom, zoom)`, arguments 5/6 at
+entry RSP+0x28/+0x30. The first ten bytes are
+`48 89 5C 24 10 48 89 6C 24 18`; both MOV instructions save nonvolatile registers
+in home slots. Indirect/10 resumes at `0x41D6A`; validate pointer-slot jump, NOP
+padding, displaced bytes and resume target. APIShared exclusively owns this entry;
+consumers register observers rather than detours. The demand bridge tail-jumps
+without changing stack arguments, using only volatile RAX/flags. Its instructions
+and targets are validated after publication. Published failed hooks stay rooted
+with zero demand. `VisibleMapRenderTests` executes the production bridge and tests
+both demand paths, all six arguments, exact original count and cleanup failures.
+The complete original render function and its terminal drawing-list cleanup at
+`0x41D10` remain intact. Rendering temporarily changed spectator visibility must
+always be restored by consumer cleanup; the service makes no player changes.
+
+Managed presentation: public `HUD_IngameMenu.Init()` and `Close()` on the real
+Assembly-CSharp, and the `PresentationEvents.GuiChecks` post event. The XAML host
+wraps `ButtonQuitMission` while preserving its command, parameter 6, label binding,
+style and MouseEnter handler. Re-audit these on a managed/UI update. Popup sizing
+reads Unity screen height only on the UI thread; its opt-in disables the competing
+SE scaler only for that popup.

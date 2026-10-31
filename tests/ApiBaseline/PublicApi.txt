@@ -1222,10 +1222,12 @@ APIShared.ModSettings.ModSettingsWorkingSource | public string PreferenceContext
 APIShared.ModSettings.ModSettingsWorkingSourceKind | public enum APIShared.ModSettings.ModSettingsWorkingSourceKind : int
 APIShared.ModSettings.ModSettingsWorkingSourceKind | Map = 2
 APIShared.ModSettings.ModSettingsWorkingSourceKind | ModDefault = 0
+APIShared.ModSettings.ModSettingsWorkingSourceKind | Personal = 3
 APIShared.ModSettings.ModSettingsWorkingSourceKind | Trail = 1
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public static class APIShared.ModSettings.ModSettingsWorkingSourceRegistry
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string MapId = "map"
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string ModDefaultsId = "mod-default"
+APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string PersonalSettingsId = "personal-settings"
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public const string TrailId = "trail"
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public static System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingsWorkingSource> GetProviderSources(string targetGuid)
 APIShared.ModSettings.ModSettingsWorkingSourceRegistry | public static bool HasProvider { get; }
@@ -1496,6 +1498,16 @@ APIShared.ModSettings.SettingModeStatus | public enum APIShared.ModSettings.Sett
 APIShared.ModSettings.SettingModeStatus | Active = 1
 APIShared.ModSettings.SettingModeStatus | Inactive = 2
 APIShared.ModSettings.SettingModeStatus | Unknown = 0
+APIShared.ModSettings.SharedToolTipSizing | public static class APIShared.ModSettings.SharedToolTipSizing
+APIShared.ModSettings.SharedToolTipSizing | public static Noesis.FrameworkElement GetReferenceElement(Noesis.DependencyObject value)
+APIShared.ModSettings.SharedToolTipSizing | public static bool GetEnabled(Noesis.DependencyObject value)
+APIShared.ModSettings.SharedToolTipSizing | public static float GetReferenceFontSize(Noesis.DependencyObject value)
+APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty EnabledProperty
+APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty ReferenceElementProperty
+APIShared.ModSettings.SharedToolTipSizing | public static readonly Noesis.DependencyProperty ReferenceFontSizeProperty
+APIShared.ModSettings.SharedToolTipSizing | public static void SetEnabled(Noesis.DependencyObject value, bool enabled)
+APIShared.ModSettings.SharedToolTipSizing | public static void SetReferenceElement(Noesis.DependencyObject value, Noesis.FrameworkElement reference)
+APIShared.ModSettings.SharedToolTipSizing | public static void SetReferenceFontSize(Noesis.DependencyObject value, float size)
 APIShared.ModSettings.ToolTipPresentation | public static class APIShared.ModSettings.ToolTipPresentation
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
@@ -1834,6 +1846,14 @@ APIShared.Networking.NetworkSendStatus | Submitted = 0
 APIShared.Networking.NetworkSendStatus | TooLarge = 4
 APIShared.Networking.NetworkSendStatus | TransportFailed = 6
 APIShared.Networking.NetworkSendStatus | Unavailable = 1
+APIShared.Pathfinding.RouteReplanPolicy | public sealed class APIShared.Pathfinding.RouteReplanPolicy
+APIShared.Pathfinding.RouteReplanPolicy | public .ctor(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
+APIShared.Pathfinding.RouteReplanPolicy | public bool AllowsDetour(int remaining, int replanned)
+APIShared.Pathfinding.RouteReplanPolicy | public const int MaximumTriggerDistance = 16
+APIShared.Pathfinding.RouteReplanPolicy | public int MaximumDetourPercent { get; }
+APIShared.Pathfinding.RouteReplanPolicy | public int MaximumWaitTicks { get; }
+APIShared.Pathfinding.RouteReplanPolicy | public int MinimumDetourTiles { get; }
+APIShared.Pathfinding.RouteReplanPolicy | public int TriggerDistance { get; }
 APIShared.Pathfinding.RouteSearchContext | public sealed class APIShared.Pathfinding.RouteSearchContext
 APIShared.Pathfinding.RouteSearchContext | public .ctor(string sourceGuid, int playerId, int startX, int startY, int targetX, int targetY, APIShared.Pathfinding.RouteSearchTerrain terrain, int maximumEdges, long maximumEdgeCost)
 APIShared.Pathfinding.RouteSearchContext | public APIShared.Pathfinding.RouteSearchTerrain Terrain { get; }
@@ -1870,6 +1890,30 @@ APIShared.Pathfinding.RouteSearchTerrain | public enum APIShared.Pathfinding.Rou
 APIShared.Pathfinding.RouteSearchTerrain | DiagnosticMoat = 2
 APIShared.Pathfinding.RouteSearchTerrain | FriendlyMoat = 1
 APIShared.Pathfinding.RouteSearchTerrain | GroundOnly = 0
+APIShared.Pathfinding.RouteTileEffect | public enum APIShared.Pathfinding.RouteTileEffect : int
+APIShared.Pathfinding.RouteTileEffect | Forbidden = 2
+APIShared.Pathfinding.RouteTileEffect | None = 0
+APIShared.Pathfinding.RouteTileEffect | Penalty = 1
+APIShared.Pathfinding.RouteTileRuleSet | public sealed class APIShared.Pathfinding.RouteTileRuleSet
+APIShared.Pathfinding.RouteTileRuleSet | public APIShared.Pathfinding.RouteReplanPolicy ReplanPolicy { get; set; }
+APIShared.Pathfinding.RouteTileRuleSet | public bool Clear(int tileX, int tileY)
+APIShared.Pathfinding.RouteTileRuleSet | public bool Set(int tileX, int tileY, APIShared.Pathfinding.RouteTileEffect effect, int penalty = 0, uint players = 510)
+APIShared.Pathfinding.RouteTileRuleSet | public const uint AllPlayers = 510
+APIShared.Pathfinding.RouteTileRuleSet | public int Count { get; }
+APIShared.Pathfinding.RouteTileRuleSet | public string OwnerGuid { get; }
+APIShared.Pathfinding.RouteTileRuleSet | public string RegistrationId { get; }
+APIShared.Pathfinding.RouteTileRuleSet | public void ClearAll()
+APIShared.Pathfinding.RouteTileRules | public static class APIShared.Pathfinding.RouteTileRules
+APIShared.Pathfinding.RouteTileRules | public const int JournalCapacity = 65536
+APIShared.Pathfinding.RouteTileRules | public const int MapSize = 800
+APIShared.Pathfinding.RouteTileRules | public const int MaximumPenalty = 255
+APIShared.Pathfinding.RouteTileRules | public static APIShared.Pathfinding.RouteReplanPolicy GetReplanPolicy(int tileX, int tileY, int playerId)
+APIShared.Pathfinding.RouteTileRules | public static APIShared.Pathfinding.RouteTileEffect GetEffect(int tileX, int tileY, int playerId, out int penalty)
+APIShared.Pathfinding.RouteTileRules | public static bool HasReplanRules { get; }
+APIShared.Pathfinding.RouteTileRules | public static bool HasRules { get; }
+APIShared.Pathfinding.RouteTileRules | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Pathfinding.RouteTileRuleSet rules, out string reason)
+APIShared.Pathfinding.RouteTileRules | public static int ReadChanges(ref long cursor, int[] tiles)
+APIShared.Pathfinding.RouteTileRules | public static long Version { get; }
 APIShared.PlagueSurfaceCategory | public enum APIShared.PlagueSurfaceCategory : int
 APIShared.PlagueSurfaceCategory | All = 15
 APIShared.PlagueSurfaceCategory | Gates = 2
@@ -1927,6 +1971,103 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.IngameMenuActionInfo | public sealed class APIShared.Presentation.IngameMenuActionInfo
+APIShared.Presentation.IngameMenuActionInfo | public APIShared.Presentation.IngameMenuActionState State { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool HasState { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool IsEffective { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool IsVanilla { get; }
+APIShared.Presentation.IngameMenuActionInfo | public string Id { get; }
+APIShared.Presentation.IngameMenuActionInfo | public string OwnerGuid { get; }
+APIShared.Presentation.IngameMenuActionOptions | public sealed class APIShared.Presentation.IngameMenuActionOptions
+APIShared.Presentation.IngameMenuActionOptions | public .ctor()
+APIShared.Presentation.IngameMenuActionOptions | public .ctor(APIShared.Presentation.IngameMenuRow row, APIShared.Presentation.IngameMenuSlot slot, bool replaceExisting = false, bool replaceVanilla = false)
+APIShared.Presentation.IngameMenuActionOptions | public APIShared.Presentation.IngameMenuRow? Row { get; }
+APIShared.Presentation.IngameMenuActionOptions | public APIShared.Presentation.IngameMenuSlot Slot { get; }
+APIShared.Presentation.IngameMenuActionOptions | public bool ReplaceExisting { get; }
+APIShared.Presentation.IngameMenuActionOptions | public bool ReplaceVanilla { get; }
+APIShared.Presentation.IngameMenuActionRegistration | public sealed class APIShared.Presentation.IngameMenuActionRegistration
+APIShared.Presentation.IngameMenuActionRegistration | public void Invalidate()
+APIShared.Presentation.IngameMenuActionState | public sealed class APIShared.Presentation.IngameMenuActionState
+APIShared.Presentation.IngameMenuActionState | public .ctor(string text, bool visible, bool enabled)
+APIShared.Presentation.IngameMenuActionState | public .ctor(string text, bool visible, bool enabled, string tooltip)
+APIShared.Presentation.IngameMenuActionState | public bool Enabled { get; }
+APIShared.Presentation.IngameMenuActionState | public bool Visible { get; }
+APIShared.Presentation.IngameMenuActionState | public string Text { get; }
+APIShared.Presentation.IngameMenuActionState | public string Tooltip { get; }
+APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
+APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.IngameMenuRowState GetRowState(APIShared.Presentation.IngameMenuRow row)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
+APIShared.Presentation.IngameMenuRow | public enum APIShared.Presentation.IngameMenuRow : int
+APIShared.Presentation.IngameMenuRow | ExitStronghold = 7
+APIShared.Presentation.IngameMenuRow | Help = 4
+APIShared.Presentation.IngameMenuRow | Load = 1
+APIShared.Presentation.IngameMenuRow | Options = 3
+APIShared.Presentation.IngameMenuRow | QuitMission = 6
+APIShared.Presentation.IngameMenuRow | RestartMission = 5
+APIShared.Presentation.IngameMenuRow | Resume = 8
+APIShared.Presentation.IngameMenuRow | Save = 0
+APIShared.Presentation.IngameMenuRow | Workshop = 2
+APIShared.Presentation.IngameMenuRowState | public sealed class APIShared.Presentation.IngameMenuRowState
+APIShared.Presentation.IngameMenuRowState | public APIShared.Presentation.IngameMenuRow Row { get; }
+APIShared.Presentation.IngameMenuRowState | public APIShared.Presentation.IngameMenuSlotState Left { get; }
+APIShared.Presentation.IngameMenuRowState | public APIShared.Presentation.IngameMenuSlotState Right { get; }
+APIShared.Presentation.IngameMenuSlot | public enum APIShared.Presentation.IngameMenuSlot : int
+APIShared.Presentation.IngameMenuSlot | Left = 0
+APIShared.Presentation.IngameMenuSlot | Right = 1
+APIShared.Presentation.IngameMenuSlotState | public sealed class APIShared.Presentation.IngameMenuSlotState
+APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuActionInfo Current { get; }
+APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuSlot Slot { get; }
+APIShared.Presentation.IngameMenuSlotState | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.IngameMenuActionInfo> Claims { get; }
+APIShared.Presentation.MissionOverContinuation | public sealed class APIShared.Presentation.MissionOverContinuation
+APIShared.Presentation.MissionOverContinuation | public bool TryInvoke()
+APIShared.Presentation.MissionOverEvents | public static class APIShared.Presentation.MissionOverEvents
+APIShared.Presentation.MissionOverEvents | public static bool TryRegister(APIShared.Presentation.MissionOverOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.MissionOverPreEventArgs> pre, System.Action<APIShared.Presentation.MissionOverPostEventArgs> post, out string reason, int order = 0, System.Action<APIShared.Presentation.MissionOverPreEventArgs> accepted = null)
+APIShared.Presentation.MissionOverOperation | public enum APIShared.Presentation.MissionOverOperation : int
+APIShared.Presentation.MissionOverOperation | Button = 0
+APIShared.Presentation.MissionOverOperation | State = 1
+APIShared.Presentation.MissionOverOperation | Text = 2
+APIShared.Presentation.MissionOverPostEventArgs | public sealed class APIShared.Presentation.MissionOverPostEventArgs
+APIShared.Presentation.MissionOverPostEventArgs | public APIShared.Presentation.MissionOverOperation Operation { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public System.Exception CompletionException { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public bool OriginalCompleted { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public bool WasDeferred { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public bool WasSkipped { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Data4 { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Data5 { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Date { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int OriginalResult { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Result { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public int Screen { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public object Receiver { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public object State { get; }
+APIShared.Presentation.MissionOverPostEventArgs | public string Button { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public sealed class APIShared.Presentation.MissionOverPreEventArgs : APIShared.Events.InterceptionPreEventArgs
+APIShared.Presentation.MissionOverPreEventArgs | public APIShared.Presentation.MissionOverOperation Operation { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public CrusaderDE.HUD_MissionOver View { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Data4 { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Data5 { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Date { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int OriginalResult { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Result { get; set; }
+APIShared.Presentation.MissionOverPreEventArgs | public int Screen { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public object Receiver { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public string Button { get; }
+APIShared.Presentation.MissionOverPreEventArgs | public void DeferOriginal(System.Action<APIShared.Presentation.MissionOverContinuation> handler, System.Func<bool> isCurrent)
+APIShared.Presentation.PackagedLordPresentation | public static class APIShared.Presentation.PackagedLordPresentation
+APIShared.Presentation.PackagedLordPresentation | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Presentation.PackagedLordPresentationRegistration registration, out string reason)
+APIShared.Presentation.PackagedLordPresentationEntry | public sealed class APIShared.Presentation.PackagedLordPresentationEntry
+APIShared.Presentation.PackagedLordPresentationEntry | public .ctor(int playerId, string internalName, string authoredName, string metadataJson, string assetProviderGuid = null, bool allowGlobalMedia = false)
+APIShared.Presentation.PackagedLordPresentationEntry | public bool AllowGlobalMedia { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public int PlayerId { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string AssetProviderGuid { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string AuthoredName { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string InternalName { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string MetadataJson { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string ResolveName(string locale, int nickname)
+APIShared.Presentation.PackagedLordPresentationRegistration | public sealed class APIShared.Presentation.PackagedLordPresentationRegistration
+APIShared.Presentation.PackagedLordPresentationRegistration | public void SetEntries(System.Collections.Generic.IReadOnlyList<APIShared.Presentation.PackagedLordPresentationEntry> entries)
 APIShared.Presentation.PresentationEvents | public static class APIShared.Presentation.PresentationEvents
 APIShared.Presentation.PresentationEvents | public static bool TryRegister(APIShared.Presentation.PresentationOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.PresentationPreEventArgs> pre, System.Action<APIShared.Presentation.PresentationPostEventArgs> post, out string reason, int order = 0)
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)
@@ -2008,6 +2149,17 @@ APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ow
 APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
 APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
 APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
+APIShared.Presentation.VisibleMapRenderEventArgs | public sealed class APIShared.Presentation.VisibleMapRenderEventArgs : System.EventArgs
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Bottom { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Left { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Right { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Top { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public int Zoom { get; }
+APIShared.Presentation.VisibleMapRenderEventArgs | public object State { get; set; }
+APIShared.Presentation.VisibleMapRenderEvents | public static class APIShared.Presentation.VisibleMapRenderEvents
+APIShared.Presentation.VisibleMapRenderEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Presentation.VisibleMapRenderEventArgs> before, System.Action<APIShared.Presentation.VisibleMapRenderEventArgs> finallyCallback, out APIShared.Presentation.VisibleMapRenderRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.VisibleMapRenderRegistration | public sealed class APIShared.Presentation.VisibleMapRenderRegistration
+APIShared.Presentation.VisibleMapRenderRegistration | public void SetEnabled(bool enabled)
 APIShared.Recruitment.RecruitmentAvailability | public static class APIShared.Recruitment.RecruitmentAvailability
 APIShared.Recruitment.RecruitmentAvailability | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Recruitment.RecruitmentAvailabilityContext, SHCDESE.Interop.eChimps, bool> isBlocked, System.Func<bool> isActive, out string reason)
 APIShared.Recruitment.RecruitmentAvailability | public static long CallbackFailures { get; }
@@ -2184,6 +2336,49 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Statistics.EngineReadbackRegistration | public sealed class APIShared.Statistics.EngineReadbackRegistration
+APIShared.Statistics.EngineReadbackRegistration | public bool TryTakeError(out System.Exception exception)
+APIShared.Statistics.EngineReadbackRegistration | public void Cancel()
+APIShared.Statistics.EngineReadbackRegistration | public void Request()
+APIShared.Statistics.EngineReadbacks | public static class APIShared.Statistics.EngineReadbacks
+APIShared.Statistics.EngineReadbacks | public static bool IsAvailable { get; }
+APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string ownerGuid, string id, System.Action copy, out APIShared.Statistics.EngineReadbackRegistration registration)
+APIShared.Statistics.LordStatisticCatalog | public sealed class APIShared.Statistics.LordStatisticCatalog
+APIShared.Statistics.LordStatisticCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Statistics.LordStatisticColumn> Columns { get; }
+APIShared.Statistics.LordStatisticCatalog | public long Revision { get; }
+APIShared.Statistics.LordStatisticColumn | public sealed class APIShared.Statistics.LordStatisticColumn
+APIShared.Statistics.LordStatisticColumn | public APIShared.Statistics.LordStatisticTheme Theme { get; }
+APIShared.Statistics.LordStatisticColumn | public Noesis.ImageSource GetIcon()
+APIShared.Statistics.LordStatisticColumn | public System.Collections.Generic.IReadOnlyDictionary<int, decimal?> Read(long sessionId, System.Collections.Generic.IEnumerable<int> authorizedPlayerIds)
+APIShared.Statistics.LordStatisticColumn | public bool IsActive { get; }
+APIShared.Statistics.LordStatisticColumn | public string Format(decimal value)
+APIShared.Statistics.LordStatisticColumn | public string GetName()
+APIShared.Statistics.LordStatisticColumn | public string GetTooltip()
+APIShared.Statistics.LordStatisticColumn | public string Key { get; }
+APIShared.Statistics.LordStatisticColumn | public string OwnerGuid { get; }
+APIShared.Statistics.LordStatisticColumn | public void RefreshMetadata()
+APIShared.Statistics.LordStatisticColumn | public void SetActive(bool active)
+APIShared.Statistics.LordStatisticColumnDefinition | public sealed class APIShared.Statistics.LordStatisticColumnDefinition
+APIShared.Statistics.LordStatisticColumnDefinition | public .ctor(string columnId, System.Func<string> name, System.Func<string> tooltip, System.Func<Noesis.ImageSource> icon, System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> values, APIShared.Statistics.LordStatisticTheme theme = (APIShared.Statistics.LordStatisticTheme)0, System.Func<decimal, string> format = null)
+APIShared.Statistics.LordStatisticColumnDefinition | public APIShared.Statistics.LordStatisticTheme Theme { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> Values { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<Noesis.ImageSource> Icon { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<decimal, string> Format { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<string> Name { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<string> Tooltip { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public string ColumnId { get; }
+APIShared.Statistics.LordStatisticRequest | public sealed class APIShared.Statistics.LordStatisticRequest
+APIShared.Statistics.LordStatisticRequest | public System.Collections.Generic.IReadOnlyList<int> PlayerIds { get; }
+APIShared.Statistics.LordStatisticRequest | public long SessionId { get; }
+APIShared.Statistics.LordStatisticTheme | public enum APIShared.Statistics.LordStatisticTheme : int
+APIShared.Statistics.LordStatisticTheme | Economy = 1
+APIShared.Statistics.LordStatisticTheme | Military = 2
+APIShared.Statistics.LordStatisticTheme | OtherMods = 0
+APIShared.Statistics.LordStatisticTheme | PopulationMood = 3
+APIShared.Statistics.LordStatistics | public static class APIShared.Statistics.LordStatistics
+APIShared.Statistics.LordStatistics | public static APIShared.Statistics.LordStatisticCatalog GetCatalog()
+APIShared.Statistics.LordStatistics | public static bool TryRegister(string ownerGuid, APIShared.Statistics.LordStatisticColumnDefinition definition, out APIShared.Statistics.LordStatisticColumn column, out string reason)
+APIShared.Statistics.LordStatistics | public static event System.Action<APIShared.Statistics.LordStatisticCatalog> CatalogChanged
 APIShared.TemporaryGateRouteAcceptanceBridge | public static class APIShared.TemporaryGateRouteAcceptanceBridge
 APIShared.TemporaryGateRouteAcceptanceBridge | public static APIShared.ITemporaryGateRouteAcceptanceObserver Current { get; }
 APIShared.TemporaryGateRouteAcceptanceBridge | public static APIShared.ITemporaryGateRouteAcceptanceObserver CurrentRequested { get; }

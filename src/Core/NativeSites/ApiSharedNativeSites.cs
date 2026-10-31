@@ -27,6 +27,13 @@ namespace APIShared
         internal const string GateComparisons = "GateRouting.Comparisons";
         internal const string GateDescent = "GateRouting.Descent";
         internal const string BuildingRepair = "Buildings.RepairQuote";
+        internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
+
+        internal static NativeSiteSpan[] SynchronizedSaveSpans() => new[] {
+            Exclusive(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva, ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength),
+            Observe(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva + ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength,
+                ScriptExtenderFixes.SynchronizedSaveRuntime.Entry.Length - ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength)
+        };
 
         // AIV detour: the backend's displacement is not fixed here, so the claim covers the
         // instruction-aligned prologue any patch of up to 14 bytes displaces (2+1+1+1+2+2+2+2+4).
@@ -166,7 +173,8 @@ namespace APIShared
             Group(GateMovement, GateMovementSpans()),
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
-            Group(BuildingRepair, BuildingRepairSpans())
+            Group(BuildingRepair, BuildingRepairSpans()),
+            Group(SynchronizedSave, SynchronizedSaveSpans())
         };
 
         // Claims a group for APIShared before installation. Throws the service's own failure type

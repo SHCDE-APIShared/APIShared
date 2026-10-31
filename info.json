@@ -3,13 +3,43 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.16.3",
+  "Version": "0.20.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.20.0",
+      "Changes": [
+        "Add scoped packaged Lord presentation with complete lossless lordmeta.json, independent locale fallback, optional private media and synchronized speech selection.",
+        "Preserve claimed Coop AI names and portraits in the original restart object before serialization, without changing Lord gameplay types or Script Extender's global catalog."
+      ]
+    },
+    {
+      "Version": "0.19.0",
+      "Changes": [
+        "Add opt-in visible-map render coordination with native dormant bypass and isolated preparation/cleanup callbacks.",
+        "Add shared pause-menu actions preserving Vanilla Quit, and opt-in popup sizing from the common resolution presets."
+      ]
+    },
+    {
+      "Version": "0.17.0",
+      "Changes": [
+        "Add shared end-screen Pre/Accepted/Post events for buttons, game-over state and game-over text without changing existing API contracts.",
+        "Coordinate preview cancellation and delayed exit through guarded, caller-thread, at-most-once original continuations with isolated consumer failures."
+      ]
+    },
+    {
+      "Version": "0.16.4",
+      "Changes": [
+        "Keep Map/Trail/Save source labels visible after loading personal presets and associate restored preset state with the correct mission working-copy session.",
+        "Add bounded settings-transition and persistence diagnostics with context/source/preset identities, dirty state, actual write results and target paths; include available exception type, HResult and exception details on failure.",
+        "Add Personal Settings as a reset source for editable Map and Trail working copies without leaving their context or overwriting personal settings and preset files.",
+        "Keep source selection, host/client ownership and backend restart handling consistent; prepare all target snapshots before a shared reset and preserve untouched backend state on failure."
+      ]
+    },
     {
       "Version": "0.16.3",
       "Changes": [

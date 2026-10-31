@@ -60,7 +60,9 @@ namespace APIShared.Workshop
                 return Level(item.DiagnosticError);
             }
             if (item.IsSubscribed && (item.Package == null || !item.CanInstall)) {
-                write(WorkshopDiagnosticLevel.Warning, context + "; reason=" + item.Status + "; source=" + item.ContentRoot);
+                write(WorkshopDiagnosticLevel.Warning, context + "; reason=" + item.Status + "; source=" + item.ContentRoot +
+                    "; subscribed=" + item.IsSubscribed + "; packagePresent=" + (item.Package != null) +
+                    "; canInstall=" + item.CanInstall + "; action=skip-this-item; subscription alone does not confirm an installable mod package");
                 return WorkshopDiagnosticLevel.Warning;
             }
             return null;

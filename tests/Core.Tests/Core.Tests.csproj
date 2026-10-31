@@ -1,6 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
+    <Compile Include="../../src/Statistics/LordStatisticColumns.cs" Link="Production/LordStatisticColumns.cs" />
+    <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
+    <Compile Include="../../src/Presentation/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
+    <Content Include="../../Patches/Assets/GUI/XAMLResources/HUD_IngameMenu.xaml" Link="MenuPatch.xaml"><CopyToOutputDirectory>Always</CopyToOutputDirectory></Content>
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
     <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
     <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
@@ -18,6 +26,7 @@
     <Compile Include="../../src/Compatibility/FixesWheatContract.cs" Link="Production/FixesWheatContract.cs" />
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs" />
     <Compile Include="../../src/Pathfinding/GateRoutes/GateAccessRules.cs" Link="Production/GateAccessRules.cs" />
+    <Compile Include="../../src/Pathfinding/Routes/RouteTileRules.cs" Link="Production/RouteTileRules.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipContracts.cs" Link="Production/BuildingTooltipContracts.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipSelection.cs" Link="Production/BuildingTooltipSelection.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipRegistry.cs" Link="Production/BuildingTooltipRegistry.cs" />
