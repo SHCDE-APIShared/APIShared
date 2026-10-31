@@ -2055,6 +2055,19 @@ APIShared.Presentation.MissionOverPreEventArgs | public int Screen { get; }
 APIShared.Presentation.MissionOverPreEventArgs | public object Receiver { get; }
 APIShared.Presentation.MissionOverPreEventArgs | public string Button { get; }
 APIShared.Presentation.MissionOverPreEventArgs | public void DeferOriginal(System.Action<APIShared.Presentation.MissionOverContinuation> handler, System.Func<bool> isCurrent)
+APIShared.Presentation.PackagedLordPresentation | public static class APIShared.Presentation.PackagedLordPresentation
+APIShared.Presentation.PackagedLordPresentation | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Presentation.PackagedLordPresentationRegistration registration, out string reason)
+APIShared.Presentation.PackagedLordPresentationEntry | public sealed class APIShared.Presentation.PackagedLordPresentationEntry
+APIShared.Presentation.PackagedLordPresentationEntry | public .ctor(int playerId, string internalName, string authoredName, string metadataJson, string assetProviderGuid = null, bool allowGlobalMedia = false)
+APIShared.Presentation.PackagedLordPresentationEntry | public bool AllowGlobalMedia { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public int PlayerId { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string AssetProviderGuid { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string AuthoredName { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string InternalName { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string MetadataJson { get; }
+APIShared.Presentation.PackagedLordPresentationEntry | public string ResolveName(string locale, int nickname)
+APIShared.Presentation.PackagedLordPresentationRegistration | public sealed class APIShared.Presentation.PackagedLordPresentationRegistration
+APIShared.Presentation.PackagedLordPresentationRegistration | public void SetEntries(System.Collections.Generic.IReadOnlyList<APIShared.Presentation.PackagedLordPresentationEntry> entries)
 APIShared.Presentation.PresentationEvents | public static class APIShared.Presentation.PresentationEvents
 APIShared.Presentation.PresentationEvents | public static bool TryRegister(APIShared.Presentation.PresentationOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.PresentationPreEventArgs> pre, System.Action<APIShared.Presentation.PresentationPostEventArgs> post, out string reason, int order = 0)
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)

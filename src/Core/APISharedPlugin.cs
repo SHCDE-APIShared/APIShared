@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.19.0";
+        public const string PluginVersion = "0.20.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -73,6 +73,8 @@ namespace APIShared
                 new NativeInitializationStep("repair tooltip binding", () => GameXAMLManagerAPI.Instance.RegisterBinding(
                     "APISharedRepairExtrasHost", runtime.RepairTooltip), runtime.FaultBuildingRepair),
                 new NativeInitializationStep("building tooltip bindings", Presentation.BuildingTooltipPresentation.Bind),
+                new NativeInitializationStep("Extender archive contexts", () => ScriptExtenderFixes.SaveContextRuntime.InitializeManaged(RuntimeLogger)),
+                new NativeInitializationStep("Extender move failure context", () => ScriptExtenderFixes.MoveCommandFailureRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame load dialog", () => Savegames.SaveLoadDialogEvents.Initialize(Config, RuntimeLogger)),
                 new NativeInitializationStep("multiplayer map lookup", () => Maps.MultiplayerMapLookup.Initialize(RuntimeLogger)),
@@ -81,6 +83,7 @@ namespace APIShared
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
                 new NativeInitializationStep("native field knowledge", () => NativeKnowledge.NativeFieldReader.InitializeCurrent(hash)),
+                new NativeInitializationStep("synchronized save context", () => ScriptExtenderFixes.SynchronizedSaveRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
                     context.ModuleHandle, context.Memory.Length, hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(

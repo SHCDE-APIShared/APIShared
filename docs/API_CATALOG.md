@@ -1,5 +1,10 @@
 # API catalog
 
+The internal [archive-context correction](THIRD_PARTY_GUIDE.md#script-extender-bugfixes)
+repairs save-only record persistence in synchronized saves and classifies multiplayer
+save/editor loads correctly. It requires no consumer registration and preserves
+settings author rules and existing serialization contracts.
+
 ## Demand-driven engine readback
 
 `APIShared.Statistics.EngineReadbacks` registers prepared raw-copy callbacks at the
@@ -672,3 +677,7 @@ See the [integration guide](THIRD_PARTY_GUIDE.md#lord-statistic-columns) and
 The opt-in [`SharedToolTipSizing`](../src/ModSettings/UI/SharedToolTipSizing.cs) also accepts
 `ReferenceElement` and `ReferenceFontSize`: opened popups match the source HUD's pixel scale.
 Consumers without a reference retain the established resolution presets.
+
+## Packaged Lord presentation
+
+APIShared.Presentation.PackagedLordPresentation.TryRegister registers an owner-local presentation snapshot. See [integration contract](THIRD_PARTY_GUIDE.md#packaged-lord-presentation). APIShared.Content.Lords.LordMetadataDocument preserves complete lordmeta.json inputs, including unknown fields.

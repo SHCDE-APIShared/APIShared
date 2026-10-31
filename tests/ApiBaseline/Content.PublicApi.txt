@@ -1,3 +1,13 @@
+APIShared.Content.Lords.LordMetadataDocument | public System.Collections.Generic.IReadOnlyList<string> MediaReferences()
+APIShared.Content.Lords.LordMetadataDocument | public sealed class APIShared.Content.Lords.LordMetadataDocument
+APIShared.Content.Lords.LordMetadataDocument | public static APIShared.Content.Lords.LordMetadataDocument Parse(string json)
+APIShared.Content.Lords.LordMetadataDocument | public static string Combine(string name, string title)
+APIShared.Content.Lords.LordMetadataDocument | public string GetMessageClipsJson(string category)
+APIShared.Content.Lords.LordMetadataDocument | public string GetPath(string field)
+APIShared.Content.Lords.LordMetadataDocument | public string OriginalJson { get; }
+APIShared.Content.Lords.LordMetadataDocument | public string ResolveName(string locale, string fallback)
+APIShared.Content.Lords.LordMetadataDocument | public string ResolveText(string field, string locale, string fallback = "")
+APIShared.Content.Lords.LordMetadataDocument | public string ResolveTitle(string locale, int nickname)
 APIShared.Maps.TrailContainer | public const int DefaultMaximumContainerBytes = 67108864
 APIShared.Maps.TrailContainer | public static APIShared.Maps.TrailContainerLayout ReadLayout(byte[] container, int maximumContainerBytes = 67108864)
 APIShared.Maps.TrailContainer | public static byte[] ExtractMap(byte[] trail, int maximumContainerBytes = 67108864)

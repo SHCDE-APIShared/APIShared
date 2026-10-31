@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.19.0",
+  "Version": "0.20.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.20.0",
+      "Changes": [
+        "Add scoped packaged Lord presentation with complete lossless lordmeta.json, independent locale fallback, optional private media and synchronized speech selection.",
+        "Preserve claimed Coop AI names and portraits in the original restart object before serialization, without changing Lord gameplay types or Script Extender's global catalog."
+      ]
+    },
     {
       "Version": "0.19.0",
       "Changes": [

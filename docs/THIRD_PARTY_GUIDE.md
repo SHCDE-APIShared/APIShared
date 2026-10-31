@@ -1,5 +1,45 @@
 # Third-party integration guide
 
+**Contents**
+
+- [Demand-driven engine readback](#demand-driven-engine-readback)
+- [Native field knowledge](#native-field-knowledge)
+- [Example package requirements](#example-package-requirements)
+- [Game-independent content](#game-independent-content)
+- [Coop Trail AI start import](#coop-trail-ai-start-import)
+- [Mission settings preparation](#mission-settings-preparation)
+- [Settings participant diagnostics](#settings-participant-diagnostics)
+- [Diagnostic opt-in and observer demand](#diagnostic-opt-in-and-observer-demand)
+- [Multiplayer actions and messages](#multiplayer-actions-and-messages)
+- [Initialization and ownership](#initialization-and-ownership)
+- [Declaring native hook sites](#declaring-native-hook-sites)
+- [APIShared interface language](#apishared-interface-language)
+- [Script Extender bugfixes](#script-extender-bugfixes)
+- [Optional game-mode permissions](#optional-game-mode-permissions)
+- [Presets without SerpsModsHost](#presets-without-serpsmodshost)
+- [Namespaces and packaging](#namespaces-and-packaging)
+- [HUD integration](#hud-integration)
+- [Sharing action and HUD hooks](#sharing-action-and-hud-hooks)
+- [Sharing native market price queries](#sharing-native-market-price-queries)
+- [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
+- [Extending APIShared](#extending-apishared)
+- [Assassin obstacle completion](#assassin-obstacle-completion)
+- [Workshop package cleanup](#workshop-package-cleanup)
+- [Plugin entry points with optional APIShared](#plugin-entry-points-with-optional-apishared)
+- [Versioned save data](#versioned-save-data)
+- [Loose Workshop packages](#loose-workshop-packages)
+- [Situational sound rules](#situational-sound-rules)
+- [General in-game tooltip extensions](#general-in-game-tooltip-extensions)
+- [Building tooltip text](#building-tooltip-text)
+- [Gate access contributions](#gate-access-contributions)
+- [Rounded fear popularity](#rounded-fear-popularity)
+- [Plague standing-height policies](#plague-standing-height-policies)
+- [Multiplayer map lookup and lobby system hints](#multiplayer-map-lookup-and-lobby-system-hints)
+- [End-screen presentation](#end-screen-presentation)
+- [Shared render and pause-menu presentation](#shared-render-and-pause-menu-presentation)
+- [Lord statistic columns](#lord-statistic-columns)
+- [Packaged Lord presentation](#packaged-lord-presentation)
+
 ## Demand-driven engine readback
 
 After APIShared native initialization, call
@@ -47,9 +87,11 @@ Its hash-bound authoring JSON is not consumed by the runtime and grants no nativ
 
 ## Example package requirements
 
-The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) targets
-APIShared 0.14.0 and Script Extender 2.14.0 or newer. Its BepInEx attributes and
-[info.json](../examples/ThirdPartyMod/info.json) declare matching minimum versions.
+The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) declares
+its required APIShared and Script Extender minimum versions in its BepInEx attributes
+and [info.json](../examples/ThirdPartyMod/info.json). Keep these declarations consistent
+in your own mod, choosing minimum versions for the APIs it actually uses. The complete
+example uses more APIs than the networking example alone; check their individual requirements.
 Install the complete APIShared package and reference its assemblies with
 `Private=false`. The example references both `APIShared.dll` and
 `APIShared.Content.dll`; neither is bundled in the consumer. Its GUID is
@@ -431,7 +473,33 @@ can override the package default and is not inferred from a release summary.
 
 ## Multiplayer actions and messages
 
-Declare APIShared 0.7.0 or newer and use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
+These networking APIs require APIShared 0.7.0 or newer; neither SerpsModsHost nor
+ExtendedData is required. Follow the [package requirements](#example-package-requirements)
+for dependency declarations, the complete central installation and `Private=false`
+references; never bundle your own APIShared DLL with the mod.
+
+### Chore quick start
+
+1. Define a packet with an explicit MessagePack formatter, stable global object IDs
+   and a desired state, such as `BuildingGlobalId` and `DesiredEnabled`.
+2. Obtain `ApiShared.ForMod(yourPluginGuid).Network` and register a Chore channel once
+   from the Unity-thread `LibraryLoaded` entry after Extender built-in registration.
+   Retain it in your process-owned runtime; register in the same order on every peer.
+3. Supply deterministic validation and execution callbacks. Check current session,
+   protocol and ownership; use synchronized state for `IsEnabled` and `Validate`.
+4. At the button/key action, call `channel.Send(packet)` and inspect its result.
+   Apply the effect only in the receiver, which also executes on the sender.
+5. Post copied UI/log snapshots with `Network.TryPostPresentation`; keep gameplay
+   execution synchronous in the Chore callback.
+
+Use the [compiled networking example](../examples/ThirdPartyMod/NetworkingExample.cs)
+as the starting point. Its helpers are not automatically wired into `ExamplePlugin`:
+call `NetworkingExample.Register` from your own initialization path above, supply your
+session/ownership checks and gameplay callback, and route your button to `OnButton`.
+
+### Registration and Chore execution
+
+Use `ApiShared.ForMod(yourPluginGuid).Network` to register a typed channel once from
 the validated Unity-thread `LibraryLoaded` entry, after Extender built-in packet
 registration. Registration must be unconditional and in identical order on every
 peer. Extender packet IDs depend on registration order; GUIDs do not negotiate IDs
@@ -472,6 +540,8 @@ The first such drop on each channel is reported once through the channel's
 not reported. `Send` checks `IsEnabled` on the caller and returns `Disabled`
 without submitting.
 
+### Submission limits and results
+
 `NetworkSendResult.Submitted` means local preflight and a normal return from the
 underlying send, not native execution or peer acknowledgement. The Extender public
 API returns void and retains its internal Steam fallback. APIShared blocks its
@@ -479,6 +549,8 @@ known missing-manager/oversize triggers before calling it, but does not claim an
 atomic native queue contract. There is no automatic retry, split, rollback or local
 fallback; acknowledgements and large synchronized batches require a consumer
 protocol. Pause does not justify replacing a Chore with a Steam packet.
+
+### Control-plane messages
 
 `RegisterMessage<T>(id, receive, options)` is for control-plane data and presentation,
 never simulation mutation. The raw callback deep-copies only the payload and
@@ -494,10 +566,6 @@ peers even during the lobby/map transition. `SendToSteamPeer` sends directly on
 reliable Steam channel 2 without resolving a stale game player. Broadcast excludes
 the sender. Sends require the initialized Unity thread and remain local results;
 partial broadcast failure cannot undo messages already submitted to other peers.
-
-See the [compiled networking example](../examples/ThirdPartyMod/NetworkingExample.cs)
-for registration, an explicit formatter and a button that only submits a desired
-state. Supply your own current-session and ownership validation and execution.
 
 ## Initialization and ownership
 
@@ -558,6 +626,28 @@ APIShared includes targeted corrections for Script Extender and bundled dependen
 implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consumer
 registration. They do not replace the Extender and do not change existing public
 APIShared capability contracts.
+
+The archive-context correction fixes the shared Script Extender context before mod
+callbacks run. Synchronized native saves (including autosaves before the first manual
+save) now receive `SaveContext.IsSaveFile=true` and `IsMapEditorSave=false`.
+Their `FilePath` is null: the Extender's retained path can still name the source map,
+and the synchronized Chore does not supply a managed output filename. Consumers must
+continue accepting an unavailable path, as specified by the Extender context contract.
+Ordinary export saves, map/editor writes and Trail templates retain their original
+factory context. Multiplayer-save loads use `bMultiplayerSave`; editor loads use
+`LoadingEditorMap`, so their mod-data callbacks also receive the correct classification.
+The correction adds no public API or save format. It changes the previously incorrect
+context flags for every handler, including third-party save-only records. Handlers
+that accidentally relied on autosaves being maps must use their explicit context
+scope instead. Unsupported managed/native contracts log a failure and preserve the
+original save path; they do not force record writes. See the native update contract
+in [UpdateToNewDLL](../UpdateToNewDLL.md#synchronized-save-archive-context).
+
+This preserves the existing modsettings policy: eligible saved host settings form
+the selected base, then Trail author rules apply; personal/client values stay current.
+A missing or invalid settings record forces the existing current-host fallback and
+is reported as such, independently of the user's preferred checkbox state. Previously
+omitted records cannot be recovered from those old files by this correction.
 
 The Lord media correction validates the loaded internal resolver's signature and
 output-initialization, registration lookup and logging-only miss branch before installing
@@ -1837,3 +1927,21 @@ A popup that is not attached waits for its view. Closed popups release source/vi
 Enabling takes exclusive sizing ownership from the Extender scaler; disabling restores its prior
 setting. A null reference retains the existing 23/30/45 resolution presets for existing consumers.
 The caller owns the dark/gold, white wrapped-text template and closes its popups when its HUD ends.
+
+## Packaged Lord presentation
+
+Register with PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason) on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.
+
+The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
+
+Omitting the provider GUID means metadata-only presentation. Set `allowGlobalMedia: true` only for an authenticated installed source using the Extender's legacy global asset mode; null alone must never opt into global file lookup. Missing optional media does not change synchronized message-clip selection. Asset providers must contain only verified presentation files and must not impersonate the source mod or register its scripts.
+
+The consumer must revalidate the player slot against the current selection before starting. Coop restart names use the claimed entry's current internal identity, which may be a verified peer-local alias of the host's selected package. This does not authorize a different gameplay selection or configuration.
+
+```csharp
+if (PackagedLordPresentation.TryRegister(pluginGuid, "mission-lords", out var presentation, out var reason))
+    presentation.SetEntries(new[] {
+        new PackagedLordPresentationEntry(3, selectedInternalName, authoredFallbackName, completeLordmetaJson)
+    });
+// Retain the registration and call presentation.SetEntries(null) when leaving this selection.
+```

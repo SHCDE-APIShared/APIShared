@@ -173,6 +173,11 @@ namespace APIShared
                 useChosenCurrent = SavegameLoadDecision.UseCurrent(state, useCurrentSettings);
                 legacyChoice = legacy;
             }
+            NativeApiLog.Info(log, "Savegame settings source selected: file=" + path + ",recordState=" + state +
+                ",requestedCurrent=" + useCurrentSettings + ",effectiveSource=" +
+                (legacy || SavegameLoadDecision.UseCurrent(state, useCurrentSettings) ? "current-host-settings" : "saved-host-settings") +
+                ",choice=" + (legacy ? "forced-no-usable-record" : "host-choice-subject-to-author-rules") +
+                "; existing Trail author rules and current personal/client settings remain applicable.");
         }
 
         private static Dictionary<string, byte[]> ResolveStartupSnapshot(string modId, CompatibleMod participant,
@@ -290,8 +295,8 @@ namespace APIShared
             lock (Sync) { if (chosenCurrent == null) fallback = CaptureCompatibleHostSettings(); }
             lock (Sync)
             {
-                // Multiplayer saves use OnLoadMap, whose Extender LoadContext is
-                // incorrectly marked as a map. The confirmed entry owns this read.
+                // Multiplayer saves use OnLoadMap. The confirmed preparation owns
+                // this read, including an authoritative absence of metadata.
                 if (multiplayer) loaded = PreparedRecordForStart;
                 else
                 {
@@ -434,6 +439,10 @@ namespace APIShared
                 if (chosenPath != null &&
                     !string.Equals(chosenPath, Normalize(context.FilePath), StringComparison.OrdinalIgnoreCase))
                     return;
+                // Host provenance (including a missing record) remains authoritative
+                // through both archive callbacks and a delayed client start. Local
+                // Coop uses this same confirmed load phase without real networking.
+                if (SavegameLoadCoordinator.IsLoadingMultiplayerSave) return;
                 loaded = record;
             }
         }
@@ -449,8 +458,10 @@ namespace APIShared
         private static SavegameModSettingsRecord ReadRecordForLoad(string path, out bool legacy)
         {
             RecordReadState read = ReadRecord(path, out SavegameModSettingsRecord record);
-            if (read == RecordReadState.Invalid)
-                NativeApiLog.Warning(log, "Savegame ModSettings record is unreadable or unsupported; loading with current host settings: " + path);
+            if (read != RecordReadState.Valid)
+                NativeApiLog.Warning(log, "Savegame ModSettings fallback: file=" + path + ",record=" + read +
+                    ",entry=" + EntryName + ",source=current-host-settings,choice=forced-no-usable-record; " +
+                    "saved host settings cannot be restored because the record is missing, unreadable or unsupported.");
             legacy = read != RecordReadState.Valid;
             return record;
         }
@@ -478,7 +489,8 @@ namespace APIShared
             }
             catch (Exception error)
             {
-                NativeApiLog.Error(log, "Could not inspect savegame ModSettings: " + error.Message);
+                NativeApiLog.Error(log, "Could not inspect savegame ModSettings: file=" + path +
+                    ",entry=" + EntryName + ",error=" + error);
                 return RecordReadState.Invalid;
             }
         }
