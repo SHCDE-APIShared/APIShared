@@ -29,12 +29,25 @@ namespace APISharedTests
             var second = new VisibleMapRenderRegistration("b", "second", 1,
                 e => { Assert.AreEqual(null, e.State); trace.Add("b+"); first.Enabled = false; },
                 e => { trace.Add("b-"); throw new Exception("cleanup"); });
+            // Disabled when the invocation starts: neither phase runs, even if enabled meanwhile.
+            var skipped = new VisibleMapRenderRegistration("ab", "skipped", 0,
+                e => trace.Add("skipped+"), e => trace.Add("skipped-"));
             first.Enabled = second.Enabled = true;
-            VisibleMapRenderEvents.Dispatch(new[] { first, second }, new IntPtr(123), -2, 3, -4, 5, 6,
+            VisibleMapRenderEvents.Dispatch(new[] { first, skipped, second }, new IntPtr(123), -2, 3, -4, 5, 6,
                 (map,l,r,t,b,z) => { originals++; Assert.AreEqual(1, flag); Assert.AreEqual(new IntPtr(123), map);
-                    CollectionAssert.AreEqual(new[] { -2,3,-4,5,6 }, new[] { l,r,t,b,z }); trace.Add("original"); });
+                    CollectionAssert.AreEqual(new[] { -2,3,-4,5,6 }, new[] { l,r,t,b,z }); trace.Add("original"); skipped.Enabled = true; });
             Assert.AreEqual(7, flag); Assert.AreEqual(1, originals);
             CollectionAssert.AreEqual(new[] { "a+", "b+", "original", "b-", "a-" }, trace);
+
+            // A recursive render gets its own args and completes its cleanup before the outer one.
+            trace.Clear(); int depth = 0;
+            var nested = new VisibleMapRenderRegistration("n", "nested", 0,
+                e => { e.State = ++depth; trace.Add("+" + depth); },
+                e => trace.Add("-" + (int)e.State)) { Enabled = true };
+            VisibleMapRenderEvents.RenderCall inner = null;
+            inner = (m,l,r,t,b,z) => { if (depth == 1) VisibleMapRenderEvents.Dispatch(new[] { nested }, m,l,r,t,b,z, inner); };
+            VisibleMapRenderEvents.Dispatch(new[] { nested }, IntPtr.Zero, 0,0,0,0,0, inner);
+            CollectionAssert.AreEqual(new[] { "+1", "+2", "-2", "-1" }, trace);
             first.Enabled = true;
             Assert.Throws<InvalidOperationException>(() => VisibleMapRenderEvents.Dispatch(new[] { first },
                 IntPtr.Zero, 0,0,0,0,0, (m,l,r,t,b,z) => { throw new InvalidOperationException("original"); }));

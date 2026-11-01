@@ -117,7 +117,7 @@ namespace APIShared.Presentation
         public IngameMenuSlot Slot { get; }
         /// <summary>Effective visible occupant, or null for an empty/unknown position.</summary>
         public IngameMenuActionInfo Current { get; }
-        /// <summary>Accepted claims, including the Vanilla baseline on Right and legacy candidates on QuitMission/Left.</summary>
+        /// <summary>Accepted claims, including the Vanilla baseline on Right.</summary>
         public IReadOnlyList<IngameMenuActionInfo> Claims { get; }
     }
 

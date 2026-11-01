@@ -1782,7 +1782,7 @@ permission checks. Registrations and hooks last until process exit. Return null
 or an invisible `IngameMenuActionState` to hide an action and release its position.
 A visible disabled action still occupies its position.
 
-Use the overload with `IngameMenuActionOptions` and an output registration handle:
+Register with explicit `IngameMenuActionOptions`; the output handle invalidates the action:
 
 ```csharp
 IngameMenuActionRegistration menuAction;
@@ -1848,7 +1848,7 @@ objects, bindings, commands and confirmation dialogs when moved to the extra pag
 Providers are reevaluated on menu opening (including return from a confirmation),
 explicit invalidation while open, and command validation. A handle invalidates its
 action; `IngameMenuActions.Invalidate(ownerGuid)` invalidates all that owner's
-registrations, including legacy ones. Requests from other threads are posted and
+registrations. Requests from other threads are posted and
 coalesced on the validated Unity dispatcher. Closed-menu invalidations defer
 provider work until opening. Do not issue invalidations on recurring ticks/frames.
 Invalidating from inside a provider defers that demand until the next external
@@ -1858,17 +1858,6 @@ invalidation can retry it. Commands recheck visibility, enabled state, view iden
 and effective placement; exceptions are logged once and commands are not retried.
 A command opening another view owns whether to keep the pause menu, hide it for
 a confirmation, or call `HUDIngameMenu.Close()` to restore the previous pause state.
-
-**Migration from the original registration:** the existing
-`TryRegister(owner, id, stateProvider, execute, out reason, order)` signature and
-`IngameMenuActionState` constructor remain binary/source compatible. Its visible
-entries retain order/owner/ID sorting: the first supplies QuitMission/Left when
-no explicit visible claim occupies it; further entries appear on the extra page.
-This deliberately replaces the old unbounded extra rows. Providers are no longer
-polled by GuiChecks. Existing consumers whose state changes while the menu is open
-must notify `Invalidate(owner)` or use the new handle. Prefer named explicit slots
-for intentional placement. New consumers require an APIShared package containing
-this overload; do not infer its availability from an older package's version label.
 
 `apiui:SharedToolTipSizing.Enabled="True"` (namespace `APIShared.ModSettings`)
 opts an owned `ToolTip` into the common resolution presets: font sizes 23/30/45,
