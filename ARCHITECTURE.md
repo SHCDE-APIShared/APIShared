@@ -80,7 +80,10 @@ The runtime's `MissionModSettingsPreparation` owns host-value capture, override
 conversion validation and detached defaults/player/fixed source materialization.
 It shares existing property discovery and preset conversion, with the Content codec
 as the mission wire contract. `MissionModSettingsSession` owns application, temporary
-endpoint ownership and cleanup; author-rule capture/save materialization share one
+endpoint ownership and cleanup for mission-dependent Host values only. Personal
+Player/Local and opt-in mission-independent Host values remain in the owned personal
+store; their persistence and restart provenance are independent of mission restoration.
+Author-rule capture/save materialization share one
 implementation. ExtendedData retains content lifecycle decisions, source registration
 and file ownership. Actual lifecycle adoption is explicit; no second registry is added.
 

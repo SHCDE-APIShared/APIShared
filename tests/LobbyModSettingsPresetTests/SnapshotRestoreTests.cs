@@ -104,7 +104,7 @@ namespace LobbyModSettingsPresetTests
             Assert.AreEqual(17, host.Target.HostAmount);
             Assert.AreEqual(19, host.Target.SecondHostAmount);
             Assert.AreEqual(5, host.Target.LocalAmount);
-            Assert.IsTrue(origins.Count >= 3 && origins.All(origin => origin == LobbyModSettingsChangeOrigin.InitialLoad));
+            Assert.IsTrue(origins.Count >= 2 && origins.All(origin => origin == LobbyModSettingsChangeOrigin.InitialLoad));
             Assert.IsFalse(host.Publications.Any(name => name == nameof(Settings.HostAmount) || name == nameof(Settings.SecondHostAmount)));
             CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
         }

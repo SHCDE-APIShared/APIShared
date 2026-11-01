@@ -33,7 +33,7 @@ namespace APIShared.ModSettings
 {
     /// <summary>
     /// Persists a setting in the shared local preset file without exposing it to
-    /// the Script Extender's multiplayer synchronization layer.
+    /// the Script Extender's multiplayer synchronization layer. Mission sources never lock or restore it.
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     public sealed class PresetLocalAttribute : Attribute
@@ -244,12 +244,16 @@ namespace APIShared.ModSettings
         /// <summary>Recognizes removed properties whose stored preset values may be ignored.</summary>
         protected virtual bool IsRetiredPresetProperty(string propertyName) => false;
 
-        /// <summary>Whether personal fields may be edited; a read-only selected mission preset blocks them.</summary>
-        public bool CanEditClientSettings => !IsMissionPresetSelected || missionPresetEditable;
+        /// <summary>Personal fields are independent of mission-source editability; normal setter authority still applies.</summary>
+        public bool CanEditClientSettings => true;
+
+        /// <summary>Whether this peer owns mission-independent Host properties. Use outside a mission-disabled host container.</summary>
+        public bool CanEditMissionIndependentHostSettings => isLocalHost;
 
         /// <summary>Whether host activation controls are available under the current editing policy.</summary>
         public bool CanToggleHostSettings =>
-            HasHostSettings && HasHostSettingsActivation && CanEditHostSettings;
+            HasHostSettings && HasHostSettingsActivation &&
+            (presetController?.HostActivationMissionIndependent == true ? CanEditMissionIndependentHostSettings : CanEditHostSettings);
 
         /// <summary>Whether per-player activation controls are available under the current editing policy.</summary>
         public bool CanToggleClientSettings =>
@@ -260,7 +264,8 @@ namespace APIShared.ModSettings
             (!IsMissionPresetSelected || missionPresetEditable) && (isLocalHost || HasClientSettings);
 
         /// <summary>Whether at least one editable host or player settings scope can be reset.</summary>
-        public bool CanResetSettings => CanEditHostSettings || (HasClientSettings && CanEditClientSettings);
+        public bool CanResetSettings => (!IsMissionPresetSelected || missionPresetEditable) &&
+            (CanEditHostSettings || (HasClientSettings && CanEditClientSettings));
 
         /// <summary>Shows the preset selector when settings exist and the current context permits it.</summary>
         public Visibility PresetVisibility =>
@@ -356,7 +361,7 @@ namespace APIShared.ModSettings
             {
                 if (presetController == null) throw new InvalidOperationException("Preset controller is not initialized.");
                 if (SettingsApplicationBackend != null)
-                    SettingsApplicationBackend.ReplaceDesiredValues(SettingsApplicationBackend.ReadOwnValues());
+                    System_RefreshOwnConfiguration();
                 presetController.LoadPreset(preset);
                 System_CommitConfiguration();
             }
@@ -422,7 +427,7 @@ namespace APIShared.ModSettings
             if (backend == null) return;
             backend.DiscardPendingConfiguration();
             bool returnToOwn = !string.IsNullOrEmpty(backend.ActiveContextId);
-            backend.ReplaceDesiredValues(returnToOwn ? backend.ReadOwnValues() : backend.ReadActiveValues());
+            backend.ReplaceDesiredValues(LobbyPresetController.CopyConfigurationValues(returnToOwn ? backend.ReadOwnValues() : backend.ReadActiveValues()));
             if (returnToOwn)
             {
                 if (System_GetPresetSettingDescriptors().Any(x => x.RequiresRestart)) backend.ReturnToOwnConfiguration();
@@ -523,8 +528,15 @@ namespace APIShared.ModSettings
         /// <summary>Copies backend personal values into desired working values without applying them live.</summary>
         public void System_RefreshOwnConfiguration()
         {
-            if (SettingsApplicationBackend != null)
-                SettingsApplicationBackend.ReplaceDesiredValues(SettingsApplicationBackend.ReadOwnValues());
+            var backend = SettingsApplicationBackend;
+            if (backend == null) return;
+            var own = LobbyPresetController.CopyConfigurationValues(backend.ReadOwnValues());
+            if (!IsMissionPresetSelected) { backend.ReplaceDesiredValues(own); return; }
+            var desired = LobbyPresetController.CopyConfigurationValues(backend.ReadDesiredValues());
+            foreach (var property in System_GetPresetSettingDescriptors().Where(p => p.MissionIndependent &&
+                (p.Scope != PresetSettingScope.Host || isLocalHost)))
+                if (own.TryGetValue(property.PropertyName, out var value)) desired[property.PropertyName] = value;
+            backend.ReplaceDesiredValues(desired);
         }
         /// <summary>Whether changed restart-marked settings need local startup staging; authenticated network clients defer to their transport.</summary>
         public bool System_ConfigurationNeedsRestart()
@@ -539,10 +551,13 @@ namespace APIShared.ModSettings
         }
         /// <summary>Applies desired values live or stages restart-marked changes for contextId. Returns true when restart is needed; backend failures propagate. Empty identity denotes personal configuration.</summary>
         public bool System_ApplyConfiguration(string contextId) => System_ApplyConfiguration(contextId, false);
+        internal void PersistPersonalConfiguration() => presetController?.PersistCurrentPersonalValues();
+
         internal bool System_ApplyConfiguration(string contextId, bool personalChoiceConfirmed)
         {
             var backend = SettingsApplicationBackend;
             if (backend == null) return false;
+            PersistPersonalConfiguration();
             if (backend is INetworkModSettingsApplicationBackend network && network.IsNetworkConfigurationClient)
                 return !network.PrepareNetworkConfiguration();
             var desired = backend.ReadDesiredValues();
@@ -588,7 +603,7 @@ namespace APIShared.ModSettings
             if (backend == null) return;
             // Leaving for an explicitly prepared restart must not replace that preparation.
             if (backend.ReadPendingValues() != null) return;
-            backend.ReplaceDesiredValues(backend.ReadOwnValues());
+            backend.ReplaceDesiredValues(LobbyPresetController.CopyConfigurationValues(backend.ReadOwnValues()));
             if (!string.IsNullOrEmpty(backend.ActiveContextId))
             {
                 if (System_GetPresetSettingDescriptors().Any(x => x.RequiresRestart)) backend.ReturnToOwnConfiguration();
@@ -704,7 +719,8 @@ namespace APIShared.ModSettings
                 return CanEdit(propertyName);
 
             System_RefreshSettingsAccess();
-            if (IsMissionPresetSelected && !missionPresetEditable)
+            if (IsMissionPresetSelected && !missionPresetEditable &&
+                presetController?.IsMissionIndependentPropertyName(propertyName) != true)
             {
                 NotifyRejectedProperty(propertyName);
                 return false;
@@ -899,10 +915,13 @@ namespace APIShared.ModSettings
             return presetController?.CreatePlayerMissionSnapshot() ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
         }
 
-        /// <summary>Replaces the temporary mission snapshot and label without modifying its external source.</summary>
+        private bool explicitModDefaultsReset;
+
+        /// <summary>Replaces only mission-dependent Host values and the source label. Personal values in old snapshots are ignored.</summary>
         public void System_ApplyMissionPresetSnapshot(Dictionary<string, byte[]> snapshot, string label)
         {
-            presetController?.ApplyMissionWorkingSnapshot(snapshot, label);
+            if (explicitModDefaultsReset) presetController?.ApplyExplicitMissionDefaults(snapshot, label);
+            else presetController?.ApplyMissionWorkingSnapshot(snapshot, label);
             RaiseAccessProperties();
         }
 
@@ -928,7 +947,12 @@ namespace APIShared.ModSettings
                 var activeBefore = backend?.ReadActiveValues();
                 var pendingBefore = backend?.ReadPendingValues();
                 if (IsMissionPresetSelected)
-                    ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, ModSettingsWorkingSourceRegistry.ModDefaultsId);
+                {
+                    bool previousReset = explicitModDefaultsReset;
+                    explicitModDefaultsReset = true;
+                    try { ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, ModSettingsWorkingSourceRegistry.ModDefaultsId); }
+                    finally { explicitModDefaultsReset = previousReset; }
+                }
                 else
                     presetController?.ApplyDefaultsAsWorkingCopy();
                 System_CommitConfiguration();
@@ -1227,6 +1251,7 @@ namespace APIShared.ModSettings
             base.OnPropertyChanged(nameof(IsMissionPresetSelected));
             base.OnPropertyChanged(nameof(CanEditHostSettings));
             base.OnPropertyChanged(nameof(CanEditClientSettings));
+            base.OnPropertyChanged(nameof(CanEditMissionIndependentHostSettings));
             base.OnPropertyChanged(nameof(CanToggleHostSettings));
             base.OnPropertyChanged(nameof(CanToggleClientSettings));
             base.OnPropertyChanged(nameof(CanChangePreset));

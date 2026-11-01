@@ -26,6 +26,7 @@ namespace APIShared
 
         private static void EnterPreparedPreset(string id, IModSettingsPresetEndpoint endpoint, Dictionary<string, byte[]> snapshot)
         {
+            if (ModSettingsApplication.GetMissionHostProperties(endpoint).Length == 0) return;
             // Re-entering would replace suspended preset attribution with the
             // temporary source. Keep one entry per participant and transaction.
             if (preparedEndpoints.Values.Contains(endpoint) && endpoint.IsMissionPresetActive) return;
@@ -35,7 +36,7 @@ namespace APIShared
             preparedSnapshots[id] = snapshot.ToDictionary(x => x.Key, x => x.Value == null ? null : (byte[])x.Value.Clone(), StringComparer.Ordinal);
             endpoint.System_EnterMissionPreset(snapshot, "Savegame", false);
             if (!endpoint.IsMissionPresetActive) throw new InvalidOperationException("Savegame preset did not become active.");
-            foreach (var property in ModSettingsApplication.GetHostProperties(endpoint))
+            foreach (var property in ModSettingsApplication.GetMissionHostProperties(endpoint))
             {
                 if (!snapshot.TryGetValue(property.Name, out var bytes)) throw new InvalidDataException("Missing prepared host value: " + id + "." + property.Name);
                 var expected = MessagePackSerializer.Deserialize(property.PropertyType, bytes);

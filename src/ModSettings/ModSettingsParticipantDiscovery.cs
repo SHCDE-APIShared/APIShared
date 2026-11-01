@@ -67,7 +67,7 @@ namespace APIShared.ModSettings
                     }
                     result.Add(new ModSettingsParticipantInfo(registration.Guid, registration.Name,
                         ModSettingsParticipantStatus.Compatible, null, true,
-                        (IModSettingsPresetEndpoint)registration.Model, registration.DynamicProperties()));
+                        (IModSettingsPresetEndpoint)registration.Model, registration.DynamicProperties().Where(property => !property.IsDefined(typeof(MissionIndependentAttribute), true)).ToArray()));
                 }
                 catch (Exception error) { result.Add(Failed(registration, error, true)); }
             }
@@ -101,12 +101,15 @@ namespace APIShared.ModSettings
                 return Reject(registration, ModSettingsParticipantStatus.MissingEndpoint, "missing typed APIShared preset endpoint");
             var properties = registration.Model.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
             var host = properties.Where(property => property.CanRead && property.CanWrite &&
-                Has(property, "SyncHostOnlyAttribute") && !Has(property, "DoNotPersistAttribute"))
+                Has(property, "SyncHostOnlyAttribute") && !Has(property, "DoNotPersistAttribute") &&
+                !property.IsDefined(typeof(MissionIndependentAttribute), true))
                 .OrderBy(property => property.Name, StringComparer.Ordinal).ToArray();
             var personal = properties.Where(property => property.CanRead && property.CanWrite &&
                 !Has(property, "DoNotPersistAttribute") &&
-                (Has(property, "SyncPerPlayerAttribute") || Has(property, "PresetLocalAttribute"))).ToArray();
-            if (host.Length == 0)
+                (Has(property, "SyncPerPlayerAttribute") || Has(property, "PresetLocalAttribute") ||
+                property.IsDefined(typeof(MissionIndependentAttribute), true))).ToArray();
+            if (host.Length == 0 && !properties.Any(property => Has(property, "SyncHostOnlyAttribute") &&
+                property.IsDefined(typeof(MissionIndependentAttribute), true)))
                 return Reject(registration, ModSettingsParticipantStatus.NoHostSettings, "no persistent SyncHostOnly settings");
             if (host.Any(property => property.Name == "EnableMod" && property.PropertyType != typeof(bool)))
                 return Reject(registration, ModSettingsParticipantStatus.InvalidHostSettings, "EnableMod must be Boolean");

@@ -95,7 +95,7 @@ namespace APIShared.ModSettings
         }
 
         private static Dictionary<string, PropertyInfo> Properties(object endpoint) =>
-            ModSettingsApplication.GetHostProperties(endpoint).ToDictionary(property => property.Name, StringComparer.Ordinal);
+            ModSettingsApplication.GetMissionHostProperties(endpoint).ToDictionary(property => property.Name, StringComparer.Ordinal);
 
         internal static Dictionary<string, byte[]> CopySnapshot(Dictionary<string, byte[]> source)
         {

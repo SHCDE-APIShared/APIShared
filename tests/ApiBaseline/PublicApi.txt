@@ -948,6 +948,7 @@ APIShared.ModSettings.DynamicPresetSetting | public sealed class APIShared.ModSe
 APIShared.ModSettings.DynamicPresetSetting | public .ctor()
 APIShared.ModSettings.DynamicPresetSetting | public APIShared.ModSettings.PresetSettingScope Scope { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public System.Type ValueType { get; set; }
+APIShared.ModSettings.DynamicPresetSetting | public bool MissionIndependent { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public bool RequiresRestart { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public object DefaultValue { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public string DisplayName { get; set; }
@@ -974,6 +975,8 @@ APIShared.ModSettings.IModSettingsApplicationBackend | public void ReturnToOwnCo
 APIShared.ModSettings.IModSettingsApplicationBackend | public void StageValues(System.Collections.Generic.Dictionary<string, object> values, string contextId)
 APIShared.ModSettings.IModSettingsMissionSourceEndpoint | public interface APIShared.ModSettings.IModSettingsMissionSourceEndpoint
 APIShared.ModSettings.IModSettingsMissionSourceEndpoint | public void System_SetExplicitMissionSettings(bool hasExplicitSettings)
+APIShared.ModSettings.IModSettingsPersonalPersistenceBackend | public interface APIShared.ModSettings.IModSettingsPersonalPersistenceBackend
+APIShared.ModSettings.IModSettingsPersonalPersistenceBackend | public void PersistPersonalValues(System.Collections.Generic.Dictionary<string, object> values)
 APIShared.ModSettings.IModSettingsPresetEndpoint | public interface APIShared.ModSettings.IModSettingsPresetEndpoint
 APIShared.ModSettings.IModSettingsPresetEndpoint | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateDisabledMissionPresetSnapshot()
 APIShared.ModSettings.IModSettingsPresetEndpoint | public bool IsMissionPresetActive { get; }
@@ -1005,6 +1008,8 @@ APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void Re
 APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void RegisterExternalWorkingCopy(BepInEx.Logging.ManualLogSource log, string storageAssemblyLocation, string modName, string targetGuid, System.Version targetVersion, APIShared.ModSettings.PresetLobbyModSettingsViewModel viewModel)
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public sealed class APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public void Activate(System.Action enable, System.Func<System.Exception, bool> definitelyRejected = null)
+APIShared.ModSettings.MissionIndependentAttribute | public sealed class APIShared.ModSettings.MissionIndependentAttribute : System.Attribute
+APIShared.ModSettings.MissionIndependentAttribute | public .ctor()
 APIShared.ModSettings.MissionModSettingsApplicationKind | public enum APIShared.ModSettings.MissionModSettingsApplicationKind : int
 APIShared.ModSettings.MissionModSettingsApplicationKind | Authoring = 3
 APIShared.ModSettings.MissionModSettingsApplicationKind | AuthoringTest = 4
@@ -1030,6 +1035,7 @@ APIShared.ModSettings.ModSettingsApplication | public static class APIShared.Mod
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.Dictionary<string, byte[]> ResumeSnapshot(string id)
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.PresetLobbyModSettingsViewModel> Endpoints { get; }
 APIShared.ModSettings.ModSettingsApplication | public static System.Reflection.PropertyInfo[] GetHostProperties(object endpoint)
+APIShared.ModSettings.ModSettingsApplication | public static System.Reflection.PropertyInfo[] GetMissionHostProperties(object endpoint)
 APIShared.ModSettings.ModSettingsApplication | public static bool Commit(string id)
 APIShared.ModSettings.ModSettingsApplication | public static bool HasActivationFailures { get; }
 APIShared.ModSettings.ModSettingsApplication | public static bool HasApplicationEndpoints { get; }
@@ -1319,6 +1325,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool AreSettingsE
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanChangePreset { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanEditClientSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanEditHostSettings { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanEditMissionIndependentHostSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanResetSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanToggleClientSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanToggleHostSettings { get; }
@@ -1457,6 +1464,7 @@ APIShared.ModSettings.PresetSettingDescriptor | public sealed class APIShared.Mo
 APIShared.ModSettings.PresetSettingDescriptor | public .ctor()
 APIShared.ModSettings.PresetSettingDescriptor | public APIShared.ModSettings.PresetSettingScope Scope { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public System.Type PropertyType { get; }
+APIShared.ModSettings.PresetSettingDescriptor | public bool MissionIndependent { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public bool RequiresRestart { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public string DisplayName { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public string Group { get; }

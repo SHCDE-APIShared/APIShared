@@ -292,6 +292,53 @@ name => PublishedPresetValueMode.Player);`, put the entry under your mod GUID in
 `MissionModSettingsDocument`, then normalize/serialize it with `MissionModSettingsJson`.
 Only the caller's authorized mission integration should later apply a prepared snapshot.
 
+### Personal values and mission-independent Host settings
+
+Available since APIShared 0.21.0.
+
+`[PresetLocal]` and `[SyncPerPlayer]` are always personal. Mission entry, source
+reset, materialization, save loading, restart and exit never restore older values
+for them. Accepted edits are saved immediately in the existing personal store;
+per-player synchronization still uses its existing authority and convergence rules.
+A read-only mission locks only mission-dependent Host settings. Preset loading and
+source reset retain their existing read-only mission gates.
+
+Mod authors may additionally mark a `[SyncHostOnly]` property with
+`[MissionIndependent]`. It stays host-owned and synchronized; only the host can edit
+and persist it. Clients must never persist its received value. Mission sources
+cannot capture, prescribe or restore it, even from older full snapshots. For dynamic
+Host descriptors set `DynamicPresetSetting.MissionIndependent = true`; the default
+is false. `PresetSettingDescriptor.MissionIndependent` reports the effective policy
+and is automatically true for Player/Local values.
+
+Bind marked Host controls to `CanEditMissionIndependentHostSettings`, outside any
+container disabled by `CanEditHostSettings`. Continue guarding their setters with
+`CanMutateSetting()`. The marker changes settings ownership only; it does not grant
+additional gameplay-mode permissions. `GetHostProperties` still returns all Host
+settings; use `GetMissionHostProperties` for mission authoring and savegame data.
+ExtendedData excludes marked properties from its authoring selectors and exports.
+
+Loading a mixed normal preset in Customize changes mission-dependent Host values
+only in the draft, while Player/Local and marked Host values are personally saved.
+An explicit reset to Mod defaults may reset those personal values too. Applying a
+Map/Trail/Savegame source preserves them. Leaving Customize restores only the
+previous mission-dependent Host values; personal preset modified status is retained.
+
+An `IModSettingsApplicationBackend` exposing personal properties must also implement
+`IModSettingsPersonalPersistenceBackend.PersistPersonalValues`. It receives a detached
+subset of personally owned keys and must validate and persist them atomically without
+applying mission values or discarding/replacing pending startup work. Failure leaves
+its own store unchanged and propagates; APIShared restores rejected personal desired
+values without reverting the mission Host draft. Backends lacking this capability
+are rejected before mutation. Existing interfaces have no new mandatory members.
+`RequiresRestart` still governs application, independently of personal persistence.
+Legitimate personal writes rebase the existing restart provenance fingerprint while
+preserving the prepared Host snapshot and source identity.
+
+This intentionally corrects the earlier behavior which treated Player/Local edits
+as temporary and reverted them on mission exit. No opt-in is required for these
+scopes. Existing normal Host defaults and wire/storage schemas remain unchanged.
+
 ### Applying and leaving a mission context
 
 Retain one `MissionModSettingsSession` for your coordinator. Pass your compatible
@@ -322,8 +369,8 @@ restoration is reused; the session creates no second registry, journal or transp
 
 Use `Editable` to open Customize with the same resolved values as `Playable`.
 Keep that draft through Ready/Unready and apply `Materialized` only at the actual
-start boundary. Working-copy endpoints retain their complete draft, including local
-options. A consumer which reopens a rejected start must retain a detached draft and
+start boundary. Only mission-dependent Host values belong to that temporary draft.
+Player and Local values remain personal throughout preparation, launch and exit. A consumer which reopens a rejected start must retain a detached draft and
 re-enter it through `Authoring` with starting snapshots and no original overrides;
 applying the original document again would discard edits. Source documents and
 personal files are not modified by these transitions. Trail-maker authoring can
@@ -884,7 +931,7 @@ simulation-relevant and blocks the load with the mod and record named when they 
 The reset selector may also expose `ModSettingsWorkingSourceKind.Personal` with
 `ModSettingsWorkingSourceRegistry.PersonalSettingsId` (`personal-settings`) while
 Map/Trail sources are available. This copies the participant's personal snapshot
-into the editable temporary mission working copy; it neither exits that context
+into the editable mission-dependent Host working copy; it neither exits that context
 nor writes personal settings or preset files. The mission source remains available
 for a later reset. Host/client ownership and read-only mission locks still apply.
 A provider offering this source must capture detached personal snapshots through

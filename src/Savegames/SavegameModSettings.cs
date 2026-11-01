@@ -190,23 +190,7 @@ namespace APIShared
                     {
                         throw new InvalidDataException("Savegame baseline unavailable: " + modId);
                     }
-                    // Player-owned and local values are outside the savegame host contract.
-                    foreach (PropertyInfo property in participant.PersonalProperties)
-                    {
-                        try
-                        {
-                            object value = property.GetValue(participant.Endpoint);
-                            if (value != null)
-                                snapshot[property.Name] = MessagePackSerializer.Serialize(property.PropertyType, value);
-                        }
-                        catch (Exception error)
-                        {
-                            MarkRestoreFailed();
-                            NativeApiLog.Error(log, "Could not preserve local setting " +
-                                modId + "." + property.Name + ": " + error.Message);
-                            throw new InvalidDataException("Cannot prepare a save without preserving personal setting " + modId + "." + property.Name, error);
-                        }
-                    }
+                    // Personal values are never captured into a save-owned mission snapshot.
                     if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
                         OverlaySavedHostProperties(snapshot, participant.Properties, stored, modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
@@ -662,7 +646,7 @@ namespace APIShared
                 new ModSettingsParticipantDiscovery.Registration {
                     Guid = pair.Key, Name = pair.Key, Model = pair.Value,
                     IsDynamic = () => pair.Value.System_HasDynamicSettings,
-                    DynamicProperties = () => ModSettingsApplication.GetHostProperties(pair.Value)
+                    DynamicProperties = () => ModSettingsApplication.GetMissionHostProperties(pair.Value)
                 }).ToArray();
             var result = ModSettingsParticipantDiscovery.Inspect(lobby, configurations, purpose);
             foreach (var item in result.Where(item => item.Status == ModSettingsParticipantStatus.InspectionFailed))

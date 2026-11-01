@@ -75,6 +75,20 @@ namespace APIShared.ModSettings
                     !x.GetCustomAttributes(true).Any(a => a.GetType().Name == "DoNotPersistAttribute")).ToArray();
         }
 
+        /// <summary>Discovers host settings owned by mission sources. Network host ownership is unchanged.</summary>
+        public static PropertyInfo[] GetMissionHostProperties(object endpoint)
+        {
+            if (endpoint is PresetLobbyModSettingsViewModel model)
+            {
+                var independent = new HashSet<string>(model.System_GetPresetSettingDescriptors()
+                    .Where(item => item.MissionIndependent).Select(item => item.PropertyName), StringComparer.Ordinal);
+                return GetHostProperties(endpoint).Where(property => !independent.Contains(property.Name) &&
+                    !property.IsDefined(typeof(MissionIndependentAttribute), true)).ToArray();
+            }
+            return GetHostProperties(endpoint).Where(property =>
+                !property.IsDefined(typeof(MissionIndependentAttribute), true)).ToArray();
+        }
+
         /// <summary>Whether an unconsumed durable startup preparation exists; may read and validate its journal.</summary>
         public static bool HasRestartPreparation
         {
@@ -148,6 +162,7 @@ namespace APIShared.ModSettings
         public static bool Commit(string id)
         {
             if (!endpoints.TryGetValue(id, out var endpoint)) return false;
+            endpoint.PersistPersonalConfiguration();
             byte[] previous = journalPath != null && File.Exists(journalPath) ? File.ReadAllBytes(journalPath) : null;
             var previousSources = preparedSources; var previousResume = resume; var previousFingerprints = personalFingerprints; string previousContext = resumeContext;
             bool written = contextId.Length != 0 && endpoint.System_ConfigurationNeedsRestart();
@@ -169,6 +184,7 @@ namespace APIShared.ModSettings
         public static bool PrepareLaunch()
         {
             RequireActivatedIntegrations();
+            foreach (var endpoint in endpoints.Values.ToArray()) endpoint.PersistPersonalConfiguration();
             ReadJournal();
             if (resume != null && !consumed && resumeContext == contextId)
                 foreach (string id in resume.Keys)
@@ -289,6 +305,36 @@ namespace APIShared.ModSettings
             preparedSources = sources; resume = snapshots; personalFingerprints = fingerprints; resumeContext = contextId; consumed = false;
         }
 
+        // A legitimate personal edit must not invalidate an already prepared mission restart.
+        // Validate before persistence; update only its ownership fingerprint afterwards, retaining
+        // the prepared host snapshot and source metadata rather than capturing a newer draft.
+        internal static void ValidatePersonalPersistence(string id)
+        {
+            ReadJournal();
+            if (resume == null || consumed || personalFingerprints == null || !personalFingerprints.TryGetValue(id, out var expected)) return;
+            if (resumeContext != contextId || !endpoints.TryGetValue(id, out var endpoint) ||
+                endpoint.System_OwnConfigurationFingerprint() != expected)
+                throw new InvalidDataException("Personal settings changed after restart preparation: " + id);
+        }
+
+        internal static void PersonalValuesPersisted(string id)
+        {
+            if (resume == null || consumed || personalFingerprints == null || !personalFingerprints.ContainsKey(id)) return;
+            var fingerprints = new Dictionary<string, string>(personalFingerprints, StringComparer.Ordinal);
+            fingerprints[id] = endpoints[id].System_OwnConfigurationFingerprint();
+            string payload = DependencyFreeJson.Serialize(new Dictionary<string, object> {
+                ["schema"] = 1, ["context"] = resumeContext,
+                ["mods"] = resume.ToDictionary(item => item.Key, item => (object)item.Value.ToDictionary(
+                    value => value.Key, value => (object)Convert.ToBase64String(value.Value), StringComparer.Ordinal), StringComparer.Ordinal),
+                ["sources"] = preparedSources.ToDictionary(item => item.Key, item => (object)item.Value),
+                ["personal"] = fingerprints.ToDictionary(item => item.Key, item => (object)item.Value)
+            });
+            byte[] bytes = Encoding.UTF8.GetBytes(DependencyFreeJson.Serialize(new Dictionary<string, object> { ["payload"] = payload, ["sha256"] = Digest(payload) }));
+            if (bytes.Length > 8 * 1024 * 1024) throw new InvalidDataException("Restart preparation exceeds 8 MiB.");
+            PublishJournal(bytes);
+            personalFingerprints = fingerprints;
+        }
+
         private static string Digest(string text)
         {
             using (var sha = System.Security.Cryptography.SHA256.Create())
@@ -365,7 +411,8 @@ namespace APIShared.ModSettings
             public override ParameterInfo[] GetIndexParameters() => Array.Empty<ParameterInfo>();
             public override object[] GetCustomAttributes(bool inherit) => Array.Empty<object>();
             public override object[] GetCustomAttributes(Type attributeType, bool inherit) => Array.Empty<object>();
-            public override bool IsDefined(Type attributeType, bool inherit) => attributeType == typeof(RequiresRestartAttribute) && descriptor.RequiresRestart;
+            public override bool IsDefined(Type attributeType, bool inherit) => (attributeType == typeof(RequiresRestartAttribute) && descriptor.RequiresRestart) ||
+                (attributeType == typeof(MissionIndependentAttribute) && descriptor.MissionIndependent);
         }
     }
 }

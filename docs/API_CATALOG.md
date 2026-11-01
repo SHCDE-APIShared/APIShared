@@ -64,6 +64,12 @@ choices/current snapshots, validates known overrides and materializes detached
 Map/Trail working snapshots. It does not apply settings or own mission lifecycle.
 See [mission settings preparation](THIRD_PARTY_GUIDE.md#mission-settings-preparation).
 
+`[PresetLocal]` and `[SyncPerPlayer]` remain personally editable and persistent across
+mission contexts. `[MissionIndependent]` optionally extends that behavior to Host
+properties without changing host authority. `GetMissionHostProperties` filters these
+from mission authoring. Complete configuration backends with personal values implement
+`IModSettingsPersonalPersistenceBackend`; see [personal-value contracts](THIRD_PARTY_GUIDE.md#personal-values-and-mission-independent-host-settings).
+
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
 Internal snapshot application suppresses intermediate transport/storage, isolates

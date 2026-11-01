@@ -45,6 +45,7 @@ namespace APIShared.ModSettings
         private readonly PresetPropertyAccessor hostSettingsActivationProperty;
         private readonly PresetPropertyAccessor clientSettingsActivationProperty;
         private readonly Dictionary<string, PresetPropertyAccessor> persistedPropertiesByName;
+        private readonly Dictionary<string, bool> missionIndependentByName;
         private readonly List<PublishedModSettingsPreset> publishedPresets =
             new List<PublishedModSettingsPreset>();
 
@@ -121,8 +122,17 @@ namespace APIShared.ModSettings
                 throw new InvalidOperationException("RequiresRestart settings need a configuration application backend.");
             persistedPropertiesByName = persistedProperties
                 .ToDictionary(property => property.Name, StringComparer.Ordinal);
+            missionIndependentByName = persistedProperties.ToDictionary(property => property.Name, property => property.MissionIndependent, StringComparer.Ordinal);
+            if (dynamicProvider == null)
+                foreach (var property in owner.SettingsTarget.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                    if (!missionIndependentByName.ContainsKey(property.Name))
+                        missionIndependentByName[property.Name] = property.GetCustomAttribute<SyncHostOnlyAttribute>() == null ||
+                            property.IsDefined(typeof(MissionIndependentAttribute), true);
             hostProperties = persistedProperties.Where(IsHostProperty).ToArray();
             clientProperties = persistedProperties.Where(IsClientProperty).ToArray();
+            if (owner.SettingsApplicationBackend != null && persistedProperties.Any(p => p.MissionIndependent) &&
+                !(owner.SettingsApplicationBackend is IModSettingsPersonalPersistenceBackend))
+                throw new InvalidOperationException("A backend with personal settings must implement IModSettingsPersonalPersistenceBackend.");
             hostSettingsActivationProperty = FindSettingsActivationProperty(hostProperties, "EnableMod");
             clientSettingsActivationProperty = FindSettingsActivationProperty(clientProperties, "EnableClientFeatures", "EnableMod");
             if (persistedProperties.Length != 0)
@@ -238,6 +248,13 @@ namespace APIShared.ModSettings
             IsSettingsActivationProperty(clientSettingsActivationProperty, propertyName);
 
         public bool IsApplyingSnapshot => applying;
+
+        public bool IsMissionIndependentPropertyName(string propertyName) =>
+            propertyName != null && missionIndependentByName.TryGetValue(propertyName, out bool independent) && independent;
+
+        public bool HostActivationMissionIndependent => hostSettingsActivationProperty?.MissionIndependent == true;
+
+        private static bool IsMissionProperty(PresetPropertyAccessor property) => !property.MissionIndependent;
 
         public bool IsHostPropertyName(string propertyName) =>
             !string.IsNullOrEmpty(propertyName) &&

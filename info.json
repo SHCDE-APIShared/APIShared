@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.20.0",
+  "Version": "0.21.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.21.0",
+      "Changes": [
+        "Keep Player and Local ModSettings personally editable and persistent across mission contexts; mission sources now own only mission-dependent Host values.",
+        "Add optional MissionIndependent Host settings, filtered mission metadata and separated personal backend persistence while preserving Host network authority.",
+        "Preserve accepted personal changes through source resets, save loads, failed restoration and prepared restarts."
+      ]
+    },
     {
       "Version": "0.20.0",
       "Changes": [
