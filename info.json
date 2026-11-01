@@ -3,13 +3,27 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.21.0",
+  "Version": "0.23.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.23.0",
+      "Changes": [
+        "Add mission-scoped SimulationClock reads after native initialization and overflow-safe elapsed ticks.",
+        "Invalidate native clock access before nested/repeated loads and retirement; preserve ready-only tick events and existing Extender clocks."
+      ]
+    },
+    {
+      "Version": "0.22.0",
+      "Changes": [
+        "Add SimulationTickEvents with the native save-preserved map tick, ready-mission gating, stable process-lifetime registrations and isolated callbacks.",
+        "Discard the audited Script Extender event's local engine-run counter for this new API; preserve existing Extender tick events, R3 schedulers, timestamps and timer formats."
+      ]
+    },
     {
       "Version": "0.21.0",
       "Changes": [

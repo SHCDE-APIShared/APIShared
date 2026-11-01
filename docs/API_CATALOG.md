@@ -5,6 +5,23 @@ repairs save-only record persistence in synchronized saves and classifies multip
 save/editor loads correctly. It requires no consumer registration and preserves
 settings author rules and existing serialization contracts.
 
+## Native simulation ticks
+
+`APIShared.Simulation.SimulationTickEvents.TryRegister(ownerGuid, registrationId, callback,
+out reason, order)` publishes the native, save-preserved Int32 map tick in the existing
+simulation callback. `TryGetCurrentTick(out mapTick)` reads the same source during a
+ready mission, including the editor. Registration is process-lived, ordered and
+exception-isolated, with no replay or catch-up. The audited Extender `OnTick` argument
+counts local engine runs and is unsuitable for scheduling multiplayer mutations.
+Existing Extender events, R3 frame counts and timestamps are unchanged. See the
+[source, lifetime and multiplayer contract](THIRD_PARTY_GUIDE.md#native-simulation-ticks).
+
+`APIShared.Simulation.SimulationClock.TryGetCurrentTick(expectedMission, out mapTick)`
+also supports the existing `NativeLoaded` initialization phase. Reads reject stale
+missions, unfinished/repeated loads and unavailable sources.
+`TryGetElapsedTicks(earlierTick, currentTick, out elapsedTicks)` handles signed wrap
+within the same mission and the forward Int32 half-range.
+
 ## Demand-driven engine readback
 
 `APIShared.Statistics.EngineReadbacks` registers prepared raw-copy callbacks at the

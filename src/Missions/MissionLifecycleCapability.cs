@@ -50,6 +50,7 @@ namespace APIShared
         internal static GameModeSnapshot Snapshot => published?.state.Context?.Mode ?? default;
         internal static bool HasContext => published?.state.Context != null;
         internal static MissionContext ActiveContext => published?.state.Context;
+        internal static MissionLifecycleState.NativeClockState NativeClock => published?.state.NativeClock;
 
         private CreateMap create; private EditorLoad editorLoad; private NewMap newMap;
         private Campaign campaign; private Trail trail; private CustomTrail customTrail;
@@ -238,7 +239,11 @@ namespace APIShared
         {
             // These callbacks must NEVER escape into SE: its detour catch blocks can call Vanilla twice.
             subscriptions.Add(MapLoaderR3EventHooks.OnUnloadMap.Observable.Subscribe(e => Safe(() =>
-            { if (e.Phase == EventHookPhase.Pre && executing == null) End(MissionEndReason.Unloaded); })));
+            {
+                if (e.Phase != EventHookPhase.Pre) return;
+                state.InvalidateNativeClock();
+                if (executing == null) End(MissionEndReason.Unloaded);
+            })));
             subscriptions.Add(MapLoaderR3EventHooks.OnStartMap.Observable.Subscribe(e => Safe(() =>
             {
                 var op = executing;
@@ -412,13 +417,18 @@ namespace APIShared
         private EngineInterface.LoadMapReturnData CaptureNative(Func<EngineInterface.LoadMapReturnData> original)
         {
             var op = executing;
+            Safe(() => { state.InvalidateNativeClock(); if (op != null) state.BeginNativeLoad(op.Id); });
             Safe(() => { if (op != null) state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.BeforeLoad); });
-            var result = original();
+            EngineInterface.LoadMapReturnData result;
+            bool returned = false;
+            try { result = original(); returned = true; }
+            finally { if (!returned) Safe(() => { if (op != null) state.CompleteNativeLoad(op.Id, false); }); }
             Safe(() =>
             {
                 if (op == null || !state.IsPending(op.Id)) return; // Noninteractive export is not a mission.
                 op.Data = result;
                 op.NativeSucceeded = result.errorCode == 1;
+                state.CompleteNativeLoad(op.Id, op.NativeSucceeded && !op.NativeFailed);
                 if (op.NativeSucceeded && !op.NativeFailed)
                     state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.NativeLoaded);
             });

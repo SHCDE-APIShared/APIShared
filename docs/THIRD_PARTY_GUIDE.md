@@ -2,6 +2,7 @@
 
 **Contents**
 
+- [Native simulation ticks](#native-simulation-ticks)
 - [Demand-driven engine readback](#demand-driven-engine-readback)
 - [Native field knowledge](#native-field-knowledge)
 - [Example package requirements](#example-package-requirements)
@@ -39,6 +40,66 @@
 - [Shared render and pause-menu presentation](#shared-render-and-pause-menu-presentation)
 - [Lord statistic columns](#lord-statistic-columns)
 - [Packaged Lord presentation](#packaged-lord-presentation)
+
+## Native simulation ticks
+
+For synchronous initialization work, use the existing mission lifecycle phases.
+`Simulation.SimulationClock.TryGetCurrentTick(expectedMission, out int mapTick)`
+is available after successful native loading, before managed readiness is required.
+The internal gate is updated before `NativeLoaded` observers run and cleared before
+another native load/unload or mission retirement. The expected mission must still
+be active; a read rechecks the immutable load token to reject same-attempt reload
+races. Before native completion there is no substitute clock. This helper does not
+make a callback safe for arbitrary mutations, acquire the engine lock, or add an
+initialization tick event. Existing initialization notifications do not replay.
+
+Use `Simulation.SimulationClock.TryGetElapsedTicks(startTick, currentTick, out elapsed)`
+only for values from the same mission. It supports signed wrap and distances up to
+Int32.MaxValue; backwards/ambiguous distances return false. Keep availability in
+separate state: zero, negative ticks and Int32.MinValue are valid native values.
+Early synchronous transactions should use their operation scope until map time is
+available, rather than borrowing the preceding mission's counter.
+
+After APIShared's library initialization, register once with
+`Simulation.SimulationTickEvents.TryRegister(ownerGuid, registrationId, callback, out reason, order: 0)`.
+Failure returns a reason; keep the dependent feature inactive. Registrations last
+until process exit. Use logical activation in the callback rather than registering
+again at each map start. Callbacks run synchronously on the simulation publisher's
+thread, outside registry locks, ordered by order, ordinal owner GUID and registration
+ID. Exceptions are isolated per registration; registrations added during delivery
+start at the next tick. There is no replay, catch-up or main-thread dispatch.
+
+The argument is the signed Int32 representation of the native map counter, preserved
+in saves. Duplicate/older ticks in the same mission and reentrant publications are
+suppressed, including across Int32 wraparound. A new mission may reuse earlier tick
+values. `TryGetCurrentTick(out int mapTick)` reads the same source without activating
+notifications. Check its Boolean result: zero is valid and is not an unavailable
+sentinel. Read in the simulation context or at completed mission initialization
+while simulation is stopped/locked; the getter acquires no engine lock.
+
+Only fully started missions publish, including the editor. Pending or failed loads,
+menus and unavailable native time sources publish nothing. The service uses the
+central mission lifecycle and the public Extender `GetElapsedMapTicks` getter.
+It forwards the existing Extender time callback and reads the native counter once
+for all APIShared recipients of that publication. Paused/skipped simulation steps
+do not advance the native counter. Delivery still depends on the Extender reaching
+its event: an exception in earlier Extender triggers, runners or subscribers may
+prevent a notification. This adapter cannot recover that lost callback.
+
+**Multiplayer:** the audited Extender `GameTimeManagerAPI.OnTick` argument comes
+from `Director.getSimTickCount`, a local engine-run counter that includes multiplayer
+frame skips and FPS compensation. Do not use that argument to schedule tick-dependent
+multiplayer mutations. The callback context itself is suitable; this API provides
+the native map tick without changing existing Extender events, R3 schedulers,
+timestamps, high-precision clocks or timer serialization. Register matching callbacks
+before the mission on all peers, use synchronized settings and deterministic state,
+and keep game mutations synchronous. Do not block, touch Unity/Noesis, or modify
+native scenario/timeline vectors from these callbacks.
+
+For a periodic rule, capture the current map tick at completed mission start and
+on logical reactivation; execute only later matching boundaries. This preserves
+save phase and avoids repeating the boundary already present in the loaded save.
+Feature permission, recipient selection and accounting remain the consumer's job.
 
 ## Demand-driven engine readback
 

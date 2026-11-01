@@ -2343,6 +2343,12 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Simulation.SimulationClock | public static class APIShared.Simulation.SimulationClock
+APIShared.Simulation.SimulationClock | public static bool TryGetCurrentTick(APIShared.MissionContext expectedMission, out int mapTick)
+APIShared.Simulation.SimulationClock | public static bool TryGetElapsedTicks(int earlierTick, int currentTick, out int elapsedTicks)
+APIShared.Simulation.SimulationTickEvents | public static class APIShared.Simulation.SimulationTickEvents
+APIShared.Simulation.SimulationTickEvents | public static bool TryGetCurrentTick(out int mapTick)
+APIShared.Simulation.SimulationTickEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<int> callback, out string reason, int order = 0)
 APIShared.Statistics.EngineReadbackRegistration | public sealed class APIShared.Statistics.EngineReadbackRegistration
 APIShared.Statistics.EngineReadbackRegistration | public bool TryTakeError(out System.Exception exception)
 APIShared.Statistics.EngineReadbackRegistration | public void Cancel()

@@ -28,7 +28,7 @@ namespace APIShared
         public int LordUnitId { get; }
         /// <summary>Gets the stable global identity of the last confirmed living lord.</summary>
         public int LordGlobalId { get; }
-        /// <summary>Gets the simulation tick on which the transition was observed.</summary>
+        /// <summary>Gets the local Script Extender engine-run tick on which the transition was observed; not the saved native map tick.</summary>
         public int SimulationTick { get; }
     }
 
@@ -47,7 +47,7 @@ namespace APIShared
         public long SessionId { get; }
         /// <summary>Gets the one-based player identifier.</summary>
         public int PlayerId { get; }
-        /// <summary>Gets the simulation tick on which the transition was observed.</summary>
+        /// <summary>Gets the local Script Extender engine-run tick on which the transition was observed; not the saved native map tick.</summary>
         public int SimulationTick { get; }
     }
 
