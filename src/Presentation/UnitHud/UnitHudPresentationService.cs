@@ -89,6 +89,7 @@ namespace APIShared
 
 
         private IDisposable mapUnloadSubscription;
+        private IDisposable spriteMissionStartSubscription;
         private HUD_Troops activeTroopPanel;
         private Grid[] categoryHosts;
         private Button[] categoryButtons;

@@ -28,7 +28,11 @@ namespace APIShared.PlayerControl
         private static readonly IntPtr actorCell = AllocateActor();
         private static NativeDetour<InputBoundaryCall> runTickHook, dispatcherHook;
         private static ControlInputBridge runTickBridge, dispatcherBridge;
-        private static bool publicationStarted;
+        private static readonly object installGate = new object();
+        private static IntPtr moduleHandle;
+        private static ManualLogSource log;
+        private static string unavailable, failure;
+        private static bool prepared, publicationStarted;
         private static volatile bool ready;
 
         internal static bool IsReady => ready;
@@ -51,38 +55,78 @@ namespace APIShared.PlayerControl
                 Chaining = HookChainingPolicy.Refuse, FunctionScanLimit = scanLimit, SuspendThreadsDuringPatch = suspendThreads
             });
 
-        internal static void Initialize(CrusaderLibraryLoadContext context, string hash, ManualLogSource log)
+        // Startup step: validates the audited image only. No hook, claim or allocation beyond the
+        // actor cell happens here; without a registered consumer nothing is ever installed.
+        internal static void Prepare(CrusaderLibraryLoadContext context, string hash, ManualLogSource logger)
         {
-            if (ready || publicationStarted) return;
+            log = logger;
+            if (prepared || unavailable != null) return;
             // The view-identity step already reports an unsupported image; one cause, one failure.
             if (!string.Equals(hash, ApiSharedRuntime.SupportedHash, StringComparison.OrdinalIgnoreCase))
             {
-                NativeApiLog.Info(log, "PLAYER_CONTROL_INPUT: skipped; spectator input control requires the audited native image.");
+                unavailable = "Spectator input control requires the audited native image.";
+                NativeApiLog.Info(log, "PLAYER_CONTROL_INPUT: unavailable; " + unavailable);
                 return;
             }
-            if (!NativeStartupPatchWindow.IsOpen)
-                throw new InvalidOperationException("PLAYER_CONTROL_INPUT: initialize only in the startup patch window; no late native installation is allowed.");
-            ulong module = unchecked((ulong)context.ModuleHandle.ToInt64());
-            if (SHCDESE.GameGlobals.GameGlobalsManager.Instance.LocalPlayerIdVA != module + ViewRva ||
-                (ulong)ViewRva + 4 > (ulong)context.Memory.Length)
-                throw new InvalidOperationException("PLAYER_CONTROL_INPUT: native view cell differs from the audited image.");
-            VerifyPristine(context.Memory, RunTickRva, RunTickWindow);
-            VerifyPristine(context.Memory, DispatcherRva, DispatcherWindow);
-            IntPtr runTick = context.ModuleHandle + RunTickRva, dispatcher = context.ModuleHandle + DispatcherRva;
+            try
+            {
+                ulong module = unchecked((ulong)context.ModuleHandle.ToInt64());
+                if (SHCDESE.GameGlobals.GameGlobalsManager.Instance.LocalPlayerIdVA != module + ViewRva ||
+                    (ulong)ViewRva + 4 > (ulong)context.Memory.Length)
+                    throw new InvalidOperationException("PLAYER_CONTROL_INPUT: native view cell differs from the audited image.");
+                VerifyPristine(context.Memory, RunTickRva, RunTickWindow);
+                VerifyPristine(context.Memory, DispatcherRva, DispatcherWindow);
+            }
+            catch (Exception error) { unavailable = error.Message; throw; }
+            moduleHandle = context.ModuleHandle;
+            prepared = true;
+            NativeApiLog.Info(log, "PLAYER_CONTROL_INPUT: prepared; boundaries are installed only on the first consumer registration.");
+        }
+
+        // Installs both boundaries for the first consumer. In the LibraryLoaded run (startup patch
+        // window) this costs no thread suspension; later it is allowed only outside a running
+        // mission and then suspends threads like any late detour. A failure is final for the process.
+        internal static bool TryInstall(out string reason)
+        {
+            lock (installGate)
+            {
+                reason = null;
+                if (ready) return true;
+                if (failure != null) { reason = failure; return false; }
+                if (!prepared) { reason = unavailable ?? "Spectator input control was not prepared by APIShared's native initialization."; return false; }
+                bool window = NativeStartupPatchWindow.IsOpen;
+                if (!window && MissionLifecycleService.NativeWorld != null)
+                {
+                    reason = "Register spectator input control in LibraryLoaded or outside a running mission.";
+                    return false;
+                }
+                try { Install(!window); return true; }
+                catch (Exception error)
+                {
+                    failure = reason = "Spectator input control installation failed: " + error.Message;
+                    NativeApiLog.Error(log, "PLAYER_CONTROL_INPUT_UNAVAILABLE: " + error);
+                    return false;
+                }
+            }
+        }
+
+        private static void Install(bool suspendThreads)
+        {
+            IntPtr runTick = moduleHandle + RunTickRva, dispatcher = moduleHandle + DispatcherRva;
             NativeSites.NativeIndirectEntry.VerifyBytes(runTick, RunTickWindow);
             NativeSites.NativeIndirectEntry.VerifyBytes(dispatcher, DispatcherWindow);
             var sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
             ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.PlayerControlInput, ApiSharedNativeSites.PlayerControlInputSpans(),
                 reason => new InvalidOperationException(reason));
-            ulong view = module + ViewRva, actor = unchecked((ulong)actorCell.ToInt64());
+            ulong view = unchecked((ulong)moduleHandle.ToInt64()) + ViewRva, actor = unchecked((ulong)actorCell.ToInt64());
             try
             {
                 runTickBridge = new ControlInputBridge(ControlInputSite.RunTick, actor, view,
                     unchecked((ulong)(runTick + ControlInputBridge.DisplacedLength(ControlInputSite.RunTick)).ToInt64()));
                 dispatcherBridge = new ControlInputBridge(ControlInputSite.Dispatcher, actor, view,
                     unchecked((ulong)(dispatcher + ControlInputBridge.DisplacedLength(ControlInputSite.Dispatcher)).ToInt64()));
-                runTickHook = Create(runTick, runTickBridge, RunTickWindow.Length, "APIShared player-control RunTick input");
-                dispatcherHook = Create(dispatcher, dispatcherBridge, DispatcherWindow.Length, "APIShared player-control dispatcher input");
+                runTickHook = Create(runTick, runTickBridge, RunTickWindow.Length, "APIShared player-control RunTick input", suspendThreads);
+                dispatcherHook = Create(dispatcher, dispatcherBridge, DispatcherWindow.Length, "APIShared player-control dispatcher input", suspendThreads);
                 runTickBridge.Validate(runTickHook, runTick, RunTickWindow, false);
                 dispatcherBridge.Validate(dispatcherHook, dispatcher, DispatcherWindow, false);
             }
@@ -102,15 +146,14 @@ namespace APIShared.PlayerControl
             ready = true;
             NativeApiLog.Info(log, "PLAYER_CONTROL_INPUT: method=reference-rva; RunTick span=[0x868F6,0x86900) Indirect/10, " +
                 "continuation=movzx r8d,r14b; dispatcher span=[0x8D128,0x8D12E) Indirect/6, continuation=mov [view],eax; " +
-                "native view=reference-rva 0x88E3D70; actor zero follows Vanilla; process lifetime.");
+                "native view=reference-rva 0x88E3D70; actor zero or no spectator follows Vanilla; suspend=" + suspendThreads + "; process lifetime.");
         }
-
-        private static NativeDetour<InputBoundaryCall> Create(IntPtr target, ControlInputBridge bridge, int window, string name)
+        private static NativeDetour<InputBoundaryCall> Create(IntPtr target, ControlInputBridge bridge, int window, string name, bool suspendThreads)
         {
             var request = new DetourRequest<InputBoundaryCall> {
                 Name = name, TargetAddress = unchecked((ulong)target.ToInt64()), Callback = unreachable, IntermediaryFactory = bridge
             };
-            var hook = CreateBackend(window, NativeStartupPatchWindow.SuspendThreads).CreateDetour(in request) as NativeDetour<InputBoundaryCall>;
+            var hook = CreateBackend(window, suspendThreads).CreateDetour(in request) as NativeDetour<InputBoundaryCall>;
             if (hook == null || hook.IsInstalled) throw new InvalidOperationException("PLAYER_CONTROL_INPUT: detour candidate contract changed.");
             return hook;
         }

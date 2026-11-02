@@ -1958,6 +1958,8 @@ APIShared.PlagueSurfaceCategory | Keeps = 8
 APIShared.PlagueSurfaceCategory | None = 0
 APIShared.PlagueSurfaceCategory | Towers = 4
 APIShared.PlagueSurfaceCategory | Walls = 1
+APIShared.PlayerColors | public static class APIShared.PlayerColors
+APIShared.PlayerColors | public static bool TryGetUiColour(int playerId, out int uiColour)
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }
@@ -1981,6 +1983,7 @@ APIShared.PlayerLordDeathNotification | public int SimulationTick { get; }
 APIShared.PlayerLordDeathNotification | public long SessionId { get; }
 APIShared.PlayerPerspectiveAPI | public static class APIShared.PlayerPerspectiveAPI
 APIShared.PlayerPerspectiveAPI | public static System.IDisposable SubscribeChanges(string ownerGuid, string registrationId, System.Action<APIShared.PlayerPerspectiveChange> callback)
+APIShared.PlayerPerspectiveAPI | public static bool TryRegisterSpectatorControl(string ownerGuid, out string reason)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetEliminatedPlayerView(int playerId)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorControl(int playerId)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorView(int playerId)
@@ -2535,6 +2538,9 @@ APIShared.UnitHudSlotSnapshot | public .ctor(int slot, int vanillaType, APIShare
 APIShared.UnitHudSlotSnapshot | public APIShared.UnitHudCategorySnapshot Category { get; }
 APIShared.UnitHudSlotSnapshot | public int Slot { get; }
 APIShared.UnitHudSlotSnapshot | public int VanillaType { get; }
+APIShared.UnitHudSpriteColours | public static class APIShared.UnitHudSpriteColours
+APIShared.UnitHudSpriteColours | public static bool Release(string ownerGuid)
+APIShared.UnitHudSpriteColours | public static bool TryLease(string ownerGuid, int playerId, out string reason)
 APIShared.UnitHudSurface | public enum APIShared.UnitHudSurface : int
 APIShared.UnitHudSurface | All = 63
 APIShared.UnitHudSurface | ArmyReport = 8

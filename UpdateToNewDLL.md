@@ -71,8 +71,11 @@ Owner: `PlayerControl.ControlInputNative` (installer) with `ControlInputBridge`
 (stubs), registry group `Players.ControlInput`; the actor cell is written only by
 `LocalInputControl` through `PlayerPerspectiveAPI.TrySetSpectatorControl`. Reference
 native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
-Both boundaries are installed together in the startup window, hash-bound; any other
-image skips the feature (one Info line) and leaves Vanilla unchanged. Actor zero
+Startup only validates the pristine blocks; both boundaries are installed together on the
+first `PlayerPerspectiveAPI.TryRegisterSpectatorControl` (inside the LibraryLoaded startup
+window without thread suspension, otherwise only outside a running mission with
+suspension). Hash-bound; any other image skips the feature (one Info line) and leaves
+Vanilla unchanged. Without a registered consumer nothing is installed. Actor zero
 follows both complete original blocks. This grants full Vanilla input of the chosen
 player; it is not a rights/permission service (that path remains WIP).
 

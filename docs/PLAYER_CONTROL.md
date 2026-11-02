@@ -8,6 +8,11 @@ work in progress (see [WIP](#work-in-progress)).
 ## Usage
 
 ```csharp
+// Once, in the mod's CrusaderLibrary.LibraryLoaded handler (or later outside a mission),
+// and only when the mod's feature is actually enabled. Nothing is installed without it.
+if (!PlayerPerspectiveAPI.TryRegisterSpectatorControl(MyPlugin.Guid, out string reason))
+    LogUnavailable(reason); // unsupported image, refused in a running mission, or failed install
+
 // Unity main thread, after the spectator has selected the player in the consumer's UI.
 if (!PlayerPerspectiveAPI.TrySetSpectatorControl(playerId))
     ShowUnavailable(); // unsupported mode/image or rejected view; details are logged
@@ -52,8 +57,12 @@ be confirmed, spectator input stays blocked until control is cleared.
 ## Implementation
 
 Vanilla zeroes the native view for spectators at two input boundaries: in
-`DLL_RunTick` and in the input dispatcher's nested re-dispatch. `ControlInputNative`
-installs one NativeX64 Indirect stub at each place during APIShared's startup window.
+`DLL_RunTick` and in the input dispatcher's nested re-dispatch. APIShared's startup only
+validates the image (`ControlInputNative.Prepare`). The first `TryRegisterSpectatorControl`
+installs one NativeX64 Indirect stub at each place: without thread suspension inside the
+LibraryLoaded startup window, otherwise only outside a running mission and with suspension.
+Without a registered consumer there is no hook, no callback and no per-tick cost; the
+dormant stubs cost a few instructions per input pass and never enter managed code.
 With actor zero, or when the spectator flag is clear, both stubs follow the complete
 original blocks. For a spectator, a nonzero actor keeps the view for the input scope only
 if it equals the current view in 1..8; otherwise the view stays zero. `LocalInputControl` is the only writer of the actor cell, always under

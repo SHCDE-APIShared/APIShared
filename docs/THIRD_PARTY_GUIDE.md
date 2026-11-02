@@ -1388,6 +1388,30 @@ use Vanilla rollover text; side buttons use the mod-options popup by default.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
 
+### Unit HUD sprites in another player's colour
+
+A spectator or control feature that shows another player's units can lease the unit HUD
+sprite colours instead of hooking `MainViewModel.UpdateUITroopSprites` itself:
+
+```csharp
+if (!UnitHudSpriteColours.TryLease(MyPlugin.Guid, viewedPlayerId, out string reason))
+    Logger.LogWarning(reason); // e.g. another mod holds the lease
+// ... later, when your view ends:
+UnitHudSpriteColours.Release(MyPlugin.Guid);
+```
+
+Call both on the Unity main thread, for example from your perspective-change handler after
+dispatching to it. Call `TryLease` again with the new player when the view changes; repeating
+the same player does nothing. The lease ends at mission end, so lease again in the next mission.
+Read a player's UI colour without changing the HUD with `PlayerColors.TryGetUiColour`.
+
+Limits: only images that Vanilla's sprite update recolours change. Keeps, outposts, flags and
+the other building icons have no colour variants, and some resource keys are identical in all
+colours. The Arabic troop variants follow the leased player only for human multiplayer members;
+otherwise they keep Vanilla's value for the local player. Map sprites, labels, selection and
+control rights are unaffected. The [lease contract](../src/Presentation/UnitHud/UnitHudSpriteColours.cs)
+describes ordering, replay and failure behavior.
+
 ## Sharing action and HUD hooks
 
 Use [the managed action/HUD contracts](API_CATALOG.md#managed-actions-and-hud-interception)
@@ -2193,7 +2217,10 @@ requires no new spectator Save marker. Original-spectator recovery is separate.
 
 ## Spectator input control
 
-`PlayerPerspectiveAPI.TrySetSpectatorControl(playerId)` lets an original spectator
+First call `PlayerPerspectiveAPI.TryRegisterSpectatorControl(ownerGuid, out reason)` from
+your LibraryLoaded handler (or later outside a mission), only when your feature is enabled;
+APIShared installs the input hooks on that first registration and otherwise nothing.
+`PlayerPerspectiveAPI.TrySetSpectatorControl(playerId)` then lets an original spectator
 (nonpositive `EditorDirector.ActivePlayerID`, Vanilla spectator flag, offline
 multiplayer-type game) control one chosen player with Vanilla's own input: it
 selects that view, deselects the previously controlled player through Vanilla and

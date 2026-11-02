@@ -171,13 +171,27 @@ namespace APIShared
         }
 
         /// <summary>
+        /// Declares that a mod uses spectator input control. Without any registration APIShared
+        /// installs nothing for this feature. The first registration installs two dormant native input
+        /// boundaries for the process lifetime (actor zero follows Vanilla completely). Call from the
+        /// mod's CrusaderLibrary.LibraryLoaded handler (no thread suspension) or outside a running
+        /// mission; inside a mission the first registration is refused. Idempotent per owner GUID.
+        /// Returns false with a reason for an unsupported native image or a failed installation.
+        /// </summary>
+        public static bool TryRegisterSpectatorControl(string ownerGuid, out string reason)
+        {
+            if (string.IsNullOrWhiteSpace(ownerGuid)) { reason = "An owner GUID is required."; return false; }
+            return ControlInputNative.TryInstall(out reason);
+        }
+
+        /// <summary>
         /// Gives an original spectator the complete Vanilla map input of one chosen player and selects
         /// that player's view: selection, unit orders, building panels, and the view-based economy
         /// actions (tax, rations). There are no rights categories; the player's AI keeps acting too.
         /// Requirements: Unity main thread, a ready offline multiplayer-type game (local skirmish) with
         /// Vanilla's local spectator flag, a nonpositive EditorDirector.ActivePlayerID, no participant
-        /// view lease and an occupied human/skirmish slot. Real multiplayer and the map editor (where
-        /// Vanilla switches players itself) return false, as does an unsupported native image.
+        /// view lease and an occupied human/skirmish slot, after TryRegisterSpectatorControl succeeded.
+        /// Real multiplayer and the map editor (where Vanilla switches players itself) return false.
         /// Switching to another player first deselects the previous player's units through Vanilla's
         /// own path. While active, GetLocalPlayerId reports the controlled player. Managed placement
         /// and demolition (EngineInterface.PlaceMapperItem/DeleteBuilding) pass
@@ -235,8 +249,9 @@ namespace APIShared
         /// <summary>Gets the player whose map input the original spectator currently controls, or 0.</summary>
         public static int GetInputControlledPlayerId()
         {
-            long world = MissionLifecycleService.NativeWorld?.Sequence ?? 0;
-            return inputControl.IsActiveIn(world) ? inputControl.Player : 0;
+            int player = inputControl.Player;
+            if (player <= 0) return 0;
+            return inputControl.IsActiveIn(MissionLifecycleService.NativeWorld?.Sequence ?? 0) ? player : 0;
         }
 
         // Caller holds the engine monitor. The injected delegates let the transaction be tested
@@ -284,8 +299,13 @@ namespace APIShared
             }
         }
 
-        private static void EndControl(bool deselect) => EndControlCore(inputControl,
-            MissionLifecycleService.NativeWorld?.Sequence ?? 0, GetRawNativeViewPlayerId, deselect ? deselectNative : null);
+        // Dormant fast path: without engaged control no lifecycle or native read happens.
+        private static void EndControl(bool deselect)
+        {
+            if (!inputControl.IsEngaged) return;
+            EndControlCore(inputControl, MissionLifecycleService.NativeWorld?.Sequence ?? 0,
+                GetRawNativeViewPlayerId, deselect ? deselectNative : null);
+        }
 
         // Vanilla's own right-click/troop-panel deselection (GameAction CloseTroopsPanel ->
         // native 0x897F0): local marking clear plus a queued synchronized unselect whose source
@@ -308,7 +328,7 @@ namespace APIShared
         private static void EndViewWorld()
         {
             // The ended world's input actor goes first, without any GameAction into the new world.
-            try
+            if (inputControl.IsEngaged) try
             {
                 object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
                 if (engineGate == null) EndControl(false);

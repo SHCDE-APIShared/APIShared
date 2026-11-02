@@ -190,6 +190,19 @@ namespace APISharedTests
             APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
         }
 
+        // Contract: without a registered, prepared consumer nothing is installed and control stays off.
+        [TestMethod]
+        public void SpectatorControlInstallsNothingWithoutAPreparedRegistration()
+        {
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TryRegisterSpectatorControl(" ", out string reason));
+            Assert.IsNotNull(reason);
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TryRegisterSpectatorControl("test.owner", out reason));
+            StringAssert.Contains(reason, "not prepared");
+            Assert.IsFalse(APIShared.PlayerControl.ControlInputNative.IsReady);
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TrySetSpectatorControl(1));
+            Assert.AreEqual(0, APIShared.PlayerPerspectiveAPI.GetInputControlledPlayerId());
+        }
+
         [TestMethod]
         public void FailedActorWriteFailsClosedToBlockedInput()
         {

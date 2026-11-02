@@ -15,7 +15,8 @@
       "Changes": [
         "Add immutable current player-defeat snapshots and ordered state observers, including loaded losses, without replaying existing transition events.",
         "Add eliminated-participant perspectives that preserve positive local identity, protect Save and Chore submission identity, and retain the original-spectator contract.",
-        "Add spectator input control: an original offline spectator controls one chosen player with Vanilla input (TrySetSpectatorControl, ClearSpectatorControl, GetInputControlledPlayerId); rights-gated, multi-owner and multiplayer control remain WIP."
+        "Add spectator input control: an original offline spectator controls one chosen player with Vanilla input (TryRegisterSpectatorControl installs the input hooks only on demand; TrySetSpectatorControl, ClearSpectatorControl, GetInputControlledPlayerId); rights-gated, multi-owner and multiplayer control remain WIP.",
+        "Add PlayerColors.TryGetUiColour (Vanilla's UI/portrait colour of a player) and the exclusive UnitHudSpriteColours lease that draws the unit HUD sprites in another player's colour on the existing sprite hook, restoring Vanilla's values on release and mission end."
       ]
     },
     {

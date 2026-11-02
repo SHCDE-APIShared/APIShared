@@ -327,8 +327,10 @@ entries have drained or been reset. Ending managed sidecars alone does not remov
 native commands; disabling the handler guard could otherwise send them to Vanilla.
 
 The live part is spectator input control (full Vanilla input of one chosen player,
-no rights). `ControlInputNative` installs both spectator-input boundary stubs in the
-startup window; `LocalInputControl` is the only writer of their actor cell. The
+no rights). Startup only validates the image; `ControlInputNative` installs both
+spectator-input boundary stubs on the first consumer registration
+(`TryRegisterSpectatorControl`), so without a consumer nothing runs. `LocalInputControl` is
+the only writer of their actor cell. The
 public `PlayerPerspectiveAPI` transaction owns ordering under the engine monitor:
 Vanilla deselection as the old view, confirmed view change, then actor publication.
 Every view selection/clear and the lifecycle's world invalidation end control; the

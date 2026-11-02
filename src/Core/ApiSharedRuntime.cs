@@ -368,6 +368,24 @@ namespace APIShared
             }
         }
 
+        // Static brokers on the Unit HUD hooks (UnitHudSpriteColours) need the installed service, not a facade.
+        internal bool TryGetUnitHudService(out UnitHudPresentationService service, out string reason)
+        {
+            lock (sync)
+            {
+                service = unitHudPresentation;
+                if (service != null)
+                {
+                    reason = null;
+                    return true;
+                }
+                reason = state == NativeApiState.Pending
+                    ? "APIShared native initialization has not completed; the Unit HUD presentation hooks are not installed yet."
+                    : $"Unit HUD presentation is unavailable ({unitHudDiagnostic.State}): {unitHudDiagnostic.Reason}";
+                return false;
+            }
+        }
+
         internal bool TryGetHudExtrasButtons(string ownerGuid, out IHudExtrasButtonsCapability capability, out NativeCapabilityDiagnostic diagnostic)
         {
             capability = null;

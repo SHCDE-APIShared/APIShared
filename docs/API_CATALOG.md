@@ -216,7 +216,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateCapability.cs) | â€” |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatCapability.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |
-| Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
+| Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs), [sprite colours](../src/Presentation/UnitHud/UnitHudSpriteColours.cs), [player colours](../src/Players/PlayerColors.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Briefing gold | [Contracts](../src/Presentation/BriefingGold/BriefingGoldContracts.cs) | [Capability](../src/Presentation/BriefingGold/BriefingGoldPresentationCapability.cs) | â€” |
 | Repair | [Contracts](../src/Buildings/Repair/BuildingRepairContracts.cs) | [Capability](../src/Buildings/Repair/BuildingRepairCapability.cs) | â€” |
@@ -309,11 +309,26 @@ setting `Show_HUD_Troops`. Context notifications report availability changes
 include hiding hovered entries. These optional callbacks also run on the Unity
 thread, outside locks, with exception isolation. Registrations have no hook teardown.
 
+## Unit HUD sprite colours
+
+`PlayerColors.TryGetUiColour(playerId, out uiColour)` reads the colour Vanilla's unit HUD
+sprite update uses for a player: UI/portrait order 1..8, not the material palette order of
+map sprites and labels. Unity main thread, allocation-free, `false` without Vanilla's mapping.
+
+`UnitHudSpriteColours.TryLease(ownerGuid, playerId, out reason)` draws Vanilla's troop and
+recruitment icons, troop portraits and control groups in another player's colour, for example
+for a spectated or input-controlled player; `Release(ownerGuid)` ends it. One owner at a time,
+Unity main thread, applied once per change on APIShared's existing sprite hook, Vanilla's request
+replayed on release and mission end (which also ends the lease). Image overrides receive the drawn
+colour. Contracts: [lease](../src/Presentation/UnitHud/UnitHudSpriteColours.cs),
+[colour lookup](../src/Players/PlayerColors.cs); usage and limits in the
+[guide](THIRD_PARTY_GUIDE.md#unit-hud-sprites-in-another-players-colour).
+
 ## Direct helpers and advanced integration
 
 `PlayerPerspectiveAPI.TrySetEliminatedPlayerView(playerId)` adds identity-preserving views for confirmed eliminated participants. It keeps their positive local player ID and protects Save/Chore identity; it grants no command rights. The original-spectator API remains unchanged. See [eliminated-player views](THIRD_PARTY_GUIDE.md#eliminated-player-perspectives).
 
-`PlayerPerspectiveAPI.TrySetSpectatorControl(playerId)` gives an original spectator in an offline skirmish the complete Vanilla map input of one chosen player; `ClearSpectatorControl()` ends it and `GetInputControlledPlayerId()` reads it. No rights categories; real multiplayer and the editor are excluded. Rights-gated, multi-owner and multiplayer control are WIP. See [player control](PLAYER_CONTROL.md).
+After `PlayerPerspectiveAPI.TryRegisterSpectatorControl(ownerGuid, out reason)` (installs the input hooks only on this demand), `PlayerPerspectiveAPI.TrySetSpectatorControl(playerId)` gives an original spectator in an offline skirmish the complete Vanilla map input of one chosen player; `ClearSpectatorControl()` ends it and `GetInputControlledPlayerId()` reads it. No rights categories; real multiplayer and the editor are excluded. Rights-gated, multi-owner and multiplayer control are WIP. See [player control](PLAYER_CONTROL.md).
 
 `LocalSelectionAPI`, `MarkedUnitSelectionAPI` and `PlayerPerspectiveAPI` provide selection/perspective access independent of a custom command engine. `PlayerPerspectiveAPI.SubscribeChanges(ownerGuid, registrationId, callback)` reports immutable confirmed transitions (`Selected`, `Cleared`, `Uncertain`) with previous/current IDs and a monotonic sequence. Duplicate selections are silent. Notifications are queued in transition order and callbacks run outside the transition lock with per-observer exception isolation; UI dispatch belongs to the subscriber. Subscribe first, then read the initial snapshot: there is no implicit replay. Clear/uncertain notifications carry `-1` as the new override, not as a native player ID. Disposing stops future captures; already queued notifications may still arrive. `UnitAccess` validates unit lookup/liveness; its unsafe pointer views are immediate-use advanced contracts and must not outlive their valid game state. `GatehouseDrawbridgeCoupling` is a pure spatial helper: callers supply validated bounds and live identity predicates; it grants no ownership or access permission.
 

@@ -81,6 +81,7 @@ namespace APIShared
                 {
                     UnityEngine.Application.onBeforeRender -= candidate.OnBeforeRender;
                     candidate.mapUnloadSubscription?.Dispose();
+                    candidate.spriteMissionStartSubscription?.Dispose();
                 }
                 for (int i = installed.Count - 1; i >= 0; i--)
                 {
@@ -126,7 +127,9 @@ namespace APIShared
             mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => {
                 ResetRecruitment();
                 ResetActionButtonPresentation();
+                EndSpriteColourLease();
             });
+            spriteMissionStartSubscription = APIShared.Internal.MissionEvents.Started.Subscribe(_ => OnSpriteMissionStarted());
             UnityEngine.Application.onBeforeRender += OnBeforeRender;
         }
 
@@ -268,11 +271,13 @@ namespace APIShared
             updateSpritesActive = true;
             try
             {
-                updateSpritesOriginal(self, colour, arabic);
+                // Vanilla's request stays the restore value; a sprite-colour lease only changes what is drawn.
+                ResolveSpriteColours(colour, arabic, out int drawColour, out bool drawArabic);
+                updateSpritesOriginal(self, drawColour, drawArabic);
                 lastSpriteColour = colour;
                 lastSpriteArabic = arabic;
                 hasSpriteContext = true;
-                if (activeImages && IsImageOverrideContextReady()) ApplyImageOverrides(self, colour, arabic);
+                if (activeImages && IsImageOverrideContextReady()) ApplyImageOverrides(self, drawColour, drawArabic);
             }
             finally { updateSpritesActive = false; }
         }
