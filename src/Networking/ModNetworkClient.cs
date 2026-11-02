@@ -44,6 +44,18 @@ namespace APIShared.Networking
             return Register(registrationId, "chore", () => new ChoreChannel<T>(OwnerGuid, registrationId, execute, options));
         }
 
+        /// <summary>Registers an additive Chore-only channel with an issuer verified from the executing native slot.</summary>
+        /// <remarks>Existing RegisterChore contracts remain unchanged. These channels share its duplicate-packet-type guard. The hash-bound native reader must be ready for delivery; callers still own session, authority and deterministic validation.</remarks>
+        public AuthenticatedChoreChannel<T> RegisterAuthenticatedChore<T>(string registrationId,
+            Action<AuthenticatedChoreMessage<T>> execute, AuthenticatedChoreChannelOptions<T> options = null) where T : class
+        {
+            if (execute == null) throw new ArgumentNullException(nameof(execute));
+            options = options ?? new AuthenticatedChoreChannelOptions<T>();
+            if (options.MaximumPayloadBytes < 2 || options.MaximumPayloadBytes > ChoreTransport.MaximumPayloadBytes)
+                throw new ArgumentOutOfRangeException(nameof(options.MaximumPayloadBytes));
+            return Register(registrationId, "chore", () => new AuthenticatedChoreChannel<T>(OwnerGuid, registrationId, execute, options));
+        }
+
         /// <summary>Registers copied, sender-aware control-plane messages with FIFO Unity-thread processing.</summary>
         /// <remarks>
         /// Snapshot is the only consumer callback on the raw receive thread and must only deep-copy the

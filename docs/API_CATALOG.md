@@ -182,6 +182,9 @@ may not yet be present in published downloads.
 Requires APIShared 0.7.0 or newer; register through `ApiShared.ForMod(ownerGuid).Network`; no SerpsModsHost
 dependency is required. `RegisterChore<T>` retains synchronous simulation execution.
 `RegisterMessage<T>` snapshots payload and Steam identity before FIFO Unity dispatch.
+The additive `RegisterAuthenticatedChore<T>` provides a native-verified issuer and
+Chore-only single-serialization submission; it grants no foreign-control permission.
+See the [sender, thread and native prerequisites](THIRD_PARTY_GUIDE.md#native-issuer-aware-chore-channel).
 Register unconditionally on Unity after the Extender's built-in packet registration,
 in the same order on all peers. Explicit MessagePack formatters are required.
 

@@ -29,6 +29,7 @@ namespace APIShared
         internal const string BuildingRepair = "Buildings.RepairQuote";
         internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
         internal const string VisibleMapRender = "Presentation.VisibleMapRender";
+        internal const string PlayerControlSave = "Players.ControlSaveIdentity";
 
         // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
         internal static NativeSiteSpan[] VisibleMapRenderSpans() => new[] {
@@ -39,6 +40,12 @@ namespace APIShared
             Exclusive(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva, ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength),
             Observe(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva + ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength,
                 ScriptExtenderFixes.SynchronizedSaveRuntime.Entry.Length - ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength)
+        };
+
+        internal static NativeSiteSpan[] PlayerControlSaveSpans() => new[] {
+            Exclusive(PlayerControl.ControlSaveNative.Rva, PlayerControl.ControlSaveNative.DisplacedLength),
+            Observe(PlayerControl.ControlSaveNative.Rva + PlayerControl.ControlSaveNative.DisplacedLength,
+                PlayerControl.ControlSaveNative.Entry.Length - PlayerControl.ControlSaveNative.DisplacedLength)
         };
 
         // AIV detour: the backend's displacement is not fixed here, so the claim covers the
@@ -181,6 +188,7 @@ namespace APIShared
             Group(GateDescent, GateDescentSpans()),
             Group(BuildingRepair, BuildingRepairSpans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
+            Group(PlayerControlSave, PlayerControlSaveSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans())
         };
 

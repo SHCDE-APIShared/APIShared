@@ -17,13 +17,24 @@ namespace APIShared
         private MissionInitializationPhase phase;
         private readonly HashSet<MissionInitializationPhase> reached = new HashSet<MissionInitializationPhase>();
         private NativeClockState nativeClock;
+        private long nativeWorldSequence;
         private int nativeLoadDepth;
         private bool nativeLoadFailed;
         internal NativeClockState NativeClock => Volatile.Read(ref nativeClock);
         internal sealed class NativeClockState
         {
             internal readonly MissionContext Context;
-            internal NativeClockState(MissionContext context) { Context = context; }
+            internal readonly NativeWorldState World;
+            internal NativeClockState(MissionContext context, NativeWorldState world) { Context = context; World = world; }
+        }
+        // Distinct from a context/clock snapshot: metadata checkpoints may replace
+        // those while the actual native world remains the same. A successful new
+        // load gets a fresh identity even within one mission-start attempt. The
+        // existing load/unload boundaries invalidate it before notifying observers.
+        internal sealed class NativeWorldState
+        {
+            internal readonly long Sequence, Mission;
+            internal NativeWorldState(long sequence, long mission) { Sequence = sequence; Mission = mission; }
         }
         internal void InvalidateNativeClock() => Volatile.Write(ref nativeClock, null);
         internal void BeginNativeLoad(long id)
@@ -38,13 +49,14 @@ namespace APIShared
             if (Context?.SessionId != id) return;
             if (!success) nativeLoadFailed = true;
             if (nativeLoadDepth > 0) nativeLoadDepth--;
-            if (success && !nativeLoadFailed && nativeLoadDepth == 0)
-                Volatile.Write(ref nativeClock, new NativeClockState(Context));
+            if (success && !nativeLoadFailed && nativeLoadDepth == 0 && nativeWorldSequence < long.MaxValue)
+                Volatile.Write(ref nativeClock, new NativeClockState(Context, new NativeWorldState(++nativeWorldSequence, id)));
         }
         private void RefreshNativeClock(MissionContext context)
         {
-            if (NativeClock != null && nativeLoadDepth == 0)
-                Volatile.Write(ref nativeClock, new NativeClockState(context));
+            var current = NativeClock;
+            if (current != null && nativeLoadDepth == 0)
+                Volatile.Write(ref nativeClock, new NativeClockState(context, current.World));
         }
         internal MissionContext Current { get; private set; }
         internal MissionContext Context => pending ?? Current;

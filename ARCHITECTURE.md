@@ -277,6 +277,27 @@ wire IDs or registering an additional envelope type. It preflights the public
 Extender send; its void return and internal Steam fallback are not upgraded into
 an atomic delivery guarantee. No competing native transport hook is installed.
 
+The additive authenticated channel separately validates the native pending-slot
+issuer and loaded raw-submission adapter. A process-owned managed dispatcher scope
+binds the native blob and packet ID before typed deserialization, restores nested
+scopes and rejects changed native contexts after consumer validation. Unrelated
+packet IDs take the original path without native reads. Rejected Steam/worker
+deliveries never invoke consumer activation or validation. The raw submission
+checks the real engine monitor/finally and rechecks mutable bindings. It serializes once, rejects a foreign
+enqueue viewpoint and never selects Steam fallback. The old channels remain
+unchanged. This transport identity is only a prerequisite for the developing
+player-control service, whose protocol/permission state is separate from local UI
+selection and report views; it does not itself authorize foreign gameplay.
+
+Control development uses the existing mission load/unload state machine's private
+native-world identity. Successful loads create it; metadata checkpoints preserve it,
+and load/unload invalidates it before observer delivery. It is separate from the
+clock snapshot and process-local mission attempt. No second start detector or
+periodic world scan is introduced. The local single-owner queue checks current
+session health even before allowing an untracked Vanilla path; stale mode reads
+cannot retire a reentrantly replaced session. Native control/view providers and
+the public capability still require integration and game acceptance.
+
 The preset view model owns UI bindings, commands and role/context presentation.
 Its small `PresetHost` adapter implements the internal `ILobbyPresetHost` boundary:
 live settings target, application backend, authority/context and completion callbacks.

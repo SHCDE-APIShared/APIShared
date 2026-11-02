@@ -173,6 +173,7 @@ spans are built from each service's native contract constants in
 | `GateRouting.Descent` | Exclusive 0x185D55/20; Observe 0x185934/4 | Provider's `InstallDescent` |
 | `Buildings.RepairQuote` | Observe 0xD51A0/17 (validated entry that the repair quote calls) | First repair capability acquisition |
 | `Savegames.SynchronizedSaveContext` | Exclusive 0x13030/6 (Chore 39 save handler entry); Observe 0x13036/13 (validated continuation) | LibraryLoaded, after the managed archive-context correction |
+| `Players.ControlSaveIdentity` | Exclusive 0x52B0/10 (common save-writer entry); Observe 0x52BA/2 (validated continuation) | Startup-only optional active-human control-view protection; not required by original-spectator single-owner control |
 | `Presentation.VisibleMapRender` | Exclusive 0x41D60/10 (visible-map render entry; consumers register observers through `VisibleMapRenderEvents`) | First visible-map render registration |
 
 A conflict with another owner's earlier registration fails that APIShared service

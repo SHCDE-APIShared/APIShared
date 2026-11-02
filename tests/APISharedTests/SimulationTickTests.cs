@@ -60,6 +60,45 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void NativeWorldIdentitySurvivesMetadataButRetiresBeforeReentrantReplacementObservers()
+        {
+            var lifecycle = new MissionLifecycleState(error => Assert.Fail(error.ToString()));
+            long id = lifecycle.Begin(Mission(0));
+            lifecycle.BeginNativeLoad(id); lifecycle.CompleteNativeLoad(id, true);
+            var first = lifecycle.NativeClock.World;
+            Assert.AreEqual(id, first.Mission);
+            var beforeCheckpoint = lifecycle.NativeClock;
+            lifecycle.Checkpoint(id, lifecycle.Context, MissionInitializationPhase.NativeLoaded);
+            lifecycle.Ready(id, lifecycle.Context);
+            Assert.AreNotSame(beforeCheckpoint, lifecycle.NativeClock, "Clock snapshots still track context changes.");
+            Assert.AreSame(first, lifecycle.NativeClock.World, "Context refresh must not revoke the live native world.");
+
+            // A repeated native load invalidates before its managed completion;
+            // the same mission ID cannot make old native identities current again.
+            lifecycle.BeginNativeLoad(id); Assert.IsNull(lifecycle.NativeClock);
+            lifecycle.CompleteNativeLoad(id, true);
+            var reloaded = lifecycle.NativeClock.World;
+            Assert.AreNotSame(first, reloaded); Assert.IsTrue(reloaded.Sequence > first.Sequence);
+            long replacement = 0;
+            bool sawRetired = false;
+            lifecycle.Register("world.fixture", "replace", notification => {
+                if (notification.Kind != MissionLifecycleKind.End) return;
+                sawRetired = lifecycle.NativeClock == null;
+                replacement = lifecycle.Context.SessionId;
+                lifecycle.BeginNativeLoad(replacement); lifecycle.CompleteNativeLoad(replacement, true);
+            });
+            bool sawNewWorld = false;
+            lifecycle.Register("world.fixture", "late-end", notification => {
+                if (notification.Kind != MissionLifecycleKind.End) return;
+                var current = lifecycle.NativeClock?.World;
+                sawNewWorld = current != null && current.Mission == replacement && !ReferenceEquals(current, reloaded);
+            });
+            lifecycle.Begin(Mission(0));
+            Assert.IsTrue(sawRetired); Assert.IsTrue(sawNewWorld,
+                "An old End observer can run after another observer has loaded the new native world.");
+        }
+
+        [TestMethod]
         public void ElapsedClockAllowsZeroAndSignedWrapButRejectsBackwards()
         {
             Assert.IsTrue(SimulationClock.TryGetElapsedTicks(0, 0, out int elapsed)); Assert.AreEqual(0, elapsed);

@@ -1,5 +1,143 @@
 # Native binary update contracts
 
+## Authenticated Chore context and submission
+
+Owner: `Networking.NativeChoreContext` / `NativeChoreDispatch` / `NativeChoreTransport`. Reference native
+SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+This adds no native hook and does not replace SE's opcode-106 handler.
+
+The ChoreManager base is supplied by SE's public resolved `ChoreManagerVA`, must
+equal module `+0x8574320` for the reference image and must fit the complete accessed
+range inside the loaded image. The exact base is independently confirmed by
+enqueue, receive and execution; an in-range but different resolver value is rejected. Offsets are
+current-slot `0x84CC8`, phase `0x84CCC`, slot base `0xB0BF8`, stride `0x500`,
+executing source `0x36FA4C`. Slot tick/source/opcode/command ID are at 0/4/8/12.
+Only phase 0, opcode 106, slot 0..499 and identical slot/execution sources 1..8
+are admitted, with a second consistency read. Neither a packet's PlayerId nor
+the current native view establishes issuer identity. Native `0x1F9A0` is
+`mov eax,edx; ret` in the reference image; roster remapping occurs in managed
+multiplayer before `ReceiveChore`.
+
+Native field reads are bound to SE's loaded
+`DispatchReceivedScriptExtenderPayload(byte[]) -> void` by a permanent managed
+hook. Its loaded IL must decode the two-byte packet ID at offset zero, allocate
+and copy precisely the remaining body from offset two, and call `HandleRawPacket`
+once with an absent Steam sender; unknown helpers/mutations fail initialization.
+Before typed deserialization, verify the blob against native slot parameters
+`+17` (four-byte length) and `+21` (blob), with manager payload size `+0x84CD4`
+and transfer cursor `+0x370BF8` both equal to length plus four. Scope the captured
+issuer/slot/command/tick and packet ID on the dispatch thread, restoring outer
+scopes in `finally`; invalid nested calls must not inherit them. Receivers require
+the exact packet ID and unchanged native tuple before and after consumer validation.
+Do not invoke consumer activation/payload/authority predicates before this context
+is verified; rejected Steam/worker deliveries must not run game-state callbacks.
+Unrelated registered packet IDs avoid native reads; old dispatch order and behavior
+are retained. This adds no native patch, and the managed hook is never torn down.
+
+Raw submission binds SE's installed `SendScriptExtenderChorePayload(byte[]) -> bool`
+and checks its loaded IL calls: one native queue delegate invocation, engine
+monitor Enter/Exit, and only the audited manager/log/string/pointer helpers.
+The lock object must be loaded once from `EngineInterface.threadLock`, retained
+in the same local for Enter and Exit, and the queue must lie in its protected
+try/finally. The taken flag cannot escape or be reassigned after initialization.
+The bound native queue must still resolve to module `+0x23990`. The staging byte
+field and private engine monitor are validated reflection bindings, not direct
+publicized-assembly accesses. Recheck their mutable monitor/queue bindings before
+each send. The outer wrapper holds that same monitor while
+checking real local identity against the native enqueue view and clears staging
+in `finally`. It never calls the public Steam-fallback sender. The old channel
+contracts remain unchanged.
+
+Before enqueue, inspect the next available native slot under that same monitor.
+`0x20950` starts after the cursor at manager `+0x370BF4`, wraps over 500 entries
+and accepts state zero or signed-byte state >=10 at slot `+9`. After 500 failed
+checks it still returns an active slot, which `0x23990` overwrites. The additive
+sender therefore refuses a full queue. This bounded event-time check grants no
+global peer capacity reservation: the control protocol still needs a bounded
+in-flight native-packet window, including peer acknowledgements and other traffic.
+Do not burst the complete logical reassembly budget into Vanilla's 500 slots.
+
+There is no unknown-image layout fallback: source attribution needs the entire
+receive/schedule/dispatch chain, and a matching function prologue cannot establish
+these data offsets. Unsupported images or changed SE method contracts disable
+only authenticated delivery/submission and report an independent initialization
+failure. Re-audit `0x23F10`, `0x1F7E0`, `0x1F9A0`, `0x23990`, the field helper
+`0x1F5F0`, native/managed receive and SE's opcode-106 pack/unpack/dispatch before
+admitting another image. This is a transport prerequisite, not control permission.
+
+## Pending single-owner control input boundary
+
+Owner: `PlayerControl.ControlInputBridge`. This is an uninstalled assembly primitive,
+not an available player-control backend or a permission service. Reference native
+SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+
+Within `DLL_RunTick` at `0x86680`, PE unwind end `0x86F72`, span
+`[0x868F6,0x86900)` contains `41 0F 45 C4` (CMOVNE EAX,R12D) and
+`89 05 70 D4 85 08` (MOV [RIP+disp32],EAX). The destination is native view
+RVA `0x88E3D70`. Incoming EAX/EBX hold the view, R12D is zero, and flags come
+from the spectator comparison at `0x868DC`; the intervening MOVs do not alter
+them. Continuation `0x86900` is `45 0F B6 C6` (MOVZX R8D,R14B). The full
+current-image function's direct branches/calls and baseline xrefs have no entry
+inside the ten-byte span. This boundary is not a whole foreign-command audit.
+
+The intermediary preserves flags, R11 and stack; it uses no managed callback or
+SIMD scratch. Zero demand follows the complete relocated original. Nonzero demand
+requires an actor in 1..8 equal to EBX; any other value, including suspended -1,
+writes zero for the input scope. Only a future verified control runtime may own
+that cell; UI selection or a packet cannot grant input merely by setting a view.
+
+For NativeX64 Indirect/10, validate both prepared and installed forms, pointer slot,
+padding and generated stub destinations. The relocated MOV's bytes necessarily
+change: decode its operand and require the same native destination. Require the
+exact CMOVNE form and a trampoline jump to +10. A separately owned E9 or FF25 hook
+starting exactly at +10 is allowed; the pristine continuation is still checked.
+An isolated executable-page fixture exercises the real backend/factory, relocated
+store, flags/stack and both branches. No game hook is installed by this fixture.
+
+No unknown-image fallback is established: this short CMOV/MOV pair cannot identify
+the surrounding spectator/input lifetime, view storage or later command effects.
+A future installer must require the audited whole-image contract, claim the span
+and prepare only during the existing startup window. Failure of this optional
+boundary must leave Vanilla and independently supported backends unchanged.
+
+## Optional active-human control-view save identity
+
+Owner: `PlayerControl.ControlSaveNative`, registry group `Players.ControlSaveIdentity`.
+Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+The common writer at `0x52B0` has Win64 signature
+`ulong (nativeManager, sectionTable, byte mapSave)`. Its three current callers
+are `0x13030`, `0x816B0` and `0x86F80`. The table at RVA `0x336B20`, row 103,
+serializes four bytes from native viewpoint RVA `0x88E3D70`; a foreign view must
+not replace the original active human's saved identity.
+
+The only admitted detour is NativeX64 Indirect/10, replacing
+`48 89 5C 24 10 48 89 74 24 18`, two five-byte register-save MOV instructions.
+Continuation `0x52BA` starts `55 57` (push rbp/rdi). The complete PE unwind range
+ends at `0x5AD8`; direct branches/calls and current xrefs have no interior entry.
+Validate pristine/live bytes, prepared span and original target before publication;
+after publication verify the indirect pointer slot, padding, displaced bytes and
+exact `+10` trampoline return. SE's later append hook at `0x5A4C` stays intact.
+Installation is permitted only in the existing startup patch window, using its
+non-suspending backend. There is no lazy or late installation.
+
+No unknown-image fallback: this generic prologue cannot establish writer identity,
+section-table semantics, argument ABI or native viewpoint storage. A mismatch
+leaves active-human view protection unavailable; original-spectator single-owner
+control has no dependency on it. Re-audit the full writer/section flow and callers,
+the preparation helpers `0xB8220`/`0x186040` and archive append before admitting a
+new image. The guard changes only the runtime-owned native view cell during the
+writer scope, restores it in `finally`, and suppresses stale restoration after a
+lease release or world replacement, including replacement inside a throwing setter
+before the writer runs. Lease transitions recheck the world after adapter reads;
+an old read cannot release or replace another identity. The central lifecycle's
+private native-world identity survives metadata refreshes but is invalidated before
+load/unload observers; repeated loads get new identities even within one attempt.
+Failed restoration retains human identity
+protection and must block the dependent view lease until recovery. This adapter
+and its private machine fixture do not yet constitute published control/view
+capabilities or live-game save acceptance.
+
 ## Synchronized-save archive context
 
 Owner: `ScriptExtenderFixes.SynchronizedSaveRuntime`, registry group

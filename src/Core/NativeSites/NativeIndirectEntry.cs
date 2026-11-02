@@ -16,18 +16,26 @@ namespace APIShared.NativeSites
                 if (Marshal.ReadByte(target, i) != expected[i])
                     throw new InvalidOperationException("Native indirect helper changed or is already occupied.");
         }
-        internal static void Validate<T>(IDetour<T> hook, IntPtr target, byte[] expected) where T : Delegate
+        internal static void Validate<T>(IDetour<T> hook, IntPtr target, byte[] expected) where T : Delegate =>
+            Validate(hook, target, expected, true);
+        internal static void Validate<T>(IDetour<T> hook, IntPtr target, byte[] expected, bool installed) where T : Delegate
         {
             var native = hook as NativeDetour<T>;
-            if (native == null || !native.IsInstalled || native.Scheme != DetourScheme.Indirect ||
+            if (native == null || native.IsInstalled != installed || native.Scheme != DetourScheme.Indirect ||
                 native.DisplacedByteCount != DisplacedLength || native.TargetAddress != unchecked((ulong)target.ToInt64()) ||
-                native.ChainDepth != 1 || native.PointerSlot == IntPtr.Zero || native.TrampolineAddress == IntPtr.Zero ||
+                native.ChainDepth != 1 || native.PointerSlot == IntPtr.Zero || native.TrampolineAddress == IntPtr.Zero)
+                throw new InvalidOperationException("Native indirect Indirect/10 detour contract mismatch.");
+            if (installed && (
                 Marshal.ReadByte(target) != 0xFF || Marshal.ReadByte(target, 1) != 0x25 ||
                 target + 6 + Marshal.ReadInt32(target, 2) != native.PointerSlot ||
-                Marshal.ReadIntPtr(native.PointerSlot) != native.HookEntryPointAddress)
+                Marshal.ReadIntPtr(native.PointerSlot) != native.HookEntryPointAddress))
                 throw new InvalidOperationException("Native indirect Indirect/10 detour contract mismatch.");
-            for (int i = 6; i < DisplacedLength; i++)
-                if (Marshal.ReadByte(target, i) != 0x90) throw new InvalidOperationException("Native indirect patch padding changed.");
+            if (installed)
+            {
+                for (int i = 6; i < DisplacedLength; i++)
+                    if (Marshal.ReadByte(target, i) != 0x90) throw new InvalidOperationException("Native indirect patch padding changed.");
+            }
+            else VerifyBytes(target, expected);
             for (int i = 0; i < DisplacedLength; i++)
                 if (Marshal.ReadByte(native.TrampolineAddress, i) != expected[i])
                     throw new InvalidOperationException("Native indirect displaced instructions changed.");

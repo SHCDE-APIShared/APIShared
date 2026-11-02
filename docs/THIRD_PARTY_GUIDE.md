@@ -660,6 +660,41 @@ atomic native queue contract. There is no automatic retry, split, rollback or lo
 fallback; acknowledgements and large synchronized batches require a consumer
 protocol. Pause does not justify replacing a Chore with a Steam packet.
 
+### Native-issuer-aware Chore channel
+
+The source checkout additionally provides
+`RegisterAuthenticatedChore<T>(id, execute, options)`. Existing channel types and
+their wire contracts are unchanged. Register it with the same startup/order and
+explicit-formatter requirements; a packet type cannot simultaneously have an old
+and an authenticated Chore handler.
+
+`AuthenticatedChoreMessage<T>` provides the packet, `SenderPlayerId`, native
+`CommandId` and final `ScheduledTick`. The source is checked against both the active
+native pending slot and executing issuer, independently of payload player IDs and
+the local viewpoint. A shared managed scope binds the native body and exact packet
+ID before deserialization. Nested dispatches cannot inherit a different packet's
+identity; the native tuple must remain unchanged after validation. Known Steam deliveries, missing context or unsupported native
+layouts are rejected. `ScheduledTick` is not a session token or operation identity.
+Consumer `ValidateReceive` runs after this capture, synchronously in simulation
+context; it must still validate the current session, authority, rights and live
+object identities. A verified participant is not automatically permitted to control
+another player. `ValidatePayload` runs on send and receive. Validation must not
+mutate the packet or simulation; dispatch only the actual action in `execute`.
+
+`Send` serializes once and calls the validated raw SE Chore path, with no Steam
+fallback. It requires Unity and a real local player in 1..8 whose ID matches the
+native enqueue view under the engine monitor. A foreign report viewpoint rejects
+submission instead of impersonating that owner. `IsAvailable` reports technical
+reader/dispatcher/adapter readiness on the initialized Unity thread, not peer agreement
+or control rights. Other threads receive false without game-state reads; off-thread
+`Send` rejects before consumer activation, validation or serialization. Submitted still
+means local submission only; no acknowledgement, retry or immediate gameplay
+effect is implied. These stronger rules apply only to the new channel.
+
+The adapter is deliberately tied to audited native layout and loaded SE method
+contracts; see [native update requirements](../UpdateToNewDLL.md#authenticated-chore-context-and-submission).
+The internal player-control protocol work is not yet an exposed control capability.
+
 ### Control-plane messages
 
 `RegisterMessage<T>(id, receive, options)` is for control-plane data and presentation,

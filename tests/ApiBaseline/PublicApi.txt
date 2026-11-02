@@ -1797,6 +1797,22 @@ APIShared.NativeSites.NativeSiteSpan | public int Length { get; }
 APIShared.NativeSites.NativeSiteSpan | public int Rva { get; }
 APIShared.NativeSites.NativeSiteSpan | public override string ToString()
 APIShared.NativeSites.NativeSiteSpan | public string ExpectedOriginalSha256 { get; }
+APIShared.Networking.AuthenticatedChoreChannel<T> | public sealed class APIShared.Networking.AuthenticatedChoreChannel<T> where T : class
+APIShared.Networking.AuthenticatedChoreChannel<T> | public APIShared.Networking.NetworkSendResult Send(T packet)
+APIShared.Networking.AuthenticatedChoreChannel<T> | public bool IsAvailable { get; }
+APIShared.Networking.AuthenticatedChoreChannel<T> | public short PacketId { get; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public sealed class APIShared.Networking.AuthenticatedChoreChannelOptions<T> where T : class
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public .ctor()
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Action<APIShared.Networking.NetworkPacketDiagnostic> Diagnostic { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Func<APIShared.Networking.AuthenticatedChoreMessage<T>, bool> ValidateReceive { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Func<T, bool> ValidatePayload { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Func<bool> IsEnabled { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public int MaximumPayloadBytes { get; set; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public sealed class APIShared.Networking.AuthenticatedChoreMessage<T> where T : class
+APIShared.Networking.AuthenticatedChoreMessage<T> | public T Packet { get; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public int CommandId { get; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public int ScheduledTick { get; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public int SenderPlayerId { get; }
 APIShared.Networking.ChoreChannel<T> | public sealed class APIShared.Networking.ChoreChannel<T> where T : class
 APIShared.Networking.ChoreChannel<T> | public APIShared.Networking.NetworkSendResult Send(T packet)
 APIShared.Networking.ChoreChannel<T> | public bool IsAvailable { get; }
@@ -1827,6 +1843,7 @@ APIShared.Networking.MessageChannelOptions<T> | public System.Func<T, T> Snapsho
 APIShared.Networking.MessageChannelOptions<T> | public System.Func<bool> IsEnabled { get; set; }
 APIShared.Networking.MessageChannelOptions<T> | public int MaximumBodyBytes { get; set; }
 APIShared.Networking.ModNetworkClient | public sealed class APIShared.Networking.ModNetworkClient
+APIShared.Networking.ModNetworkClient | public APIShared.Networking.AuthenticatedChoreChannel<T> RegisterAuthenticatedChore<T>(string registrationId, System.Action<APIShared.Networking.AuthenticatedChoreMessage<T>> execute, APIShared.Networking.AuthenticatedChoreChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public APIShared.Networking.ChoreChannel<T> RegisterChore<T>(string registrationId, System.Action<T> execute, APIShared.Networking.ChoreChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public APIShared.Networking.MessageChannel<T> RegisterMessage<T>(string registrationId, System.Action<APIShared.Networking.NetworkMessage<T>> receive, APIShared.Networking.MessageChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public bool TryPostPresentation(System.Action presentation)
@@ -1929,6 +1946,29 @@ APIShared.PlagueSurfaceCategory | Keeps = 8
 APIShared.PlagueSurfaceCategory | None = 0
 APIShared.PlagueSurfaceCategory | Towers = 4
 APIShared.PlagueSurfaceCategory | Walls = 1
+APIShared.PlayerControl.PlayerControlObject | public struct APIShared.PlayerControl.PlayerControlObject : System.IEquatable<APIShared.PlayerControl.PlayerControlObject>
+APIShared.PlayerControl.PlayerControlObject | public .ctor(APIShared.PlayerControl.PlayerControlObjectKind kind, int slot, uint globalId, int ownerPlayerId)
+APIShared.PlayerControl.PlayerControlObject | public APIShared.PlayerControl.PlayerControlObjectKind Kind { get; }
+APIShared.PlayerControl.PlayerControlObject | public bool Equals(APIShared.PlayerControl.PlayerControlObject other)
+APIShared.PlayerControl.PlayerControlObject | public int OwnerPlayerId { get; }
+APIShared.PlayerControl.PlayerControlObject | public int Slot { get; }
+APIShared.PlayerControl.PlayerControlObject | public override bool Equals(object obj)
+APIShared.PlayerControl.PlayerControlObject | public override int GetHashCode()
+APIShared.PlayerControl.PlayerControlObject | public uint GlobalId { get; }
+APIShared.PlayerControl.PlayerControlObjectKind | public enum APIShared.PlayerControl.PlayerControlObjectKind : int
+APIShared.PlayerControl.PlayerControlObjectKind | Building = 1
+APIShared.PlayerControl.PlayerControlObjectKind | Unit = 0
+APIShared.PlayerControl.PlayerControlRights | public enum APIShared.PlayerControl.PlayerControlRights : int
+APIShared.PlayerControl.PlayerControlRights | All = 31
+APIShared.PlayerControl.PlayerControlRights | BuildingActions = 2
+APIShared.PlayerControl.PlayerControlRights | Construction = 8
+APIShared.PlayerControl.PlayerControlRights | DestructiveActions = 16
+APIShared.PlayerControl.PlayerControlRights | None = 0
+APIShared.PlayerControl.PlayerControlRights | PlayerEconomy = 4
+APIShared.PlayerControl.PlayerControlRights | UnitOrders = 1
+APIShared.PlayerControl.PlayerControlSelectionMode | public enum APIShared.PlayerControl.PlayerControlSelectionMode : int
+APIShared.PlayerControl.PlayerControlSelectionMode | AdditionalOwners = 1
+APIShared.PlayerControl.PlayerControlSelectionMode | ExclusivePlayer = 0
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }
