@@ -92,8 +92,8 @@ namespace APIShared
                         NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_SEND: method=validated-managed-IL; native queue=reference-rva 0x23990; Chore only, no Steam fallback.");
                     }
                 }),
-                new NativeInitializationStep("eliminated-player view identity", () =>
-                    EliminatedPlayerViewIdentity.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("shared player-view identity", () =>
+                    PlayerViewIdentityRuntime.Instance.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native Chore dispatch scope", () => {
                     // The reader step already reported an unsupported image; one cause, one failure.
                     if (!Networking.NativeChoreContext.IsReady)

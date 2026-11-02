@@ -8,6 +8,7 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
+using APIShared.PlayerControl;
 
 namespace APIShared
 {
@@ -38,6 +39,8 @@ namespace APIShared
         private static int identityOverridePlayerId = -1;
         private static bool lifecycleBound;
         private static object perspectiveEngineGate;
+        private static readonly PlayerViewIdentityOwner viewOwner = new PlayerViewIdentityOwner("spectator-view", OnViewIdentityFailure);
+        private static ControlSaveIdentity.Lease viewLease;
         private static int selectedSpectatorPlayerId;
         private static int transitionViewPlayerId;
         private static int transitionActive;
@@ -79,7 +82,7 @@ namespace APIShared
         {
             // The hot hook never touches Unity state. Session teardown clears this flag,
             // and inactive calls retain the original Script Extender behavior.
-            int protectedPlayer = EliminatedPlayerViewIdentity.ProtectedPlayerId;
+            int protectedPlayer = PlayerViewIdentityRuntime.Instance.ProtectedPlayerId;
             if (protectedPlayer > 0) return protectedPlayer;
             if (Volatile.Read(ref identityOverrideActive) != 0) return Volatile.Read(ref identityOverridePlayerId);
             return originalLocalPlayerId(self);
@@ -102,7 +105,8 @@ namespace APIShared
         /// <summary>Gets the selected report viewpoint; outside spectator mode this is the native view.</summary>
         public static int GetViewedPlayerId()
         {
-            if (EliminatedPlayerViewIdentity.Faulted) return -1;
+            var failure = PlayerViewIdentityRuntime.Instance.Identity?.LastFailure;
+            if (failure != null && ReferenceEquals(failure.Lease, viewLease)) return -1;
             if (Volatile.Read(ref transitionActive) != 0)
                 return Volatile.Read(ref transitionViewPlayerId);
             if (Volatile.Read(ref viewUncertain) != 0) return -1;
@@ -122,7 +126,10 @@ namespace APIShared
             catch { return -1; }
         }
 
-        /// <summary>Changes Vanilla's view and publishes it for an original spectator only.</summary>
+        /// <summary>
+        /// Changes Vanilla's view and publishes it for an original spectator only.
+        /// Returns false while another role owns the participant view or a Save/send scope is active.
+        /// </summary>
         public static bool TrySetSpectatorView(int playerId)
         {
             if (localPlayerIdHook == null || playerId < 1 || playerId > 8) return false;
@@ -137,24 +144,38 @@ namespace APIShared
             string failure;
             try
             {
-                object engineGate = EliminatedPlayerViewIdentity.EngineGate ?? perspectiveEngineGate;
+                object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
                 if (engineGate == null)
-                    changed = TryChangeViewCore(playerId, GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer, out failure);
+                    changed = TryChangeViewCore(playerId, GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer,
+                        out failure, contextValid: IsUnboundViewIdentity);
                 else lock (engineGate)
-                    changed = TryChangeViewCore(playerId, GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer, out failure);
+                    changed = TryChangeViewCore(playerId, GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer,
+                        out failure, contextValid: IsUnboundViewIdentity);
             }
             finally { changes.Drain(); }
             if (!changed) transitionLog?.LogError("PLAYER_PERSPECTIVE_SWITCH_FAILED: " + failure);
             return changed;
         }
 
+        private static bool IsUnboundViewIdentity()
+        {
+            var core = PlayerViewIdentityRuntime.Instance.Identity;
+            return core == null || (core.CurrentLease == null && !core.IsScopeActive);
+        }
+
         internal static void BindLifecycle(MissionLifecycleService lifecycle)
         {
             if (lifecycleBound || lifecycle == null) return;
             if (!lifecycle.Bind("APIShared.player-perspective").TryRegisterObserver("view-reset",
-                _ => ClearSpectatorView(), _ => ClearSpectatorView(), null, out var diagnostic))
+                _ => EndViewWorld(), _ => EndViewWorld(), null, out var diagnostic))
                 throw new InvalidOperationException("Player-perspective lifecycle unavailable: " + diagnostic?.Reason);
             lifecycleBound = true;
+        }
+
+        private static void EndViewWorld()
+        {
+            PlayerViewIdentityRuntime.Instance.RetireEndedWorld();
+            ClearSpectatorView();
         }
 
         /// <summary>
@@ -170,7 +191,7 @@ namespace APIShared
         {
             if (!Internal.UnityMainThreadDispatch.IsMainThread || localPlayerIdHook == null ||
                 playerId < 1 || playerId > 8) return false;
-            object engineGate = EliminatedPlayerViewIdentity.EngineGate ?? perspectiveEngineGate;
+            object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
             if (engineGate == null) return false;
             try
             {
@@ -180,11 +201,15 @@ namespace APIShared
                     var state = GameData.Instance?.lastGameState;
                     int actual = GetControlledPlayerId();
                     var observations = ApiSharedRuntime.ProcessInstance.PlayerDefeatState;
+                    var runtime = PlayerViewIdentityRuntime.Instance;
+                    var core = runtime.Identity;
                     if (context == null || state == null || actual < 1 || actual > 8 ||
                         state.game_type != (int)eGameTypeModes.GAMETYPE_MULTIPLAYER || state.spectatorMode == 0 ||
                         !state.is_human_or_skirmish_player(playerId) || observations == null ||
                         !observations.TryGetState(context.SessionId, actual, out var snapshot) || !snapshot.IsEliminated) return false;
-                    if (playerId == actual && EliminatedPlayerViewIdentity.ProtectedPlayerId == 0 &&
+                    if (viewLease != null && (core == null || !core.IsOwned(viewOwner, viewLease))) viewLease = null;
+                    if (core?.CurrentLease != null && !core.IsOwned(viewOwner, viewLease)) return false;
+                    if (playerId == actual && viewLease == null &&
                         GetRawNativeViewPlayerId() == actual)
                     {
                         long ownWorld = MissionLifecycleService.NativeWorld?.Sequence ?? 0;
@@ -192,11 +217,18 @@ namespace APIShared
                             () => ownWorld > 0 && MissionLifecycleService.NativeWorld?.Sequence == ownWorld &&
                                 MissionLifecycleService.ActiveContext?.SessionId == context.SessionId);
                     }
-                    if (!EliminatedPlayerViewIdentity.TryBind(context.SessionId, actual, out _)) return false;
-                    long viewToken = EliminatedPlayerViewIdentity.CurrentToken;
+                    if (!runtime.ForeignViewsReady || core == null || core.IsScopeActive) return false;
+                    if (viewLease == null)
+                    {
+                        long world = MissionLifecycleService.NativeWorld?.Sequence ?? 0;
+                        if (!core.TryBind(viewOwner, world, actual, out viewLease, out _)) return false;
+                    }
+                    if (!core.IsCurrent(viewOwner, viewLease) || viewLease.Human != actual || core.Failure != null) return false;
+                    var selectedLease = viewLease;
                     bool changed = TryChangeViewCore(playerId, GetRawNativeViewPlayerId,
                         EngineInterface.SetEditorPlayer, out string failure, actual,
-                        () => EliminatedPlayerViewIdentity.IsCurrentBinding(context.SessionId, actual, viewToken));
+                        () => core.IsCurrent(viewOwner, selectedLease) &&
+                            MissionLifecycleService.ActiveContext?.SessionId == context.SessionId);
                     if (!changed) NativeApiLog.Error(transitionLog, "ELIMINATED_PLAYER_VIEW_FAILED: " + failure);
                     return changed;
                 }
@@ -215,20 +247,36 @@ namespace APIShared
         /// </summary>
         public static void ClearEliminatedPlayerView()
         {
-            if (EliminatedPlayerViewIdentity.ProtectedPlayerId != 0 ||
+            if (viewLease != null ||
                 (Volatile.Read(ref identityOverrideActive) != 0 && Volatile.Read(ref identityOverridePlayerId) > 0))
                 ClearSpectatorView();
         }
 
-        // Main-thread delivery of asynchronous save/send restoration failures.
-        internal static void InvalidateProtectedView()
+        private static void OnViewIdentityFailure(ControlSaveIdentity.FailureRecord failure)
         {
+            var runtime = PlayerViewIdentityRuntime.Instance;
+            if (runtime.EngineGate == null) return;
+            try
+            {
+                lock (runtime.EngineGate)
+                    TryInvalidateOwnedView(runtime.Identity, viewOwner, viewLease, failure);
+            }
+            finally { changes.Drain(); }
+        }
+
+        // Validation and marking share the lifecycle's engine monitor. Drain after
+        // leaving it, so observers cannot run under the native critical section.
+        internal static bool TryInvalidateOwnedView(ControlSaveIdentity core, object owner,
+            ControlSaveIdentity.Lease ownedLease, ControlSaveIdentity.FailureRecord failure)
+        {
+            if (failure == null || core == null || !ReferenceEquals(ownedLease, failure.Lease) ||
+                !core.IsCurrent(owner, ownedLease)) return false;
             lock (viewChangeGate)
             {
-                if (Interlocked.Exchange(ref viewUncertain, 1) != 0) return;
+                if (Interlocked.Exchange(ref viewUncertain, 1) != 0) return true;
                 changes.Enqueue(Volatile.Read(ref selectedSpectatorPlayerId), -1, PlayerPerspectiveChangeReason.Uncertain);
             }
-            changes.Drain();
+            return true;
         }
 
         // The injected delegates also let the transaction be tested without a running game.
@@ -343,7 +391,7 @@ namespace APIShared
         {
             try
             {
-                object engineGate = EliminatedPlayerViewIdentity.EngineGate ?? perspectiveEngineGate;
+                object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
                 if (engineGate == null) ClearViewCore();
                 else lock (engineGate) ClearViewCore();
             }
@@ -354,8 +402,12 @@ namespace APIShared
 
         private static void ClearViewCore()
         {
-            if (!EliminatedPlayerViewIdentity.TryClear(out string failure))
-            { NativeApiLog.Error(transitionLog, "ELIMINATED_PLAYER_VIEW_CLEAR_FAILED: " + failure); return; }
+            var core = PlayerViewIdentityRuntime.Instance.Identity;
+            if (!TryClearOwnedView(core, viewOwner, ref viewLease, out string failure))
+            {
+                PlayerViewIdentityRuntime.Instance.ObserveFailure(core);
+                NativeApiLog.Error(transitionLog, "ELIMINATED_PLAYER_VIEW_CLEAR_FAILED: " + failure); return;
+            }
             lock (viewChangeGate)
             {
                 int previous = Volatile.Read(ref viewUncertain) != 0 ? -1 :
@@ -368,6 +420,19 @@ namespace APIShared
                 Volatile.Write(ref identityOverridePlayerId, -1);
                 if (hadOverride) changes.Enqueue(previous, -1, PlayerPerspectiveChangeReason.Cleared);
             }
+        }
+
+        // Shared production release path; fixtures combine it with LocalControlRuntime
+        // and the exact same core to prove that public view cleanup cannot steal control.
+        internal static bool TryClearOwnedView(ControlSaveIdentity core, object owner,
+            ref ControlSaveIdentity.Lease ownedLease, out string reason)
+        {
+            reason = null;
+            var captured = ownedLease;
+            if (captured != null && core != null && core.IsOwned(owner, captured) &&
+                !core.TryRestoreAndRelease(owner, captured, out reason)) return false;
+            if (ReferenceEquals(ownedLease, captured)) ownedLease = null;
+            return true;
         }
     }
 }

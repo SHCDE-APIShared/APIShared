@@ -85,6 +85,11 @@ SIMD scratch. Zero demand follows the complete relocated original. Nonzero deman
 requires an actor in 1..8 equal to EBX; any other value, including suspended -1,
 writes zero for the input scope. Only a future verified control runtime may own
 that cell; UI selection or a packet cannot grant input merely by setting a view.
+Before wiring local-control retirement, establish a native queue reset/drain contract:
+`SinglePlayerNativeQueue.End` clears managed sidecars, not native Chore slots.
+`ControlHandlerBridge` follows the original handler when demand is zero, so a view
+restoration or managed cleanup alone is not proof that queued foreign commands
+cannot reach Vanilla. This remains a prerequisite of the unfinished control backend.
 The stub loads the actor cell once per decision, so a concurrent change cannot mix
 two actor states. `LocalControlRuntime` writes the cell only under the engine monitor
 and refuses a protected save lease while the actor is suspended (-1): the blocked
@@ -106,9 +111,11 @@ boundary must leave Vanilla and independently supported backends unchanged.
 
 ## Eliminated participant view protection
 
-`EliminatedPlayerViewIdentity` now connects the common writer guard below to
-confirmed eliminated positive participants without enabling the foreign-control
-backend. Reference SHA-256 is
+`PlayerViewIdentityRuntime` connects the common writer guard below to positive-player
+view leases. Confirmed eliminated participants use it through `PlayerPerspectiveAPI`;
+the developing local-control runtime receives this neutral runtime and derives the
+same engine monitor and identity core from it. This does not enable the unfinished
+foreign-control backend. Reference SHA-256 is
 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
 The local view cell must match the Extender-resolved address at module RVA
 `0x88E3D70` and remain inside the image. Unsupported hashes or unavailable
@@ -130,7 +137,27 @@ The writer guard is installed during the existing startup window and uses its
 existing exclusive site; normal and synchronized saves protect the original
 participant. Recheck all writer callers, native-world/lifecycle invalidation,
 positive local identity, nested callbacks and Vanilla load/remapping on updates.
-The guard and the raw-send detour remain dormant without a protected view.
+Both adapters serialize the lease check and original operation with the same
+engine monitor, including unbound calls. Known Vanilla writer callers already
+hold that monitor; retaining the adapter boundary also prevents a concurrent
+lease acquisition from bypassing protection. Dormant Save/send fixtures verify
+the monitor boundary and zero managed allocations after warm-up.
+Unbound original callbacks also retain the scope depth, preventing reentrant
+view acquisition before a Save or immediate Chore execution has completed.
+
+Identity ownership is shared, not duplicated per role: one `ControlSaveIdentity`
+core issues immutable leases containing owner, native-world epoch, original human
+ID and token. View changes and ordinary release must verify the exact owning lease
+before and after native adapters. A competing role cannot adopt an existing lease;
+its failed acquisition or cleanup must leave that lease intact. `LocalControlRuntime`
+binds its original controller at Begin and stores only its own lease. A direct
+return to Vanilla input confirms suspension before restoring/releasing that lease;
+a failed final input write must leave a safe suspended actor. Ordinary role release
+refuses an ended world; only the neutral root retires it at the existing lifecycle
+invalidation boundary, without native writes. Re-audit reentrant release/replacement,
+nested Save/send scopes and failure delivery against this ownership contract. Stale
+captured failures must neither fault a replacement owner nor reset its deduplication
+state; the common writer's error has one coordinated drain.
 
 ## Optional active-human control-view save identity
 
@@ -166,9 +193,10 @@ an old read cannot release or replace another identity. The central lifecycle's
 private native-world identity survives metadata refreshes but is invalidated before
 load/unload observers; repeated loads get new identities even within one attempt.
 Failed restoration retains human identity
-protection and must block the dependent view lease until recovery. This adapter
-and its private machine fixture do not yet constitute published control/view
-capabilities or live-game save acceptance.
+protection and must block the dependent view lease until recovery. Shared identity
+protection and its private machine fixtures do not establish a complete foreign-command
+backend or live-game Save acceptance. Public eliminated-player perspective helpers
+use this guard independently of that unfinished backend.
 
 ## Synchronized-save archive context
 

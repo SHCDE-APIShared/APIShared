@@ -207,7 +207,7 @@ namespace APIShared.Networking
         }
 
         internal static bool TryQueue(byte[] blob)
-            => EliminatedPlayerViewIdentity.RunSubmission(blob, queueInOriginalIdentity);
+            => PlayerViewIdentityRuntime.Instance.RunSubmission(blob, queueInOriginalIdentity);
 
         private static bool TryQueueCore(byte[] blob)
         {

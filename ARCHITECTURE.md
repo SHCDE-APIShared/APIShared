@@ -283,11 +283,12 @@ binds the native blob and packet ID before typed deserialization, restores neste
 scopes and rejects changed native contexts after consumer validation. Unrelated
 packet IDs take the original path without native reads. Rejected Steam/worker
 deliveries never invoke consumer activation or validation. The raw submission
-checks the real engine monitor/finally and rechecks mutable bindings. It serializes once, rejects a foreign
-enqueue viewpoint and never selects Steam fallback. The old channels remain
-unchanged. This transport identity is only a prerequisite for the developing
-player-control service, whose protocol/permission state is separate from local UI
-selection and report views; it does not itself authorize foreign gameplay.
+checks the real engine monitor/finally and rechecks mutable bindings. It serializes
+once, requires the original participant's enqueue viewpoint and never selects
+Steam fallback. The shared identity scope below supplies that viewpoint for a
+protected view; otherwise the existing checks and channel behavior are unchanged.
+Wire formats and packet IDs are unchanged. Transport identity does not authorize
+foreign gameplay; command permissions remain separate from local UI and report views.
 
 Control development uses the existing mission load/unload state machine's private
 native-world identity. Successful loads create it; metadata checkpoints preserve it,
@@ -295,13 +296,35 @@ and load/unload invalidates it before observer delivery. It is separate from the
 clock snapshot and process-local mission attempt. No second start detector or
 periodic world scan is introduced. The local single-owner queue checks current
 session health even before allowing an untracked Vanilla path; stale mode reads
-cannot retire a reentrantly replaced session. The internal `LocalControlRuntime` is
-the only coordinator of the local blocks: under the engine monitor it binds session
-and queue to one native world, then publishes handler demand; on retirement it clears
-demand and the input actor, ends queue and session, and retires the ended world's
-save identity in that order. Components are never begun or ended individually.
-Native control/view providers, their wiring to this runtime and any public capability
-still require integration and game acceptance; the control types remain internal.
+cannot retire a reentrantly replaced session.
+
+`PlayerViewIdentityRuntime` owns one process-wide `ControlSaveIdentity` core for
+positive-player views. The common Save writer, raw Chore submission and local-ID
+correction use that same core. Its immutable leases bind owner, native-world epoch,
+original human ID and token; another owner cannot reuse or release an existing lease.
+Role policy remains with `PlayerPerspectiveAPI` or the control coordinator. A normal
+release restores the owning lease's original view and rechecks that exact lease;
+ordinary release refuses an ended world, which only the neutral root retires at
+the existing lifecycle invalidation boundary without native writes. Failure delivery
+is bound to the originating lease; delayed observations cannot reset a newer lease's
+deduplication state or invalidate its view. Hook lifetime remains process-wide.
+
+The internal `LocalControlRuntime` coordinates its local blocks under the engine
+monitor. It binds session and queue to one native world and original controller,
+then publishes handler demand. Its constructor receives `PlayerViewIdentityRuntime`
+and derives the engine monitor and identity core from that root; it cannot be wired
+to a different guard. It keeps only its own exact lease. Retirement stops dispatch
+and clears queue/session state; returning input to Vanilla, including a direct
+`TrySetActor(0)`, first confirms suspended input, then restores and releases the
+owned view. A failed final Vanilla-input write therefore leaves suspended input;
+failed suspension retains the lease. It cannot release the observer role's lease. Components
+are never begun or ended individually. The public eliminated-player perspective
+helper uses this shared protection without requiring the unfinished general control backend.
+Native control providers, their wiring to the local runtime and any public control
+capability still require integration and game acceptance; the control types remain internal.
+Before wiring retirement to the native handler, prove that delegated native queue
+entries have drained or been reset. Ending managed sidecars alone does not remove
+native commands; disabling the handler guard could otherwise send them to Vanilla.
 
 The preset view model owns UI bindings, commands and role/context presentation.
 Its small `PresetHost` adapter implements the internal `ILobbyPresetHost` boundary:

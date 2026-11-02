@@ -2151,12 +2151,28 @@ reports; it never grants gameplay permission.
 Foreign participant views require the audited common Save writer and raw Chore
 submission protections. Both temporarily use the original identity under the
 actual engine monitor, including nested saves and synchronous packet callbacks;
-the published view does not change during those scopes. View changes/releases
-are rejected while a scope is active. Native-world replacement prevents old-view
-rollback. Submission result and original writer result survive a later failed
+the published view does not change during those scopes. Save and raw submission use
+the same engine monitor even before a lease is acquired, so concurrent or reentrant
+acquisition cannot bypass identity protection. Their dormant paths add no allocations. View
+changes/releases are rejected while a scope is active. Native-world replacement
+prevents old-view rollback. Submission result and original writer result survive a later failed
 view restoration; a rejected protected raw send throws rather than allowing an
 unsynchronized Steam fallback. Protection failures are reported on Unity and
 invalidate the dependent view. These guards do not validate consumer commands.
+
+Internally, `PlayerViewIdentityRuntime` coordinates one shared identity core for
+these observer views and the developing local-control runtime. An immutable lease
+identifies its owner, native world, original participant and token. A role can
+restore or release only its own exact lease; a live lease owned by another role
+rejects acquisition. Ordinary role release refuses an ended world; the neutral root
+retires it at the existing lifecycle boundary without native writes. The local-control
+coordinator receives this neutral root rather than a separate guard, and restores its
+owned view before enabling Vanilla input. It first confirms suspended input, so a
+failed final input write cannot leave a positive actor after the lease is freed.
+Failure notifications retain their lease
+identity and cannot invalidate a later owner's view. This coordination adds no public
+lease API or control capability: consumers continue to use the perspective helpers
+and existing change events.
 
 The unchanged own view remains available when optional foreign-view protection
 is unavailable. `ClearEliminatedPlayerView()` restores the own native view before

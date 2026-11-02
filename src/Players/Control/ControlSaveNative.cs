@@ -27,7 +27,6 @@ namespace APIShared.PlayerControl
         private static readonly Func<WriterArguments, ulong> writeOriginal = WriteOriginal;
         private static DetourHandle<WriterCall> handle;
         private static ControlSaveIdentity identity;
-        private static string deferredFailure;
 
         private readonly struct WriterArguments
         {
@@ -38,11 +37,20 @@ namespace APIShared.PlayerControl
         }
 
         internal static bool IsReady => publication.IsReady;
+        internal static bool IsBoundTo(ControlSaveIdentity guard) => publication.IsReady && ReferenceEquals(identity, guard);
+
+        internal static void ValidateIdentityBinding(ControlSaveIdentity existing, ControlSaveIdentity requested)
+        {
+            if (requested == null) throw new ArgumentNullException(nameof(requested));
+            if (existing != null && !ReferenceEquals(existing, requested))
+                throw new InvalidOperationException("PLAYER_CONTROL_SAVE: the published writer belongs to a different identity core.");
+        }
 
         internal static void Initialize(CrusaderLibraryLoadContext context, string hash,
             ControlSaveIdentity guard, ManualLogSource log)
         {
             publication.ThrowIfUnavailable();
+            ValidateIdentityBinding(identity, guard);
             if (publication.IsReady) return;
             if (!NativeStartupPatchWindow.IsOpen)
                 throw new InvalidOperationException("PLAYER_CONTROL_SAVE: initialize only in the startup patch window; no late native installation is allowed.");
@@ -95,7 +103,7 @@ namespace APIShared.PlayerControl
         private static ulong OnWriter(IntPtr manager, IntPtr sections, byte mapSave)
         {
             var guard = identity;
-            if (!publication.IsReady || guard == null || guard.ProtectedHumanId == 0)
+            if (!publication.IsReady || guard == null)
                 return handle.Original(manager, sections, mapSave);
             return RunProtectedWriter(guard, new WriterArguments(manager, sections, mapSave), writeOriginal);
         }
@@ -103,14 +111,25 @@ namespace APIShared.PlayerControl
         // The native error boundary is also exercised with a throwing world
         // adapter. If a post-write check throws, the file has already been written;
         // preserve the writer's result rather than reporting a false write failure.
-        internal static ulong RunProtectedWriter<TState>(ControlSaveIdentity guard, TState state, Func<TState, ulong> writer)
+        internal static ulong RunProtectedWriter<TState>(ControlSaveIdentity guard, TState state, Func<TState, ulong> writer,
+            PlayerViewIdentityRuntime runtime = null)
         {
             ulong result = 0;
+            ControlSaveIdentity.Lease lease = null;
+            var coordinator = runtime ?? PlayerViewIdentityRuntime.Instance;
             string protectionFailure = null;
             try
             {
-                bool completed = guard.TryRunWriter(state, writer, out result, out string reason);
-                if (!completed) Interlocked.Exchange(ref deferredFailure, protectionFailure = reason);
+                if (!ReferenceEquals(coordinator.Identity, guard))
+                    throw new InvalidOperationException("The save adapter and coordinator must use the same identity core.");
+                // Known Vanilla callers already hold this monitor. Retain the
+                // boundary here as well, including concurrent unbound acquisition.
+                lock (coordinator.EngineGate)
+                {
+                    lease = guard.CurrentLease;
+                    bool completed = guard.TryRunWriter(state, writer, out result, out string reason);
+                    if (!completed) protectionFailure = reason;
+                }
                 // A restoration failure can follow a successful file write. Keep
                 // Vanilla's actual writer result; report/fault the dependent view
                 // separately. Before-writer rejection leaves result at zero.
@@ -120,13 +139,14 @@ namespace APIShared.PlayerControl
             {
                 // No managed exception crosses the native writer boundary. The
                 // scope's finally has already attempted to restore the leased view.
-                Interlocked.Exchange(ref deferredFailure, protectionFailure = "Protected writer failed: " + error.GetType().Name + ": " + error.Message);
+                protectionFailure = "Protected writer failed: " + error.GetType().Name + ": " + error.Message;
             }
-            finally { EliminatedPlayerViewIdentity.ObserveFailure(guard, protectionFailure); }
+            finally
+            {
+                if (protectionFailure != null) guard.ReportFailure(lease, protectionFailure);
+                coordinator.ObserveFailure(guard);
+            }
             return result;
         }
-
-        // Drain/log only outside the native/engine critical section on Unity.
-        internal static string TakeFailure() => Interlocked.Exchange(ref deferredFailure, null);
     }
 }

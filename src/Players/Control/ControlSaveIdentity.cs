@@ -3,28 +3,46 @@ using System.Threading;
 
 namespace APIShared.PlayerControl
 {
-    // Optional active-human view-lease protection. Original spectators do not need
-    // it and must not depend on its availability. The runtime adapter owns the
-    // exclusive view lease, engine monitor and validated native view cell; neither
-    // consumers nor packets provide these delegates. This class installs no hook.
+    // One owner-bound positive participant identity protects the shared native view.
+    // The process coordinator owns this state; role adapters receive lease handles,
+    // never an independently constructed production guard or the native delegates.
+    // Mutation/scopes require the engine monitor. Delayed failure reports cannot
+    // overwrite a replacement lease's fault.
     internal sealed class ControlSaveIdentity
     {
-        private sealed class Binding
+        internal sealed class Lease
         {
+            internal readonly object Owner;
             internal readonly long Epoch, Token;
             internal readonly int Human;
-            internal Binding(long epoch, long token, int human) { Epoch = epoch; Token = token; Human = human; }
+            internal Lease(object owner, long epoch, long token, int human)
+            { Owner = owner; Epoch = epoch; Token = token; Human = human; }
+        }
+
+        internal sealed class FailureRecord
+        {
+            internal readonly Lease Lease;
+            internal readonly string Reason;
+            internal FailureRecord(Lease lease, string reason) { Lease = lease; Reason = reason; }
+        }
+
+        // Lease and fault publish atomically. An old asynchronous error cannot
+        // erase a new fault by racing with lease replacement or release.
+        private sealed class BoundState
+        {
+            internal readonly Lease Lease;
+            internal readonly FailureRecord Failure;
+            internal BoundState(Lease lease, FailureRecord failure) { Lease = lease; Failure = failure; }
         }
 
         private readonly Func<bool> inEngineContext;
         private readonly Func<long, bool> isCurrentLocalWorld;
         private readonly Func<int> readView;
         private readonly Action<int> writeView;
-        private Binding binding;
+        private BoundState binding;
         private long nextToken;
         private int saveDepth;
         private bool changingIdentity;
-        private string failure;
 
         internal ControlSaveIdentity(Func<bool> inEngineContext, Func<long, bool> isCurrentLocalWorld,
             Func<int> readView, Action<int> writeView)
@@ -35,108 +53,192 @@ namespace APIShared.PlayerControl
             this.writeView = writeView ?? throw new ArgumentNullException(nameof(writeView));
         }
 
-        // Safe for the existing GetLocalPlayerId hook: no lock, native lookup,
-        // allocation, consumer predicate or Unity access in this hot observation.
-        internal int ProtectedHumanId => Volatile.Read(ref binding)?.Human ?? 0;
+        // Hot identity observation performs no lock, game lookup or allocation.
+        internal Lease CurrentLease => Volatile.Read(ref binding)?.Lease;
+        internal FailureRecord LastFailure => Volatile.Read(ref binding)?.Failure;
+        internal int ProtectedHumanId => CurrentLease?.Human ?? 0;
         internal bool IsScopeActive => saveDepth != 0 || changingIdentity;
-        internal string Failure => Volatile.Read(ref failure);
+        internal string Failure => LastFailure?.Reason;
 
-        internal bool TryBind(long epoch, int actualHuman, out long token, out string reason)
+        internal bool IsOwned(object owner, Lease lease) => owner != null && lease != null &&
+            ReferenceEquals(lease.Owner, owner) && ReferenceEquals(CurrentLease, lease);
+
+        internal bool IsCurrent(object owner, Lease lease) => IsOwned(owner, lease) &&
+            isCurrentLocalWorld(lease.Epoch) && IsOwned(owner, lease);
+
+        internal bool TryBind(object owner, long epoch, int actualHuman, out Lease lease, out string reason)
         {
-            token = 0; reason = null;
-            if (changingIdentity || saveDepth != 0 || binding != null || nextToken == long.MaxValue)
-            { reason = "The view identity is already protected or a save is in progress."; return false; }
+            lease = null; reason = null;
+            if (owner == null || changingIdentity || saveDepth != 0 || CurrentLease != null || nextToken == long.MaxValue)
+            { reason = "A non-null owner and an unbound stable view identity are required."; return false; }
             changingIdentity = true;
             try
             {
                 if (!inEngineContext() || epoch <= 0 || actualHuman < 1 || actualHuman > 8 || !isCurrentLocalWorld(epoch))
-                { reason = "A serialized active-human singleplayer view context is required."; return false; }
-                // Bind before changing the native view. Do not adopt another API's
-                // already changed viewpoint as the original human identity. Reads
-                // may cross managed observers, so recheck the world afterwards.
+                { reason = "A serialized current positive-participant view context is required."; return false; }
+                // Bind before changing the view. Never adopt another owner's
+                // viewpoint as the actual controller or reuse its token.
                 if (!TryRead(out int current, out reason) || current != actualHuman || !isCurrentLocalWorld(epoch))
-                { reason = reason ?? "The current native view is not the original human player in the requested world."; return false; }
-                var next = new Binding(epoch, ++nextToken, actualHuman);
-                Volatile.Write(ref failure, null);
-                Volatile.Write(ref binding, next); token = next.Token;
+                { reason = reason ?? "The native view is not the actual participant in the requested world."; return false; }
+                var next = new Lease(owner, epoch, ++nextToken, actualHuman);
+                if (Interlocked.CompareExchange(ref binding, new BoundState(next, null), null) != null)
+                { reason = "Another view identity was acquired during validation."; return false; }
+                lease = next;
                 return true;
             }
             finally { changingIdentity = false; }
         }
 
-        internal bool TryRelease(long token, out string reason)
+        // This no-write release remains legal inside a writer callback after the
+        // writer installed the own view. Its outer finally sees the retired exact
+        // lease and must not restore a previously borrowed foreign view.
+        internal bool TryRelease(object owner, Lease lease, out string reason)
         {
             reason = null;
-            var current = Volatile.Read(ref binding);
-            if (changingIdentity || !inEngineContext() || current == null || current.Token != token)
-            { reason = "No matching protected view identity."; return false; }
+            if (changingIdentity || !inEngineContext() || !IsOwned(owner, lease))
+            { reason = "No matching owner-bound protected view identity."; return false; }
             changingIdentity = true;
             try
             {
-                if (!Current(current))
-                { reason = "The protected world has ended; retire its identity without writing into the new world."; return false; }
-                if (!TryRead(out int nativeView, out reason) || nativeView != current.Human || !Current(current))
-                { reason = reason ?? "Restore the original human view before releasing its identity."; return false; }
-                Volatile.Write(ref binding, null); Volatile.Write(ref failure, null);
+                if (!IsCurrent(owner, lease))
+                { reason = "The protected world has ended; retire its lease without writing into the replacement."; return false; }
+                if (!TryRead(out int nativeView, out reason) || nativeView != lease.Human || !IsCurrent(owner, lease))
+                { reason = reason ?? "Restore the actual participant view before releasing its identity."; return false; }
+                if (!TryRemove(lease)) { reason = "The protected view lease changed during release."; return false; }
                 return true;
             }
             finally { changingIdentity = false; }
         }
 
-        // Lifecycle replacement only. It never writes a view from an old world
-        // into the next one; an ordinary lease release must first restore its view.
-        internal bool RetireEndedWorld(long expectedEpoch)
+        // Ordinary role retirement owns only this exact lease. The root-only
+        // world invalidation below may retire any lease of the ended world.
+        internal bool TryRestoreAndRelease(object owner, Lease lease, out string reason)
         {
-            var current = Volatile.Read(ref binding);
-            if (!inEngineContext() || current == null || current.Epoch != expectedEpoch || isCurrentLocalWorld(expectedEpoch)) return false;
-            if (!ReferenceEquals(Interlocked.CompareExchange(ref binding, null, current), current)) return false;
-            Volatile.Write(ref failure, null);
-            return true;
+            reason = null;
+            if (changingIdentity || saveDepth != 0 || !inEngineContext() || !IsOwned(owner, lease))
+            { reason = "No stable matching owner-bound view lease is available for restoration."; return false; }
+            changingIdentity = true;
+            try
+            {
+                bool currentWorld = isCurrentLocalWorld(lease.Epoch);
+                if (!IsOwned(owner, lease)) { reason = "The view lease changed before restoration."; return false; }
+                if (!currentWorld)
+                {
+                    reason = "Only the central lifecycle may retire an invalidated native world's lease.";
+                    return false;
+                }
+                if (!TryWrite(lease, lease.Human, out reason))
+                { ReportFailure(lease, reason); return false; }
+                if (!IsCurrent(owner, lease) || !TryRemove(lease))
+                { reason = "The view lease changed during restoration."; return false; }
+                return true;
+            }
+            finally { changingIdentity = false; }
         }
 
-        // The native writer adapter passes its arguments as a struct and a cached
-        // static delegate. Inactive saves take the complete original path without
-        // invoking the mode/read/write adapters. Native callers must catch managed
-        // exceptions; an original-writer exception still runs this finally block.
+        // Root-only lifecycle replacement, never a role adapter's generic cleanup.
+        // No native write; a reentrantly replaced lease remains untouched.
+        internal bool RetireEndedWorld(long expectedEpoch)
+        {
+            var captured = CurrentLease;
+            if (!inEngineContext() || captured == null || captured.Epoch != expectedEpoch || isCurrentLocalWorld(expectedEpoch)) return false;
+            return TryRemove(captured);
+        }
+
+        // Delayed errors identify the exact immutable lease, not only its world
+        // or controller (which a later lease may legitimately share).
+        internal bool ReportFailure(Lease lease, string reason)
+        {
+            if (lease == null || string.IsNullOrEmpty(reason)) return false;
+            while (true)
+            {
+                var current = Volatile.Read(ref binding);
+                if (current == null || !ReferenceEquals(current.Lease, lease)) return false;
+                if (current.Failure != null && string.Equals(current.Failure.Reason, reason, StringComparison.Ordinal)) return true;
+                var next = new BoundState(lease, new FailureRecord(lease, reason));
+                if (ReferenceEquals(Interlocked.CompareExchange(ref binding, next, current), current)) return true;
+            }
+        }
+
+        // Native adapters retain the writer's result even if restoration fails
+        // afterwards. Exceptions are contained by those adapter boundaries.
         internal bool TryRunWriter<TState, TResult>(TState state, Func<TState, TResult> original,
             out TResult result, out string reason)
         {
             if (original == null) throw new ArgumentNullException(nameof(original));
             reason = null; result = default;
-            var captured = Volatile.Read(ref binding);
-            if (captured == null) { result = original(state); return true; }
-            if (changingIdentity || !inEngineContext() || !Current(captured))
-            { reason = "The protected save has no current serialized local world."; return false; }
-            // Block a replacement lease before the first native adapter, not just
-            // while the original writer runs. Nested original saves remain valid.
+            var captured = CurrentLease;
+            if (captured == null)
+            {
+                // The original can synchronously call back into a view consumer.
+                // Keep acquisition blocked until even an unbound Save/send ends.
+                saveDepth++;
+                try { result = original(state); return true; }
+                finally { saveDepth--; }
+            }
+            try { return RunCapturedWriter(captured, state, original, out result, out reason); }
+            catch (Exception error)
+            {
+                ReportFailure(captured, "Protected operation failed: " + error.GetType().Name + ": " + error.Message);
+                throw;
+            }
+        }
+
+        private bool RunCapturedWriter<TState, TResult>(Lease captured, TState state, Func<TState, TResult> original,
+            out TResult result, out string reason)
+        {
+            reason = null; result = default;
+            if (changingIdentity || !inEngineContext() || !IsCurrent(captured.Owner, captured))
+            {
+                reason = "The protected operation has no current serialized view world.";
+                ReportFailure(captured, reason);
+                return false;
+            }
+            // Nested sends/writers are valid, but acquisition and restoring role
+            // release wait until every enclosing scope has returned.
             saveDepth++;
             int previous = 0;
             bool restoreNeeded = false, restoreSucceeded = true;
             try
             {
-                if (!TryRead(out previous, out reason) || previous < 1 || previous > 8 || !Current(captured))
-                { reason = Fail(reason ?? "The previous native view or world cannot be restored."); return false; }
+                if (!TryRead(out previous, out reason) || previous < 1 || previous > 8 || !IsCurrent(captured.Owner, captured))
+                {
+                    reason = reason ?? "The previous native view or world cannot be restored.";
+                    ReportFailure(captured, reason); return false;
+                }
                 restoreNeeded = true; // A throwing setter may already have written.
                 if (!TryWrite(captured, captured.Human, out reason))
-                { reason = Fail(reason); return false; }
+                { ReportFailure(captured, reason); return false; }
                 result = original(state);
             }
             finally
             {
                 try
                 {
-                    // Never roll back a setter/read that replaced the world or
-                    // released this lease. This applies before the writer too.
-                    if (restoreNeeded && Current(captured))
+                    if (restoreNeeded && IsCurrent(captured.Owner, captured))
                     {
                         restoreSucceeded = TryWrite(captured, previous, out string restore);
-                        if (!restoreSucceeded) reason = Fail((reason == null ? string.Empty : reason + " ") +
-                            "Could not restore the leased view after saving: " + restore);
+                        if (!restoreSucceeded)
+                        {
+                            reason = (reason == null ? string.Empty : reason + " ") +
+                                "Could not restore the borrowed view after the protected operation: " + restore;
+                            ReportFailure(captured, reason);
+                        }
                     }
                 }
                 finally { saveDepth--; }
             }
             return restoreSucceeded;
+        }
+
+        private bool TryRemove(Lease lease)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref binding);
+                if (current == null || !ReferenceEquals(current.Lease, lease)) return false;
+                if (ReferenceEquals(Interlocked.CompareExchange(ref binding, null, current), current)) return true;
+            }
         }
 
         private bool TryRead(out int view, out string reason)
@@ -146,24 +248,19 @@ namespace APIShared.PlayerControl
             catch (Exception error) { reason = "Native view read failed: " + error.GetType().Name + ": " + error.Message; return false; }
         }
 
-        private bool Current(Binding expected) => ReferenceEquals(Volatile.Read(ref binding), expected) &&
-            isCurrentLocalWorld(expected.Epoch) && ReferenceEquals(Volatile.Read(ref binding), expected);
-
-        private bool TryWrite(Binding expected, int view, out string reason)
+        private bool TryWrite(Lease expected, int view, out string reason)
         {
             reason = null;
             try
             {
-                if (!Current(expected)) { reason = "The protected view or world changed."; return false; }
+                if (!IsCurrent(expected.Owner, expected)) { reason = "The protected view or world changed."; return false; }
                 writeView(view);
-                if (!Current(expected)) { reason = "The protected view or world changed during its native write."; return false; }
-                if (readView() == view && Current(expected)) return true;
+                if (!IsCurrent(expected.Owner, expected)) { reason = "The protected view or world changed during its native write."; return false; }
+                if (readView() == view && IsCurrent(expected.Owner, expected)) return true;
                 reason = "Native view write was not confirmed.";
             }
             catch (Exception error) { reason = "Native view write failed: " + error.GetType().Name + ": " + error.Message; }
             return false;
         }
-
-        private string Fail(string reason) { Volatile.Write(ref failure, reason); return reason; }
     }
 }

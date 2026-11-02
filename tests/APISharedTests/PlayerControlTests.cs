@@ -530,32 +530,51 @@ namespace APISharedTests
             var gate = new object();
             long currentWorld = 1;
             int nativeView = 1;
+            bool failRestore = false;
             var writes = new List<string>();
             var session = new SinglePlayerControlSession(new CommandRules(),
                 (PlayerControlObject captured, out PlayerControlObject live) => { live = captured; return true; }, () => true);
             Assert.IsTrue(session.Register("independent.mod", "control", out string key));
             var queue = new SinglePlayerNativeQueue(session);
             var save = new ControlSaveIdentity(() => System.Threading.Monitor.IsEntered(gate), world => world == currentWorld,
-                () => nativeView, view => nativeView = view);
-            var runtime = new LocalControlRuntime(gate, session, queue, save,
+                () => nativeView, view => { if (failRestore && view == 1) throw new InvalidOperationException("view restore failed"); nativeView = view; });
+            var coordinator = new APIShared.PlayerViewIdentityRuntime(save, gate, _ => false, _ => { });
+            var runtime = new LocalControlRuntime(coordinator, session, queue,
                 demand => writes.Add("demand=" + demand), actor => writes.Add("actor=" + actor));
 
-            runtime.Begin(1, 0x1000, 0);
+            runtime.Begin(1, 0x1000, 1);
             Assert.AreEqual(1, runtime.World);
             CollectionAssert.AreEqual(new[] { "demand=1" }, writes);
-            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Begin(1, 0x1000, 0));
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Begin(1, 0x1000, 1));
+            Assert.IsTrue(runtime.TrySetActor(1, out _), "An active human may retain its own input actor without optional view protection.");
+            Assert.IsFalse(runtime.TrySetActor(3, out _), "Foreign human-player input must not start before acquiring its own participant lease.");
+            Assert.IsFalse(runtime.TryBindSave(0, out _, out _));
+            Assert.IsFalse(runtime.TryBindSave(2, out _, out _), "A caller-supplied human must match Begin's real controller.");
             Assert.IsTrue(session.SetGrant(1, key, 1 << 2, PlayerControlRights.UnitOrders, 1));
             var body = new byte[] { 1, 2 };
             var batch = new ControlCommandBatch(Array.Empty<PlayerControlObject>(), new[] { new ControlNativeCommand(2, 1, body) });
             var entry = new ControlNativeQueueEntry(1, 0x1000, 0, 200000001, 2, 1);
             Assert.IsTrue(queue.Capture(entry, body, key, 1, batch, null, out _));
-            Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            Assert.IsTrue(runtime.TryBindSave(1, out long token, out _));
+            var firstLease = save.CurrentLease;
+            Assert.IsTrue(runtime.TryBindSave(1, out long repeated, out _));
+            Assert.AreEqual(token, repeated, "Repeated acquisition may reuse only this runtime's exact healthy lease.");
+            Assert.AreSame(firstLease, save.CurrentLease);
+            Assert.IsTrue(runtime.TrySetActor(3, out _));
+            nativeView = 3;
+            Assert.IsTrue(runtime.TrySetActor(0, out _));
+            Assert.AreEqual(1, nativeView, "Returning to Vanilla input must restore the true participant view first.");
+            Assert.IsNull(save.CurrentLease);
+            Assert.AreEqual(0, runtime.Actor);
+            Assert.IsTrue(runtime.TryBindSave(1, out long nextToken, out _));
+            Assert.AreNotEqual(token, nextToken, "Released ownership cannot be silently reused as a new view lease.");
             Assert.IsTrue(runtime.TrySetActor(3, out _));
 
             // The native world ends: one ordered retirement, independent of the lifecycle thread.
             currentWorld = 2; writes.Clear();
+            coordinator.RetireEndedWorld();
             Assert.IsTrue(runtime.Retire(out string reason), reason);
-            CollectionAssert.AreEqual(new[] { "demand=0", "actor=0" }, writes);
+            CollectionAssert.AreEqual(new[] { "actor=-1", "demand=0", "actor=0" }, writes);
             Assert.AreEqual(0, runtime.World); Assert.AreEqual(0, runtime.Actor);
             Assert.AreEqual(0, session.PendingCount);
             Assert.AreEqual(0, save.ProtectedHumanId, "The ended world's save binding would refuse every later save.");
@@ -566,6 +585,8 @@ namespace APISharedTests
 
             // The next world binds without manual component sequencing.
             runtime.Begin(2, 0x2000, 0);
+            Assert.IsFalse(runtime.TryBindSave(1, out _, out _), "An original spectator cannot adopt a positive participant identity.");
+            Assert.IsNull(save.CurrentLease);
             Assert.IsTrue(session.SetGrant(2, key, 1 << 2, PlayerControlRights.UnitOrders, 1));
             var next = new ControlNativeQueueEntry(2, 0x2000, 0, 200000002, 2, 1);
             Assert.IsTrue(queue.Capture(next, body, key, 1, batch, null, out _));
@@ -577,12 +598,87 @@ namespace APISharedTests
             Assert.IsTrue(runtime.TrySetActor(LocalControlRuntime.SuspendedActor, out _));
             Assert.IsFalse(runtime.TryBindSave(1, out _, out _));
             Assert.IsTrue(runtime.TrySetActor(0, out _));
-            // Mode loss in a still-current world keeps the lease for its view adapter.
+            Assert.IsTrue(runtime.Retire(out reason), reason);
+
+            // A live foreign view must be restored before enabling ordinary input.
+            currentWorld = 3; nativeView = 1;
+            runtime.Begin(3, 0x3000, 1);
             Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            var retained = save.CurrentLease;
+            Assert.IsTrue(runtime.TrySetActor(3, out _));
+            nativeView = 3; failRestore = true; writes.Clear();
+            Assert.IsFalse(runtime.TrySetActor(0, out reason));
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, runtime.Actor);
+            Assert.AreEqual(3, nativeView);
+            Assert.AreSame(retained, save.CurrentLease);
+            Assert.IsFalse(runtime.TrySetActor(3, out _), "A failed direct return cannot reactivate foreign control.");
+            writes.Clear();
             Assert.IsFalse(runtime.Retire(out reason));
             Assert.IsFalse(string.IsNullOrWhiteSpace(reason));
             Assert.AreEqual(1, save.ProtectedHumanId);
             Assert.AreEqual(0, runtime.World);
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, runtime.Actor);
+            Assert.AreEqual(3, nativeView);
+            Assert.AreSame(retained, save.CurrentLease);
+            CollectionAssert.AreEqual(Array.Empty<string>(), writes, "Failed view restoration disabled the native guard.");
+            Assert.AreEqual(0, session.PendingCount);
+            Assert.IsFalse(session.IsReady(3));
+            Assert.IsFalse(runtime.TrySetActor(0, out _), "Failed retirement must not enable raw Vanilla input.");
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Begin(4, 0x4000, 1));
+            failRestore = false;
+            Assert.IsTrue(runtime.Retire(out reason), reason);
+            Assert.AreEqual(1, nativeView);
+            Assert.IsNull(save.CurrentLease);
+            Assert.AreEqual(0, runtime.Actor);
+
+            // A stale local handle cannot release a later spectator owner's lease, even
+            // when both handles concern the same world and the same participant number.
+            currentWorld = 4;
+            runtime.Begin(4, 0x4000, 1);
+            Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            var stale = save.CurrentLease;
+            var otherOwner = new object();
+            ControlSaveIdentity.Lease other;
+            lock (gate)
+            {
+                Assert.IsTrue(save.TryRestoreAndRelease(stale.Owner, stale, out _));
+                Assert.IsTrue(save.TryBind(otherOwner, 4, 1, out other, out _));
+            }
+            nativeView = 7;
+            Assert.IsFalse(runtime.TrySetActor(0, out _), "A stale local handle cannot enable Vanilla input under another owner's view.");
+            Assert.AreEqual(7, nativeView);
+            Assert.AreSame(other, save.CurrentLease);
+            writes.Clear();
+            Assert.IsFalse(runtime.Retire(out reason));
+            CollectionAssert.AreEqual(Array.Empty<string>(), writes, "Stale cleanup wrote another owner's native actor or guard.");
+            Assert.AreSame(other, save.CurrentLease);
+            Assert.AreEqual(7, nativeView, "Stale role cleanup wrote into another owner's view.");
+            lock (gate) Assert.IsTrue(save.TryRestoreAndRelease(otherOwner, other, out _));
+            Assert.IsTrue(runtime.Retire(out reason), reason);
+            writes.Clear();
+            Assert.IsTrue(runtime.Retire(out reason), reason);
+            Assert.AreEqual(0, writes.Count, "Completed stale cleanup toggled native demand/input again.");
+
+            // Unknown/unsupported optional native view protection does not disable the
+            // independent original-spectator path, and cannot grant a human foreign input.
+            var noCoreSession = new SinglePlayerControlSession(new CommandRules(),
+                (PlayerControlObject captured, out PlayerControlObject live) => { live = captured; return true; }, () => true);
+            Assert.IsTrue(noCoreSession.Register("independent.mod", "no-core", out _));
+            var noCoreCoordinator = new APIShared.PlayerViewIdentityRuntime(null, gate, _ => false, _ => { });
+            int noCoreActor = 0;
+            var noCoreRuntime = new LocalControlRuntime(noCoreCoordinator, noCoreSession,
+                new SinglePlayerNativeQueue(noCoreSession), _ => { }, value => noCoreActor = value);
+            noCoreRuntime.Begin(4, 0x4000, 0);
+            Assert.IsTrue(noCoreRuntime.TrySetActor(3, out _));
+            Assert.AreEqual(3, noCoreActor);
+            Assert.IsFalse(noCoreRuntime.TryBindSave(1, out _, out _));
+            Assert.IsTrue(noCoreRuntime.Retire(out _));
+            Assert.AreEqual(0, noCoreActor);
+            noCoreRuntime.Begin(5, 0x5000, 1);
+            Assert.IsTrue(noCoreRuntime.TrySetActor(1, out _));
+            Assert.IsFalse(noCoreRuntime.TrySetActor(3, out _));
+            Assert.IsFalse(noCoreRuntime.TryBindSave(1, out _, out _));
+            Assert.IsTrue(noCoreRuntime.Retire(out _));
         }
 
         [TestMethod]
@@ -591,24 +687,192 @@ namespace APISharedTests
             var gate = new object();
             long currentWorld = 1;
             int nativeView = 1;
+            int nativeActor = 0;
+            int nativeDemand = 0;
             bool failActor = false;
+            bool failDemand = false;
+            bool failSuspend = false;
+            Action<int> actorCallback = null;
+            Action<int> demandCallback = null;
+            var writes = new List<string>();
             var session = new SinglePlayerControlSession(new CommandRules(),
                 (PlayerControlObject captured, out PlayerControlObject live) => { live = captured; return true; }, () => true);
-            Assert.IsTrue(session.Register("independent.mod", "control", out _));
+            Assert.IsTrue(session.Register("independent.mod", "control", out string key));
             var queue = new SinglePlayerNativeQueue(session);
             var save = new ControlSaveIdentity(() => System.Threading.Monitor.IsEntered(gate), world => world == currentWorld,
                 () => nativeView, view => nativeView = view);
-            var runtime = new LocalControlRuntime(gate, session, queue, save, _ => { },
-                actor => { if (failActor && actor == 0) throw new InvalidOperationException("actor cell unavailable"); });
-            runtime.Begin(1, 0x1000, 0);
+            var coordinator = new APIShared.PlayerViewIdentityRuntime(save, gate, _ => false, _ => { });
+            var runtime = new LocalControlRuntime(coordinator, session, queue,
+                demand => {
+                    writes.Add("demand=" + demand);
+                    if (failDemand && demand == 0) throw new InvalidOperationException("demand cell unavailable");
+                    nativeDemand = demand; demandCallback?.Invoke(demand);
+                },
+                actor => {
+                    writes.Add("actor=" + actor);
+                    if (failActor && actor == 0) throw new InvalidOperationException("actor cell unavailable");
+                    if (failSuspend && actor == LocalControlRuntime.SuspendedActor) throw new InvalidOperationException("actor suspension unavailable");
+                    nativeActor = actor; actorCallback?.Invoke(actor);
+                });
+            runtime.Begin(1, 0x1000, 1);
             Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            Assert.IsTrue(session.SetGrant(1, key, 1 << 2, PlayerControlRights.UnitOrders, 1));
+            var body = new byte[] { 1, 2 };
+            var batch = new ControlCommandBatch(Array.Empty<PlayerControlObject>(), new[] { new ControlNativeCommand(2, 1, body) });
+            var entry = new ControlNativeQueueEntry(1, 0x1000, 0, 200000001, 2, 1);
+            Assert.IsTrue(queue.Capture(entry, body, key, 1, batch, null, out _));
+            Assert.IsTrue(runtime.TrySetActor(3, out _));
+            Assert.AreEqual(3, nativeActor);
+            Assert.AreEqual(1, nativeDemand);
             currentWorld = 2; failActor = true;
+            coordinator.RetireEndedWorld();
             Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Retire(out _));
             Assert.AreEqual(0, runtime.World);
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, nativeActor, "The final actor-zero write throws only after suspension was confirmed.");
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, runtime.Actor, "A failed final zero must retain the last confirmed suspended actor.");
             Assert.AreEqual(0, save.ProtectedHumanId, "A failed native write skipped the save retirement.");
+            Assert.AreEqual(0, session.PendingCount);
+            Assert.AreEqual(ControlNativeQueueResult.Rejected, queue.Run(entry, body, _ => Assert.Fail(), out _));
+            Assert.IsFalse(runtime.TrySetActor(0, out _));
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Begin(2, 0x2000, 1));
             failActor = false;
-            runtime.Begin(2, 0x2000, 0); // Session and queue were ended despite the failure.
+            Assert.IsTrue(runtime.Retire(out _));
+            Assert.AreEqual(0, runtime.Actor);
+            Assert.AreEqual(0, nativeActor);
+            writes.Clear();
+            Assert.IsTrue(runtime.Retire(out _));
+            Assert.AreEqual(0, writes.Count, "Completed retirement must be native-write-free and idempotent.");
+            runtime.Begin(2, 0x2000, 1); // Session and queue were ended despite the failure.
             Assert.AreEqual(2, runtime.World);
+            Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            var owned = save.CurrentLease;
+            nativeView = 5;
+            Assert.IsTrue(save.ReportFailure(owned, "owned view fault"));
+            var failure = save.LastFailure;
+            Assert.IsFalse(runtime.TryBindSave(1, out _, out _), "A faulted lease cannot count as a successful repeated bind.");
+            Assert.IsFalse(runtime.TrySetActor(3, out _));
+            ((APIShared.PlayerViewIdentityOwner)owned.Owner).Notify(failure);
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, runtime.Actor);
+            Assert.IsTrue(runtime.TrySetActor(0, out _), "A faulted role can return ordinary input only through confirmed identity restoration.");
+            Assert.AreEqual(1, nativeView);
+            Assert.AreEqual(0, nativeActor);
+            Assert.IsNull(save.CurrentLease);
+            Assert.IsTrue(runtime.Retire(out _));
+            Assert.IsNull(save.CurrentLease);
+
+            currentWorld = 3;
+            runtime.Begin(3, 0x3000, 0);
+            Assert.IsTrue(runtime.TrySetActor(4, out _));
+            int beforeDelayed = runtime.Actor;
+            ((APIShared.PlayerViewIdentityOwner)owned.Owner).Notify(failure);
+            Assert.AreEqual(beforeDelayed, runtime.Actor, "A queued failure from an old lease suspended a newer session.");
+            failDemand = failActor = true;
+            var first = Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Retire(out _));
+            Assert.AreEqual("demand cell unavailable", first.Message, "Queue/session cleanup hid the native guard-write error.");
+            Assert.AreEqual(0, runtime.World);
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, nativeActor);
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, runtime.Actor);
+            Assert.AreEqual(1, nativeDemand, "An unconfirmed guard-zero write must leave the guard active.");
+            Assert.AreEqual(0, session.PendingCount);
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Begin(4, 0x4000, 0));
+            failDemand = failActor = false;
+            Assert.IsTrue(runtime.Retire(out _));
+            Assert.AreEqual(0, nativeActor);
+            currentWorld = 4;
+            runtime.Begin(4, 0x4000, 0);
+            Assert.AreEqual(4, runtime.World, "Cleanup did not retire session/queue after multiple native failures.");
+            Assert.IsTrue(runtime.Retire(out _));
+
+            // Never free a positive lease while an old positive actor may still run.
+            currentWorld = 5; nativeView = 1;
+            runtime.Begin(5, 0x5000, 1);
+            Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            var protectedLease = save.CurrentLease;
+            Assert.IsTrue(runtime.TrySetActor(3, out _));
+            nativeView = 3; failSuspend = true; writes.Clear();
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.TrySetActor(0, out _));
+            Assert.AreSame(protectedLease, save.CurrentLease);
+            Assert.AreEqual(3, nativeActor);
+            Assert.AreEqual(3, nativeView);
+            Assert.AreEqual(1, nativeDemand);
+            var competitor = new object();
+            lock (gate) Assert.IsFalse(save.TryBind(competitor, 5, 3, out _, out _), "Unconfirmed suspension released exclusive ownership.");
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Retire(out _));
+            Assert.AreSame(protectedLease, save.CurrentLease);
+            Assert.AreEqual(3, nativeActor);
+            Assert.AreEqual(1, nativeDemand, "A failed suspension must not expose positive native input to the original handler.");
+            Assert.IsFalse(writes.Contains("demand=0"));
+            Assert.AreEqual(0, session.PendingCount);
+            Assert.IsFalse(session.IsReady(5));
+            failSuspend = false; failActor = true;
+            Assert.ThrowsExactly<InvalidOperationException>(() => runtime.Retire(out _));
+            Assert.IsNull(save.CurrentLease);
+            Assert.AreEqual(1, nativeView);
+            Assert.AreEqual(LocalControlRuntime.SuspendedActor, nativeActor, "A final zero failure left positive native input after releasing ownership.");
+            ControlSaveIdentity.Lease competitorLease;
+            lock (gate) Assert.IsTrue(save.TryBind(competitor, 5, 1, out competitorLease, out _));
+            nativeView = 7; nativeDemand = 1; failActor = false; writes.Clear();
+            Assert.IsFalse(runtime.Retire(out _));
+            CollectionAssert.AreEqual(Array.Empty<string>(), writes, "Pending cleanup wrote into a replacement owner's input or guard.");
+            Assert.AreEqual(1, nativeDemand);
+            Assert.AreSame(competitorLease, save.CurrentLease);
+            lock (gate) Assert.IsTrue(save.TryRestoreAndRelease(competitor, competitorLease, out _));
+            Assert.IsTrue(runtime.Retire(out _));
+
+            // The suspension adapter can retire and replace its old lease reentrantly.
+            currentWorld = 6; nativeView = 1;
+            runtime.Begin(6, 0x6000, 1);
+            Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            var replaced = save.CurrentLease;
+            Assert.IsTrue(runtime.TrySetActor(3, out _));
+            nativeView = 3;
+            ControlSaveIdentity.Lease replacement = null;
+            actorCallback = value => {
+                if (value != LocalControlRuntime.SuspendedActor) return;
+                actorCallback = null;
+                Assert.IsTrue(save.TryRestoreAndRelease(replaced.Owner, replaced, out _));
+                Assert.IsTrue(save.TryBind(competitor, 6, 1, out replacement, out _));
+                nativeView = 7;
+            };
+            writes.Clear();
+            Assert.IsFalse(runtime.TrySetActor(0, out _));
+            CollectionAssert.AreEqual(new[] { "actor=-1" }, writes);
+            Assert.AreSame(replacement, save.CurrentLease);
+            Assert.AreEqual(7, nativeView);
+            writes.Clear();
+            Assert.IsFalse(runtime.Retire(out _));
+            Assert.AreEqual(0, writes.Count, "A reentrantly replaced owner received stale guard/input writes.");
+            Assert.AreEqual(1, nativeDemand);
+            lock (gate) Assert.IsTrue(save.TryRestoreAndRelease(competitor, replacement, out _));
+            Assert.IsTrue(runtime.Retire(out _));
+
+            // The final zero callback runs inside the unbound-core scope, so a new
+            // owner cannot be acquired reentrantly between validation and its native store.
+            currentWorld = 7; nativeView = 1;
+            runtime.Begin(7, 0x7000, 1);
+            Assert.IsTrue(runtime.TryBindSave(1, out _, out _));
+            Assert.IsTrue(runtime.TrySetActor(3, out _));
+            nativeView = 3;
+            bool blockedInsideZero = false;
+            actorCallback = value => {
+                if (value != 0) return;
+                blockedInsideZero = !save.TryBind(competitor, 7, 1, out _, out _);
+            };
+            Assert.IsTrue(runtime.TrySetActor(0, out _));
+            actorCallback = null;
+            Assert.IsTrue(blockedInsideZero);
+            Assert.AreEqual(0, nativeActor);
+            Assert.IsNull(save.CurrentLease);
+            Assert.AreEqual(1, nativeDemand, "Direct return to Vanilla input must not stop the handler guard.");
+            bool blockedInsideDemand = false;
+            demandCallback = value => {
+                if (value != 0) return;
+                blockedInsideDemand = !save.TryBind(competitor, 7, 1, out _, out _);
+            };
+            Assert.IsTrue(runtime.Retire(out _));
+            demandCallback = null;
+            Assert.IsTrue(blockedInsideDemand);
+            Assert.AreEqual(0, nativeDemand);
         }
 
         [TestMethod]
@@ -736,16 +1000,17 @@ namespace APISharedTests
         [TestMethod]
         public void ProtectedSaveUsesTheOriginalHumanIdentityAndRestoresViewsIncludingNestedAndFailedWriters()
         {
+            var owner = new object();
             bool inEngine = true;
             long epoch = 1;
             int nativeView = 1, writes = 0;
             var guard = new ControlSaveIdentity(() => inEngine, expected => epoch == expected,
                 () => nativeView, view => { writes++; nativeView = view; });
-            Assert.IsTrue(guard.TryBind(1, 1, out long token, out _));
+            Assert.IsTrue(guard.TryBind(owner, 1, 1, out ControlSaveIdentity.Lease token, out _));
             Assert.AreEqual(1, guard.ProtectedHumanId);
             nativeView = 3; // The separate view-lease adapter performs this transition.
-            Assert.IsFalse(guard.TryRelease(token, out _));
-            Assert.IsFalse(guard.TryBind(1, 1, out _, out _));
+            Assert.IsFalse(guard.TryRelease(owner, token, out _));
+            Assert.IsFalse(guard.TryBind(owner, 1, 1, out _, out _));
             int writers = 0;
             Assert.IsTrue(guard.TryRunWriter(17, value => {
                 writers++; Assert.AreEqual(1, nativeView);
@@ -754,7 +1019,7 @@ namespace APISharedTests
                     writers++; Assert.AreEqual(1, nativeView); return nested + 1;
                 }, out int nestedResult, out _));
                 Assert.AreEqual(18, nestedResult); Assert.AreEqual(1, nativeView);
-                Assert.IsFalse(guard.TryBind(1, 1, out _, out _));
+                Assert.IsFalse(guard.TryBind(owner, 1, 1, out _, out _));
                 return 0xFEDCBA9876543210UL;
             }, out ulong result, out _));
             Assert.AreEqual(0xFEDCBA9876543210UL, result);
@@ -769,7 +1034,7 @@ namespace APISharedTests
             Assert.IsFalse(guard.TryRunWriter(0, value => { writers++; return value; }, out _, out _));
             Assert.AreEqual(priorWrites, writes); Assert.AreEqual(2, writers);
             inEngine = true; nativeView = 1;
-            Assert.IsTrue(guard.TryRelease(token, out _)); Assert.AreEqual(0, guard.ProtectedHumanId);
+            Assert.IsTrue(guard.TryRelease(owner, token, out _)); Assert.AreEqual(0, guard.ProtectedHumanId);
 
             // A normal, unleased save must not query an optional failed adapter.
             var dormant = new ControlSaveIdentity(() => throw new InvalidOperationException("unused monitor"),
@@ -790,6 +1055,7 @@ namespace APISharedTests
         [TestMethod]
         public void SaveIdentityDoesNotReviveReleasedOrReplacedWorldsAndRetainsProtectionAfterRestoreFailure()
         {
+            var owner = new object();
             long epoch = 1;
             int nativeView = 1;
             bool failForeignRestore = false;
@@ -798,16 +1064,16 @@ namespace APISharedTests
                     if (view == 3 && failForeignRestore) throw new InvalidOperationException("restore unavailable");
                     nativeView = view;
                 });
-            Assert.IsTrue(guard.TryBind(1, 1, out long token, out _)); nativeView = 3;
+            Assert.IsTrue(guard.TryBind(owner, 1, 1, out ControlSaveIdentity.Lease token, out _)); nativeView = 3;
             Assert.IsTrue(guard.TryRunWriter(0, value => {
                 Assert.AreEqual(1, nativeView);
-                Assert.IsTrue(guard.TryRelease(token, out _));
-                Assert.IsFalse(guard.TryBind(1, 1, out _, out _));
+                Assert.IsTrue(guard.TryRelease(owner, token, out _));
+                Assert.IsFalse(guard.TryBind(owner, 1, 1, out _, out _));
                 return value;
             }, out _, out _));
             Assert.AreEqual(1, nativeView); Assert.AreEqual(0, guard.ProtectedHumanId);
 
-            Assert.IsTrue(guard.TryBind(1, 1, out token, out _)); nativeView = 3;
+            Assert.IsTrue(guard.TryBind(owner, 1, 1, out token, out _)); nativeView = 3;
             Assert.IsTrue(guard.TryRunWriter(0, value => {
                 epoch = 2; nativeView = 6; // Native load/mission replacement in an append callback.
                 Assert.IsTrue(guard.RetireEndedWorld(1));
@@ -816,19 +1082,20 @@ namespace APISharedTests
             Assert.AreEqual(6, nativeView); Assert.AreEqual(0, guard.ProtectedHumanId);
 
             nativeView = 1;
-            Assert.IsTrue(guard.TryBind(2, 1, out token, out _)); nativeView = 3;
+            Assert.IsTrue(guard.TryBind(owner, 2, 1, out token, out _)); nativeView = 3;
             failForeignRestore = true;
             Assert.IsFalse(guard.TryRunWriter(7, value => value + 1, out int result, out string failure));
             Assert.AreEqual(8, result); Assert.IsFalse(string.IsNullOrWhiteSpace(failure));
             Assert.AreEqual(1, nativeView); Assert.AreEqual(1, guard.ProtectedHumanId);
             Assert.IsNotNull(guard.Failure);
-            Assert.IsTrue(guard.TryRelease(token, out _));
+            Assert.IsTrue(guard.TryRelease(owner, token, out _));
             Assert.IsNull(guard.Failure); Assert.AreEqual(0, guard.ProtectedHumanId);
         }
 
         [TestMethod]
         public void SaveIdentityRechecksWorldAcrossNativeAdaptersAndSerializesLeaseTransitions()
         {
+            var owner = new object();
             // The adapter can cross managed observers. A load during a failing
             // setter must not roll an old view back into the replacement world.
             foreach (bool throwAfterReplacement in new[] { false, true })
@@ -843,18 +1110,18 @@ namespace APISharedTests
                     {
                         world = 2; view = 6;
                         Assert.IsTrue(guard.RetireEndedWorld(1));
-                        Assert.IsFalse(guard.TryBind(2, 6, out _, out _), "A save transition is still in progress.");
+                        Assert.IsFalse(guard.TryBind(owner, 2, 6, out _, out _), "A save transition is still in progress.");
                         if (throwAfterReplacement) throw new InvalidOperationException("load during setter");
                     }
                     else view = next;
                 });
-                Assert.IsTrue(guard.TryBind(1, 1, out _, out _)); view = 3;
+                Assert.IsTrue(guard.TryBind(owner, 1, 1, out _, out _)); view = 3;
                 replaceOnWrite = true;
                 Assert.IsFalse(guard.TryRunWriter(0, value => { writers++; return value; }, out _, out _));
                 Assert.AreEqual(0, writers); Assert.AreEqual(1, writes);
                 Assert.AreEqual(6, view); Assert.AreEqual(0, guard.ProtectedHumanId);
                 replaceOnWrite = false;
-                Assert.IsTrue(guard.TryBind(2, 6, out _, out _), "The failed save must release its transition scope.");
+                Assert.IsTrue(guard.TryBind(owner, 2, 6, out _, out _), "The failed save must release its transition scope.");
             }
 
             long epochNow = 1;
@@ -865,19 +1132,19 @@ namespace APISharedTests
                 if (reenter)
                 {
                     reenter = false;
-                    Assert.IsFalse(readerGuard.TryBind(1, 1, out _, out _), "A recursive bind cannot replace its caller.");
+                    Assert.IsFalse(readerGuard.TryBind(owner, 1, 1, out _, out _), "A recursive bind cannot replace its caller.");
                 }
                 int result = currentView;
                 if (replaceOnRead) { epochNow = 2; currentView = 6; }
                 return result;
             }, next => { readWrites++; currentView = next; });
-            Assert.IsTrue(readerGuard.TryBind(1, 1, out long token, out _));
+            Assert.IsTrue(readerGuard.TryBind(owner, 1, 1, out ControlSaveIdentity.Lease token, out _));
             replaceOnRead = true;
-            Assert.IsFalse(readerGuard.TryRelease(token, out _), "A stale read cannot release an identity in a new world.");
+            Assert.IsFalse(readerGuard.TryRelease(owner, token, out _), "A stale read cannot release an identity in a new world.");
             Assert.IsTrue(readerGuard.RetireEndedWorld(1));
             Assert.AreEqual(0, readWrites); Assert.AreEqual(6, currentView);
             epochNow = 1; currentView = 1;
-            Assert.IsFalse(readerGuard.TryBind(1, 1, out _, out _), "A stale read cannot bind a replaced world.");
+            Assert.IsFalse(readerGuard.TryBind(owner, 1, 1, out _, out _), "A stale read cannot bind a replaced world.");
             Assert.AreEqual(0, readerGuard.ProtectedHumanId);
         }
 
