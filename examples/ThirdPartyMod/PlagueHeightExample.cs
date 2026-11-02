@@ -10,4 +10,8 @@ internal static class PlagueHeightExample
             PlagueSurfaceCategory.Walls | PlagueSurfaceCategory.Gates | PlagueSurfaceCategory.Towers,
             20, out diagnostic);
     }
+
+    // Whether clouds can currently damage units on walls (any owner's policy; false means Vanilla immunity).
+    internal static bool WallsCanBeHit() =>
+        ApiShared.ForMod("example.plague.rules").TryGetPlagueHeightPolicy(out var policy, out _) && policy.WallsTolerance >= 0;
 }

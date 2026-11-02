@@ -1815,6 +1815,14 @@ leaves the previous snapshot unchanged. Unknown native/backend contracts make on
 this capability unavailable with a diagnostic. Hooks and registrations persist until
 process exit; never dispose or patch executable code to toggle these rules.
 
+`TryGetPlagueHeightPolicy(out policy, out diagnostic)` reads the effective policy of all owners,
+the one the native damage path applies, without acquiring or changing an owner. It is
+allocation-free and safe on any thread, for example on the simulation thread of a mod that
+predicts where clouds would damage units. `PlagueHeightPolicy` reports the tolerance per
+category (-1 when no owner enables it) and `GroundTolerance`; `IsActive` false means the
+complete Vanilla path. When the service is unavailable the call returns false with an inactive
+policy, which also means Vanilla.
+
 Building identity takes precedence over wall flags. Low/high walls and stairs,
 walkable gates, defensive towers and keep platforms can be controlled separately;
 mobile siege towers are excluded. Unrecognized elevated surfaces keep Vanilla

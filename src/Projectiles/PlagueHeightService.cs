@@ -55,6 +55,14 @@ namespace APIShared
             }
             return true;
         }
+        // The effective policy the native stub reads; allocation-free for simulation-thread readers.
+        internal static bool TryGetPolicy(out PlagueHeightPolicy policy, out NativeCapabilityDiagnostic diagnostic)
+        {
+            diagnostic = status;
+            if (status.State != NativeCapabilityState.Available || policies == null) { policy = PlagueHeightPolicy.FromPacked(0); return false; }
+            policy = PlagueHeightPolicy.FromPacked(policies.Current);
+            return true;
+        }
         private sealed class Owner : IPlagueHeightCapability
         {
             private readonly string guid;

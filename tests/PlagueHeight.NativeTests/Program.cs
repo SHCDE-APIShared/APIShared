@@ -227,9 +227,14 @@ internal static class Program
             policies.TrySet("a", false, PlagueSurfaceCategory.All, 20);
             Check(packed == 65535UL << 32, "independent owner deactivation");
             policies.TrySet("b", false, PlagueSurfaceCategory.None, 0); Check(packed == 0, "last owner Vanilla");
+            Check(policies.Current == 0 && !PlagueHeightPolicy.FromPacked(policies.Current).IsActive &&
+                PlagueHeightPolicy.FromPacked(policies.Current).GroundTolerance == -1, "inactive effective policy view");
             policies.TrySet("a", true, PlagueSurfaceCategory.Walls, 19);
             policies.TrySet("b", true, PlagueSurfaceCategory.Walls, 21);
             Check(packed == 22, "overlapping owner maximum");
+            var view = PlagueHeightPolicy.FromPacked(policies.Current);
+            Check(policies.Current == packed && view.IsActive && view.WallsTolerance == 21 && view.GatesTolerance == -1 &&
+                view.TowersTolerance == -1 && view.KeepsTolerance == -1 && view.GroundTolerance == 21, "effective policy view equals the native snapshot");
             policies.TrySet("b", false, PlagueSurfaceCategory.None, 0); Check(packed == 20, "owner removal restores smaller tolerance");
             Console.WriteLine("PASS: full native disease damage routine: exact unit-record parity, radius/resistance, death state, all building exemptions, wall height, self/dead rejection.");
         }

@@ -677,6 +677,8 @@ Owner-bound [plague height policies](THIRD_PARTY_GUIDE.md#plague-standing-height
 share four permanent native sites. Obtain `IPlagueHeightCapability` through
 `ModApiClient.TryGetPlagueHeight`; no active owner means Vanilla. Consumers retain
 their settings and multiplayer authorization. Existing projectile events are not duplicated.
+`ModApiClient.TryGetPlagueHeightPolicy` reads the effective (unioned) policy as `PlagueHeightPolicy`,
+for example to predict where clouds damage units.
 ## Multiplayer map lookup and lobby system hints
 
 `APIShared.Maps.MultiplayerMapLookup` is the single owner of the exact-name/CRC
