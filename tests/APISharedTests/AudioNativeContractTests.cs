@@ -38,7 +38,12 @@ public sealed unsafe class AudioNativeContractTests
         var files = new InstalledAudioFiles(game);
         files.Validate();
         Check(NativeContract.HashFile(files.Native) == NativeContract.NativeHash, "native identity");
-        Check(NativeContract.HashFile(files.Backend) == NativeContract.BackendHash, "installed backend identity");
+        // The backend is accepted by minimum version and by the hook contract Probe checks below.
+        bool older = false;
+        try { NativeContract.ValidateBackendVersion(new Version(1, 4, 9, 0)); }
+        catch (InvalidOperationException) { older = true; }
+        Check(older, "backend below the minimum version rejected");
+        NativeContract.ValidateBackendVersion(new Version(NativeContract.MinimumBackendVersion.Major + 1, 0, 0, 0));
         Paths(files);
         SoundRuntime.ValidateMembers();
         SoundRuntime.ValidateUnitMembers();
@@ -57,13 +62,13 @@ public sealed unsafe class AudioNativeContractTests
         var fromBytes = Assembly.Load(File.ReadAllBytes(files.Managed));
         Check(fromBytes.Location == "", "real byte-loaded assembly has empty Location like Unity");
         files.Validate();
-        Check(File.Exists(files.Managed) && File.Exists(files.Native) && File.Exists(files.Backend), "canonical files resolve independently of empty Location");
+        Check(File.Exists(files.Managed) && File.Exists(files.Native), "canonical files resolve independently of empty Location");
         bool missing = false;
-        try { InstalledAudioFiles.ValidateFile(files.Managed + ".missing-unit-audio", NativeContract.NativeHash); }
+        try { new InstalledAudioFiles(Path.Combine(game, "missing-unit-audio")).Validate(NativeContract.NativeHash); }
         catch (FileNotFoundException) { missing = true; }
         Check(missing && !SoundContextPolicy.Active, "missing file rejected before activation");
         bool changed = false;
-        try { InstalledAudioFiles.ValidateFile(files.Managed, new string('0', 64)); }
+        try { files.Validate(new string('0', 64)); }
         catch (InvalidOperationException) { changed = true; }
         Check(changed && !SoundContextPolicy.Active, "hash mismatch rejected before activation");
         bool empty = false;

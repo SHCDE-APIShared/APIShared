@@ -93,8 +93,12 @@ namespace APIShared
                     }
                 }),
                 new NativeInitializationStep("native Chore dispatch scope", () => {
+                    // The reader step already reported an unsupported image; one cause, one failure.
                     if (!Networking.NativeChoreContext.IsReady)
-                        throw new InvalidOperationException("Authenticated Chore dispatch requires the verified native reader.");
+                    {
+                        NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_DISPATCH: skipped; native issuer reader unavailable.");
+                        return;
+                    }
                     Networking.NativeChoreDispatch.Initialize();
                     NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_DISPATCH: method=validated-managed-IL; native blob/packet/issuer scope; process lifetime.");
                 }),

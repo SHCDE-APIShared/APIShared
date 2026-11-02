@@ -312,8 +312,9 @@ namespace APIShared.ModSettings
         {
             ReadJournal();
             if (resume == null || consumed || personalFingerprints == null || !personalFingerprints.TryGetValue(id, out var expected)) return;
-            if (resumeContext != contextId || !endpoints.TryGetValue(id, out var endpoint) ||
-                endpoint.System_OwnConfigurationFingerprint() != expected)
+            // Personal values are not mission-supplied: only an unexplained change of the
+            // own configuration is a conflict, independently of the currently entered context.
+            if (!endpoints.TryGetValue(id, out var endpoint) || endpoint.System_OwnConfigurationFingerprint() != expected)
                 throw new InvalidDataException("Personal settings changed after restart preparation: " + id);
         }
 

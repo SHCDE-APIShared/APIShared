@@ -81,8 +81,9 @@ namespace APIShared.PlayerControl
             string registration, long revision, ControlCommandBatch batch, Action releaseReservation, out string reason)
         {
             reason = null;
-            if (!Current(entry) || nativeBody.Length > ControlCommandBatch.MaximumCommandBytes)
-            { reason = "No valid current native control entry."; return false; }
+            // A non-current entry is rejected by Run anyway; every other failure below
+            // must leave a tombstone, including an oversized native body.
+            if (!Current(entry)) { reason = "No valid current native control entry."; return false; }
             var previous = slots[entry.Slot];
             if (previous != null && previous.Entry.Equals(entry))
             {
@@ -92,12 +93,15 @@ namespace APIShared.PlayerControl
                 previous.Reason = reason = "Native control entry was already captured.";
                 return false;
             }
-            var item = new Pending(entry, nativeBody, releaseReservation);
+            bool oversized = nativeBody.Length > ControlCommandBatch.MaximumCommandBytes;
+            // An oversized body is never admitted; its tombstone keeps no copy of it.
+            var item = new Pending(entry, oversized ? ReadOnlySpan<byte>.Empty : nativeBody, releaseReservation);
             // Publish the rejection tombstone BEFORE a validator can fail/reenter.
             slots[entry.Slot] = item;
             if (previous != null) Retire(previous);
             item.Reason = "Native control input has not been admitted.";
             if (failure != null) { item.Reason = reason = failure; Release(item); return false; }
+            if (oversized) { item.Reason = reason = "Native control body exceeds the command limit."; Release(item); return false; }
             try
             {
                 if (!MatchesCommand(entry, nativeBody, batch) ||

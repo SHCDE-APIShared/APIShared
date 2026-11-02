@@ -2,9 +2,11 @@ using System;
 
 namespace APIShared.PlayerControl
 {
+    // Internal until a public control capability exists: published enums and identities
+    // (including the compiled value of All) would otherwise freeze an unfinished contract.
     /// <summary>Explicit delegated rights. No right changes an object's owner or grants report visibility.</summary>
     [Flags]
-    public enum PlayerControlRights
+    internal enum PlayerControlRights
     {
         /// <summary>No foreign control.</summary>
         None = 0,
@@ -23,7 +25,7 @@ namespace APIShared.PlayerControl
     }
 
     /// <summary>Which authorized owners participate in a local input context; never changes the real local player.</summary>
-    public enum PlayerControlSelectionMode
+    internal enum PlayerControlSelectionMode
     {
         /// <summary>Only the one requested owner participates, as used by a spectator's player selector.</summary>
         ExclusivePlayer,
@@ -32,7 +34,7 @@ namespace APIShared.PlayerControl
     }
 
     /// <summary>The native object table used by a stable object identity.</summary>
-    public enum PlayerControlObjectKind
+    internal enum PlayerControlObjectKind
     {
         /// <summary>A unit slot.</summary>
         Unit,
@@ -41,7 +43,7 @@ namespace APIShared.PlayerControl
     }
 
     /// <summary>One captured object identity. Slots and owner IDs are one-based; GlobalId distinguishes recycled slots.</summary>
-    public readonly struct PlayerControlObject : IEquatable<PlayerControlObject>
+    internal readonly struct PlayerControlObject : IEquatable<PlayerControlObject>
     {
         /// <summary>Creates an immutable identity; live existence and ownership are checked again at execution.</summary>
         public PlayerControlObject(PlayerControlObjectKind kind, int slot, uint globalId, int ownerPlayerId)

@@ -61,7 +61,8 @@ imply in-game confirmation.
 `ArabianIdleContextAvailable`/`ContextDiagnostic` independently report native
 context support. Missing native context leaves generic sound rules usable.
 Unsupported binaries, occupied entries and changed IL fail closed. Only the
-current audited managed/native/backend identities are supported. Callback
+current audited native identity is supported; managed playback is gated by its IL
+contract and the RedBird backend by a minimum version plus the validated hook. Callback
 failures are counted and logged at bounded intervals. Settings and consumer
 policies remain with consumers; no global sound defaults change.
 

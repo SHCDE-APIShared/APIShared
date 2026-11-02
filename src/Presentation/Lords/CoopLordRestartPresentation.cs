@@ -46,19 +46,32 @@ namespace APIShared.Presentation
             var lobby = platform.activeLobby;
             foreach (var member in lobby.members)
             {
-                if (member == null || !member.SkirmishMember || member.SkirmishHumanMember) continue;
-                int id = lobby.getThisPlayerFromSteamID(member.id.m_SteamID);
-                if (id < 2 || id > 8) continue;
-                string data = id == 2 ? lobby.AIVDataPlayer2 : id == 3 ? lobby.AIVDataPlayer3 : id == 4 ? lobby.AIVDataPlayer4 :
-                    id == 5 ? lobby.AIVDataPlayer5 : id == 6 ? lobby.AIVDataPlayer6 : id == 7 ? lobby.AIVDataPlayer7 : lobby.AIVDataPlayer8;
-                if (string.IsNullOrWhiteSpace(data)) continue;
-                var info = new FRONT_Multiplayer.MPAIVInfo(); info.decode(data);
-                string identity = PackagedLordPresentation.RestartIdentity(id);
-                if (identity == null) continue;
-                // The authenticated owner may use a verified peer-local media alias. The lobby
-                // carries the host's alias; the restart must resolve this peer's immutable entry.
-                ApplySelection(restart, id, member.GetLordType(), info, identity);
+                // Runs inside Vanilla's StartGame: lobby-supplied data must never abort the start.
+                // A failing member is skipped; the other members and Vanilla's start continue.
+                try { PopulateMember(restart, lobby, member); }
+                catch (Exception error) { ReportFailure(error); }
             }
+        }
+        private static void PopulateMember(HUD_IngameMenu.RestartMPInfo restart, Platform_Multiplayer.MPLobby lobby,
+            Platform_Multiplayer.MPLobbyMember member)
+        {
+            if (member == null || !member.SkirmishMember || member.SkirmishHumanMember) return;
+            int id = lobby.getThisPlayerFromSteamID(member.id.m_SteamID);
+            if (id < 2 || id > 8) return;
+            string data = id == 2 ? lobby.AIVDataPlayer2 : id == 3 ? lobby.AIVDataPlayer3 : id == 4 ? lobby.AIVDataPlayer4 :
+                id == 5 ? lobby.AIVDataPlayer5 : id == 6 ? lobby.AIVDataPlayer6 : id == 7 ? lobby.AIVDataPlayer7 : lobby.AIVDataPlayer8;
+            if (string.IsNullOrWhiteSpace(data)) return;
+            var info = new FRONT_Multiplayer.MPAIVInfo(); info.decode(data);
+            string identity = PackagedLordPresentation.RestartIdentity(id);
+            if (identity == null) return;
+            // The authenticated owner may use a verified peer-local media alias. The lobby
+            // carries the host's alias; the restart must resolve this peer's immutable entry.
+            ApplySelection(restart, id, member.GetLordType(), info, identity);
+        }
+        private static void ReportFailure(Exception error)
+        {
+            try { NativeApiLog.Error(ApiSharedRuntime.ProcessInstance.Logger, "Coop restart Lord presentation skipped a lobby member: " + error); }
+            catch { /* Logging cannot interrupt Vanilla's game start. */ }
         }
         internal static void ApplySelection(HUD_IngameMenu.RestartMPInfo restart, int id, int type, FRONT_Multiplayer.MPAIVInfo info, string identity = null)
         {

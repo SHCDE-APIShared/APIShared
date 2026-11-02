@@ -1946,29 +1946,6 @@ APIShared.PlagueSurfaceCategory | Keeps = 8
 APIShared.PlagueSurfaceCategory | None = 0
 APIShared.PlagueSurfaceCategory | Towers = 4
 APIShared.PlagueSurfaceCategory | Walls = 1
-APIShared.PlayerControl.PlayerControlObject | public struct APIShared.PlayerControl.PlayerControlObject : System.IEquatable<APIShared.PlayerControl.PlayerControlObject>
-APIShared.PlayerControl.PlayerControlObject | public .ctor(APIShared.PlayerControl.PlayerControlObjectKind kind, int slot, uint globalId, int ownerPlayerId)
-APIShared.PlayerControl.PlayerControlObject | public APIShared.PlayerControl.PlayerControlObjectKind Kind { get; }
-APIShared.PlayerControl.PlayerControlObject | public bool Equals(APIShared.PlayerControl.PlayerControlObject other)
-APIShared.PlayerControl.PlayerControlObject | public int OwnerPlayerId { get; }
-APIShared.PlayerControl.PlayerControlObject | public int Slot { get; }
-APIShared.PlayerControl.PlayerControlObject | public override bool Equals(object obj)
-APIShared.PlayerControl.PlayerControlObject | public override int GetHashCode()
-APIShared.PlayerControl.PlayerControlObject | public uint GlobalId { get; }
-APIShared.PlayerControl.PlayerControlObjectKind | public enum APIShared.PlayerControl.PlayerControlObjectKind : int
-APIShared.PlayerControl.PlayerControlObjectKind | Building = 1
-APIShared.PlayerControl.PlayerControlObjectKind | Unit = 0
-APIShared.PlayerControl.PlayerControlRights | public enum APIShared.PlayerControl.PlayerControlRights : int
-APIShared.PlayerControl.PlayerControlRights | All = 31
-APIShared.PlayerControl.PlayerControlRights | BuildingActions = 2
-APIShared.PlayerControl.PlayerControlRights | Construction = 8
-APIShared.PlayerControl.PlayerControlRights | DestructiveActions = 16
-APIShared.PlayerControl.PlayerControlRights | None = 0
-APIShared.PlayerControl.PlayerControlRights | PlayerEconomy = 4
-APIShared.PlayerControl.PlayerControlRights | UnitOrders = 1
-APIShared.PlayerControl.PlayerControlSelectionMode | public enum APIShared.PlayerControl.PlayerControlSelectionMode : int
-APIShared.PlayerControl.PlayerControlSelectionMode | AdditionalOwners = 1
-APIShared.PlayerControl.PlayerControlSelectionMode | ExclusivePlayer = 0
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }

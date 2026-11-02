@@ -30,7 +30,9 @@ namespace APIShared.ModSettings
                 GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin == LobbyModSettingsChangeOrigin.InitialLoad) return;
             bool retryable = hostRestoreFailures + 1 < MaximumRestoreAttempts;
             SnapshotApplicationResult result;
-            try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false, retryableCleanup: retryable, missionOnly: true); }
+            // As a client, synchronized host values (mission-independent ones included)
+            // replaced this peer's own; restore all of them before they can be persisted.
+            try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false, retryableCleanup: retryable, include: IsHostProperty); }
             catch { if (retryableSetterFailure) hostRestoreFailures++; retryableSetterFailure = false; throw; }
             ReportFinalRestoreAttempt(result, hostRestoreFailures, "personal host settings");
             hostRestoreFailures = 0;
@@ -106,7 +108,7 @@ namespace APIShared.ModSettings
             SnapshotApplicationResult result;
             try
             {
-                try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false, retryableCleanup: retryable, missionOnly: true); }
+                try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false, retryableCleanup: retryable, include: IsMissionProperty); }
                 catch { if (retryableSetterFailure) missionExitFailures++; retryableSetterFailure = false; throw; }
                 owner.PublishSettingsSnapshot(clientProperties.Select(property => property.Name).ToArray());
             }

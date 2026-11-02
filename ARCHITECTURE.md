@@ -295,8 +295,13 @@ and load/unload invalidates it before observer delivery. It is separate from the
 clock snapshot and process-local mission attempt. No second start detector or
 periodic world scan is introduced. The local single-owner queue checks current
 session health even before allowing an untracked Vanilla path; stale mode reads
-cannot retire a reentrantly replaced session. Native control/view providers and
-the public capability still require integration and game acceptance.
+cannot retire a reentrantly replaced session. The internal `LocalControlRuntime` is
+the only coordinator of the local blocks: under the engine monitor it binds session
+and queue to one native world, then publishes handler demand; on retirement it clears
+demand and the input actor, ends queue and session, and retires the ended world's
+save identity in that order. Components are never begun or ended individually.
+Native control/view providers, their wiring to this runtime and any public capability
+still require integration and game acceptance; the control types remain internal.
 
 The preset view model owns UI bindings, commands and role/context presentation.
 Its small `PresetHost` adapter implements the internal `ILobbyPresetHost` boundary:
@@ -352,18 +357,21 @@ patching shared generic code or locking callbacks. Nested calls and other thread
 finally-based cleanup needs no frame callback. See the
 [integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
 
-The UU-ImGUI shutdown fix protects the audited 1.6.7 binaries bundled with
-SHCDE-SE 2.14.1. The configuration and compatibility limits are documented in the
+The UU-ImGUI shutdown fix was audited against UU-ImGUI 1.6.7 bundled with
+SHCDE-SE 2.14.1. It accepts other binaries only by the contracts it actually uses,
+not by file hash; the configuration and compatibility limits are documented in the
 [integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes). Permanent
 hooks and native resources survive until process exit. When upstream fixes a defect,
-re-audit the installed code before supporting that new binary or retiring the fix;
-a version number or changelog entry alone is not proof of equivalent behavior.
+re-audit the installed code before retiring the fix; a version number or changelog
+entry alone is not proof of equivalent behavior.
 
 SE compatibility uses the declared minimum version and the actual required managed
-contracts, never a fixed SE release or whole-assembly hash allow-list. Workshop
+contracts, never a fixed SE release or whole-assembly hash allow-list. The same
+applies to other third-party mod and loader components: required features, a
+minimum version or a runtime behavior probe, never their file hash. Workshop
 staging and the development dependency bootstrap validate signatures, managed
-bodies and IL transformations before publishing hooks. Native game contracts and
-third-party dependency fingerprints remain independently validated.
+bodies and IL transformations before publishing hooks. Native game contracts
+remain independently hash-bound.
 
 The solution contains the runtime, two local integration suites, a game-independent
 core suite and public consumer examples. Test-only packages never become plugin

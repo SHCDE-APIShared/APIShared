@@ -132,6 +132,34 @@ namespace LobbyModSettingsPresetTests
             CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
         }
 
+        public sealed class IndependentHostSettings
+        {
+            [SyncHostOnly] public int Amount { get; set; } = 17;
+            [SyncHostOnly, MissionIndependent] public int PersonalHost { get; set; } = 23;
+        }
+
+        [TestMethod]
+        public void FormerClientRestoresMissionIndependentHostValuesBeforePersisting()
+        {
+            var settings = new IndependentHostSettings();
+            var host = new Host { SettingsTargetOverride = settings };
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = false;
+            settings.PersonalHost = 77; // Received from the remote host by the authorized sync setter.
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(new Dictionary<string, byte[]> {
+                [nameof(IndependentHostSettings.Amount)] = MessagePackSerializer.Serialize(91) }, "Trail", false);
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = true;
+            controller.RestorePersonalHostIfPending();
+            Assert.AreEqual(17, settings.Amount);
+            Assert.AreEqual(23, settings.PersonalHost, "A foreign host's mission-independent value survived the return to local host.");
+            controller.PersistCurrentPersonalValues();
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath), "A foreign host value was persisted as this peer's own.");
+        }
+
         [TestMethod]
         public void SetterFailureRetainsMissionMetadataAndCleanupCanBeRetried()
         {

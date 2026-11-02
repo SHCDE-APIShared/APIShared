@@ -264,7 +264,7 @@ namespace APIShared.ModSettings
             bool? restoreHost = null,
             bool publish = true,
             bool retryableCleanup = false,
-            bool missionOnly = false)
+            Func<PresetPropertyAccessor, bool> include = null)
         {
             // Capture inclusion once, before a setter's PropertyChanged can refresh
             // the live role. Deserialization likewise finishes before any mutation.
@@ -277,7 +277,8 @@ namespace APIShared.ModSettings
             var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
             foreach (PresetPropertyAccessor property in persistedProperties)
             {
-                if ((missionOnly || selected == MissionPresetIndex) && !IsMissionProperty(property)) continue;
+                if (selected == MissionPresetIndex && !IsMissionProperty(property)) continue;
+                if (include != null && !include(property)) continue;
                 if (!includeHost && !IsClientProperty(property)) continue;
                 if (!property.CanWrite) continue;
                 byte[] bytes = null;

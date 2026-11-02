@@ -98,9 +98,22 @@ namespace APIShared.Networking
             {
                 // Failed optional attribution cannot suppress or repeat the
                 // original dispatcher. Deactivate only authenticated delivery.
-                Volatile.Write(ref failure, error); Volatile.Write(ref ready, 0);
+                Volatile.Write(ref failure, error);
+                if (Interlocked.Exchange(ref ready, 0) != 0) ReportDeactivation(error);
             }
             DispatchCaptured(captured, blob, original);
+        }
+
+        // Reported only by the ready->disabled transition; later deliveries take the early original path.
+        private static void ReportDeactivation(Exception error)
+        {
+            try
+            {
+                NativeApiLog.Error(ApiSharedRuntime.ProcessInstance.Logger,
+                    "AUTHENTICATED_CHORE_DISPATCH: native issuer capture failed; authenticated delivery is disabled for this process, " +
+                    "existing channels are unchanged: " + error);
+            }
+            catch { /* Diagnostics never interrupt the original dispatcher. */ }
         }
 
         internal static Frame Current => active;

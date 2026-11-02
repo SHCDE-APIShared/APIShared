@@ -17,9 +17,12 @@ namespace APIShared.ScriptExtenderFixes
             if (!il.Body.Variables.Any(local => local.VariableType is FunctionPointerType ||
                 local.VariableType.FullName == "System.MonoFNPtrFakeClass")) return;
             // Mono's reflected function-pointer Type may lose its Cecil identity.
-            // Use the hash-validated original metadata to identify precisely those slots.
+            // Use the original metadata to identify precisely those slots; the module
+            // version ID proves the file on disk is the module that is actually loaded.
             using (var module = ModuleDefinition.ReadModule(source.Module.Assembly.Location))
             {
+                if (module.Mvid != source.Module.ModuleVersionId)
+                    throw new InvalidOperationException("Metadata file does not match the loaded module: " + source.Name);
                 var original = (MethodDefinition)module.LookupToken(source.MetadataToken);
                 if (original.Body.Variables.Count > il.Body.Variables.Count)
                     throw new InvalidOperationException("Native-pointer local contract changed: " + source.Name);

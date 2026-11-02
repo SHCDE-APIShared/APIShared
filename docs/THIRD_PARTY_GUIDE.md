@@ -385,13 +385,14 @@ An explicit reset to Mod defaults may reset those personal values too. Applying 
 Map/Trail/Savegame source preserves them. Leaving Customize restores only the
 previous mission-dependent Host values; personal preset modified status is retained.
 
-An `IModSettingsApplicationBackend` exposing personal properties must also implement
+An `IModSettingsApplicationBackend` exposing personal properties should also implement
 `IModSettingsPersonalPersistenceBackend.PersistPersonalValues`. It receives a detached
 subset of personally owned keys and must validate and persist them atomically without
 applying mission values or discarding/replacing pending startup work. Failure leaves
 its own store unchanged and propagates; APIShared restores rejected personal desired
-values without reverting the mission Host draft. Backends lacking this capability
-are rejected before mutation. Existing interfaces have no new mandatory members.
+values without reverting the mission Host draft. The interface is optional: a backend
+without it keeps the earlier behavior, logs one warning and persists personal values in the
+preset storage only. Existing interfaces have no new mandatory members.
 `RequiresRestart` still governs application, independently of personal persistence.
 Legitimate personal writes rebase the existing restart provenance fingerprint while
 preserving the prepared Host snapshot and source identity.
@@ -784,7 +785,11 @@ factory context. Multiplayer-save loads use `bMultiplayerSave`; editor loads use
 The correction adds no public API or save format. It changes the previously incorrect
 context flags for every handler, including third-party save-only records. Handlers
 that accidentally relied on autosaves being maps must use their explicit context
-scope instead. Unsupported managed/native contracts log a failure and preserve the
+scope instead. Multiplayer saves written before this correction were stored while handlers
+still saw a map context, so a handler that returned no save record then left only its map
+record in that save. Loading such an older multiplayer save now reports `IsSaveFile=true`;
+handlers that branch on it should accept a map-format record from a save (for example, fall
+back to the map interpretation when save-only fields are absent). Unsupported managed/native contracts log a failure and preserve the
 original save path; they do not force record writes. See the native update contract
 in [UpdateToNewDLL](../UpdateToNewDLL.md#synchronized-save-archive-context).
 
@@ -878,17 +883,21 @@ creates strings. This is not a Unity frame-time or multiplayer performance claim
 The original testmod correction was accepted in-game; the transferred implementation
 still needs its own game/editor/save-load and real host/client acceptance.
 
-The shutdown fix addresses an intermittent Alt+F4 crash in the audited UU-ImGUI API
-1.6.7 managed DLL and its matching `cimguiaio.dll` bundled with SHCDE-SE 2.14.1.
-Compatibility is determined by SHA-256 fingerprints and method/IL contracts, not
-by the version label alone. The implementation also validates the installed MonoMod
-compiler/hook binaries. Unity Mono needs the MethodBuilder backend for these native
-call signatures: a permanent managed compiler hook routes only copies of the eight
-audited methods, including internal original backups, through that backend. Other
-method generation and process-wide MonoMod settings keep their existing behavior.
-All fingerprints are recorded in the implementation.
-Unknown or changed binaries are skipped with a `SE_IMGUI_SHUTDOWN_FIX` log reason;
-other services remain available. Recheck this evidence after upstream updates.
+The shutdown fix addresses an intermittent Alt+F4 crash in the UU-ImGUI API managed
+DLL and its `cimguiaio.dll` bundled with the Script Extender (audited: UU-ImGUI 1.6.7
+in SHCDE-SE 2.14.1). Compatibility is determined by the features the fix uses, not
+by file hashes or the version label: the eight methods with their signatures and
+IL/native-call contracts, loaded/disk module identity for the metadata it reads,
+and a loaded `cimguiaio.dll` identical to the one shipped beside the managed DLL.
+Unity Mono needs the MethodBuilder backend for these native call signatures: a
+permanent managed compiler hook routes only copies of the eight methods, including
+internal original backups, through that backend. Before the first UU-ImGUI hook, a
+private probe hook proves that the installed MonoMod uses this routing for edited
+bodies and backups and that the generated thiscall `calli` keeps every argument and
+the result. Other method generation and process-wide MonoMod settings keep their
+existing behavior. Binaries without these contracts are skipped with a
+`SE_IMGUI_SHUTDOWN_FIX` log reason; other services remain available. Recheck the
+shutdown semantics after upstream updates.
 
 For visual interpolation, SE creates a new `UnitUnityVisualInterpolateEventArgs` for every
 visible unit and frame before raising `UnitR3EventHooks.OnUnitUnityVisualInterpolate`.
@@ -1925,7 +1934,16 @@ permission checks. Registrations and hooks last until process exit. Return null
 or an invisible `IngameMenuActionState` to hide an action and release its position.
 A visible disabled action still occupies its position.
 
-Register with explicit `IngameMenuActionOptions`; the output handle invalidates the action:
+Register with explicit `IngameMenuActionOptions`; the output handle invalidates the action.
+
+**Breaking change in 0.21.0:** the former options-less overload
+`TryRegister(ownerGuid, id, state, execute, out reason, order)` and the empty XAML resource
+key `APISharedMenuActionButtonStyle` were removed. Binaries compiled against them fail with
+`MissingMethodException`/an unresolved resource. Migrate to the overload below; for the
+former automatic QuitMission/Left placement pass
+`new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left)`, or use the
+additional page only. Placement conflicts are no longer resolved implicitly.
+
 
 ```csharp
 IngameMenuActionRegistration menuAction;

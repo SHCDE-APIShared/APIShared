@@ -153,6 +153,13 @@ namespace LobbyModSettingsPresetTests
                 ModSettingsApplication.EnterContext("mission|personal-journal");
                 Assert(ModSettingsApplication.ResumeSnapshot(id) != null, "Updated journal could not be read after process restart.");
                 settings.System_ExitMissionPreset();
+                // The unconsumed preparation survives leaving its context; personal edits elsewhere stay legitimate.
+                type.GetField("contextId", flags).SetValue(null, "");
+                settings.Backend.Desired["Other"] = 95;
+                settings.NotifyPersonalOther();
+                Assert((int)settings.Backend.Own["Other"] == 95, "A personal edit outside the prepared context was rejected.");
+                ModSettingsApplication.EnterContext("mission|personal-journal");
+                Assert(ModSettingsApplication.ResumeSnapshot(id) != null, "A personal edit outside its context invalidated the preparation.");
             }
             finally
             {
@@ -187,12 +194,17 @@ namespace LobbyModSettingsPresetTests
             protected override IDynamicPresetSettingsProvider DynamicSettingsProvider => Backend;
         }
         [TestMethod]
-        public void PersonalBackendWithoutSeparatedPersistenceIsRejectedBeforeAnyReplacement()
+        public void PersonalBackendWithoutSeparatedPersistenceKeepsPresetStoragePersistence()
         {
+            // IModSettingsPersonalPersistenceBackend is optional for compatibility with existing backends.
             var settings = new LegacyPersonalBackendSettings();
-            Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExactly<InvalidOperationException>(() => settings.PreparePresets(
-                null, Path.Combine(testRoot, "LegacyPersonal.dll"), "LegacyPersonal", "Tests.LegacyPersonal", new Version(1, 0)));
-            Assert(settings.Backend.Replacements == 0, "An unsupported personal backend was mutated before admission failed.");
+            settings.PreparePresets(null, Path.Combine(testRoot, "LegacyPersonal.dll"), "LegacyPersonal", "Tests.LegacyPersonal", new Version(1, 0));
+            Assert(settings.Backend.Replacements == 0, "Registering an existing personal backend mutated it.");
+            settings.ActivatePresets();
+            var working = settings.System_CreateCurrentWorkingSnapshot(); working["Other"] = MessagePack.MessagePackSerializer.Serialize(99);
+            settings.System_ApplyWorkingSnapshot(working);
+            Assert((int)settings.Backend.ReadDesiredValues()["Other"] == 99, "An existing backend did not receive its personal edit.");
+            Assert((int)settings.Backend.ReadOwnValues()["Other"] == 8, "The optional separated persistence was used without being implemented.");
         }
 
         [TestMethod]

@@ -85,6 +85,10 @@ SIMD scratch. Zero demand follows the complete relocated original. Nonzero deman
 requires an actor in 1..8 equal to EBX; any other value, including suspended -1,
 writes zero for the input scope. Only a future verified control runtime may own
 that cell; UI selection or a packet cannot grant input merely by setting a view.
+The stub loads the actor cell once per decision, so a concurrent change cannot mix
+two actor states. `LocalControlRuntime` writes the cell only under the engine monitor
+and refuses a protected save lease while the actor is suspended (-1): the blocked
+branch writes view 0, which the protected writer must reject.
 
 For NativeX64 Indirect/10, validate both prepared and installed forms, pointer slot,
 padding and generated stub destinations. The relocated MOV's bytes necessarily
@@ -289,8 +293,11 @@ Their full loaded/disk assembly identities and MVIDs must agree. The native
 game rows remain pinned to the audited machine contracts. The RedBird and Iced
 rows record the audited installation only: the AI market sell and plague-height hooks
 prove the backend contract at run time (displaced span, generated stub bytes, jump form)
-instead of pinning those files. Unsupported hook bytes and startup evidence are
-always refused.
+instead of pinning those files. The MonoMod rows likewise record the audited
+installation only: the UU-ImGUI shutdown fix proves at run time, with a private
+ILHook probe, that edited bodies and original backups use its scoped compiler and
+that a thiscall calli keeps every argument. Unsupported hook bytes and startup
+evidence are always refused.
 
 The 2026-10-17 installed-binary recheck records the two updated identities above.
 Fixes 1.26.5 still emits the same
@@ -395,7 +402,10 @@ hash-bound; a matching prologue alone cannot authorize a new game binary.
 
 Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
 Managed SHA-256: BC8B6A395F01D48557DB413600C8DD8D1FDFD3ABDF97BFBBB68A3C56B04FD789.
-NativeX64 SHA-256: 0843DD4C381A3E77DD6D8B51D5CCF95465B3FB49BFDF2980F39A212D774AADB0.
+NativeX64 SHA-256 (audited installation, not a runtime pin): 0843DD4C381A3E77DD6D8B51D5CCF95465B3FB49BFDF2980F39A212D774AADB0.
+The runtime requires the loaded RedBird NativeX64 backend 1.5.0 or newer and then
+validates the prepared and published Absolute hooks (displacement, trampoline
+prologue, continuation, patch form and bridge code) before readiness.
 NativeContract holds the exact executable-section patterns and prologue bytes.
 Targets: spatial wrapper 0x2960, flagged wrapper 0x2990, emitter 0x1A41E0.
 Resolve the reference RVA first; if its pattern no longer matches, attempt a unique

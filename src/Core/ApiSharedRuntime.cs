@@ -46,6 +46,8 @@ namespace APIShared
         internal NativeOwnershipRegistry NativeOwnership { get; } = new NativeOwnershipRegistry();
 
         internal static ApiSharedRuntime ProcessInstance { get; } = new ApiSharedRuntime();
+        // For lazily installed services without their own logger; null before managed initialization.
+        internal ManualLogSource Logger => System.Threading.Volatile.Read(ref log);
 
         public NativeApiState State { get { lock (sync) return state; } }
 

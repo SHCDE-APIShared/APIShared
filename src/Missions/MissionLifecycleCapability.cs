@@ -51,6 +51,8 @@ namespace APIShared
         internal static bool HasContext => published?.state.Context != null;
         internal static MissionContext ActiveContext => published?.state.Context;
         internal static MissionLifecycleState.NativeClockState NativeClock => published?.state.NativeClock;
+        // Identity of the currently loaded native world; null between invalidation and the next successful load.
+        internal static MissionLifecycleState.NativeWorldState NativeWorld => NativeClock?.World;
 
         private CreateMap create; private EditorLoad editorLoad; private NewMap newMap;
         private Campaign campaign; private Trail trail; private CustomTrail customTrail;

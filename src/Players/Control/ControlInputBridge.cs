@@ -116,8 +116,10 @@ namespace APIShared.PlayerControl
             var publish = a.CreateLabel();
             a.pushfq(); a.push(r11);
             a.mov(r11, actor);
-            a.cmp(__dword_ptr[r11], 0); a.je(fallback);
-            a.cmp(__dword_ptr[r11], ebx); a.jne(blocked);
+            // One load: a concurrent actor change cannot mix two states in one decision.
+            a.mov(r11d, __dword_ptr[r11]);
+            a.test(r11d, r11d); a.je(fallback);
+            a.cmp(r11d, ebx); a.jne(blocked);
             a.cmp(ebx, 1); a.jb(blocked);
             a.cmp(ebx, 8); a.ja(blocked);
             a.mov(eax, ebx);

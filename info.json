@@ -14,7 +14,13 @@
       "Version": "0.23.0",
       "Changes": [
         "Add mission-scoped SimulationClock reads after native initialization and overflow-safe elapsed ticks.",
-        "Invalidate native clock access before nested/repeated loads and retirement; preserve ready-only tick events and existing Extender clocks."
+        "Invalidate native clock access before nested/repeated loads and retirement; preserve ready-only tick events and existing Extender clocks.",
+        "Breaking change since 0.21.0 (documented): the options-less IngameMenuActions.TryRegister overload and the APISharedMenuActionButtonStyle resource were removed; register with IngameMenuActionOptions.",
+        "IModSettingsPersonalPersistenceBackend is optional again: existing backends with personal settings are accepted and persist those values in the preset storage.",
+        "Former clients restore their own mission-independent Host values before persisting; personal edits no longer fail while another mission's restart preparation is pending.",
+        "Migration note: multiplayer saves written before 0.20.0 now load with SaveContext.IsSaveFile=true; handlers branching on it must accept map-format records.",
+        "Coop restart Lord presentation can no longer abort a game start on invalid lobby data; a disabled authenticated Chore dispatcher is now logged once.",
+        "Third-party mod components are no longer bound to file hashes: the UU-ImGUI shutdown fix checks the used members/IL contracts, native pairing and a MonoMod routing/calli probe; audio requires RedBird NativeX64 1.5.0 or newer plus its validated hooks."
       ]
     },
     {
