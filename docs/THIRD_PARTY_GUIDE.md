@@ -241,6 +241,56 @@ losses. Lobby observers receive a current capture on first registration and the
 known snapshot on later registrations. Marked selection observers and successful
 `TryCapture` calls establish process-lived tracking demand.
 
+### Player defeat state
+
+Acquire the existing player-defeat capability through your owner-bound client, then
+check whether it implements `IPlayerDefeatStateCapability`. This additive interface
+does not change `IPlayerDefeatCapability` or its transition callbacks. Register a
+state observer when an already defeated player in a loaded save matters:
+
+```csharp
+if (client.TryGetPlayerDefeat(out var defeat, out var diagnostic) &&
+    defeat is IPlayerDefeatStateCapability states)
+{
+    states.TryRegisterStateObserver("defeat-state", snapshot => {
+        // Dispatch UI work yourself. Verify the current session before acting.
+        if (states.TryGetObservedState(snapshot.SessionId, snapshot.PlayerId, out var current) &&
+            current.IsEliminated)
+        {
+            // Apply your own mode/participant/feature policy; state grants no control rights.
+        }
+    }, out diagnostic);
+}
+```
+
+State observers receive available current snapshots in player order on registration,
+then changed snapshots and unreadable invalidations through the service's ordered
+FIFO. A registration before the first observation receives its initial states on that
+tick. Callbacks run outside service locks on the FIFO-draining thread, which can be
+the simulation, registering or lifecycle thread; exceptions are isolated and reentrant
+publications follow the current delivery. Owner/registration order is deterministic.
+State and transition registrations share the owner-local registration-ID namespace.
+The state FIFO is independent of the original transition delivery: lord-death and
+official-loss callbacks remain synchronous on their simulation-tick publisher,
+even while another thread is delivering state replay. State is committed before
+those transition callbacks, so their managed lookup sees the confirmed observation.
+
+`TryGetObservedState(sessionId, playerId, out snapshot)` is a thread-safe managed lookup,
+not a native read or an implicit observation request. It fails before the first
+observation and for an invalid or ended session. Its successful result can still have
+`Readable == false`; that state grants no elimination rights. `OfficialLoss` includes
+a loaded loss baseline; `LordDeathConfirmed` requires a previously observed living
+lord followed by its death or disappearance. A lordless baseline alone is insufficient.
+`IsEliminated` requires readable official loss or confirmed lord death. Unreadable
+captures withdraw the visible confirmation until readable state returns.
+
+Snapshots are immutable and can be retained as historical values. Recheck current
+state and session before acting: queued deliveries can describe an ended mission.
+Unchanged observations reuse their snapshot and do not notify; `SimulationTick`
+records the last state change, rather than the latest observation or saved map tick.
+Session-end invalidation retains that tick. The existing transition observers still
+receive no baseline replay, even when a state observer receives a loaded loss.
+
 Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGetById`
 returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
@@ -2079,6 +2129,43 @@ A popup that is not attached waits for its view. Closed popups release source/vi
 Enabling takes exclusive sizing ownership from the Extender scaler; disabling restores its prior
 setting. A null reference retains the existing 23/30/45 resolution presets for existing consumers.
 The caller owns the dark/gold, white wrapped-text template and closes its popups when its HUD ends.
+
+## Eliminated-player perspectives
+
+Use `PlayerPerspectiveAPI.TrySetEliminatedPlayerView(playerId)` on Unity's main
+thread after enabling Vanilla's local spectator flag for an actually eliminated
+participant. The ready mission must have multiplayer-type native state (also used
+by local skirmishes). The current player-defeat snapshot must confirm official
+loss or an observed lord death; an absent lord alone never grants access. Keep a
+player-defeat observer registered so the existing demand-driven service observes
+the state. Host permission and mod-specific activation belong to the consumer.
+
+The controlled participant and Extender local player ID remain their original
+positive ID. `GetViewedPlayerId()` reports the independently selected occupied
+player. No human registration, team, command ownership or multiplayer control
+permission changes. `TrySetSpectatorView` remains exclusive to original spectators.
+Observe committed changes through the existing `SubscribeChanges` contract and
+dispatch presentation work to Unity. An `Uncertain` view must close/disable stale
+reports; it never grants gameplay permission.
+
+Foreign participant views require the audited common Save writer and raw Chore
+submission protections. Both temporarily use the original identity under the
+actual engine monitor, including nested saves and synchronous packet callbacks;
+the published view does not change during those scopes. View changes/releases
+are rejected while a scope is active. Native-world replacement prevents old-view
+rollback. Submission result and original writer result survive a later failed
+view restoration; a rejected protected raw send throws rather than allowing an
+unsynchronized Steam fallback. Protection failures are reported on Unity and
+invalidate the dependent view. These guards do not validate consumer commands.
+
+The unchanged own view remains available when optional foreign-view protection
+is unavailable. `ClearEliminatedPlayerView()` restores the own native view before
+releasing protection; failures retain protection. Lifecycle end retires an ended
+native world without writing into the next one. Hooks remain installed for the
+process. Saves serialize the original participant identity, so normal Vanilla
+load/remapping can resolve the participant again. Re-enable a loaded eliminated
+participant from the current loss snapshot, starting with their own view; this
+requires no new spectator Save marker. Original-spectator recovery is separate.
 
 ## Packaged Lord presentation
 

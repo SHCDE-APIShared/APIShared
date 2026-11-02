@@ -8,6 +8,68 @@ namespace APISharedTests
     public sealed class PlayerPerspectiveChangesTests
     {
         [TestMethod]
+        public void ClearEliminatedViewAlsoClearsOwnViewWithoutOptionalNativeProtection()
+        {
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+            int native = 2;
+            var events = new List<APIShared.PlayerPerspectiveChange>();
+            using (APIShared.PlayerPerspectiveAPI.SubscribeChanges("test", "own-view-clear", events.Add))
+            {
+                Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TryChangeView(2, () => native, p => native = p, out _, 2));
+                APIShared.PlayerPerspectiveAPI.ClearEliminatedPlayerView();
+                Assert.AreEqual(APIShared.PlayerPerspectiveChangeReason.Cleared, events[events.Count - 1].Reason);
+                var active = typeof(APIShared.PlayerPerspectiveAPI).GetField("identityOverrideActive",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                Assert.AreEqual(0, active.GetValue(null));
+                Assert.AreEqual(2, native);
+            }
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TryChangeView(3, () => native, p => native = p, out _));
+            APIShared.PlayerPerspectiveAPI.ClearEliminatedPlayerView();
+            Assert.AreEqual(3, APIShared.PlayerPerspectiveAPI.GetViewedPlayerId(), "Original-spectator view is independent.");
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+        }
+
+        [TestMethod]
+        public void EliminatedTransactionsKeepPositiveIdentityAndNeverRollbackIntoAnotherWorld()
+        {
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+            int native = 2;
+            bool current = true;
+            var identity = typeof(APIShared.PlayerPerspectiveAPI).GetField("identityOverridePlayerId",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TryChangeView(4, () => native, p => {
+                Assert.AreEqual(2, identity.GetValue(null), "Identity is protected before the native write.");
+                native = p;
+            }, out _, 2, () => current));
+            Assert.AreEqual(4, APIShared.PlayerPerspectiveAPI.GetViewedPlayerId());
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TryChangeView(5, () => native, p => {
+                native = 7; // A reentrant load created a different world.
+                current = false;
+                throw new InvalidOperationException("load replaced the world");
+            }, out _, 2, () => current));
+            Assert.AreEqual(7, native, "The old view must not be restored into the replacement world.");
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+        }
+
+        [TestMethod]
+        public void PositiveIdentityRollbackRestoresBothViewAndProtectedIdentity()
+        {
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+            int native = 2;
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TryChangeView(4, () => native, p => native = p, out _, 2));
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TryChangeView(5, () => native, p => {
+                if (p == 5) throw new InvalidOperationException("native failure"); native = p;
+            }, out string reason, 2));
+            Assert.AreEqual(4, native);
+            Assert.AreEqual(4, APIShared.PlayerPerspectiveAPI.GetViewedPlayerId());
+            var identity = typeof(APIShared.PlayerPerspectiveAPI).GetField("identityOverridePlayerId",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            Assert.AreEqual(2, identity.GetValue(null));
+            StringAssert.Contains(reason, "rollback=verified");
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+        }
+
+        [TestMethod]
         public void CommittedTransactionsNotifyOnceAndPreserveRollback()
         {
             APIShared.PlayerPerspectiveAPI.ClearSpectatorView();

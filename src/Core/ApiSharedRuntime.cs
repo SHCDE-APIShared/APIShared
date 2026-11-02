@@ -25,6 +25,7 @@ namespace APIShared
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
+        internal PlayerDefeatService PlayerDefeatState => playerDefeat;
         private MissionLifecycleService missionLifecycle;
         private BriefingGoldPresentationService briefingGoldPresentation;
         private BuildingRepairService buildingRepair;
@@ -115,6 +116,7 @@ namespace APIShared
                         missionLifecycle,
                         out playerDefeat,
                         out playerDefeatDiagnostic);
+                PlayerPerspectiveAPI.BindLifecycle(missionLifecycle);
                 if (lobbyState != null ||
                     lobbyStateDiagnostic.State != NativeCapabilityState.Pending)
                 {

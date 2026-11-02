@@ -106,10 +106,11 @@ namespace APIShared.PlayerControl
         internal static ulong RunProtectedWriter<TState>(ControlSaveIdentity guard, TState state, Func<TState, ulong> writer)
         {
             ulong result = 0;
+            string protectionFailure = null;
             try
             {
                 bool completed = guard.TryRunWriter(state, writer, out result, out string reason);
-                if (!completed) Interlocked.Exchange(ref deferredFailure, reason);
+                if (!completed) Interlocked.Exchange(ref deferredFailure, protectionFailure = reason);
                 // A restoration failure can follow a successful file write. Keep
                 // Vanilla's actual writer result; report/fault the dependent view
                 // separately. Before-writer rejection leaves result at zero.
@@ -119,8 +120,9 @@ namespace APIShared.PlayerControl
             {
                 // No managed exception crosses the native writer boundary. The
                 // scope's finally has already attempted to restore the leased view.
-                Interlocked.Exchange(ref deferredFailure, "Protected writer failed: " + error.GetType().Name + ": " + error.Message);
+                Interlocked.Exchange(ref deferredFailure, protectionFailure = "Protected writer failed: " + error.GetType().Name + ": " + error.Message);
             }
+            finally { EliminatedPlayerViewIdentity.ObserveFailure(guard, protectionFailure); }
             return result;
         }
 

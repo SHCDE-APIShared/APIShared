@@ -15,6 +15,174 @@ namespace APISharedTests
     [TestClass, DoNotParallelize]
     public sealed class PlayerControlNativeTests
     {
+        private static readonly string[] viewIdentityFields = {
+            "identity", "engineGate", "scopeFailure", "reportedFailure", "reportedFailureToken", "failureQueued", "world", "session", "token"
+        };
+        private object[] previousViewIdentity;
+        [TestInitialize]
+        public void CaptureViewIdentityRuntime()
+        {
+            previousViewIdentity = new object[viewIdentityFields.Length];
+            for (int i = 0; i < viewIdentityFields.Length; i++)
+                previousViewIdentity[i] = typeof(APIShared.EliminatedPlayerViewIdentity).GetField(viewIdentityFields[i],
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic).GetValue(null);
+        }
+        [TestCleanup]
+        public void RestoreViewIdentityRuntime()
+        {
+            for (int i = 0; i < viewIdentityFields.Length; i++)
+                typeof(APIShared.EliminatedPlayerViewIdentity).GetField(viewIdentityFields[i],
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic).SetValue(null, previousViewIdentity[i]);
+        }
+
+        private sealed class QueuedUnityContext : System.Threading.SynchronizationContext
+        {
+            internal int Posts;
+            private readonly System.Collections.Generic.Queue<Action> pending = new System.Collections.Generic.Queue<Action>();
+            public override void Post(System.Threading.SendOrPostCallback callback, object state)
+            { Posts++; pending.Enqueue(() => callback(state)); }
+            internal void Drain() { while (pending.Count > 0) pending.Dequeue()(); }
+        }
+
+        [TestMethod]
+        public void DormantParticipantProtectionDoesNotAllocateOnRawSubmissions()
+        {
+            typeof(APIShared.EliminatedPlayerViewIdentity).GetField("identity",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic).SetValue(null, null);
+            byte[] payload = new byte[2];
+            Func<byte[], bool> submit = bytes => bytes.Length == 2;
+            for (int i = 0; i < 32; i++) APIShared.EliminatedPlayerViewIdentity.RunSubmission(payload, submit);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 10000; i++) APIShared.EliminatedPlayerViewIdentity.RunSubmission(payload, submit);
+            Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+
+        [TestMethod]
+        public void ClearingParticipantViewNeverReleasesAReentrantReplacementLease()
+        {
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var type = typeof(APIShared.EliminatedPlayerViewIdentity);
+            var worldField = type.GetField("world", flags);
+            var sessionField = type.GetField("session", flags);
+            var tokenField = type.GetField("token", flags);
+            int view = 2; long currentWorld = 1;
+            var guard = new ControlSaveIdentity(() => true, epoch => epoch == currentWorld, () => view, p => view = p);
+            Assert.IsTrue(guard.TryBind(1, 2, out long oldToken, out _));
+            type.GetField("identity", flags).SetValue(null, guard);
+            worldField.SetValue(null, 1L); sessionField.SetValue(null, 10L); tokenField.SetValue(null, oldToken);
+            view = 6; long newToken = 0;
+            Assert.IsFalse(APIShared.EliminatedPlayerViewIdentity.TryClearBoundView(p => {
+                // Loading during the native setter retires the old world and
+                // establishes a new participant before the outer Clear returns.
+                currentWorld = 2; view = 7;
+                Assert.IsTrue(guard.RetireEndedWorld(1));
+                Assert.IsTrue(guard.TryBind(2, 7, out newToken, out _));
+                worldField.SetValue(null, 2L); sessionField.SetValue(null, 11L); tokenField.SetValue(null, newToken);
+            }, epoch => epoch == currentWorld, out _));
+            Assert.AreEqual(7, view); Assert.AreEqual(7, guard.ProtectedHumanId);
+            Assert.AreEqual(newToken, tokenField.GetValue(null)); Assert.AreEqual(2L, worldField.GetValue(null));
+            Assert.AreEqual(11L, sessionField.GetValue(null));
+        }
+
+        [TestMethod]
+        public void ProtectedFailureDispatchIsOncePerLeaseAndFailureInsteadOfOncePerSend()
+        {
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var dispatch = typeof(APIShared.Internal.UnityMainThreadDispatch);
+            var contextField = dispatch.GetField("unityContext", flags);
+            var threadField = dispatch.GetField("unityThreadId", flags);
+            object oldContext = contextField.GetValue(null), oldThread = threadField.GetValue(null);
+            var context = new QueuedUnityContext();
+            int view = 2;
+            var guard = new ControlSaveIdentity(() => true, _ => true, () => view, p => view = p);
+            Assert.IsTrue(guard.TryBind(1, 2, out _, out _));
+            typeof(APIShared.EliminatedPlayerViewIdentity).GetField("identity", flags).SetValue(null, guard);
+            var token = typeof(APIShared.EliminatedPlayerViewIdentity).GetField("token", flags);
+            token.SetValue(null, 42L);
+            contextField.SetValue(null, context);
+            threadField.SetValue(null, System.Threading.Thread.CurrentThread.ManagedThreadId);
+            try
+            {
+                APIShared.EliminatedPlayerViewIdentity.ObserveFailure(guard, "fixture failure"); context.Drain();
+                Assert.AreEqual(1, context.Posts);
+                for (int i = 0; i < 20; i++) APIShared.EliminatedPlayerViewIdentity.ObserveFailure(guard, "fixture failure");
+                context.Drain(); Assert.AreEqual(1, context.Posts);
+                APIShared.EliminatedPlayerViewIdentity.ObserveFailure(guard, "different failure"); context.Drain();
+                Assert.AreEqual(2, context.Posts);
+                token.SetValue(null, 43L);
+                APIShared.EliminatedPlayerViewIdentity.ObserveFailure(guard, "different failure"); context.Drain();
+                Assert.AreEqual(3, context.Posts);
+            }
+            finally { context.Drain(); contextField.SetValue(null, oldContext); threadField.SetValue(null, oldThread); }
+        }
+
+        [TestMethod]
+        public void EliminatedViewSendScopeKeepsIssuerForNestedSendAndSaveAndRestoresTheView()
+        {
+            // Exercise the actual runtime scope with a native-cell boundary fixture;
+            // no published game hook or real packet is installed by this test.
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var guardField = typeof(APIShared.EliminatedPlayerViewIdentity).GetField("identity", flags);
+            var gateField = typeof(APIShared.EliminatedPlayerViewIdentity).GetField("engineGate", flags);
+            object previousGuard = guardField.GetValue(null), previousGate = gateField.GetValue(null);
+            object gate = new object(); int view = 2; long currentWorld = 1;
+            var guard = new ControlSaveIdentity(() => System.Threading.Monitor.IsEntered(gate),
+                epoch => epoch == currentWorld, () => view, p => view = p);
+            lock (gate) Assert.IsTrue(guard.TryBind(1, 2, out _, out _));
+            view = 6;
+            guardField.SetValue(null, guard); gateField.SetValue(null, gate);
+            try
+            {
+                Assert.IsTrue(APIShared.EliminatedPlayerViewIdentity.TryRunWithOriginalIdentity(0, ignored => {
+                    Assert.AreEqual(2, view, "Raw queue source and command ID must use the participant.");
+                    Assert.IsTrue(guard.IsScopeActive, "A callback cannot change a view lease during submission.");
+                    Assert.IsTrue(APIShared.EliminatedPlayerViewIdentity.TryRunWithOriginalIdentity(0,
+                        __ => { Assert.AreEqual(2, view); return true; }, out bool sent));
+                    Assert.IsTrue(sent);
+                    Assert.IsTrue(guard.TryRunWriter(0, __ => { Assert.AreEqual(2, view); return 42; }, out int saved, out _));
+                    Assert.AreEqual(42, saved); return 7;
+                }, out int result));
+                Assert.AreEqual(7, result); Assert.AreEqual(6, view);
+                Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    APIShared.EliminatedPlayerViewIdentity.TryRunWithOriginalIdentity<int, bool>(0,
+                        _ => throw new InvalidOperationException("native submit failed"), out _));
+                Assert.AreEqual(6, view, "A throwing send still restores the view.");
+                Assert.IsTrue(APIShared.EliminatedPlayerViewIdentity.TryRunWithOriginalIdentity(0,
+                    _ => { currentWorld = 2; view = 8; return true; }, out _));
+                Assert.AreEqual(8, view, "An ended lease must not write into a new native world.");
+            }
+            finally { guardField.SetValue(null, previousGuard); gateField.SetValue(null, previousGate); }
+        }
+
+        [TestMethod]
+        public void ProtectedSendDoesNotRequestSteamFallbackAfterQueuingOrScopeRejection()
+        {
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var guardField = typeof(APIShared.EliminatedPlayerViewIdentity).GetField("identity", flags);
+            var gateField = typeof(APIShared.EliminatedPlayerViewIdentity).GetField("engineGate", flags);
+            object previousGuard = guardField.GetValue(null), previousGate = gateField.GetValue(null);
+            object gate = new object(); int view = 2, submissions = 0; bool current = true;
+            var guard = new ControlSaveIdentity(() => System.Threading.Monitor.IsEntered(gate),
+                epoch => current, () => view, p => {
+                    if (p == 6) throw new InvalidOperationException("restore failed"); view = p;
+                });
+            lock (gate) Assert.IsTrue(guard.TryBind(1, 2, out _, out _));
+            view = 6; guardField.SetValue(null, guard); gateField.SetValue(null, gate);
+            try
+            {
+                Assert.IsTrue(APIShared.EliminatedPlayerViewIdentity.RunSubmission(new byte[2], _ => {
+                    submissions++; Assert.AreEqual(2, view); return true;
+                }), "Already queued packets must not be sent again via Steam.");
+                Assert.AreEqual(1, submissions); Assert.AreEqual(2, view);
+                Assert.IsNotNull(guard.Failure);
+                current = false;
+                Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    APIShared.EliminatedPlayerViewIdentity.RunSubmission(new byte[2], _ => { submissions++; return false; }));
+                Assert.AreEqual(1, submissions, "An invalid protected world cannot reach any submission.");
+            }
+            finally { guardField.SetValue(null, previousGuard); gateField.SetValue(null, previousGate); }
+        }
+
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void InputFixture(int nativeView, int spectatorFlag, int ignored, IntPtr output);
 

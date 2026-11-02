@@ -750,6 +750,9 @@ APIShared.IPlagueHeightCapability | public interface APIShared.IPlagueHeightCapa
 APIShared.IPlagueHeightCapability | public bool TrySetPolicy(bool active, APIShared.PlagueSurfaceCategory categories, int maximumHeightDifference, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlayerDefeatCapability | public interface APIShared.IPlayerDefeatCapability
 APIShared.IPlayerDefeatCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.PlayerLordDeathNotification> onLordDied, System.Action<APIShared.PlayerDefeatNotification> onDefeated, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IPlayerDefeatStateCapability | public interface APIShared.IPlayerDefeatStateCapability : APIShared.IPlayerDefeatCapability
+APIShared.IPlayerDefeatStateCapability | public bool TryGetObservedState(long sessionId, int playerId, out APIShared.PlayerDefeatSnapshot snapshot)
+APIShared.IPlayerDefeatStateCapability | public bool TryRegisterStateObserver(string registrationId, System.Action<APIShared.PlayerDefeatSnapshot> onChanged, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ITemporaryAssassinGateObserver | public interface APIShared.ITemporaryAssassinGateObserver
 APIShared.ITemporaryAssassinGateObserver | public void ObserveAssassinDecision(object token, int player, int from, int to, int direction, bool prepared, APIShared.AssassinTransitionKind movement, bool allowed, int gate, uint global, string evidence)
 APIShared.ITemporaryAssassinGateObserver | public void ObserveAssassinStage(object token, int player, string stage, string result, string detail)
@@ -1951,6 +1954,15 @@ APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, 
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }
 APIShared.PlayerDefeatNotification | public int SimulationTick { get; }
 APIShared.PlayerDefeatNotification | public long SessionId { get; }
+APIShared.PlayerDefeatSnapshot | public sealed class APIShared.PlayerDefeatSnapshot
+APIShared.PlayerDefeatSnapshot | public bool HasLivingLord { get; }
+APIShared.PlayerDefeatSnapshot | public bool IsEliminated { get; }
+APIShared.PlayerDefeatSnapshot | public bool LordDeathConfirmed { get; }
+APIShared.PlayerDefeatSnapshot | public bool OfficialLoss { get; }
+APIShared.PlayerDefeatSnapshot | public bool Readable { get; }
+APIShared.PlayerDefeatSnapshot | public int PlayerId { get; }
+APIShared.PlayerDefeatSnapshot | public int SimulationTick { get; }
+APIShared.PlayerDefeatSnapshot | public long SessionId { get; }
 APIShared.PlayerLordDeathNotification | public sealed class APIShared.PlayerLordDeathNotification
 APIShared.PlayerLordDeathNotification | public .ctor(long sessionId, int playerId, int lordUnitId, int lordGlobalId, int simulationTick)
 APIShared.PlayerLordDeathNotification | public int LordGlobalId { get; }
@@ -1960,10 +1972,12 @@ APIShared.PlayerLordDeathNotification | public int SimulationTick { get; }
 APIShared.PlayerLordDeathNotification | public long SessionId { get; }
 APIShared.PlayerPerspectiveAPI | public static class APIShared.PlayerPerspectiveAPI
 APIShared.PlayerPerspectiveAPI | public static System.IDisposable SubscribeChanges(string ownerGuid, string registrationId, System.Action<APIShared.PlayerPerspectiveChange> callback)
+APIShared.PlayerPerspectiveAPI | public static bool TrySetEliminatedPlayerView(int playerId)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorView(int playerId)
 APIShared.PlayerPerspectiveAPI | public static int GetControlledPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetRawNativeViewPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetViewedPlayerId()
+APIShared.PlayerPerspectiveAPI | public static void ClearEliminatedPlayerView()
 APIShared.PlayerPerspectiveAPI | public static void ClearSpectatorView()
 APIShared.PlayerPerspectiveChange | public sealed class APIShared.PlayerPerspectiveChange
 APIShared.PlayerPerspectiveChange | public APIShared.PlayerPerspectiveChangeReason Reason { get; }

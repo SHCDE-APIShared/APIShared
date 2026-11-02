@@ -38,6 +38,7 @@ namespace APIShared.PlayerControl
         // Safe for the existing GetLocalPlayerId hook: no lock, native lookup,
         // allocation, consumer predicate or Unity access in this hot observation.
         internal int ProtectedHumanId => Volatile.Read(ref binding)?.Human ?? 0;
+        internal bool IsScopeActive => saveDepth != 0 || changingIdentity;
         internal string Failure => Volatile.Read(ref failure);
 
         internal bool TryBind(long epoch, int actualHuman, out long token, out string reason)

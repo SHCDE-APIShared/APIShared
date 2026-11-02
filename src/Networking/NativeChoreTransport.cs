@@ -20,6 +20,7 @@ namespace APIShared.Networking
         private static FieldInfo engineMonitor;
         private static BulkChoreDetours.c_game_queue_chore_delegate nativeQueue;
         private static Func<byte[], bool> submit;
+        private static readonly Func<byte[], bool> queueInOriginalIdentity = TryQueueCore;
         internal static bool IsReady => Volatile.Read(ref submit) != null;
 
         internal static void Initialize(long moduleBase)
@@ -206,6 +207,9 @@ namespace APIShared.Networking
         }
 
         internal static bool TryQueue(byte[] blob)
+            => EliminatedPlayerViewIdentity.RunSubmission(blob, queueInOriginalIdentity);
+
+        private static bool TryQueueCore(byte[] blob)
         {
             var call = Volatile.Read(ref submit);
             if (call == null || !NativeChoreContext.IsReady || !Internal.UnityMainThreadDispatch.IsMainThread ||

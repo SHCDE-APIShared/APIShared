@@ -14,8 +14,14 @@ namespace APIShared
         private readonly ManualLogSource log;
         private readonly PlayerDefeatState state = new PlayerDefeatState();
         private readonly List<Registration> registrations = new List<Registration>();
+        private Registration[] observers = Array.Empty<Registration>();
         private readonly Queue<Publication> pendingPublications = new Queue<Publication>();
+        private readonly Queue<Publication> pendingTransitions = new Queue<Publication>();
+        private readonly Action<PlayerLordDeathNotification> enqueueLordDied;
+        private readonly Action<PlayerDefeatNotification> enqueueDefeated;
+        private readonly Action<PlayerDefeatSnapshot> enqueueSnapshot;
         private bool notificationActive;
+        private bool transitionNotificationActive;
         private volatile bool hasObservers;
         private int observationFailures;
         private readonly Func<long?> sessionProvider;
@@ -27,6 +33,9 @@ namespace APIShared
             log = logger;
             this.sessionProvider = sessionProvider;
             this.observationProvider = observationProvider;
+            enqueueLordDied = EnqueueLordDied;
+            enqueueDefeated = EnqueueDefeated;
+            enqueueSnapshot = EnqueueSnapshot;
         }
 
         // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
@@ -96,10 +105,31 @@ namespace APIShared
         internal IPlayerDefeatCapability Bind(string owner) => new Binding(this, owner);
 
         private void OnMissionStarted(MissionLifecycleNotification notification) =>
-            state.SynchronizeSession(notification?.Context?.SessionId);
+            SynchronizeSession(notification?.Context?.SessionId);
 
-        private void OnMissionEnded(MissionLifecycleNotification notification) =>
-            state.SynchronizeSession(null);
+        private void OnMissionEnded(MissionLifecycleNotification notification) => SynchronizeSession(null);
+
+        private void SynchronizeSession(long? sessionId)
+        {
+            lock (sync) state.SynchronizeSession(sessionId, enqueueSnapshot);
+            DrainPublications();
+        }
+
+        internal bool TryGetState(long sessionId, int playerId, out PlayerDefeatSnapshot snapshot)
+        {
+            lock (sync)
+            {
+                snapshot = null;
+                if (sessionId <= 0) return false;
+                // A lifecycle invalidation must take effect even before this service's
+                // observer runs, and lookup never samples native memory from the caller.
+                long? current = CurrentSession();
+                return current.HasValue && current.Value == sessionId &&
+                    state.TryGetSnapshot(sessionId, playerId, out snapshot);
+            }
+        }
+
+        private long? CurrentSession() => sessionProvider != null ? sessionProvider() : MissionLifecycleService.ActiveContext?.SessionId;
 
         private void OnTick(int simulationTick)
         {
@@ -112,16 +142,27 @@ namespace APIShared
         {
             try
             {
-                long? sessionId = sessionProvider != null ? sessionProvider() : MissionLifecycleService.ActiveContext?.SessionId;
-                state.SynchronizeSession(sessionId);
-                if (!sessionId.HasValue)
-                    return;
-
-                PlayerDefeatObservation[] observations = observationProvider != null ? observationProvider() : CaptureObservations();
-                state.Observe(simulationTick, observations, PublishLordDied, PublishDefeated);
+                lock (sync)
+                {
+                    long? sessionId = CurrentSession();
+                    state.SynchronizeSession(sessionId, enqueueSnapshot);
+                    if (sessionId.HasValue)
+                    {
+                        PlayerDefeatObservation[] observations = observationProvider != null ? observationProvider() : CaptureObservations();
+                        // An injected/provider call can synchronously replace the world.
+                        if (CurrentSession() == sessionId)
+                            state.Observe(simulationTick, observations, enqueueLordDied, enqueueDefeated, enqueueSnapshot);
+                        else
+                            state.SynchronizeSession(CurrentSession(), enqueueSnapshot);
+                    }
+                }
             }
             catch (Exception ex)
             {
+                lock (sync)
+                {
+                    state.Observe(simulationTick, null, null, null, enqueueSnapshot);
+                }
                 // Throttled: the first failure and every 1024th repeat are logged, with the count.
                 int failures = System.Threading.Interlocked.Increment(ref observationFailures);
                 if (failures == 1 || (failures & 1023) == 0)
@@ -129,6 +170,14 @@ namespace APIShared
                     try { NativeApiLog.Error(log, "Player-defeat observation failed closed (" + failures + " failures): " + ex); }
                     catch { }
                 }
+            }
+            finally
+            {
+                // Existing transition observers retain their synchronous simulation
+                // publisher. A registering thread draining state replay cannot steal
+                // these callbacks or move gameplay work outside the engine context.
+                DrainTransitions();
+                DrainPublications();
             }
         }
 
@@ -205,46 +254,89 @@ namespace APIShared
                     return false;
                 }
 
-                registrations.Add(new Registration(owner, id, onLordDied, onDefeated));
+                registrations.Add(new Registration(owner, id, onLordDied, onDefeated, null));
                 registrations.Sort(Registration.Compare);
+                observers = registrations.ToArray();
                 hasObservers = true;
             }
             diagnostic = Available("The process-lifetime player-defeat observer was registered.");
             return true;
         }
 
-        private void PublishLordDied(PlayerLordDeathNotification notification) =>
-            Publish(new Publication(notification));
+        private bool RegisterState(string owner, string id, Action<PlayerDefeatSnapshot> changed,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            if (string.IsNullOrWhiteSpace(id) || changed == null)
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.PlayerDefeat,
+                    NativeCapabilityState.ValidationFailed, string.Empty,
+                    "A non-empty registration ID and a state callback are required.");
+                return false;
+            }
+            lock (sync)
+            {
+                if (registrations.Exists(registration => string.Equals(registration.Owner, owner, StringComparison.Ordinal) &&
+                    string.Equals(registration.Id, id, StringComparison.Ordinal)))
+                {
+                    diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.PlayerDefeat,
+                        NativeCapabilityState.Conflict, string.Empty,
+                        "The owner already registered this player-defeat observer ID.", owner);
+                    return false;
+                }
+                state.SynchronizeSession(CurrentSession(), enqueueSnapshot);
+                var registration = new Registration(owner, id, null, null, changed);
+                registrations.Add(registration);
+                registrations.Sort(Registration.Compare);
+                observers = registrations.ToArray();
+                hasObservers = true;
+                var replayTarget = new[] { registration };
+                long? current = CurrentSession();
+                if (current.HasValue)
+                    for (int player = 1; player <= LastPlayerId; player++)
+                        if (state.TryGetSnapshot(current.Value, player, out var snapshot))
+                            pendingPublications.Enqueue(new Publication(snapshot, replayTarget));
+            }
+            diagnostic = Available("The process-lifetime player-defeat state observer was registered.");
+            DrainPublications();
+            return true;
+        }
 
-        private void PublishDefeated(PlayerDefeatNotification notification) =>
-            Publish(new Publication(notification));
+        private void EnqueueLordDied(PlayerLordDeathNotification notification) =>
+            pendingTransitions.Enqueue(new Publication(notification, observers));
+        private void EnqueueDefeated(PlayerDefeatNotification notification) =>
+            pendingTransitions.Enqueue(new Publication(notification, observers));
+        private void EnqueueSnapshot(PlayerDefeatSnapshot snapshot) =>
+            pendingPublications.Enqueue(new Publication(snapshot, observers));
 
-        private void Publish(Publication publication)
+        private void DrainPublications()
+            => Drain(pendingPublications, ref notificationActive);
+
+        private void DrainTransitions()
+            => Drain(pendingTransitions, ref transitionNotificationActive);
+
+        private void Drain(Queue<Publication> pending, ref bool active)
         {
             lock (sync)
             {
-                pendingPublications.Enqueue(publication);
-                if (notificationActive)
+                if (active || pending.Count == 0)
                     return;
-                notificationActive = true;
+                active = true;
             }
 
             while (true)
             {
                 Publication current;
-                Registration[] observers;
                 lock (sync)
                 {
-                    if (pendingPublications.Count == 0)
+                    if (pending.Count == 0)
                     {
-                        notificationActive = false;
+                        active = false;
                         return;
                     }
-                    current = pendingPublications.Dequeue();
-                    observers = registrations.ToArray();
+                    current = pending.Dequeue();
                 }
 
-                foreach (Registration observer in observers)
+                foreach (Registration observer in current.Observers)
                 {
                     try { current.Invoke(observer); }
                     catch (Exception ex)
@@ -268,14 +360,16 @@ namespace APIShared
                 string.Empty,
                 reason);
 
-        internal void TestPublish(PlayerLordDeathNotification notification) => PublishLordDied(notification);
-        internal void TestPublish(PlayerDefeatNotification notification) => PublishDefeated(notification);
+        internal void TestPublish(PlayerLordDeathNotification notification)
+        { lock (sync) EnqueueLordDied(notification); DrainTransitions(); }
+        internal void TestPublish(PlayerDefeatNotification notification)
+        { lock (sync) EnqueueDefeated(notification); DrainTransitions(); }
         internal static PlayerDefeatService TestCreate(Func<long?> session = null,
             Func<PlayerDefeatObservation[]> observations = null, ManualLogSource log = null) =>
             new PlayerDefeatService(log, session, observations);
         internal void TestTick(int tick) => OnTick(tick);
 
-        private sealed class Binding : IPlayerDefeatCapability
+        private sealed class Binding : IPlayerDefeatStateCapability
         {
             private readonly PlayerDefeatService service;
             private readonly string owner;
@@ -292,6 +386,11 @@ namespace APIShared
                 Action<PlayerDefeatNotification> onDefeated,
                 out NativeCapabilityDiagnostic diagnostic) =>
                 service.Register(owner, registrationId, onLordDied, onDefeated, out diagnostic);
+
+            public bool TryGetObservedState(long sessionId, int playerId, out PlayerDefeatSnapshot snapshot) =>
+                service.TryGetState(sessionId, playerId, out snapshot);
+            public bool TryRegisterStateObserver(string registrationId, Action<PlayerDefeatSnapshot> onChanged,
+                out NativeCapabilityDiagnostic diagnostic) => service.RegisterState(owner, registrationId, onChanged, out diagnostic);
         }
 
         private sealed class Registration
@@ -300,18 +399,21 @@ namespace APIShared
                 string owner,
                 string id,
                 Action<PlayerLordDeathNotification> onLordDied,
-                Action<PlayerDefeatNotification> onDefeated)
+                Action<PlayerDefeatNotification> onDefeated,
+                Action<PlayerDefeatSnapshot> onChanged)
             {
                 Owner = owner;
                 Id = id;
                 OnLordDied = onLordDied;
                 OnDefeated = onDefeated;
+                OnChanged = onChanged;
             }
 
             internal string Owner { get; }
             internal string Id { get; }
             internal Action<PlayerLordDeathNotification> OnLordDied { get; }
             internal Action<PlayerDefeatNotification> OnDefeated { get; }
+            internal Action<PlayerDefeatSnapshot> OnChanged { get; }
 
             internal static int Compare(Registration left, Registration right)
             {
@@ -324,22 +426,33 @@ namespace APIShared
         {
             private readonly PlayerLordDeathNotification lordDied;
             private readonly PlayerDefeatNotification defeated;
+            private readonly PlayerDefeatSnapshot snapshot;
+            internal Registration[] Observers { get; }
 
-            internal Publication(PlayerLordDeathNotification notification)
+            internal Publication(PlayerLordDeathNotification notification, Registration[] observers)
             {
                 lordDied = notification;
                 defeated = null;
+                snapshot = null;
+                Observers = observers;
             }
 
-            internal Publication(PlayerDefeatNotification notification)
+            internal Publication(PlayerDefeatNotification notification, Registration[] observers)
             {
                 lordDied = null;
                 defeated = notification;
+                snapshot = null;
+                Observers = observers;
             }
+
+            internal Publication(PlayerDefeatSnapshot state, Registration[] observers)
+            { snapshot = state; lordDied = null; defeated = null; Observers = observers; }
 
             internal void Invoke(Registration observer)
             {
-                if (lordDied != null)
+                if (snapshot != null)
+                    observer.OnChanged?.Invoke(snapshot);
+                else if (lordDied != null)
                     observer.OnLordDied?.Invoke(lordDied);
                 else
                     observer.OnDefeated?.Invoke(defeated);

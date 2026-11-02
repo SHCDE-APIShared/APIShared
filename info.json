@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.23.0",
+  "Version": "0.24.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.24.0",
+      "Changes": [
+        "Add immutable current player-defeat snapshots and ordered state observers, including loaded losses, without replaying existing transition events.",
+        "Add eliminated-participant perspectives that preserve positive local identity, protect Save and Chore submission identity, and retain the original-spectator contract."
+      ]
+    },
     {
       "Version": "0.23.0",
       "Changes": [

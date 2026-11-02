@@ -34,10 +34,11 @@ namespace APIShared
         private long sessionId;
         private bool sessionActive;
 
-        internal void SynchronizeSession(long? activeSessionId)
+        internal void SynchronizeSession(long? activeSessionId, Action<PlayerDefeatSnapshot> changed = null)
         {
-            if (!activeSessionId.HasValue)
+            if (!activeSessionId.HasValue || activeSessionId.Value <= 0)
             {
+                Invalidate(changed);
                 Reset();
                 return;
             }
@@ -45,27 +46,42 @@ namespace APIShared
             if (sessionActive && sessionId == activeSessionId.Value)
                 return;
 
+            Invalidate(changed);
             Reset();
             sessionActive = true;
             sessionId = activeSessionId.Value;
+        }
+
+        // The service serializes observation, lookup and lifecycle under its managed gate.
+        internal bool TryGetSnapshot(long expectedSession, int playerId, out PlayerDefeatSnapshot snapshot)
+        {
+            snapshot = null;
+            if (!sessionActive || expectedSession != sessionId || playerId < FirstPlayerId || playerId > LastPlayerId)
+                return false;
+            snapshot = slots[playerId - 1]?.Snapshot;
+            return snapshot != null;
         }
 
         internal void Observe(
             int simulationTick,
             PlayerDefeatObservation[] observations,
             Action<PlayerLordDeathNotification> lordDied,
-            Action<PlayerDefeatNotification> defeated)
+            Action<PlayerDefeatNotification> defeated,
+            Action<PlayerDefeatSnapshot> changed = null)
         {
-            if (!sessionActive || observations == null || observations.Length < LastPlayerId)
+            if (!sessionActive)
                 return;
 
             for (int playerId = FirstPlayerId; playerId <= LastPlayerId; playerId++)
             {
-                PlayerDefeatObservation observation = observations[playerId - 1];
-                if (!observation.Readable)
-                    continue;
-
+                PlayerDefeatObservation observation = observations != null && observations.Length >= LastPlayerId
+                    ? observations[playerId - 1] : default;
                 Slot slot = slots[playerId - 1] ?? (slots[playerId - 1] = new Slot());
+                if (!observation.Readable)
+                {
+                    UpdateSnapshot(slot, playerId, simulationTick, false, false, false, changed);
+                    continue;
+                }
                 if (!slot.Observed)
                 {
                     slot.Observed = true;
@@ -74,38 +90,67 @@ namespace APIShared
                         slot.LordDeathPublished = true;
                     else
                         ArmLivingLord(slot, observation);
+                    UpdateSnapshot(slot, playerId, simulationTick, true,
+                        observation.WinLossState == WinLossState.Loss, observation.HasLivingLord, changed);
                     continue;
                 }
 
-                if (!slot.DefeatPublished &&
+                bool publishDefeat = !slot.DefeatPublished &&
                     slot.PreviousWinLossState != WinLossState.Loss &&
-                    observation.WinLossState == WinLossState.Loss)
+                    observation.WinLossState == WinLossState.Loss;
+                if (publishDefeat)
                 {
                     slot.DefeatPublished = true;
-                    defeated?.Invoke(new PlayerDefeatNotification(sessionId, playerId, simulationTick));
                 }
                 slot.PreviousWinLossState = observation.WinLossState;
 
-                if (slot.LordDeathPublished)
-                    continue;
-
-                if (observation.HasLivingLord)
+                bool publishLordDeath = false;
+                if (!slot.LordDeathPublished)
                 {
-                    ArmLivingLord(slot, observation);
-                    continue;
+                    if (observation.HasLivingLord)
+                        ArmLivingLord(slot, observation);
+                    else if (slot.LordArmed)
+                    {
+                        slot.LordDeathPublished = slot.LordDeathConfirmed = true;
+                        slot.LordArmed = false;
+                        publishLordDeath = true;
+                    }
                 }
-
-                if (slot.LordArmed)
-                {
-                    slot.LordDeathPublished = true;
-                    slot.LordArmed = false;
+                // Commit state before exposing either transition callback. Their established
+                // order (official defeat, then lord death) remains unchanged.
+                UpdateSnapshot(slot, playerId, simulationTick, true,
+                    observation.WinLossState == WinLossState.Loss, observation.HasLivingLord, changed);
+                if (publishDefeat)
+                    defeated?.Invoke(new PlayerDefeatNotification(sessionId, playerId, simulationTick));
+                if (publishLordDeath)
                     lordDied?.Invoke(new PlayerLordDeathNotification(
                         sessionId,
                         playerId,
                         slot.LordUnitId,
                         slot.LordGlobalId,
                         simulationTick));
-                }
+            }
+        }
+
+        private void UpdateSnapshot(Slot slot, int playerId, int tick, bool readable,
+            bool loss, bool living, Action<PlayerDefeatSnapshot> changed)
+        {
+            var previous = slot.Snapshot;
+            bool death = readable && slot.LordDeathConfirmed;
+            if (previous != null && previous.Readable == readable && previous.OfficialLoss == loss &&
+                previous.HasLivingLord == living && previous.LordDeathConfirmed == death) return;
+            slot.Snapshot = new PlayerDefeatSnapshot(sessionId, playerId, tick, readable, loss, living, death);
+            changed?.Invoke(slot.Snapshot);
+        }
+
+        private void Invalidate(Action<PlayerDefeatSnapshot> changed)
+        {
+            if (!sessionActive) return;
+            for (int playerId = FirstPlayerId; playerId <= LastPlayerId; playerId++)
+            {
+                var slot = slots[playerId - 1];
+                if (slot?.Snapshot != null)
+                    UpdateSnapshot(slot, playerId, slot.Snapshot.SimulationTick, false, false, false, changed);
             }
         }
 
@@ -132,6 +177,8 @@ namespace APIShared
             internal bool DefeatPublished;
             internal bool LordArmed;
             internal bool LordDeathPublished;
+            internal bool LordDeathConfirmed;
+            internal PlayerDefeatSnapshot Snapshot;
             internal int LordUnitId;
             internal int LordGlobalId;
         }

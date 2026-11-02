@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.23.0";
+        public const string PluginVersion = "0.24.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -92,6 +92,8 @@ namespace APIShared
                         NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_SEND: method=validated-managed-IL; native queue=reference-rva 0x23990; Chore only, no Steam fallback.");
                     }
                 }),
+                new NativeInitializationStep("eliminated-player view identity", () =>
+                    EliminatedPlayerViewIdentity.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native Chore dispatch scope", () => {
                     // The reader step already reported an unsupported image; one cause, one failure.
                     if (!Networking.NativeChoreContext.IsReady)

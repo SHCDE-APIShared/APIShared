@@ -104,6 +104,34 @@ A future installer must require the audited whole-image contract, claim the span
 and prepare only during the existing startup window. Failure of this optional
 boundary must leave Vanilla and independently supported backends unchanged.
 
+## Eliminated participant view protection
+
+`EliminatedPlayerViewIdentity` now connects the common writer guard below to
+confirmed eliminated positive participants without enabling the foreign-control
+backend. Reference SHA-256 is
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+The local view cell must match the Extender-resolved address at module RVA
+`0x88E3D70` and remain inside the image. Unsupported hashes or unavailable
+writer/send protection reject only foreign participant views.
+
+The process-lifetime managed raw-send hook targets the installed internal static
+`GameNetworkAPI.SendScriptExtenderChorePayload(byte[]) : bool`, validated by the
+same loaded-IL/engine-monitor/native-queue contract as `NativeChoreTransport`.
+The authenticated transport enters the identity scope before its existing raw
+view/actual-player check; the raw hook covers direct Extender Chore sends too.
+No new native queue hook is installed. Re-audit the entire queue `0x23990`:
+slot source `+4` and command ID `+12` use the local view before serialization
+`0x23800`, and the immediate branch may synchronously execute a handler.
+Protect the full original submission rather than rewriting a header afterwards.
+Preserve an already-queued result even if restoration fails; protection rejection
+must not return the false result that SE uses to select its Steam fallback.
+
+The writer guard is installed during the existing startup window and uses its
+existing exclusive site; normal and synchronized saves protect the original
+participant. Recheck all writer callers, native-world/lifecycle invalidation,
+positive local identity, nested callbacks and Vanilla load/remapping on updates.
+The guard and the raw-send detour remain dormant without a protected view.
+
 ## Optional active-human control-view save identity
 
 Owner: `PlayerControl.ControlSaveNative`, registry group `Players.ControlSaveIdentity`.
