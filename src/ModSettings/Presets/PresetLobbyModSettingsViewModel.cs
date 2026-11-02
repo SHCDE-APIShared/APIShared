@@ -384,6 +384,15 @@ namespace APIShared.ModSettings
             presetController?.IsApplyingSnapshot == true;
 
         /// <summary>
+        /// True only while entering, exiting or restoring a mission/remote-host snapshot.
+        /// Local working copies, published presets and resets do not enter this scope.
+        /// Like snapshot application itself, this is synchronous and does not establish network authority.
+        /// Existing mutation/host checks still apply.
+        /// </summary>
+        protected bool IsApplyingMissionSettingsSnapshot =>
+            presetController?.IsApplyingMissionSnapshot == true;
+
+        /// <summary>
         /// Replaces one captured code-default value without changing the current working settings.
         /// This is intended for defaults which can only be materialized after dynamic discovery.
         /// </summary>

@@ -728,3 +728,17 @@ Consumers without a reference retain the established resolution presets.
 ## Packaged Lord presentation
 
 APIShared.Presentation.PackagedLordPresentation.TryRegister registers an owner-local presentation snapshot. See [integration contract](THIRD_PARTY_GUIDE.md#packaged-lord-presentation). APIShared.Content.Lords.LordMetadataDocument preserves complete lordmeta.json inputs, including unknown fields.
+
+## Enemy-unit building proximity and Peace Time
+
+`APIShared.Buildings.EnemyProximityPolicies` combines ordered Override and Limit
+contributions and authoritative vetoes on the existing Script Extender query.
+`APIShared.Simulation.PeaceTimeState.TryGetActive(out bool)` reads the current
+native mission state; it does not infer a timer from setup options. Neither service
+adds default gameplay policy. See [contracts and examples](ENEMY_PROXIMITY.md).
+
+## Mission-locked preset settings
+
+`PresetLobbyModSettingsViewModel.IsApplyingMissionSettingsSnapshot` distinguishes
+mission/host restoration from local preset/reset actions without changing existing
+snapshot APIs. See [integration](THIRD_PARTY_GUIDE.md#locking-an-individual-setting-during-a-mission).

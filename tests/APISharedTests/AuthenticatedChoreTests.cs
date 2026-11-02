@@ -2,6 +2,8 @@ using System;
 using APIShared.PlayerControl;
 using APIShared.Networking;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using SHCDESE.Detours;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace APISharedTests
@@ -10,6 +12,39 @@ namespace APISharedTests
     [TestClass]
     public sealed class AuthenticatedChoreTests
     {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandle(string moduleName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true)]
+        private static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+        [TestMethod]
+        public void NativeQueueBindingRequiresTheExactSingleNativeTarget()
+        {
+            // Export addresses supply real, distinct native targets. These delegates are
+            // never invoked: only binding identity is tested, independent of the exports' ABI.
+            IntPtr module = GetModuleHandle("kernel32.dll");
+            Assert.AreNotEqual(IntPtr.Zero, module);
+            IntPtr address = GetProcAddress(module, "GetCurrentProcessId");
+            IntPtr otherAddress = GetProcAddress(module, "GetCurrentThreadId");
+            Assert.AreNotEqual(IntPtr.Zero, address);
+            Assert.AreNotEqual(IntPtr.Zero, otherAddress);
+            Assert.AreNotEqual(address, otherAddress);
+            var queue = Marshal.GetDelegateForFunctionPointer<BulkChoreDetours.c_game_queue_chore_delegate>(address);
+            var other = Marshal.GetDelegateForFunctionPointer<BulkChoreDetours.c_game_queue_chore_delegate>(otherAddress);
+            BulkChoreDetours.c_game_queue_chore_delegate managed = (manager, opcode) => Assert.Fail("Binding validation must not invoke delegates.");
+
+            Assert.IsTrue(NativeChoreQueueBinding.Matches(queue, address));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(queue, otherAddress));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(other, address));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(null, address));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(queue, IntPtr.Zero));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(managed, address));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(queue + queue, address));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(managed + queue, address));
+            Assert.IsFalse(NativeChoreQueueBinding.Matches(queue + managed, address));
+        }
+
         [TestMethod]
         public void NativeIssuerMustMatchPendingSlotAndExecutionContextNotPayloadOrView()
         {

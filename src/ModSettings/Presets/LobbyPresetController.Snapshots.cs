@@ -264,7 +264,8 @@ namespace APIShared.ModSettings
             bool? restoreHost = null,
             bool publish = true,
             bool retryableCleanup = false,
-            Func<PresetPropertyAccessor, bool> include = null)
+            Func<PresetPropertyAccessor, bool> include = null,
+            bool missionRestore = false)
         {
             // Capture inclusion once, before a setter's PropertyChanged can refresh
             // the live role. Deserialization likewise finishes before any mutation.
@@ -310,7 +311,7 @@ namespace APIShared.ModSettings
             retryableSetterFailure = false;
             try
             {
-                result = ApplyPreparedValues(prepared, _ => owner.SetSelectedPresetCore(selected), publish);
+                result = ApplyPreparedValues(prepared, _ => owner.SetSelectedPresetCore(selected), publish, missionRestore);
                 retryableSetterFailure = retryableCleanup && result.Failed.Count != 0;
                 if (retryableSetterFailure) result.ThrowFirstFailure();
             }
@@ -335,13 +336,15 @@ namespace APIShared.ModSettings
         /// Dynamic providers and application backends keep their complete-configuration validation.
         /// </summary>
         private SnapshotApplicationResult ApplyPreparedValues(Dictionary<PresetPropertyAccessor, byte[]> prepared,
-            Action<SnapshotApplicationResult> commit, bool publish)
+            Action<SnapshotApplicationResult> commit, bool publish, bool missionRestore = false)
         {
             using (ModSettingsSearchUpdateScope.Begin(owner.SettingsTarget))
             {
                 var result = new SnapshotApplicationResult();
                 bool previousApplying = applying;
+                bool previousMissionSnapshot = applyingMissionSnapshot;
                 applying = true;
+                applyingMissionSnapshot = missionRestore;
                 try
                 {
                     LobbySettingsRestoreScope.Execute(() =>
@@ -359,6 +362,7 @@ namespace APIShared.ModSettings
                 finally
                 {
                     applying = previousApplying;
+                    applyingMissionSnapshot = previousMissionSnapshot;
                 }
 
                 ReportApplicationFailures(result);

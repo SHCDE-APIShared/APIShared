@@ -40,7 +40,14 @@ monitor Enter/Exit, and only the audited manager/log/string/pointer helpers.
 The lock object must be loaded once from `EngineInterface.threadLock`, retained
 in the same local for Enter and Exit, and the queue must lie in its protected
 try/finally. The taken flag cannot escape or be reassigned after initialization.
-The bound native queue must still resolve to module `+0x23990`. The staging byte
+The bound native queue must still target module `+0x23990`. Compare the SE queue
+delegate with a reference of the same delegate type created from that audited
+address using `Marshal.GetDelegateForFunctionPointer`; neither delegate is invoked.
+Do not compare `GetFunctionPointerForDelegate(queue)` with the native address:
+the installed Unity/Mono runtime returns a marshaling-wrapper address even for
+a correctly bound native delegate. Same-target delegate equality accepts the
+native binding and rejects another target, managed replacements and multicast
+delegates. The staging byte
 field and private engine monitor are validated reflection bindings, not direct
 publicized-assembly accesses. Recheck their mutable monitor/queue bindings before
 each send. The outer wrapper holds that same monitor while
@@ -852,3 +859,47 @@ Extender or managed game update.
 - `MoveCommandFailureRuntime`: IL edit of SE `GameTribeManagerAPI.IssueMoveHereCommand(int,int,int,bool,int,TribeMoveType)`;
   requires exactly two `LogHelper.Error(string,string,string)` branches and one native
   dispatch. A mismatch logs `SE_MOVE_FAILURE_CONTEXT` and keeps the original wrapper.
+
+## Enemy-unit proximity and Peace Time (2026-11-02)
+
+Reference native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+
+- The existing Script Extender owns live entry `0xEE640`; APIShared only subscribes
+  to its Pre event. There is no additional native hook or overlapping reservation.
+- The shared private predicate copies exactly `0xEE640..0xEE835` (502 bytes), body
+  SHA-256 `1D2DDB19C37B3EC505D426272421E57FE4336CAA2BF9FA80BE6F1143282C565D`.
+  Every original instruction and internal branch identity is retained except the
+  audited category distance CMP at `0xEE748`; four RIP-relative data anchors are
+  reencoded as absolute loads. A seventh Win64 argument supplies civilian radius
+  squared; the original six arguments, stack layout and military radius remain.
+- Data contract: enemy count `0x379CE58 + player*0x583C`, word IDs
+  `0x38C19E8 + player*20000`, paired global IDs `0x38ED908 + player*40000`,
+  sentinel-relative unit base `0x67E8A5C + gameId*0x490`. All original identity,
+  coordinate, death/state and Assassin/Bedouin filters must remain byte-equivalent.
+  Fixed layouts have no speculative unknown-build fallback.
+- The native loop uses strict squared Euclidean `< radius*radius`. Public supplied
+  radii are nonnegative and at most46340. Unsupported raw inputs retain the
+  original path; independent valid policy vetoes still apply.
+- `PeaceTimeState` reads the native active byte at `0x38722DC`, anchored by the
+  RIP-relative load at `0xCA874` in updater `0xCA870`. Native initializer `0xCA900`,
+  archive `0x15C60`, scenario reconstruction `0x100530`, and alternate updater
+  `0xD1E50` remain authoritative. Expiry occurs when current tick exceeds end;
+  the reader must not replace this with its own comparison or timer.
+- Validate all consumed bytes against the pristine load context before preparing
+  pointers. Never interpret a byte/address from another native hash using these
+  fixed layouts. A failed query validation disables radius replacement only; a
+  failed peace read disables peace-dependent consumers only.
+- Revalidate the installed RedBird AllocateStub/WriteStub cache-flushing and
+  process-lifetime allocation contract and execute the copied native tests after
+  an SDK/native update. No executable rewrite/free after publication.
+- Review the full candidate-producer and placement/action callers, native ABI,
+  category enum values, complete exclusions, save/load/world invalidation and
+  separate building/wall/Keep checks on updates. Retain the independent native
+  fixtures and repeat game/editor/save and matching-build multiplayer acceptance.
+
+The offline expiry fixture validates the complete 138-byte `0xCA870` body hash
+`FF0C43799C8C79DAB6071437A44818457D5D42BC341CF448B59CA657DF8EB19B` before
+executing a private relocated copy. Only external display/remove calls at
+`0x1A2980`/`0x1A42B0` and the sound tail jump at `0x2940` become private RET
+stubs. Timer reads, comparisons and active-flag writes remain original. Review
+all three external edges and R11 liveness when updating this fixture.

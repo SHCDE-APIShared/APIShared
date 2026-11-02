@@ -2250,3 +2250,22 @@ if (PackagedLordPresentation.TryRegister(pluginGuid, "mission-lords", out var pr
     });
 // Retain the registration and call presentation.SetEntries(null) when leaving this selection.
 ```
+
+## Enemy-unit building proximity and Peace Time
+
+Register owner-bound `EnemyProximityPolicies` callbacks after native initialization.
+Use Override for general category radii and Limit for reductions; valid vetoes
+always prevail. Resolve your own settings sentinels before contributing a radius.
+For a peace-only rule, check the availability result as well as the active value
+of `PeaceTimeState.TryGetActive`. No extra tick subscription is needed.
+See [enemy proximity](ENEMY_PROXIMITY.md) for ordering, standalone collaboration,
+thread/lifetime, native fallback and multiplayer requirements.
+
+## Locking an individual setting during a mission
+
+A setter that forbids local in-mission edits may exempt
+`IsApplyingMissionSettingsSnapshot` for mission entry/exit and deferred host-value
+restoration. Keep normal `CanMutateSetting`/host checks. The general
+`IsApplyingSettingsSnapshot` flag and Extender `InitialLoad` origin include local
+preset/reset operations and therefore do not distinguish authoritative restores.
+See [the mission-lock integration contract](ENEMY_PROXIMITY.md#mission-locked-consumer-settings).

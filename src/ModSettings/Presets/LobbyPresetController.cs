@@ -54,6 +54,7 @@ namespace APIShared.ModSettings
         private Dictionary<string, byte[]> missionPreset;
         private bool active;
         private bool applying;
+        private bool applyingMissionSnapshot;
         private PublishedModSettingsPreset activePublishedPreset;
         private PublishedModSettingsPreset suspendedPublishedPreset;
         private string basedOnStableId = string.Empty;
@@ -251,6 +252,7 @@ namespace APIShared.ModSettings
             IsSettingsActivationProperty(clientSettingsActivationProperty, propertyName);
 
         public bool IsApplyingSnapshot => applying;
+        public bool IsApplyingMissionSnapshot => applyingMissionSnapshot;
 
         public bool IsMissionIndependentPropertyName(string propertyName) =>
             propertyName != null && missionIndependentByName.TryGetValue(propertyName, out bool independent) && independent;

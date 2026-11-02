@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Threading;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -35,7 +34,7 @@ namespace APIShared.Networking
             ValidateSubmissionMethod(method);
             object gate = monitor.GetValue(null);
             var queue = BulkChoreDetours.c_game_queue_chore;
-            if (gate == null || queue == null || Marshal.GetFunctionPointerForDelegate(queue).ToInt64() != checked(moduleBase + 0x23990))
+            if (gate == null || !NativeChoreQueueBinding.Matches(queue, new IntPtr(checked(moduleBase + 0x23990))))
                 throw new InvalidOperationException("Authenticated Chore submission: native queue binding differs from the audited image.");
             var call = (Func<byte[], bool>)Delegate.CreateDelegate(typeof(Func<byte[], bool>), method);
             engineGate = gate; pendingPayload = field; engineMonitor = monitor; nativeQueue = queue;

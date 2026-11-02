@@ -222,6 +222,35 @@ APIShared.BuildingRepairQuote | public int Panel { get; }
 APIShared.BuildingRepairQuote | public int Pitch { get; }
 APIShared.BuildingRepairQuote | public int Stone { get; }
 APIShared.BuildingRepairQuote | public int Wood { get; }
+APIShared.Buildings.EnemyProximityContext | public struct APIShared.Buildings.EnemyProximityContext
+APIShared.Buildings.EnemyProximityContext | public byte Unknown { get; }
+APIShared.Buildings.EnemyProximityContext | public int CivilianRadius { get; }
+APIShared.Buildings.EnemyProximityContext | public int MilitaryRadius { get; }
+APIShared.Buildings.EnemyProximityContext | public int OriginalRadius { get; }
+APIShared.Buildings.EnemyProximityContext | public int PlayerId { get; }
+APIShared.Buildings.EnemyProximityContext | public int TileX { get; }
+APIShared.Buildings.EnemyProximityContext | public int TileY { get; }
+APIShared.Buildings.EnemyProximityDecision | public struct APIShared.Buildings.EnemyProximityDecision
+APIShared.Buildings.EnemyProximityDecision | public .ctor(int? civilianRadius = null, int? militaryRadius = null, bool block = false)
+APIShared.Buildings.EnemyProximityDecision | public bool Block { get; }
+APIShared.Buildings.EnemyProximityDecision | public int? CivilianRadius { get; }
+APIShared.Buildings.EnemyProximityDecision | public int? MilitaryRadius { get; }
+APIShared.Buildings.EnemyProximityDecision | public static APIShared.Buildings.EnemyProximityDecision Blocked { get; }
+APIShared.Buildings.EnemyProximityDecision | public static APIShared.Buildings.EnemyProximityDecision None { get; }
+APIShared.Buildings.EnemyProximityPhase | public enum APIShared.Buildings.EnemyProximityPhase : int
+APIShared.Buildings.EnemyProximityPhase | Limit = 1
+APIShared.Buildings.EnemyProximityPhase | Override = 0
+APIShared.Buildings.EnemyProximityPolicies | public static class APIShared.Buildings.EnemyProximityPolicies
+APIShared.Buildings.EnemyProximityPolicies | public static APIShared.NativeCapabilityDiagnostic QueryDiagnostic { get; }
+APIShared.Buildings.EnemyProximityPolicies | public static bool HasRegistration(string ownerGuid, string registrationId)
+APIShared.Buildings.EnemyProximityPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Buildings.EnemyProximityPhase phase, System.Func<APIShared.Buildings.EnemyProximityContext, APIShared.Buildings.EnemyProximityDecision> callback, out APIShared.Buildings.EnemyProximityRegistration registration, out string error, int order = 0)
+APIShared.Buildings.EnemyProximityRegistration | public sealed class APIShared.Buildings.EnemyProximityRegistration
+APIShared.Buildings.EnemyProximityRegistration | public APIShared.Buildings.EnemyProximityPhase Phase { get; }
+APIShared.Buildings.EnemyProximityRegistration | public bool IsEnabled { get; }
+APIShared.Buildings.EnemyProximityRegistration | public int CallbackErrorCount { get; }
+APIShared.Buildings.EnemyProximityRegistration | public string OwnerGuid { get; }
+APIShared.Buildings.EnemyProximityRegistration | public string RegistrationId { get; }
+APIShared.Buildings.EnemyProximityRegistration | public void SetEnabled(bool enabled)
 APIShared.Commands.GameActionAcceptedEventArgs | public sealed class APIShared.Commands.GameActionAcceptedEventArgs
 APIShared.Commands.GameActionAcceptedEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public int ActionState { get; }
@@ -1264,6 +1293,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public abstract class AP
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected .ctor()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool CanMutateSetting(string propertyName = null)
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool CanMutateSettingWithDependents(string propertyName, params string[] dependentPropertyNames)
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool IsApplyingMissionSettingsSnapshot { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool IsApplyingSettingsSnapshot { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected virtual APIShared.ModSettings.IDynamicPresetSettingsProvider DynamicSettingsProvider { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected virtual APIShared.ModSettings.IModSettingsApplicationBackend SettingsApplicationBackend { get; }
@@ -2389,6 +2419,9 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Simulation.PeaceTimeState | public static class APIShared.Simulation.PeaceTimeState
+APIShared.Simulation.PeaceTimeState | public static APIShared.NativeCapabilityDiagnostic Diagnostic { get; }
+APIShared.Simulation.PeaceTimeState | public static bool TryGetActive(out bool active)
 APIShared.Simulation.SimulationClock | public static class APIShared.Simulation.SimulationClock
 APIShared.Simulation.SimulationClock | public static bool TryGetCurrentTick(APIShared.MissionContext expectedMission, out int mapTick)
 APIShared.Simulation.SimulationClock | public static bool TryGetElapsedTicks(int earlierTick, int currentTick, out int elapsedTicks)

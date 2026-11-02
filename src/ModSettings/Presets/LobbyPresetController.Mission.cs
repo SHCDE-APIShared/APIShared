@@ -32,7 +32,7 @@ namespace APIShared.ModSettings
             SnapshotApplicationResult result;
             // As a client, synchronized host values (mission-independent ones included)
             // replaced this peer's own; restore all of them before they can be persisted.
-            try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false, retryableCleanup: retryable, include: IsHostProperty); }
+            try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: true, publish: false, retryableCleanup: retryable, include: IsHostProperty, missionRestore: true); }
             catch { if (retryableSetterFailure) hostRestoreFailures++; retryableSetterFailure = false; throw; }
             ReportFinalRestoreAttempt(result, hostRestoreFailures, "personal host settings");
             hostRestoreFailures = 0;
@@ -86,7 +86,7 @@ namespace APIShared.ModSettings
             foreach (KeyValuePair<string, byte[]> entry in supplied)
                 if (persistedPropertiesByName.TryGetValue(entry.Key, out var property) && IsMissionProperty(property))
                     missionPreset[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
-            ApplySnapshot(missionPreset, MissionPresetIndex, writeLocalStorage: false);
+            ApplySnapshot(missionPreset, MissionPresetIndex, writeLocalStorage: false, missionRestore: true);
             DebugLogHelper.LogInfo(log,
                 $"SETTINGS_CONTEXT: mod={targetGuid}, action=enter, context={SanitizeLogValue(missionContextLabel)}, " +
                 $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, editable={editable}, " +
@@ -108,7 +108,7 @@ namespace APIShared.ModSettings
             SnapshotApplicationResult result;
             try
             {
-                try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false, retryableCleanup: retryable, include: IsMissionProperty); }
+                try { result = ApplySnapshot(preset1, 0, writeLocalStorage: false, restoreHost: restoreHost, publish: false, retryableCleanup: retryable, include: IsMissionProperty, missionRestore: true); }
                 catch { if (retryableSetterFailure) missionExitFailures++; retryableSetterFailure = false; throw; }
                 owner.PublishSettingsSnapshot(clientProperties.Select(property => property.Name).ToArray());
             }

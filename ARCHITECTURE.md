@@ -447,3 +447,13 @@ retains the compatible building-text adapter and selection contract. APIShared o
 shared presentation and registration; consumers own localized text, symbols,
 activation and gameplay decisions. See the [tooltip guide](docs/TOOLTIPS.md). See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
 for the public entry point and integration documentation.
+
+### Enemy-unit proximity and active Peace Time
+
+Buildings/EnemyProximity owns the shared category-query implementation and the
+single subscription to the existing Script Extender event, not another live hook.
+Ordered Override/Limit registrations separate shared mechanics from consumer
+settings; block coordination remains independent of native-copy availability.
+Simulation/PeaceTimeState reads validated mission state without a timer or event.
+Both are prepared before native API publication can run consumer readiness
+callbacks. See [the public contract](docs/ENEMY_PROXIMITY.md).
