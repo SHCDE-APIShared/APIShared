@@ -4,6 +4,7 @@ using static Iced.Intel.AssemblerRegisters;
 
 namespace APIShared.PlayerControl
 {
+    // WIP (see docs/PLAYER_CONTROL.md): no handler-table owner installs it yet.
     // Primitive for the current-image no-argument Chore handler ABI. It does not
     // publish a table entry, select a backend or grant control. A future table
     // owner must validate the entry, root both destinations before publication,

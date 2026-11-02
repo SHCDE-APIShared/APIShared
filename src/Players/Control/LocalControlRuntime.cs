@@ -10,6 +10,8 @@ namespace APIShared.PlayerControl
     // begin or end those components individually. Every transition holds the engine
     // monitor, so the simulation sees either the complete old or the complete new state.
     // Still internal and unwired: native producer/handler adapters will drive it.
+    // WIP (see docs/PLAYER_CONTROL.md): rights-gated control. Its writeActor must become
+    // LocalInputControl, the live owner of the input actor, before this runtime is wired.
     internal sealed class LocalControlRuntime
     {
         internal const int SuspendedActor = -1;

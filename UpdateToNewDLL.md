@@ -65,49 +65,80 @@ failure. Re-audit `0x23F10`, `0x1F7E0`, `0x1F9A0`, `0x23990`, the field helper
 `0x1F5F0`, native/managed receive and SE's opcode-106 pack/unpack/dispatch before
 admitting another image. This is a transport prerequisite, not control permission.
 
-## Pending single-owner control input boundary
+## Spectator input control boundaries
 
-Owner: `PlayerControl.ControlInputBridge`. This is an uninstalled assembly primitive,
-not an available player-control backend or a permission service. Reference native
-SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Owner: `PlayerControl.ControlInputNative` (installer) with `ControlInputBridge`
+(stubs), registry group `Players.ControlInput`; the actor cell is written only by
+`LocalInputControl` through `PlayerPerspectiveAPI.TrySetSpectatorControl`. Reference
+native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Both boundaries are installed together in the startup window, hash-bound; any other
+image skips the feature (one Info line) and leaves Vanilla unchanged. Actor zero
+follows both complete original blocks. This grants full Vanilla input of the chosen
+player; it is not a rights/permission service (that path remains WIP).
 
-Within `DLL_RunTick` at `0x86680`, PE unwind end `0x86F72`, span
-`[0x868F6,0x86900)` contains `41 0F 45 C4` (CMOVNE EAX,R12D) and
-`89 05 70 D4 85 08` (MOV [RIP+disp32],EAX). The destination is native view
-RVA `0x88E3D70`. Incoming EAX/EBX hold the view, R12D is zero, and flags come
-from the spectator comparison at `0x868DC`; the intervening MOVs do not alter
-them. Continuation `0x86900` is `45 0F B6 C6` (MOVZX R8D,R14B). The full
-current-image function's direct branches/calls and baseline xrefs have no entry
-inside the ten-byte span. This boundary is not a whole foreign-command audit.
+Vanilla zeroes the native view for a spectator at two places before map input:
 
-The intermediary preserves flags, R11 and stack; it uses no managed callback or
-SIMD scratch. Zero demand follows the complete relocated original. Nonzero demand
-requires an actor in 1..8 equal to EBX; any other value, including suspended -1,
-writes zero for the input scope. Only a future verified control runtime may own
-that cell; UI selection or a packet cannot grant input merely by setting a view.
-Before wiring local-control retirement, establish a native queue reset/drain contract:
+1. Within `DLL_RunTick` at `0x86680`, PE unwind end `0x86F72`, span
+   `[0x868F6,0x86900)` contains `41 0F 45 C4` (CMOVNE EAX,R12D) and
+   `89 05 70 D4 85 08` (MOV [RIP+disp32],EAX). The destination is native view
+   RVA `0x88E3D70`. Incoming EAX/EBX hold the view, R12D is zero, and flags come
+   from the spectator comparison at `0x868DC`; the intervening MOVs do not alter
+   them. Continuation `0x86900` is `45 0F B6 C6` (MOVZX R8D,R14B). The full
+   current-image function's direct branches/calls and baseline xrefs have no entry
+   inside the ten-byte span. RunTick restores EBX at `0x86927` after the call to the
+   input dispatcher `0x8C5F0`.
+2. Inside the dispatcher `0x8C5F0`, a nested re-dispatch (taken when the input state
+   `[0x1860AD56C]` was nonzero before Vanilla's deselection `0x897F0`) loads
+   EBX=[view] at `0x8D10B`, compares the spectator flag at `0x8D115` and executes
+   `0F 45 C7` (CMOVNE EAX,EDI; EDI=0 since `0x8D0C8`), `45 33 C9` (XOR R9D,R9D) and
+   `89 05 3C 6C 85 08` (MOV [view],EAX at `0x8D12E`) before the recursive call
+   `0x8D15B`; `0x8D16D` restores EBX. NativeX64 Indirect displaces exactly the six
+   bytes `[0x8D128,0x8D12E)`; the unchanged store then writes the stub's EAX. Within
+   the whole dispatcher no direct branch targets `0x8D129..0x8D133`; the flags are
+   dead after the span (XOR R8D,R8D at `0x8D134` precedes the call). No SE or Fixes
+   source references either span.
+
+These boundaries are not a whole foreign-command audit. Managed building placement
+and demolition (`EditorDirector` -> `PlaceMapperItem`/`DeleteBuilding`) pass
+`EditorDirector.ActivePlayerID`, which `DLL_MapAction` temporarily writes as the view;
+they do not use these boundaries.
+
+The intermediaries preserve flags, R11 and stack; they use no managed callback or
+SIMD scratch. Zero demand, or a clear spectator comparison (ZF set, preserved from
+`0x868DC`/`0x8D115`), follows the complete relocated original, so a stale actor can never
+change a non-spectator's input. For a spectator, nonzero demand requires an actor in 1..8
+equal to EBX; any other value, including suspended -1, yields zero for the input scope. The dispatcher form also performs the displaced
+XOR R9D,R9D on its own branches. UI selection or a packet cannot grant input merely
+by setting a view. Switching players first runs Vanilla's deselection (GameAction
+`CloseTroopsPanel` -> `0x897F0`: local marking clear `0x186C50`, queued opcode-15
+unselect via `0x19A5B0`/`0x23990` with the current view as source) while the old
+view is current. Whether that path releases every tribe reservation (`+0x2A`) is
+statically unproven; it is identical to an ordinary Vanilla deselection.
+For the WIP rights-gated runtime: before wiring local-control retirement, establish a native queue reset/drain contract:
 `SinglePlayerNativeQueue.End` clears managed sidecars, not native Chore slots.
 `ControlHandlerBridge` follows the original handler when demand is zero, so a view
 restoration or managed cleanup alone is not proof that queued foreign commands
 cannot reach Vanilla. This remains a prerequisite of the unfinished control backend.
-The stub loads the actor cell once per decision, so a concurrent change cannot mix
-two actor states. `LocalControlRuntime` writes the cell only under the engine monitor
-and refuses a protected save lease while the actor is suspended (-1): the blocked
-branch writes view 0, which the protected writer must reject.
+The stubs load the actor cell once per decision, so a concurrent change cannot mix
+two actor states; every actor write also holds the engine monitor, which serializes
+`DLL_RunTick`. The WIP `LocalControlRuntime` must use `LocalInputControl` as the actor
+owner before it is wired; it refuses a protected save lease while the actor is
+suspended (-1): the blocked branch writes view 0, which the protected writer must reject.
 
-For NativeX64 Indirect/10, validate both prepared and installed forms, pointer slot,
-padding and generated stub destinations. The relocated MOV's bytes necessarily
-change: decode its operand and require the same native destination. Require the
-exact CMOVNE form and a trampoline jump to +10. A separately owned E9 or FF25 hook
-starting exactly at +10 is allowed; the pristine continuation is still checked.
-An isolated executable-page fixture exercises the real backend/factory, relocated
-store, flags/stack and both branches. No game hook is installed by this fixture.
+For NativeX64 Indirect/10 and Indirect/6, validate both prepared and installed forms,
+pointer slot, padding and generated stub destinations. The relocated RunTick MOV's
+bytes necessarily change: decode its operand and require the same native destination.
+Require the exact CMOVNE forms, the XOR R9D form and a trampoline jump to +10/+6; the
+dispatcher continuation must decode as the native-view store. A separately owned E9 or
+FF25 hook starting exactly at the continuation is allowed; the pristine continuation is
+still checked. Isolated executable-page fixtures exercise the real backend/factory
+(dispatcher: the production options), relocated store, flags/stack/R9 and both branches.
+No game hook is installed by these fixtures.
 
-No unknown-image fallback is established: this short CMOV/MOV pair cannot identify
-the surrounding spectator/input lifetime, view storage or later command effects.
-A future installer must require the audited whole-image contract, claim the span
-and prepare only during the existing startup window. Failure of this optional
-boundary must leave Vanilla and independently supported backends unchanged.
+No unknown-image fallback is established: these short CMOV/MOV/XOR blocks cannot
+identify the surrounding spectator/input lifetime, view storage or later command
+effects. Updates must re-audit both spans, the dispatcher's nested branch conditions,
+`0x897F0` and the view cell before admitting another image.
 
 ## Eliminated participant view protection
 

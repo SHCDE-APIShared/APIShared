@@ -24,6 +24,7 @@ namespace APIShared.PlayerControl
 
     internal enum ControlNativeQueueResult { NotTracked, Rejected, Executed }
 
+    // WIP (see docs/PLAYER_CONTROL.md): needs the 0x23990 producer and handler adapters; unwired.
     // Local native sidecars only: no serializer, peer roster or mixed-owner
     // backend. A rejected/consumed entry remains a tombstone until native slot
     // reuse or world retirement. Revoking a session ticket therefore cannot turn

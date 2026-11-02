@@ -15,6 +15,7 @@ namespace APIShared.PlayerControl
         internal byte[] CopyDigest() => (byte[])digest.Clone();
     }
 
+    // WIP (see docs/PLAYER_CONTROL.md): multiplayer control protocol; unwired.
     // Multiplayer-only protocol state, composed from the same admission path used
     // at execution. The independent SinglePlayerControlSession never constructs or
     // consults this object. Only synchronized simulation/lifecycle adapters call it.

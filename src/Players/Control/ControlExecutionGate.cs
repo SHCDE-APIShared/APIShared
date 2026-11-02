@@ -32,6 +32,7 @@ namespace APIShared.PlayerControl
         internal ReadOnlyCollection<ControlOwnerCommands> Groups { get; }
     }
 
+    // WIP (see docs/PLAYER_CONTROL.md): no production IControlCommandRules/resolver exists yet.
     // A synchronized-context admission boundary. No native side effects until EVERY
     // command and identity has passed; then one backend call processes the whole batch.
     // The same gate is used for submission preflight and fresh execution admission.

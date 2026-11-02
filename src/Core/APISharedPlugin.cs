@@ -94,6 +94,9 @@ namespace APIShared
                 }),
                 new NativeInitializationStep("shared player-view identity", () =>
                     PlayerViewIdentityRuntime.Instance.Initialize(context, hash, RuntimeLogger)),
+                // Independent of the identity step: original spectators need no view lease.
+                new NativeInitializationStep("spectator input control", () =>
+                    PlayerControl.ControlInputNative.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native Chore dispatch scope", () => {
                     // The reader step already reported an unsupported image; one cause, one failure.
                     if (!Networking.NativeChoreContext.IsReady)

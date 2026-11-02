@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace APIShared.PlayerControl
 {
+    // WIP (see docs/PLAYER_CONTROL.md): rights-gated local control; unwired.
     // This path deliberately has no transport, fingerprint, fragment assembler,
     // peer agreement or mixed-selection backend. An optional network provider can
     // fail even during construction without preventing local single-owner control.

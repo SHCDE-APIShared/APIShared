@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace APIShared.PlayerControl
 {
+    // WIP (see docs/PLAYER_CONTROL.md): multiplayer control protocol; unwired.
     // Protocol agreement is synchronized state, not a local feature setting. The
     // lifecycle/network adapter supplies a verified roster and the host's epoch;
     // process-local MissionContext.SessionId must never be used as a wire epoch.

@@ -30,6 +30,7 @@ namespace APIShared
         internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
         internal const string VisibleMapRender = "Presentation.VisibleMapRender";
         internal const string PlayerControlSave = "Players.ControlSaveIdentity";
+        internal const string PlayerControlInput = "Players.ControlInput";
 
         // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
         internal static NativeSiteSpan[] VisibleMapRenderSpans() => new[] {
@@ -47,6 +48,20 @@ namespace APIShared
             Observe(PlayerControl.ControlSaveNative.Rva + PlayerControl.ControlSaveNative.DisplacedLength,
                 PlayerControl.ControlSaveNative.Entry.Length - PlayerControl.ControlSaveNative.DisplacedLength)
         };
+
+        // Both spectator-input boundaries; each continuation instruction is decoded and must stay intact.
+        internal static NativeSiteSpan[] PlayerControlInputSpans()
+        {
+            var spans = new List<NativeSiteSpan>();
+            foreach (var site in new[] { PlayerControl.ControlInputSite.RunTick, PlayerControl.ControlInputSite.Dispatcher })
+            {
+                int rva = site == PlayerControl.ControlInputSite.RunTick ? PlayerControl.ControlInputNative.RunTickRva : PlayerControl.ControlInputNative.DispatcherRva;
+                int displaced = PlayerControl.ControlInputBridge.DisplacedLength(site);
+                spans.Add(Exclusive(rva, displaced));
+                spans.Add(Observe(rva + displaced, PlayerControl.ControlInputBridge.WindowLength(site) - displaced));
+            }
+            return spans.ToArray();
+        }
 
         // AIV detour: the backend's displacement is not fixed here, so the claim covers the
         // instruction-aligned prologue any patch of up to 14 bytes displaces (2+1+1+1+2+2+2+2+4).
@@ -189,6 +204,7 @@ namespace APIShared
             Group(BuildingRepair, BuildingRepairSpans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerControlSave, PlayerControlSaveSpans()),
+            Group(PlayerControlInput, PlayerControlInputSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans())
         };
 

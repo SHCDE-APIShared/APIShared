@@ -14,7 +14,8 @@
       "Version": "0.24.0",
       "Changes": [
         "Add immutable current player-defeat snapshots and ordered state observers, including loaded losses, without replaying existing transition events.",
-        "Add eliminated-participant perspectives that preserve positive local identity, protect Save and Chore submission identity, and retain the original-spectator contract."
+        "Add eliminated-participant perspectives that preserve positive local identity, protect Save and Chore submission identity, and retain the original-spectator contract.",
+        "Add spectator input control: an original offline spectator controls one chosen player with Vanilla input (TrySetSpectatorControl, ClearSpectatorControl, GetInputControlledPlayerId); rights-gated, multi-owner and multiplayer control remain WIP."
       ]
     },
     {

@@ -515,7 +515,7 @@ namespace APISharedTests
                     {
                         Marshal.WriteInt32(new IntPtr(unchecked((long)actor)), permit);
                         invoke(selected, spectator, 0, output);
-                        int expected = permit == 0 ? spectator == 0 ? selected : 0 :
+                        int expected = permit == 0 || spectator == 0 ? spectator == 0 ? selected : 0 :
                             selected >= 1 && selected <= 8 && permit == selected ? selected : 0;
                         Assert.AreEqual(expected, Marshal.ReadInt32(new IntPtr(unchecked((long)view))));
                         Assert.AreEqual(expected, Marshal.ReadInt32(output, 56));
@@ -535,6 +535,111 @@ namespace APISharedTests
                 hook?.Dispose(); Marshal.FreeHGlobal(output);
                 Assert.IsTrue(VirtualFree(page, UIntPtr.Zero, 0x8000));
             }
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void DispatcherFixture(int nativeView, int spectatorFlag, int ignored, IntPtr output);
+
+        // Regression: the dispatcher's nested re-dispatch zeroes the view a second time. With the
+        // production backend options Indirect displaces exactly CMOVNE+XOR (6 bytes); the unchanged
+        // RIP store at +6 must write the stub's decision, and the displaced XOR R9D must still run.
+        [TestMethod]
+        public void ActualDispatcherBackendDisplacesSixBytesAndTheUnchangedStoreWritesTheDecision()
+        {
+            IntPtr page = VirtualAlloc(IntPtr.Zero, new UIntPtr(4096), 0x3000, 0x40);
+            Assert.AreNotEqual(IntPtr.Zero, page);
+            IntPtr output = Marshal.AllocHGlobal(64);
+            NativeDetour<DispatcherFixture> hook = null;
+            try
+            {
+                ulong target = unchecked((ulong)page.ToInt64()), view = target + 2048, actor = view + 8;
+                var code = new Assembler(64);
+                // Exact dispatcher window: CMOVNE EAX,EDI; XOR R9D,R9D; MOV [RIP+disp],EAX.
+                byte[] window = { 0x0F, 0x45, 0xC7, 0x45, 0x33, 0xC9, 0x89, 0x05, 0, 0, 0, 0 };
+                Buffer.BlockCopy(BitConverter.GetBytes(2048 - window.Length), 0, window, 8, 4);
+                code.db(window);
+                // R9 is zeroed by the original, so the recorder uses R13 for the output buffer.
+                code.pushfq(); code.pop(r10); code.mov(__qword_ptr[r13 + 16], r10);
+                code.mov(__qword_ptr[r13 + 24], rsp); code.mov(__qword_ptr[r13 + 32], r11);
+                code.mov(__qword_ptr[r13 + 40], r9); code.mov(__dword_ptr[r13 + 56], eax);
+                code.pop(r13); code.pop(rdi); code.pop(rbx); code.ret();
+                byte[] bytes;
+                using (var stream = new MemoryStream())
+                {
+                    code.Assemble(new StreamCodeWriter(stream), target); bytes = stream.ToArray();
+                }
+                Marshal.Copy(bytes, 0, page, bytes.Length);
+                Assert.IsTrue(FlushInstructionCache(GetCurrentProcess(), page, new UIntPtr((uint)bytes.Length)));
+                int unexpectedCallbacks = 0;
+                DispatcherFixture callback = (v, s, unused, pointer) => unexpectedCallbacks++;
+                var bridge = new ControlInputBridge(ControlInputSite.Dispatcher, actor, view, target + 6);
+                var request = new DetourRequest<DispatcherFixture> {
+                    Name = "private dispatcher input boundary", TargetAddress = target, Callback = callback,
+                    IntermediaryFactory = bridge
+                };
+                hook = (NativeDetour<DispatcherFixture>)ControlInputNative.CreateBackend(window.Length, false).CreateDetour(in request);
+                Assert.AreEqual(6, hook.DisplacedByteCount); Assert.AreEqual(DetourScheme.Indirect, hook.Scheme);
+                bridge.Validate(hook, page, window, false);
+                hook.Enable(); bridge.Validate(hook, page, window);
+                var wrongContinuation = new ControlInputBridge(ControlInputSite.Dispatcher, actor, view, target + 10);
+                Assert.ThrowsExactly<InvalidOperationException>(() => wrongContinuation.Validate(hook, page, window));
+                var wrongSite = new ControlInputBridge(ControlInputSite.RunTick, actor, view, target + 6);
+                Assert.ThrowsExactly<InvalidOperationException>(() => wrongSite.Validate(hook, page, window));
+                using (var caller = ExecutableFunction.Create(a => {
+                    a.push(rbx); a.push(rdi); a.push(r13);
+                    a.mov(r13, r9); a.mov(__qword_ptr[r13], rsp); a.mov(r11, 0x123456789ABCDEF0UL);
+                    a.mov(ebx, ecx); a.mov(eax, ebx); a.mov(edi, 0); a.mov(r9, 0x5555AAAA5555AAAAUL);
+                    a.cmp(edx, 0); a.pushfq(); a.pop(r10); a.mov(__qword_ptr[r13 + 8], r10);
+                    a.jmp(target);
+                }))
+                {
+                    var invoke = Marshal.GetDelegateForFunctionPointer<DispatcherFixture>(caller.EntryPoint);
+                    foreach (int selected in new[] { 0, 1, 3, 8, 9, -1 })
+                    foreach (int permit in new[] { 0, 1, 3, 8, 9, -1 })
+                    foreach (int spectator in new[] { 0, 1, -1 })
+                    {
+                        Marshal.WriteInt32(new IntPtr(unchecked((long)actor)), permit);
+                        Marshal.WriteInt32(new IntPtr(unchecked((long)view)), 77);
+                        invoke(selected, spectator, 0, output);
+                        int expected = permit == 0 || spectator == 0 ? spectator == 0 ? selected : 0 :
+                            selected >= 1 && selected <= 8 && permit == selected ? selected : 0;
+                        Assert.AreEqual(expected, Marshal.ReadInt32(new IntPtr(unchecked((long)view))));
+                        Assert.AreEqual(expected, Marshal.ReadInt32(output, 56));
+                        // No flag assertion: Vanilla's own XOR R9D rewrites them on the original path,
+                        // and the next real instruction (XOR R8D,R8D) overwrites them before any use.
+                        Assert.AreEqual(Marshal.ReadInt64(output, 0), Marshal.ReadInt64(output, 24), "Stack pointer changed.");
+                        Assert.AreEqual(0x123456789ABCDEF0UL, unchecked((ulong)Marshal.ReadInt64(output, 32)));
+                        Assert.AreEqual(0L, Marshal.ReadInt64(output, 40), "The displaced XOR R9D,R9D must run on every branch.");
+                    }
+                    Assert.AreEqual(0, unexpectedCallbacks, "Both branches must stay native.");
+                    GC.Collect(); GC.WaitForPendingFinalizers();
+                    GC.KeepAlive(invoke); GC.KeepAlive(callback);
+                }
+            }
+            finally
+            {
+                // Private fixture only, never a published game hook.
+                hook?.Dispose(); Marshal.FreeHGlobal(output);
+                Assert.IsTrue(VirtualFree(page, UIntPtr.Zero, 0x8000));
+            }
+        }
+
+        [TestMethod]
+        public void ProductionInputWindowsMatchTheAuditedInstructionForms()
+        {
+            // The reference bytes are the audited contract for the hash-bound installer; decode them
+            // at their real RVAs so a constant typo cannot pass the validator's instruction checks.
+            ulong module = 0x180000000UL, view = module + ControlInputNative.ViewRva;
+            var runTick = Decoder.Create(64, new ByteArrayCodeReader(ControlInputNative.RunTickWindow));
+            runTick.IP = module + ControlInputNative.RunTickRva;
+            runTick.Decode(); var runStore = runTick.Decode();
+            Assert.AreEqual(view, runStore.IPRelativeMemoryAddress);
+            Assert.AreEqual(14, ControlInputNative.RunTickWindow.Length);
+            var dispatcher = Decoder.Create(64, new ByteArrayCodeReader(ControlInputNative.DispatcherWindow));
+            dispatcher.IP = module + ControlInputNative.DispatcherRva;
+            dispatcher.Decode(); dispatcher.Decode(); var dispatchStore = dispatcher.Decode();
+            Assert.AreEqual(view, dispatchStore.IPRelativeMemoryAddress);
+            Assert.AreEqual(Code.Mov_rm32_r32, dispatchStore.Code);
         }
 
         [TestMethod]
@@ -582,7 +687,7 @@ namespace APISharedTests
                     {
                         Marshal.WriteInt32(cells, permit); Marshal.WriteInt32(cells, 8, 77);
                         invoke(selected, spectator, 0, output);
-                        int expected = permit == 0 ? spectator == 0 ? selected : 0 :
+                        int expected = permit == 0 || spectator == 0 ? spectator == 0 ? selected : 0 :
                             selected >= 1 && selected <= 8 && permit == selected ? selected : 0;
                         Assert.AreEqual(expected, Marshal.ReadInt32(cells, 8));
                         Assert.AreEqual(expected, Marshal.ReadInt32(output, 56));

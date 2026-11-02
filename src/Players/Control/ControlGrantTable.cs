@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace APIShared.PlayerControl
 {
+    // WIP (see docs/PLAYER_CONTROL.md): used only by the unwired rights/MP sessions.
     // Pure simulation-state registry. Network callers must supply the captured native
     // Chore issuer; a claimed player ID from a packet must never be used as that argument.
     internal sealed class ControlGrantTable

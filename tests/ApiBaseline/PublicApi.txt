@@ -1973,11 +1973,14 @@ APIShared.PlayerLordDeathNotification | public long SessionId { get; }
 APIShared.PlayerPerspectiveAPI | public static class APIShared.PlayerPerspectiveAPI
 APIShared.PlayerPerspectiveAPI | public static System.IDisposable SubscribeChanges(string ownerGuid, string registrationId, System.Action<APIShared.PlayerPerspectiveChange> callback)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetEliminatedPlayerView(int playerId)
+APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorControl(int playerId)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorView(int playerId)
 APIShared.PlayerPerspectiveAPI | public static int GetControlledPlayerId()
+APIShared.PlayerPerspectiveAPI | public static int GetInputControlledPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetRawNativeViewPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetViewedPlayerId()
 APIShared.PlayerPerspectiveAPI | public static void ClearEliminatedPlayerView()
+APIShared.PlayerPerspectiveAPI | public static void ClearSpectatorControl()
 APIShared.PlayerPerspectiveAPI | public static void ClearSpectatorView()
 APIShared.PlayerPerspectiveChange | public sealed class APIShared.PlayerPerspectiveChange
 APIShared.PlayerPerspectiveChange | public APIShared.PlayerPerspectiveChangeReason Reason { get; }

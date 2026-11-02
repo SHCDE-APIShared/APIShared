@@ -326,6 +326,16 @@ Before wiring retirement to the native handler, prove that delegated native queu
 entries have drained or been reset. Ending managed sidecars alone does not remove
 native commands; disabling the handler guard could otherwise send them to Vanilla.
 
+The live part is spectator input control (full Vanilla input of one chosen player,
+no rights). `ControlInputNative` installs both spectator-input boundary stubs in the
+startup window; `LocalInputControl` is the only writer of their actor cell. The
+public `PlayerPerspectiveAPI` transaction owns ordering under the engine monitor:
+Vanilla deselection as the old view, confirmed view change, then actor publication.
+Every view selection/clear and the lifecycle's world invalidation end control; the
+latter only resets the actor. The rights-gated `LocalControlRuntime`, the mixed-owner
+backend and the multiplayer protocol stay WIP; the runtime must adopt
+`LocalInputControl` as actor owner before wiring. See [player control](docs/PLAYER_CONTROL.md).
+
 The preset view model owns UI bindings, commands and role/context presentation.
 Its small `PresetHost` adapter implements the internal `ILobbyPresetHost` boundary:
 live settings target, application backend, authority/context and completion callbacks.

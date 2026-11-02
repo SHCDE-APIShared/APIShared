@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 
 namespace APIShared.PlayerControl
 {
+    // WIP (see docs/PLAYER_CONTROL.md): rights/multiplayer command format; unwired.
     // Internal wire format, independent of MessagePack/transport fragmentation. Native
     // opcodes remain private: only the audited backend can interpret/authorize them.
     internal sealed class ControlNativeCommand

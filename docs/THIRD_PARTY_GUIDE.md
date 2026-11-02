@@ -2183,6 +2183,21 @@ load/remapping can resolve the participant again. Re-enable a loaded eliminated
 participant from the current loss snapshot, starting with their own view; this
 requires no new spectator Save marker. Original-spectator recovery is separate.
 
+## Spectator input control
+
+`PlayerPerspectiveAPI.TrySetSpectatorControl(playerId)` lets an original spectator
+(nonpositive `EditorDirector.ActivePlayerID`, Vanilla spectator flag, offline
+multiplayer-type game) control one chosen player with Vanilla's own input: it
+selects that view, deselects the previously controlled player through Vanilla and
+reports the controlled player through `GetLocalPlayerId`. Call it on Unity's main
+thread; it returns false in real multiplayer, the map editor, with a participant view
+lease or on an unsupported native image. Managed placement/demolition still carry
+`EditorDirector.ActivePlayerID`: the mod owning a `PlaceMapperItem`/`DeleteBuilding`
+hook substitutes `GetInputControlledPlayerId()`. Any other view selection or clear,
+`ClearSpectatorControl()` and every native world change end control. Consumer
+settings, UI and the remaining spectator restrictions stay with the consumer. Details,
+limits and the WIP list: [player control](PLAYER_CONTROL.md).
+
 ## Packaged Lord presentation
 
 Register with PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason) on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.

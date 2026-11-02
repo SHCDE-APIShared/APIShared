@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace APIShared.PlayerControl
 {
+    // WIP (see docs/PLAYER_CONTROL.md): multiplayer control protocol; unwired.
     // Called only from synchronized receive context. An incomplete command has no
     // execution callback and cannot publish a partially assembled object selection.
     internal sealed class ControlBatchAssembler

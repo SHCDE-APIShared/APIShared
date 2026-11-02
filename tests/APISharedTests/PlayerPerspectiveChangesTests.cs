@@ -107,6 +107,99 @@ namespace APISharedTests
             }
         }
 
+        private static int IdentityOverride() => (int)typeof(APIShared.PlayerPerspectiveAPI).GetField("identityOverridePlayerId",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic).GetValue(null);
+
+        // Regression: the input bridge admits input only while actor == native view. A switch must
+        // deselect the old player while its view is current, publish the new actor only after the
+        // confirmed view, and the API identity must follow the controlled player.
+        [TestMethod]
+        public void ControlSwitchDeselectsAsTheOldViewAndPublishesTheActorAfterTheConfirmedView()
+        {
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+            int native = 1;
+            var actor = new List<int>();
+            var deselected = new List<string>();
+            var control = new APIShared.PlayerControl.LocalInputControl(actor.Add);
+            Action<int> setView = p => {
+                Assert.IsTrue(actor.Count == 0 || actor[actor.Count - 1] != p, "No actor before its confirmed view.");
+                native = p;
+            };
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 2, 5, () => native, setView,
+                p => deselected.Add(p + "@" + native), () => true, out _));
+            CollectionAssert.AreEqual(new[] { 2 }, actor);
+            Assert.AreEqual(0, deselected.Count, "Nothing was controlled before.");
+            Assert.AreEqual(2, IdentityOverride(), "GetLocalPlayerId follows the controlled player.");
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 3, 5, () => native, setView,
+                p => deselected.Add(p + "@" + native), () => true, out _));
+            CollectionAssert.AreEqual(new[] { "2@2" }, deselected, "Vanilla deselection runs as the previous view.");
+            CollectionAssert.AreEqual(new[] { 2, 3 }, actor);
+            Assert.AreEqual(3, native);
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 3, 5, () => native, setView,
+                p => deselected.Add(p + "@" + native), () => true, out _));
+            Assert.AreEqual(2, actor.Count, "An unchanged selection writes nothing.");
+            APIShared.PlayerPerspectiveAPI.EndControlCore(control, 5, () => native, p => deselected.Add(p + "@" + native));
+            CollectionAssert.AreEqual(new[] { "2@2", "3@3" }, deselected);
+            Assert.AreEqual(0, actor[actor.Count - 1]);
+            Assert.AreEqual(-1, IdentityOverride(), "The spectator identity returns after control.");
+            Assert.AreEqual(3, native, "Ending control keeps the selected view.");
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+        }
+
+        [TestMethod]
+        public void FailedControlSwitchKeepsVerifiedPreviousControlAndBlocksInputWhenUncertain()
+        {
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+            int native = 1;
+            var actor = new List<int>();
+            var control = new APIShared.PlayerControl.LocalInputControl(actor.Add);
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 2, 5, () => native, p => native = p, p => { }, () => true, out _));
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 4, 5, () => native,
+                p => { if (p == 4) throw new InvalidOperationException("native"); native = p; }, p => { }, () => true, out string reason));
+            StringAssert.Contains(reason, "rollback=verified");
+            Assert.AreEqual(2, native); Assert.AreEqual(2, control.Player);
+            CollectionAssert.AreEqual(new[] { 2 }, actor, "A verified rollback keeps the previous actor unchanged.");
+            Assert.AreEqual(2, IdentityOverride());
+            Assert.IsFalse(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 5, 5, () => native,
+                p => throw new InvalidOperationException("native"), p => { }, () => true, out _));
+            Assert.IsTrue(control.IsSuspended);
+            Assert.AreEqual(-1, actor[actor.Count - 1], "An unconfirmed view blocks spectator input.");
+            APIShared.PlayerPerspectiveAPI.EndControlCore(control, 5, () => native, p => Assert.Fail("No controlled view to deselect."));
+            Assert.AreEqual(0, actor[actor.Count - 1]);
+            Assert.AreEqual(-1, IdentityOverride());
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+        }
+
+        [TestMethod]
+        public void ControlFromAnEndedWorldIsReleasedWithoutDeselectingIntoTheNewWorld()
+        {
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+            int native = 1;
+            var actor = new List<int>();
+            int deselects = 0;
+            var control = new APIShared.PlayerControl.LocalInputControl(actor.Add);
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 2, 5, () => native, p => native = p, p => deselects++, () => true, out _));
+            Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TrySetControlCore(control, 3, 6, () => native, p => native = p, p => deselects++, () => true, out _));
+            Assert.AreEqual(0, deselects, "The previous world's selection is not deselected in the next world.");
+            CollectionAssert.AreEqual(new[] { 2, 0, 3 }, actor);
+            Assert.IsFalse(control.IsActiveIn(5)); Assert.IsTrue(control.IsActiveIn(6));
+            APIShared.PlayerPerspectiveAPI.EndControlCore(control, 7, () => native, p => deselects++);
+            Assert.AreEqual(0, deselects);
+            Assert.AreEqual(0, actor[actor.Count - 1]);
+            Assert.IsFalse(control.IsEngaged);
+            APIShared.PlayerPerspectiveAPI.ClearSpectatorView();
+        }
+
+        [TestMethod]
+        public void FailedActorWriteFailsClosedToBlockedInput()
+        {
+            var actor = new List<int>();
+            var control = new APIShared.PlayerControl.LocalInputControl(v => { if (v > 0) throw new InvalidOperationException("write"); actor.Add(v); });
+            Assert.ThrowsExactly<InvalidOperationException>(() => control.Activate(5, 2));
+            CollectionAssert.AreEqual(new[] { -1 }, actor);
+            Assert.IsTrue(control.IsSuspended); Assert.AreEqual(0, control.Player);
+        }
+
         [TestMethod]
         public void ReentrantDeliveryKeepsObserverOrderAndDisposeStopsFutureCaptures()
         {

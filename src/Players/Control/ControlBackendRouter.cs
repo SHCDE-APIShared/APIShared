@@ -18,6 +18,7 @@ namespace APIShared.PlayerControl
         bool TryExecute(ControlExecutionPlan plan, out string reason);
     }
 
+    // WIP (see docs/PLAYER_CONTROL.md): no backend is registered yet.
     // Failure domains follow actual operation dependencies. In particular the local
     // single-owner backend never acquires a network/mixed provider, negotiates peers,
     // allocates fragments or consults their health to operate. No cross-mode fallback
