@@ -115,7 +115,9 @@ They require no capability acquisition or consumer registration and are implemen
 separately in `src/ScriptExtenderFixes`. Unsupported dependency implementations are
 skipped without disabling the public services below. The popularity display correction
 automatically follows changed SE contribution values in reports and building panels,
-without modifying simulation or requiring consumer registration. The interpolate-event
+without modifying simulation or requiring consumer registration. A separate world-popup
+correction selects the campfire mask from its own displayed popularity snapshot before
+Vanilla caches it. The interpolate-event
 correction reuses SE's per-unit event object only while every subscriber provably
 reads it synchronously; other subscribers keep SE's allocation.
 The Lord media correction treats absent custom Lord identities as unavailable optional

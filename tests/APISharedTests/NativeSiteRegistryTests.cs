@@ -47,6 +47,10 @@ namespace APISharedTests
                 (0xE2705, 20, ApiSharedNativeSites.GateComparisons), (0xE3024, 20, ApiSharedNativeSites.GateComparisons),
                 (0x185D55, 20, ApiSharedNativeSites.GateDescent),
                 (0x13030, 6, ApiSharedNativeSites.SynchronizedSave),
+                (0x869D2, 6, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x27FEB, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x27FFF, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x28019, 7, ApiSharedNativeSites.PlayerViewNetwork),
                 (0x41D60, 10, ApiSharedNativeSites.VisibleMapRender)
             };
             foreach (var expected in expectedWriters)
@@ -85,6 +89,7 @@ namespace APISharedTests
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallDescent", -1, m => m.Name == "Commit"),
                 ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook"),
                 ("APIShared.ScriptExtenderFixes.SynchronizedSaveRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.PlayerControl.PlayerViewNetworkNative", "Initialize", -1, m => m.Name == "Enable"),
                 ("APIShared.Presentation.VisibleMapRenderEvents", "EnsureInstalled", -1, m => m.Name == "Enable")
             };
             using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))

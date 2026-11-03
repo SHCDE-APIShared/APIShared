@@ -128,6 +128,15 @@ the [APIShared catalogs](THIRD_PARTY_GUIDE.md#apishared-interface-language). Con
 
 ## Popularity display
 
+The separate world-popup correction keeps the campfire's floating mask consistent
+with its displayed popularity snapshot: red below 40, neutral from 40 through 59,
+and green from 60. Vanilla initializes the mask before installing the new number,
+then caches that first mask in a Unity sprite child. APIShared normalizes only the
+popularity popup's mask argument before that cache is created. Other floating
+icons, digits, simulation state and player identities retain their original paths.
+This permanent managed hook validates the loaded public method and its IL argument
+mapping; the native thresholds are hash-bound. It requires no consumer registration.
+
 The popularity display correction reads the 41 direct SE popularity modifiers after
 successful `GuiChecks` execution during an active mission. It automatically replaces
 only contributions whose effective SE value differs from Vanilla, including values

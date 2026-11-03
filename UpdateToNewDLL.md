@@ -216,6 +216,43 @@ until recovery. Stale captured failures must neither fault a replacement owner n
 deduplication state; the common writer's error has one coordinated drain. Dormant Save/send
 fixtures verify the monitor boundary and zero managed allocations after warm-up.
 
+**Native network identity reads.** The same lease also supplies one process-lifetime
+participant data cell to four pure-native read substitutions. These do not enter managed
+code or temporarily change the report viewpoint. All sites are prepared and validated
+before publishing the group, and all must be available before admitting a foreign
+eliminated-participant view. The admitted backend is NativeX64 `Indirect` (minimum six
+bytes), with these complete single-instruction displaced spans:
+
+| Purpose | RVA / exclusive end | Original instruction | First unchanged continuation |
+|---|---|---|---|
+| Timing participant | `0x869D2` / `0x869D8` | `8B 15 98 D3 85 08`, `mov edx,[rip+nativeView]` | `49 8B CE`, `mov rcx,r14` |
+| Heartbeat progress | `0x27FEB` / `0x27FF2` | `48 63 8B 50 FA 36 00`, `movsxd rcx,[rbx+0x36FA50]` | `8B 05 60 DF 63 03`, `mov eax,[rip+tick]` |
+| Heartbeat acknowledgement | `0x27FFF` / `0x28006` | `48 63 8B 50 FA 36 00`, `movsxd rcx,[rbx+0x36FA50]` | `8B 05 4C DF 63 03`, `mov eax,[rip+tick]` |
+| Heartbeat timestamp | `0x28019` / `0x28020` | `48 63 8B 50 FA 36 00`, `movsxd rcx,[rbx+0x36FA50]` | `89 84 8B 78 D0 14 00`, `mov [rbx+rcx*4+0x14D078],eax` |
+
+`DLL_RunTick` (`0x86680`) forwards the timing participant through `0x24E80` to
+`0x1F9B0`, where local progress is compared with the registered humans' progress. The
+heartbeat producer (`0x27F30`) writes self progress, acknowledgement and time at manager
+`+0x14D030/+0x14D054/+0x14D078` indexed by the participant. Its manager `+0x36FA50`
+aliases native view RVA `0x88E3D70`; reading a report viewpoint here incorrectly changes
+the self index. The `DAT_188575204` gate is connection pause, written by
+`DLL_ConnectionPause` (`0x81360`), not the spectator or defeat flag. Preserve this gate,
+manager role flag `+0x9A0`, declared local identity `+0x8A8`, participant registration,
+received-peer indexes and authenticated sending unchanged.
+
+Validate every pristine instruction and continuation, the timing RIP target, prepared
+and installed spans, indirect entry and exact trampoline continuation. Full surrounding
+function branches and current xrefs have no entry inside these four displaced spans.
+The dormant cell-zero branch executes the original relocated read; active values retain
+MOV's EDX zero-extension or MOVSXD's RCX result semantics. Save/restore flags and the
+scratch register on every branch; neither branch may allocate, call managed code, write
+the native view or change other registers, SIMD state or stack position. Publish/clear
+the data cell only with the exact current lease under the engine monitor, and retain
+all published code/data until process exit. Unsupported hashes have no fallback: re-audit
+timing, heartbeat, transport/role identity and native-view aliases before admitting another
+image. Executable private-memory fixtures cover the four entries and continuations;
+they do not establish live host/client pacing acceptance.
+
 No unknown-image fallback: the generic writer prologue cannot establish writer identity,
 section-table semantics, argument ABI or native viewpoint storage. Re-audit the full
 writer/section flow and callers, the preparation helpers `0xB8220`/`0x186040`, archive
@@ -653,6 +690,37 @@ The optional [Linux first-install patcher](docs/WORKSHOP.md#independent-linux-fi
 has separate managed launcher and attempt-counter contracts. When updating the
 Extender, run its [independent build and checks](CONTRIBUTING.md#building-and-checking-the-optional-proton-patcher)
 as well; the ordinary APIShared build does not build or validate that patcher.
+
+## Campfire popularity popup
+
+Native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+The popup is a Unity Fly, not a Noesis WGT_Popularity or book/report widget.
+Producer `0xB5690` selects campground projectile type 41 (SE
+`ProjectileType.EconomyIndicator2`) and calls spawn `0x9B2B0`. Spawn immediately
+dispatches its updater through `0x2DA9C0` at `0x9BA06`. Only after spawn returns
+does `0xB5845` store the campground owner's current popularity divided by 100 into
+projectile offset `0xD8`. Updater `0x9AC20` reads that same snapshot and writes mask
+frame `0xD4`: 130 below 40, 129 below 60, otherwise 128. The snapshot stays fixed
+for the popup lifetime; subsequent popularity changes create a later popup.
+
+Packet builder `0x1A13C0` exports `0xD4` and `0xD8` as the 21-short record's
+infoType and infoData fields. Managed `GameMap.addUpdateFly` creates the icon and
+digits once, and its existing-object branch never refreshes them. Consequently
+the first render can retain the old red mask beside the new number 98.
+
+`PopularityWorldPopupRuntime` owns one permanent managed IL hook. The loaded
+public instance method must return void and accept fourteen parameters, all Int32
+except the sixth (Single). Semantic IL guards require exactly one direct store
+from IL arguments 12, 13 and 14 into Fly.gameObjectType, infoType and infoData,
+respectively. A dry transformation precedes publication. Only argument 13 is
+normalized, only for type 41, using the native snapshot thresholds. No native
+memory, popup number, cache, child sprite, original branch or player identity is
+changed. Unknown native/managed contracts skip this optional correction.
+`PopularityDisplay.Tests` checks thresholds and unrelated icons; APISharedTests
+transforms and emits the actual installed method, preserving its original body,
+and executes a boundary fixture to verify first-call output and unchanged arguments.
+The unchanged Unity body cannot be JIT-prepared in the standalone .NET host because
+of its Unity ECalls. Actual Mono/game acceptance remains separate.
 
 ## Rounded fear-popularity SE adapter
 

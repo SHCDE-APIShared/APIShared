@@ -62,6 +62,8 @@ namespace APIShared
         internal void Initialize(CrusaderLibraryLoadContext context, string hash, ManualLogSource log)
         {
             if (ready) return;
+            if (sendHook != null)
+                throw new InvalidOperationException("Player-view Chore identity publication failed; the retained hook cannot be retried.");
             logger = log;
             if (engineGate == null)
             {
@@ -87,16 +89,24 @@ namespace APIShared
             PlayerViewSaveScope.Initialize(context, hash, identity, log);
             MethodInfo method = Networking.NativeChoreTransport.ResolveSubmissionMethod();
             Hook candidate = null;
+            bool publicationAttempted = false;
             try
             {
                 candidate = new Hook(method, (SendCall)SendProtected,
                     new HookConfig { ManualApply = true, ID = "APIShared.PlayerPerspective.ChoreIdentity" });
                 originalSend = candidate.GenerateTrampoline<Func<byte[], bool>>();
-                candidate.Apply(); sendHook = candidate; ready = true;
+                // Apply can publish before throwing. Root the hook and its usable
+                // original first, and never infer rollback safety from its result.
+                sendHook = candidate;
+                publicationAttempted = true;
+                candidate.Apply();
+                if (!candidate.IsApplied) throw new InvalidOperationException("Player-view Chore identity hook publication incomplete.");
+                ready = true;
             }
             catch
             {
-                try { candidate?.Undo(); candidate?.Dispose(); } catch { } // Unpublished candidate only.
+                if (!publicationAttempted)
+                    try { candidate?.Undo(); candidate?.Dispose(); } catch { } // No Apply attempt, so still unpublished.
                 throw;
             }
             NativeApiLog.Info(log, "PLAYER_VIEW_IDENTITY: one core for Save, Chore, network timing and local identity; native view=reference-rva 0x88E3D70; process lifetime.");

@@ -30,6 +30,7 @@ namespace APIShared
         internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
         internal const string VisibleMapRender = "Presentation.VisibleMapRender";
         internal const string PlayerViewIdentitySite = "Players.ViewIdentity";
+        internal const string PlayerViewNetwork = "Players.ViewNetworkIdentity";
         internal const string PlayerControlInput = "Players.ControlInput";
 
         // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
@@ -48,6 +49,20 @@ namespace APIShared
             Observe(PlayerControl.PlayerViewSaveScope.Rva + PlayerControl.PlayerViewSaveScope.DisplacedLength,
                 PlayerControl.PlayerViewSaveScope.Entry.Length - PlayerControl.PlayerViewSaveScope.DisplacedLength)
         };
+
+        internal static NativeSiteSpan[] PlayerViewNetworkSpans()
+        {
+            var spans = new List<NativeSiteSpan>();
+            foreach (var site in PlayerControl.PlayerViewNetworkNative.Sites)
+            {
+                int rva = PlayerControl.PlayerViewNetworkNative.Rva(site);
+                int displaced = PlayerControl.PlayerViewNetworkBridge.DisplacedLength(site);
+                spans.Add(Exclusive(rva, displaced));
+                spans.Add(Observe(rva + displaced,
+                    PlayerControl.PlayerViewNetworkBridge.WindowLength(site) - displaced));
+            }
+            return spans.ToArray();
+        }
 
         // Both spectator-input boundaries; each continuation instruction is decoded and must stay intact.
         internal static NativeSiteSpan[] PlayerControlInputSpans()
@@ -204,6 +219,7 @@ namespace APIShared
             Group(BuildingRepair, BuildingRepairSpans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
+            Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
             Group(PlayerControlInput, PlayerControlInputSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans())
         };

@@ -515,6 +515,175 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void ActualNetworkIdentityBackendPreservesReadOutputsFlagsRegistersSimdAndStack()
+        {
+            // Exercise the production intermediary and backend in private executable memory.
+            // The unchanged continuation stores progress at the selected self index; no game
+            // address, transport, registration or native report viewpoint is changed here.
+            foreach (PlayerViewNetworkSite site in Enum.GetValues(typeof(PlayerViewNetworkSite)))
+                ExecuteNetworkIdentitySite(site);
+        }
+
+        private static void ExecuteNetworkIdentitySite(PlayerViewNetworkSite site)
+        {
+            IntPtr page = VirtualAlloc(IntPtr.Zero, new UIntPtr(4096), 0x3000, 0x40);
+            Assert.AreNotEqual(IntPtr.Zero, page);
+            IntPtr manager = Marshal.AllocHGlobal(0x370000), output = Marshal.AllocHGlobal(512);
+            NativeDetour<InputFixture> hook = null;
+            const ulong SimdSentinel = 0x7654321001234567;
+            var registers = new[] { rax, rbx, rcx, rdx, rsi, rdi, rbp, r8, r9, r10, r11, r12, r13, r14, r15, rsp };
+            var simd = new[] { xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7,
+                xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15 };
+            ulong[] sentinels = { 0x11111111DEADBEEF, unchecked((ulong)manager.ToInt64()),
+                0x3333333333333333, 0x4444444444444444, 0x5555555555555555, 0x6666666666666666,
+                0x7777777777777777, 0x8888888888888888, 0x9999999999999999, 0xAAAAAAAAAAAAAAAA,
+                0xBBBBBBBBBBBBBBBB, 0xCCCCCCCCCCCCCCCC, 0xDDDDDDDDDDDDDDDD, 0xEEEEEEEEEEEEEEEE,
+                unchecked((ulong)output.ToInt64()), 0 };
+            try
+            {
+                bool timing = site == PlayerViewNetworkSite.Timing;
+                ulong target = unchecked((ulong)page.ToInt64()), cell = target + 2048, tick = cell + 16;
+                ulong view = timing ? cell + 8 : unchecked((ulong)manager.ToInt64()) + 0x36FA50;
+                int displaced = PlayerViewNetworkBridge.DisplacedLength(site);
+                int destination = site == PlayerViewNetworkSite.HeartbeatProgress ? 0x14D030 :
+                    site == PlayerViewNetworkSite.HeartbeatAcknowledgement ? 0x14D054 : 0x14D078;
+                var code = new Assembler(64);
+                if (timing)
+                {
+                    byte[] read = { 0x8B, 0x15, 0, 0, 0, 0 };
+                    Buffer.BlockCopy(BitConverter.GetBytes(checked((int)(view - target - 6))), 0, read, 2, 4);
+                    code.db(read); code.db(new byte[] { 0x49, 0x8B, 0xCE });
+                }
+                else
+                {
+                    code.db(new byte[] { 0x48, 0x63, 0x8B, 0x50, 0xFA, 0x36, 0 });
+                    if (site != PlayerViewNetworkSite.HeartbeatTimestamp)
+                    {
+                        byte[] readTick = { 0x8B, 0x05, 0, 0, 0, 0 };
+                        Buffer.BlockCopy(BitConverter.GetBytes(checked((int)(tick - target - 13))), 0, readTick, 2, 4);
+                        code.db(readTick);
+                    }
+                    code.mov(__dword_ptr[rbx + rcx * 4 + destination], eax);
+                }
+                // Record before altering any tested register or flag. Restore the caller's
+                // nonvolatile state afterwards, including XMM6..15 and direction flag.
+                code.pushfq(); code.pop(__qword_ptr[r15 + 16]);
+                for (int index = 0; index < registers.Length; index++)
+                    code.mov(__qword_ptr[r15 + 32 + index * 8], registers[index]);
+                for (int index = 0; index < simd.Length; index++)
+                    code.movdqu(__xmmword_ptr[r15 + 160 + index * 16], simd[index]);
+                code.cld();
+                for (int index = 0; index < simd.Length; index++)
+                    code.movdqu(simd[index], __xmmword_ptr[rsp + index * 16]);
+                code.lea(rsp, __qword_ptr[rsp + 256]);
+                code.pop(r15); code.pop(r14); code.pop(r13); code.pop(r12);
+                code.pop(rbp); code.pop(rdi); code.pop(rsi); code.pop(rbx); code.ret();
+                byte[] bytes;
+                using (var stream = new MemoryStream())
+                { code.Assemble(new StreamCodeWriter(stream), target); bytes = stream.ToArray(); }
+                Marshal.Copy(bytes, 0, page, bytes.Length);
+                Assert.IsTrue(FlushInstructionCache(GetCurrentProcess(), page, new UIntPtr((uint)bytes.Length)));
+                var window = new byte[PlayerViewNetworkBridge.WindowLength(site)];
+                Buffer.BlockCopy(bytes, 0, window, 0, window.Length);
+                int callbacks = 0;
+                InputFixture callback = (v, s, unused, pointer) => callbacks++;
+                var bridge = new PlayerViewNetworkBridge(site, cell, view, target + (ulong)displaced);
+                var request = new DetourRequest<InputFixture> {
+                    Name = "private network identity read " + site, TargetAddress = target,
+                    Callback = callback, IntermediaryFactory = bridge
+                };
+                var backend = new NativeDetourBackend(new NativeDetourOptions {
+                    AllowedSchemes = DetourScheme.Indirect, FollowJumps = false, FollowCalls = false,
+                    Chaining = HookChainingPolicy.Refuse, FunctionScanLimit = 14, SuspendThreadsDuringPatch = false
+                });
+                hook = (NativeDetour<InputFixture>)backend.CreateDetour(in request);
+                Assert.AreEqual(displaced, hook.DisplacedByteCount); Assert.AreEqual(DetourScheme.Indirect, hook.Scheme);
+                bridge.Validate(hook, page, window, false);
+                AssertNetworkAdjacentContinuation(bridge, hook, page, window, displaced, false);
+                hook.Enable(); bridge.Validate(hook, page, window);
+                AssertNetworkAdjacentContinuation(bridge, hook, page, window, displaced, true);
+                Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    new PlayerViewNetworkBridge(site, cell + 4, view, target + (ulong)displaced).Validate(hook, page, window));
+                Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    new PlayerViewNetworkBridge(site, cell, view, target + (ulong)displaced + 1).Validate(hook, page, window));
+                using (var caller = ExecutableFunction.Create(a => {
+                    a.push(rbx); a.push(rsi); a.push(rdi); a.push(rbp);
+                    a.push(r12); a.push(r13); a.push(r14); a.push(r15);
+                    a.lea(rsp, __qword_ptr[rsp - 256]);
+                    for (int index = 0; index < simd.Length; index++)
+                        a.movdqu(__xmmword_ptr[rsp + index * 16], simd[index]);
+                    a.mov(r15, r9); a.mov(__qword_ptr[r15], rsp);
+                    for (int index = 0; index < simd.Length; index++) {
+                        a.mov(rax, SimdSentinel + (ulong)index); a.movq(simd[index], rax);
+                        a.punpcklqdq(simd[index], simd[index]);
+                    }
+                    // Two flag patterns, including DF, verify exact preservation through both branches.
+                    a.cmp(edx, 0); var clearFlags = a.CreateLabel(); var setFlags = a.CreateLabel();
+                    a.je(clearFlags); a.mov(r11, 0xED7UL); a.jmp(setFlags);
+                    a.Label(ref clearFlags); a.mov(r11, 0x202UL);
+                    a.Label(ref setFlags); a.push(r11); a.popfq();
+                    for (int index = 0; index < registers.Length - 2; index++) a.mov(registers[index], sentinels[index]);
+                    a.pushfq(); a.pop(__qword_ptr[r15 + 8]);
+                    a.jmp(target);
+                }))
+                {
+                    var invoke = Marshal.GetDelegateForFunctionPointer<InputFixture>(caller.EntryPoint);
+                    foreach (int raw in new[] { -1, 0, 1, 3, 8 })
+                    for (int protectedPlayer = 0; protectedPlayer <= 8; protectedPlayer++)
+                    foreach (int flags in new[] { 0, 1 })
+                    {
+                        Marshal.WriteInt32(new IntPtr(unchecked((long)cell)), protectedPlayer);
+                        Marshal.WriteInt32(new IntPtr(unchecked((long)view)), raw);
+                        Marshal.WriteInt32(new IntPtr(unchecked((long)tick)), 12345);
+                        int expectedPlayer = protectedPlayer == 0 ? raw : protectedPlayer;
+                        if (!timing) Marshal.WriteInt32(manager, destination + expectedPlayer * 4, 0);
+                        invoke(0, flags, 0, output);
+                        ulong[] expected = (ulong[])sentinels.Clone();
+                        expected[15] = unchecked((ulong)Marshal.ReadInt64(output));
+                        if (timing) { expected[3] = unchecked((uint)expectedPlayer); expected[2] = expected[13]; }
+                        else {
+                            expected[2] = unchecked((ulong)(long)expectedPlayer);
+                            if (site != PlayerViewNetworkSite.HeartbeatTimestamp) expected[0] = 12345;
+                            Assert.AreEqual(unchecked((int)expected[0]), Marshal.ReadInt32(manager, destination + expectedPlayer * 4));
+                        }
+                        for (int index = 0; index < registers.Length; index++)
+                            Assert.AreEqual(expected[index], unchecked((ulong)Marshal.ReadInt64(output, 32 + index * 8)), site + " register " + index);
+                        Assert.AreEqual(Marshal.ReadInt64(output, 8), Marshal.ReadInt64(output, 16), site + " flags");
+                        for (int index = 0; index < simd.Length * 2; index++)
+                            Assert.AreEqual(SimdSentinel + (ulong)(index / 2), unchecked((ulong)Marshal.ReadInt64(output, 160 + index * 8)), site + " SIMD " + index);
+                        Assert.AreEqual(raw, Marshal.ReadInt32(new IntPtr(unchecked((long)view))), "Network reads must not write the report viewpoint.");
+                    }
+                    Assert.AreEqual(0, callbacks, "Active and dormant paths must stay entirely native.");
+                    GC.KeepAlive(invoke); GC.KeepAlive(callback);
+                }
+            }
+            finally
+            {
+                // Only private fixture memory, never a published game hook.
+                hook?.Dispose(); Marshal.FreeHGlobal(output); Marshal.FreeHGlobal(manager);
+                Assert.IsTrue(VirtualFree(page, UIntPtr.Zero, 0x8000));
+            }
+        }
+
+        private static void AssertNetworkAdjacentContinuation(PlayerViewNetworkBridge bridge,
+            NativeDetour<InputFixture> hook, IntPtr target, byte[] window, int displaced, bool installed)
+        {
+            // Private fixture only: an independently owned jump may begin at the exact
+            // continuation. It must neither enlarge our claim nor reject preparation.
+            var saved = new byte[5]; Marshal.Copy(target + displaced, saved, 0, saved.Length);
+            try
+            {
+                Marshal.Copy(new byte[] { 0xE9, 0, 0, 0, 0 }, 0, target + displaced, 5);
+                bridge.Validate(hook, target, window, installed);
+            }
+            finally
+            {
+                Marshal.Copy(saved, 0, target + displaced, saved.Length);
+                Assert.IsTrue(FlushInstructionCache(GetCurrentProcess(), target + displaced, new UIntPtr(5)));
+            }
+        }
+
+        [TestMethod]
         public void ExecutedInputBridgePreservesFlagsRegistersSimdAndStackOnEveryPermitBranch()
         {
             IntPtr cells = Marshal.AllocHGlobal(16), output = Marshal.AllocHGlobal(64);
