@@ -57,7 +57,7 @@ namespace APIShared
         internal object EngineGate => engineGate;
         internal PlayerViewIdentity Identity => identity;
         internal int ProtectedPlayerId => identity?.ProtectedHumanId ?? 0;
-        internal bool ForeignViewsReady => ready && PlayerViewSaveScope.IsBoundTo(identity);
+        internal bool ForeignViewsReady => ready && PlayerViewSaveScope.IsBoundTo(identity) && PlayerViewNetworkNative.IsReady;
 
         internal void Initialize(CrusaderLibraryLoadContext context, string hash, ManualLogSource log)
         {
@@ -78,10 +78,12 @@ namespace APIShared
             if (viewAddress != unchecked((ulong)context.ModuleHandle.ToInt64()) + (ulong)NativeViewCell.Rva ||
                 (ulong)NativeViewCell.Rva + 4 > (ulong)context.Memory.Length)
                 throw new InvalidOperationException("Participant native view cell differs from the audited image.");
+            PlayerViewNetworkNative.Initialize(context, hash, log);
             // Never replace a core after a partially successful startup: the
             // published native writer may already hold this instance forever.
             if (identity == null) identity = new PlayerViewIdentity(InEngineContext, IsCurrentWorld,
-                PlayerPerspectiveAPI.GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer);
+                PlayerPerspectiveAPI.GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer,
+                PlayerViewNetworkNative.WriteProtectedPlayer);
             PlayerViewSaveScope.Initialize(context, hash, identity, log);
             MethodInfo method = Networking.NativeChoreTransport.ResolveSubmissionMethod();
             Hook candidate = null;
@@ -97,7 +99,7 @@ namespace APIShared
                 try { candidate?.Undo(); candidate?.Dispose(); } catch { } // Unpublished candidate only.
                 throw;
             }
-            NativeApiLog.Info(log, "PLAYER_VIEW_IDENTITY: one core for Save, Chore and local identity; native view=reference-rva 0x88E3D70; process lifetime.");
+            NativeApiLog.Info(log, "PLAYER_VIEW_IDENTITY: one core for Save, Chore, network timing and local identity; native view=reference-rva 0x88E3D70; process lifetime.");
         }
         private bool InEngineContext() => engineGate != null && Monitor.IsEntered(engineGate) &&
             ReferenceEquals(engineMonitor.GetValue(null), engineGate) &&

@@ -1,0 +1,24 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
+  <PropertyGroup>
+    <OutputType>Library</OutputType><TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <AssemblyName>APIShared.ProtonWorkshopFix</AssemblyName><LangVersion>latest</LangVersion>
+    <OutputPath>..\.local\ProtonWorkshopFix\bin\</OutputPath>
+    <IntermediateOutputPath>obj\</IntermediateOutputPath>
+    <Optimize>true</Optimize><Deterministic>true</Deterministic><WarningLevel>4</WarningLevel><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" /><Reference Include="System.Core" />
+    <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Mono.Cecil"><HintPath>$(GameDir)\BepInEx\core\Mono.Cecil.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MonoMod.RuntimeDetour"><HintPath>$(GameDir)\BepInEx\core\MonoMod.RuntimeDetour.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MonoMod.Utils"><HintPath>$(GameDir)\BepInEx\core\MonoMod.Utils.dll</HintPath><Private>false</Private></Reference>
+    <Compile Include="src\*.cs" />
+    <Compile Include="..\src\Workshop\Proton\WinePathInterop.cs"><Link>Proton\WinePathInterop.cs</Link></Compile>
+    <Compile Include="..\src\Workshop\Proton\ProtonPaths.cs"><Link>Proton\ProtonPaths.cs</Link></Compile>
+    <Compile Include="..\src\Workshop\Proton\ProtonProcess.cs"><Link>Proton\ProtonProcess.cs</Link></Compile>
+    <Compile Include="..\src\Workshop\Proton\ProtonConfiguration.cs"><Link>Proton\ProtonConfiguration.cs</Link></Compile>
+    <EmbeddedResource Include="Assets\extender-updater.sh"><LogicalName>APIShared.ProtonWorkshopFix.extender-updater.sh</LogicalName></EmbeddedResource>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

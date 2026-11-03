@@ -619,6 +619,9 @@ Steam entry points require initialized Steamworks on Unity. Planning does not
 change installed files; application requires consent and uses a post-exit updater.
 See [Workshop contracts and workflows](WORKSHOP.md).
 
+See [Linux deployment](WORKSHOP.md#linux-paths-and-first-install-repair) for path
+configuration, the separate first-install repair and platform acceptance limits.
+
 ## Situational audio
 
 Requires APIShared **0.8.0** or newer. `APIShared.Audio.SoundEvents` provides owner-bound

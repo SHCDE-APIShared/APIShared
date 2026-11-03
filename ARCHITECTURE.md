@@ -161,6 +161,11 @@ Other small subjects (`Lobby`, `GameModes`, `Savegames`,
 responsibilities actually exist, rather than creating empty template directories.
 Folder paths do not change C# namespaces or public API identity.
 
+`src/Workshop/Proton` owns internal Linux/Wine path and process helpers. The independent
+`proton-fix` project source-links those helpers without an APIShared runtime dependency.
+Its manual preloader owns the Extender installation correction; APIShared changes only
+its own updater. See [ownership and lifetime](docs/WORKSHOP.md#independent-linux-first-install-patcher).
+
 ## Deciding what belongs here
 
 APIShared coordinates services that multiple mods need to share in one process:

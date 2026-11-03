@@ -1,5 +1,6 @@
 using APIShared.Internal;
 using APIShared.Workshop;
+using APIShared.Workshop.Proton;
 using Steamworks;
 using System;
 using System.Collections.Generic;
@@ -26,10 +27,12 @@ internal static partial class Program
     private static string AuthorPath(string value)
     {
         value = value.Trim('"');
-        // Proton exposes host paths through Z:. Accept normal Linux paths in
-        // this Windows helper, without invoking a shell or altering arguments.
-        if (value.StartsWith("/", StringComparison.Ordinal) && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("STEAM_COMPAT_DATA_PATH")))
-            value = "Z:" + value.Replace('/', '\\');
+        if (value.StartsWith("/", StringComparison.Ordinal) && WinePathInterop.Instance.IsWine) {
+            if (!ProtonProcess.ConfirmLinuxWine(WinePathInterop.Instance, TimeSpan.FromSeconds(2)))
+                throw new PlatformNotSupportedException("Linux host path input requires confirmed Linux Wine/Proton.");
+            var paths = new ProtonPaths(Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory), new ProtonPathOptions(), WinePathInterop.Instance);
+            return paths.ToWindowsExisting(value);
+        }
         return Path.GetFullPath(value);
     }
     private static string PathInput(string label, string previous = "") => AuthorPath(Input(label, previous));

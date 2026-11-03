@@ -15,6 +15,10 @@ asset inventory. A selected nested plugin may therefore be reported as missing.
 APIShared's ordinary Awake runs too late to correct this check. The independent
 `APIShared.DependencyBootstrap.dll` companion supplies the earlier entry point.
 
+This pair-gated companion does not repair a failed initial Workshop deployment.
+The separate [Linux first-install patcher](WORKSHOP.md#linux-paths-and-first-install-repair)
+works without APIShared and has no dependency on this companion or its pair manifest.
+
 No public capability, consumer registration or changed dependency declaration is
 required, and no APIShared public type or method is involved. The correction only adds eligible missing providers to a separate local check dictionary.
 It never overwrites original entries, registers assets, reorders plugins or filters

@@ -649,6 +649,11 @@ The development dependency bootstrap follows the same SE policy for
 and a dry transformation/compilation precede installation. Pair ownership and the
 BepInEx binary gate remain separate requirements; SE hashes are diagnostic only.
 
+The optional [Linux first-install patcher](docs/WORKSHOP.md#independent-linux-first-install-patcher)
+has separate managed launcher and attempt-counter contracts. When updating the
+Extender, run its [independent build and checks](CONTRIBUTING.md#building-and-checking-the-optional-proton-patcher)
+as well; the ordinary APIShared build does not build or validate that patcher.
+
 ## Rounded fear-popularity SE adapter
 
 `Economy/FearPopularityRuntime` installs a permanent managed IL hook, without a new

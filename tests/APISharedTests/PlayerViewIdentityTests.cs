@@ -9,6 +9,51 @@ namespace APISharedTests
     public sealed class PlayerViewIdentityTests
     {
         [TestMethod]
+        public void NetworkProgressKeepsTheParticipantWhileViewsChangeAndRetiresWithTheExactWorldLease()
+        {
+            var owner = new object();
+            long world = 1;
+            int view = 1, networkParticipant = 0;
+            bool failRestore = false;
+            var guard = new PlayerViewIdentity(() => true, expected => expected == world,
+                () => view, value => {
+                    if (failRestore) throw new InvalidOperationException("cannot restore view");
+                    view = value;
+                }, value => networkParticipant = value);
+            Assert.AreEqual(0, networkParticipant, "Unleased views retain Vanilla network identity.");
+            Assert.IsTrue(guard.TryBind(owner, world, view, out var first, out _));
+            Assert.AreEqual(1, networkParticipant, "Protection must exist before the first foreign view write.");
+            foreach (int viewedPlayer in new[] { 2, 3, 8, 2 })
+            {
+                view = viewedPlayer;
+                Assert.AreEqual(1, networkParticipant, "Heartbeat and timing must stay on the actual participant.");
+            }
+            Assert.IsFalse(guard.TryRelease(new object(), first, out _));
+            Assert.AreEqual(1, networkParticipant);
+            failRestore = true;
+            Assert.IsFalse(guard.TryRestoreAndRelease(owner, first, out _));
+            Assert.AreEqual(1, networkParticipant, "A failed restore must keep network protection.");
+            failRestore = false;
+            Assert.IsTrue(guard.TryRestoreAndRelease(owner, first, out _));
+            Assert.AreEqual(1, view);
+            Assert.AreEqual(0, networkParticipant);
+
+            Assert.IsTrue(guard.TryBind(owner, world, view, out var ended, out _));
+            view = 3;
+            world = 2; view = 7;
+            Assert.IsTrue(guard.RetireEndedWorld(1));
+            Assert.AreEqual(0, networkParticipant, "A replacement world must not inherit the previous participant.");
+            Assert.AreEqual(7, view, "World retirement must not write an old viewpoint into the new world.");
+            Assert.IsTrue(guard.TryBind(owner, world, view, out var replacement, out _));
+            Assert.AreEqual(7, networkParticipant);
+            Assert.IsFalse(guard.TryRelease(owner, ended, out _));
+            Assert.IsFalse(guard.RetireEndedWorld(1));
+            Assert.AreEqual(7, networkParticipant, "Stale release and retirement must preserve a replacement lease.");
+            Assert.IsTrue(guard.TryRelease(owner, replacement, out _));
+            Assert.AreEqual(0, networkParticipant);
+        }
+
+        [TestMethod]
         public void ProtectedSaveUsesTheOriginalHumanIdentityAndRestoresViewsIncludingNestedAndFailedWriters()
         {
             var owner = new object();

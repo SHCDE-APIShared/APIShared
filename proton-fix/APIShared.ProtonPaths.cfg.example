@@ -1,0 +1,6 @@
+[ProtonPaths]
+# Normally leave both values empty. Changes require a complete game restart.
+# Linux host path to this exact game installation, only if automatic mapping fails.
+HostGameDirectory =
+# Windows/Wine path to the host Bash, only if automatic interpreter discovery fails.
+WineBashPath =

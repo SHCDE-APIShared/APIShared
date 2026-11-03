@@ -1,38 +1,59 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using APIShared.Workshop.Proton;
 
 namespace APIShared.Workshop
 {
     internal static class WorkshopUpdaterLauncher
     {
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string name);
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] private static extern IntPtr GetProcAddress(IntPtr module, string name);
+        private static readonly object protonGate = new object();
+        private static Task<ProtonExecutionContext> protonContext;
+        private static string protonGame;
         private static string Quote(string value)
         {
             if (value.Contains("\"") || value.EndsWith("\\", StringComparison.Ordinal)) throw new ArgumentException("Unsupported command-line argument.");
             return "\"" + value + "\"";
         }
-        private static string HostPath(string path)
+        // Initialization is shared across install/status/maintenance and never runs on native
+        // Windows. The worker has no Unity access; bounded callers may defer without quitting.
+        private static async Task<ProtonExecutionContext> LinuxContext(string game, TimeSpan budget)
         {
-            if (!path.StartsWith(@"Z:\", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Proton updater requires game and transaction paths on Wine's Z: drive.");
-            return "/" + path.Substring(3).Replace('\\', '/');
+            if (budget <= TimeSpan.Zero) throw new TimeoutException("Proton path initialization exceeded its time budget.");
+            Task<ProtonExecutionContext> pending;
+            lock (protonGate) {
+                if (protonContext == null) {
+                    protonGame = Path.GetFullPath(game);
+                    protonContext = Task.Run(() => {
+                        var context = ProtonExecutionContext.Create(game,
+                            ProtonConfiguration.Load(BepInEx.Paths.ConfigPath), TimeSpan.FromSeconds(2));
+                        return context;
+                    });
+                }
+                if (!string.Equals(protonGame, Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Proton updater context belongs to another game directory.");
+                pending = protonContext;
+            }
+            if (await Task.WhenAny(pending, Task.Delay(budget)).ConfigureAwait(false) != pending)
+                throw new TimeoutException("Proton path initialization exceeded its time budget.");
+            return await pending.ConfigureAwait(false);
         }
         internal static async Task Launch(string transaction, string game)
         {
             string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
             string hash = WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "operations.tsv"));
             string repairHash = File.Exists(WorkshopPaths.Inside(transaction, "supersedes.tsv")) ? WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "supersedes.tsv")) : "";
-            bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
+            bool wine = WinePathInterop.Instance.IsWine;
             ProcessStartInfo start;
             if (wine)
             {
-                string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
+                var context = await LinuxContext(game, TimeSpan.FromSeconds(2));
+                context.ValidateGameIdentity(TimeSpan.FromSeconds(2));
                 string script = WorkshopPaths.Inside(assets, "workshop-updater.sh");
                 if (!File.Exists(script)) throw new FileNotFoundException("Proton updater script is missing.", script);
-                start = new ProcessStartInfo(shell, Quote(HostPath(script)) + " " + Quote(HostPath(game)) + " " + Quote(HostPath(transaction)) + " " + hash + " --restart " + Quote(repairHash));
+                start = context.CreateStartInfo(context.Paths.ToHostExisting(script), new[] {
+                    context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--restart", repairHash });
             }
             else
             {
@@ -64,26 +85,36 @@ namespace APIShared.Workshop
         internal static void Cancel(string transaction) => File.WriteAllText(WorkshopPaths.Inside(transaction, "cancel.flag"), "Cancelled before game exit.");
         internal static async Task<WorkshopUpdaterActivity> Activity(string game)
         {
-            bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
+            bool wine = WinePathInterop.Instance.IsWine;
             if (!wine) {
                 var read = Task.Run(() => WorkshopUpdaterActivity.ReadWindows(game));
                 if (await Task.WhenAny(read, Task.Delay(2000)) != read) return new WorkshopUpdaterActivity { Busy = true };
                 return await read;
             }
+            var budget = Stopwatch.StartNew();
             string state = WorkshopInstallation.StateRoot(game);
             if (!File.Exists(WorkshopPaths.Inside(state, "apply.lock"))) return new WorkshopUpdaterActivity();
             string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
-            string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
-            var start = new ProcessStartInfo(shell, Quote(HostPath(WorkshopPaths.Inside(assets, "workshop-updater.sh"))) + " " + Quote(HostPath(game)) + " --status") {
-                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
+            ProtonExecutionContext context;
+            try { context = await LinuxContext(game, TimeSpan.FromMilliseconds(2000) - budget.Elapsed); }
+            catch (TimeoutException) { return new WorkshopUpdaterActivity { Busy = true }; }
+            var start = context.CreateStartInfo(context.Paths.ToHostExisting(WorkshopPaths.Inside(assets, "workshop-updater.sh")),
+                new[] { context.Paths.ToHostExisting(game), "--status" });
+            start.RedirectStandardOutput = true; start.RedirectStandardError = true;
             using (var process = Process.Start(start)) {
                 if (process == null) return new WorkshopUpdaterActivity { Busy = true };
                 var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
-                var exited = Task.Run(() => process.WaitForExit(1750));
+                int remaining = Math.Max(0, 2000 - (int)budget.ElapsedMilliseconds);
+                var exited = Task.Run(() => process.WaitForExit(remaining));
                 if (!await exited) {
-                    try { process.Kill(); process.WaitForExit(150); } catch { }
+                    try { process.Kill(); } catch { }
+                    CloseStatusReaders(process);
+                    return new WorkshopUpdaterActivity { Busy = true };
+                }
+                var streams = Task.WhenAll(output, error);
+                remaining = Math.Max(0, 2000 - (int)budget.ElapsedMilliseconds);
+                if (await Task.WhenAny(streams, Task.Delay(remaining)) != streams) {
+                    CloseStatusReaders(process);
                     return new WorkshopUpdaterActivity { Busy = true };
                 }
                 string text = (await output).Trim(); await error;
@@ -92,6 +123,13 @@ namespace APIShared.Workshop
                 // The host query has validated flock, /proc identity and pins.
                 return WorkshopUpdaterActivity.Parse(text, "linux", (pid, stamp) => true);
             }
+        }
+        private static void CloseStatusReaders(Process process)
+        {
+            // A descendant retaining a pipe must not retain our asynchronous readers
+            // after the bounded status query has already deferred startup work.
+            try { process.StandardOutput.Close(); } catch { }
+            try { process.StandardError.Close(); } catch { }
         }
         // Startup history maintenance. The read-only plan check decides whether the
         // external pass could change anything; only then a hidden child runs, bounded
@@ -131,19 +169,15 @@ namespace APIShared.Workshop
         private static ProcessStartInfo MaintenanceStart(string game)
         {
             string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
-            bool wine = GetProcAddress(GetModuleHandle("ntdll.dll"), "wine_get_version") != IntPtr.Zero;
+            bool wine = WinePathInterop.Instance.IsWine;
             ProcessStartInfo start;
             if (wine) {
-                string shell = new[] { @"Z:\bin\bash", @"Z:\usr\bin\bash" }.FirstExisting();
-                start = new ProcessStartInfo(shell, Quote(HostPath(WorkshopPaths.Inside(assets, "workshop-updater.sh"))) + " " + Quote(HostPath(game)) + " --maintain");
+                var context = LinuxContext(game, TimeSpan.FromSeconds(2)).GetAwaiter().GetResult();
+                start = context.CreateStartInfo(context.Paths.ToHostExisting(WorkshopPaths.Inside(assets, "workshop-updater.sh")),
+                    new[] { context.Paths.ToHostExisting(game), "--maintain" });
             } else start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(WorkshopPaths.Inside(assets, "workshop-updater.ps1")) + " -GameRoot " + Quote(game) + " -Maintain");
             start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
             return start;
-        }
-        private static string FirstExisting(this string[] paths)
-        {
-            foreach (string path in paths) if (File.Exists(path)) return path;
-            throw new FileNotFoundException("Host bash was not found through Wine's Z: drive.");
         }
     }
 }

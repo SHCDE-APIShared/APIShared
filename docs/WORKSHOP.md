@@ -9,7 +9,8 @@ Extender-managed maps and explicitly declared loose packages are separate paths.
 - [Publishing](#loose-workshop-packages): the external uploader and platform limits.
 - [Package format](#package-format-and-bootstrap): inventory and bootstrap preparation.
 - [Installation and recovery](#installation-and-recovery): receipts, embedded-copy replacement and transactions.
-- [Internal implementation](#internal-implementation): staging hooks and persistent publishers.
+- [Linux paths and first-install repair](#linux-paths-and-first-install-repair): Wine drive mappings and the independent manual patcher.
+- [Internal implementation](#internal-implementation): staging hooks, the independent patcher and persistent publishers.
 
 ## Workshop inventory
 
@@ -45,7 +46,7 @@ Startup diagnostics use timestamped Info, Warning and Error entries. Warnings ex
 
 Authors use `BepInEx/tools/APISharedWorkshopPublisher/UploadMod.bat`, shipped by APIShared outside the plugin scan. No running game or separate Steam password is needed; Steam must be running, signed in and online. The wizard accepts a prepared manifest or generates one from Payload, collects prerequisites/dependencies, offers owned SHCDE items and publishing metadata, validates a private snapshot and requires typing `UPLOAD` before submission. `/validate` skips Steam initialization and publishing, `/test` uses private visibility and account-scoped separate IDs, `/nopause` only suppresses the BAT closing pause; `/cancel` cancels a prompt. Saved settings and immediately persisted item IDs live in LocalApplicationData/APIShared/WorkshopPublisher, scoped by app/account/mode/package. Never add this state to uploaded content.
 
-Linux users can run `bash UploadMod-linux.sh`. It uses the existing SHCDE Proton prefix, not a separate uploader. With custom Steam/Proton locations set `STEAM_COMPAT_CLIENT_INSTALL_PATH`, `STEAM_COMPAT_DATA_PATH` (directory containing pfx), and `APISHARED_PROTON` (the selected Proton script). Python 3 is required by Proton; host paths such as `/home/user/My Mod` are accepted by the wizard through Wine Z:. This launcher has automated syntax/argument tests; successful real Proton publishing is still required before claiming Linux support.
+Linux users can run `bash UploadMod-linux.sh`. It uses the existing SHCDE Proton prefix, not a separate uploader. With custom Steam/Proton locations set `STEAM_COMPAT_CLIENT_INSTALL_PATH`, `STEAM_COMPAT_DATA_PATH` (directory containing pfx), and `APISHARED_PROTON` (the selected Proton script). Python 3 is required by Proton; host paths such as `/home/user/My Mod` are translated using the active Wine mappings rather than an assumed Z: drive. This launcher has automated syntax/argument tests; successful real Proton publishing is still required before claiming Linux support.
 
 Build, ZIP and map contain the same complete tool with a separate `publisher-files.json` inventory. Only the fixed tool filenames are accepted; plugin inventories and runtime binary restrictions are separate contracts. Publisher sources, build and shared Steam state machine belong to APIShared. Maintainer drivers use the same helper.
 This capability is under platform testing in the source checkout. Before distributing API consumers, choose a published release containing the capability and declare that release as their minimum dependency. See the compiled [Workshop example](../examples/ThirdPartyMod/WorkshopExample.cs) for explicit preview/confirmation callbacks and task-based failure handling.
@@ -129,7 +130,7 @@ If a game process appears during backup, application or restoration, the updater
 
 Recovery checks every required backup before restoring any target. Independent interrupted transactions can be restored together; overlapping transactions require complete repair. A fresh recovery request has independent readiness and cancellation files, so a cancelled old installation cannot cancel newly approved recovery. Already restored targets can be skipped after another interruption. The request also retains changed interrupted bytes in `RecoveryBackup`. File changes happen only after game exit, with the updater lock held and no pending Extender staging. Failures retain evidence and are reported with the transaction path; startup logs previous outcomes and offers recovery again when required.
 
-Manual recovery remains supported with the game closed: run the installed `Workshop/workshop-updater.ps1` with the original `-GameRoot`, `-Transaction`, `-OperationsHash` and `-Recover`, or the host bash script with the same three positional arguments and `--recover`. Successful manual recovery restores original files/receipt and exits with code 2. Never manually delete backups while a transaction is unresolved. Proton requires Wine Z: paths and host bash/flock/coreutils; paths that cannot be translated are rejected before game exit.
+Manual recovery remains supported with the game closed: run the installed `Workshop/workshop-updater.ps1` with the original `-GameRoot`, `-Transaction`, `-OperationsHash` and `-Recover`, or the host bash script with the same three positional arguments and `--recover`. Successful manual recovery restores original files/receipt and exits with code 2. Never manually delete backups while a transaction is unresolved. Proton requires translatable Wine paths and host bash/flock/coreutils; paths that cannot be translated are rejected before game exit.
 
 ### Automatic history retention
 
@@ -142,6 +143,66 @@ Replacement proofs and recovery references form a dependency graph: an old resol
 Extender staging/download restarts take precedence. Under `SCDEModManagerLaunchId`, installation remains read-only, including restart and reactivation; uploads are available. The external manager's current importer is separate. Loose APIShared packages require an importer explicitly supported by that manager. Publish APIShared's independently managed map first; test package replacement at the existing modpack ID using the same map filename and a separate bootstrap GUID before replacing the live release. Do not publish loose packages until real Windows/Proton and Steam tests pass.
 
 Platform-test records are optional and are not read by the maintainer release/upload drivers. Missing, outdated or malformed records do not block manual publication. SerpsMods publishes a separate Workshop-content ZIP alongside its ordinary plugin ZIP; reusing a release restores the complete verified content ZIP, including manifest and Payload, rather than just its bootstrap map.
+
+## Linux paths and first-install repair
+
+### Path configuration
+
+APIShared's updater translates game, script and transaction paths through Wine's own
+path API. Mapped S:, Z: and user-defined drives use the same resolver;
+interpreter discovery uses the reverse translation of `/bin/bash` or `/usr/bin/bash`.
+This applies to installation, status queries, recovery and history maintenance.
+The publisher uses the same native translation for author-supplied host paths.
+Only a confirmed Linux Wine/Proton host activates this path. Native Windows keeps
+the existing PowerShell updater and does not read the new configuration or retry state.
+Both Linux updaters require host Bash, flock and GNU coreutils.
+
+Normally no configuration is needed. The optional
+`BepInEx/config/APIShared.ProtonPaths.cfg` is shared by the independent patcher and
+the APIShared updater. It is read once per process and existing contents are not rewritten:
+
+    [ProtonPaths]
+    HostGameDirectory =
+    WineBashPath =
+
+`HostGameDirectory` is an absolute Linux path to this exact game installation, used
+only when automatic translation needs an explicit override. An identity probe
+checks both filesystem views before any update can close the game. `WineBashPath`
+is the absolute Windows/Wine path to the host Bash when automatic discovery fails.
+Invalid explicit values are reported, not silently ignored. Restart after editing.
+Existing containment, hash, link, transaction and external-management boundaries still apply.
+
+### Manual first-install repair
+
+If Script Extender cannot install APIShared in the first place, the APIShared runtime
+cannot repair that earlier step. The separate manual asset
+`APIShared-ProtonWorkshopFix-v<version>.zip` contains one independent preloader:
+`BepInEx/patchers/APIShared.ProtonWorkshopFix.dll`. Close the game, copy that DLL
+to the matching game path, retain the APIShared subscription, then start and accept
+the normal Script Extender installation prompt. Keep exactly one patcher copy.
+The asset contains no APIShared runtime and is not automatically installed by the
+normal APIShared ZIP/map. The [dependency-index bootstrap](DEPENDENCY_BOOTSTRAP.md)
+is a separate feature.
+
+An already exhausted deployment counter receives one additional confirmed attempt
+after successful preflight. Declining does not consume it; a failed retry does not
+repeat automatically. Failed copies retain staging and diagnostics. Inspect
+`BepInEx/LogOutput.log` and the attempt's `journal.log` under
+`BepInEx/cache/APIShared.ProtonWorkshopFix/` when the handoff fails.
+The patcher is inert under native Windows and externally managed launches.
+Remove or replace it only with the game closed.
+
+### Platform acceptance limits
+
+Automated path, IL, counter and package checks exercise separate boundaries.
+The native Bash fixtures are required by the Linux CI job; they do not run Wine,
+Unity Mono or Steam. Real argument conversion, hook activation after startup cleanup,
+first installation without APIShared on S:, Z: and a custom mapping, configuration
+overrides, a failed one-time retry, Steam restart and subsequent APIShared status and
+recovery still require Proton acceptance. Test APIShared's updater both with and
+without the manual patcher. Native Windows acceptance must confirm the unchanged
+launcher and absence of new hooks, host processes and retry state. Automated checks
+alone do not establish these live results or successful Proton publishing.
 
 ## Internal implementation
 
@@ -169,13 +230,46 @@ The staging callback only cleans obsolete APIShared package files. Foreign map p
 
 The owner-bound `ModApiClient.Workshop` capability handles a different schema, `apishared-workshop.json`, and exclusively declared loose `Payload` files. `WorkshopPackageCodec`, `WorkshopPaths`, `WorkshopInstallation`, `WorkshopTransaction` and `WorkshopPublishing` contain testable file policy without game dependencies. `WorkshopRuntime` captures Steam state on Unity and delegates file preparation to workers. `WorkshopSteamUpload` roots its own call-results and never uses Vanilla's stateful upload singleton. The view is presentation state rather than persisted lobby settings. Callbacks are retained by static fields and Extender publishers after plugin-component destruction.
 
-Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend uses the host bash through Wine's Z: mapping, requires flock/coreutils and conservatively waits for all matching game executables.
+Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend reaches host Bash through the active Wine mappings, requires flock/coreutils and conservatively waits for all matching game executables.
 
 Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself is distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
 
 Dialog recovery uses an internal `APISHARED-WORKSHOP-RECOVERY-1` operation file: restart/stop followed by interrupted transaction IDs and SHA-256 pins of their operation lists and journals. Existing installation protocols 1 and 2 are retained. Confirmed complete repairs carry `supersedes.tsv` plus its hash; launch pins that hash separately. Only a committed replacement with unchanged reference bytes resolves the original transactions. Original journals and backups remain intact while unresolved, including when replacement itself fails; validated resolved history follows the retention policy above. Recovery does not change public Workshop signatures or automatically repair a current receipt.
 
 The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Review the staging semantics when the Extender changes and run the installed-contract and transformation checks; see [Workshop staging cleanup](../UpdateToNewDLL.md#workshop-staging-cleanup). These contracts concern managed Workshop staging, not native gameplay hooks.
+
+### Independent Linux first-install patcher
+
+The [manual patcher](#manual-first-install-repair) source-links the internal
+`src/Workshop/Proton` path and process helpers; it has no APIShared runtime dependency.
+Its preloader observes `Chainloader ready`, then checks already loaded and newly
+loaded Extender assemblies before plugin Awake. It neither initializes MapModManager
+nor installs a runtime AssemblyResolve handler. APIShared itself adds no Extender
+hooks for this correction and changes only its own Workshop launcher.
+
+After Linux confirmation, the patcher validates the Extender method and control-flow
+contracts and prepares both transformed delegates before publishing its two hooks.
+One redirects the Linux launcher, reading the private ByRef context through its
+getters; the other preserves the original attempt-counter calls and adds the
+one-time retry gate. Activation follows successful installation of both hooks.
+Published hooks remain rooted for the process lifetime, including partial failures;
+an inactive gate preserves the original method bodies. At an active launcher failure,
+returning false keeps the game open without falling back to the original Linux launch.
+
+A confirmed retry exclusively claims the generation-1 record
+`BepInEx/config/APIShared.ProtonWorkshopFix/retry-v1.state` before permitting launch.
+Existing malformed or incomplete records are treated as consumed. The original raw
+counter is incremented with saturation; after success the Extender still owns its
+ordinary counter reset.
+
+The embedded helper uses the hash-bound `APISHARED-SE-PROTON-1` request and its own
+cache directory and lock. All delete-list targets are translated and checked inside
+the game directory. Readiness requires a live helper and visible game process before
+the Extender may close the game. The helper then waits for game exit, rechecks sources,
+applies payload files before metadata, and retains staging on failure or unknown files.
+It does not overwrite the Extender's script or change APIShared's transaction format.
+See [contributor build and check instructions](../CONTRIBUTING.md#building-and-checking-the-optional-proton-patcher)
+and the [platform acceptance limits](#platform-acceptance-limits).
 
 ## Dated release acceptance records
 
