@@ -92,8 +92,17 @@ namespace APIShared
                 if (hudExtrasButtons == null && hudExtrasDiagnostic == null &&
                     ManagedMemberContracts.TryValidate(NativeCapabilityIds.HudExtrasButtons, logger, out hudExtrasDiagnostic))
                 {
-                    hudExtrasButtons = new HudExtrasButtonsService(logger);
-                    hudExtrasButtons.Start();
+                    try
+                    {
+                        var candidate = new HudExtrasButtonsService(logger);
+                        candidate.Start();
+                        hudExtrasButtons = candidate;
+                    }
+                    catch (Exception error)
+                    {
+                        hudExtrasDiagnostic = Faulted(NativeCapabilityIds.HudExtrasButtons, error.Message);
+                        NativeApiLog.Error(logger, "Side-HUD frame service unavailable: " + error);
+                    }
                 }
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);

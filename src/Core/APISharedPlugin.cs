@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.25.0";
+        public const string PluginVersion = "0.26.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -37,6 +37,9 @@ namespace APIShared
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
             ScriptExtenderFixes.LordMediaResolverRuntime.Initialize(RuntimeLogger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
+            // A frame-service failure must not prevent independent managed/native publication.
+            try { Presentation.UiWorkRuntime.Initialize(RuntimeLogger); }
+            catch (Exception error) { NativeApiLog.Error(RuntimeLogger, "Shared Unity work initialization failed: " + error); }
             ScriptExtenderFixes.LobbyMismatchRuntime.Initialize(RuntimeLogger);
             Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.

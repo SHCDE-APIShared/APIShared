@@ -26,6 +26,7 @@ namespace APIShared
         private delegate void GameActionDelegate(Enums.KeyFunctions command, int value1, int value2, int value3);
         private delegate void UpdateSpritesDelegate(MainViewModel self, int colour, bool arabic);
         private delegate void CreateTroopDelegate(MainViewModel self, object parameter);
+        private Presentation.IUiFrameWorkRegistration frameWork;
 
         internal static bool TryCreate(
             string hash,
@@ -79,7 +80,8 @@ namespace APIShared
                 service = null;
                 if (candidate != null)
                 {
-                    UnityEngine.Application.onBeforeRender -= candidate.OnBeforeRender;
+                    candidate.frameWork?.SetContinuous(false);
+                    candidate.frameWork?.CancelPending();
                     candidate.mapUnloadSubscription?.Dispose();
                     candidate.spriteMissionStartSubscription?.Dispose();
                 }
@@ -130,7 +132,11 @@ namespace APIShared
                 EndSpriteColourLease();
             });
             spriteMissionStartSubscription = APIShared.Internal.MissionEvents.Started.Subscribe(_ => OnSpriteMissionStarted());
-            UnityEngine.Application.onBeforeRender += OnBeforeRender;
+            if (!Presentation.UiWorkRuntime.TryRegister(APISharedPlugin.PluginGuid, "internal/30-unit-hud",
+                OnBeforeRender, 0, out frameWork, out string frameReason)) throw new InvalidOperationException(frameReason);
+            // Public providers may use dynamic predicates without invalidation notifications.
+            // Retain the existing demand guard and presentation cadence for those providers.
+            UpdateFrameDemand();
         }
 
         private static Hook PrepareHook(MethodInfo method, Delegate callback, string id, List<Hook> installed)
@@ -224,6 +230,7 @@ namespace APIShared
                 if (recruitmentLease != null && recruitmentLease.Ticket.BaseUnitType == type)
                 {
                     refreshRequested = true;
+                    UpdateFrameDemand();
                     return;
                 }
             }

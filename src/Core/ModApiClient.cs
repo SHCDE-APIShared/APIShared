@@ -15,6 +15,7 @@ namespace APIShared
             this.api = api ?? throw new ArgumentNullException(nameof(api));
             Network = new Networking.ModNetworkClient(ownerGuid);
             Workshop = new Workshop.WorkshopClient(ownerGuid);
+            Ui = new Presentation.UiWorkClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
@@ -23,6 +24,8 @@ namespace APIShared
         public Networking.ModNetworkClient Network { get; }
         /// <summary>Owner-bound Workshop upload, receipt-based installation and catalog service. Steam calls require the Unity thread; planning never installs files.</summary>
         public Workshop.WorkshopClient Workshop { get; }
+        /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
+        public Presentation.UiWorkClient Ui { get; }
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 

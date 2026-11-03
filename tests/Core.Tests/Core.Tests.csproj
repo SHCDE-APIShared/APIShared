@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Presentation/UiWork/UiWorkContracts.cs" Link="Production/UiWorkContracts.cs" />
+    <Compile Include="../../src/Presentation/UiWork/UiWorkScheduler.cs" Link="Production/UiWorkScheduler.cs" />
     <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
     <Compile Include="../../src/Statistics/LordStatisticColumns.cs" Link="Production/LordStatisticColumns.cs" />
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />

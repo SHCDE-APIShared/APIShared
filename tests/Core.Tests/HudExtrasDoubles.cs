@@ -102,6 +102,7 @@ namespace UnityEngine
 }
 namespace APIShared
 {
+    public static class APISharedPlugin { public const string PluginGuid = "APIShared_Serp"; }
     public enum NativeCapabilityState { Pending, Available, ValidationFailed }
     public static class NativeCapabilityIds { public const string HudExtrasButtons = "hud-extras-buttons"; }
     public sealed class NativeCapabilityDiagnostic
@@ -113,5 +114,18 @@ namespace APIShared
     {
         internal static void Debug(BepInEx.Logging.ManualLogSource? log, string text) { log?.LogDebug(text); }
         internal static void Error(BepInEx.Logging.ManualLogSource? log, string text) { log?.LogDebug(text); }
+    }
+}
+namespace APIShared.Presentation
+{
+    // The Unity adapter is an external boundary; core HUD tests drive the real HUD callback directly.
+    internal static class UiWorkRuntime
+    {
+        internal static bool TryRegister(string owner, string id, Action callback, int order,
+            out IUiFrameWorkRegistration registration, out string reason)
+        {
+            var scheduler = new UiWorkScheduler(() => 0, 1000, null);
+            return scheduler.TryRegister(owner, id, callback, order, out registration, out reason);
+        }
     }
 }

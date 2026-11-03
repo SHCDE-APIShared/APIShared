@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.25.0",
+  "Version": "0.26.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.26.0",
+      "Changes": [
+        "Add ModApiClient.Ui with shared deferred Unity dispatch and owner-bound coalesced, monotonic delayed and explicitly continuous presentation work.",
+        "Share one process-owned frame publisher across managed UI services; preserve GUI completion phases, lobby fallback frames and decisive save-load checks."
+      ]
+    },
     {
       "Version": "0.25.0",
       "Changes": [

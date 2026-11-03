@@ -11,7 +11,7 @@ using System.Windows.Input;
 namespace APIShared
 {
     // Owns permanent registrations and rebuildable visuals, not gameplay command policy.
-    // Application.onBeforeRender survives plugin cleanup; HUD property changes mark layout dirty.
+    // Shared UI work survives plugin cleanup; HUD property changes mark layout dirty.
     // Registry snapshots release the lock before invoking consumer factories/commands.
     internal sealed partial class HudExtrasButtonsService
     {
@@ -28,10 +28,28 @@ namespace APIShared
         private Button next;
         private int page;
         private bool frameObserved;
+        private Presentation.IUiFrameWorkRegistration frameWork;
+        private readonly Func<long> clock;
+        private readonly long discoveryInterval;
+        private long nextDiscovery = long.MinValue;
+        private int discoveryRevision, observedDiscoveryRevision;
+        private bool extrasShown;
 
-        internal HudExtrasButtonsService(ManualLogSource logger) { log = logger; }
+        internal HudExtrasButtonsService(ManualLogSource logger)
+            : this(logger, System.Diagnostics.Stopwatch.GetTimestamp, System.Diagnostics.Stopwatch.Frequency) { }
+        internal HudExtrasButtonsService(ManualLogSource logger, Func<long> clock, long frequency)
+        {
+            if (clock == null || frequency <= 0) throw new ArgumentException("A monotonic clock and positive frequency are required.");
+            log = logger; this.clock = clock;
+            discoveryInterval = frequency / 10 + (frequency % 10 == 0 ? 0 : 1);
+        }
         // Published only once, rooted by ProcessInstance and the static Unity publisher.
-        internal void Start() { UnityEngine.Application.onBeforeRender += OnBeforeRender; }
+        internal void Start()
+        {
+            if (!Presentation.UiWorkRuntime.TryRegister(APISharedPlugin.PluginGuid, "internal/00-hud-extras",
+                OnBeforeRender, 0, out frameWork, out string reason)) throw new InvalidOperationException(reason);
+            frameWork.SetContinuous(hasRegistrations);
+        }
         internal IHudExtrasButtonsCapability Bind(string owner) => new Binding(this, owner);
         private static NativeCapabilityDiagnostic Diagnostic(NativeCapabilityState state, string reason) =>
             new NativeCapabilityDiagnostic(NativeCapabilityIds.HudExtrasButtons, state, string.Empty, reason);
@@ -50,7 +68,8 @@ namespace APIShared
                 registrations.Add(item);
                 registrations.Sort((a, b) => HudExtrasButtonLayout.Compare(a.Definition.Order, a.Owner, a.Definition.ButtonId,
                     b.Definition.Order, b.Owner, b.Definition.ButtonId));
-                registration = item; hasRegistrations = true; dirty = true;
+                registration = item; hasRegistrations = true; Invalidate();
+                frameWork?.SetContinuous(true);
             }
             diagnostic = Diagnostic(NativeCapabilityState.Available, "Side-HUD button registered for the process lifetime."); return true;
         }
@@ -76,14 +95,23 @@ namespace APIShared
                 }
                 if (main == null) return;
                 bool shown = main.Show_HUD_Extras;
+                int revision = System.Threading.Volatile.Read(ref discoveryRevision);
+                if (revision != observedDiscoveryRevision || shown != extrasShown)
+                { observedDiscoveryRevision = revision; extrasShown = shown; nextDiscovery = long.MinValue; }
                 // The host sits in IngameUIScreens, a fixed child of the MasterController root whose constructor
                 // creates the MainViewModel instance, so a rebuilt HUD arrives with a new MainViewModel (above).
                 // Otherwise the tree search only answers differently after the cached host leaves its view, which
-                // Noesis reports through IsLoaded. Nothing announces a missing host, so shown frames search for it.
-                if (host == null ? shown : !host.IsLoaded)
+                // Noesis reports through IsLoaded. A missing host has no creation event: retry at
+                // most every 100 ms, but known HUD/property/registration changes bypass the delay.
+                if (host == null ? shown && (nextDiscovery == long.MinValue || clock() >= nextDiscovery) : !host.IsLoaded)
                 {
                     Grid current = GameXAMLManagerAPI.Instance.FindGlobalElement(HostName) as Grid;
                     if (!ReferenceEquals(host, current)) { ResetHost(); host = current; dirty = true; }
+                    if (host == null)
+                    {
+                        long now = clock();
+                        nextDiscovery = now > long.MaxValue - discoveryInterval ? long.MaxValue : now + discoveryInterval;
+                    }
                 }
                 if (host == null) return;
                 if (!shown) { Hide(); dirty = true; return; }
@@ -96,7 +124,14 @@ namespace APIShared
         {
             if (string.IsNullOrEmpty(args.PropertyName) || args.PropertyName == nameof(MainViewModel.Show_HUD_Extras) ||
                 args.PropertyName == nameof(MainViewModel.Show_HUD_Extras_Button_Objectves) ||
-                args.PropertyName == nameof(MainViewModel.Show_HUD_Extras_Button_Freebuild)) dirty = true;
+                args.PropertyName == nameof(MainViewModel.Show_HUD_Extras_Button_Freebuild)) Invalidate();
+        }
+
+        private void Invalidate()
+        {
+            dirty = true;
+            System.Threading.Interlocked.Increment(ref discoveryRevision);
+            frameWork?.Request();
         }
 
         private void ResetHost()
@@ -104,6 +139,7 @@ namespace APIShared
             Hide();
             if (host != null) host.Children.Clear();
             visuals.Clear(); host = null; next = null; page = 0;
+            nextDiscovery = long.MinValue;
         }
         private void Hide() { if (host != null) host.Visibility = Visibility.Collapsed; }
 
@@ -144,7 +180,7 @@ namespace APIShared
                     next.Click += (_, __) => {
                         if (!HostAvailable()) return;
                         page = HudExtrasButtonLayout.NextPage(page, CaptureStates().Count(x => x.Visible &&
-                            visuals.TryGetValue(x.Item, out Visual v) && !v.Failed)); dirty = true;
+                            visuals.TryGetValue(x.Item, out Visual v) && !v.Failed)); Invalidate();
                     };
                     host.Children.Add(next);
                 }
@@ -222,7 +258,7 @@ namespace APIShared
             internal Binding(HudExtrasButtonsService service, string owner) { this.service = service; this.owner = owner; }
             public bool TryRegisterButton(HudExtrasButtonDefinition definition, out IHudExtrasButtonRegistration registration, out NativeCapabilityDiagnostic diagnostic) =>
                 service.Register(owner, definition, out registration, out diagnostic);
-            public void SetOwnerActive(bool active) { lock (service.sync) { service.ownerActivation[owner] = active; service.dirty = true; } }
+            public void SetOwnerActive(bool active) { lock (service.sync) { service.ownerActivation[owner] = active; service.Invalidate(); } }
         }
         internal sealed class State
         {
@@ -238,10 +274,10 @@ namespace APIShared
             internal bool Visible = true, Enabled = true; internal int Version, TooltipVersion; internal string Tooltip;
             internal Registration(HudExtrasButtonsService service, string owner, HudExtrasButtonDefinition definition)
             { this.service = service; Owner = owner; Definition = definition; Key = owner + ":" + definition.ButtonId; Tooltip = definition.Tooltip; }
-            public void SetVisible(bool visible) { lock (service.sync) { Visible = visible; service.dirty = true; } }
-            public void SetEnabled(bool enabled) { lock (service.sync) { Enabled = enabled; service.dirty = true; } }
-            public void SetTooltip(string tooltip) { lock (service.sync) { Tooltip = tooltip ?? string.Empty; TooltipVersion++; service.dirty = true; } }
-            public void RequestContentRefresh() { lock (service.sync) { Version++; TooltipVersion++; service.dirty = true; } }
+            public void SetVisible(bool visible) { lock (service.sync) { Visible = visible; service.Invalidate(); } }
+            public void SetEnabled(bool enabled) { lock (service.sync) { Enabled = enabled; service.Invalidate(); } }
+            public void SetTooltip(string tooltip) { lock (service.sync) { Tooltip = tooltip ?? string.Empty; TooltipVersion++; service.Invalidate(); } }
+            public void RequestContentRefresh() { lock (service.sync) { Version++; TooltipVersion++; service.Invalidate(); } }
         }
         private sealed class Visual
         {

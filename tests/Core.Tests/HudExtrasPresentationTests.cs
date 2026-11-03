@@ -96,7 +96,8 @@ namespace Core.Tests
         [TestMethod]
         public void HostIsSearchedOnlyWhenTheHudTreeCanHaveChanged()
         {
-            var service = new HudExtrasButtonsService(null); var api = service.Bind("mod"); var host = Host(); var views = GameXAMLManagerAPI.Instance;
+            long now = 0;
+            var service = new HudExtrasButtonsService(null, () => now, 1000); var api = service.Bind("mod"); var host = Host(); var views = GameXAMLManagerAPI.Instance;
             // A direct delegate keeps reflection allocations out of the per-frame measurement.
             var frame = (Action)Delegate.CreateDelegate(typeof(Action), service, typeof(HudExtrasButtonsService)
                 .GetMethod("OnBeforeRender", BindingFlags.Instance | BindingFlags.NonPublic)!);
@@ -120,13 +121,33 @@ namespace Core.Tests
             // A rebuilt HUD comes with a new MainViewModel instance.
             MainViewModel.Instance = new MainViewModel(); frame(); frame();
             Assert.AreEqual(searches + 3, views.Searches); Assert.AreEqual(1, Visible(replacement).Length);
-            // A missing host has no change notification: shown frames keep searching, hidden frames do not.
+            // A missing host has no creation signal. Retry every 100 ms without tree work between deadlines.
             views.Element = null; frame(); frame();
-            Assert.AreEqual(searches + 5, views.Searches); Assert.IsFalse(replacement.IsVisible);
+            Assert.AreEqual(searches + 4, views.Searches); Assert.IsFalse(replacement.IsVisible);
+            now = 99; frame(); Assert.AreEqual(searches + 4, views.Searches);
+            now = 100; frame(); Assert.AreEqual(searches + 5, views.Searches);
             MainViewModel.Instance.Show_HUD_Extras = false; frame(); Assert.AreEqual(searches + 5, views.Searches);
             var restored = Host(); frame(); Assert.AreEqual(searches + 5, views.Searches); Assert.AreEqual(0, Visible(restored).Length);
             MainViewModel.Instance.Show_HUD_Extras = true; frame(); frame();
             Assert.AreEqual(searches + 6, views.Searches); Assert.AreEqual(1, Visible(restored).Length);
+        }
+
+        [TestMethod]
+        public void MissingHostDiscoveryWakesImmediatelyForKnownChanges()
+        {
+            long now = 0;
+            var service = new HudExtrasButtonsService(null, () => now, 1000); var api = service.Bind("mod");
+            var views = GameXAMLManagerAPI.Instance; views.Element = null;
+            api.TryRegisterButton(new HudExtrasButtonDefinition("one", new Command(), "one", _ => new Button()), out var work, out _);
+            Tick(service); int searches = views.Searches;
+            now = 1; Tick(service); Assert.AreEqual(searches, views.Searches);
+            MainViewModel.Instance!.Raise(nameof(MainViewModel.Show_HUD_Extras_Button_Objectves)); Tick(service);
+            Assert.AreEqual(++searches, views.Searches, "Known HUD changes bypass a pending retry deadline.");
+            work.SetTooltip("changed"); Tick(service); Assert.AreEqual(++searches, views.Searches);
+            api.TryRegisterButton(new HudExtrasButtonDefinition("two", new Command(), "two", _ => new Button()), out _, out _);
+            Tick(service); Assert.AreEqual(++searches, views.Searches);
+            MainViewModel.Instance = new MainViewModel(); var host = Host(); Tick(service);
+            Assert.AreEqual(++searches, views.Searches); Assert.AreEqual(2, Visible(host).Length);
         }
     }
 }

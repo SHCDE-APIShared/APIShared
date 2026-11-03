@@ -60,6 +60,46 @@ Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client,
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
 
+## Deferred Unity work and refresh demand
+
+Requires APIShared 0.26.0 or later.
+
+`ApiShared.ForMod(yourGuid).Ui` provides presentation work independently of native
+or network readiness. `TryPost(Action)` always defers through the existing validated
+Unity synchronization context, even on Unity. FIFO means enqueue order; a nested
+post may run in the same drain. It is not a next-frame or render-phase promise.
+False means unavailable; accepted work is not durable across context failure or
+shutdown. `Network.TryPostPresentation` retains its existing contract and queue.
+
+Register a stable owner-local ID with `TryRegisterBeforeRender(id, callback, out
+registration, out reason, order)`. Registrations are process-lived and initially
+dormant. Handles are thread-safe: `Request()` coalesces refreshes; `RequestAfter(delay)`
+keeps the earliest nonnegative monotonic deadline, and zero is immediate. An immediate
+request satisfies an older deferred refresh. Invalid/overflowing delays throw before
+changing demand. Delays run on the first rendered frame at/after the deadline,
+including while paused, without catch-up calls. They are refresh requests, not action timers.
+
+`SetContinuous(true)` requests every rendered frame; false preserves separately
+pending work. `CancelPending()` clears uncaptured immediate/deferred work, leaving
+continuous demand unchanged. Each callback runs at most once per rendered frame.
+The service freezes a pass and consumes current requests before invoking callbacks;
+requests or toggles during it apply to later frames. A canceled frozen callback may
+still run once. Keep current session/HUD guards and never permanently capture a map's
+view. Callbacks and diagnostic failures are isolated, outside registry locks.
+
+Ordering is `order`, ordinal owner GUID, then ordinal registration ID. No ordering
+against foreign Unity callbacks or Vanilla GUI writes is promised. Use the existing
+`PresentationEvents.GuiChecks` for post-Vanilla HUD writes, concrete input events for
+input, and simulation events for gameplay. Do not throttle commands, authorization,
+input protection or decisive save/load checks. Use bounded delays only for presentation
+whose latency permits them. See the compiled [example](../examples/ThirdPartyMod/UiWorkExample.cs).
+
+One static publisher survives startup cleanup. Dormant, waiting and steady continuous
+scheduler paths allocate nothing after warm-up; real demand changes may allocate
+copy-on-write snapshots. Callback cost and application-level scans remain the consumer's
+responsibility. Internal lobby fallback remains 15 rendered frames; save preparation
+continues every frame only while pending and not already loading.
+
 ## Namespaces and packaging
 
 Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode contracts. Settings XAML imports `clr-namespace:APIShared.ModSettings;assembly=APIShared`. Compile against the selected APIShared package and check that it contains every API used by your mod; this guide describes the source checkout. Author-specific permission tables belong in consumers, rather than APIShared; construct profiles for your own rules. Command/formation implementations belong to their consuming mods; use the public route-search events for the documented preference extension.

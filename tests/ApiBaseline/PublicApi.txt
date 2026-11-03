@@ -955,6 +955,7 @@ APIShared.MissionStartKind | NewGame = 0
 APIShared.ModApiClient | public sealed class APIShared.ModApiClient
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
+APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBriefingGoldPresentation(out APIShared.IBriefingGoldPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -2070,6 +2071,11 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.IUiFrameWorkRegistration | public interface APIShared.Presentation.IUiFrameWorkRegistration
+APIShared.Presentation.IUiFrameWorkRegistration | public void CancelPending()
+APIShared.Presentation.IUiFrameWorkRegistration | public void Request()
+APIShared.Presentation.IUiFrameWorkRegistration | public void RequestAfter(System.TimeSpan delay)
+APIShared.Presentation.IUiFrameWorkRegistration | public void SetContinuous(bool enabled)
 APIShared.Presentation.IngameMenuActionInfo | public sealed class APIShared.Presentation.IngameMenuActionInfo
 APIShared.Presentation.IngameMenuActionInfo | public APIShared.Presentation.IngameMenuActionState State { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool HasState { get; }
@@ -2247,6 +2253,9 @@ APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ow
 APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
 APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
 APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
+APIShared.Presentation.UiWorkClient | public sealed class APIShared.Presentation.UiWorkClient
+APIShared.Presentation.UiWorkClient | public bool TryPost(System.Action callback)
+APIShared.Presentation.UiWorkClient | public bool TryRegisterBeforeRender(string registrationId, System.Action callback, out APIShared.Presentation.IUiFrameWorkRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.VisibleMapRenderEventArgs | public sealed class APIShared.Presentation.VisibleMapRenderEventArgs : System.EventArgs
 APIShared.Presentation.VisibleMapRenderEventArgs | public int Bottom { get; }
 APIShared.Presentation.VisibleMapRenderEventArgs | public int Left { get; }
