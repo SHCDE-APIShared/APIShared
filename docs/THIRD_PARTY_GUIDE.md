@@ -2215,6 +2215,27 @@ load/remapping can resolve the participant again. Re-enable a loaded eliminated
 participant from the current loss snapshot, starting with their own view; this
 requires no new spectator Save marker. Original-spectator recovery is separate.
 
+## Observer command exceptions
+
+Vanilla's local command queue takes its network source from the native viewpoint. A
+mod that shows an eliminated participant another player's view must therefore block
+that participant's local commands which act as the viewed player; APIShared's view
+guards do not do this. Such an enforcing mod blocks only local input (Unity's main
+thread), never synchronized simulation or Chore calls, which must run identically on
+every peer.
+
+Other mods can allow single commands with
+`ObserverCommandExceptions.TryRegister(ownerGuid, registrationId, allow, out reason, order)`.
+The callback receives an `ObserverCommandRequest` with the observer's own player ID,
+the viewed player ID, the `GameActionCommand` and its three payloads, and returns true
+to allow. The enforcing mod calls `ObserverCommandExceptions.IsAllowed(request)` before
+each veto, synchronously on its caller thread. Callbacks are ordered by order, owner
+GUID and ID; the first true wins, a throwing callback counts as no opinion
+(`CallbackFailures`). An allowed command follows Vanilla's path with the viewed player
+as its source, so it acts as that player in multiplayer: allow only what your mod
+intends to grant, deterministically from shared state where it matters. Registrations
+live for the process. Without registrations the check returns false without allocation.
+
 ## Spectator input control
 
 First call `PlayerPerspectiveAPI.TryRegisterSpectatorControl(ownerGuid, out reason)` from

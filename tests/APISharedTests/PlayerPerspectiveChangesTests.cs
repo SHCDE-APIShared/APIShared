@@ -164,6 +164,7 @@ namespace APISharedTests
                 p => throw new InvalidOperationException("native"), p => { }, () => true, out _));
             Assert.IsTrue(control.IsSuspended);
             Assert.AreEqual(-1, actor[actor.Count - 1], "An unconfirmed view blocks spectator input.");
+            Assert.AreEqual(-1, IdentityOverride(), "Blocked input reports the spectator, never the unconfirmed target.");
             APIShared.PlayerPerspectiveAPI.EndControlCore(control, 5, () => native, p => Assert.Fail("No controlled view to deselect."));
             Assert.AreEqual(0, actor[actor.Count - 1]);
             Assert.AreEqual(-1, IdentityOverride());

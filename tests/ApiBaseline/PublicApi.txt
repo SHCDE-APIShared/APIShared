@@ -1905,6 +1905,19 @@ APIShared.Networking.NetworkSendStatus | Submitted = 0
 APIShared.Networking.NetworkSendStatus | TooLarge = 4
 APIShared.Networking.NetworkSendStatus | TransportFailed = 6
 APIShared.Networking.NetworkSendStatus | Unavailable = 1
+APIShared.ObserverCommandException | public delegate bool APIShared.ObserverCommandException(APIShared.ObserverCommandRequest request)
+APIShared.ObserverCommandExceptions | public static class APIShared.ObserverCommandExceptions
+APIShared.ObserverCommandExceptions | public static bool IsAllowed(APIShared.ObserverCommandRequest request)
+APIShared.ObserverCommandExceptions | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.ObserverCommandException allow, out string reason, int order = 0)
+APIShared.ObserverCommandExceptions | public static long CallbackFailures { get; }
+APIShared.ObserverCommandRequest | public struct APIShared.ObserverCommandRequest
+APIShared.ObserverCommandRequest | public .ctor(int observerPlayerId, int viewedPlayerId, Enums.GameActionCommand command, int structureId, int actionState, int value2)
+APIShared.ObserverCommandRequest | public Enums.GameActionCommand Command { get; }
+APIShared.ObserverCommandRequest | public int ActionState { get; }
+APIShared.ObserverCommandRequest | public int ObserverPlayerId { get; }
+APIShared.ObserverCommandRequest | public int StructureId { get; }
+APIShared.ObserverCommandRequest | public int Value2 { get; }
+APIShared.ObserverCommandRequest | public int ViewedPlayerId { get; }
 APIShared.Pathfinding.RouteReplanPolicy | public sealed class APIShared.Pathfinding.RouteReplanPolicy
 APIShared.Pathfinding.RouteReplanPolicy | public .ctor(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
 APIShared.Pathfinding.RouteReplanPolicy | public bool AllowsDetour(int remaining, int replanned)

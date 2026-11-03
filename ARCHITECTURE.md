@@ -334,7 +334,8 @@ the only writer of their actor cell. The
 public `PlayerPerspectiveAPI` transaction owns ordering under the engine monitor:
 Vanilla deselection as the old view, confirmed view change, then actor publication.
 Every view selection/clear and the lifecycle's world invalidation end control; the
-latter only resets the actor. The rights-gated `LocalControlRuntime`, the mixed-owner
+latter resets the actor without a deselection command and then clears the selected
+original-spectator view (`EndViewWorld`). The rights-gated `LocalControlRuntime`, the mixed-owner
 backend and the multiplayer protocol stay WIP; the runtime must adopt
 `LocalInputControl` as actor owner before wiring. See [player control](docs/PLAYER_CONTROL.md).
 

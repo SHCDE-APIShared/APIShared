@@ -13,7 +13,10 @@
     {
       "Version": "0.25.0",
       "Changes": [
-        "Add shared enemy-unit building proximity policies and a validated active Peace Time reader; consumers compose overrides, limits and authoritative vetoes."
+        "Add shared enemy-unit building proximity policies and a validated active Peace Time reader; consumers compose overrides, limits and authoritative vetoes.",
+        "Add ObserverCommandExceptions: mods can allow single local commands of a confirmed observer (such as an eliminated participant viewing another player) that an enforcing mod would otherwise veto.",
+        "Spectator input control: an unconfirmed rollback now reports the spectator identity again instead of the failed target, and ClearEliminatedPlayerView no longer ends an original spectator's input control.",
+        "Document that every native world change clears a selected original-spectator view with a Cleared notification."
       ]
     },
     {

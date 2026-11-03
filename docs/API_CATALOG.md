@@ -326,7 +326,9 @@ colour. Contracts: [lease](../src/Presentation/UnitHud/UnitHudSpriteColours.cs),
 
 ## Direct helpers and advanced integration
 
-`PlayerPerspectiveAPI.TrySetEliminatedPlayerView(playerId)` adds identity-preserving views for confirmed eliminated participants. It keeps their positive local player ID and protects Save/Chore identity; it grants no command rights. The original-spectator API remains unchanged. See [eliminated-player views](THIRD_PARTY_GUIDE.md#eliminated-player-perspectives).
+`PlayerPerspectiveAPI.TrySetEliminatedPlayerView(playerId)` adds identity-preserving views for confirmed eliminated participants. It keeps their positive local player ID and protects Save/Chore identity; it grants no command rights. `TrySetSpectatorView` stays exclusive to original spectators; every native world change (load, unload, new mission) clears a selected spectator view with a `Cleared` notification. See [eliminated-player views](THIRD_PARTY_GUIDE.md#eliminated-player-perspectives).
+
+`ObserverCommandExceptions.TryRegister(ownerGuid, id, allow, out reason)` lets mods allow single local commands of a confirmed observer that an enforcing mod (such as a spectator mod blocking an eliminated participant who views another player) would otherwise veto; the enforcing mod asks `ObserverCommandExceptions.IsAllowed(request)`. An allowed command acts as the viewed player. See [observer command exceptions](THIRD_PARTY_GUIDE.md#observer-command-exceptions).
 
 After `PlayerPerspectiveAPI.TryRegisterSpectatorControl(ownerGuid, out reason)` (installs the input hooks only on this demand), `PlayerPerspectiveAPI.TrySetSpectatorControl(playerId)` gives an original spectator in an offline skirmish the complete Vanilla map input of one chosen player; `ClearSpectatorControl()` ends it and `GetInputControlledPlayerId()` reads it. No rights categories; real multiplayer and the editor are excluded. Rights-gated, multi-owner and multiplayer control are WIP. See [player control](PLAYER_CONTROL.md).
 

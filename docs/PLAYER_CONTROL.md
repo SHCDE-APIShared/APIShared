@@ -43,7 +43,8 @@ Control ends with `ClearSpectatorControl`, any other `TrySetSpectatorView` or cl
 and every native world change (load, unload, new mission). Switching or ending
 deselects the controlled player's units through Vanilla's own deselection while that
 player's view is still current. A world change only resets the actor and sends no
-command into the next world. A failed view write rolls back; if the rollback cannot
+command into the next world; it also clears the selected spectator view, as for every
+original-spectator view. A failed view write rolls back; if the rollback cannot
 be confirmed, spectator input stays blocked until control is cleared.
 
 ## Limits

@@ -132,6 +132,8 @@ namespace APIShared
         /// <summary>
         /// Changes Vanilla's view and publishes it for an original spectator only.
         /// Returns false while another role owns the participant view or a Save/send scope is active.
+        /// The selection lasts for the current native world: every load, unload or new mission clears it
+        /// with a Cleared change notification, so consumers select again for each mission.
         /// </summary>
         public static bool TrySetSpectatorView(int playerId)
         {
@@ -271,10 +273,20 @@ namespace APIShared
                 control.Activate(world, playerId);
                 return true;
             }
-            // A verified rollback restored the previous view (and its identity override).
-            if (Volatile.Read(ref viewUncertain) != 0) control.Suspend();
+            // A verified rollback restored the previous view (and its identity override). An unconfirmed
+            // one blocks input and reports the spectator identity again, never the unconfirmed target.
+            if (Volatile.Read(ref viewUncertain) != 0) { control.Suspend(); ResetSpectatorControlIdentity(); }
             else if (previous <= 0 || readView() != previous) control.Release();
             return false;
+        }
+
+        // Positive overrides of an original spectator come only from control; a participant's leased
+        // identity is never touched here.
+        private static void ResetSpectatorControlIdentity()
+        {
+            lock (viewChangeGate)
+                if (viewLease == null && Volatile.Read(ref identityOverridePlayerId) > 0)
+                    Volatile.Write(ref identityOverridePlayerId, -1);
         }
 
         // Caller holds the engine monitor (or no monitor exists). Deselection runs only while the
@@ -291,11 +303,7 @@ namespace APIShared
             finally
             {
                 control.Release();
-                // Positive overrides of an original spectator come only from control; a
-                // participant's leased identity is never touched here.
-                lock (viewChangeGate)
-                    if (viewLease == null && Volatile.Read(ref identityOverridePlayerId) > 0)
-                        Volatile.Write(ref identityOverridePlayerId, -1);
+                ResetSpectatorControlIdentity();
             }
         }
 
@@ -408,8 +416,10 @@ namespace APIShared
         /// </summary>
         public static void ClearEliminatedPlayerView()
         {
-            if (viewLease != null ||
-                (Volatile.Read(ref identityOverrideActive) != 0 && Volatile.Read(ref identityOverridePlayerId) > 0))
+            // An original spectator's input control also holds a positive override; it is not an
+            // eliminated-participant view and stays with ClearSpectatorControl/ClearSpectatorView.
+            if (viewLease != null || (!inputControl.IsEngaged &&
+                Volatile.Read(ref identityOverrideActive) != 0 && Volatile.Read(ref identityOverridePlayerId) > 0))
                 ClearSpectatorView();
         }
 
@@ -547,7 +557,8 @@ namespace APIShared
             return false;
         }
 
-        /// <summary>Clears the identity override when the spectator session ends.</summary>
+        /// <summary>Clears the identity override when the spectator session ends. APIShared also calls it
+        /// at every native world change (load, unload, new mission).</summary>
         public static void ClearSpectatorView()
         {
             try
