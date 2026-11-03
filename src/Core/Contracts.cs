@@ -65,6 +65,10 @@ namespace APIShared
         public const string BuildingRepair = "building-repair";
         /// <summary>Capability for importing planned AI castles and custom Lord configurations at Coop Trail starts.</summary>
         public const string CoopAiStartImport = "coop-ai-start-import";
+        /// <summary>Diagnostic of the read-only native enemy-unit proximity category predicate.</summary>
+        public const string EnemyUnitProximity = "enemy-unit-proximity";
+        /// <summary>Diagnostic of the validated active Peace Time reader.</summary>
+        public const string PeaceTimeState = "peace-time-state";
     }
 
     /// <summary>Immutable diagnostic information returned by capability acquisition and mutation.</summary>

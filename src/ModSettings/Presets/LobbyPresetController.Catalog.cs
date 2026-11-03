@@ -201,6 +201,7 @@ namespace APIShared.ModSettings
                 Group = property.Group,
                 DisplayName = property.DisplayName,
                 RequiresRestart = property.RequiresRestart,
+                MissionIndependent = property.MissionIndependent,
                 Scope = IsHostProperty(property)
                     ? PresetSettingScope.Host
                     : property.GetCustomAttribute<SyncPerPlayerAttribute>() != null

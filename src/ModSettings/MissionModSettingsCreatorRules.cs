@@ -20,7 +20,7 @@ namespace APIShared.ModSettings
             MissionModSettingsEntry entry, Action<string, Exception> onError = null)
         {
             if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
-            var properties = ModSettingsApplication.GetHostProperties(endpoint).ToDictionary(property => property.Name, StringComparer.Ordinal);
+            var properties = ModSettingsApplication.GetMissionHostProperties(endpoint).ToDictionary(property => property.Name, StringComparer.Ordinal);
             var result = properties.Keys.ToDictionary(name => name, _ => new TrailCreatorRule { Mode = 0 }, StringComparer.Ordinal);
             if (entry == null) return result;
             foreach (string name in entry.PlayerSettings ?? Array.Empty<string>())

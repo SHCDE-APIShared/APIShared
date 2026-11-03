@@ -11,7 +11,10 @@ namespace APIShared.Audio
     internal static class NativeContract
     {
         internal const string NativeHash = "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2";
-        internal const string BackendHash = "0843DD4C381A3E77DD6D8B51D5CCF95465B3FB49BFDF2980F39A212D774AADB0";
+        // The Script Extender's RedBird backend is not pinned by file hash. 1.5.0 is the first
+        // audited NativeX64 Absolute contract; Validate below proves the actual prepared and
+        // published hooks (scheme, displacement, trampoline, continuation and patch form).
+        internal static readonly Version MinimumBackendVersion = new Version(1, 5, 0, 0);
         internal const int EmitRva = 0x1A41E0, CurrentUnitRva = 0x9302C4;
         internal const string EmitPattern = "48 63 41 08 4C 8B D9 4C 6B D0 2A 48 8B 01 66 45 89 44 02 02 48 63 41 08 4C 6B C0 2A 48 8B 01 66 45 89 4C 00 04";
         internal const int WrapperRva = 0x2960, FlagWrapperRva = 0x2990;
@@ -48,6 +51,13 @@ namespace APIShared.Audio
         // suspendThreads=false is for private test copies no other thread can execute (RedBird's
         // thread-suspending patch destabilises the desktop CLR test host: crash at a later GC) and for
         // the synchronous startup run (NativeStartupPatchWindow).
+        internal static void ValidateBackendVersion(Version loaded)
+        {
+            if (loaded == null || loaded < MinimumBackendVersion)
+                throw new InvalidOperationException("RedBird NativeX64 backend " + (loaded?.ToString() ?? "<unknown>") +
+                    " is older than the required " + MinimumBackendVersion + ".");
+        }
+
         internal static NativeDetourBackend Backend(int size, bool suspendThreads = true)
         {
             var options = new NativeDetourOptions

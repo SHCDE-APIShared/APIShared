@@ -79,13 +79,22 @@ namespace APIShared.ModSettings
         public Visibility System_SettingsSourceVisibility =>
             presetController?.HasPersistentSettings == true ? Visibility.Visible : Visibility.Collapsed;
 
-        /// <summary>Application notice or the current source/modified description.</summary>
-        public string System_PresetStatusText => (string.IsNullOrEmpty(System_ApplicationNotice) ? "" : System_ApplicationNotice + " · ") + (presetController?.GetStatusText(
-            ResolveSettingsUiTextSafe("Common.PresetBasedOn", APIShared.Localization.UiText.English("Common.PresetBasedOn")),
-            ResolveSettingsUiTextSafe("Common.PresetModified", APIShared.Localization.UiText.English("Common.PresetModified")),
-            ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", APIShared.Localization.UiText.English("Common.PresetSourcePersonal")),
-            ResolveSettingsUiTextSafe("Common.PresetSourceBundled", APIShared.Localization.UiText.English("Common.PresetSourceBundled")),
-            ResolveSettingsUiTextSafe("Common.PresetSourceExternal", APIShared.Localization.UiText.English("Common.PresetSourceExternal"))) ?? string.Empty);
+        /// <summary>Application notice and the current source/modified description, joined only when both exist.</summary>
+        public string System_PresetStatusText
+        {
+            get
+            {
+                string status = presetController?.GetStatusText(
+                    ResolveSettingsUiTextSafe("Common.PresetBasedOn", APIShared.Localization.UiText.English("Common.PresetBasedOn")),
+                    ResolveSettingsUiTextSafe("Common.PresetModified", APIShared.Localization.UiText.English("Common.PresetModified")),
+                    ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", APIShared.Localization.UiText.English("Common.PresetSourcePersonal")),
+                    ResolveSettingsUiTextSafe("Common.PresetSourceBundled", APIShared.Localization.UiText.English("Common.PresetSourceBundled")),
+                    ResolveSettingsUiTextSafe("Common.PresetSourceExternal", APIShared.Localization.UiText.English("Common.PresetSourceExternal"))) ?? string.Empty;
+                string notice = System_ApplicationNotice;
+                if (string.IsNullOrEmpty(notice)) return status;
+                return string.IsNullOrEmpty(status) ? notice : notice + " · " + status;
+            }
+        }
 
         /// <summary>Shows nonempty source/application status.</summary>
         public Visibility System_PresetStatusVisibility =>

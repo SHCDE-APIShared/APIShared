@@ -13,24 +13,27 @@ namespace Core.Tests
         private static IngameMenuActionOptions Left(bool replace = false) =>
             new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left, replace);
         private static IngameMenuRegistry.Entry Add(IngameMenuRegistry registry, string owner, string id,
-            Func<IngameMenuActionState> state, IngameMenuActionOptions options, int order = 0, bool legacy = false)
+            Func<IngameMenuActionState> state, IngameMenuActionOptions options, int order = 0)
         {
-            Assert.IsTrue(registry.CanRegister(owner, id, state, () => { }, options, legacy, out string reason), reason);
-            return registry.Register(owner, id, state, () => { }, options, legacy, order);
+            Assert.IsTrue(registry.CanRegister(owner, id, state, () => { }, options, out string reason), reason);
+            return registry.Register(owner, id, state, () => { }, options, order);
         }
         [TestMethod]
         public void ConflictsAreExplicitIncludingHiddenClaimsAndVanilla()
         {
             var registry = new IngameMenuRegistry();
             Add(registry, "a", "hidden", () => null, Left());
-            Assert.IsFalse(registry.CanRegister("b", "x", () => Shown(), () => { }, Left(), false, out string reason));
+            Assert.IsFalse(registry.CanRegister("b", "x", () => Shown(), () => { }, Left(), out string reason));
             StringAssert.Contains(reason, "a/hidden");
             Assert.AreEqual(1, registry.Entries.Length);
             Assert.IsFalse(registry.CanRegister("b", "right", () => Shown(), () => { },
-                new IngameMenuActionOptions(IngameMenuRow.Save, IngameMenuSlot.Right), false, out _));
+                new IngameMenuActionOptions(IngameMenuRow.Save, IngameMenuSlot.Right), out _));
             Add(registry, "b", "right", () => Shown(),
                 new IngameMenuActionOptions(IngameMenuRow.Save, IngameMenuSlot.Right, replaceVanilla: true));
-            Assert.IsFalse(registry.CanRegister("b", "right", () => Shown(), () => { }, new IngameMenuActionOptions(), false, out _));
+            Assert.IsFalse(registry.CanRegister("b", "right", () => Shown(), () => { }, new IngameMenuActionOptions(), out _));
+            // Every public registration states its placement; there is no implicit QuitMission/Left fallback.
+            Assert.IsFalse(registry.CanRegister("b", "implicit", () => Shown(), () => { }, null, out reason));
+            StringAssert.Contains(reason, "Placement options are required");
         }
         [TestMethod]
         public void TakeoversRestorePrecedingVisibleClaimWithoutChangingPrecedenceOnRefresh()
@@ -68,20 +71,6 @@ namespace Core.Tests
             rightVisible = false; registry.Invalidate("b"); registry.Evaluate(false, null);
             Assert.AreSame(registry.Vanilla(IngameMenuRow.QuitMission), registry.Resolve().Slots[(int)IngameMenuRow.QuitMission, 1]);
             Assert.AreEqual(0, registry.Resolve().Overflow.Count);
-        }
-        [TestMethod]
-        public void LegacyOrderAndExplicitPriorityAreIndependentOfRegistrationOrder()
-        {
-            var registry = new IngameMenuRegistry();
-            var z = Add(registry, "z", "x", () => Shown(), null, legacy: true);
-            var a = Add(registry, "a", "x", () => Shown(), null, legacy: true);
-            registry.Evaluate(true, null);
-            Assert.AreSame(a, registry.Resolve().Slots[(int)IngameMenuRow.QuitMission, 0]);
-            Assert.AreSame(z, registry.Resolve().Overflow.Single());
-            var explicitAction = Add(registry, "explicit", "x", () => Shown(), Left(true), 100);
-            registry.Evaluate(false, null);
-            Assert.AreSame(explicitAction, registry.Resolve().Slots[(int)IngameMenuRow.QuitMission, 0]);
-            CollectionAssert.AreEqual(new[] { a, z }, registry.Resolve().Overflow.ToArray());
         }
         [TestMethod]
         public void OverflowIncludesEveryDisplacedAndAdditionalEntryExactlyOnceInStableOrder()
@@ -138,7 +127,7 @@ namespace Core.Tests
             int calls = 0;
             Add(registry, "a", "x", () => {
                 calls++;
-                Assert.IsFalse(registry.CanRegister("b", "nested", () => Shown(), () => { }, new IngameMenuActionOptions(), false, out _));
+                Assert.IsFalse(registry.CanRegister("b", "nested", () => Shown(), () => { }, new IngameMenuActionOptions(), out _));
                 registry.Evaluate(true, null);
                 return Shown();
             }, Left());

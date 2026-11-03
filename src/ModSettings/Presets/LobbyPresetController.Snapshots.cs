@@ -28,45 +28,88 @@ namespace APIShared.ModSettings
         {
             if (owner.IsMissionPresetSelected)
                 throw new InvalidOperationException("Mission defaults must be materialized by the registered mission source provider.");
-            var prepared = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-            bool host = owner.IsLocalHost;
-            foreach (PresetPropertyAccessor property in persistedProperties)
-            {
-                if (IsHostProperty(property) && !host) continue;
-                if (defaults.TryGetValue(property.Name, out byte[] value))
-                    prepared[property.Name] = value == null ? null : (byte[])value.Clone();
-            }
-            ApplySnapshot(prepared, 0, writeLocalStorage: false);
-            foreach (KeyValuePair<string, byte[]> entry in prepared) preset1[entry.Key] = entry.Value;
+            ApplyWorkingSnapshot(defaults, writeLocalStorage: false);
             SetBasedOn(null, false);
             WriteCombinedPayload();
             LogRoutine($"[{modName}] Loaded Mod defaults as editable working settings.");
         }
 
-        public void ApplyWorkingSnapshot(Dictionary<string, byte[]> snapshot)
+        public void ApplyWorkingSnapshot(Dictionary<string, byte[]> snapshot, bool writeLocalStorage = true)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
-            if (owner.IsMissionPresetSelected)
-            {
-                ApplyMissionWorkingSnapshot(snapshot, missionPresetLabel);
-                return;
-            }
-            Dictionary<string, byte[]> clone = Clone(preset1 ?? defaults);
-            bool host = owner.IsLocalHost;
+            bool mission = owner.IsMissionPresetSelected, host = owner.IsLocalHost;
+            if (mission && !owner.MissionPresetEditable) throw new InvalidOperationException("Mission settings are not currently editable.");
+            var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
+            bool omitNull = dynamicProvider == null && owner.SettingsApplicationBackend == null;
             foreach (var entry in snapshot)
-                if (persistedPropertiesByName.TryGetValue(entry.Key, out var property) &&
-                    (host || IsClientProperty(property)))
-                    clone[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
-            ApplySnapshot(clone, 0, writeLocalStorage: false);
-            preset1 = clone;
-            WriteCombinedPayload();
+                if (persistedPropertiesByName.TryGetValue(entry.Key, out var property) && (host || IsClientProperty(property)))
+                {
+                    byte[] bytes = entry.Value;
+                    if (bytes == null) defaults.TryGetValue(property.Name, out bytes);
+                    if (bytes == null && omitNull) continue;
+                    try
+                    {
+                        if (bytes == null) throw new InvalidDataException("Missing setting: " + property.Name);
+                        if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                        {
+                            if (omitNull) continue;
+                            throw new InvalidDataException("Missing setting: " + property.Name);
+                        }
+                    }
+                    catch
+                    {
+                        if (!defaults.TryGetValue(property.Name, out bytes) || bytes == null) throw;
+                        if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                        {
+                            if (omitNull) continue;
+                            throw;
+                        }
+                    }
+                    prepared[property] = (byte[])bytes.Clone();
+                }
+            ValidatePersonalCommit(prepared.Keys, host);
+            var before = owner.SettingsApplicationBackend == null ? null : CopyConfigurationValues(owner.SettingsApplicationBackend.ReadDesiredValues());
+            bool personalChanged = false;
+            ApplyPreparedValues(prepared, result =>
+            {
+                personalChanged = PersistPersonalProperties(prepared.Keys.Where(p => p.MissionIndependent), writeLocalStorage: false, hostAuthority: host, rollbackValues: before);
+                foreach (var property in prepared.Keys)
+                {
+                    var target = mission && IsMissionProperty(property) ? missionPreset : preset1;
+                    if (result.Failed.Contains(property))
+                    {
+                        target[property.Name] = (byte[])prepared[property].Clone();
+                        if (property.MissionIndependent) personalChanged = true;
+                    }
+                    else if (IsMissionProperty(property)) StoreProperty(target, property);
+                }
+                if (mission) missionPresetDirty = true;
+            }, publish: true);
+            if (writeLocalStorage && (!mission || personalChanged)) WriteCombinedPayload();
+        }
+
+        public void ApplyExplicitMissionDefaults(Dictionary<string, byte[]> source, string label)
+        {
+            var snapshot = Clone(defaults);
+            foreach (var property in persistedProperties.Where(IsMissionProperty))
+                if (source.TryGetValue(property.Name, out var bytes)) snapshot[property.Name] = bytes == null ? null : (byte[])bytes.Clone();
+            ApplyWorkingSnapshot(snapshot);
+            missionPresetLabel = label ?? string.Empty;
+            missionBasedOnPreset = null;
+            missionPresetDirty = false;
+        }
+
+        private void ValidatePersonalCommit(IEnumerable<PresetPropertyAccessor> properties, bool host)
+        {
+            if (owner.SettingsApplicationBackend != null && properties.Any(p => p.MissionIndependent && (!IsHostProperty(p) || host)))
+                ModSettingsApplication.ValidatePersonalPersistence(targetGuid);
         }
 
         public Dictionary<string, byte[]> CreateDisabledSnapshot()
         {
-            Dictionary<string, byte[]> snapshot = CopyProperties(defaults, hostProperties);
+            Dictionary<string, byte[]> snapshot = CopyProperties(defaults, persistedProperties.Where(IsMissionProperty));
             if (persistedPropertiesByName.TryGetValue("EnableMod", out PresetPropertyAccessor enableProperty) &&
-                enableProperty.PropertyType == typeof(bool))
+                enableProperty.PropertyType == typeof(bool) && IsMissionProperty(enableProperty))
             {
                 snapshot[enableProperty.Name] = MessagePackSerializer.Serialize(false);
             }
@@ -75,8 +118,16 @@ namespace APIShared.ModSettings
 
         public Dictionary<string, byte[]> CreateDefaultSnapshot() => Clone(defaults);
 
-        public Dictionary<string, byte[]> CreateCurrentMissionSnapshot() =>
-            Clone(owner.IsMissionPresetSelected ? missionPreset : preset1 ?? defaults);
+        public Dictionary<string, byte[]> CreateCurrentMissionSnapshot()
+        {
+            var result = Clone(preset1 ?? defaults);
+            if (owner.IsMissionPresetSelected)
+                foreach (var entry in missionPreset) result[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
+            // Independent Host values on clients belong to the authenticated host, never the own file.
+            if (!owner.IsLocalHost)
+                foreach (var property in hostProperties.Where(p => p.MissionIndependent)) StoreProperty(result, property);
+            return result;
+        }
 
         public Dictionary<string, byte[]> CreatePlayerMissionSnapshot() =>
             Clone(preset1 ?? defaults);
@@ -92,7 +143,7 @@ namespace APIShared.ModSettings
             {
                 if (!persistedPropertiesByName.TryGetValue(entry.Key, out PresetPropertyAccessor property))
                     continue;
-                if (IsHostProperty(property) && !host)
+                if (!IsMissionProperty(property) || !host)
                     continue;
                 merged[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
             }
@@ -147,11 +198,15 @@ namespace APIShared.ModSettings
 
             // The stored copy reads the live values back, so a substituted default or a
             // rejected value is recorded as it now is; the preset then counts as modified.
+            ValidatePersonalCommit(prepared.Keys, host);
+            var before = owner.SettingsApplicationBackend == null ? null : CopyConfigurationValues(owner.SettingsApplicationBackend.ReadDesiredValues());
+            bool personalChanged = false;
             ApplyPreparedValues(prepared, result =>
             {
+                personalChanged = PersistPersonalProperties(prepared.Keys.Where(property => property.MissionIndependent), writeLocalStorage: false, hostAuthority: host, rollbackValues: before);
                 if (owner.IsMissionPresetSelected)
                 {
-                    foreach (PresetPropertyAccessor property in prepared.Keys)
+                    foreach (PresetPropertyAccessor property in prepared.Keys.Where(IsMissionProperty))
                         StoreProperty(missionPreset, property);
                     // Mission attribution is transient; the normal working preset stays suspended.
                     missionBasedOnPreset = preset;
@@ -166,7 +221,7 @@ namespace APIShared.ModSettings
                     owner.SetSelectedPresetCore(0);
                 }
             }, publish: true);
-            if (writeLocalStorage) WriteCombinedPayload();
+            if (writeLocalStorage || personalChanged) WriteCombinedPayload();
             DebugLogHelper.LogInfo(log, $"SETTINGS_PRESET: mod={targetGuid}, action=load, " +
                 $"context={SanitizeLogValue(owner.IsMissionPresetSelected ? missionContextLabel : "Personal")}, " +
                 $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, preset={SanitizeLogValue(preset.StableId)}, " +
@@ -208,12 +263,14 @@ namespace APIShared.ModSettings
             bool writeLocalStorage,
             bool? restoreHost = null,
             bool publish = true,
-            bool retryableCleanup = false)
+            bool retryableCleanup = false,
+            Func<PresetPropertyAccessor, bool> include = null,
+            bool missionRestore = false)
         {
             // Capture inclusion once, before a setter's PropertyChanged can refresh
             // the live role. Deserialization likewise finishes before any mutation.
             bool includeHost = restoreHost ?? (selected == MissionPresetIndex || owner.IsLocalHost);
-            // Reflected presets historically omit null values (CaptureCurrentSettings and
+            // Reflected presets omit null values (CaptureCurrentSettings and
             // TryApplyProperty do the same). A missing optional value must not prevent
             // activation or restoration of the other settings. Backends retain their
             // existing complete-configuration validation.
@@ -221,6 +278,8 @@ namespace APIShared.ModSettings
             var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
             foreach (PresetPropertyAccessor property in persistedProperties)
             {
+                if (selected == MissionPresetIndex && !IsMissionProperty(property)) continue;
+                if (include != null && !include(property)) continue;
                 if (!includeHost && !IsClientProperty(property)) continue;
                 if (!property.CanWrite) continue;
                 byte[] bytes = null;
@@ -252,7 +311,7 @@ namespace APIShared.ModSettings
             retryableSetterFailure = false;
             try
             {
-                result = ApplyPreparedValues(prepared, _ => owner.SetSelectedPresetCore(selected), publish);
+                result = ApplyPreparedValues(prepared, _ => owner.SetSelectedPresetCore(selected), publish, missionRestore);
                 retryableSetterFailure = retryableCleanup && result.Failed.Count != 0;
                 if (retryableSetterFailure) result.ThrowFirstFailure();
             }
@@ -277,13 +336,15 @@ namespace APIShared.ModSettings
         /// Dynamic providers and application backends keep their complete-configuration validation.
         /// </summary>
         private SnapshotApplicationResult ApplyPreparedValues(Dictionary<PresetPropertyAccessor, byte[]> prepared,
-            Action<SnapshotApplicationResult> commit, bool publish)
+            Action<SnapshotApplicationResult> commit, bool publish, bool missionRestore = false)
         {
             using (ModSettingsSearchUpdateScope.Begin(owner.SettingsTarget))
             {
                 var result = new SnapshotApplicationResult();
                 bool previousApplying = applying;
+                bool previousMissionSnapshot = applyingMissionSnapshot;
                 applying = true;
+                applyingMissionSnapshot = missionRestore;
                 try
                 {
                     LobbySettingsRestoreScope.Execute(() =>
@@ -301,6 +362,7 @@ namespace APIShared.ModSettings
                 finally
                 {
                     applying = previousApplying;
+                    applyingMissionSnapshot = previousMissionSnapshot;
                 }
 
                 ReportApplicationFailures(result);
@@ -372,9 +434,22 @@ namespace APIShared.ModSettings
             }
         }
 
+        // Reader dictionaries may be live backend state. Never mutate or retain their buffers.
+        internal static Dictionary<string, object> CopyConfigurationValues(Dictionary<string, object> source)
+        {
+            if (source == null) throw new InvalidDataException("The backend returned a null configuration.");
+            return source.ToDictionary(entry => entry.Key, entry =>
+            {
+                object value = entry.Value;
+                if (value == null || value is string || value is decimal || value.GetType().IsPrimitive || value.GetType().IsEnum) return value;
+                Type type = value.GetType();
+                return MessagePackSerializer.Deserialize(type, MessagePackSerializer.Serialize(type, value));
+            }, StringComparer.Ordinal);
+        }
+
         private void ApplyDynamicValues(Dictionary<PresetPropertyAccessor, byte[]> prepared)
         {
-            var values = owner.SettingsApplicationBackend?.ReadDesiredValues() ?? dynamicProvider.ReadValues();
+            var values = CopyConfigurationValues(owner.SettingsApplicationBackend?.ReadDesiredValues() ?? dynamicProvider.ReadValues());
             foreach (var entry in prepared)
                 values[entry.Key.Name] = MessagePackSerializer.Deserialize(entry.Key.PropertyType, entry.Value);
             if (owner.SettingsApplicationBackend != null) owner.SettingsApplicationBackend.ReplaceDesiredValues(values);
@@ -412,7 +487,7 @@ namespace APIShared.ModSettings
 
         private void StoreProperty(
             Dictionary<string, byte[]> snapshot,
-            PresetPropertyAccessor property)
+            PresetPropertyAccessor property, bool retainNull = false)
         {
             if (!property.CanRead)
                 return;
@@ -422,7 +497,8 @@ namespace APIShared.ModSettings
                 object value = dynamicProvider != null ? dynamicProvider.ReadValue(property.Name) : owner.SettingsApplicationBackend != null ? owner.SettingsApplicationBackend.ReadDesiredValues()[property.Name] : property.GetValue(owner.SettingsTarget);
                 if (value == null)
                 {
-                    snapshot.Remove(property.Name);
+                    if (retainNull) snapshot[property.Name] = null;
+                    else snapshot.Remove(property.Name);
                     return;
                 }
 

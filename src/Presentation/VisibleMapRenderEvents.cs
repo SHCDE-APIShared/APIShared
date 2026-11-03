@@ -30,6 +30,9 @@ namespace APIShared.Presentation
         /// <summary>Private state shared only by this registration's Before and Finally callbacks.
         /// Set rollback state before making temporary changes; Finally also runs when Before throws.</summary>
         public object State { get; set; }
+        // Per-invocation cleanup chain; Dispatch clears Previous before Finally so retained args root nothing else.
+        internal VisibleMapRenderRegistration Registration;
+        internal VisibleMapRenderEventArgs Previous;
     }
 
     /// <summary>Process-lived render observer. Initially disabled; activation changes data, never executable patches.</summary>
@@ -117,8 +120,9 @@ namespace APIShared.Presentation
                 throw new InvalidOperationException("Visible-map events require the audited native image and LibraryLoaded initialization.");
             var target = module + Rva;
             NativeIndirectEntry.VerifyBytes(target, Entry);
-            var claim = NativeSiteRegistry.Register(APISharedPlugin.PluginGuid, "visible-map-render", Rva, Entry.Length, NativeSiteMode.Exclusive);
-            if (!claim.Succeeded) throw new InvalidOperationException("Visible-map render entry is occupied: " + claim.Status);
+            var sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.VisibleMapRender, ApiSharedNativeSites.VisibleMapRenderSpans(),
+                reason => new InvalidOperationException("Visible-map render entry is occupied: " + reason));
             try
             {
                 var bridge = new VisibleMapRenderBridge(callback, demand);
@@ -138,7 +142,7 @@ namespace APIShared.Presentation
             catch (Exception error)
             {
                 installationFailure = error;
-                if (!publicationStarted) { hook?.Dispose(); hook = null; NativeSiteRegistry.Unregister(APISharedPlugin.PluginGuid, "visible-map-render"); }
+                if (!publicationStarted) { hook?.Dispose(); hook = null; ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.VisibleMapRender); }
                 throw;
             }
         }
@@ -148,22 +152,28 @@ namespace APIShared.Presentation
         internal static void Dispatch(VisibleMapRenderRegistration[] snapshot, IntPtr map, int left, int right,
             int top, int bottom, int zoom, RenderCall original)
         {
-            var calls = new VisibleMapRenderEventArgs[snapshot.Length];
+            // Linking the args instead of a per-call array keeps this per-tick path at the
+            // contractually required allocations; each (also recursive) invocation owns its chain.
+            VisibleMapRenderEventArgs last = null;
             try
             {
                 for (int i = 0; i < snapshot.Length; i++)
                 {
                     if (!Volatile.Read(ref snapshot[i].Enabled)) continue;
-                    var args = calls[i] = new VisibleMapRenderEventArgs(map, left, right, top, bottom, zoom);
+                    // Linked before Before runs: Finally still follows a throwing or disabling Before.
+                    var args = last = new VisibleMapRenderEventArgs(map, left, right, top, bottom, zoom)
+                        { Registration = snapshot[i], Previous = last };
                     try { snapshot[i].Before?.Invoke(args); } catch (Exception error) { Report(snapshot[i], error); }
                 }
                 original(map, left, right, top, bottom, zoom);
             }
             finally
             {
-                for (int i = snapshot.Length - 1; i >= 0; i--)
-                    if (calls[i] != null)
-                        try { snapshot[i].Finally?.Invoke(calls[i]); } catch (Exception error) { Report(snapshot[i], error); }
+                while (last != null)
+                {
+                    var args = last; last = args.Previous; args.Previous = null;
+                    try { args.Registration.Finally?.Invoke(args); } catch (Exception error) { Report(args.Registration, error); }
+                }
             }
         }
         private static void Report(VisibleMapRenderRegistration registration, Exception error)

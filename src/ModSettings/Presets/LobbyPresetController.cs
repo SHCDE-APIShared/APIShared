@@ -45,6 +45,7 @@ namespace APIShared.ModSettings
         private readonly PresetPropertyAccessor hostSettingsActivationProperty;
         private readonly PresetPropertyAccessor clientSettingsActivationProperty;
         private readonly Dictionary<string, PresetPropertyAccessor> persistedPropertiesByName;
+        private readonly Dictionary<string, bool> missionIndependentByName;
         private readonly List<PublishedModSettingsPreset> publishedPresets =
             new List<PublishedModSettingsPreset>();
 
@@ -53,6 +54,7 @@ namespace APIShared.ModSettings
         private Dictionary<string, byte[]> missionPreset;
         private bool active;
         private bool applying;
+        private bool applyingMissionSnapshot;
         private PublishedModSettingsPreset activePublishedPreset;
         private PublishedModSettingsPreset suspendedPublishedPreset;
         private string basedOnStableId = string.Empty;
@@ -121,17 +123,62 @@ namespace APIShared.ModSettings
                 throw new InvalidOperationException("RequiresRestart settings need a configuration application backend.");
             persistedPropertiesByName = persistedProperties
                 .ToDictionary(property => property.Name, StringComparer.Ordinal);
+            missionIndependentByName = persistedProperties.ToDictionary(property => property.Name, property => property.MissionIndependent, StringComparer.Ordinal);
+            if (dynamicProvider == null)
+                foreach (var property in owner.SettingsTarget.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                    if (!missionIndependentByName.ContainsKey(property.Name))
+                        missionIndependentByName[property.Name] = property.GetCustomAttribute<SyncHostOnlyAttribute>() == null ||
+                            property.IsDefined(typeof(MissionIndependentAttribute), true);
             hostProperties = persistedProperties.Where(IsHostProperty).ToArray();
             clientProperties = persistedProperties.Where(IsClientProperty).ToArray();
+            // The separated persistence interface is optional: backends without
+            // IModSettingsPersonalPersistenceBackend store personal values only in the preset storage.
+            if (owner.SettingsApplicationBackend != null && persistedProperties.Any(p => p.MissionIndependent) &&
+                !(owner.SettingsApplicationBackend is IModSettingsPersonalPersistenceBackend))
+                DebugLogHelper.LogWarning(log, $"[{modName}] Backend has personal settings but no IModSettingsPersonalPersistenceBackend; " +
+                    "personal values are persisted in the preset storage only.");
             hostSettingsActivationProperty = FindSettingsActivationProperty(hostProperties, "EnableMod");
             clientSettingsActivationProperty = FindSettingsActivationProperty(clientProperties, "EnableClientFeatures", "EnableMod");
             if (persistedProperties.Length != 0)
                 RefreshCatalog();
         }
 
+        // Restart preparations store the raw mission source state, never a rendered status line:
+        // rendering it again after the restart keeps the current language and avoids nesting.
+        internal bool TryCaptureMissionStatus(out string sourceLabel, out string presetId, out bool modified)
+        {
+            sourceLabel = presetId = string.Empty;
+            modified = false;
+            if (!owner.IsMissionPresetSelected) return false;
+            sourceLabel = missionBasedOnPreset?.Name ?? missionPresetLabel;
+            presetId = missionBasedOnPreset?.StableId ?? string.Empty;
+            modified = missionPresetDirty;
+            return true;
+        }
+
+        // Runs after EnterMissionPreset has restored the prepared snapshot of the same context.
+        internal void RestoreMissionStatus(string sourceLabel, string presetId, bool modified)
+        {
+            if (!owner.IsMissionPresetSelected) return;
+            PublishedModSettingsPreset preset = string.IsNullOrEmpty(presetId) ? null : publishedPresets.FirstOrDefault(item =>
+                string.Equals(item.StableId, presetId, StringComparison.OrdinalIgnoreCase));
+            missionBasedOnPreset = preset;
+            // An unavailable preset keeps its captured name as a plain source label.
+            if (preset == null && !string.IsNullOrWhiteSpace(sourceLabel)) missionPresetLabel = sourceLabel;
+            missionPresetDirty = modified;
+        }
+
+        // Journals written before the raw restart status contain only the English status line
+        // rendered by CaptureRestartSources. Its fixed " (modified)" suffix becomes the dirty state.
         internal void RestorePreparationLabel(string label)
         {
+            const string legacyModified = " (modified)";
             missionBasedOnPreset = null;
+            if (label.EndsWith(legacyModified, StringComparison.Ordinal))
+            {
+                label = label.Substring(0, label.Length - legacyModified.Length);
+                missionPresetDirty = true;
+            }
             missionPresetLabel = label;
         }
 
@@ -152,7 +199,7 @@ namespace APIShared.ModSettings
                 string context = missionContextLabel;
                 if (!string.Equals(context, missionPresetLabel, StringComparison.Ordinal) && missionPresetLabel.Length != 0)
                     context = context.Length != 0 && missionPresetLabel.StartsWith(context + " · ", StringComparison.Ordinal)
-                        ? missionPresetLabel // Restart preparation already captured the full status.
+                        ? missionPresetLabel // A legacy restart journal already captured the full status.
                         : context + " · " + (basedOnText ?? "Based on") + ": " + missionPresetLabel;
                 string modified = " (" + (modifiedText ?? "modified") + ")";
                 return context + (missionPresetDirty && !context.EndsWith(modified, StringComparison.Ordinal) ? modified : "");
@@ -205,6 +252,14 @@ namespace APIShared.ModSettings
             IsSettingsActivationProperty(clientSettingsActivationProperty, propertyName);
 
         public bool IsApplyingSnapshot => applying;
+        public bool IsApplyingMissionSnapshot => applyingMissionSnapshot;
+
+        public bool IsMissionIndependentPropertyName(string propertyName) =>
+            propertyName != null && missionIndependentByName.TryGetValue(propertyName, out bool independent) && independent;
+
+        public bool HostActivationMissionIndependent => hostSettingsActivationProperty?.MissionIndependent == true;
+
+        private static bool IsMissionProperty(PresetPropertyAccessor property) => !property.MissionIndependent;
 
         public bool IsHostPropertyName(string propertyName) =>
             !string.IsNullOrEmpty(propertyName) &&

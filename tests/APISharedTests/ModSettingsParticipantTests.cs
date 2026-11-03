@@ -39,6 +39,31 @@ namespace APISharedTests
             }; }
         }
         private sealed class ReadableHost : Host { [SyncHostOnly] public override int Value { get; set; } = 7; }
+        private sealed class IndependentHost : Host
+        {
+            [SyncHostOnly, MissionIndependent] public int PersonalHost { get => throw new Exception("Must not probe personal host values"); set { } }
+        }
+        private sealed class OnlyIndependent : Endpoint
+        {
+            [SyncHostOnly, MissionIndependent] public int PersonalHost { get; set; }
+            internal OnlyIndependent() { Factory = () => new Dictionary<string, byte[]>(); }
+        }
+
+        [TestMethod]
+        public void MissionDiscoveryOmitsIndependentHostPropertiesWithoutChangingHostAuthorityMetadata()
+        {
+            var host = new IndependentHost();
+            var info = Inspect(Registration("independent", host)).Single();
+            Assert.IsTrue(info.IsCompatible);
+            Assert.IsFalse(info.HostProperties.Any(property => property.Name == nameof(IndependentHost.PersonalHost)));
+            Assert.IsTrue(info.PersonalProperties.Any(property => property.Name == nameof(IndependentHost.PersonalHost)));
+            Assert.IsTrue(ModSettingsApplication.GetHostProperties(host).Any(property => property.Name == nameof(IndependentHost.PersonalHost)));
+            Assert.IsFalse(ModSettingsApplication.GetMissionHostProperties(host).Any(property => property.Name == nameof(IndependentHost.PersonalHost)));
+            var independentOnly = Inspect(Registration("independent.only", new OnlyIndependent())).Single();
+            Assert.IsTrue(independentOnly.IsCompatible);
+            Assert.AreEqual(0, independentOnly.HostProperties.Count, "No authoring choices should remain for ExtendedData.");
+        }
+
         private sealed class InvalidEnable : Endpoint { [SyncHostOnly] public int EnableMod { get; set; } }
         private sealed class BrokenMetadata : Endpoint { [SyncHostOnly, Exploding] public int Value { get; set; } }
         [ExcludeFromSavegameModSettings] private sealed class OptOut { }

@@ -24,18 +24,27 @@ namespace APIShared.Statistics
         /// Callback exceptions are isolated and retained for TryTakeError outside the engine lock.</summary>
         public static bool TryRegister(string ownerGuid, string id, Action copy,
             out EngineReadbackRegistration registration)
+            => TryRegister(ownerGuid, id, copy, out registration, out _);
+        /// <summary>Same contract as the overload without reason; a rejected registration also reports
+        /// whether the publisher is unavailable, an argument is missing or the owner-local ID is a duplicate.</summary>
+        public static bool TryRegister(string ownerGuid, string id, Action copy,
+            out EngineReadbackRegistration registration, out string reason)
         {
             registration = null;
-            if (!IsAvailable || string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(id) || copy == null) return false;
+            if (!IsAvailable) { reason = "The engine run/buffer publisher is not initialized."; return false; }
+            if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(id) || copy == null)
+            { reason = "Owner GUID, registration ID and copy callback are required."; return false; }
             lock (registrations)
             {
                 var current = entries;
-                foreach (var entry in current) if (entry.Owner == ownerGuid && entry.Id == id) return false;
+                foreach (var entry in current)
+                    if (entry.Owner == ownerGuid && entry.Id == id) { reason = "Duplicate engine readback registration: " + ownerGuid + "/" + id; return false; }
                 registration = new EngineReadbackRegistration(ownerGuid, id, copy);
                 var next = new EngineReadbackRegistration[current.Length + 1];
                 Array.Copy(current, next, current.Length); next[current.Length] = registration;
                 Array.Sort(next, (a, b) => { int owner = string.CompareOrdinal(a.Owner, b.Owner); return owner != 0 ? owner : string.CompareOrdinal(a.Id, b.Id); });
                 Volatile.Write(ref entries, next);
+                reason = null;
                 return true;
             }
         }

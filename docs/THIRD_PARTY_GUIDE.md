@@ -2,49 +2,188 @@
 
 **Contents**
 
-- [Demand-driven engine readback](#demand-driven-engine-readback)
-- [Native field knowledge](#native-field-knowledge)
 - [Example package requirements](#example-package-requirements)
-- [Game-independent content](#game-independent-content)
-- [Coop Trail AI start import](#coop-trail-ai-start-import)
-- [Mission settings preparation](#mission-settings-preparation)
-- [Settings participant diagnostics](#settings-participant-diagnostics)
-- [Diagnostic opt-in and observer demand](#diagnostic-opt-in-and-observer-demand)
-- [Multiplayer actions and messages](#multiplayer-actions-and-messages)
 - [Initialization and ownership](#initialization-and-ownership)
+- [Namespaces and packaging](#namespaces-and-packaging)
+- [Extending APIShared](#extending-apishared)
 - [Declaring native hook sites](#declaring-native-hook-sites)
 - [APIShared interface language](#apishared-interface-language)
-- [Script Extender bugfixes](#script-extender-bugfixes)
+- [Native simulation ticks](#native-simulation-ticks)
+- [Demand-driven engine readback](#demand-driven-engine-readback)
+- [Native field knowledge](#native-field-knowledge)
+- [Diagnostic opt-in and observer demand](#diagnostic-opt-in-and-observer-demand)
+- [Game-independent content](#game-independent-content)
+- [Player defeat state](#player-defeat-state)
+- [Player views and control](#player-views-and-control)
+- [Coop Trail AI start import](#coop-trail-ai-start-import)
+- [Mission settings and presets](#mission-settings-and-presets)
 - [Optional game-mode permissions](#optional-game-mode-permissions)
-- [Presets without SerpsModsHost](#presets-without-serpsmodshost)
-- [Namespaces and packaging](#namespaces-and-packaging)
+- [Multiplayer actions and messages](#multiplayer-actions-and-messages)
+- [Script Extender bugfixes](SCRIPT_EXTENDER_FIXES.md)
+- [Plugin entry points with optional APIShared](#plugin-entry-points-with-optional-apishared)
+- [Versioned save data](#versioned-save-data)
+- [Workshop package cleanup](#workshop-package-cleanup)
+- [Loose Workshop packages](#loose-workshop-packages)
 - [HUD integration](#hud-integration)
 - [Sharing action and HUD hooks](#sharing-action-and-hud-hooks)
 - [Sharing native market price queries](#sharing-native-market-price-queries)
 - [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
-- [Extending APIShared](#extending-apishared)
 - [Assassin obstacle completion](#assassin-obstacle-completion)
-- [Workshop package cleanup](#workshop-package-cleanup)
-- [Plugin entry points with optional APIShared](#plugin-entry-points-with-optional-apishared)
-- [Versioned save data](#versioned-save-data)
-- [Loose Workshop packages](#loose-workshop-packages)
+- [Gate access contributions](#gate-access-contributions)
+- [Enemy-unit building proximity and Peace Time](#enemy-unit-building-proximity-and-peace-time)
+- [Plague standing-height policies](#plague-standing-height-policies)
+- [Rounded fear popularity](#rounded-fear-popularity)
 - [Situational sound rules](#situational-sound-rules)
 - [General in-game tooltip extensions](#general-in-game-tooltip-extensions)
 - [Building tooltip text](#building-tooltip-text)
-- [Gate access contributions](#gate-access-contributions)
-- [Rounded fear popularity](#rounded-fear-popularity)
-- [Plague standing-height policies](#plague-standing-height-policies)
 - [Multiplayer map lookup and lobby system hints](#multiplayer-map-lookup-and-lobby-system-hints)
 - [End-screen presentation](#end-screen-presentation)
 - [Shared render and pause-menu presentation](#shared-render-and-pause-menu-presentation)
 - [Lord statistic columns](#lord-statistic-columns)
 - [Packaged Lord presentation](#packaged-lord-presentation)
 
+## Example package requirements
+
+The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) declares
+its required APIShared and Script Extender minimum versions in its BepInEx attributes
+and [info.json](../examples/ThirdPartyMod/info.json). Keep these declarations consistent
+in your own mod, choosing minimum versions for the APIs it actually uses. The complete
+example uses more APIs than the networking example alone; check their individual requirements.
+Install the complete APIShared package and reference its assemblies with
+`Private=false`. The example references both `APIShared.dll` and
+`APIShared.Content.dll`; neither is bundled in the consumer. Its GUID is
+`Example.Author.APISharedDemo`, independent of ExtendedData and the modpack.
+
+## Initialization and ownership
+
+Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client, logger, settings and callbacks in a static runtime or a long-lived publisher. Register managed lifecycle services from `Awake`, after the hard APIShared dependency has initialized. Acquire native services in `WhenReady`. Never treat a native failure as proof that all managed services failed. `WhenReady` is a terminal global-state notification, not a Unity-thread dispatcher: late callbacks run synchronously on the registering thread, early callbacks on the initialization publisher thread. Call Unity/Noesis operations only from a known Unity-thread entry point.
+
+The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
+
+## Namespaces and packaging
+
+Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode contracts. Settings XAML imports `clr-namespace:APIShared.ModSettings;assembly=APIShared`. Compile against the selected APIShared package and check that it contains every API used by your mod; this guide describes the source checkout. Author-specific permission tables belong in consumers, rather than APIShared; construct profiles for your own rules. Command/formation implementations belong to their consuming mods; use the public route-search events for the documented preference extension.
+
+Release consumers with hard minimum APIShared/Script Extender versions and `<Private>false</Private>` for runtime references. Never include APIShared.dll, Script Extender DLLs or game DLLs in the consumer package. Put your XAML under the usual mod Override directory. Keep one centrally installed APIShared instance.
+
+## Extending APIShared
+
+Use the [catalog source map](API_CATALOG.md#source-map) to find the current contract
+and its implementation. The [architecture guide](../ARCHITECTURE.md#finding-and-extending-a-feature)
+explains where shared behavior, hook ownership and consumer algorithms belong.
+Follow [CONTRIBUTING](../CONTRIBUTING.md) for setup and tests. An ordinary clone of
+this repository is sufficient; no maintainer workspace or AI assistant is required.
+
+## Declaring native hook sites
+
+Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover
+yet. Where a service exists (for example market price queries), subscribe to it instead
+of hooking. If your mod detours, patches or validates bytes of CrusaderDE.dll that no
+service covers, register those spans in `APIShared.NativeSites.NativeSiteRegistry` from
+your `LibraryLoaded` handler before installing anything, and keep Vanilla behavior when
+the result is a refusal. A refusal identifies the conflict; it does not resolve it. If
+another mod really needs the same point, propose a shared service with ordering, veto
+and replacement rules. An accepted overlap is not a compatibility guarantee. Modes,
+overlap rules, when to use which, and limits: [Native sites](NATIVE_SITES.md); workflow:
+[compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
+
+## APIShared interface language
+
+APIShared's own UI uses `Locales/<locale>.txt`, not consumer/modpack resources.
+The internal reader is not a public localization service. Files are UTF-8 with
+`Key=Value` entries, `#` comments, named `{Placeholders}`, `\n` for line breaks and
+`\\` for a literal backslash. Values retain spaces and may contain `=`.
+English and German are maintained; other supported game catalogs currently contain
+the same keys with English substitutes. Duplicate/unknown keys, invalid UTF-8 and
+changed placeholder sets reject that external catalog with a diagnostic.
+
+In game, an explicit Extender language override wins, followed by Steam's game
+language, the Extender fallback and English. Main-thread UI calls publish the
+selected language for workers; catalogs are cached per language. Missing keys use
+English. The English file is also embedded in the assembly, so missing or damaged
+installed catalogs retain usable messages. The publisher uses the operating
+system's UI culture; its reader and English resource are compiled into the tool.
+Generated warning bootstraps compile their own reader, language selector and
+catalog resources and work before APIShared is installed. Launcher helpers read
+catalog data without executing it. Package/build evidence includes the catalogs.
+
+For preset consumers, continue overriding
+`ResolveSettingsUiText(string key, string fallback)` if needed. Existing `Common.*`
+keys and their English fallback values are retained; a nonempty consumer result
+that differs from the key takes precedence. Empty/key results or translation
+exceptions fall back to APIShared's selected catalog. APIShared does not replace
+Vanilla text or text supplied by consumers. Technical diagnostics, protocol values
+and mod identities are not translated.
+
+## Native simulation ticks
+
+Requires APIShared 0.22.0 or later (`SimulationClock`: 0.23.0 or later).
+
+For synchronous initialization work, use the existing mission lifecycle phases.
+`Simulation.SimulationClock.TryGetCurrentTick(expectedMission, out int mapTick)`
+is available after successful native loading, before managed readiness is required.
+The internal gate is updated before `NativeLoaded` observers run and cleared before
+another native load/unload or mission retirement. The expected mission must still
+be active; a read rechecks the immutable load token to reject same-attempt reload
+races. Before native completion there is no substitute clock. This helper does not
+make a callback safe for arbitrary mutations, acquire the engine lock, or add an
+initialization tick event. Existing initialization notifications do not replay.
+
+Use `Simulation.SimulationClock.TryGetElapsedTicks(startTick, currentTick, out elapsed)`
+only for values from the same mission. It supports signed wrap and distances up to
+Int32.MaxValue; backwards/ambiguous distances return false. Keep availability in
+separate state: zero, negative ticks and Int32.MinValue are valid native values.
+Early synchronous transactions should use their operation scope until map time is
+available, rather than borrowing the preceding mission's counter.
+
+After APIShared's library initialization, register once with
+`Simulation.SimulationTickEvents.TryRegister(ownerGuid, registrationId, callback, out reason, order: 0)`.
+Failure returns a reason; keep the dependent feature inactive. Registrations last
+until process exit. Use logical activation in the callback rather than registering
+again at each map start. Callbacks run synchronously on the simulation publisher's
+thread, outside registry locks, ordered by order, ordinal owner GUID and registration
+ID. Exceptions are isolated per registration; registrations added during delivery
+start at the next tick. There is no replay, catch-up or main-thread dispatch.
+
+The argument is the signed Int32 representation of the native map counter, preserved
+in saves. Duplicate/older ticks in the same mission and reentrant publications are
+suppressed, including across Int32 wraparound. A new mission may reuse earlier tick
+values. `TryGetCurrentTick(out int mapTick)` reads the same source without activating
+notifications. Check its Boolean result: zero is valid and is not an unavailable
+sentinel. Read in the simulation context or at completed mission initialization
+while simulation is stopped/locked; the getter acquires no engine lock.
+
+Only fully started missions publish, including the editor. Pending or failed loads,
+menus and unavailable native time sources publish nothing. The service uses the
+central mission lifecycle and the public Extender `GetElapsedMapTicks` getter.
+It forwards the existing Extender time callback and reads the native counter once
+for all APIShared recipients of that publication. Paused/skipped simulation steps
+do not advance the native counter. Delivery still depends on the Extender reaching
+its event: an exception in earlier Extender triggers, runners or subscribers may
+prevent a notification. This adapter cannot recover that lost callback.
+
+**Multiplayer:** the audited Extender `GameTimeManagerAPI.OnTick` argument comes
+from `Director.getSimTickCount`, a local engine-run counter that includes multiplayer
+frame skips and FPS compensation. Do not use that argument to schedule tick-dependent
+multiplayer mutations. The callback context itself is suitable; this API provides
+the native map tick without changing existing Extender events, R3 schedulers,
+timestamps, high-precision clocks or timer serialization. Register matching callbacks
+before the mission on all peers, use synchronized settings and deterministic state,
+and keep game mutations synchronous. Do not block, touch Unity/Noesis, or modify
+native scenario/timeline vectors from these callbacks.
+
+For a periodic rule, capture the current map tick at completed mission start and
+on logical reactivation; execute only later matching boundaries. This preserves
+save phase and avoids repeating the boundary already present in the loaded save.
+Feature permission, recipient selection and accounting remain the consumer's job.
+
 ## Demand-driven engine readback
 
 After APIShared native initialization, call
-`Statistics.EngineReadbacks.TryRegister(ownerGuid, stableId, copyPreparedRawData, out registration)`.
-Registration is permanent and rejects duplicate owner/ID pairs. On the main thread,
+`Statistics.EngineReadbacks.TryRegister(ownerGuid, stableId, copyPreparedRawData, out registration, out reason)`.
+Registration is permanent and rejects duplicate owner/ID pairs; `reason` names the
+unavailable publisher, missing argument or duplicate. The overload without `reason`
+has the same behavior. On the main thread,
 prepare private reusable buffers and immutable request identity, then call `Request()`.
 The existing `EngineInterface.run` / `MemoryBuffers.returnBuffer` publisher invokes
 requested readers in ordinal owner/ID order, after native execution and managed
@@ -85,17 +224,47 @@ and [field/evidence reference](../src/NativeKnowledge/FELDKATALOG.md).
 For reverse engineering, see the separate [function-name reference](../src/NativeKnowledge/FUNKTIONEN.md).
 Its hash-bound authoring JSON is not consumed by the runtime and grants no native-call contract.
 
-## Example package requirements
+## Diagnostic opt-in and observer demand
 
-The [third-party plugin example](../examples/ThirdPartyMod/ExamplePlugin.cs) declares
-its required APIShared and Script Extender minimum versions in its BepInEx attributes
-and [info.json](../examples/ThirdPartyMod/info.json). Keep these declarations consistent
-in your own mod, choosing minimum versions for the APIs it actually uses. The complete
-example uses more APIs than the networking example alone; check their individual requirements.
-Install the complete APIShared package and reference its assemblies with
-`Private=false`. The example references both `APIShared.dll` and
-`APIShared.Content.dll`; neither is bundled in the consumer. Its GUID is
-`Example.Author.APISharedDemo`, independent of ExtendedData and the modpack.
+Search `API_SHARED_DIAGNOSTICS` in the sources to find optional tracing and its
+activation boundaries. APIShared's local `BepInEx/config/APIShared_Serp.cfg` has
+`[Diagnostics] Enabled = false` by default. Set it to `true` and restart the game
+to enable Debug messages; Debug output additionally requires a BepInEx listener
+that accepts Debug. Changing the config during a session does not change this
+startup snapshot. APIShared logs a warning on every start with the persisted switch
+enabled. Neither the branch nor Debug/Release compilation enables tracing implicitly.
+
+Info messages are not gated: APIShared keeps their number small at the call sites
+(one-time startup and state markers such as Workshop transaction outcomes), so they
+are available in every player log. Routine and per-use tracing is Debug. Scroll
+tracing additionally needs the caller's `enableScrollDiagnostics` option. Services
+receive a forwarding logger so their direct Debug calls cannot bypass the gate.
+Successful native-site summaries are not constructed without opt-in; refused
+registrations still produce warnings. Warnings, errors, capability failure results
+and recovery evidence remain available.
+Workshop `Transactions/*/diagnostics.txt` contains installation warnings and is
+retained without opt-in, alongside the transaction protocol. The independent
+dependency bootstrap emits only warnings/errors and creates no tracing files.
+
+Consumer observation contracts retain their existing behavior: registering an
+`IAivBuildStepObserver`, `IEnemyBridgePathObserver` or temporary gate-route observer
+is explicit demand for those callbacks, not automatic APIShared tracing. Without
+registration these paths do not gather observer payloads. The owner of a temporary
+gate-route observer can also use `SetObservationEnabled`. Consumers must apply
+their own explicit diagnostic switch before registering diagnostic observers and
+before doing diagnostic analysis. APIShared's log switch does not suppress their
+callbacks, failure notifications, gameplay events or public query results.
+
+The switch also affects Debug messages written through consumer-provided loggers.
+Public signatures, observer registration, callback ordering/lifetime and gameplay
+behavior are unchanged. For troubleshooting, enable both APIShared's switch and any
+relevant consumer/page switch.
+
+The release driver prints an advisory summary from the staged DLL/configuration.
+A compiled enabled default or shipped `Enabled=true` produces a prominent warning;
+an unknown diagnostic state is reported as unknown. These notices never reject a
+release. Diagnostic builds may deliberately be published. Local user configuration
+can override the package default and is not inferred from a release summary.
 
 ## Game-independent content
 
@@ -172,16 +341,12 @@ Supported legacy stack-load and division-based wheat hooks are corrected inside
 their existing allocations; no consumer adapter or settings migration is needed.
 
 Unused observation services do not scan or prepare events. Register player-defeat
-observers before the first simulation tick if early transitions matter: the first
-tick after the first subscriber establishes the baseline and never replays earlier
-losses. Lobby observers receive a current capture on first registration and the
+transition observers before the first simulation tick if early transitions matter: the
+first tick after the first subscriber establishes the baseline, and transition callbacks
+never replay earlier losses; [state observers](#player-defeat-state) receive the current
+snapshots instead. Lobby observers receive a current capture on first registration and the
 known snapshot on later registrations. Marked selection observers and successful
 `TryCapture` calls establish process-lived tracking demand.
-
-Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGetById`
-returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
-Generic observation hooks remain shared; they do not create payloads without
-interested consumers. Registering an observer is explicit demand for observation.
 
 ### Trail containers
 
@@ -202,6 +367,68 @@ byte[] trail = File.ReadAllBytes(trailPath);
 byte[] restart = TrailContainer.ReadRestartData(trail);
 File.WriteAllBytes(mapPath, TrailContainer.ExtractMap(trail));
 ```
+
+## Player defeat state
+
+Requires APIShared 0.24.0 or later.
+
+Acquire the player-defeat capability through your owner-bound client, then check
+whether it implements `IPlayerDefeatStateCapability`, which is independent of the
+transition callbacks of `IPlayerDefeatCapability`. Register a state observer when an already defeated player in a loaded save matters:
+
+```csharp
+if (client.TryGetPlayerDefeat(out var defeat, out var diagnostic) &&
+    defeat is IPlayerDefeatStateCapability states)
+{
+    states.TryRegisterStateObserver("defeat-state", snapshot => {
+        // Dispatch UI work yourself. Verify the current session before acting.
+        if (states.TryGetObservedState(snapshot.SessionId, snapshot.PlayerId, out var current) &&
+            current.IsEliminated)
+        {
+            // Apply your own mode/participant/feature policy; state grants no control rights.
+        }
+    }, out diagnostic);
+}
+```
+
+State observers receive available current snapshots in player order on registration,
+then changed snapshots and unreadable invalidations through the service's ordered
+FIFO. A registration before the first observation receives its initial states on that
+tick. Callbacks run outside service locks on the FIFO-draining thread, which can be
+the simulation, registering or lifecycle thread; exceptions are isolated and reentrant
+publications follow the current delivery. Owner/registration order is deterministic.
+State and transition registrations share the owner-local registration-ID namespace.
+The state FIFO is independent of the original transition delivery: lord-death and
+official-loss callbacks remain synchronous on their simulation-tick publisher,
+even while another thread is delivering state replay. State is committed before
+those transition callbacks, so their managed lookup sees the confirmed observation.
+
+`TryGetObservedState(sessionId, playerId, out snapshot)` is a thread-safe managed lookup,
+not a native read or an implicit observation request. It fails before the first
+observation and for an invalid or ended session. Its successful result can still have
+`Readable == false`; that state grants no elimination rights. `OfficialLoss` includes
+a loaded loss baseline; `LordDeathConfirmed` requires a previously observed living
+lord followed by its death or disappearance. A lordless baseline alone is insufficient.
+`IsEliminated` requires readable official loss or confirmed lord death. Unreadable
+captures withdraw the visible confirmation until readable state returns.
+
+Snapshots are immutable and can be retained as historical values. Recheck current
+state and session before acting: queued deliveries can describe an ended mission.
+Unchanged observations reuse their snapshot and do not notify; `SimulationTick`
+records the last state change, rather than the latest observation or saved map tick.
+Session-end invalidation retains that tick. The existing transition observers still
+receive no baseline replay, even when a state observer receives a loaded loss.
+
+Keep mod-specific diagnostic analysis and logging in your mod. `UnitAccess.TryGetById`
+returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
+Generic observation hooks remain shared; they do not create payloads without
+interested consumers. Registering an observer is explicit demand for observation.
+
+## Player views and control
+
+Original-spectator views, eliminated-participant views, observer command exceptions and
+spectator input control (an original spectator plays one chosen player with Vanilla input)
+are described in [player views and control](PLAYER_CONTROL.md).
 
 ## Coop Trail AI start import
 
@@ -253,227 +480,83 @@ if (import is ICoopAiStartPreviewCapability preview &&
 - Registrations are permanent; return null to contribute nothing. Plans exist only for
   the current attempt. The capability requires the mission lifecycle.
 
-## Mission settings preparation
+## Mission settings and presets
 
-`MissionModSettingsPreparation` belongs to APIShared.dll and consumes the schema-3
-`MissionModSettingsEntry` from APIShared.Content.dll. Reference both assemblies;
-ship neither with a consumer mod. Call on the Unity thread after settings registration,
-without concurrent endpoint changes. Obtain compatible endpoints through participant
-discovery and keep authorization, source selection and lifecycle in your integration.
+Mission settings preparation, personal values, settings participant diagnostics, presets
+without SerpsModsHost, settings search, load/save requesters and settings locked during a
+mission are described in [mod settings integration](MOD_SETTINGS.md).
 
-- `CaptureEntry(endpoint, selectMode)` visits host metadata and asks for the existing
-  `PublishedPresetValueMode`. ModDefault omits the property, Player records its name,
-  Fixed reads and copies its value. Personal properties are not inspected. Normalize
-  the assembled document through `MissionModSettingsJson` before writing it.
-- `CaptureCurrentSnapshot(endpoint)` overlays current host values on a disabled
-  mission snapshot, or the current working snapshot for an APIShared model with an
-  application backend. It preserves other baseline entries and does not refresh the backend.
-- `ValidateEntry(endpoint, entry)` converts known fixed overrides without live getters,
-  mutation or application. Unknown properties are ignored; schema validation is separate.
-- `MaterializeSource(workingEndpoint, entry)` starts from mod defaults, copies known
-  Player values, then converts and serializes known Fixed values. Missing player values
-  retain defaults. A null entry selects defaults without requesting a player snapshot.
+## Optional game-mode permissions
 
-Returned snapshots and captured mutable values are detached. Provider failures, getter
-errors and conversion errors propagate without returning a partial result; no method
-enters/exits a mission, applies a working snapshot, writes files or registers sources.
-Null provider snapshots and selected null player buffers throw `InvalidDataException`.
-Snapshot factories must still honor their existing non-mutating contracts.
+For a same-mission restart, wrap the complete preparation and loading action in
+`MissionRestart.Run(ownerGuid, action)` on the Unity thread. This requires a ready
+gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
+restart already use this boundary; opening or cancelling confirmation does not.
+Nested calls share one attempt. Other launches must use their normal entry points.
+Restart authorization retains the source's Customize provenance and conflict locks,
+including saves restored without ExtendedData; network and native facts are captured
+again. An incompatible native family cannot inherit the source's gameplay permission.
 
-Mission encoding is preserved: supported scalars/flat sequences remain JSON values;
-other property types use the existing MessagePack/base64 marker. In particular float
-and enum properties retain their legacy mission representation. This is intentionally
-the mission codec's value domain, distinct from loose personal-preset JSON encoding.
+The source receives an ordinary `End(Replaced)` with an immutable
+`ReplacementContext`. Its `RestartedFromSessionId` identifies the source session;
+the destination has its own session ID and `IsRestart`, and is a new game even
+when the source was loaded from a save. Settings owners can transfer their
+existing context to this destination instead of leaving/re-entering a preset.
+Preserve working values, source attribution, locks and personal state; do not
+reload source defaults while `MissionRestart.IsInProgress`. Release transferred
+ownership on destination failure or actual departure. Delayed MP-client loading
+retains the destination attempt until managed completion; no second transport or
+disk snapshot is introduced. Gameplay runtimes still receive normal end/start
+notifications and must perform their usual cleanup. See the
+[restart contract](../src/Missions/MissionRestart.cs).
 
-For example, capture `var entry = MissionModSettingsPreparation.CaptureEntry(endpoint,
-name => PublishedPresetValueMode.Player);`, put the entry under your mod GUID in a
-`MissionModSettingsDocument`, then normalize/serialize it with `MissionModSettingsJson`.
-Only the caller's authorized mission integration should later apply a prepared snapshot.
+Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Use `GameModeHelper.Capture()` for a current snapshot where appropriate. Capture itself applies no permissions. Construct `GameplayModActivationProfile` with your own GUID, allowed contexts and `allowRealMultiplayer`, then call `GameplayModModePolicy.IsAllowed`. You can instead implement your own policy directly from the snapshot.
 
-### Applying and leaving a mission context
+The built-in optional evaluator rejects unknown or conflicting origins. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
 
-Retain one `MissionModSettingsSession` for your coordinator. Pass your compatible
-endpoint snapshot, a validated `MissionModSettingsDocument` and an explicit
-`MissionModSettingsApplicationKind` to `Apply`. The returned dictionary reports
-pruned unknown properties; the supplied document is pruned in place. Missing
-mentioned providers block replacement before the previous context is left.
-GUID identity is ordinal for participants, document entries and optional starting
-snapshots, independent of the dictionaries' comparers. Differently cased GUIDs
-remain distinct: an absent provider is rejected and another GUID's rules or
-starting values cannot be substituted by a case-insensitive lookup.
 
-| Kind | Baseline and resolution | Editing |
-|---|---|---|
-| Playable | Disabled mission baseline, personal Player values, then Fixed | Read-only |
-| Preview | Playable, but skip participants absent after pruning | Read-only |
-| Editable | Playable | Editable |
-| Authoring | Captured working values, backend Player values, then Fixed | Editable |
-| AuthoringTest | Authoring | Read-only |
-| Materialized | Captured working values without resolving the document again | Read-only |
+For a cached runtime decision, retain a `GameplayModeGate(profile)` in your static
+runtime. Feed `gate.Update(notification)` from initialization, start and end callbacks
+**before** your own feature work in that callback. Read `gate.IsEnabled(configuredValue)`
+when applying the feature. End clears the mode; ready-session replay is supported.
+The gate installs no hooks or observers and does not change lifecycle ordering.
+`StateChanged` runs synchronously after an allowed/blocked transition and isolates
+each listener's exception. Runtime permission and settings editability are separate.
 
-Authoring values are captured before leaving the old context. Personal Player
-values resolve after exit; backend own values are refreshed first. Non-backend
-authoring retains captured Player values. Optional starting snapshots replace the
-captured baseline per participant. Matching unconsumed restart snapshots retain
-precedence except in Materialized. Existing `ModSettingsApplication` restart/source
-restoration is reused; the session creates no second registry, journal or transport.
+### Optional inactive-setting backgrounds
 
-Use `Editable` to open Customize with the same resolved values as `Playable`.
-Keep that draft through Ready/Unready and apply `Materialized` only at the actual
-start boundary. Working-copy endpoints retain their complete draft, including local
-options. A consumer which reopens a rejected start must retain a detached draft and
-re-enter it through `Authoring` with starting snapshots and no original overrides;
-applying the original document again would discard edits. Source documents and
-personal files are not modified by these transitions. Trail-maker authoring can
-continue to use `Authoring` for its current-values baseline.
+Use the same profile in `System_ModeAvailability.ConfigureDefault(profile)` before
+registering your settings view model. Override individual setting/group keys with
+`Configure("some.key", featureProfile)`; use `Configure("local.hotkey", null)` for
+local preferences that should stay neutral. `ConfigureNetworkVariant(key, false)`
+or `true` distinguishes separate singleplayer/multiplayer values without changing
+how the consumer selects them at runtime. No particular GUID or mod pack is required.
 
-APIShared models apply internal snapshots under the Extender's `InitialLoad` origin.
-Property/UI notifications remain enabled, but intermediate values are neither sent
-nor persisted. Inclusion and authority are captured before the first setter; after
-successful application, eligible host properties use the existing Extender sender
-and personal values use the existing per-player convergence. Snapshot callbacks
-still run after application, and their failures propagate to the owning session.
-Reflected setters are applied independently: a setter that rejects its value receives
-the code default, and the other settings are applied regardless. The default is
-recorded in the working copy and a loaded preset then counts as modified; a setting
-that rejects even its default is reported and keeps its requested value for the next
-load. Leaving a mission or restoring personal host settings rethrows such a failure
-after the other values, so the owner keeps its context and retries; the third
-attempt completes and reports the settings that kept their current values. Dynamic
-providers and application backends keep their complete-configuration validation.
-Personal persistence uses the owned working snapshot, never a mixture of current
-mission values and received host values. On exit a confirmed active client lobby
-retains host values until lobby departure; stale host flags left by local Coop do
-not prevent restoration. Personal restoration does not publish host values.
+Bind `shared:ModSettingsMode.Availability="{Binding System_ModeAvailability}"` on
+your page root. Put `shared:ModSettingsMode.Key="some.key"` on a logical `Grid` row.
+The key can also bind to that row's `ModSettingsSearch.Key`; search itself is optional.
+APIShared inserts a noninteractive `#20FFCC66` background beneath the existing row,
+leaving its search style and controls intact. Bind one heading to
+`System_ModeNoticeText` / `System_ModeNoticeVisibility`. The optional
+`System_ConsumerModeNoticeText` / `System_ConsumerModeNoticeVisibility` pair uses an
+existing direct-launch notice when one is visible; include the legend in your notice
+provider if you use that combined heading. The direct-launch and Trail-source notice
+bindings are also available separately.
 
-The process-lifetime managed Extender receive hook copies packet data and transport
-sender on the raw callback and posts to the validated Unity FIFO also used by
-`Network.TryPostPresentation`. Application rechecks lobby/session identity and calls
-the original Extender receiver, preserving its sender checks and join protocol.
-Stale queued work is discarded: leaving the lobby or ending/replacing a mission
-invalidates it, while starting a mission from the same lobby keeps it current.
-Inside a multiplayer start (new game or save) the queued settings are applied on the
-Unity thread after Vanilla received its last lobby packets and before the map loads,
-as the Extender's synchronous receiver would; their dispatcher turns then do nothing.
-Missing dispatch never falls back to the network thread. Registration requires the signature-checked hook to be available. This
-changes incoming Extender settings delivery to queued Unity execution, including
-settings registered directly with the Extender; outbound formats and direct
-registration ownership remain unchanged.
-
-`beforeApply` is a required preparation callback if supplied: it runs once after
-all snapshots are ready, before any new endpoint enters. A failure blocks entry.
-Do not call Apply/Exit/ConfirmStarted recursively on the same session. Conversions
-are prevalidated before exit; later preparation/application failures clean up to
-personal state, without recreating the previous temporary mission context.
-Cleanup includes a partially failed Enter, attempts every owned endpoint and uses
-the exact instances originally entered. Failed cleanup owners remain for retry;
-errors are aggregated rather than hidden. Retry a failed Exit before applying a new
-context; values from an incompletely cleaned context are not captured as a new draft. APIShared models retain their active
-context when personal restoration throws, making a later Exit retry effective.
-Providers must tolerate Exit after a
-partially failed Enter. An incomplete cleanup is not a successful replacement.
-
-On a matching actual successful mission lifecycle notification, call
-`session.ConfirmStarted(context.SessionId)`. Apply or a dialog callback returning
-is not evidence of mission start. Bind a new lifecycle ID for an accepted restart.
-On authoritative end/cancellation call `session.Exit()`; retain across an explicitly
-accepted replacement if your content lifecycle requires it. The caller still owns
-`ModSettingsApplication.EnterContext`, launch preparation and global context exit.
-The session neither subscribes to game events nor uninstalls hooks.
-
-`MissionModSettingsCreatorRules.Capture(endpoint, entry, onError)` creates the
-existing `TrailCreatorRule` save contract for host properties. Failed fixed values
-retain the preceding default/Player rule, with the existing 1 MiB property limit;
-optional diagnostics are isolated. ExtendedData supplies which active document is
-authoritative. Savegame materialization uses the same rule implementation while
-preserving its existing strict-trail/Customize/lock semantics and wire format.
-
-## Settings participant diagnostics
-
-Call `SavegameModSettings.GetParticipantDiagnostics()` on the Unity thread after
-LibraryLoaded and settings registration. The read-only result contains
-`ModSettingsParticipantInfo` entries ordered by ordinal plugin GUID: display name,
-`ModSettingsParticipantStatus`, diagnostic, accepted endpoint and host properties.
-Metadata is copied; endpoints and PropertyInfo targets remain live objects.
-Use `IsCompatible`/`Status` for decisions; a provider's exception message can be empty.
-Re-query when registrations or schemas change. This is an inspection of the existing
-lobby/configuration registries; it does not register another provider or apply settings.
-
-The default query uses `ModSettingsParticipantPurpose.AutomaticSavegame`.
-For Map/Trail authoring, pass `ModSettingsParticipantPurpose.MissionAuthoring` to
-the overload. A plugin's savegame-only exclusion remains effective for automatic
-saves and does not exclude it from authoring. For such excluded endpoints,
-authoring retains its historical current-value read/serialization checks before
-checking the disabled snapshot, unless an explicit dynamic endpoint already represents
-that GUID. That endpoint keeps its historical precedence without probing the shadowed
-panel. Ordinary accepted endpoints acquire no new
-current-value probes. Unknown purposes throw before accessing discovery sources.
-
-The same discovery drives `GetCompatibleParticipants()` and automatic savegame
-preparation. Lobby endpoints must expose persistent host properties and a complete
-disabled mission snapshot. Inspection calls that snapshot factory once per eligible
-lobby endpoint; factories must not apply settings. The automatic query does not
-additionally probe current host values. Missing GUIDs, duplicate panels, plugin exclusions, missing typed
-endpoints, invalid property schemas and invalid snapshots have separate statuses.
-Reflection, factory and decode exceptions reject that participant and leave other
-participants available. A failure of the discovery source itself still propagates.
-
-Explicitly registered dynamic configuration endpoints keep their existing contract,
-independent of their optional UI panel. They are identified by `IsConfigurationEndpoint`.
-Rejected UI panels may therefore coexist with an accepted dynamic endpoint for one
-GUID. Two accepted providers claiming one GUID produce `ConflictingProvider` with no
-usable endpoint. The diagnostic query reports this conflict; automatic operations and
-`GetCompatibleParticipants()` continue to throw rather than choose an arbitrary provider.
-
-ExtendedData uses the MissionAuthoring outcomes for its existing Map/Trail compatibility UI. Its
-legacy explicit opt-out marker and content-specific panel selection remain local.
-The old public Core compatibility helpers remain available for existing callers.
-
-## Diagnostic opt-in and observer demand
-
-Search `API_SHARED_DIAGNOSTICS` in the sources to find optional tracing and its
-activation boundaries. APIShared's local `BepInEx/config/APIShared_Serp.cfg` has
-`[Diagnostics] Enabled = false` by default. Set it to `true` and restart the game
-to enable Debug messages; Debug output additionally requires a BepInEx listener
-that accepts Debug. Changing the config during a session does not change this
-startup snapshot. APIShared logs a warning on every start with the persisted switch
-enabled. Neither the branch nor Debug/Release compilation enables tracing implicitly.
-
-Info messages are not gated: APIShared keeps their number small at the call sites
-(one-time startup and state markers such as Workshop transaction outcomes), so they
-are available in every player log. Routine and per-use tracing is Debug. Scroll
-tracing additionally needs the caller's `enableScrollDiagnostics` option. Services
-receive a forwarding logger so their direct Debug calls cannot bypass the gate.
-Successful native-site summaries are not constructed without opt-in; refused
-registrations still produce warnings. Warnings, errors, capability failure results
-and recovery evidence remain available.
-Workshop `Transactions/*/diagnostics.txt` contains installation warnings and is
-retained without opt-in, alongside the transaction protocol. The independent
-dependency bootstrap emits only warnings/errors and creates no tracing files.
-
-Consumer observation contracts retain their existing behavior: registering an
-`IAivBuildStepObserver`, `IEnemyBridgePathObserver` or temporary gate-route observer
-is explicit demand for those callbacks, not automatic APIShared tracing. Without
-registration these paths do not gather observer payloads. The owner of a temporary
-gate-route observer can also use `SetObservationEnabled`. Consumers must apply
-their own explicit diagnostic switch before registering diagnostic observers and
-before doing diagnostic analysis. APIShared's log switch does not suppress their
-callbacks, failure notifications, gameplay events or public query results.
-
-The switch also affects Debug messages written through consumer-provided loggers.
-Public signatures, observer registration, callback ordering/lifetime and gameplay
-behavior are unchanged. For troubleshooting, enable both APIShared's switch and any
-relevant consumer/page switch.
-
-The release driver prints an advisory summary from the staged DLL/configuration.
-A compiled enabled default or shipped `Enabled=true` produces a prominent warning;
-an unknown diagnostic state is reported as unknown. These notices never reject a
-release. Diagnostic builds may deliberately be published. Local user configuration
-can override the package default and is not inferred from a release summary.
+The preset view model refreshes presentation when the settings hub changes or access
+is refreshed. It uses existing menu evidence and authoritative mission snapshots.
+Menu families can be ambiguous: a row is tinted only if **every** possible target
+excludes it. No selected target and mixed decisions remain neutral. Explicit trail
+settings retain possible customized contexts. This UI status never grants runtime
+permission, changes values, disables controls or replaces host/client and trail locks.
+Independent pages can instead own a `ModSettingsModeAvailability`, use `GetState(key)`
+for observable row state, and supply `SetPreview(contexts, multiplayer)` or
+`SetMission(snapshot)` on the Unity UI thread. Consumers own policy and localization;
+the built-in compact legend has English and German fallbacks.
 
 ## Multiplayer actions and messages
 
-These networking APIs require APIShared 0.7.0 or newer; neither SerpsModsHost nor
+These networking APIs require APIShared 0.7.0 or later; neither SerpsModsHost nor
 ExtendedData is required. Follow the [package requirements](#example-package-requirements)
 for dependency declarations, the complete central installation and `Private=false`
 references; never bundle your own APIShared DLL with the mod.
@@ -550,6 +633,41 @@ atomic native queue contract. There is no automatic retry, split, rollback or lo
 fallback; acknowledgements and large synchronized batches require a consumer
 protocol. Pause does not justify replacing a Chore with a Steam packet.
 
+### Authenticated Chore channel
+
+Requires APIShared 0.23.0 or later.
+
+`RegisterAuthenticatedChore<T>(id, execute, options)` registers a Chore channel whose
+sender is verified from the executing native slot. Register it with the same startup/order and
+explicit-formatter requirements as a regular Chore channel; one packet type cannot have both
+a regular and an authenticated Chore handler.
+
+`AuthenticatedChoreMessage<T>` provides the packet, `SenderPlayerId`, native
+`CommandId` and final `ScheduledTick`. The source is checked against both the active
+native pending slot and executing issuer, independently of payload player IDs and
+the local viewpoint. A shared managed scope binds the native body and exact packet
+ID before deserialization. Nested dispatches cannot inherit a different packet's
+identity; the native tuple must remain unchanged after validation. Known Steam deliveries, missing context or unsupported native
+layouts are rejected. `ScheduledTick` is not a session token or operation identity.
+Consumer `ValidateReceive` runs after this capture, synchronously in simulation
+context; it must still validate the current session, authority, rights and live
+object identities. A verified participant is not automatically permitted to control
+another player. `ValidatePayload` runs on send and receive. Validation must not
+mutate the packet or simulation; dispatch only the actual action in `execute`.
+
+`Send` serializes once and calls the validated raw SE Chore path, with no Steam
+fallback. It requires Unity and a real local player in 1..8 whose ID matches the
+native enqueue view under the engine monitor. A foreign report viewpoint rejects
+submission instead of impersonating that owner. `IsAvailable` reports technical
+reader/dispatcher/adapter readiness on the initialized Unity thread, not peer agreement
+or control rights. Other threads receive false without game-state reads; off-thread
+`Send` rejects before consumer activation, validation or serialization. Submitted still
+means local submission only; no acknowledgement, retry or immediate gameplay
+effect is implied. These rules apply only to authenticated channels.
+
+The adapter is deliberately tied to audited native layout and loaded SE method
+contracts; see [native update requirements](../UpdateToNewDLL.md#authenticated-chore-context-and-submission).
+
 ### Control-plane messages
 
 `RegisterMessage<T>(id, receive, options)` is for control-plane data and presentation,
@@ -567,604 +685,39 @@ reliable Steam channel 2 without resolving a stale game player. Broadcast exclud
 the sender. Sends require the initialized Unity thread and remain local results;
 partial broadcast failure cannot undo messages already submitted to other peers.
 
-## Initialization and ownership
-
-Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client, logger, settings and callbacks in a static runtime or a long-lived publisher. Register managed lifecycle services from `Awake`, after the hard APIShared dependency has initialized. Acquire native services in `WhenReady`. Never treat a native failure as proof that all managed services failed. `WhenReady` is a terminal global-state notification, not a Unity-thread dispatcher: late callbacks run synchronously on the registering thread, early callbacks on the initialization publisher thread. Call Unity/Noesis operations only from a known Unity-thread entry point.
-
-The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
-
-## Declaring native hook sites
-
-Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover
-yet. Where a service exists (for example market price queries), subscribe to it instead
-of hooking. If your mod detours, patches or validates bytes of CrusaderDE.dll that no
-service covers, register those spans in `APIShared.NativeSites.NativeSiteRegistry` from
-your `LibraryLoaded` handler before installing anything, and keep Vanilla behavior when
-the result is a refusal. A refusal identifies the conflict; it does not resolve it. If
-another mod really needs the same point, propose a shared service with ordering, veto
-and replacement rules. An accepted overlap is not a compatibility guarantee. Modes,
-overlap rules, when to use which, and limits: [Native sites](NATIVE_SITES.md); workflow:
-[compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
-
-## APIShared interface language
-
-APIShared's own UI uses `Locales/<locale>.txt`, not consumer/modpack resources.
-The internal reader is not a public localization service. Files are UTF-8 with
-`Key=Value` entries, `#` comments, named `{Placeholders}`, `\n` for line breaks and
-`\\` for a literal backslash. Values retain spaces and may contain `=`.
-English and German are maintained; other supported game catalogs currently contain
-the same keys with English substitutes. Duplicate/unknown keys, invalid UTF-8 and
-changed placeholder sets reject that external catalog with a diagnostic.
-
-In game, an explicit Extender language override wins, followed by Steam's game
-language, the Extender fallback and English. Main-thread UI calls publish the
-selected language for workers; catalogs are cached per language. Missing keys use
-English. The English file is also embedded in the assembly, so missing or damaged
-installed catalogs retain usable messages. The publisher uses the operating
-system's UI culture; its reader and English resource are compiled into the tool.
-Generated warning bootstraps compile their own reader, language selector and
-catalog resources and work before APIShared is installed. Launcher helpers read
-catalog data without executing it. Package/build evidence includes the catalogs.
-
-For preset consumers, continue overriding
-`ResolveSettingsUiText(string key, string fallback)` if needed. Existing `Common.*`
-keys and their English fallback values are retained; a nonempty consumer result
-that differs from the key takes precedence. Empty/key results or translation
-exceptions fall back to APIShared's selected catalog. APIShared does not replace
-Vanilla text or text supplied by consumers. Technical diagnostics, protocol values
-and mod identities are not translated.
-
 ## Script Extender bugfixes
 
-For explicitly called alternatives, see
-[Script Extender replacements](../src/ScriptExtenderReplacements/DOCUMENTATION.md).
-That separate public area provides corrected pathfinding-table access with the
-SE method signatures; migrate those calls explicitly rather than expecting an
-automatic correction of existing SE calls.
+APIShared corrects selected Script Extender defects without consumer registration; see
+[Script Extender fixes](SCRIPT_EXTENDER_FIXES.md). Save handlers in particular receive
+`SaveContext.IsSaveFile=true` with a null `FilePath` for synchronized native saves, including
+autosaves; branch on the explicit context rather than assuming autosaves are maps.
 
-APIShared includes targeted corrections for Script Extender and bundled dependencies,
-implemented in `src/ScriptExtenderFixes`. They work without SerpsMods or a consumer
-registration. They do not replace the Extender and do not change existing public
-APIShared capability contracts.
+## Plugin entry points with optional APIShared
 
-The archive-context correction fixes the shared Script Extender context before mod
-callbacks run. Synchronized native saves (including autosaves before the first manual
-save) now receive `SaveContext.IsSaveFile=true` and `IsMapEditorSave=false`.
-Their `FilePath` is null: the Extender's retained path can still name the source map,
-and the synchronized Chore does not supply a managed output filename. Consumers must
-continue accepting an unavailable path, as specified by the Extender context contract.
-Ordinary export saves, map/editor writes and Trail templates retain their original
-factory context. Multiplayer-save loads use `bMultiplayerSave`; editor loads use
-`LoadingEditorMap`, so their mod-data callbacks also receive the correct classification.
-The correction adds no public API or save format. It changes the previously incorrect
-context flags for every handler, including third-party save-only records. Handlers
-that accidentally relied on autosaves being maps must use their explicit context
-scope instead. Unsupported managed/native contracts log a failure and preserve the
-original save path; they do not force record writes. See the native update contract
-in [UpdateToNewDLL](../UpdateToNewDLL.md#synchronized-save-archive-context).
+Optional consumers requiring APIShared 0.7.1 or later may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This thread-safe registration is idempotent, applies to derived types and lasts until process exit. The exclusion applies only to the registered type and its derived types. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
 
-This preserves the existing modsettings policy: eligible saved host settings form
-the selected base, then Trail author rules apply; personal/client values stay current.
-A missing or invalid settings record forces the existing current-host fallback and
-is reported as such, independently of the user's preferred checkbox state. Previously
-omitted records cannot be recovered from those old files by this correction.
+## Versioned save data
 
-The Lord media correction validates the loaded internal resolver's signature and
-output-initialization, registration lookup and logging-only miss branch before installing
-a process-lifetime managed hook. Null/empty names and unregistered Lords return false
-with empty outputs, quietly retaining the original game media paths. These are normal
-for Vanilla Lords using a custom `.lordjson` AIC and for Vanilla-style custom packages
-without `lordmeta.json`. A generic native AI slot does not imply custom media.
-Registered Lords retain the original lookup, clip selection, subtitle effects, results
-and exceptions; an omitted optional message category does not produce a new warning.
+Store per-mission mod state in saves with `APIShared.Savegames.VersionedSaveData` instead of a
+raw `ModSaveDataAPI` handler when the data must survive mod updates and downgrades. Register
+once at startup with your own identifier, record version, minimum reader version, known entry
+names, a capture callback and a load callback. Apply delivered entries when your mission state
+is ready, and treat `NoRecord` as a new mission. Follow the
+[record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
+format changes, and add a legacy reader when you keep an identifier that already holds data.
+See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
 
-After managed mission initialization (including saves and editor starts), a separate
-Unity-thread lifecycle observer checks occupied custom AI slots against Vanilla's
-public Lord catalog and SE's registry. `SE_LORD_MEDIA` warns only when a used,
-unambiguously identified package has `lordmeta.json` but is not registered. This can
-happen because Vanilla accepts packages with valid AIC/AIV data independently of SE's
-registration: an absent `info.json` prevents registration, and invalid SE metadata can
-abort it without removing the Lord from Vanilla's catalog. Warnings identify the
-display/internal names, all affected player slots and package folder, distinguish a
-missing `info.json` from an otherwise unexplained registration failure, and suggest
-checking the package and earlier registration messages. They do not assert missing
-media files or successful fallback playback. Each package/cause is reported once per
-session; a later map or save is checked afresh. Stale queued sessions are ignored.
-Packages without SE metadata remain quiet. Video/audio files are not inspected.
+## Workshop package cleanup
 
-Neither diagnosis nor logging affects the media callback; no file/UI access occurs
-there. An incompatible resolver skips only this correction with an explanatory
-installation warning and technical contract details. No consumer registration is
-needed; this correction does not reconstruct lost Lord identities or recover media.
+APIShared cleans its own previous releases through the contract-validated Extender staging
+path. Foreign maps remain Extender-managed. Inventory schema, historical hashes
+and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cleanup).
 
-The Lord script diagnostics in `ScriptExtenderFixes/LordScripts` only log. Script
-Extender runs a custom Lord's `init.lua` per player slot by the slot's local Lord name,
-only while its local `AllowScriptedLords` option is on, and checks only `NetworkMode: 1`
-packages when a player joins a lobby. Once per real multiplayer match, APIShared logs
-`SE_LORD_SCRIPTS` with every scripted Lord (player, package GUID and version,
-NetworkMode, a short `init.lua` hash and the local option) so players' logs can be
-compared, and a warning when a scripted Lord's package is client-side or unregistered,
-or when scripts are disabled locally. Matches without scripted Lords log nothing.
-Nothing is blocked, sent or changed; the Lord author is responsible for NetworkMode 1.
+## Loose Workshop packages
 
-The lobby mismatch correction in `ScriptExtenderFixes/LobbyMismatch` replaces only
-the audited popup call inside SE's `GameNetworkAPI.RejectLobby`. It installs once
-at managed startup, survives Unity's startup cleanup, and needs no consumer registration.
-The original rejection, logging, exception boundary, Multiplayer overlay and OK callback
-are retained. Changed signatures or popup-call structures skip this correction with an
-explicit `SE_LOBBY_MISMATCH` warning; no other APIShared service is disabled.
-
-The larger dialog shows at most two differences with bounded names and versions,
-identifies the side missing a mod, and always points to the client's
-`BepInEx\LogOutput.log`. Additional differences are announced in the dialog and
-the complete detected list (names, GUIDs and both version states) is logged once per
-rejected attempt, independently of development diagnostics. Diagnostic comparison
-uses SE's lobby metadata and asset-over-plugin precedence, case-insensitive GUIDs,
-ordinal version matching and client-only exemptions; it never makes the join decision.
-Missing/invalid metadata or capture failures are explicitly reported instead of claiming
-a complete comparison. The original SE reason remains in the log and is shown when
-no complete explanatory comparison is available. The localized title "Different mods"
-describes mod-list differences without claiming an incompatibility diagnosis. Text uses
-the [APIShared catalogs](#apishared-interface-language). Existing consumer lobby-chat warnings are unchanged.
-
-The popularity display correction reads the 41 direct SE popularity modifiers after
-successful `GuiChecks` execution during an active mission. It automatically replaces
-only contributions whose effective SE value differs from Vanilla, including values
-set by third-party mods. It updates report/building text, totals and direction icons;
-it never changes simulation data, current popularity, SE stacks or building identity.
-No consumer registration, new setting or network packet is needed. Restoring a SE
-value to Vanilla automatically removes that correction. In particular, the existing
-zero-population Vanilla report discrepancy stays untouched when its SE value is Vanilla.
-The separate coverage/overpopulation thresholds are outside this correction's scope.
-
-The implementation in `ScriptExtenderFixes/Popularity` validates the audited native
-and managed game fingerprints before registering. Unknown report implementations
-are skipped independently. Mission observers and the GUI publisher survive startup
-cleanup; ending a mission closes only the logical gate. Snapshots are read from the
-current perspective, including paused checks and ration/tax previews. Public text
-setters retain Vanilla labels; signed church/cathedral sums never enter the identity
-byte. Overflow leaves the original display intact and produces a throttled error.
-One `SE_POPULARITY_DISPLAY` confirmation is logged per corrected session.
-
-The independent `tests/PopularityDisplay.Tests` suite covers all 41 modifiers, engine
-boundary callbacks and allocation checks. In the warmed .NET test runtime, effective
-value capture and calculation allocate no per-call objects; UI text output still
-creates strings. This is not a Unity frame-time or multiplayer performance claim.
-The original testmod correction was accepted in-game; the transferred implementation
-still needs its own game/editor/save-load and real host/client acceptance.
-
-The shutdown fix addresses an intermittent Alt+F4 crash in the audited UU-ImGUI API
-1.6.7 managed DLL and its matching `cimguiaio.dll` bundled with SHCDE-SE 2.14.1.
-Compatibility is determined by SHA-256 fingerprints and method/IL contracts, not
-by the version label alone. The implementation also validates the installed MonoMod
-compiler/hook binaries. Unity Mono needs the MethodBuilder backend for these native
-call signatures: a permanent managed compiler hook routes only copies of the eight
-audited methods, including internal original backups, through that backend. Other
-method generation and process-wide MonoMod settings keep their existing behavior.
-All fingerprints are recorded in the implementation.
-Unknown or changed binaries are skipped with a `SE_IMGUI_SHUTDOWN_FIX` log reason;
-other services remain available. Recheck this evidence after upstream updates.
-
-For visual interpolation, SE creates a new `UnitUnityVisualInterpolateEventArgs` for every
-visible unit and frame before raising `UnitR3EventHooks.OnUnitUnityVisualInterpolate`.
-APIShared avoids that allocation only for receivers whose handlers provably cannot retain
-or forward the arguments. Before the first unknown or retaining receiver actually runs,
-the notification is promoted to a fresh object. All subsequent receivers of that notification
-receive the same fresh object, preserving callback mutations and allowing it to be retained.
-R3 operators and custom observers are treated as unknown. Newly registered receivers are
-checked at their actual delivery; short-lived subscriptions cannot bypass this boundary.
-
-The implementation copies the audited R3 delivery loop into a private, non-generic stand-in.
-It does not patch `Subject<T>.OnNext`, avoiding effects on other events through Mono's
-shared generic code. R3 subscription versions, ordering, disposal and error handling remain
-in that loop. No callback runs under an added lock. Nested hook calls and other threads use
-fresh arguments. A finally wrapper balances notification state even after an exception;
-there is no per-frame recovery callback. Unknown method contracts or existing patches of
-the audited dispatch methods decline the optimization and keep SE's original path.
-
-BepInEx writes the settings to `BepInEx/config/APIShared_Serp.cfg`:
-
-    [ScriptExtenderFixes]
-    EnableImGuiShutdownFix = true
-    EnableInterpolateEventReuse = true
-
-Both fixes default to enabled and take effect after restarting the game.
-The existing interpolate setting remains supported; setting it to false retains the original path.
-Neither option is a network setting and no live unpatching occurs.
-
-At the first close, menu exit, or quitting notification, a terminal shutdown gate
-stops new ImGui work. Subsequent Present/Resize callbacks call the existing native
-trampolines directly. Already admitted callbacks may finish; the fix never frees
-their contexts. Window messages continue to the saved original WndProc, and its
-stored predecessor cannot be replaced with the ImGui hook itself. Context destruction,
-native hook removal, and native DLL unloading are suppressed during shutdown;
-the operating system reclaims resources at process exit. The existing managed
-`OnDestroyed` notification and context clearing in `ProcessExit` are preserved.
-Rendering, input and normal menu callbacks before shutdown retain their behavior.
-
-Fixes must be tested with controlled competing callbacks and installed-game checks.
-An official upstream correction must be inspected before updating support or
-retiring a workaround. Do not install a competing patch for the same owned methods.
-
-## Optional game-mode permissions
-
-For a same-mission restart, wrap the complete preparation and loading action in
-`MissionRestart.Run(ownerGuid, action)` on the Unity thread. This requires a ready
-gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
-restart already use this boundary; opening or cancelling confirmation does not.
-Nested calls share one attempt. Other launches must use their normal entry points.
-Restart authorization retains the source's Customize provenance and conflict locks,
-including saves restored without ExtendedData; network and native facts are captured
-again. An incompatible native family cannot inherit the source's gameplay permission.
-
-The source receives an ordinary `End(Replaced)` with an immutable
-`ReplacementContext`. Its `RestartedFromSessionId` identifies the source session;
-the destination has its own session ID and `IsRestart`, and is a new game even
-when the source was loaded from a save. Settings owners can transfer their
-existing context to this destination instead of leaving/re-entering a preset.
-Preserve working values, source attribution, locks and personal state; do not
-reload source defaults while `MissionRestart.IsInProgress`. Release transferred
-ownership on destination failure or actual departure. Delayed MP-client loading
-retains the destination attempt until managed completion; no second transport or
-disk snapshot is introduced. Gameplay runtimes still receive normal end/start
-notifications and must perform their usual cleanup. See the
-[restart contract](../src/Missions/MissionRestart.cs).
-
-Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Use `GameModeHelper.Capture()` for a current snapshot where appropriate. Capture itself applies no permissions. Construct `GameplayModActivationProfile` with your own GUID, allowed contexts and `allowRealMultiplayer`, then call `GameplayModModePolicy.IsAllowed`. You can instead implement your own policy directly from the snapshot.
-
-The built-in optional evaluator rejects unknown or conflicting origins. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
-
-
-For a cached runtime decision, retain a `GameplayModeGate(profile)` in your static
-runtime. Feed `gate.Update(notification)` from initialization, start and end callbacks
-**before** your own feature work in that callback. Read `gate.IsEnabled(configuredValue)`
-when applying the feature. End clears the mode; ready-session replay is supported.
-The gate installs no hooks or observers and does not change lifecycle ordering.
-`StateChanged` runs synchronously after an allowed/blocked transition and isolates
-each listener's exception. Runtime permission and settings editability are separate.
-
-### Optional inactive-setting backgrounds
-
-Use the same profile in `System_ModeAvailability.ConfigureDefault(profile)` before
-registering your settings view model. Override individual setting/group keys with
-`Configure("some.key", featureProfile)`; use `Configure("local.hotkey", null)` for
-local preferences that should stay neutral. `ConfigureNetworkVariant(key, false)`
-or `true` distinguishes separate singleplayer/multiplayer values without changing
-how the consumer selects them at runtime. No particular GUID or mod pack is required.
-
-Bind `shared:ModSettingsMode.Availability="{Binding System_ModeAvailability}"` on
-your page root. Put `shared:ModSettingsMode.Key="some.key"` on a logical `Grid` row.
-The key can also bind to that row's `ModSettingsSearch.Key`; search itself is optional.
-APIShared inserts a noninteractive `#20FFCC66` background beneath the existing row,
-leaving its search style and controls intact. Bind one heading to
-`System_ModeNoticeText` / `System_ModeNoticeVisibility`. The optional
-`System_ConsumerModeNoticeText` / `System_ConsumerModeNoticeVisibility` pair uses an
-existing direct-launch notice when one is visible; include the legend in your notice
-provider if you use that combined heading. The direct-launch and Trail-source notice
-bindings are also available separately.
-
-The preset view model refreshes presentation when the settings hub changes or access
-is refreshed. It uses existing menu evidence and authoritative mission snapshots.
-Menu families can be ambiguous: a row is tinted only if **every** possible target
-excludes it. No selected target and mixed decisions remain neutral. Explicit trail
-settings retain possible customized contexts. This UI status never grants runtime
-permission, changes values, disables controls or replaces host/client and trail locks.
-Independent pages can instead own a `ModSettingsModeAvailability`, use `GetState(key)`
-for observable row state, and supply `SetPreview(contexts, multiplayer)` or
-`SetMission(snapshot)` on the Unity UI thread. Consumers own policy and localization;
-the built-in compact legend has English and German fallbacks.
-
-## Presets without SerpsModsHost
-
-Derive your settings from `APIShared.ModSettings.PresetLobbyModSettingsViewModel` and register through `LobbyModSettingsPresetRegistration.Register`. The Script Extender displays the mod tab; APIShared owns discovery, personal preset files, persistence and lobby convergence. SerpsModsHost and ExtendedData are optional consumers, not prerequisites.
-
-Classify saved properties with Script Extender `[SyncHostOnly]` or `[SyncPerPlayer]`, or APIShared `[PresetLocal]`. Each per-player property needs a public compatible `<Name>Data` array for slots 0..8. Keep setters behind `CanMutateSetting()` and call `OnPropertyChanged` after actual changes. Configure additional per-player rules through `ConfigurePerPlayerLobbySettings`; do not implement another roster poller.
-
-For registered APIShared participants, personal values may change before a stable local slot exists or while leaving a lobby. The scalar, UI notifications and personal persistence remain local; only the outbound per-player broadcast waits. After the roster and transport mapping agree, the existing coordinator publishes the latest full personal snapshot into the resolved slot. No temporary value is assigned to slot 1.
-
-Host-only changes also wait for a current lobby observation and a matching local transport slot. Only property names are retained: each pending property is published once with its current value through the original Extender sender. Host publication does not wait for other players' identities or personal reports. This also applies to participants without per-player settings. Publication rechecks host authority and lobby identity; leaving, replacing the lobby or starting a mission discards that lobby's pending work. Changes without an active lobby stay local, and the ordinary join sync supplies current host values to new peers. Settings registered outside APIShared retain their original transport behavior. The existing lobby observer reports a local player ID of zero until its roster and transport mappings agree, so a later transport resolution wakes waiting publishers even if the roster itself did not change. Replacing the actual lobby instance also notifies observers, even when the public snapshot values remain equal.
-
-Automatic save restoration prepares host settings before loading. Multiplayer saves
-are identified by their actual load entry, including a host playing alone. Existing
-Extender property sync and application-backend transports carry the values; APIShared
-checks current human peers' fingerprints before releasing the host load request.
-The save provenance comes from the authenticated host, so client save copies need
-not contain APIShared metadata. Personal properties and presets remain local.
-Coop content does not imply multiplayer: the mission entry determines transport,
-and the central mode reconciliation validates saved provenance against native data.
-Load preparation times out after 60 seconds; missing or changed participants cannot
-silently release a stale request. Setters still notify runtimes normally. Do not
-interpret a submitted packet as an acknowledgement of a complete settings snapshot.
-The same agreement compares each player's stored copy of versioned save records declared
-simulation-relevant and blocks the load with the mod and record named when they differ; see
-[multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
-
-The reset selector may also expose `ModSettingsWorkingSourceKind.Personal` with
-`ModSettingsWorkingSourceRegistry.PersonalSettingsId` (`personal-settings`) while
-Map/Trail sources are available. This copies the participant's personal snapshot
-into the editable temporary mission working copy; it neither exits that context
-nor writes personal settings or preset files. The mission source remains available
-for a later reset. Host/client ownership and read-only mission locks still apply.
-A provider offering this source must capture detached personal snapshots through
-`System_CreatePlayerMissionPresetSnapshot()` before applying any target, preserve
-authoring rules, and commit backend application within `Apply`/`ApplyMany` (including
-restart staging). The common UI deliberately skips its usual pre-refresh and second
-commit for this source so a failed reset can restore the original mission draft.
-
-Bind host/client UI sections to `CanEditHostSettings` and `CanEditClientSettings`. Bind common preset/source actions to the public `System_*` properties and commands; do not replace them with a second persistence engine. Use nonempty tooltips with `ToolTipService.ShowDuration="60000"`. Settings-search metadata is optional when the control title/tooltip layout is unambiguous.
-
-For an activation hint, bind the host/client content containers' `Opacity` to
-`HostSettingsOpacity` / `ClientSettingsOpacity`. They return `0.65f` while the
-corresponding discovered activation switch is off, otherwise `1f`; a scope without
-an activation switch stays fully opaque. Keep activation switches, role headings,
-search and preset actions outside those containers. These Unity-thread presentation
-bindings notify after activation changes and snapshot application. They do not
-disable editing or change stored values: keep the existing editing-rights bindings
-and allow users to prepare values while a mod is inactive.
-
-The example includes a minimal host/local settings tab. Use localized labels and override `ResolveSettingsUiText` for translated common actions in a production mod. APIShared supplies English fallbacks. Persistence uses the documented file formats and `__Serp*` keys with arbitrary mod GUIDs.
-
-### Mission-start settings log
-
-APIShared automatically logs published preset endpoints, including local-only mods
-and external working-copy integrations. No additional consumer registration is
-needed. Successful new maps, save restores, explicit restarts and editor starts
-produce one Info block per process-local mission session. Failed attempts do not
-produce a block, and replayed start notifications do not duplicate it. This output
-is independent of the optional diagnostics switch and uses the normal BepInEx
-logger with millisecond timestamps; the disk listener must include Info.
-
-After the BepInEx/timestamp prefix, parse the exact `MODSETTINGS_BEGIN ` or
-`MODSETTINGS ` marker followed by one complete compact JSON object. Both objects
-contain integer `schema: 1` and `session`; session IDs are process-local, so combine
-them with the enclosing BepInEx process-start boundary when reading appended logs.
-
-The header contains `start` (`NewGame`, `LoadedSave`, `EditorCreated`, `EditorLoaded`),
-boolean `restart`, `mode` and `variant` (the names of the existing mission-mode
-enums), `role` (`host`, `client`, `local`, `unknown`), nullable `localPlayer` and
-the number of endpoint rows in `mods`. Unknown mode/authority is not guessed.
-For example, omitting the normal logger prefix:
-
-```text
-MODSETTINGS_BEGIN {"schema":1,"session":12,"start":"NewGame","restart":false,"mode":"CustomGame","variant":"Standard","role":"local","localPlayer":1,"mods":1}
-MODSETTINGS {"schema":1,"session":12,"mod":"Foreign.Author.Mod","host":{"EnableMod":false},"player":{"EnableClientFeatures":true,"Preference":2},"local":{"ShowMarkers":true},"disabled":["host"]}
-```
-
-Each endpoint row identifies the target plugin by its exact GUID in `mod`.
-The optional `context` object describes the personal or temporary Map/Trail/Save
-working context, its existing source identity, selected preset, modified/editable
-state and persistence scope. Its storage path, successful/failed write counters,
-last outcome and pending-migration flag describe actual personal-file publication;
-temporary changes do not count as personal writes. Context display remains visible
-when a different preset or reset source is loaded into an editable mission copy.
-These fields reuse controller state and perform no additional file or world reads.
-`host`, `player` and `local` group the existing persistent setting scopes and use
-exact, case-sensitive code keys, ordered ordinally. Mods are ordered by GUID.
-All current values, including defaults and full arrays, are included; UI helpers,
-commands and companion arrays are not settings. Player values come from this
-client's own properties, never other players' companion slots. Configuration
-backends are read through `ReadActiveValues()`, never desired or pending values.
-The read-only capture runs on the Unity thread and does not alter presets,
-personal files, authority or synchronization.
-
-The controller's existing host/client activation switches determine shortening.
-An inactive group retains only its activation property, if that property belongs
-to the group. `disabled` explicitly lists shortened groups; the client switch
-shortens both `player` and `local`. A shortened local group can therefore be `{}`
-when its switch belongs to `player`. Groups without settings are absent, and
-groups without a discovered activation switch are not assumed disabled.
-
-Values use the existing JSON codec: numbers are culture-independent, enums use
-their underlying numeric value, booleans remain booleans, strings are escaped,
-and null remains null. Lines are not truncated. Parsers should accept additional
-metadata fields within this schema and distinguish an omitted value from null.
-Failed reads/encodings omit the affected value and add an `errors` array of
-objects with `scope`, `code: "read_failed"` and, for individual settings, `key`.
-A whole-endpoint or active-backend failure uses `scope: "mod"` without `key`;
-no desired-value fallback is used. Technical exceptions are logged separately
-as warnings. One endpoint failure does not suppress the other endpoint rows.
-
-This records current configuration, not proof that each configured feature runs
-in the current mode. Additional consumer-owned feature conditions are not inferred.
-
-### Explicit settings-search support
-
-Global search includes only tabs that opted in through `ModSettingsSearchCatalog`.
-`LobbyModSettingsPresetRegistration.Register(...)` already registers the resolved
-XAML source and the preset ViewModel's local exact-key navigation. Existing preset
-consumers need no second registry or export method.
-
-A mod with its own settings ViewModel can opt in independently of presets and
-SerpsModsHost. On the Unity thread, resolve the same XAML filename used for its tab,
-then call:
-
-```csharp
-ModSettingsSearchCatalog.RegisterSource(settings, absoluteXamlPath, log, modName);
-```
-
-An optional fifth argument is `Func<string, string, bool>`: it receives an exact
-entry key and its current localized title. Return true after applying a local
-filter. Without a callback, or if it fails, the host simply opens the tab. The
-callback must not traverse, realize, measure or focus other views. See the
-[standalone example](../examples/ThirdPartyMod/SettingsSearchExample.cs).
-
-Register the same ViewModel object as the tab, preferably before publishing the
-tab. Metadata comes exclusively from the XAML document and public readable binding
-properties; it never loads a Noesis view. Titles, tooltips, sections, exclusion and
-ItemsSource-backed templates use the existing `ModSettingsSearch` attached
-metadata. Item collections are snapshots, not live UI subscriptions.
-Re-register the source to refresh changed language text or dynamic items. This
-replaces the source and optional callback and invalidates its cached entries.
-
-Configured-value filtering is independent of text metadata and parent activation.
-`ModSettingsSearchCatalog.GetState(model, key)` reads current public checkbox/slider
-bindings on the Unity thread. `ModSettingsSearchState` is a flags enum: `Unknown`,
-`Active`, `Inactive`; a logical row with mixed values contains both flags and matches
-both status filters. Unsupported bindings, non-numeric values and failed value
-getters remain unknown without invalidating the catalog. Associated text editors
-do not add a second value. Recursive reads of the same state key return unknown
-at the recursive boundary. The old text-only APIs and converter inputs are unchanged.
-
-Checkboxes use their checked state. Sliders default to inactive at exactly -1 or 0.
-Declare context-specific neutral values directly on a slider, for example
-`shared:ModSettingsSearch.InactiveValues="1"` for a multiplier or `"100"` for a
-percentage. This literal metadata **replaces** the default rule: with `"1"`, zero
-is active. Multiple values use semicolons (`"-1;100"`); inclusive numeric ranges
-are supported (`"0..1"`). Numbers use invariant decimal notation. Invalid metadata
-produces unknown state. Declare neutral semantics explicitly; neither labels nor
-initial/default values are used to guess them.
-
-
-TextBoxes can opt in to numeric state filtering with APIShared 0.16.1:
-`shared:ModSettingsSearch.StateValue="{Binding Amount}"` binds the authoritative
-numeric property, independently of `Text="{Binding AmountValueText}"`. Put
-`shared:ModSettingsSearch.InactiveValues="0"` on the same TextBox when every
-nonzero amount, including -1, is active. The catalog reads and observes the
-numeric model path on the Unity thread; it never parses localized display text.
-Converters, alternate binding sources, missing paths and nonnumeric values remain
-unknown. TextBoxes without StateValue retain their prior unknown state. Existing
-checkbox/slider behavior and defaults are unchanged; no migration is required.
-
-The catalog starts observing value paths when state is queried. `StateChanged`
-publishes the registered root model on the Unity thread, including changes to
-observed nested objects; foreign-thread notifications use APIShared's existing
-Unity dispatcher and are drained in a coalesced callback. Defaults resets, preset
-snapshots and configuration commits internally batch derived search updates per
-model: the outer operation publishes one final `StateChanged` if an observed value
-changed, including when an operation exits with an exception. Individual edits
-still publish synchronously on the Unity thread. Original setting notifications,
-storage and network publication are not suppressed. Explicit `GetState` reads
-remain live even inside a batch; presentation-only reuse ends with its notification.
-Leaf changes do not rebuild the observation graph. Replaced intermediate objects
-rewire only their affected paths. Local status presentation does no value refresh
-for All; source replacement and text filtering retain their normal behavior.
-Source replacement detaches the old managed observers. Dynamic
-item collections still require re-registration; item metadata remains a snapshot.
-Custom hosts can combine `ModSettingsSearchStateMatcher.IsMatch(filter, state)`
-with the existing text matcher. Preset pages expose session-only
-`System_ModSettingsSearchStateFilter` and selector index/labels. A status-aware
-local converter prefixes the old inputs with root model, status filter and revision,
-provided by the inherited `SourceModel`, `StateFilter`, `StateRevision` properties.
-Exact navigation and the clear command reset the local status filter to All.
-
-`IsRegistered(model)` checks support without reading consumer properties.
-`TryGetEntries(model, out entries)` returns false only for an unregistered model;
-a registered empty or failed catalog returns true with zero entries. Snapshots
-are read-only. A load/getter failure is logged once per registration and cached
-until replacement. Hosts must never fall back to a native UI-tree search.
-`TryNavigate(model, key)` rejects stale keys and isolates callback exceptions,
-logging the first navigation failure per registration. It uses the current title.
-`SourceChanged` runs synchronously after registration/replacement and isolates each
-listener's failure. Replacing the same source from its own notification is rejected
-before mutation to prevent recursive event loops. Recursive `TryNavigate` calls for
-the same model return false, including when a callback replaces its source. All these operations are Unity-thread operations; registration
-retains the ViewModel and callback for process lifetime.
-
-The original `ModSettingsSearch.RegisterSource(...)` remains a compatibility
-facade. Its legacy `Export(model, view)` method retains its existing realized-view
-fallback for older direct callers; the global host uses only the new catalog API
-and never calls that method. Exact keys remain ordinal. Free-text matching repairs
-malformed UTF-16 and Unicode noncharacters rejected by CLR normalization for comparison, retaining
-ordinary Unicode, valid surrogate pairs and diacritic folding.
-
-### Personal files and previous installations
-
-APIShared preset participants store personal files in the platform-resolved Documents
-folder under `SHCDE/APIShared/<Mod-GUID>/`: `settings.msgpack` contains the working
-settings and `Presets/preset_<id>.json` contains personal presets. The same user and
-mod GUID share this data across game installations. Ordinary Extender settings
-registrations without APIShared presets keep their existing storage behavior.
-
-The previous plugin-local `LobbyModSettings/Presets/Override/<Mod-GUID>` directory
-remains readable. A valid Documents preset takes precedence over an old personal
-preset with the same stable identity; duplicate IDs within either directory remain
-invalid. Saving, importing or explicitly overwriting a personal preset writes only
-to Documents and preserves old JSON files. Explicit deletion removes personal copies
-of the selected identity from both directories and reports partial failures.
-Bundled and external provider presets remain read-only in their original locations.
-
-When no Documents working file exists, APIShared loads the previous plugin-local
-`.msgpack` and writes the validated/migrated state to Documents, retaining the original.
-A present but corrupt or inaccessible new file does not fall back to stale installation
-settings. Failed migrations retain their source for retry. APIShared restores initial
-values before UI binding and remains the sole writer for its participants. External
-configuration providers retain ownership of their own configuration files.
-
-Missing or unwritable Documents storage is reported rather than silently redirecting
-writes to the plugin directory. The shorter layout reduces installation-path dependence;
-it does not provide general long-path support for the game or its preset providers.
-Documents resolution and persistence need validation in the actual Proton prefix.
-
-### External settings and application backends
-
-Settings adapters can override `DynamicSettingsProvider` with an
-`IDynamicPresetSettingsProvider` when settings are described at runtime. Descriptors
-use stable keys, exact CLR types and non-null code defaults; dynamic scopes are
-Host or Local. The provider validates and replaces complete working snapshots.
-An optional `IModSettingsApplicationBackend` separates desired values from applied
-values and identifies settings requiring restart. Use the public
-[dynamic/provider contracts](../src/ModSettings/Presets/DynamicPresetSettings.cs)
-and [application coordinator](../src/ModSettings/ModSettingsApplication.cs);
-do not treat every edited working value as an already applied runtime setting.
-
-For a separately registered foreign page, use
-`LobbyModSettingsPresetRegistration.AttachExternalWorkingCopy` to attach presets
-without a second network registration, or `RegisterExternalWorkingCopy` for a
-participant without a page. `PrepareExternalWorkingCopy` creates an unpublished
-candidate; activate it only when the surrounding integration is ready. These
-entry points are Unity-thread operations. Optional consumer adapters and their
-activation rules belong to the integrating mod; presets do not require ExtendedData.
-
-### Load/save requester integration
-
-APIShared owns the savegame checkbox, including a persistent local preference
-(initially off). Save selection, forced legacy/saved-only states and cancellation
-do not change that preference. Missing/unusable UI means current supported settings
-for automatic loads, while saved mission permissions and fixed creator rules remain
-authoritative. Explicit `SavegameModSettings.PrepareLoad` and
-`PrepareLoadWithRestartCheck` Boolean calls keep their existing meaning.
-
-Use `APIShared.Savegames.SaveLoadDialogEvents.Register` on the Unity thread with
-your GUID, a stable owner-local registration ID and `SaveLoadDialogCallbacks`.
-Registration lasts until process exit and applies only to future requests.
-Consumers requiring this service check `SaveLoadDialogEvents.IsAvailable` after
-LibraryLoaded before publishing their runtime. The dialog API requires APIShared 0.12.1 or newer.
-Ordering is ascending numeric order, then owner GUID and registration ID ordinal. Delegates
-are copied; each contribution receives private per-request context state.
-
-`Opened` initializes a contribution after the game opened its view. `Validate`
-must only check readiness: false or an exception prevents every preparation and
-the original action. `Prepare` runs after all gates passed. `AttemptFinished`
-runs in reverse order even for a partially throwing preparation. Release temporary
-write decisions there, not a successfully transferred mission. `Closed` observes
-confirmation, cancellation, replacement or failure once, after attempt cleanup;
-its exceptions are isolated. A requester opened synchronously by a callback is
-deferred until the outer game operation has returned, including delayed editor
-overwrite execution and Vanilla's filename bookkeeping.
-Exceptions from the original game callback propagate after cleanup, preserving its failure path.
-Opening errors block that contribution's confirmation. Confirmation means the game
-callback returned, not that the mission initialized successfully. Use the mission
-lifecycle for the latter. A rejected confirmation keeps its request/selection and
-restores the requester view; it does not invoke the original action.
-
-Do not install another requester hook. Vanilla hides the requester before invoking
-its confirmation callback; APIShared captures checkbox availability before that hide.
-An installed ExtendedData plugin must advertise the shared dialog integration with
-`public const bool UsesApiSharedSaveLoadDialog = true` on its plugin type. APIShared
-rejects a conflicting requester owner before installing its dialog hooks.
-The build installer's consumer preflight also rejects an incompatible ExtendedData
-plugin before copying the APIShared package. It checks the plugin GUID and its public
-constant broker marker in assemblies below `BepInEx/plugins`, including renamed
-files. It does not discover unopened Workshop archives or prove a working UI;
-the runtime check remains necessary for those loading paths and manual installs.
-The dialog uses the save archive, packet protocol, local personal presets and
-host-load agreement of the savegame service. No ExtendedData installation is required for this UI.
-
-## Namespaces and packaging
-
-Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode contracts. Settings XAML imports `clr-namespace:APIShared.ModSettings;assembly=APIShared`. Compile against the selected APIShared package and check that it contains every API used by your mod; this guide describes the source checkout. Author-specific permission tables belong in consumers, rather than APIShared; construct profiles for your own rules. Command/formation implementations belong to their consuming mods; use the public route-search events for the documented preference extension.
-
-Release consumers with hard minimum APIShared/Script Extender versions and `<Private>false</Private>` for runtime references. Never include APIShared.dll, Script Extender DLLs or game DLLs in the consumer package. Put your XAML under the usual mod Override directory. Keep one centrally installed APIShared instance.
+Use the shipped external publisher for explicitly declared Payload packages.
+The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
+bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton limits.
 
 ## HUD integration
 
@@ -1183,6 +736,32 @@ Factories and commands run on the Unity thread and must not block. Troop descrip
 use Vanilla rollover text; side buttons use the mod-options popup by default.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
+
+### Unit HUD sprites in another player's colour
+
+Requires APIShared 0.24.0 or later.
+
+A spectator or control feature that shows another player's units can lease the unit HUD
+sprite colours instead of hooking `MainViewModel.UpdateUITroopSprites` itself:
+
+```csharp
+if (!UnitHudSpriteColours.TryLease(MyPlugin.Guid, viewedPlayerId, out string reason))
+    Logger.LogWarning(reason); // e.g. another mod holds the lease
+// ... later, when your view ends:
+UnitHudSpriteColours.Release(MyPlugin.Guid);
+```
+
+Call both on the Unity main thread, for example from your perspective-change handler after
+dispatching to it. Call `TryLease` again with the new player when the view changes; repeating
+the same player does nothing. The lease ends at mission end, so lease again in the next mission.
+Read a player's UI colour without changing the HUD with `PlayerColours.TryGetUiColour`.
+
+Limits: only images that Vanilla's sprite update recolours change. Keeps, outposts, flags and
+the other building icons have no colour variants, and some resource keys are identical in all
+colours. The Arabic troop variants follow the leased player only for human multiplayer members;
+otherwise they keep Vanilla's value for the local player. Map sprites, labels, selection and
+control rights are unaffected. The [lease contract](../src/Presentation/UnitHud/UnitHudSpriteColours.cs)
+describes ordering, replay and failure behavior.
 
 ## Sharing action and HUD hooks
 
@@ -1352,14 +931,6 @@ check the compiled SE entry points and the tick guard for heap allocation. The
 fixtures use a fake slot reader, not Mono, the native unit array or consumer
 callbacks; they are not an FPS measurement.
 
-## Extending APIShared
-
-Use the [catalog source map](API_CATALOG.md#source-map) to find the current contract
-and its implementation. The [architecture guide](../ARCHITECTURE.md#finding-and-extending-a-feature)
-explains where shared behavior, hook ownership and consumer algorithms belong.
-Follow [CONTRIBUTING](../CONTRIBUTING.md) for setup and tests. An ordinary clone of
-this repository is sufficient; no maintainer workspace or AI assistant is required.
-
 ## Assassin obstacle completion
 
 Assassin obstacle control uses `AssassinAttackControlAPI.RegisterGuard(ownerGuid, callback)`
@@ -1371,36 +942,173 @@ Native selection can fail or select another vetoed obstacle; it does not guarant
 Obstacle completion does not expose consumer-defined alternative traversal search
 and requires no command-engine mod.
 
-## Workshop package cleanup
+## Gate access contributions
 
-APIShared cleans its own previous releases through the contract-validated Extender staging
-path. Foreign maps remain Extender-managed. Inventory schema, historical hashes
-and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cleanup).
+Use `GateAccessRules.TryRegister` for additional gate access exceptions and
+`Invalidate` after synchronized data changes. Registration performs no world work.
+Follow the [gate routing guide](GATE_ROUTING.md); a routing provider is required.
 
-## Plugin entry points with optional APIShared
+## Enemy-unit building proximity and Peace Time
 
-Optional consumers requiring APIShared 0.7.1 or newer may call `SavegameModSettings.ExcludePluginFromAutomaticSettings(typeof(MyPlugin))` after dependency validation and before settings registration, instead of applying the exclusion attribute to their independent bootstrap type. This thread-safe registration is idempotent, applies to derived types and lasts until process exit. The exclusion applies only to the registered type and its derived types. Set your consumer's minimum APIShared version to 0.7.1 or newer when calling this method.
+Requires APIShared 0.25.0 or later.
 
-## Versioned save data
+Register owner-bound `EnemyProximityPolicies` callbacks after native initialization.
+Use Override for general category radii and Limit for reductions; valid vetoes
+always prevail. Resolve your own settings sentinels before contributing a radius.
+For a peace-only rule, check the availability result as well as the active value
+of `PeaceTimeState.TryGetActive`. No extra tick subscription is needed.
+See [enemy proximity](ENEMY_PROXIMITY.md) for ordering, standalone collaboration,
+thread/lifetime, native fallback and multiplayer requirements.
 
-Store per-mission mod state in saves with `APIShared.Savegames.VersionedSaveData` instead of a
-raw `ModSaveDataAPI` handler when the data must survive mod updates and downgrades. Register
-once at startup with your own identifier, record version, minimum reader version, known entry
-names, a capture callback and a load callback. Apply delivered entries when your mission state
-is ready, and treat `NoRecord` as a new mission. Follow the
-[record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
-format changes, and add a legacy reader when you keep an identifier that already holds data.
-See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
+## Plague standing-height policies
 
-## Loose Workshop packages
+Requires APIShared 0.14.0 or later (`TryGetPlagueHeightPolicy`: 0.24.0 or later).
 
-Use the shipped external publisher for explicitly declared Payload packages.
-The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
-bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton limits.
+`ApiShared.ForMod(yourGuid).TryGetPlagueHeight(...)` acquires the optional
+`IPlagueHeightCapability` after native readiness. Acquisition alone changes nothing.
+Call `TrySetPolicy(active, categories, maximumHeightDifference, out diagnostic)` on
+the main thread before or after simulation. Consumers own mission authorization,
+host settings and identical configuration on multiplayer peers. No callbacks or
+additional event transport are involved; existing Script Extender projectile-damage
+Pre/Post events retain their original meaning and ordering.
+
+Categories are `Walls`, `Gates`, `Towers`, `Keeps` or combinations. Tolerance is an
+inclusive integer difference of standing planes, 0..65534 native height units;
+the cloud's visual +20 offset is excluded. The range is the 16-bit packed native
+policy contract, not a gameplay recommendation. Unit-type immunity, damage tiers,
+apothecary resistance, treatment, lifetime and cadence remain native.
+
+Repeated acquisition with one GUID shares that owner's policy. Owners start inactive.
+Active policies are unioned, with the largest requested tolerance per category;
+ordinary ground uses the largest active tolerance. Disabling one owner cannot veto
+another. No active categories restores the complete original paths. Invalid input
+leaves the previous snapshot unchanged. Unknown native/backend contracts make only
+this capability unavailable with a diagnostic. Hooks and registrations persist until
+process exit; never dispose or patch executable code to toggle these rules.
+
+`TryGetPlagueHeightPolicy(out policy, out diagnostic)` reads the effective policy of all owners,
+the one the native damage path applies, without acquiring or changing an owner. It is
+allocation-free and safe on any thread, for example on the simulation thread of a mod that
+predicts where clouds would damage units. `PlagueHeightPolicy` reports the tolerance per
+category (-1 when no owner enables it) and `GroundTolerance`; `IsActive` false means the
+complete Vanilla path. When the service is unavailable the call returns false with an inactive
+policy, which also means Vanilla.
+
+Building identity takes precedence over wall flags. Low/high walls and stairs,
+walkable gates, defensive towers and keep platforms can be controlled separately;
+mobile siege towers are excluded. Unrecognized elevated surfaces keep Vanilla
+exclusions. Destroyed platforms are reevaluated from the current tile/building data.
+See [the independent example](../examples/ThirdPartyMod/PlagueHeightExample.cs).
+
+Native implementation and validation: [update contract](../UpdateToNewDLL.md#plague-standing-heights).
+The executed fixtures cover original/modified paths, all category combinations,
+multiple owners, heights, full native damage semantics and ABI preservation. These
+checks do not replace in-game rendering, save roundtrips or a real multiplayer run.
+
+## Rounded fear popularity
+
+The 0.10.0 development API provides `APIShared.Economy.FearPopularity` for absolute,
+fractional popularity coefficients per signed fear level. After native initialization,
+call `TryRegister` with your own plugin GUID and stable local ID, retain the handle,
+and inspect the returned diagnostic. SE compatibility is determined from the installed
+module's actual coefficient-to-resource data flow, without an SE version or file-hash
+allowlist. The separate native game ABI remains bound to its audited fingerprint.
+No consumer native hook or SE stack manipulation is needed.
+
+`handle.SetMultiplier(1.1m)` computes `round(level * 1.1)` in whole report points,
+with midpoint ties away from zero, then converts to the engine's 25 units per report
+point. Thus level 5 produces 6 points and level -5 produces -6. The calculation runs
+at every validated SE fear multiplication, before the worst-source decision, event
+penalties and final native clamp. Reports and preview panels use the same arithmetic.
+Fear level, productivity and combat remain unchanged.
+
+Registration starts inactive. Set null at your mission end or when disabled; do not
+unhook or unregister. Among active registrations, the last in ascending order, ordinal
+owner GUID and local ID wins. `SetMultiplier` is thread-safe; synchronized settings,
+mode permissions and activation boundaries remain the consumer's responsibility.
+When no registration applies to the current level, original SE multiplication, including other mods'
+integer coefficients, remains intact. Overflow preserves the SE simulation contribution
+and logs once; the report's existing error boundary preserves its original display.
+Use sensible bounds in the consumer. The API accepts decimal coefficients; UI ranges
+and step sizes belong to the consumer.
+
+`handle.SetLevelContributions(IReadOnlyDictionary<int, int>)` (APIShared 0.15.0 or later) accepts
+absolute whole report points for exact signed input levels. For example,
+`{ [-1] = -2, [-2] = -4, [-3] = -6, [-4] = -8, [-5] = -10 }` doubles the Vanilla
+negative contributions while leaving positive levels to earlier registrations or SE.
+Output signs do not select the side: the key always names the original fear level.
+Zero-valued contributions are active overrides; key zero is rejected so the neutral
+level stays neutral. Other Int32 keys are allowed even though Vanilla produces -5..5.
+The caller's map is copied; any invalid key, duplicate entry or overflowing points*25
+conversion throws before publication and preserves the preceding configuration.
+Null or an empty map disables the handle. Each setter replaces that handle's entire
+configuration: a table never retains a previous multiplier or old table keys.
+Among registrations the last applicable one wins separately for each level, using
+the same order/GUID/ID ordering as uniform coefficients. A later uniform coefficient
+covers every level; a later sparse table changes only its listed levels. The
+published snapshot is immutable and read without locks or per-calculation allocations.
+Simulation and the report correction share it. Existing multiplier callers retain
+their rounding, overflow and logical-disable behavior; no new native or managed hook
+is installed for tables.
+
+### Human and AI contributions
+
+Requires APIShared 0.16.0 or later.
+
+`Economy.PopularityOverrides.TryRegister(ownerGuid, registrationId,
+out handle, out diagnostic, order)` creates an inactive ordinary-source policy.
+Call `handle.SetContributions(IReadOnlyDictionary<PopularitySource,
+PopularityOverrideValues>)` at synchronized mission boundaries. The enum names the
+SE parameters for rations, food variety, crowding, taxes, religion, ale and fairs.
+`new PopularityOverrideValues(humanPoints, aiPoints)` contains independent nullable
+whole report points: null leaves that player type untouched; zero is an explicit
+contribution. Human covers every human participant; AI includes allied and enemy
+AI lords. Invalid, empty or unresolved player slots receive no targeted policy.
+
+Fear handles add `SetTargetedLevelContributions(IReadOnlyDictionary<int,
+PopularityOverrideValues>)`. This distinct name preserves unambiguous legacy null
+calls. Every fear setter replaces the complete configuration of its handle. Old
+uniform multipliers and fixed level tables retain binary/source compatibility,
+rounding, ordering, overflow and availability semantics. Mixed registrations select
+the last non-null applicable value separately for each source, player type and
+fear input level. Missing values reveal earlier policies and then the effective SE
+global value, including foreign stack overrides. No global stack swaps are used.
+
+Setters defensively copy and validate all keys and checked points*25 conversions
+before publication. Invalid updates throw without changing active configuration.
+Null or empty tables deactivate; unknown source enum values and fear key zero are
+rejected. Handles remain owner-bound until process exit. Register after native
+initialization, check diagnostics and keep synchronized settings, host authority
+and mission activation in the consumer. Setters are thread-safe and may run on
+any thread; no user callbacks execute under registry locks.
+
+One immutable role/source/fear snapshot is captured per successful calculation
+from the same R15 player ID used to resolve its resources. Eligibility follows
+the audited native keep/keep-door gate, then the public SE `IsAIPlayer` query.
+The permanent adapter validates resource and source-read provenance before editing
+the actual installed SE method. Unsupported player flows disable new policies
+with diagnostics while preserving the independent legacy fear adapter. Component
+arithmetic, strongest penalty, religion bookkeeping, events and final clamping
+remain in the original method. Reports and previews select the viewed player's
+same policy; no native pointers escape the capture. There are no new locks,
+allocations or roster searches in calculation reads. Gameplay and Mono rendering
+still require in-game acceptance after the installed-method and behavior fixtures.
+
+See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
+The pure popularity tests cover rounding, ownership and matching display deltas;
+installed-assembly tests validate and generate the actual edited SE callback and reject
+partial/double edits. Equivalent one-site/multiple-site calculations, reordered operands,
+local encodings, harmless NOPs and renamed compiler carriers are accepted. Incorrect input
+fields, player pointers, signedness/storage widths and changed arithmetic are rejected.
+Unsupported exception-region or escaped-reference flows fail with a diagnostic rather
+than claiming compatibility. The analysis runs once at startup, not on simulation ticks.
+Tests do not execute native game memory or prove in-game Mono,
+editor, save/load or real multiplayer acceptance. The adapter is permanent and statically
+rooted; startup component destruction never removes it.
 
 ## Situational sound rules
 
-Declare APIShared **0.8.0** or newer. Register through `SoundEvents` after managed
+Requires APIShared 0.8.0 or later. Register through `SoundEvents` after managed
 startup, retain the handle and use `SetEnabled` for live settings. Filter context
 before changing a request; preload clips outside playback callbacks. If your rule
 needs only some named situations or sources, pass a `SoundSourceSelection` to
@@ -1482,145 +1190,6 @@ took 29.5 ns instead of 284.8 ns per update (best of eight runs; every run faste
 Providers are still collected before the no-building return, since they may retire
 selection state there.
 
-## Gate access contributions
-
-Use `GateAccessRules.TryRegister` for additional gate access exceptions and
-`Invalidate` after synchronized data changes. Registration performs no world work.
-Follow the [gate routing guide](GATE_ROUTING.md); a routing provider is required.
-
-## Rounded fear popularity
-
-The 0.10.0 development API provides `APIShared.Economy.FearPopularity` for absolute,
-fractional popularity coefficients per signed fear level. After native initialization,
-call `TryRegister` with your own plugin GUID and stable local ID, retain the handle,
-and inspect the returned diagnostic. SE compatibility is determined from the installed
-module's actual coefficient-to-resource data flow, without an SE version or file-hash
-allowlist. The separate native game ABI remains bound to its audited fingerprint.
-No consumer native hook or SE stack manipulation is needed.
-
-`handle.SetMultiplier(1.1m)` computes `round(level * 1.1)` in whole report points,
-with midpoint ties away from zero, then converts to the engine's 25 units per report
-point. Thus level 5 produces 6 points and level -5 produces -6. The calculation runs
-at every validated SE fear multiplication, before the worst-source decision, event
-penalties and final native clamp. Reports and preview panels use the same arithmetic.
-Fear level, productivity and combat remain unchanged.
-
-Registration starts inactive. Set null at your mission end or when disabled; do not
-unhook or unregister. Among active registrations, the last in ascending order, ordinal
-owner GUID and local ID wins. `SetMultiplier` is thread-safe; synchronized settings,
-mode permissions and activation boundaries remain the consumer's responsibility.
-When no registration applies to the current level, original SE multiplication, including other mods'
-integer coefficients, remains intact. Overflow preserves the SE simulation contribution
-and logs once; the report's existing error boundary preserves its original display.
-Use sensible bounds in the consumer. The API accepts decimal coefficients; UI ranges
-and step sizes belong to the consumer.
-
-Since 0.15.0, `handle.SetLevelContributions(IReadOnlyDictionary<int, int>)` accepts
-absolute whole report points for exact signed input levels. For example,
-`{ [-1] = -2, [-2] = -4, [-3] = -6, [-4] = -8, [-5] = -10 }` doubles the Vanilla
-negative contributions while leaving positive levels to earlier registrations or SE.
-Output signs do not select the side: the key always names the original fear level.
-Zero-valued contributions are active overrides; key zero is rejected so the neutral
-level stays neutral. Other Int32 keys are allowed even though Vanilla produces -5..5.
-The caller's map is copied; any invalid key, duplicate entry or overflowing points*25
-conversion throws before publication and preserves the preceding configuration.
-Null or an empty map disables the handle. Each setter replaces that handle's entire
-configuration: a table never retains a previous multiplier or old table keys.
-Among registrations the last applicable one wins separately for each level, using
-the same order/GUID/ID ordering as uniform coefficients. A later uniform coefficient
-covers every level; a later sparse table changes only its listed levels. The
-published snapshot is immutable and read without locks or per-calculation allocations.
-Simulation and the report correction share it. Existing multiplier callers retain
-their rounding, overflow and logical-disable behavior; no new native or managed hook
-is installed for tables.
-
-### Human and AI contributions
-
-Since 0.16.0, `Economy.PopularityOverrides.TryRegister(ownerGuid, registrationId,
-out handle, out diagnostic, order)` creates an inactive ordinary-source policy.
-Call `handle.SetContributions(IReadOnlyDictionary<PopularitySource,
-PopularityOverrideValues>)` at synchronized mission boundaries. The enum names the
-SE parameters for rations, food variety, crowding, taxes, religion, ale and fairs.
-`new PopularityOverrideValues(humanPoints, aiPoints)` contains independent nullable
-whole report points: null leaves that player type untouched; zero is an explicit
-contribution. Human covers every human participant; AI includes allied and enemy
-AI lords. Invalid, empty or unresolved player slots receive no targeted policy.
-
-Fear handles add `SetTargetedLevelContributions(IReadOnlyDictionary<int,
-PopularityOverrideValues>)`. This distinct name preserves unambiguous legacy null
-calls. Every fear setter replaces the complete configuration of its handle. Old
-uniform multipliers and fixed level tables retain binary/source compatibility,
-rounding, ordering, overflow and availability semantics. Mixed registrations select
-the last non-null applicable value separately for each source, player type and
-fear input level. Missing values reveal earlier policies and then the effective SE
-global value, including foreign stack overrides. No global stack swaps are used.
-
-Setters defensively copy and validate all keys and checked points*25 conversions
-before publication. Invalid updates throw without changing active configuration.
-Null or empty tables deactivate; unknown source enum values and fear key zero are
-rejected. Handles remain owner-bound until process exit. Register after native
-initialization, check diagnostics and keep synchronized settings, host authority
-and mission activation in the consumer. Setters are thread-safe and may run on
-any thread; no user callbacks execute under registry locks.
-
-One immutable role/source/fear snapshot is captured per successful calculation
-from the same R15 player ID used to resolve its resources. Eligibility follows
-the audited native keep/keep-door gate, then the public SE `IsAIPlayer` query.
-The permanent adapter validates resource and source-read provenance before editing
-the actual installed SE method. Unsupported player flows disable new policies
-with diagnostics while preserving the independent legacy fear adapter. Component
-arithmetic, strongest penalty, religion bookkeeping, events and final clamping
-remain in the original method. Reports and previews select the viewed player's
-same policy; no native pointers escape the capture. There are no new locks,
-allocations or roster searches in calculation reads. Gameplay and Mono rendering
-still require in-game acceptance after the installed-method and behavior fixtures.
-
-See the [compiled example](../examples/ThirdPartyMod/PopularityExample.cs).
-The pure popularity tests cover rounding, ownership and matching display deltas;
-installed-assembly tests validate and generate the actual edited SE callback and reject
-partial/double edits. Equivalent one-site/multiple-site calculations, reordered operands,
-local encodings, harmless NOPs and renamed compiler carriers are accepted. Incorrect input
-fields, player pointers, signedness/storage widths and changed arithmetic are rejected.
-Unsupported exception-region or escaped-reference flows fail with a diagnostic rather
-than claiming compatibility. The analysis runs once at startup, not on simulation ticks.
-Tests do not execute native game memory or prove in-game Mono,
-editor, save/load or real multiplayer acceptance. The adapter is permanent and statically
-rooted; startup component destruction never removes it.
-
-## Plague standing-height policies
-
-`ApiShared.ForMod(yourGuid).TryGetPlagueHeight(...)` acquires the optional
-`IPlagueHeightCapability` after native readiness. Acquisition alone changes nothing.
-Call `TrySetPolicy(active, categories, maximumHeightDifference, out diagnostic)` on
-the main thread before or after simulation. Consumers own mission authorization,
-host settings and identical configuration on multiplayer peers. No callbacks or
-additional event transport are involved; existing Script Extender projectile-damage
-Pre/Post events retain their original meaning and ordering.
-
-Categories are `Walls`, `Gates`, `Towers`, `Keeps` or combinations. Tolerance is an
-inclusive integer difference of standing planes, 0..65534 native height units;
-the cloud's visual +20 offset is excluded. The range is the 16-bit packed native
-policy contract, not a gameplay recommendation. Unit-type immunity, damage tiers,
-apothecary resistance, treatment, lifetime and cadence remain native.
-
-Repeated acquisition with one GUID shares that owner's policy. Owners start inactive.
-Active policies are unioned, with the largest requested tolerance per category;
-ordinary ground uses the largest active tolerance. Disabling one owner cannot veto
-another. No active categories restores the complete original paths. Invalid input
-leaves the previous snapshot unchanged. Unknown native/backend contracts make only
-this capability unavailable with a diagnostic. Hooks and registrations persist until
-process exit; never dispose or patch executable code to toggle these rules.
-
-Building identity takes precedence over wall flags. Low/high walls and stairs,
-walkable gates, defensive towers and keep platforms can be controlled separately;
-mobile siege towers are excluded. Unrecognized elevated surfaces keep Vanilla
-exclusions. Destroyed platforms are reevaluated from the current tile/building data.
-See [the independent example](../examples/ThirdPartyMod/PlagueHeightExample.cs).
-
-Native implementation and validation: [update contract](../UpdateToNewDLL.md#plague-standing-heights).
-The executed fixtures cover original/modified paths, all category combinations,
-multiple owners, heights, full native damage semantics and ABI preservation. These
-checks do not replace in-game rendering, save roundtrips or a real multiplayer run.
 ## Multiplayer map lookup and lobby system hints
 
 These runtime APIs are in APIShared.dll and require game references. They are
@@ -1725,7 +1294,7 @@ deferral. All other inputs remain unchanged. A failing Pre rolls back its own
 changes; successful vetoes are sticky. Accepted runs after all Pre only without
 veto; Post receives immutable original/final inputs, owner-private State, veto,
 deferral, synchronous completion and error information. Callback failures are
-isolated. Existing public APIs and their defaults are unchanged.
+isolated.
 
 For a preview close, veto the button original in Pre and close the owned preview
 in the matching Post after checking its generation. This also suppresses any
@@ -1752,8 +1321,8 @@ must require the APIShared package that supplies it.
 
 ## Shared render and pause-menu presentation
 
-Available since 0.18.0; these are additive, opt-in services. Existing APIs retain
-signatures and defaults. Consumers need no knowledge of one another.
+Requires APIShared 0.18.0 or later. These are opt-in services; consumers need no
+knowledge of one another.
 
 `VisibleMapRenderEvents.TryRegister(owner, id, before, finallyCallback, out registration,
 out reason, order)` installs the shared visible-map entry only after APIShared's
@@ -1780,7 +1349,16 @@ permission checks. Registrations and hooks last until process exit. Return null
 or an invisible `IngameMenuActionState` to hide an action and release its position.
 A visible disabled action still occupies its position.
 
-Use the overload with `IngameMenuActionOptions` and an output registration handle:
+Register with explicit `IngameMenuActionOptions`; the output handle invalidates the action.
+
+**Breaking change in 0.21.0:** the former options-less overload
+`TryRegister(ownerGuid, id, state, execute, out reason, order)` and the empty XAML resource
+key `APISharedMenuActionButtonStyle` were removed. Binaries compiled against them fail with
+`MissingMethodException`/an unresolved resource. Migrate to the overload below; for the
+former automatic QuitMission/Left placement pass
+`new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left)`, or use the
+additional page only. Placement conflicts are not resolved implicitly.
+
 
 ```csharp
 IngameMenuActionRegistration menuAction;
@@ -1821,8 +1399,7 @@ The original three-argument constructor remains binary/source compatible and sup
 no tooltip. Null, empty or whitespace-only tooltip text means no popup; nonempty text
 is shown exactly as supplied, without appending the button label or mod GUID. Supply
 localized text and notify ordinary `Invalidate()` when it changes. Removing a tooltip
-closes and detaches the owned popup. Earlier automatically generated label/owner
-tooltips are no longer provided. Vanilla tooltip objects, bindings and settings are
+closes and detaches the owned popup. APIShared generates no label/owner tooltips. Vanilla tooltip objects, bindings and settings are
 untouched, including on the extra page; APIShared navigation buttons have no tooltip.
 
 The latest accepted explicit takeover wins among visible claims. Refreshing an
@@ -1846,7 +1423,7 @@ objects, bindings, commands and confirmation dialogs when moved to the extra pag
 Providers are reevaluated on menu opening (including return from a confirmation),
 explicit invalidation while open, and command validation. A handle invalidates its
 action; `IngameMenuActions.Invalidate(ownerGuid)` invalidates all that owner's
-registrations, including legacy ones. Requests from other threads are posted and
+registrations. Requests from other threads are posted and
 coalesced on the validated Unity dispatcher. Closed-menu invalidations defer
 provider work until opening. Do not issue invalidations on recurring ticks/frames.
 Invalidating from inside a provider defers that demand until the next external
@@ -1856,17 +1433,6 @@ invalidation can retry it. Commands recheck visibility, enabled state, view iden
 and effective placement; exceptions are logged once and commands are not retried.
 A command opening another view owns whether to keep the pause menu, hide it for
 a confirmation, or call `HUDIngameMenu.Close()` to restore the previous pause state.
-
-**Migration from the original registration:** the existing
-`TryRegister(owner, id, stateProvider, execute, out reason, order)` signature and
-`IngameMenuActionState` constructor remain binary/source compatible. Its visible
-entries retain order/owner/ID sorting: the first supplies QuitMission/Left when
-no explicit visible claim occupies it; further entries appear on the extra page.
-This deliberately replaces the old unbounded extra rows. Providers are no longer
-polled by GuiChecks. Existing consumers whose state changes while the menu is open
-must notify `Invalidate(owner)` or use the new handle. Prefer named explicit slots
-for intentional placement. New consumers require an APIShared package containing
-this overload; do not infer its availability from an older package's version label.
 
 `apiui:SharedToolTipSizing.Enabled="True"` (namespace `APIShared.ModSettings`)
 opts an owned `ToolTip` into the common resolution presets: font sizes 23/30/45,
@@ -1879,7 +1445,7 @@ retain those. Unopted tooltips and Vanilla rollover text are unchanged.
 
 ## Lord statistic columns
 
-Available since **0.19.0**. Register through `APIShared.Statistics.LordStatistics.TryRegister` on
+Requires APIShared 0.19.0 or later. Register through `APIShared.Statistics.LordStatistics.TryRegister` on
 Unity's main thread after APIShared initialization. Use your own mod GUID and a stable owner-local ID.
 Duplicate identities are rejected with a reason. The persisted key is escaped GUID + `/` + escaped ID;
 never persist catalog positions or translated labels. The
@@ -1930,7 +1496,9 @@ The caller owns the dark/gold, white wrapped-text template and closes its popups
 
 ## Packaged Lord presentation
 
-Register with PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason) on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.
+Requires APIShared 0.20.0 or later.
+
+Register with `PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason)` on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.
 
 The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
 
@@ -1945,3 +1513,4 @@ if (PackagedLordPresentation.TryRegister(pluginGuid, "mission-lords", out var pr
     });
 // Retain the registration and call presentation.SetEntries(null) when leaving this selection.
 ```
+

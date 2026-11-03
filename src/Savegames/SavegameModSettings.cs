@@ -146,7 +146,7 @@ namespace APIShared
         /// <summary>Inspects participants for automatic savegames or Map/Trail authoring using
         /// the same caller-thread, snapshot-factory and read-only metadata contract as the default query.</summary>
         /// <remarks>MissionAuthoring does not apply savegame-only exclusions. For those excluded
-        /// endpoints not represented by an explicit dynamic provider, it preserves the historical
+        /// endpoints not represented by an explicit dynamic provider, it runs the
         /// authoring current-value serialization probes before checking the disabled snapshot.
         /// Consumer-specific authoring opt-outs remain with consumers.</remarks>
         /// <exception cref="ArgumentOutOfRangeException">The purpose is not supported.</exception>
@@ -190,23 +190,7 @@ namespace APIShared
                     {
                         throw new InvalidDataException("Savegame baseline unavailable: " + modId);
                     }
-                    // Player-owned and local values are outside the savegame host contract.
-                    foreach (PropertyInfo property in participant.PersonalProperties)
-                    {
-                        try
-                        {
-                            object value = property.GetValue(participant.Endpoint);
-                            if (value != null)
-                                snapshot[property.Name] = MessagePackSerializer.Serialize(property.PropertyType, value);
-                        }
-                        catch (Exception error)
-                        {
-                            MarkRestoreFailed();
-                            NativeApiLog.Error(log, "Could not preserve local setting " +
-                                modId + "." + property.Name + ": " + error.Message);
-                            throw new InvalidDataException("Cannot prepare a save without preserving personal setting " + modId + "." + property.Name, error);
-                        }
-                    }
+                    // Personal values are never captured into a save-owned mission snapshot.
                     if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
                         OverlaySavedHostProperties(snapshot, participant.Properties, stored, modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
@@ -454,7 +438,7 @@ namespace APIShared
 
         // An unreadable APIShared record (damaged appended archive, newer schema, invalid
         // mode) never blocks the save itself: it loads like a save without a record,
-        // with the current host settings, as APIShared 0.9.2 did.
+        // with the current host settings.
         private static SavegameModSettingsRecord ReadRecordForLoad(string path, out bool legacy)
         {
             RecordReadState read = ReadRecord(path, out SavegameModSettingsRecord record);
@@ -662,7 +646,7 @@ namespace APIShared
                 new ModSettingsParticipantDiscovery.Registration {
                     Guid = pair.Key, Name = pair.Key, Model = pair.Value,
                     IsDynamic = () => pair.Value.System_HasDynamicSettings,
-                    DynamicProperties = () => ModSettingsApplication.GetHostProperties(pair.Value)
+                    DynamicProperties = () => ModSettingsApplication.GetMissionHostProperties(pair.Value)
                 }).ToArray();
             var result = ModSettingsParticipantDiscovery.Inspect(lobby, configurations, purpose);
             foreach (var item in result.Where(item => item.Status == ModSettingsParticipantStatus.InspectionFailed))

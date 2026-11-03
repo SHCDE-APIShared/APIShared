@@ -20,6 +20,38 @@ namespace APIShared
         All = Walls | Gates | Towers | Keeps
     }
 
+    /// <summary>The effective plague standing-height policy the native damage path applies: the union of
+    /// all active owners (<see cref="IPlagueHeightCapability"/>). Read it through
+    /// <see cref="ModApiClient.TryGetPlagueHeightPolicy"/>, for example to predict where a cloud would damage
+    /// a unit. A tolerance of -1 means no active owner enables that category, which keeps Vanilla's
+    /// immunity there; with no category enabled the complete Vanilla path applies.</summary>
+    /// <remarks>Ordinary ground uses <see cref="GroundTolerance"/> (the greatest category tolerance) while the
+    /// policy is active. Tolerances are inclusive differences of standing planes in native height units.</remarks>
+    public readonly struct PlagueHeightPolicy
+    {
+        /// <summary>Creates a policy view; each tolerance is -1 (category off) or 0..65534.</summary>
+        public PlagueHeightPolicy(int walls, int gates, int towers, int keeps)
+        {
+            WallsTolerance = walls; GatesTolerance = gates; TowersTolerance = towers; KeepsTolerance = keeps;
+        }
+        /// <summary>Tolerance for walls and their stairs, or -1.</summary>
+        public int WallsTolerance { get; }
+        /// <summary>Tolerance for walkable gatehouses, or -1.</summary>
+        public int GatesTolerance { get; }
+        /// <summary>Tolerance for defensive towers, or -1.</summary>
+        public int TowersTolerance { get; }
+        /// <summary>Tolerance for keep platforms, or -1.</summary>
+        public int KeepsTolerance { get; }
+        /// <summary>Whether any category is enabled; otherwise the native path is Vanilla.</summary>
+        public bool IsActive => WallsTolerance >= 0 || GatesTolerance >= 0 || TowersTolerance >= 0 || KeepsTolerance >= 0;
+        /// <summary>Tolerance for ordinary ground while the policy is active (greatest category), or -1.</summary>
+        public int GroundTolerance => Math.Max(Math.Max(WallsTolerance, GatesTolerance), Math.Max(TowersTolerance, KeepsTolerance));
+
+        // Packed lanes of PlagueHeightPolicies: tolerance+1 per category, 0 for no owner.
+        internal static PlagueHeightPolicy FromPacked(ulong packed) => new PlagueHeightPolicy(
+            (int)(packed & 0xFFFF) - 1, (int)((packed >> 16) & 0xFFFF) - 1, (int)((packed >> 32) & 0xFFFF) - 1, (int)((packed >> 48) & 0xFFFF) - 1);
+    }
+
     /// <summary>Owner-bound, opt-in height-aware plague eligibility. Acquire through
     /// <see cref="ModApiClient.TryGetPlagueHeight"/> after API readiness.</summary>
     /// <remarks>Configure on the Unity/main thread before/after simulation, identically on all peers.

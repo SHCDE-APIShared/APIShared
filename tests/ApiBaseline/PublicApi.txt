@@ -222,6 +222,35 @@ APIShared.BuildingRepairQuote | public int Panel { get; }
 APIShared.BuildingRepairQuote | public int Pitch { get; }
 APIShared.BuildingRepairQuote | public int Stone { get; }
 APIShared.BuildingRepairQuote | public int Wood { get; }
+APIShared.Buildings.EnemyProximityContext | public struct APIShared.Buildings.EnemyProximityContext
+APIShared.Buildings.EnemyProximityContext | public byte Unknown { get; }
+APIShared.Buildings.EnemyProximityContext | public int CivilianRadius { get; }
+APIShared.Buildings.EnemyProximityContext | public int MilitaryRadius { get; }
+APIShared.Buildings.EnemyProximityContext | public int OriginalRadius { get; }
+APIShared.Buildings.EnemyProximityContext | public int PlayerId { get; }
+APIShared.Buildings.EnemyProximityContext | public int TileX { get; }
+APIShared.Buildings.EnemyProximityContext | public int TileY { get; }
+APIShared.Buildings.EnemyProximityDecision | public struct APIShared.Buildings.EnemyProximityDecision
+APIShared.Buildings.EnemyProximityDecision | public .ctor(int? civilianRadius = null, int? militaryRadius = null, bool block = false)
+APIShared.Buildings.EnemyProximityDecision | public bool Block { get; }
+APIShared.Buildings.EnemyProximityDecision | public int? CivilianRadius { get; }
+APIShared.Buildings.EnemyProximityDecision | public int? MilitaryRadius { get; }
+APIShared.Buildings.EnemyProximityDecision | public static APIShared.Buildings.EnemyProximityDecision Blocked { get; }
+APIShared.Buildings.EnemyProximityDecision | public static APIShared.Buildings.EnemyProximityDecision None { get; }
+APIShared.Buildings.EnemyProximityPhase | public enum APIShared.Buildings.EnemyProximityPhase : int
+APIShared.Buildings.EnemyProximityPhase | Limit = 1
+APIShared.Buildings.EnemyProximityPhase | Override = 0
+APIShared.Buildings.EnemyProximityPolicies | public static class APIShared.Buildings.EnemyProximityPolicies
+APIShared.Buildings.EnemyProximityPolicies | public static APIShared.NativeCapabilityDiagnostic QueryDiagnostic { get; }
+APIShared.Buildings.EnemyProximityPolicies | public static bool HasRegistration(string ownerGuid, string registrationId)
+APIShared.Buildings.EnemyProximityPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Buildings.EnemyProximityPhase phase, System.Func<APIShared.Buildings.EnemyProximityContext, APIShared.Buildings.EnemyProximityDecision> callback, out APIShared.Buildings.EnemyProximityRegistration registration, out string error, int order = 0)
+APIShared.Buildings.EnemyProximityRegistration | public sealed class APIShared.Buildings.EnemyProximityRegistration
+APIShared.Buildings.EnemyProximityRegistration | public APIShared.Buildings.EnemyProximityPhase Phase { get; }
+APIShared.Buildings.EnemyProximityRegistration | public bool IsEnabled { get; }
+APIShared.Buildings.EnemyProximityRegistration | public int CallbackErrorCount { get; }
+APIShared.Buildings.EnemyProximityRegistration | public string OwnerGuid { get; }
+APIShared.Buildings.EnemyProximityRegistration | public string RegistrationId { get; }
+APIShared.Buildings.EnemyProximityRegistration | public void SetEnabled(bool enabled)
 APIShared.Commands.GameActionAcceptedEventArgs | public sealed class APIShared.Commands.GameActionAcceptedEventArgs
 APIShared.Commands.GameActionAcceptedEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public int ActionState { get; }
@@ -750,6 +779,9 @@ APIShared.IPlagueHeightCapability | public interface APIShared.IPlagueHeightCapa
 APIShared.IPlagueHeightCapability | public bool TrySetPolicy(bool active, APIShared.PlagueSurfaceCategory categories, int maximumHeightDifference, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlayerDefeatCapability | public interface APIShared.IPlayerDefeatCapability
 APIShared.IPlayerDefeatCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.PlayerLordDeathNotification> onLordDied, System.Action<APIShared.PlayerDefeatNotification> onDefeated, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IPlayerDefeatStateCapability | public interface APIShared.IPlayerDefeatStateCapability : APIShared.IPlayerDefeatCapability
+APIShared.IPlayerDefeatStateCapability | public bool TryGetObservedState(long sessionId, int playerId, out APIShared.PlayerDefeatSnapshot snapshot)
+APIShared.IPlayerDefeatStateCapability | public bool TryRegisterStateObserver(string registrationId, System.Action<APIShared.PlayerDefeatSnapshot> onChanged, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ITemporaryAssassinGateObserver | public interface APIShared.ITemporaryAssassinGateObserver
 APIShared.ITemporaryAssassinGateObserver | public void ObserveAssassinDecision(object token, int player, int from, int to, int direction, bool prepared, APIShared.AssassinTransitionKind movement, bool allowed, int gate, uint global, string evidence)
 APIShared.ITemporaryAssassinGateObserver | public void ObserveAssassinStage(object token, int player, string stage, string result, string detail)
@@ -934,6 +966,7 @@ APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudEx
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetPlagueHeightPolicy(out APIShared.PlagueHeightPolicy policy, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetUnitHudPresentation(out APIShared.IUnitHudPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public string OwnerGuid { get; }
@@ -948,6 +981,7 @@ APIShared.ModSettings.DynamicPresetSetting | public sealed class APIShared.ModSe
 APIShared.ModSettings.DynamicPresetSetting | public .ctor()
 APIShared.ModSettings.DynamicPresetSetting | public APIShared.ModSettings.PresetSettingScope Scope { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public System.Type ValueType { get; set; }
+APIShared.ModSettings.DynamicPresetSetting | public bool MissionIndependent { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public bool RequiresRestart { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public object DefaultValue { get; set; }
 APIShared.ModSettings.DynamicPresetSetting | public string DisplayName { get; set; }
@@ -974,6 +1008,8 @@ APIShared.ModSettings.IModSettingsApplicationBackend | public void ReturnToOwnCo
 APIShared.ModSettings.IModSettingsApplicationBackend | public void StageValues(System.Collections.Generic.Dictionary<string, object> values, string contextId)
 APIShared.ModSettings.IModSettingsMissionSourceEndpoint | public interface APIShared.ModSettings.IModSettingsMissionSourceEndpoint
 APIShared.ModSettings.IModSettingsMissionSourceEndpoint | public void System_SetExplicitMissionSettings(bool hasExplicitSettings)
+APIShared.ModSettings.IModSettingsPersonalPersistenceBackend | public interface APIShared.ModSettings.IModSettingsPersonalPersistenceBackend
+APIShared.ModSettings.IModSettingsPersonalPersistenceBackend | public void PersistPersonalValues(System.Collections.Generic.Dictionary<string, object> values)
 APIShared.ModSettings.IModSettingsPresetEndpoint | public interface APIShared.ModSettings.IModSettingsPresetEndpoint
 APIShared.ModSettings.IModSettingsPresetEndpoint | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateDisabledMissionPresetSnapshot()
 APIShared.ModSettings.IModSettingsPresetEndpoint | public bool IsMissionPresetActive { get; }
@@ -1005,6 +1041,8 @@ APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void Re
 APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void RegisterExternalWorkingCopy(BepInEx.Logging.ManualLogSource log, string storageAssemblyLocation, string modName, string targetGuid, System.Version targetVersion, APIShared.ModSettings.PresetLobbyModSettingsViewModel viewModel)
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public sealed class APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public void Activate(System.Action enable, System.Func<System.Exception, bool> definitelyRejected = null)
+APIShared.ModSettings.MissionIndependentAttribute | public sealed class APIShared.ModSettings.MissionIndependentAttribute : System.Attribute
+APIShared.ModSettings.MissionIndependentAttribute | public .ctor()
 APIShared.ModSettings.MissionModSettingsApplicationKind | public enum APIShared.ModSettings.MissionModSettingsApplicationKind : int
 APIShared.ModSettings.MissionModSettingsApplicationKind | Authoring = 3
 APIShared.ModSettings.MissionModSettingsApplicationKind | AuthoringTest = 4
@@ -1030,6 +1068,7 @@ APIShared.ModSettings.ModSettingsApplication | public static class APIShared.Mod
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.Dictionary<string, byte[]> ResumeSnapshot(string id)
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.PresetLobbyModSettingsViewModel> Endpoints { get; }
 APIShared.ModSettings.ModSettingsApplication | public static System.Reflection.PropertyInfo[] GetHostProperties(object endpoint)
+APIShared.ModSettings.ModSettingsApplication | public static System.Reflection.PropertyInfo[] GetMissionHostProperties(object endpoint)
 APIShared.ModSettings.ModSettingsApplication | public static bool Commit(string id)
 APIShared.ModSettings.ModSettingsApplication | public static bool HasActivationFailures { get; }
 APIShared.ModSettings.ModSettingsApplication | public static bool HasApplicationEndpoints { get; }
@@ -1254,6 +1293,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public abstract class AP
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected .ctor()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool CanMutateSetting(string propertyName = null)
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool CanMutateSettingWithDependents(string propertyName, params string[] dependentPropertyNames)
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool IsApplyingMissionSettingsSnapshot { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected bool IsApplyingSettingsSnapshot { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected virtual APIShared.ModSettings.IDynamicPresetSettingsProvider DynamicSettingsProvider { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | protected virtual APIShared.ModSettings.IModSettingsApplicationBackend SettingsApplicationBackend { get; }
@@ -1319,6 +1359,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool AreSettingsE
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanChangePreset { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanEditClientSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanEditHostSettings { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanEditMissionIndependentHostSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanResetSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanToggleClientSettings { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool CanToggleHostSettings { get; }
@@ -1457,6 +1498,7 @@ APIShared.ModSettings.PresetSettingDescriptor | public sealed class APIShared.Mo
 APIShared.ModSettings.PresetSettingDescriptor | public .ctor()
 APIShared.ModSettings.PresetSettingDescriptor | public APIShared.ModSettings.PresetSettingScope Scope { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public System.Type PropertyType { get; }
+APIShared.ModSettings.PresetSettingDescriptor | public bool MissionIndependent { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public bool RequiresRestart { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public string DisplayName { get; }
 APIShared.ModSettings.PresetSettingDescriptor | public string Group { get; }
@@ -1529,12 +1571,14 @@ APIShared.NativeCapabilityIds | public const string AivBuildStep = "aiv-build-st
 APIShared.NativeCapabilityIds | public const string BriefingGoldPresentation = "briefing-gold-presentation"
 APIShared.NativeCapabilityIds | public const string BuildingRepair = "building-repair"
 APIShared.NativeCapabilityIds | public const string CoopAiStartImport = "coop-ai-start-import"
+APIShared.NativeCapabilityIds | public const string EnemyUnitProximity = "enemy-unit-proximity"
 APIShared.NativeCapabilityIds | public const string GatehouseAutomation = "gatehouse-automation"
 APIShared.NativeCapabilityIds | public const string GatehouseDistanceOrigin = "gatehouse-distance-origin"
 APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse-timing"
 APIShared.NativeCapabilityIds | public const string HudExtrasButtons = "hud-extras-buttons"
 APIShared.NativeCapabilityIds | public const string LobbyState = "lobby-state"
 APIShared.NativeCapabilityIds | public const string MissionLifecycle = "mission-lifecycle"
+APIShared.NativeCapabilityIds | public const string PeaceTimeState = "peace-time-state"
 APIShared.NativeCapabilityIds | public const string PlagueHeight = "plague-height"
 APIShared.NativeCapabilityIds | public const string PlayerDefeat = "player-defeat"
 APIShared.NativeCapabilityIds | public const string UnitHudPresentation = "unit-hud-presentation"
@@ -1789,6 +1833,22 @@ APIShared.NativeSites.NativeSiteSpan | public int Length { get; }
 APIShared.NativeSites.NativeSiteSpan | public int Rva { get; }
 APIShared.NativeSites.NativeSiteSpan | public override string ToString()
 APIShared.NativeSites.NativeSiteSpan | public string ExpectedOriginalSha256 { get; }
+APIShared.Networking.AuthenticatedChoreChannel<T> | public sealed class APIShared.Networking.AuthenticatedChoreChannel<T> where T : class
+APIShared.Networking.AuthenticatedChoreChannel<T> | public APIShared.Networking.NetworkSendResult Send(T packet)
+APIShared.Networking.AuthenticatedChoreChannel<T> | public bool IsAvailable { get; }
+APIShared.Networking.AuthenticatedChoreChannel<T> | public short PacketId { get; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public sealed class APIShared.Networking.AuthenticatedChoreChannelOptions<T> where T : class
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public .ctor()
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Action<APIShared.Networking.NetworkPacketDiagnostic> Diagnostic { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Func<APIShared.Networking.AuthenticatedChoreMessage<T>, bool> ValidateReceive { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Func<T, bool> ValidatePayload { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public System.Func<bool> IsEnabled { get; set; }
+APIShared.Networking.AuthenticatedChoreChannelOptions<T> | public int MaximumPayloadBytes { get; set; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public sealed class APIShared.Networking.AuthenticatedChoreMessage<T> where T : class
+APIShared.Networking.AuthenticatedChoreMessage<T> | public T Packet { get; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public int CommandId { get; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public int ScheduledTick { get; }
+APIShared.Networking.AuthenticatedChoreMessage<T> | public int SenderPlayerId { get; }
 APIShared.Networking.ChoreChannel<T> | public sealed class APIShared.Networking.ChoreChannel<T> where T : class
 APIShared.Networking.ChoreChannel<T> | public APIShared.Networking.NetworkSendResult Send(T packet)
 APIShared.Networking.ChoreChannel<T> | public bool IsAvailable { get; }
@@ -1819,6 +1879,7 @@ APIShared.Networking.MessageChannelOptions<T> | public System.Func<T, T> Snapsho
 APIShared.Networking.MessageChannelOptions<T> | public System.Func<bool> IsEnabled { get; set; }
 APIShared.Networking.MessageChannelOptions<T> | public int MaximumBodyBytes { get; set; }
 APIShared.Networking.ModNetworkClient | public sealed class APIShared.Networking.ModNetworkClient
+APIShared.Networking.ModNetworkClient | public APIShared.Networking.AuthenticatedChoreChannel<T> RegisterAuthenticatedChore<T>(string registrationId, System.Action<APIShared.Networking.AuthenticatedChoreMessage<T>> execute, APIShared.Networking.AuthenticatedChoreChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public APIShared.Networking.ChoreChannel<T> RegisterChore<T>(string registrationId, System.Action<T> execute, APIShared.Networking.ChoreChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public APIShared.Networking.MessageChannel<T> RegisterMessage<T>(string registrationId, System.Action<APIShared.Networking.NetworkMessage<T>> receive, APIShared.Networking.MessageChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public bool TryPostPresentation(System.Action presentation)
@@ -1846,6 +1907,19 @@ APIShared.Networking.NetworkSendStatus | Submitted = 0
 APIShared.Networking.NetworkSendStatus | TooLarge = 4
 APIShared.Networking.NetworkSendStatus | TransportFailed = 6
 APIShared.Networking.NetworkSendStatus | Unavailable = 1
+APIShared.ObserverCommandException | public delegate bool APIShared.ObserverCommandException(APIShared.ObserverCommandRequest request)
+APIShared.ObserverCommandExceptions | public static class APIShared.ObserverCommandExceptions
+APIShared.ObserverCommandExceptions | public static bool IsAllowed(APIShared.ObserverCommandRequest request)
+APIShared.ObserverCommandExceptions | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.ObserverCommandException allow, out string reason, int order = 0)
+APIShared.ObserverCommandExceptions | public static long CallbackFailures { get; }
+APIShared.ObserverCommandRequest | public struct APIShared.ObserverCommandRequest
+APIShared.ObserverCommandRequest | public .ctor(int observerPlayerId, int viewedPlayerId, Enums.GameActionCommand command, int structureId, int actionState, int value2)
+APIShared.ObserverCommandRequest | public Enums.GameActionCommand Command { get; }
+APIShared.ObserverCommandRequest | public int ActionState { get; }
+APIShared.ObserverCommandRequest | public int ObserverPlayerId { get; }
+APIShared.ObserverCommandRequest | public int StructureId { get; }
+APIShared.ObserverCommandRequest | public int Value2 { get; }
+APIShared.ObserverCommandRequest | public int ViewedPlayerId { get; }
 APIShared.Pathfinding.RouteReplanPolicy | public sealed class APIShared.Pathfinding.RouteReplanPolicy
 APIShared.Pathfinding.RouteReplanPolicy | public .ctor(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
 APIShared.Pathfinding.RouteReplanPolicy | public bool AllowsDetour(int remaining, int replanned)
@@ -1914,6 +1988,14 @@ APIShared.Pathfinding.RouteTileRules | public static bool HasRules { get; }
 APIShared.Pathfinding.RouteTileRules | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Pathfinding.RouteTileRuleSet rules, out string reason)
 APIShared.Pathfinding.RouteTileRules | public static int ReadChanges(ref long cursor, int[] tiles)
 APIShared.Pathfinding.RouteTileRules | public static long Version { get; }
+APIShared.PlagueHeightPolicy | public struct APIShared.PlagueHeightPolicy
+APIShared.PlagueHeightPolicy | public .ctor(int walls, int gates, int towers, int keeps)
+APIShared.PlagueHeightPolicy | public bool IsActive { get; }
+APIShared.PlagueHeightPolicy | public int GatesTolerance { get; }
+APIShared.PlagueHeightPolicy | public int GroundTolerance { get; }
+APIShared.PlagueHeightPolicy | public int KeepsTolerance { get; }
+APIShared.PlagueHeightPolicy | public int TowersTolerance { get; }
+APIShared.PlagueHeightPolicy | public int WallsTolerance { get; }
 APIShared.PlagueSurfaceCategory | public enum APIShared.PlagueSurfaceCategory : int
 APIShared.PlagueSurfaceCategory | All = 15
 APIShared.PlagueSurfaceCategory | Gates = 2
@@ -1921,11 +2003,22 @@ APIShared.PlagueSurfaceCategory | Keeps = 8
 APIShared.PlagueSurfaceCategory | None = 0
 APIShared.PlagueSurfaceCategory | Towers = 4
 APIShared.PlagueSurfaceCategory | Walls = 1
+APIShared.PlayerColours | public static class APIShared.PlayerColours
+APIShared.PlayerColours | public static bool TryGetUiColour(int playerId, out int uiColour)
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }
 APIShared.PlayerDefeatNotification | public int SimulationTick { get; }
 APIShared.PlayerDefeatNotification | public long SessionId { get; }
+APIShared.PlayerDefeatSnapshot | public sealed class APIShared.PlayerDefeatSnapshot
+APIShared.PlayerDefeatSnapshot | public bool HasLivingLord { get; }
+APIShared.PlayerDefeatSnapshot | public bool IsEliminated { get; }
+APIShared.PlayerDefeatSnapshot | public bool LordDeathConfirmed { get; }
+APIShared.PlayerDefeatSnapshot | public bool OfficialLoss { get; }
+APIShared.PlayerDefeatSnapshot | public bool Readable { get; }
+APIShared.PlayerDefeatSnapshot | public int PlayerId { get; }
+APIShared.PlayerDefeatSnapshot | public int SimulationTick { get; }
+APIShared.PlayerDefeatSnapshot | public long SessionId { get; }
 APIShared.PlayerLordDeathNotification | public sealed class APIShared.PlayerLordDeathNotification
 APIShared.PlayerLordDeathNotification | public .ctor(long sessionId, int playerId, int lordUnitId, int lordGlobalId, int simulationTick)
 APIShared.PlayerLordDeathNotification | public int LordGlobalId { get; }
@@ -1935,10 +2028,16 @@ APIShared.PlayerLordDeathNotification | public int SimulationTick { get; }
 APIShared.PlayerLordDeathNotification | public long SessionId { get; }
 APIShared.PlayerPerspectiveAPI | public static class APIShared.PlayerPerspectiveAPI
 APIShared.PlayerPerspectiveAPI | public static System.IDisposable SubscribeChanges(string ownerGuid, string registrationId, System.Action<APIShared.PlayerPerspectiveChange> callback)
+APIShared.PlayerPerspectiveAPI | public static bool TryRegisterSpectatorControl(string ownerGuid, out string reason)
+APIShared.PlayerPerspectiveAPI | public static bool TrySetEliminatedPlayerView(int playerId)
+APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorControl(int playerId)
 APIShared.PlayerPerspectiveAPI | public static bool TrySetSpectatorView(int playerId)
 APIShared.PlayerPerspectiveAPI | public static int GetControlledPlayerId()
+APIShared.PlayerPerspectiveAPI | public static int GetInputControlledPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetRawNativeViewPlayerId()
 APIShared.PlayerPerspectiveAPI | public static int GetViewedPlayerId()
+APIShared.PlayerPerspectiveAPI | public static void ClearEliminatedPlayerView()
+APIShared.PlayerPerspectiveAPI | public static void ClearSpectatorControl()
 APIShared.PlayerPerspectiveAPI | public static void ClearSpectatorView()
 APIShared.PlayerPerspectiveChange | public sealed class APIShared.PlayerPerspectiveChange
 APIShared.PlayerPerspectiveChange | public APIShared.PlayerPerspectiveChangeReason Reason { get; }
@@ -1997,7 +2096,6 @@ APIShared.Presentation.IngameMenuActionState | public string Tooltip { get; }
 APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
 APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.IngameMenuRowState GetRowState(APIShared.Presentation.IngameMenuRow row)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
-APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, out string reason, int order = 0)
 APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
 APIShared.Presentation.IngameMenuRow | public enum APIShared.Presentation.IngameMenuRow : int
 APIShared.Presentation.IngameMenuRow | ExitStronghold = 7
@@ -2336,6 +2434,15 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Simulation.PeaceTimeState | public static class APIShared.Simulation.PeaceTimeState
+APIShared.Simulation.PeaceTimeState | public static APIShared.NativeCapabilityDiagnostic Diagnostic { get; }
+APIShared.Simulation.PeaceTimeState | public static bool TryGetActive(out bool active)
+APIShared.Simulation.SimulationClock | public static class APIShared.Simulation.SimulationClock
+APIShared.Simulation.SimulationClock | public static bool TryGetCurrentTick(APIShared.MissionContext expectedMission, out int mapTick)
+APIShared.Simulation.SimulationClock | public static bool TryGetElapsedTicks(int earlierTick, int currentTick, out int elapsedTicks)
+APIShared.Simulation.SimulationTickEvents | public static class APIShared.Simulation.SimulationTickEvents
+APIShared.Simulation.SimulationTickEvents | public static bool TryGetCurrentTick(out int mapTick)
+APIShared.Simulation.SimulationTickEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<int> callback, out string reason, int order = 0)
 APIShared.Statistics.EngineReadbackRegistration | public sealed class APIShared.Statistics.EngineReadbackRegistration
 APIShared.Statistics.EngineReadbackRegistration | public bool TryTakeError(out System.Exception exception)
 APIShared.Statistics.EngineReadbackRegistration | public void Cancel()
@@ -2343,6 +2450,7 @@ APIShared.Statistics.EngineReadbackRegistration | public void Request()
 APIShared.Statistics.EngineReadbacks | public static class APIShared.Statistics.EngineReadbacks
 APIShared.Statistics.EngineReadbacks | public static bool IsAvailable { get; }
 APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string ownerGuid, string id, System.Action copy, out APIShared.Statistics.EngineReadbackRegistration registration)
+APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string ownerGuid, string id, System.Action copy, out APIShared.Statistics.EngineReadbackRegistration registration, out string reason)
 APIShared.Statistics.LordStatisticCatalog | public sealed class APIShared.Statistics.LordStatisticCatalog
 APIShared.Statistics.LordStatisticCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Statistics.LordStatisticColumn> Columns { get; }
 APIShared.Statistics.LordStatisticCatalog | public long Revision { get; }
@@ -2478,6 +2586,9 @@ APIShared.UnitHudSlotSnapshot | public .ctor(int slot, int vanillaType, APIShare
 APIShared.UnitHudSlotSnapshot | public APIShared.UnitHudCategorySnapshot Category { get; }
 APIShared.UnitHudSlotSnapshot | public int Slot { get; }
 APIShared.UnitHudSlotSnapshot | public int VanillaType { get; }
+APIShared.UnitHudSpriteColours | public static class APIShared.UnitHudSpriteColours
+APIShared.UnitHudSpriteColours | public static bool Release(string ownerGuid)
+APIShared.UnitHudSpriteColours | public static bool TryLease(string ownerGuid, int playerId, out string reason)
 APIShared.UnitHudSurface | public enum APIShared.UnitHudSurface : int
 APIShared.UnitHudSurface | All = 63
 APIShared.UnitHudSurface | ArmyReport = 8

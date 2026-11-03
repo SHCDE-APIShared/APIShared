@@ -13,7 +13,7 @@ namespace APIShared.Presentation
             internal string Owner, Id;
             internal int Order;
             internal long Sequence;
-            internal bool Legacy, Vanilla, Known, Dirty = true, FailureReported;
+            internal bool Vanilla, Known, Dirty = true, FailureReported;
             internal IngameMenuActionOptions Options;
             internal Func<IngameMenuActionState> Provider;
             internal Action Execute;
@@ -37,7 +37,7 @@ namespace APIShared.Presentation
         internal Entry[] Entries => entries.ToArray();
         internal static bool ValidRow(IngameMenuRow row) => row >= IngameMenuRow.Save && row <= IngameMenuRow.Resume;
         internal bool CanRegister(string owner, string id, Func<IngameMenuActionState> provider, Action execute,
-            IngameMenuActionOptions options, bool legacy, out string reason)
+            IngameMenuActionOptions options, out string reason)
         {
             reason = null;
             if (string.IsNullOrWhiteSpace(owner) || owner == VanillaOwner || string.IsNullOrWhiteSpace(id) || provider == null || execute == null)
@@ -45,8 +45,8 @@ namespace APIShared.Presentation
             if (Evaluating) { reason = "Register actions outside a state-provider callback."; return false; }
             foreach (var entry in entries)
                 if (entry.Owner == owner && entry.Id == id) { reason = "Duplicate menu action: " + owner + "/" + id; return false; }
-            if (!legacy && options == null) { reason = "Placement options are required."; return false; }
-            if (!legacy && options.Row.HasValue)
+            if (options == null) { reason = "Placement options are required."; return false; }
+            if (options.Row.HasValue)
             {
                 if (!ValidRow(options.Row.Value) || (options.Slot != IngameMenuSlot.Left && options.Slot != IngameMenuSlot.Right))
                 { reason = "Unknown menu row or slot."; return false; }
@@ -54,17 +54,16 @@ namespace APIShared.Presentation
                 { reason = "Replacing Vanilla requires replaceVanilla: true."; return false; }
                 if (!options.ReplaceExisting)
                     foreach (var entry in entries)
-                        if ((!entry.Legacy && entry.Options.Row == options.Row && entry.Options.Slot == options.Slot) ||
-                            (entry.Legacy && options.Row == IngameMenuRow.QuitMission && options.Slot == IngameMenuSlot.Left))
+                        if (entry.Options.Row == options.Row && entry.Options.Slot == options.Slot)
                         { reason = "Menu position already claimed by " + entry.Owner + "/" + entry.Id + "; use replaceExisting explicitly."; return false; }
             }
             return true;
         }
         internal Entry Register(string owner, string id, Func<IngameMenuActionState> provider, Action execute,
-            IngameMenuActionOptions options, bool legacy, int order)
+            IngameMenuActionOptions options, int order)
         {
             var entry = new Entry { Owner = owner, Id = id, Provider = provider, Execute = execute,
-                Options = options, Legacy = legacy, Order = order, Sequence = ++sequence };
+                Options = options, Order = order, Sequence = ++sequence };
             entries.Add(entry);
             return entry;
         }
@@ -104,19 +103,13 @@ namespace APIShared.Presentation
         {
             var result = new Layout();
             for (int i = 0; i < vanilla.Length; i++) if (Visible(vanilla[i])) result.Slots[i, 1] = vanilla[i];
-            Entry legacy = null;
             foreach (var entry in entries)
             {
-                if (!Visible(entry)) continue;
-                if (entry.Legacy)
-                { if (legacy == null || Compare(entry, legacy) < 0) legacy = entry; continue; }
-                if (!entry.Options.Row.HasValue) continue;
+                if (!Visible(entry) || !entry.Options.Row.HasValue) continue;
                 int row = (int)entry.Options.Row.Value, slot = (int)entry.Options.Slot;
                 Entry previous = result.Slots[row, slot];
                 if (previous == null || previous.Vanilla || entry.Sequence > previous.Sequence) result.Slots[row, slot] = entry;
             }
-            if (result.Slots[(int)IngameMenuRow.QuitMission, 0] == null)
-                result.Slots[(int)IngameMenuRow.QuitMission, 0] = legacy;
             var direct = new HashSet<Entry>();
             foreach (var entry in result.Slots) if (entry != null) direct.Add(entry);
             foreach (var entry in entries) if (Visible(entry) && !direct.Contains(entry)) result.Overflow.Add(entry);
@@ -141,13 +134,9 @@ namespace APIShared.Presentation
         private IngameMenuSlotState GetSlot(IngameMenuRow row, IngameMenuSlot slot, Layout layout)
         {
             var claims = new List<Entry>();
-            var old = new List<Entry>();
             foreach (var entry in entries)
-                if (entry.Legacy)
-                { if (row == IngameMenuRow.QuitMission && slot == IngameMenuSlot.Left) old.Add(entry); }
-                else if (entry.Options.Row == row && entry.Options.Slot == slot) claims.Add(entry);
+                if (entry.Options.Row == row && entry.Options.Slot == slot) claims.Add(entry);
             claims.Sort((a, b) => b.Sequence.CompareTo(a.Sequence));
-            old.Sort(Compare); claims.AddRange(old);
             if (slot == IngameMenuSlot.Right) claims.Add(vanilla[(int)row]);
             Entry current = layout.Slots[(int)row, (int)slot];
             var snapshots = new IngameMenuActionInfo[claims.Count];

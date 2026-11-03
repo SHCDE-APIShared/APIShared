@@ -43,8 +43,8 @@ namespace APIShared.Compatibility
                 VerifyProvenance(fixesAssembly);
                 RequireStartup();
 
-                FieldInfo lockField = typeof(EngineInterface).GetField("threadLock", StaticFields);
-                Require(lockField != null && lockField.IsPrivate && lockField.FieldType == typeof(object), "Engine lock contract changed");
+                FieldInfo lockField = Internal.EngineMonitor.Field;
+                Require(lockField != null, "Engine lock contract changed");
                 object engineLock = lockField.GetValue(null);
                 Require(engineLock != null && !Monitor.IsEntered(engineLock), "Missing engine lock or reentrant engine call");
                 bool taken = false;

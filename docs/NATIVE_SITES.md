@@ -172,6 +172,10 @@ spans are built from each service's native contract constants in
 | `GateRouting.Comparisons` | Exclusive 0xE2705/20, 0xE3024/20 | Provider's `InstallComparisons` |
 | `GateRouting.Descent` | Exclusive 0x185D55/20; Observe 0x185934/4 | Provider's `InstallDescent` |
 | `Buildings.RepairQuote` | Observe 0xD51A0/17 (validated entry that the repair quote calls) | First repair capability acquisition |
+| `Savegames.SynchronizedSaveContext` | Exclusive 0x13030/6 (Chore 39 save handler entry); Observe 0x13036/13 (validated continuation) | LibraryLoaded, after the managed archive-context correction |
+| `Players.ViewIdentity` | Exclusive 0x52B0/10 (common save-writer entry); Observe 0x52BA/2 (validated continuation) | LibraryLoaded startup window (player-view identity); audited hash only; required for foreign eliminated-participant views. See [player views and control](PLAYER_CONTROL.md#implementation) |
+| `Players.ControlInput` | Exclusive 0x868F6/10 (RunTick spectator-input CMOVNE/store); Observe 0x86900/4 (validated continuation); Exclusive 0x8D128/6 (dispatcher re-dispatch CMOVNE/XOR); Observe 0x8D12E/6 (validated native-view store) | First `TryRegisterSpectatorControl` (LibraryLoaded startup window, or outside a mission with thread suspension); audited hash only; both stubs stay dormant with actor zero. See [player views and control](PLAYER_CONTROL.md#spectator-input-control) |
+| `Presentation.VisibleMapRender` | Exclusive 0x41D60/10 (visible-map render entry; consumers register observers through `VisibleMapRenderEvents`) | First visible-map render registration |
 
 A conflict with another owner's earlier registration fails that APIShared service
 closed through its existing path (capability diagnostic `Conflict` or its install

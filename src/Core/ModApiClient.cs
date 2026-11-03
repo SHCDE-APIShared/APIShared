@@ -77,6 +77,13 @@ namespace APIShared
         public bool TryGetPlagueHeight(out IPlagueHeightCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             PlagueHeightService.TryGet(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Reads the effective plague standing-height policy of all owners (the one the native damage
+        /// path applies). Any thread; no allocation, lock or callback. Returns false with an inactive policy when
+        /// the service is unavailable (then the native path is Vanilla). The value changes only when an owner sets
+        /// a policy, which owners do on the main thread before/after simulation, identically on all peers.</summary>
+        public bool TryGetPlagueHeightPolicy(out PlagueHeightPolicy policy, out NativeCapabilityDiagnostic diagnostic) =>
+            PlagueHeightService.TryGetPolicy(out policy, out diagnostic);
+
         /// <summary>Acquires building repair quotes and tooltip presentation for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IBuildingRepairCapability"/> for operation/thread contracts.</summary>
         public bool TryGetBuildingRepair(out IBuildingRepairCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetBuildingRepair(OwnerGuid, out capability, out diagnostic);

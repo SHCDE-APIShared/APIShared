@@ -102,8 +102,9 @@ namespace APISharedTests
                 {
                     entries.SetValue(null, new[] { new PackagedLordPresentationEntry(3, "Lord", "Authored", json, provider) });
                     var random = new Random(123); rng.SetValue(null, random);
-                    object[] call = { null, "Lord", AILordMessageType.Taunt1, null, null };
-                    bool available = (bool)type.GetMethod("Message", flags).Invoke(null, call);
+                    object[] call = { "Lord", AILordMessageType.Taunt1, null, null, null };
+                    Assert.IsTrue((bool)type.GetMethod("TryResolveMedia", flags).Invoke(null, call), "A claimed Lord is answered by the packaged presentation.");
+                    bool available = (bool)call[2];
                     Assert.AreEqual(provider != null, available);
                     object[] subtitle = { null, "Lord", null };
                     Assert.IsTrue((bool)type.GetMethod("Speech", flags).Invoke(null, subtitle));

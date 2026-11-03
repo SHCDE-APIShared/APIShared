@@ -1,4 +1,4 @@
-using APIShared.Content.Lords;
+using APIShared.Lords;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 

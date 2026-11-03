@@ -10,7 +10,10 @@ namespace APIShared
         private readonly object sync = new object();
         private readonly Dictionary<string, ulong> owners = new Dictionary<string, ulong>(StringComparer.Ordinal);
         private readonly Action<ulong> publish;
+        // The last published snapshot, readable from any thread without a lock or allocation.
+        private long current;
         internal PlagueHeightPolicies(Action<ulong> publish) { this.publish = publish; }
+        internal ulong Current => unchecked((ulong)System.Threading.Interlocked.Read(ref current));
         internal bool TrySet(string owner, bool active, PlagueSurfaceCategory categories, int tolerance)
         {
             if (string.IsNullOrWhiteSpace(owner) || (categories & ~PlagueSurfaceCategory.All) != 0 ||
@@ -31,6 +34,7 @@ namespace APIShared
                     combined |= maximum << (lane * 16);
                 }
                 publish(combined);
+                System.Threading.Interlocked.Exchange(ref current, unchecked((long)combined));
             }
             return true;
         }

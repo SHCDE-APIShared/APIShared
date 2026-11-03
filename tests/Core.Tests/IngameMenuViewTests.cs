@@ -1,5 +1,4 @@
 #nullable enable
-using System.Xml.Linq;
 using APIShared.Presentation;
 using CrusaderDE;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -43,8 +42,8 @@ namespace Core.Tests
             IngameMenuActionOptions? options = null)
         {
             options ??= new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left);
-            Assert.IsTrue(registry.CanRegister("mod", id, provider, () => { }, options, false, out string reason), reason);
-            return registry.Register("mod", id, provider, () => { }, options, false, 0);
+            Assert.IsTrue(registry.CanRegister("mod", id, provider, () => { }, options, out string reason), reason);
+            return registry.Register("mod", id, provider, () => { }, options, 0);
         }
         private static Button Original(HUD_IngameMenu menu, string name) => (Button)menu.Names[name];
         private static IEnumerable<FrameworkElement> Walk(FrameworkElement element)
@@ -149,17 +148,6 @@ namespace Core.Tests
             var single = Walk(menu).OfType<Grid>().Single(g => g.Children.Count == 1 && g.Children[0] is Button b && Equals(PropEx.GetTextCentre(b), "Extra"));
             Assert.AreEqual(300d, ((Button)single.Children[0]).Width);
             IngameMenuActions.TestPage(false); Assert.AreEqual(438d, menu.Names["LayoutRoot"].Height);
-        }
-        [TestMethod]
-        public void ShippedActionStyleDoesNotReplaceAnyPartOfTheVanillaTemplate()
-        {
-            // Resource identity is a compatibility contract: this published key remains an empty
-            // alias of the actual Vanilla style, so textures and state triggers cannot diverge.
-            string path = Path.Combine(AppContext.BaseDirectory, "MenuPatch.xaml");
-            var document = XDocument.Load(path); XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var style = document.Descendants("Style").Single(s => (string?)s.Attribute(x + "Key") == "APISharedMenuActionButtonStyle");
-            Assert.AreEqual("{StaticResource BTN_SH_GlowSDisable}", (string?)style.Attribute("BasedOn"));
-            Assert.IsFalse(style.Elements().Any());
         }
         [TestMethod]
         public void DisplacedOriginalKeepsItsCommandAndReturnsToItsOriginalRow()

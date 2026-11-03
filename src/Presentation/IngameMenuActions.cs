@@ -24,35 +24,24 @@ namespace APIShared.Presentation
         private static MainViewModel observedMain;
         private static bool installed, scheduled, refreshing, initializing, openingPrepared, hostFailureReported;
 
-        /// <summary>Legacy registration: sorted by order/ordinal owner/ID. First visible legacy action supplies
-        /// QuitMission/Left unless an explicit visible claim wins; the remainder go to the additional page.
-        /// Binary/source signature retained. Live changes now require Invalidate; no recurring provider polling.</summary>
-        public static bool TryRegister(string ownerGuid, string id, Func<IngameMenuActionState> state,
-            Action execute, out string reason, int order = 0)
-            => Register(ownerGuid, id, state, execute, null, true, out _, out reason, order);
-
         /// <summary>Registers with explicit placement or additional-page-only options. Conflicts, including hidden
         /// registered claims, reject atomically unless replaceExisting was requested. Right also requires replaceVanilla.
         /// Failure returns no handle and changes no claims. The accepted handle lasts until process exit.</summary>
         public static bool TryRegister(string ownerGuid, string id, Func<IngameMenuActionState> state,
             Action execute, IngameMenuActionOptions options, out IngameMenuActionRegistration registration,
             out string reason, int order = 0)
-            => Register(ownerGuid, id, state, execute, options, false, out registration, out reason, order);
-
-        private static bool Register(string owner, string id, Func<IngameMenuActionState> state, Action execute,
-            IngameMenuActionOptions options, bool legacy, out IngameMenuActionRegistration registration, out string reason, int order)
         {
             registration = null;
             try
             {
                 RequireUnity();
-                if (!registry.CanRegister(owner, id, state, execute, options, legacy, out reason)) return false;
+                if (!registry.CanRegister(ownerGuid, id, state, execute, options, out reason)) return false;
                 if (!installed)
                 {
                     hook.Install(typeof(HUD_IngameMenu), nameof(HUD_IngameMenu.Init), typeof(void), Type.EmptyTypes, OnInit, "ingame-menu");
                     installed = true;
                 }
-                var entry = registry.Register(owner, id, state, execute, options, legacy, order);
+                var entry = registry.Register(ownerGuid, id, state, execute, options, order);
                 registration = new IngameMenuActionRegistration(() => RequestInvalidation(null, entry));
                 reason = null;
             }
@@ -70,7 +59,7 @@ namespace APIShared.Presentation
             return true;
         }
 
-        /// <summary>Thread-safe owner-wide invalidation, also for legacy registrations. Requests coalesce onto
+        /// <summary>Thread-safe owner-wide invalidation. Requests coalesce onto
         /// the validated Unity dispatcher; closed menus defer evaluation. Notify relevant changes, never periodic ticks/frames.
         /// Invalidation inside a provider marks its owner dirty for the next external event, without recursive evaluation.</summary>
         public static void Invalidate(string ownerGuid)

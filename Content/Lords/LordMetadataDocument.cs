@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace APIShared.Content.Lords
+namespace APIShared.Lords
 {
     /// <summary>A lossless lordmeta.json document. Unknown fields remain in <see cref="OriginalJson"/>.</summary>
     public sealed class LordMetadataDocument
