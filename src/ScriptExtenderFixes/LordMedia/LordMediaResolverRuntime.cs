@@ -12,8 +12,10 @@ using System.Threading;
 
 namespace APIShared.ScriptExtenderFixes
 {
-    // Optional custom media must not turn an absent Lord identity into an error for
-    // each native enqueue. Returning false retains the caller's original media paths.
+    // Single owner of SE's GameAIManagerAPI.TryGetVideoAndAudio hook. Dispatch order: packaged Lord
+    // presentation claims (PackagedLordPresentation.TryResolveMedia), then the missing-identity
+    // correction, then SE. Optional custom media must not turn an absent Lord identity into an error
+    // for each native enqueue; returning false retains the caller's original media paths.
     internal static class LordMediaResolverRuntime
     {
         internal delegate bool Resolver(GameAIManagerAPI self, string name, AILordMessageType type,
@@ -22,6 +24,8 @@ namespace APIShared.ScriptExtenderFixes
         private static Resolver original;
         private static ManualLogSource logger;
         private static int attempted;
+        // The correction needs the audited body; packaged claims need only the signature.
+        private static bool correctionActive;
 
         internal static void Initialize(ManualLogSource log)
         {
@@ -34,8 +38,20 @@ namespace APIShared.ScriptExtenderFixes
                 MethodInfo target = typeof(GameAIManagerAPI).GetMethod("TryGetVideoAndAudio",
                     BindingFlags.NonPublic | BindingFlags.Instance, null,
                     new[] { typeof(string), typeof(AILordMessageType), typeof(string).MakeByRefType(), typeof(string).MakeByRefType() }, null);
-                stage = "validate-resolver-contract";
-                ValidateTarget(target);
+                stage = "validate-resolver-signature";
+                ValidateSignature(target);
+                stage = "validate-resolver-body";
+                try
+                {
+                    using (var definition = new DynamicMethodDefinition(target)) ValidateBody(definition.Definition);
+                    correctionActive = true;
+                }
+                catch (Exception error)
+                {
+                    Write(true, "Lord media protection is disabled because the Script Extender resolver body differs from the audited contract. " +
+                        "Original Script Extender behavior remains active, including possible misleading Lord lookup errors; packaged Lord media stays available. " +
+                        $"extender={typeof(GameAIManagerAPI).Assembly.FullName}, errorType={error.GetType().FullName}; {error.Message}");
+                }
                 stage = "create-hook-and-trampoline";
                 candidate = new Hook(target, (Resolver)OnResolve,
                     new HookConfig { ManualApply = true, ID = "APIShared.ScriptExtenderFixes.LordMedia" });
@@ -43,14 +59,15 @@ namespace APIShared.ScriptExtenderFixes
                 stage = "publish-hook";
                 candidate.Apply();
                 hook = candidate; // Process lifetime; logical mission end never removes this hook.
-                Write(false, "installed; Lords without registered Script Extender metadata quietly retain original game media paths.");
+                if (correctionActive)
+                    Write(false, "installed; Lords without registered Script Extender metadata quietly retain original game media paths.");
             }
             catch (Exception error)
             {
                 // Only a failed, unpublished installation candidate can be rolled back.
                 try { candidate?.Undo(); candidate?.Dispose(); } catch { }
-                Write(true, "Lord media protection could not start because the Script Extender resolver contract could not be validated or hooked. " +
-                    "Original Script Extender behavior remains active, including possible misleading Lord lookup errors. " +
+                Write(true, "Lord media hook could not start because the Script Extender resolver signature could not be validated or hooked. " +
+                    "Original Script Extender behavior remains active, including possible misleading Lord lookup errors; packaged Lord media is unavailable. " +
                     "Check that APIShared and Script Extender versions are compatible. " +
                     $"stage={stage}, extender={typeof(GameAIManagerAPI).Assembly.FullName}, " +
                     $"errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}; {error}");
@@ -58,6 +75,13 @@ namespace APIShared.ScriptExtenderFixes
         }
 
         internal static void ValidateTarget(MethodInfo target)
+        {
+            ValidateSignature(target);
+            using (var definition = new DynamicMethodDefinition(target))
+                ValidateBody(definition.Definition);
+        }
+
+        internal static void ValidateSignature(MethodInfo target)
         {
             if (target == null) throw new MissingMethodException("GameAIManagerAPI.TryGetVideoAndAudio");
             ParameterInfo[] parameters = target.GetParameters();
@@ -67,8 +91,6 @@ namespace APIShared.ScriptExtenderFixes
                 parameters[2].ParameterType != typeof(string).MakeByRefType() || !parameters[2].IsOut ||
                 parameters[3].ParameterType != typeof(string).MakeByRefType() || !parameters[3].IsOut || target.GetMethodBody() == null)
                 throw new InvalidOperationException("Incompatible Lord media resolver signature/body: " + target);
-            using (var definition = new DynamicMethodDefinition(target))
-                ValidateBody(definition.Definition);
         }
 
         internal static void ValidateBody(MethodDefinition definition)
@@ -135,9 +157,13 @@ namespace APIShared.ScriptExtenderFixes
         private static bool LoadsEmpty(Instruction instruction) => instruction.OpCode == OpCodes.Ldsfld &&
             instruction.Operand is FieldReference field && field.DeclaringType.FullName == "System.String" && field.Name == "Empty";
 
-        private static bool OnResolve(GameAIManagerAPI self, string name, AILordMessageType type, out string video, out string audio) =>
-            Resolve(original, self, name, type, out video, out audio);
+        private static bool OnResolve(GameAIManagerAPI self, string name, AILordMessageType type, out string video, out string audio)
+        {
+            if (Presentation.PackagedLordPresentation.TryResolveMedia(name, type, out bool claimed, out video, out audio)) return claimed;
+            return correctionActive ? Resolve(original, self, name, type, out video, out audio) : original(self, name, type, out video, out audio);
+        }
 
+        // Missing-identity correction (pure, tested with an injected next resolver).
         internal static bool Resolve(Resolver next, GameAIManagerAPI self, string name, AILordMessageType type,
             out string video, out string audio)
         {

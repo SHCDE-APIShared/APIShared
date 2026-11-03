@@ -270,7 +270,7 @@ namespace APIShared.ModSettings
             // Capture inclusion once, before a setter's PropertyChanged can refresh
             // the live role. Deserialization likewise finishes before any mutation.
             bool includeHost = restoreHost ?? (selected == MissionPresetIndex || owner.IsLocalHost);
-            // Reflected presets historically omit null values (CaptureCurrentSettings and
+            // Reflected presets omit null values (CaptureCurrentSettings and
             // TryApplyProperty do the same). A missing optional value must not prevent
             // activation or restoration of the other settings. Backends retain their
             // existing complete-configuration validation.

@@ -926,7 +926,7 @@ namespace APIShared.ModSettings
 
         private bool explicitModDefaultsReset;
 
-        /// <summary>Replaces only mission-dependent Host values and the source label. Personal values in old snapshots are ignored.</summary>
+        /// <summary>Replaces only mission-dependent Host values and the source label. Personal values contained in a snapshot are ignored.</summary>
         public void System_ApplyMissionPresetSnapshot(Dictionary<string, byte[]> snapshot, string label)
         {
             if (explicitModDefaultsReset) presetController?.ApplyExplicitMissionDefaults(snapshot, label);

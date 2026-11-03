@@ -25,12 +25,13 @@ namespace APIShared
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
-        internal PlayerDefeatService PlayerDefeatState => playerDefeat;
         private MissionLifecycleService missionLifecycle;
         private BriefingGoldPresentationService briefingGoldPresentation;
         private BuildingRepairService buildingRepair;
         private CoopAiStartImportService coopAiStartImport;
         internal RepairTooltipViewModel RepairTooltip { get; } = new RepairTooltipViewModel();
+        // Shared defeat observations (state snapshots) for internal readers such as eliminated-participant views.
+        internal PlayerDefeatService PlayerDefeat => playerDefeat;
         private NativeCapabilityDiagnostic buildingRepairDiagnostic = Pending(NativeCapabilityIds.BuildingRepair);
         private long nativeModuleBase;
         private NativeCapabilityDiagnostic missionLifecycleDiagnostic = Pending(NativeCapabilityIds.MissionLifecycle);

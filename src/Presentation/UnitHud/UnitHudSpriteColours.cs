@@ -9,7 +9,7 @@ namespace APIShared
     /// <remarks>
     /// <para>The lease sits on APIShared's single <c>MainViewModel.UpdateUITroopSprites</c> hook; consumers install no
     /// hook of their own. While leased, every Vanilla sprite update and every APIShared replay calls the original with
-    /// the leased player's colour from <see cref="PlayerColors.TryGetUiColour"/>. The Arabic variants follow the leased
+    /// the leased player's colour from <see cref="PlayerColours.TryGetUiColour"/>. The Arabic variants follow the leased
     /// player's lord type where Vanilla exposes it (human multiplayer members); otherwise Vanilla's own value is kept.
     /// If the leased player's colour cannot be resolved, that update keeps Vanilla's values. Vanilla's requested values
     /// stay recorded as the restore values. Unit HUD image overrides receive the drawn (effective) colour.</para>

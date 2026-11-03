@@ -9,7 +9,7 @@ namespace APIShared.Simulation
     /// <summary>Read-only access to the actual, save-preserved native peace-time state.</summary>
     public static class PeaceTimeState
     {
-        private const string DiagnosticId = "peace-time-state";
+        private const string DiagnosticId = NativeCapabilityIds.PeaceTimeState;
         internal const int FlagAnchorRva = 0xCA874, FlagRva = 0x38722DC;
         private static int initializationAttempted;
         private static PeaceTimeReader reader;
@@ -59,7 +59,7 @@ namespace APIShared.Simulation
             {
                 Volatile.Write(ref diagnostic, new NativeCapabilityDiagnostic(DiagnosticId,
                     NativeCapabilityState.ValidationFailed, hash, error.Message));
-                NativeApiLog.Error(log, "Peace-time source unavailable; independent proximity settings remain active: " + error);
+                NativeApiLog.Error(log, "Peace-time source unavailable; consumers must treat Peace Time as unknown: " + error);
             }
         }
 

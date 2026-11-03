@@ -24,18 +24,18 @@ namespace APISharedTests
             internal Action<int> DuringWrite;
             internal readonly System.Collections.Generic.Queue<Action> Pending = new System.Collections.Generic.Queue<Action>();
             internal readonly System.Collections.Generic.List<string> Errors = new System.Collections.Generic.List<string>();
-            internal readonly System.Collections.Generic.List<ControlSaveIdentity.FailureRecord> Faults = new System.Collections.Generic.List<ControlSaveIdentity.FailureRecord>();
-            internal readonly ControlSaveIdentity Core;
+            internal readonly System.Collections.Generic.List<PlayerViewIdentity.FailureRecord> Faults = new System.Collections.Generic.List<PlayerViewIdentity.FailureRecord>();
+            internal readonly PlayerViewIdentity Core;
             internal readonly APIShared.PlayerViewIdentityRuntime Runtime;
             internal readonly APIShared.PlayerViewIdentityOwner Owner;
             internal ViewFixture()
             {
-                Core = new ControlSaveIdentity(() => System.Threading.Monitor.IsEntered(Gate), e => e == World,
+                Core = new PlayerViewIdentity(() => System.Threading.Monitor.IsEntered(Gate), e => e == World,
                     () => View, p => { if (p == 6 && FailRestore) throw new InvalidOperationException("restore failed"); View = p; DuringWrite?.Invoke(p); });
                 Runtime = new APIShared.PlayerViewIdentityRuntime(Core, Gate, action => { Pending.Enqueue(action); return true; }, Errors.Add);
                 Owner = new APIShared.PlayerViewIdentityOwner("spectator-fixture", Faults.Add);
             }
-            internal ControlSaveIdentity.Lease Acquire(object owner = null)
+            internal PlayerViewIdentity.Lease Acquire(object owner = null)
             { lock (Gate) { Assert.IsTrue(Core.TryBind(owner ?? Owner, World, View, out var lease, out string reason), reason); return lease; } }
             internal void Drain() { while (Pending.Count > 0) Pending.Dequeue()(); }
         }
@@ -55,12 +55,12 @@ namespace APISharedTests
             };
             for (int i = 0; i < 32; i++) {
                 f.Runtime.RunSubmission(payload, submit);
-                ControlSaveNative.RunProtectedWriter(f.Core, 0, writer, f.Runtime);
+                PlayerViewSaveScope.RunProtectedWriter(f.Core, 0, writer, f.Runtime);
             }
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 10000; i++) {
                 f.Runtime.RunSubmission(payload, submit);
-                ControlSaveNative.RunProtectedWriter(f.Core, 0, writer, f.Runtime);
+                PlayerViewSaveScope.RunProtectedWriter(f.Core, 0, writer, f.Runtime);
             }
             Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before);
             Assert.IsTrue(serialized, "Even an unbound sender must serialize with concurrent view acquisition.");
@@ -90,7 +90,7 @@ namespace APISharedTests
             Assert.IsTrue(f.Runtime.RunSubmission(new byte[2], payload => {
                 sent++;
                 Assert.IsFalse(f.Core.TryBind(f.Owner, 1, 2, out _, out _));
-                Assert.AreEqual(42UL, ControlSaveNative.RunProtectedWriter(f.Core, 0, value => {
+                Assert.AreEqual(42UL, PlayerViewSaveScope.RunProtectedWriter(f.Core, 0, value => {
                     written++;
                     Assert.IsFalse(f.Core.TryBind(f.Owner, 1, 2, out _, out _));
                     Assert.AreEqual(2, f.View);
@@ -182,7 +182,7 @@ namespace APISharedTests
             Assert.IsTrue(f.Runtime.TryRunWithOriginalIdentity(0, ignored => {
                 Assert.AreEqual(2, f.View); Assert.IsTrue(f.Core.IsScopeActive);
                 Assert.IsTrue(f.Runtime.RunSubmission(new byte[2], bytes => { Assert.AreEqual(2, f.View); return true; }));
-                Assert.AreEqual(42UL, ControlSaveNative.RunProtectedWriter(f.Core, 0,
+                Assert.AreEqual(42UL, PlayerViewSaveScope.RunProtectedWriter(f.Core, 0,
                     value => { Assert.AreEqual(2, f.View); return 42UL; }, f.Runtime));
                 Assert.IsFalse(f.Core.TryRestoreAndRelease(f.Owner, lease, out _));
                 return 7;
@@ -211,87 +211,19 @@ namespace APISharedTests
         public void PublishedSaveWriterRejectsAnotherIdentityCore()
         {
             var first = new ViewFixture(); var second = new ViewFixture();
-            ControlSaveNative.ValidateIdentityBinding(first.Core, first.Core);
-            Assert.ThrowsExactly<InvalidOperationException>(() => ControlSaveNative.ValidateIdentityBinding(first.Core, second.Core));
-            Assert.ThrowsExactly<ArgumentNullException>(() => ControlSaveNative.ValidateIdentityBinding(first.Core, null));
+            PlayerViewSaveScope.ValidateIdentityBinding(first.Core, first.Core);
+            Assert.ThrowsExactly<InvalidOperationException>(() => PlayerViewSaveScope.ValidateIdentityBinding(first.Core, second.Core));
+            Assert.ThrowsExactly<ArgumentNullException>(() => PlayerViewSaveScope.ValidateIdentityBinding(first.Core, null));
             bool written = false;
-            Assert.AreEqual(0UL, ControlSaveNative.RunProtectedWriter(first.Core, 0, value => { written = true; return 1UL; }, second.Runtime));
+            Assert.AreEqual(0UL, PlayerViewSaveScope.RunProtectedWriter(first.Core, 0, value => { written = true; return 1UL; }, second.Runtime));
             Assert.IsFalse(written, "A writer adapter cannot use a coordinator with a different core.");
-        }
-
-        private sealed class NoCommandRules : IControlCommandRules
-        {
-            public bool TryValidate(ControlNativeCommand command,
-                System.Collections.ObjectModel.ReadOnlyCollection<PlayerControlObject> objects, out PlayerControlRights required)
-            { required = PlayerControlRights.None; return false; }
-        }
-
-        [TestMethod]
-        public void ControlPerspectiveSaveAndSendShareOneCoreWithoutStealingEachOthersLease()
-        {
-            var f = new ViewFixture();
-            var session = new SinglePlayerControlSession(new NoCommandRules(),
-                (PlayerControlObject captured, out PlayerControlObject live) => { live = captured; return true; }, () => true);
-            Assert.IsTrue(session.Register("fixture", "local", out _));
-            int actor = 0, writes = 0;
-            var local = new LocalControlRuntime(f.Runtime, session, new SinglePlayerNativeQueue(session),
-                value => writes++, value => { actor = value; writes++; });
-            local.Begin(1, 0x1000, 2);
-            Assert.IsFalse(local.TryBindSave(1, out _, out _));
-            Assert.IsTrue(local.TryBindSave(2, out long token, out _));
-            var controlLease = f.Core.CurrentLease; f.View = 6;
-            lock (f.Gate) Assert.IsFalse(f.Core.TryBind(f.Owner, 1, 2, out _, out _));
-            Assert.IsTrue(f.Runtime.RunSubmission(new byte[2], payload => {
-                Assert.AreEqual(2, f.View);
-                Assert.AreEqual(23UL, ControlSaveNative.RunProtectedWriter(f.Core, 0,
-                    ignored => { Assert.AreEqual(2, f.View); return 23UL; }, f.Runtime));
-                return true;
-            }));
-            Assert.AreEqual(6, f.View);
-            f.Core.ReportFailure(controlLease, "queued old-owner failure"); f.Runtime.ObserveFailure(f.Core);
-            Assert.IsTrue(local.Retire(out string reason), reason);
-            Assert.AreEqual(0, actor); Assert.AreEqual(2, f.View);
-            var spectatorLease = f.Acquire(); Assert.IsTrue(spectatorLease.Token > token); f.View = 4;
-            int before = writes;
-            Assert.IsTrue(local.Retire(out reason), reason);
-            Assert.AreEqual(before, writes, "An old role retirement must not touch the new owner's input state.");
-            var stale = controlLease;
-            lock (f.Gate) Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TryClearOwnedView(f.Core, controlLease.Owner, ref stale, out _));
-            Assert.AreEqual(4, f.View); Assert.AreSame(spectatorLease, f.Core.CurrentLease);
-            f.Drain(); Assert.AreEqual(0, f.Faults.Count);
-            Assert.IsFalse(f.Core.ReportFailure(controlLease, "late old-owner failure"));
-            Assert.IsNull(f.Core.LastFailure);
-            lock (f.Gate) Assert.IsTrue(APIShared.PlayerPerspectiveAPI.TryClearOwnedView(f.Core, f.Owner, ref spectatorLease, out _));
-            Assert.AreEqual(2, f.View); Assert.IsNull(f.Core.CurrentLease);
-        }
-
-        [TestMethod]
-        public void DeduplicatedRepeatingFailuresStillSuspendTheCurrentControlOwner()
-        {
-            var f = new ViewFixture(); int actor = 0;
-            var session = new SinglePlayerControlSession(new NoCommandRules(),
-                (PlayerControlObject captured, out PlayerControlObject live) => { live = captured; return true; }, () => true);
-            Assert.IsTrue(session.Register("fixture", "faults", out _));
-            var local = new LocalControlRuntime(f.Runtime, session, new SinglePlayerNativeQueue(session), _ => { }, value => actor = value);
-            local.Begin(1, 0x1000, 2);
-            Assert.IsTrue(local.TryBindSave(2, out _, out _));
-            var lease = f.Core.CurrentLease;
-            Assert.IsTrue(local.TrySetActor(3, out _)); f.View = 3;
-            foreach (string failure in new[] { "A", "B", "A" })
-            { f.Core.ReportFailure(lease, failure); f.Runtime.ObserveFailure(f.Core); }
-            f.Drain();
-            Assert.AreEqual(2, f.Errors.Count, "Each reason is delivered once for this lease.");
-            Assert.AreEqual(LocalControlRuntime.SuspendedActor, actor);
-            Assert.AreSame(lease, f.Core.CurrentLease);
-            Assert.IsTrue(local.Retire(out string reason), reason);
-            Assert.AreEqual(0, actor); Assert.AreEqual(2, f.View);
         }
 
         [TestMethod]
         public void ViewReleaseRequiresTheExactOwnerAndHandleEvenInTheSameWorld()
         {
             var f = new ViewFixture(); var lease = f.Acquire(); f.View = 6;
-            var forged = new ControlSaveIdentity.Lease(f.Owner, lease.Epoch, lease.Token, lease.Human);
+            var forged = new PlayerViewIdentity.Lease(f.Owner, lease.Epoch, lease.Token, lease.Human);
             lock (f.Gate)
             {
                 Assert.IsFalse(f.Core.TryRestoreAndRelease(new object(), lease, out _));
@@ -308,9 +240,6 @@ namespace APISharedTests
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void InputFixture(int nativeView, int spectatorFlag, int ignored, IntPtr output);
 
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate ulong HandlerFixture(IntPtr output);
-
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr VirtualAlloc(IntPtr address, UIntPtr size, uint allocation, uint protection);
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -321,83 +250,26 @@ namespace APISharedTests
         private static extern bool FlushInstructionCache(IntPtr process, IntPtr address, UIntPtr size);
 
         [TestMethod]
-        public void HandlerBridgeTailsExactlyOneDestinationAndPreservesTheWin64CallBoundary()
-        {
-            IntPtr cells = Marshal.AllocHGlobal(48);
-            const ulong Sentinel = 0x123456789ABCDEF0;
-            const ulong OriginalResult = 0x7654321012345678, DispatchResult = 0xFEDCBA9876543210;
-            try
-            {
-                ulong address = unchecked((ulong)cells.ToInt64());
-                for (int offset = 0; offset < 48; offset += 8) Marshal.WriteInt64(cells, offset, 0);
-                using (var original = ExecutableFunction.Create(a => {
-                    a.mov(r11, address); a.inc(__dword_ptr[r11 + 8]);
-                    a.mov(rax, OriginalResult); a.ret();
-                }))
-                using (var dispatch = ExecutableFunction.Create(a => {
-                    a.mov(r11, address); a.inc(__dword_ptr[r11 + 12]);
-                    a.mov(__dword_ptr[r11 + 16], ecx);
-                    a.mov(rax, DispatchResult); a.ret();
-                }))
-                using (var bridge = ExecutableFunction.Create(a => ControlHandlerBridge.Emit(a, address,
-                    unchecked((ulong)original.EntryPoint.ToInt64()), unchecked((ulong)dispatch.EntryPoint.ToInt64()),
-                    (byte)ChoreType.GiveTribeInstruction)))
-                using (var caller = ExecutableFunction.Create(a => {
-                    // Enter the stub through a real CALL with Win64 shadow space.
-                    // Neither tail destination may leave an extra return address.
-                    a.push(rbx); a.push(rdi); a.sub(rsp, 40);
-                    a.mov(rdi, rcx); a.mov(rbx, Sentinel);
-                    a.mov(__qword_ptr[rdi + 24], rsp);
-                    a.mov(r11, unchecked((ulong)bridge.EntryPoint.ToInt64())); a.call(r11);
-                    a.mov(__qword_ptr[rdi + 32], rsp);
-                    a.mov(__qword_ptr[rdi + 40], rbx);
-                    a.add(rsp, 40); a.pop(rdi); a.pop(rbx); a.ret();
-                }))
-                {
-                    var invoke = Marshal.GetDelegateForFunctionPointer<HandlerFixture>(caller.EntryPoint);
-                    foreach (int demand in new[] { 0, 1, -1, 0 })
-                    {
-                        Marshal.WriteInt32(cells, demand);
-                        int originalBefore = Marshal.ReadInt32(cells, 8), dispatchBefore = Marshal.ReadInt32(cells, 12);
-                        Assert.AreEqual(demand == 0 ? OriginalResult : DispatchResult, invoke(cells));
-                        Assert.AreEqual(originalBefore + (demand == 0 ? 1 : 0), Marshal.ReadInt32(cells, 8));
-                        Assert.AreEqual(dispatchBefore + (demand == 0 ? 0 : 1), Marshal.ReadInt32(cells, 12));
-                        Assert.AreEqual(Marshal.ReadInt64(cells, 24), Marshal.ReadInt64(cells, 32));
-                        Assert.AreEqual(Sentinel, unchecked((ulong)Marshal.ReadInt64(cells, 40)));
-                    }
-                    Assert.AreEqual((int)ChoreType.GiveTribeInstruction, Marshal.ReadInt32(cells, 16));
-                    Marshal.WriteInt32(cells, 0);
-                    for (int i = 0; i < 20; i++) invoke(cells);
-                    long allocated = GC.GetAllocatedBytesForCurrentThread();
-                    for (int i = 0; i < 10000; i++) invoke(cells);
-                    Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - allocated);
-                    GC.KeepAlive(invoke);
-                }
-            }
-            finally { Marshal.FreeHGlobal(cells); }
-        }
-
-        [TestMethod]
         public void ProtectedNativeWriterRetainsWrittenResultIfPostWriteWorldValidationThrows()
         {
             int view = 1, calls = 0;
             var gate = new object();
             bool failWorldCheck = false;
-            var guard = new ControlSaveIdentity(() => System.Threading.Monitor.IsEntered(gate),
+            var guard = new PlayerViewIdentity(() => System.Threading.Monitor.IsEntered(gate),
                 epoch => failWorldCheck ? throw new InvalidOperationException("world reader failed") : epoch == 1,
                 () => view, value => view = value);
             var runtime = new APIShared.PlayerViewIdentityRuntime(guard, gate, action => false, message => { });
             lock (gate) Assert.IsTrue(guard.TryBind(new object(), 1, 1, out _, out _)); view = 3;
             const ulong WrittenResult = 0xFEDCBA9876543210;
             Assert.IsNull(guard.LastFailure);
-            Assert.AreEqual(WrittenResult, ControlSaveNative.RunProtectedWriter(guard, 0, value => {
+            Assert.AreEqual(WrittenResult, PlayerViewSaveScope.RunProtectedWriter(guard, 0, value => {
                 calls++; Assert.AreEqual(1, view); failWorldCheck = true; return WrittenResult;
             }, runtime));
             Assert.AreEqual(1, calls); Assert.AreEqual(1, guard.ProtectedHumanId);
             Assert.IsNotNull(guard.LastFailure);
             // An exception before writing does not replay the writer and
             // cannot reuse the successful result of a previous invocation.
-            Assert.AreEqual(0UL, ControlSaveNative.RunProtectedWriter(guard, 0, value => {
+            Assert.AreEqual(0UL, PlayerViewSaveScope.RunProtectedWriter(guard, 0, value => {
                 calls++; return WrittenResult;
             }, runtime));
             Assert.AreEqual(1, calls); Assert.IsNotNull(guard.LastFailure);
@@ -414,13 +286,13 @@ namespace APISharedTests
                 a.mov(rax, rcx); a.xor(rax, rdx); a.movzx(r8d, r8b); a.add(rax, r8); a.ret();
             }))
             {
-                NativeDetour<ControlSaveNative.WriterCall> hook = null;
+                NativeDetour<PlayerViewSaveScope.WriterCall> hook = null;
                 int calls = 0;
-                var callback = new ControlSaveNative.WriterCall((manager, sections, mapSave) => {
+                var callback = new PlayerViewSaveScope.WriterCall((manager, sections, mapSave) => {
                     calls++;
                     return hook.Original(manager, sections, mapSave) + 100;
                 });
-                var request = new DetourRequest<ControlSaveNative.WriterCall> {
+                var request = new DetourRequest<PlayerViewSaveScope.WriterCall> {
                     Name = "Player-control save writer fixture", Callback = callback,
                     TargetAddress = unchecked((ulong)target.EntryPoint.ToInt64())
                 };
@@ -429,15 +301,15 @@ namespace APISharedTests
                     // Match Initialize inside the startup patch window: exactly
                     // the production options with thread suspension disabled.
                     // No other thread can execute this private fixture.
-                    var backend = new NativeDetourBackend(ControlSaveNative.Backend.Options with { SuspendThreadsDuringPatch = false });
-                    hook = (NativeDetour<ControlSaveNative.WriterCall>)backend.CreateDetour(in request);
-                    ControlSaveNative.ValidatePrepared(hook, target.EntryPoint);
-                    var invoke = Marshal.GetDelegateForFunctionPointer<ControlSaveNative.WriterCall>(target.EntryPoint);
+                    var backend = new NativeDetourBackend(PlayerViewSaveScope.Backend.Options with { SuspendThreadsDuringPatch = false });
+                    hook = (NativeDetour<PlayerViewSaveScope.WriterCall>)backend.CreateDetour(in request);
+                    PlayerViewSaveScope.ValidatePrepared(hook, target.EntryPoint);
+                    var invoke = Marshal.GetDelegateForFunctionPointer<PlayerViewSaveScope.WriterCall>(target.EntryPoint);
                     IntPtr first = new IntPtr(0x12345678), second = new IntPtr(0x76543210);
                     ulong original = unchecked((ulong)(first.ToInt64() ^ second.ToInt64())) + 0xAB;
                     Assert.AreEqual(original, invoke(first, second, 0xAB)); Assert.AreEqual(0, calls);
                     hook.Enable();
-                    APIShared.NativeSites.NativeIndirectEntry.Validate(hook, target.EntryPoint, ControlSaveNative.Entry);
+                    APIShared.NativeSites.NativeIndirectEntry.Validate(hook, target.EntryPoint, PlayerViewSaveScope.Entry);
                     Assert.AreEqual(original + 100, invoke(first, second, 0xAB)); Assert.AreEqual(1, calls);
                     GC.Collect(); GC.WaitForPendingFinalizers();
                     GC.KeepAlive(invoke); GC.KeepAlive(callback);

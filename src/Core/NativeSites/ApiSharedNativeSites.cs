@@ -29,7 +29,7 @@ namespace APIShared
         internal const string BuildingRepair = "Buildings.RepairQuote";
         internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
         internal const string VisibleMapRender = "Presentation.VisibleMapRender";
-        internal const string PlayerControlSave = "Players.ControlSaveIdentity";
+        internal const string PlayerViewIdentitySite = "Players.ViewIdentity";
         internal const string PlayerControlInput = "Players.ControlInput";
 
         // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
@@ -43,10 +43,10 @@ namespace APIShared
                 ScriptExtenderFixes.SynchronizedSaveRuntime.Entry.Length - ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength)
         };
 
-        internal static NativeSiteSpan[] PlayerControlSaveSpans() => new[] {
-            Exclusive(PlayerControl.ControlSaveNative.Rva, PlayerControl.ControlSaveNative.DisplacedLength),
-            Observe(PlayerControl.ControlSaveNative.Rva + PlayerControl.ControlSaveNative.DisplacedLength,
-                PlayerControl.ControlSaveNative.Entry.Length - PlayerControl.ControlSaveNative.DisplacedLength)
+        internal static NativeSiteSpan[] PlayerViewIdentitySpans() => new[] {
+            Exclusive(PlayerControl.PlayerViewSaveScope.Rva, PlayerControl.PlayerViewSaveScope.DisplacedLength),
+            Observe(PlayerControl.PlayerViewSaveScope.Rva + PlayerControl.PlayerViewSaveScope.DisplacedLength,
+                PlayerControl.PlayerViewSaveScope.Entry.Length - PlayerControl.PlayerViewSaveScope.DisplacedLength)
         };
 
         // Both spectator-input boundaries; each continuation instruction is decoded and must stay intact.
@@ -203,7 +203,7 @@ namespace APIShared
             Group(GateDescent, GateDescentSpans()),
             Group(BuildingRepair, BuildingRepairSpans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
-            Group(PlayerControlSave, PlayerControlSaveSpans()),
+            Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerControlInput, PlayerControlInputSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans())
         };

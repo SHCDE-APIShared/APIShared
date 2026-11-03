@@ -9,7 +9,7 @@ using SHCDESE.Detours;
 
 namespace APIShared.Networking
 {
-    // An additive, fail-closed adapter to SE's existing raw Chore submission. The
+    // Fail-closed adapter to SE's raw Chore submission. The
     // public Ex2 method may fall back to Steam and serialize twice, so it cannot
     // implement the authenticated channel's stronger transport contract.
     internal static class NativeChoreTransport
@@ -25,13 +25,11 @@ namespace APIShared.Networking
         internal static void Initialize(long moduleBase)
         {
             if (IsReady) return;
-            MethodInfo method = typeof(GameNetworkAPI).GetMethod("SendScriptExtenderChorePayload",
-                BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(byte[]) }, null);
+            MethodInfo method = ResolveSubmissionMethod();
             FieldInfo field = typeof(GameNetworkAPI).GetField("ChorePendingSendPayload", BindingFlags.NonPublic | BindingFlags.Static);
-            FieldInfo monitor = typeof(EngineInterface).GetField("threadLock", BindingFlags.NonPublic | BindingFlags.Static);
-            if (method == null || method.ReturnType != typeof(bool) || field?.FieldType != typeof(byte[]) || monitor?.FieldType != typeof(object))
+            FieldInfo monitor = Internal.EngineMonitor.Field;
+            if (field?.FieldType != typeof(byte[]) || monitor == null)
                 throw new InvalidOperationException("Authenticated Chore submission: installed SE/engine adapter contract changed.");
-            ValidateSubmissionMethod(method);
             object gate = monitor.GetValue(null);
             var queue = BulkChoreDetours.c_game_queue_chore;
             if (gate == null || !NativeChoreQueueBinding.Matches(queue, new IntPtr(checked(moduleBase + 0x23990))))
@@ -39,6 +37,18 @@ namespace APIShared.Networking
             var call = (Func<byte[], bool>)Delegate.CreateDelegate(typeof(Func<byte[], bool>), method);
             engineGate = gate; pendingPayload = field; engineMonitor = monitor; nativeQueue = queue;
             Volatile.Write(ref submit, call);
+        }
+
+        // SE's raw Chore submission GameNetworkAPI.SendScriptExtenderChorePayload(byte[]), resolved and
+        // body-validated; shared by this transport and the player-view identity hook.
+        internal static MethodInfo ResolveSubmissionMethod()
+        {
+            MethodInfo method = typeof(GameNetworkAPI).GetMethod("SendScriptExtenderChorePayload",
+                BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(byte[]) }, null);
+            if (method == null || method.ReturnType != typeof(bool))
+                throw new MissingMethodException("GameNetworkAPI", "SendScriptExtenderChorePayload(byte[])");
+            ValidateSubmissionMethod(method);
+            return method;
         }
 
         // Validate the loaded implementation, not its assembly version or a publicized

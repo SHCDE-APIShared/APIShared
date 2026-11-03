@@ -49,6 +49,8 @@ namespace APIShared.Simulation
         /// Read on the simulation thread, or at mission completion while simulation is stopped/locked;
         /// this method acquires no engine lock and does not marshal threads. The signed Int32 counter
         /// preserves the save's phase, can wrap, and belongs to the current mission rather than the process.
+        /// For reads from NativeLoaded onwards (before the mission is fully started) use
+        /// <see cref="SimulationClock.TryGetCurrentTick(MissionContext, out int)"/>.
         /// </remarks>
         /// <param name="mapTick">Native counter on success; zero on failure and must then be ignored.</param>
         /// <returns>False if no ready mission or validated source is available, or reading fails.</returns>

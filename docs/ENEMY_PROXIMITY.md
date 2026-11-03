@@ -6,7 +6,9 @@ The service does not install another native hook. It changes no building, wall,
 Keep, terrain or direct-occupancy rule and does not edit the shared hostile-unit
 list. With no effective contribution, the original native predicate executes.
 
-## Registering a policy
+Requires APIShared 0.25.0 or later.
+
+## Usage: registering a policy
 
 Register after native initialization, using your own stable GUID and an owner-local
 registration ID. `TryRegister` returns a process-held registration, initially
@@ -48,7 +50,7 @@ An incoming Script Extender `SkipOriginalFunction` is respected. The broker's st
 block guarantee covers its own participants: arbitrary later subscribers to the
 raw Script Extender event are outside its ordering and cannot be controlled here.
 
-## Categories and native availability
+## Limits: categories and native availability
 
 Civilian membership preserves the audited worker taxonomy: production/extraction
 workers, peasants, economic ox/horse transport and civilian castle residents and
@@ -61,9 +63,9 @@ registration and veto coordination. If the native copy cannot be prepared, radiu
 changes remain inactive and the original native predicate runs; valid policy
 blocks still work. Unsupported native builds do not disable unrelated services.
 The implementation and complete byte/layout contract are described in
-[UpdateToNewDLL](../UpdateToNewDLL.md).
+[UpdateToNewDLL](../UpdateToNewDLL.md#enemy-unit-proximity-and-peace-time).
 
-## Reading active Peace Time
+## Usage: reading active Peace Time
 
 `APIShared.Simulation.PeaceTimeState.TryGetActive(out bool active)` reads Vanilla's
 actual active flag in the current fully started mission, including an editor
@@ -77,7 +79,7 @@ and locked. Menu, pending/failed load and world replacement invalidate the read.
 Saved state and expiry are authoritative; no timer, polling or notifications are
 added. `Diagnostic` reports source availability separately from proximity queries.
 
-## Consumer example
+## Usage: consumer example
 
 A general-radius mod registers an `Override`. A peace-time mod registers a `Limit`
 that returns `new EnemyProximityDecision(civilianRadius: 3)` only after a successful
@@ -90,7 +92,7 @@ a stable registration ID even when logically disabled. Other consumers can then
 refuse only their optional collaboration when the older implementation is present;
 the shared broker does not special-case mod GUIDs or guess versions.
 
-## Validation limits
+## Implementation and validation
 
 Native comparison tests execute the production private predicate against the
 original machine function, including boundaries, mixed categories, stale IDs and
@@ -101,17 +103,3 @@ private native no-ops: equality retains peace, the following tick clears it, and
 the production reader observes both states. These offline checks do not replace
 game/editor/save-load or matching-build multiplayer acceptance. A small distance
 does not prove that a more distant wall ring cannot enclose an isolated worker.
-
-## Mission-locked consumer settings
-
-Consumers using `PresetLobbyModSettingsViewModel` can exempt genuine mission
-entry/exit and deferred personal-host restoration from a local mission edit lock
-with the protected `IsApplyingMissionSettingsSnapshot` property. Local working
-snapshots, published presets and reset actions do not enter that scope, even
-though the general `IsApplyingSettingsSnapshot` flag and the Extender's
-`InitialLoad` origin also cover those local actions. Keep the normal host/mutation
-gate in the setter; this synchronous scope does not establish network authority.
-Authenticated incoming host updates use the existing network authorization path.
-
-This is additive: existing snapshot APIs, callbacks, flags and persistence remain
-unchanged for consumers that do not opt into the new guard.

@@ -1,6 +1,5 @@
+using APIShared.Events;
 using CrusaderDE;
-using System;
-using System.Collections.Generic;
 using System.Threading;
 
 namespace APIShared
@@ -67,48 +66,20 @@ namespace APIShared
 
     internal sealed class ObserverCommandRegistry
     {
-        private sealed class Entry
-        {
-            internal string Owner, Id;
-            internal int Order;
-            internal ObserverCommandException Allow;
-        }
-
-        private readonly object gate = new object();
-        private readonly List<Entry> all = new List<Entry>();
-        private Entry[] ordered = Array.Empty<Entry>();
+        private readonly OwnedCallbacks<ObserverCommandException> callbacks = new OwnedCallbacks<ObserverCommandException>();
         private long failures;
 
         internal long CallbackFailures => Interlocked.Read(ref failures);
 
-        internal bool TryRegister(string owner, string id, ObserverCommandException allow, out string reason, int order)
-        {
-            reason = null;
-            if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || allow == null)
-            { reason = "Invalid observer command exception registration."; return false; }
-            lock (gate)
-            {
-                foreach (var item in all)
-                    if (item.Owner == owner && item.Id == id)
-                    { reason = "Duplicate observer command exception: " + owner + "/" + id; return false; }
-                all.Add(new Entry { Owner = owner, Id = id, Order = order, Allow = allow });
-                var snapshot = all.ToArray();
-                Array.Sort(snapshot, (x, y) => {
-                    int c = x.Order.CompareTo(y.Order); if (c != 0) return c;
-                    c = StringComparer.Ordinal.Compare(x.Owner, y.Owner);
-                    return c != 0 ? c : StringComparer.Ordinal.Compare(x.Id, y.Id);
-                });
-                Volatile.Write(ref ordered, snapshot);
-                return true;
-            }
-        }
+        internal bool TryRegister(string owner, string id, ObserverCommandException allow, out string reason, int order) =>
+            callbacks.TryAdd(owner, id, allow, out reason, order);
 
         internal bool IsAllowed(ObserverCommandRequest request)
         {
-            var snapshot = Volatile.Read(ref ordered);
+            var snapshot = callbacks.Snapshot;
             for (int i = 0; i < snapshot.Length; i++)
             {
-                try { if (snapshot[i].Allow(request)) return true; }
+                try { if (snapshot[i].Callback(request)) return true; }
                 catch { Interlocked.Increment(ref failures); }
             }
             return false;

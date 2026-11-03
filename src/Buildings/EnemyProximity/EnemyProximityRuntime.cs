@@ -10,17 +10,13 @@ namespace APIShared.Buildings
 {
     public static partial class EnemyProximityPolicies
     {
-        private const string DiagnosticId = "enemy-unit-proximity";
+        private const string DiagnosticId = NativeCapabilityIds.EnemyUnitProximity;
         private static int initializationAttempted, integrationReady, queryFailureReported;
         private static IDisposable subscription;
         private static EnemyProximityQuery query;
         private static ManualLogSource logger;
         private static NativeCapabilityDiagnostic queryDiagnostic = new NativeCapabilityDiagnostic(
             DiagnosticId, NativeCapabilityState.Pending, "", "Native query preparation has not run.");
-
-        /// <summary>Independent availability of the read-only native category predicate.
-        /// A non-available predicate does not disable registered block decisions.</summary>
-        public static NativeCapabilityDiagnostic QueryDiagnostic => Volatile.Read(ref queryDiagnostic);
 
         internal static void Initialize(CrusaderLibraryLoadContext context, string hash, ManualLogSource log)
         {

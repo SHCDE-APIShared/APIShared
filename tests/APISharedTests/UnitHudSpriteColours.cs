@@ -25,29 +25,29 @@ namespace APISharedTests
             int[] identity = Enumerable.Range(0, 9).ToArray();
             for (int slot = 1; slot <= 8; slot++)
             {
-                Assert(PlayerColors.TryMapUiColour(slot, identity, VanillaUiColourRemap, out int colour) &&
+                Assert(PlayerColours.TryMapUiColour(slot, identity, VanillaUiColourRemap, out int colour) &&
                     ui[colour] == palette[slot], "palette " + palette[slot] + " keeps its colour in UI order");
                 // A remapped player slot follows the remap table, and Vanilla's default SHC table round-trips.
-                Assert(PlayerColors.TryMapUiColour(slot, VanillaShcRemapColours, VanillaUiColourRemap, out colour) && colour == slot,
+                Assert(PlayerColours.TryMapUiColour(slot, VanillaShcRemapColours, VanillaUiColourRemap, out colour) && colour == slot,
                     "SHC default mapping gives player " + slot + " UI colour " + slot);
             }
             int[] swapped = { 0, 4, 2, 3, 1, 5, 6, 7, 8 };
-            Assert(PlayerColors.TryMapUiColour(1, swapped, VanillaUiColourRemap, out int yellow) && ui[yellow] == "yellow",
+            Assert(PlayerColours.TryMapUiColour(1, swapped, VanillaUiColourRemap, out int yellow) && ui[yellow] == "yellow",
                 "player 1 with the yellow palette resolves to UI yellow");
 
-            Assert(!PlayerColors.TryMapUiColour(1, null, VanillaUiColourRemap, out int none) && none == 0, "missing remap");
-            Assert(!PlayerColors.TryMapUiColour(1, identity, null, out none) && none == 0, "missing UI remap");
-            Assert(!PlayerColors.TryMapUiColour(9, identity, VanillaUiColourRemap, out none) && none == 0, "slot outside remap");
-            Assert(!PlayerColors.TryMapUiColour(-1, identity, VanillaUiColourRemap, out none) && none == 0, "negative slot");
-            Assert(!PlayerColors.TryMapUiColour(3, new int[9], VanillaUiColourRemap, out none) && none == 0, "unassigned slot");
-            Assert(!PlayerColors.TryMapUiColour(3, identity, new int[9], out none) && none == 0, "invalid UI colour");
-            Assert(!PlayerColors.TryMapUiColour(3, identity, new[] { 0, 1 }, out none) && none == 0, "short UI remap");
+            Assert(!PlayerColours.TryMapUiColour(1, null, VanillaUiColourRemap, out int none) && none == 0, "missing remap");
+            Assert(!PlayerColours.TryMapUiColour(1, identity, null, out none) && none == 0, "missing UI remap");
+            Assert(!PlayerColours.TryMapUiColour(9, identity, VanillaUiColourRemap, out none) && none == 0, "slot outside remap");
+            Assert(!PlayerColours.TryMapUiColour(-1, identity, VanillaUiColourRemap, out none) && none == 0, "negative slot");
+            Assert(!PlayerColours.TryMapUiColour(3, new int[9], VanillaUiColourRemap, out none) && none == 0, "unassigned slot");
+            Assert(!PlayerColours.TryMapUiColour(3, identity, new int[9], out none) && none == 0, "invalid UI colour");
+            Assert(!PlayerColours.TryMapUiColour(3, identity, new[] { 0, 1 }, out none) && none == 0, "short UI remap");
 
             // The test host is not the Unity main thread; the public lookup rejects it without reading game state.
-            Assert(!PlayerColors.TryGetUiColour(1, out none) && none == 0, "public lookup is main-thread only");
-            Assert(!PlayerColors.TryGetUiColour(0, out none) && !PlayerColors.TryGetUiColour(9, out none), "player IDs are 1..8");
-            Assert(new[] { 1, 2, 6, 7 }.All(PlayerColors.IsArabicLordType) &&
-                !new[] { 0, 3, 4, 5, 8 }.Any(PlayerColors.IsArabicLordType), "Arabic lord types");
+            Assert(!PlayerColours.TryGetUiColour(1, out none) && none == 0, "public lookup is main-thread only");
+            Assert(!PlayerColours.TryGetUiColour(0, out none) && !PlayerColours.TryGetUiColour(9, out none), "player IDs are 1..8");
+            Assert(new[] { 1, 2, 6, 7 }.All(PlayerColours.IsArabicLordType) &&
+                !new[] { 0, 3, 4, 5, 8 }.Any(PlayerColours.IsArabicLordType), "Arabic lord types");
         }
 
         [TestMethod]

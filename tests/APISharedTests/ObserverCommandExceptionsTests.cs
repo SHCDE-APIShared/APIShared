@@ -54,7 +54,7 @@ namespace APISharedTests
             var registry = new ObserverCommandRegistry();
             Assert.IsTrue(registry.TryRegister("a", "id", r => false, out _, 0));
             Assert.IsFalse(registry.TryRegister("a", "id", r => true, out string duplicate, 0));
-            StringAssert.Contains(duplicate, "Duplicate");
+            Assert.IsFalse(string.IsNullOrEmpty(duplicate));
             Assert.IsFalse(registry.TryRegister(" ", "id", r => true, out _, 0));
             Assert.IsFalse(registry.TryRegister("a", "other", null, out _, 0));
             Assert.IsFalse(registry.IsAllowed(Tax));

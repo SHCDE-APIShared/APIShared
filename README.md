@@ -33,7 +33,7 @@ APIShared also provides **Use current mod settings** in the Load Game dialog,
 independently of ExtendedData. Its last choice is remembered across saves and game
 restarts; initially it is off. Without a usable checkbox, automatic loads use current
 supported settings, while saved mission restrictions and fixed creator rules remain
-in force. See [load/save integration](docs/THIRD_PARTY_GUIDE.md#loadsave-requester-integration).
+in force. See [load/save integration](docs/MOD_SETTINGS.md#loadsave-requester-integration).
 
 ## Documentation
 

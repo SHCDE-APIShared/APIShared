@@ -73,8 +73,7 @@ namespace APIShared
                 if (inputMethod == null || inputMethod.ReturnType != typeof(void) ||
                     runMethod == null || returnMethod == null || postfixMethod == null)
                     throw new MissingMethodException("Installed EngineInterface selection/run signature changed.");
-                var engineGate = typeof(EngineInterface).GetField("threadLock", BindingFlags.Static | BindingFlags.NonPublic);
-                object readbackGate = engineGate?.FieldType == typeof(object) ? engineGate.GetValue(null) : null;
+                object readbackGate = Internal.EngineMonitor.Current;
                 run = new Hook(runMethod, (RunCall)OnRun,
                     new HookConfig { ManualApply = true, ID = "APIShared.MarkedSelection.PostRun" });
                 buffer = new Hook(returnMethod, (ReturnBufferCall)OnReturnBuffer,

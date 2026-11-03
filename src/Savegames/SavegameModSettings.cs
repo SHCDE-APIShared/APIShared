@@ -146,7 +146,7 @@ namespace APIShared
         /// <summary>Inspects participants for automatic savegames or Map/Trail authoring using
         /// the same caller-thread, snapshot-factory and read-only metadata contract as the default query.</summary>
         /// <remarks>MissionAuthoring does not apply savegame-only exclusions. For those excluded
-        /// endpoints not represented by an explicit dynamic provider, it preserves the historical
+        /// endpoints not represented by an explicit dynamic provider, it runs the
         /// authoring current-value serialization probes before checking the disabled snapshot.
         /// Consumer-specific authoring opt-outs remain with consumers.</remarks>
         /// <exception cref="ArgumentOutOfRangeException">The purpose is not supported.</exception>
@@ -438,7 +438,7 @@ namespace APIShared
 
         // An unreadable APIShared record (damaged appended archive, newer schema, invalid
         // mode) never blocks the save itself: it loads like a save without a record,
-        // with the current host settings, as APIShared 0.9.2 did.
+        // with the current host settings.
         private static SavegameModSettingsRecord ReadRecordForLoad(string path, out bool legacy)
         {
             RecordReadState read = ReadRecord(path, out SavegameModSettingsRecord record);

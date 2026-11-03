@@ -131,8 +131,8 @@ namespace APIShared.ModSettings
                             property.IsDefined(typeof(MissionIndependentAttribute), true);
             hostProperties = persistedProperties.Where(IsHostProperty).ToArray();
             clientProperties = persistedProperties.Where(IsClientProperty).ToArray();
-            // The separated persistence interface is optional: existing backends keep their
-            // pre-0.21 behavior and store personal values only in the preset storage.
+            // The separated persistence interface is optional: backends without
+            // IModSettingsPersonalPersistenceBackend store personal values only in the preset storage.
             if (owner.SettingsApplicationBackend != null && persistedProperties.Any(p => p.MissionIndependent) &&
                 !(owner.SettingsApplicationBackend is IModSettingsPersonalPersistenceBackend))
                 DebugLogHelper.LogWarning(log, $"[{modName}] Backend has personal settings but no IModSettingsPersonalPersistenceBackend; " +

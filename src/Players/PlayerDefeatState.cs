@@ -116,8 +116,8 @@ namespace APIShared
                         publishLordDeath = true;
                     }
                 }
-                // Commit state before exposing either transition callback. Their established
-                // order (official defeat, then lord death) remains unchanged.
+                // Commit state before exposing either transition callback. Callbacks publish
+                // official defeat, then lord death.
                 UpdateSnapshot(slot, playerId, simulationTick, true,
                     observation.WinLossState == WinLossState.Loss, observation.HasLivingLord, changed);
                 if (publishDefeat)

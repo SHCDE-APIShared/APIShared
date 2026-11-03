@@ -14,7 +14,7 @@ namespace APIShared.PlayerControl
     // This optional service is separate from spectator single-owner input/control.
     // Initialize only in the startup patch window with the runtime-owned guard;
     // never bind an active-human view until this whole publication is ready.
-    internal static class ControlSaveNative
+    internal static class PlayerViewSaveScope
     {
         internal const int Rva = 0x52B0, DisplacedLength = 10;
         internal static readonly byte[] Entry = { 0x48, 0x89, 0x5C, 0x24, 0x10,
@@ -26,7 +26,7 @@ namespace APIShared.PlayerControl
         private static readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private static readonly Func<WriterArguments, ulong> writeOriginal = WriteOriginal;
         private static DetourHandle<WriterCall> handle;
-        private static ControlSaveIdentity identity;
+        private static PlayerViewIdentity identity;
 
         private readonly struct WriterArguments
         {
@@ -37,9 +37,9 @@ namespace APIShared.PlayerControl
         }
 
         internal static bool IsReady => publication.IsReady;
-        internal static bool IsBoundTo(ControlSaveIdentity guard) => publication.IsReady && ReferenceEquals(identity, guard);
+        internal static bool IsBoundTo(PlayerViewIdentity guard) => publication.IsReady && ReferenceEquals(identity, guard);
 
-        internal static void ValidateIdentityBinding(ControlSaveIdentity existing, ControlSaveIdentity requested)
+        internal static void ValidateIdentityBinding(PlayerViewIdentity existing, PlayerViewIdentity requested)
         {
             if (requested == null) throw new ArgumentNullException(nameof(requested));
             if (existing != null && !ReferenceEquals(existing, requested))
@@ -47,7 +47,7 @@ namespace APIShared.PlayerControl
         }
 
         internal static void Initialize(CrusaderLibraryLoadContext context, string hash,
-            ControlSaveIdentity guard, ManualLogSource log)
+            PlayerViewIdentity guard, ManualLogSource log)
         {
             publication.ThrowIfUnavailable();
             ValidateIdentityBinding(identity, guard);
@@ -65,8 +65,8 @@ namespace APIShared.PlayerControl
             IntPtr target = context.ModuleHandle + Rva;
             NativeSites.NativeIndirectEntry.VerifyBytes(target, Entry);
             var sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
-            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.PlayerControlSave,
-                ApiSharedNativeSites.PlayerControlSaveSpans(), reason => new InvalidOperationException(reason));
+            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.PlayerViewIdentitySite,
+                ApiSharedNativeSites.PlayerViewIdentitySpans(), reason => new InvalidOperationException(reason));
             HookTransaction pending = null;
             try
             {
@@ -89,7 +89,7 @@ namespace APIShared.PlayerControl
             {
                 publication.RollbackUnpublished(pending, () => {
                     handle = null; identity = null;
-                    ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.PlayerControlSave);
+                    ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.PlayerViewIdentitySite);
                 });
                 throw;
             }
@@ -111,11 +111,11 @@ namespace APIShared.PlayerControl
         // The native error boundary is also exercised with a throwing world
         // adapter. If a post-write check throws, the file has already been written;
         // preserve the writer's result rather than reporting a false write failure.
-        internal static ulong RunProtectedWriter<TState>(ControlSaveIdentity guard, TState state, Func<TState, ulong> writer,
+        internal static ulong RunProtectedWriter<TState>(PlayerViewIdentity guard, TState state, Func<TState, ulong> writer,
             PlayerViewIdentityRuntime runtime = null)
         {
             ulong result = 0;
-            ControlSaveIdentity.Lease lease = null;
+            PlayerViewIdentity.Lease lease = null;
             var coordinator = runtime ?? PlayerViewIdentityRuntime.Instance;
             string protectionFailure = null;
             try

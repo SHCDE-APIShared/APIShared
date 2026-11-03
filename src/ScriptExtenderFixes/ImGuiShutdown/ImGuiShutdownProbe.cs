@@ -11,7 +11,7 @@ using CallSite = Mono.Cecil.CallSite;
 
 namespace APIShared.ScriptExtenderFixes
 {
-    // Feature check that replaces fixed MonoMod file fingerprints. Before any UU-ImGUI
+    // Feature check of the installed MonoMod instead of file fingerprints. Before any UU-ImGUI
     // method is hooked, a private probe must show that the installed MonoMod generates
     // both the edited ILHook body and Detour's original backup through the routed
     // DynamicMethodDefinition.Generate(object), and that the resulting thiscall calli

@@ -13,7 +13,7 @@ namespace APIShared.PlayerControl
     // CMOVNE/store pairs cannot identify the surrounding input lifetime on another image.
     internal static class ControlInputNative
     {
-        internal const int RunTickRva = 0x868F6, DispatcherRva = 0x8D128, ViewRva = 0x88E3D70;
+        internal const int RunTickRva = 0x868F6, DispatcherRva = 0x8D128, ViewRva = NativeViewCell.Rva;
         // CMOVNE EAX,R12D; MOV [view],EAX; continuation MOVZX R8D,R14B.
         internal static readonly byte[] RunTickWindow = { 0x41, 0x0F, 0x45, 0xC4, 0x89, 0x05, 0x70, 0xD4, 0x85, 0x08,
             0x45, 0x0F, 0xB6, 0xC6 };

@@ -82,31 +82,15 @@ namespace APIShared
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
-                new NativeInitializationStep("native Chore issuer context", () => {
-                    Networking.NativeChoreContext.Initialize(context.ModuleHandle.ToInt64(), context.Memory.Length, hash);
-                    NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_CONTEXT: hash-bound pending-slot and executing-issuer reader ready; no native hook installed.");
-                }),
-                new NativeInitializationStep("native Chore-only submission", () => {
-                    if (Networking.NativeChoreContext.IsReady) {
-                        Networking.NativeChoreTransport.Initialize(context.ModuleHandle.ToInt64());
-                        NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_SEND: method=validated-managed-IL; native queue=reference-rva 0x23990; Chore only, no Steam fallback.");
-                    }
-                }),
+                new NativeInitializationStep("native Chore issuer context and submission", () =>
+                    Networking.NativeChoreRuntime.InitializeSubmission(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("shared player-view identity", () =>
                     PlayerViewIdentityRuntime.Instance.Initialize(context, hash, RuntimeLogger)),
                 // Validation only: the input hooks are installed on a consumer's registration.
                 new NativeInitializationStep("spectator input control", () =>
                     PlayerControl.ControlInputNative.Prepare(context, hash, RuntimeLogger)),
-                new NativeInitializationStep("native Chore dispatch scope", () => {
-                    // The reader step already reported an unsupported image; one cause, one failure.
-                    if (!Networking.NativeChoreContext.IsReady)
-                    {
-                        NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_DISPATCH: skipped; native issuer reader unavailable.");
-                        return;
-                    }
-                    Networking.NativeChoreDispatch.Initialize();
-                    NativeApiLog.Info(RuntimeLogger, "AUTHENTICATED_CHORE_DISPATCH: method=validated-managed-IL; native blob/packet/issuer scope; process lifetime.");
-                }),
+                new NativeInitializationStep("native Chore dispatch scope", () =>
+                    Networking.NativeChoreRuntime.InitializeDispatch(RuntimeLogger)),
                 new NativeInitializationStep("native field knowledge", () => NativeKnowledge.NativeFieldReader.InitializeCurrent(hash)),
                 new NativeInitializationStep("synchronized save context", () => ScriptExtenderFixes.SynchronizedSaveRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(

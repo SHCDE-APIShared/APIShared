@@ -396,14 +396,7 @@ namespace APIShared
                     {
                         // A refresh bypasses the public detour entry, preventing resolver-driven
                         // refresh requests or later hook chains from recursively re-entering us.
-                        ResolveSpriteColours(lastSpriteColour, lastSpriteArabic, out int drawColour, out bool drawArabic);
-                        updateSpritesActive = true;
-                        try
-                        {
-                            updateSpritesOriginal(main, drawColour, drawArabic);
-                            ApplyImageOverrides(main, drawColour, drawArabic);
-                        }
-                        finally { updateSpritesActive = false; }
+                        DrawSprites(main, clearRecorded: false, applyOverrides: true);
                     }
                 }
             });
@@ -458,15 +451,7 @@ namespace APIShared
                 {
                     if (IsImageOverrideContextReady())
                     {
-                        ResolveSpriteColours(lastSpriteColour, lastSpriteArabic, out int drawColour, out bool drawArabic);
-                        updateSpritesActive = true;
-                        try
-                        {
-                            updateSpritesOriginal(main, drawColour, drawArabic);
-                            originalImages.Clear(); appliedImages.Clear();
-                            if (activeImages) ApplyImageOverrides(main, drawColour, drawArabic);
-                        }
-                        finally { updateSpritesActive = false; }
+                        DrawSprites(main, clearRecorded: true, applyOverrides: activeImages);
                     }
                     else
                     {

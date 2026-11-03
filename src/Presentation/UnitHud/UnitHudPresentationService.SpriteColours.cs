@@ -75,8 +75,24 @@ namespace APIShared
 
         private static bool ResolveLeasedSprite(int playerId, bool vanillaArabic, out int colour, out bool arabic)
         {
-            arabic = PlayerColors.TryGetHumanLordArabic(playerId, out bool lordArabic) ? lordArabic : vanillaArabic;
-            return PlayerColors.TryGetUiColour(playerId, out colour);
+            arabic = PlayerColours.TryGetHumanLordArabic(playerId, out bool lordArabic) ? lordArabic : vanillaArabic;
+            return PlayerColours.TryGetUiColour(playerId, out colour);
+        }
+
+        // Redraws the unit HUD sprites for Vanilla's last request with the effective (possibly leased) values,
+        // bypassing the public hook entry so refreshes cannot re-enter it. The original rewrites every slot,
+        // so recorded override images are cleared when the caller re-applies overrides from scratch.
+        private void DrawSprites(MainViewModel main, bool clearRecorded, bool applyOverrides)
+        {
+            ResolveSpriteColours(lastSpriteColour, lastSpriteArabic, out int colour, out bool arabic);
+            updateSpritesActive = true;
+            try
+            {
+                updateSpritesOriginal(main, colour, arabic);
+                if (clearRecorded) { originalImages.Clear(); appliedImages.Clear(); }
+                if (applyOverrides) ApplyImageOverrides(main, colour, arabic);
+            }
+            finally { updateSpritesActive = false; }
         }
 
         // One original call with the effective values; without a known Vanilla request or ready HUD the next
@@ -88,18 +104,8 @@ namespace APIShared
             try { main = spriteReplayTarget(); }
             catch (Exception ex) { LogCallbackFailure("sprite colour replay", ex); return; }
             if (main == null) return;
-            ResolveSpriteColours(lastSpriteColour, lastSpriteArabic, out int colour, out bool arabic);
-            updateSpritesActive = true;
-            try
-            {
-                updateSpritesOriginal(main, colour, arabic);
-                // The original rewrote every slot, so recorded override images no longer describe the view.
-                originalImages.Clear();
-                appliedImages.Clear();
-                if (activeImages && IsImageOverrideContextReady()) ApplyImageOverrides(main, colour, arabic);
-            }
+            try { DrawSprites(main, clearRecorded: true, applyOverrides: activeImages && IsImageOverrideContextReady()); }
             catch (Exception ex) { LogCallbackFailure("sprite colour replay", ex); }
-            finally { updateSpritesActive = false; }
         }
 
         private static MainViewModel GetSpriteReplayTarget()
@@ -111,5 +117,6 @@ namespace APIShared
             MainViewModel main = MainViewModel.Instance;
             return main?.HUDmain != null ? main : null;
         }
+
     }
 }

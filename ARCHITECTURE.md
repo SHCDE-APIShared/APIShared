@@ -59,8 +59,8 @@ load phase; it is not a second public APIShared service runtime.
 | Compatibility | Internal, binary-validated interoperability corrections for optional mods; no public capability |
 | ScriptExtenderFixes | Binary-validated corrections for Script Extender and bundled dependencies |
 | ScriptExtenderReplacements | Opt-in public alternatives to specific SE methods; no interception of existing callers |
-| Missions, Lobby, Players | Shared observations and immutable state notifications |
-| Presentation, Buildings | HUD/briefing extensions, building repair and gatehouse services |
+| Missions, Lobby | Shared observations and immutable state notifications |
+| Players | Player defeat state, player colours, player views and spectator input control |
 | GameModes | Context capture, registered launch evidence and optional caller-defined permission profiles |
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
 | Networking | Owner-bound Chore channels, control-plane messages and presentation dispatch |
@@ -73,7 +73,7 @@ Participant inspection uses the existing lobby registrations and
 `ModSettingsApplication.Endpoints` snapshots. One discovery implementation supplies
 automatic savegame selection and the public diagnostic catalog; consumer UIs reuse
 its decisions. Purpose-specific checks preserve savegame-only exclusions and the
-historical authoring probes. Individual metadata/snapshot failures are isolated. This adds no
+authoring current-value probes. Individual metadata/snapshot failures are isolated. This adds no
 provider registry or network/application engine.
 
 The runtime's `MissionModSettingsPreparation` owns host-value capture, override
@@ -96,9 +96,11 @@ Directories help navigation; public namespaces define the contracts. Capabilitie
 use `APIShared`; settings and general profiles use `APIShared.ModSettings` and
 `APIShared.GameModes`. Caller-defined profiles never constrain an unrelated mod.
 Static interception brokers use `APIShared.Commands`, `APIShared.Presentation`,
-`APIShared.Recruitment` and `APIShared.Economy`; their shared Pre base contract uses
+`APIShared.Recruitment`, `APIShared.Economy` and `APIShared.Buildings`; their shared Pre base contract uses
 `APIShared.Events`. These brokers complement the capability entry points.
-The unit-settled observation broker uses `APIShared.Units`.
+The unit-settled observation broker uses `APIShared.Units`; simulation ticks, the mission
+clock and the Peace Time reader use `APIShared.Simulation`; Lord metadata in the Content
+assembly uses `APIShared.Lords`.
 The formations command engine, work-target policy and MoatMove orchestration
 belong to BugfixesAndQoL and its addon. APIShared supplies the targeted public
 route-search preference events used by that publisher and third-party observers.
@@ -120,11 +122,16 @@ src/
   Audio/                        shared playback events, context capture and binary contracts
   Economy/                      native market query contracts and validated owner
   Missions/                     mission contracts, state and event relay
-  Networking/                   owner-bound Chore and control-plane packet channels
+  Networking/                   owner-bound Chore, authenticated Chore and control-plane channels
+  Simulation/                   native map ticks, mission clock and Peace Time reader
+  Players/
+    ViewIdentity/               shared player-view identity core, Save scope and runtime root
+    Control/                    spectator input boundaries and the input-actor owner
   Workshop/                     package contracts, file policy, Steam callbacks and UI
   Buildings/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
+    EnemyProximity/             enemy-unit proximity policies, registry and read-only native query
   Presentation/
     Events/                     named HUD Pre/Post publishers
     BuildingTooltip/            compatible building-text adapter and selection
@@ -132,6 +139,7 @@ src/
     UnitHud/                    HUD contracts and implementation parts
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
+    Lords/                      packaged Lord presentation and Coop restart names
   ModSettings/
     Presets/                    contracts, host adapter, controller, catalog and storage
     Lobby/                      per-player synchronization and convergence
@@ -148,7 +156,7 @@ src/
     Routes/                     public Pre/Post route-search preference contracts
 ```
 
-Other small subjects (`Units`, `Players`, `Lobby`, `GameModes`, `Savegames`,
+Other small subjects (`Lobby`, `GameModes`, `Savegames`,
 `Diagnostics`) remain shallow. Add subdivisions when distinct
 responsibilities actually exist, rather than creating empty template directories.
 Folder paths do not change C# namespaces or public API identity.
@@ -277,67 +285,24 @@ wire IDs or registering an additional envelope type. It preflights the public
 Extender send; its void return and internal Steam fallback are not upgraded into
 an atomic delivery guarantee. No competing native transport hook is installed.
 
-The additive authenticated channel separately validates the native pending-slot
-issuer and loaded raw-submission adapter. A process-owned managed dispatcher scope
-binds the native blob and packet ID before typed deserialization, restores nested
-scopes and rejects changed native contexts after consumer validation. Unrelated
-packet IDs take the original path without native reads. Rejected Steam/worker
-deliveries never invoke consumer activation or validation. The raw submission
-checks the real engine monitor/finally and rechecks mutable bindings. It serializes
-once, requires the original participant's enqueue viewpoint and never selects
-Steam fallback. The shared identity scope below supplies that viewpoint for a
-protected view; otherwise the existing checks and channel behavior are unchanged.
-Wire formats and packet IDs are unchanged. Transport identity does not authorize
-foreign gameplay; command permissions remain separate from local UI and report views.
+The authenticated Chore channel validates the native pending-slot issuer and the loaded
+raw-submission adapter. A process-owned managed dispatcher scope binds the native blob
+and packet ID before typed deserialization; unrelated packet IDs take the original path
+without native reads. The raw submission serializes once, requires the original
+participant's enqueue viewpoint and never selects Steam fallback. Transport identity does
+not authorize foreign gameplay. Startup ordering lives in `Networking/NativeChoreRuntime`;
+see [authenticated Chore channel](docs/THIRD_PARTY_GUIDE.md#authenticated-chore-channel).
 
-Control development uses the existing mission load/unload state machine's private
-native-world identity. Successful loads create it; metadata checkpoints preserve it,
-and load/unload invalidates it before observer delivery. It is separate from the
-clock snapshot and process-local mission attempt. No second start detector or
-periodic world scan is introduced. The local single-owner queue checks current
-session health even before allowing an untracked Vanilla path; stale mode reads
-cannot retire a reentrantly replaced session.
+The mission lifecycle keeps a private native-world identity: successful loads create it,
+and load/unload invalidates it before observer delivery. Player views, view identity
+protection and spectator input control use it to bind state to one world.
 
-`PlayerViewIdentityRuntime` owns one process-wide `ControlSaveIdentity` core for
-positive-player views. The common Save writer, raw Chore submission and local-ID
-correction use that same core. Its immutable leases bind owner, native-world epoch,
-original human ID and token; another owner cannot reuse or release an existing lease.
-Role policy remains with `PlayerPerspectiveAPI` or the control coordinator. A normal
-release restores the owning lease's original view and rechecks that exact lease;
-ordinary release refuses an ended world, which only the neutral root retires at
-the existing lifecycle invalidation boundary without native writes. Failure delivery
-is bound to the originating lease; delayed observations cannot reset a newer lease's
-deduplication state or invalidate its view. Hook lifetime remains process-wide.
-
-The internal `LocalControlRuntime` coordinates its local blocks under the engine
-monitor. It binds session and queue to one native world and original controller,
-then publishes handler demand. Its constructor receives `PlayerViewIdentityRuntime`
-and derives the engine monitor and identity core from that root; it cannot be wired
-to a different guard. It keeps only its own exact lease. Retirement stops dispatch
-and clears queue/session state; returning input to Vanilla, including a direct
-`TrySetActor(0)`, first confirms suspended input, then restores and releases the
-owned view. A failed final Vanilla-input write therefore leaves suspended input;
-failed suspension retains the lease. It cannot release the observer role's lease. Components
-are never begun or ended individually. The public eliminated-player perspective
-helper uses this shared protection without requiring the unfinished general control backend.
-Native control providers, their wiring to the local runtime and any public control
-capability still require integration and game acceptance; the control types remain internal.
-Before wiring retirement to the native handler, prove that delegated native queue
-entries have drained or been reset. Ending managed sidecars alone does not remove
-native commands; disabling the handler guard could otherwise send them to Vanilla.
-
-The live part is spectator input control (full Vanilla input of one chosen player,
-no rights). Startup only validates the image; `ControlInputNative` installs both
-spectator-input boundary stubs on the first consumer registration
-(`TryRegisterSpectatorControl`), so without a consumer nothing runs. `LocalInputControl` is
-the only writer of their actor cell. The
-public `PlayerPerspectiveAPI` transaction owns ordering under the engine monitor:
-Vanilla deselection as the old view, confirmed view change, then actor publication.
-Every view selection/clear and the lifecycle's world invalidation end control; the
-latter resets the actor without a deselection command and then clears the selected
-original-spectator view (`EndViewWorld`). The rights-gated `LocalControlRuntime`, the mixed-owner
-backend and the multiplayer protocol stay WIP; the runtime must adopt
-`LocalInputControl` as actor owner before wiring. See [player control](docs/PLAYER_CONTROL.md).
+Player views and control: `PlayerViewIdentityRuntime` (`src/Players/ViewIdentity`) owns the
+single process-wide view-identity core and its leases, shared by the common Save writer,
+the raw Chore submission and the local-ID correction. `PlayerPerspectiveAPI` owns view and
+input-actor ordering under the engine monitor; `LocalInputControl` is the only writer of the
+spectator input actor. A world change resets the actor without a deselection command and
+then clears the selected original-spectator view. See [player views and control](docs/PLAYER_CONTROL.md).
 
 The preset view model owns UI bindings, commands and role/context presentation.
 Its small `PresetHost` adapter implements the internal `ILobbyPresetHost` boundary:
@@ -391,12 +356,12 @@ argument. Unknown or retaining receivers receive a fresh object for the entire r
 notification. The private copy of the audited R3 loop preserves its dispatch rules without
 patching shared generic code or locking callbacks. Nested calls and other threads allocate;
 finally-based cleanup needs no frame callback. See the
-[integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes).
+[Script Extender fixes](docs/SCRIPT_EXTENDER_FIXES.md).
 
 The UU-ImGUI shutdown fix was audited against UU-ImGUI 1.6.7 bundled with
 SHCDE-SE 2.14.1. It accepts other binaries only by the contracts it actually uses,
 not by file hash; the configuration and compatibility limits are documented in the
-[integration guide](docs/THIRD_PARTY_GUIDE.md#script-extender-bugfixes). Permanent
+[Script Extender fixes](docs/SCRIPT_EXTENDER_FIXES.md). Permanent
 hooks and native resources survive until process exit. When upstream fixes a defect,
 re-audit the installed code before retiring the fix; a version number or changelog
 entry alone is not proof of equivalent behavior.
@@ -449,12 +414,18 @@ shared presentation and registration; consumers own localized text, symbols,
 activation and gameplay decisions. See the [tooltip guide](docs/TOOLTIPS.md). See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
 for the public entry point and integration documentation.
 
-### Enemy-unit proximity and active Peace Time
-
 Buildings/EnemyProximity owns the shared category-query implementation and the
 single subscription to the existing Script Extender event, not another live hook.
 Ordered Override/Limit registrations separate shared mechanics from consumer
 settings; block coordination remains independent of native-copy availability.
 Simulation/PeaceTimeState reads validated mission state without a timer or event.
 Both are prepared before native API publication can run consumer readiness
-callbacks. See [the public contract](docs/ENEMY_PROXIMITY.md).
+callbacks. See [enemy proximity](docs/ENEMY_PROXIMITY.md).
+
+Players owns the player-view identity, the original-spectator and eliminated-participant
+views and spectator input control; consumers own their selection UI, activation and the
+enforcement of observer command restrictions. See [player views and control](docs/PLAYER_CONTROL.md).
+
+ModSettings and Savegames own mission settings preparation, personal persistence, presets
+without SerpsModsHost and the load/save requester; consumers own their settings, sources and
+authorization. See [mod settings integration](docs/MOD_SETTINGS.md).

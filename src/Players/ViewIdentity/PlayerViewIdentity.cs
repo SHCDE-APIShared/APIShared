@@ -8,7 +8,7 @@ namespace APIShared.PlayerControl
     // never an independently constructed production guard or the native delegates.
     // Mutation/scopes require the engine monitor. Delayed failure reports cannot
     // overwrite a replacement lease's fault.
-    internal sealed class ControlSaveIdentity
+    internal sealed class PlayerViewIdentity
     {
         internal sealed class Lease
         {
@@ -44,7 +44,7 @@ namespace APIShared.PlayerControl
         private int saveDepth;
         private bool changingIdentity;
 
-        internal ControlSaveIdentity(Func<bool> inEngineContext, Func<long, bool> isCurrentLocalWorld,
+        internal PlayerViewIdentity(Func<bool> inEngineContext, Func<long, bool> isCurrentLocalWorld,
             Func<int> readView, Action<int> writeView)
         {
             this.inEngineContext = inEngineContext ?? throw new ArgumentNullException(nameof(inEngineContext));

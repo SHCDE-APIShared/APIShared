@@ -102,8 +102,8 @@ namespace APIShared
         public bool IsEliminated => Readable && (OfficialLoss || LordDeathConfirmed);
     }
 
-    /// <summary>Additive current-state access implemented by the player-defeat binding.
-    /// Existing <see cref="IPlayerDefeatCapability"/> implementations and transition callbacks remain unchanged.</summary>
+    /// <summary>Current-state access, implemented by the binding returned from TryGetPlayerDefeat
+    /// (cast the <see cref="IPlayerDefeatCapability"/>); independent of its transition callbacks.</summary>
     public interface IPlayerDefeatStateCapability : IPlayerDefeatCapability
     {
         /// <summary>Thread-safe managed snapshot lookup, with no native reads or implicit observation.

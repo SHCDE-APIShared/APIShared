@@ -165,22 +165,22 @@ namespace APISharedTests
             var packet = new object(); int serializations = 0, queues = 0;
             byte[] body = { 7, 8, 9 };
             Func<object, byte[]> serialize = value => { Assert.AreSame(packet, value); serializations++; return body; };
-            var result = StrictChoreSendPolicy.Send(packet, 0x1234, true, serialize, blob => {
+            var result = ChoreSendPolicy.SendSerializedOnce(packet, 0x1234, true, serialize, blob => {
                 queues++; CollectionAssert.AreEqual(new byte[] { 0x34, 0x12, 7, 8, 9 }, blob); return true;
             }, 1200);
             Assert.IsTrue(result.Submitted); Assert.AreEqual(1, serializations); Assert.AreEqual(1, queues);
             body[0] = 99;
             Assert.AreEqual(7, result.CopySerializedBody()[0]);
-            result = StrictChoreSendPolicy.Send(packet, 1, true, serialize, blob => { queues++; return false; }, 1200);
+            result = ChoreSendPolicy.SendSerializedOnce(packet, 1, true, serialize, blob => { queues++; return false; }, 1200);
             Assert.AreEqual(NetworkSendStatus.Unavailable, result.Status);
             Assert.AreEqual(2, serializations); Assert.AreEqual(2, queues);
-            result = StrictChoreSendPolicy.Send(packet, 1, true, serialize, blob => { queues++; throw new InvalidOperationException("queue"); }, 1200);
+            result = ChoreSendPolicy.SendSerializedOnce(packet, 1, true, serialize, blob => { queues++; throw new InvalidOperationException("queue"); }, 1200);
             Assert.AreEqual(NetworkSendStatus.TransportFailed, result.Status);
             Assert.AreEqual(3, serializations); Assert.AreEqual(3, queues);
             Assert.AreEqual(NetworkSendStatus.Unavailable,
-                StrictChoreSendPolicy.Send(packet, 1, false, serialize, blob => { queues++; return true; }, 1200).Status);
+                ChoreSendPolicy.SendSerializedOnce(packet, 1, false, serialize, blob => { queues++; return true; }, 1200).Status);
             Assert.AreEqual(NetworkSendStatus.TooLarge,
-                StrictChoreSendPolicy.Send(packet, 1, true, value => new byte[1199], blob => { queues++; return true; }, 1200).Status);
+                ChoreSendPolicy.SendSerializedOnce(packet, 1, true, value => new byte[1199], blob => { queues++; return true; }, 1200).Status);
             Assert.AreEqual(3, serializations); Assert.AreEqual(3, queues);
         }
 

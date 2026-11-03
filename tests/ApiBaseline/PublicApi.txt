@@ -1571,12 +1571,14 @@ APIShared.NativeCapabilityIds | public const string AivBuildStep = "aiv-build-st
 APIShared.NativeCapabilityIds | public const string BriefingGoldPresentation = "briefing-gold-presentation"
 APIShared.NativeCapabilityIds | public const string BuildingRepair = "building-repair"
 APIShared.NativeCapabilityIds | public const string CoopAiStartImport = "coop-ai-start-import"
+APIShared.NativeCapabilityIds | public const string EnemyUnitProximity = "enemy-unit-proximity"
 APIShared.NativeCapabilityIds | public const string GatehouseAutomation = "gatehouse-automation"
 APIShared.NativeCapabilityIds | public const string GatehouseDistanceOrigin = "gatehouse-distance-origin"
 APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse-timing"
 APIShared.NativeCapabilityIds | public const string HudExtrasButtons = "hud-extras-buttons"
 APIShared.NativeCapabilityIds | public const string LobbyState = "lobby-state"
 APIShared.NativeCapabilityIds | public const string MissionLifecycle = "mission-lifecycle"
+APIShared.NativeCapabilityIds | public const string PeaceTimeState = "peace-time-state"
 APIShared.NativeCapabilityIds | public const string PlagueHeight = "plague-height"
 APIShared.NativeCapabilityIds | public const string PlayerDefeat = "player-defeat"
 APIShared.NativeCapabilityIds | public const string UnitHudPresentation = "unit-hud-presentation"
@@ -2001,8 +2003,8 @@ APIShared.PlagueSurfaceCategory | Keeps = 8
 APIShared.PlagueSurfaceCategory | None = 0
 APIShared.PlagueSurfaceCategory | Towers = 4
 APIShared.PlagueSurfaceCategory | Walls = 1
-APIShared.PlayerColors | public static class APIShared.PlayerColors
-APIShared.PlayerColors | public static bool TryGetUiColour(int playerId, out int uiColour)
+APIShared.PlayerColours | public static class APIShared.PlayerColours
+APIShared.PlayerColours | public static bool TryGetUiColour(int playerId, out int uiColour)
 APIShared.PlayerDefeatNotification | public sealed class APIShared.PlayerDefeatNotification
 APIShared.PlayerDefeatNotification | public .ctor(long sessionId, int playerId, int simulationTick)
 APIShared.PlayerDefeatNotification | public int PlayerId { get; }

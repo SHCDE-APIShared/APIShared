@@ -13,7 +13,7 @@ using APIShared.PlayerControl;
 namespace APIShared
 {
     /// <summary>Separates the locally controlled player from Vanilla's native report viewpoint.</summary>
-    public static class PlayerPerspectiveAPI
+    public static partial class PlayerPerspectiveAPI
     {
         private delegate int LocalPlayerIdCall(GamePlayerManagerAPI self);
 
@@ -40,94 +40,11 @@ namespace APIShared
         private static bool lifecycleBound;
         private static object perspectiveEngineGate;
         private static readonly PlayerViewIdentityOwner viewOwner = new PlayerViewIdentityOwner("spectator-view", OnViewIdentityFailure);
-        private static ControlSaveIdentity.Lease viewLease;
+        private static PlayerViewIdentity.Lease viewLease;
         private static int selectedSpectatorPlayerId;
         private static int transitionViewPlayerId;
         private static int transitionActive;
         private static int viewUncertain;
-        // Sole owner of the native input actor; see LocalInputControl.
-        private static readonly LocalInputControl inputControl = new LocalInputControl(ControlInputNative.WriteActor);
-        private static readonly Action<int> deselectNative = DeselectNative;
-
-        internal static void Initialize(ManualLogSource log)
-        {
-            if (localPlayerIdHook != null) return;
-            Hook candidate = null;
-            try
-            {
-                perspectiveEngineGate = typeof(EngineInterface).GetField("threadLock",
-                    BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null);
-                MethodInfo method = typeof(GamePlayerManagerAPI).GetMethod(
-                    nameof(GamePlayerManagerAPI.GetLocalPlayerId),
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null, Type.EmptyTypes, null);
-                if (method == null || method.ReturnType != typeof(int))
-                    throw new MissingMethodException("Installed GamePlayerManagerAPI.GetLocalPlayerId signature changed.");
-
-                candidate = new Hook(method, (LocalPlayerIdCall)OnGetLocalPlayerId,
-                    new HookConfig { ManualApply = true, ID = "APIShared.PlayerPerspective.LocalIdentity" });
-                LocalPlayerIdCall original = candidate.GenerateTrampoline<LocalPlayerIdCall>();
-                originalLocalPlayerId = original;
-                candidate.Apply();
-                localPlayerIdHook = candidate;
-                transitionLog = log;
-                changes.OnError = error => log.LogError("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] PLAYER_PERSPECTIVE_OBSERVER_FAILED: " + error);
-            }
-            catch (Exception error)
-            {
-                // A failed, unpublished candidate is the only hook we ever undo.
-                try { candidate?.Undo(); candidate?.Dispose(); } catch { }
-                log.LogError("PLAYER_PERSPECTIVE_HOOK_FAILED: " + error);
-            }
-        }
-
-        private static int OnGetLocalPlayerId(GamePlayerManagerAPI self)
-        {
-            // The hot hook never touches Unity state. Session teardown clears this flag,
-            // and inactive calls retain the original Script Extender behavior.
-            int protectedPlayer = PlayerViewIdentityRuntime.Instance.ProtectedPlayerId;
-            if (protectedPlayer > 0) return protectedPlayer;
-            if (Volatile.Read(ref identityOverrideActive) != 0) return Volatile.Read(ref identityOverridePlayerId);
-            return originalLocalPlayerId(self);
-        }
-
-        internal static bool ShouldOverrideLocalPlayerId(
-            int selectedPlayerId, int gameType, int spectatorMode, int controlledPlayerId) =>
-            selectedPlayerId >= 1 && selectedPlayerId <= 8 &&
-            gameType == (int)eGameTypeModes.GAMETYPE_MULTIPLAYER &&
-            spectatorMode != 0 && controlledPlayerId <= 0;
-
-        /// <summary>Gets the player actually controlled by this client, or -1 for a spectator.</summary>
-        public static int GetControlledPlayerId()
-        {
-            if (GameData.Instance?.lastGameState == null || EditorDirector.instance == null) return -1;
-            int playerId = EditorDirector.instance.ActivePlayerID;
-            return playerId >= 1 && playerId <= 8 ? playerId : -1;
-        }
-
-        /// <summary>Gets the selected report viewpoint; outside spectator mode this is the native view.</summary>
-        public static int GetViewedPlayerId()
-        {
-            var failure = PlayerViewIdentityRuntime.Instance.Identity?.LastFailure;
-            if (failure != null && ReferenceEquals(failure.Lease, viewLease)) return -1;
-            if (Volatile.Read(ref transitionActive) != 0)
-                return Volatile.Read(ref transitionViewPlayerId);
-            if (Volatile.Read(ref viewUncertain) != 0) return -1;
-            int selected = Volatile.Read(ref selectedSpectatorPlayerId);
-            if (selected != 0) return selected;
-            return GetRawNativeViewPlayerId();
-        }
-
-        /// <summary>Reads the native index without applying the spectator identity correction.</summary>
-        public static int GetRawNativeViewPlayerId()
-        {
-            try
-            {
-                ulong address = GameGlobalsManager.Instance.LocalPlayerIdVA;
-                return address == 0 ? -1 : Marshal.ReadInt32(new IntPtr(unchecked((long)address)));
-            }
-            catch { return -1; }
-        }
 
         /// <summary>
         /// Changes Vanilla's view and publishes it for an original spectator only.
@@ -172,158 +89,6 @@ namespace APIShared
             return core == null || (core.CurrentLease == null && !core.IsScopeActive);
         }
 
-        /// <summary>
-        /// Declares that a mod uses spectator input control. Without any registration APIShared
-        /// installs nothing for this feature. The first registration installs two dormant native input
-        /// boundaries for the process lifetime (actor zero follows Vanilla completely). Call from the
-        /// mod's CrusaderLibrary.LibraryLoaded handler (no thread suspension) or outside a running
-        /// mission; inside a mission the first registration is refused. Idempotent per owner GUID.
-        /// Returns false with a reason for an unsupported native image or a failed installation.
-        /// </summary>
-        public static bool TryRegisterSpectatorControl(string ownerGuid, out string reason)
-        {
-            if (string.IsNullOrWhiteSpace(ownerGuid)) { reason = "An owner GUID is required."; return false; }
-            return ControlInputNative.TryInstall(out reason);
-        }
-
-        /// <summary>
-        /// Gives an original spectator the complete Vanilla map input of one chosen player and selects
-        /// that player's view: selection, unit orders, building panels, and the view-based economy
-        /// actions (tax, rations). There are no rights categories; the player's AI keeps acting too.
-        /// Requirements: Unity main thread, a ready offline multiplayer-type game (local skirmish) with
-        /// Vanilla's local spectator flag, a nonpositive EditorDirector.ActivePlayerID, no participant
-        /// view lease and an occupied human/skirmish slot, after TryRegisterSpectatorControl succeeded.
-        /// Real multiplayer and the map editor (where Vanilla switches players itself) return false.
-        /// Switching to another player first deselects the previous player's units through Vanilla's
-        /// own path. While active, GetLocalPlayerId reports the controlled player. Managed placement
-        /// and demolition (EngineInterface.PlaceMapperItem/DeleteBuilding) pass
-        /// EditorDirector.ActivePlayerID; the consumer owning such a hook substitutes
-        /// GetInputControlledPlayerId. Control ends with ClearSpectatorControl, any other view
-        /// selection or clear, and every native world change (load, unload, new mission). A failed
-        /// view write rolls back; an unconfirmed rollback blocks spectator input until cleared.
-        /// </summary>
-        public static bool TrySetSpectatorControl(int playerId)
-        {
-            if (!Internal.UnityMainThreadDispatch.IsMainThread || localPlayerIdHook == null ||
-                playerId < 1 || playerId > 8 || !ControlInputNative.IsReady) return false;
-            object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
-            if (engineGate == null || GameModes.GameModeHelper.IsMapEditor() || GameModes.GameModeHelper.IsRealMultiplayer())
-                return false;
-            bool changed = false;
-            string failure = null;
-            try
-            {
-                lock (engineGate)
-                {
-                    EngineInterface.PlayState state = GameData.Instance?.lastGameState;
-                    EditorDirector director = EditorDirector.instance;
-                    long world = MissionLifecycleService.NativeWorld?.Sequence ?? 0;
-                    if (state == null || director == null || world <= 0 || !ShouldOverrideLocalPlayerId(
-                            playerId, state.game_type, state.spectatorMode, director.ActivePlayerID) ||
-                        !state.is_human_or_skirmish_player(playerId) || !IsUnboundViewIdentity())
-                        return false;
-                    changed = TrySetControlCore(inputControl, playerId, world, GetRawNativeViewPlayerId,
-                        EngineInterface.SetEditorPlayer, deselectNative,
-                        () => IsUnboundViewIdentity() && MissionLifecycleService.NativeWorld?.Sequence == world, out failure);
-                }
-            }
-            catch (Exception error) { changed = false; failure = error.ToString(); }
-            finally { changes.Drain(); }
-            if (!changed && failure != null) NativeApiLog.Error(transitionLog, "PLAYER_CONTROL_SWITCH_FAILED: " + failure);
-            return changed;
-        }
-
-        /// <summary>
-        /// Ends spectator input control after Vanilla-deselecting the controlled player's units. The
-        /// selected view stays; spectator input is suppressed again. Safe to call when inactive.
-        /// </summary>
-        public static void ClearSpectatorControl()
-        {
-            try
-            {
-                object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
-                if (engineGate == null) EndControl(true);
-                else lock (engineGate) EndControl(true);
-            }
-            catch (Exception error) { NativeApiLog.Error(transitionLog, "PLAYER_CONTROL_CLEAR_FAILED: " + error); }
-        }
-
-        /// <summary>Gets the player whose map input the original spectator currently controls, or 0.</summary>
-        public static int GetInputControlledPlayerId()
-        {
-            int player = inputControl.Player;
-            if (player <= 0) return 0;
-            return inputControl.IsActiveIn(MissionLifecycleService.NativeWorld?.Sequence ?? 0) ? player : 0;
-        }
-
-        // Caller holds the engine monitor. The injected delegates let the transaction be tested
-        // without a running game. The new actor is published only for a confirmed native view.
-        internal static bool TrySetControlCore(LocalInputControl control, int playerId, long world,
-            Func<int> readView, Action<int> setView, Action<int> deselect, Func<bool> contextValid, out string failure)
-        {
-            failure = null;
-            // A binding from an ended world carries nothing into this one.
-            if (control.IsEngaged && control.World != world) control.Release();
-            int previous = control.Player;
-            if (previous == playerId && readView() == playerId) return true;
-            // Vanilla deselects as the CURRENT view; the queued command keeps that source.
-            if (previous > 0 && readView() == previous) deselect(previous);
-            if (TryChangeViewCore(playerId, readView, setView, out failure, playerId, contextValid))
-            {
-                control.Activate(world, playerId);
-                return true;
-            }
-            // A verified rollback restored the previous view (and its identity override). An unconfirmed
-            // one blocks input and reports the spectator identity again, never the unconfirmed target.
-            if (Volatile.Read(ref viewUncertain) != 0) { control.Suspend(); ResetSpectatorControlIdentity(); }
-            else if (previous <= 0 || readView() != previous) control.Release();
-            return false;
-        }
-
-        // Positive overrides of an original spectator come only from control; a participant's leased
-        // identity is never touched here.
-        private static void ResetSpectatorControlIdentity()
-        {
-            lock (viewChangeGate)
-                if (viewLease == null && Volatile.Read(ref identityOverridePlayerId) > 0)
-                    Volatile.Write(ref identityOverridePlayerId, -1);
-        }
-
-        // Caller holds the engine monitor (or no monitor exists). Deselection runs only while the
-        // controlled player's view is still current in the bound world.
-        internal static void EndControlCore(LocalInputControl control, long world, Func<int> readView, Action<int> deselect)
-        {
-            if (!control.IsEngaged) return;
-            int controlled = control.Player;
-            try
-            {
-                if (deselect != null && controlled > 0 && world > 0 && control.World == world && readView() == controlled)
-                    deselect(controlled);
-            }
-            finally
-            {
-                control.Release();
-                ResetSpectatorControlIdentity();
-            }
-        }
-
-        // Dormant fast path: without engaged control no lifecycle or native read happens.
-        private static void EndControl(bool deselect)
-        {
-            if (!inputControl.IsEngaged) return;
-            EndControlCore(inputControl, MissionLifecycleService.NativeWorld?.Sequence ?? 0,
-                GetRawNativeViewPlayerId, deselect ? deselectNative : null);
-        }
-
-        // Vanilla's own right-click/troop-panel deselection (GameAction CloseTroopsPanel ->
-        // native 0x897F0): local marking clear plus a queued synchronized unselect whose source
-        // is the current native view. Failure leaves only the old selection; it is reported.
-        private static void DeselectNative(int playerId)
-        {
-            try { EngineInterface.GameAction(Enums.GameActionCommand.CloseTroopsPanel, 0, 0); }
-            catch (Exception error) { NativeApiLog.Error(transitionLog, "PLAYER_CONTROL_DESELECT_FAILED: player=" + playerId + ": " + error); }
-        }
-
         internal static void BindLifecycle(MissionLifecycleService lifecycle)
         {
             if (lifecycleBound || lifecycle == null) return;
@@ -345,109 +110,6 @@ namespace APIShared
             catch (Exception error) { NativeApiLog.Error(transitionLog, "PLAYER_CONTROL_RETIRE_FAILED: " + error); }
             PlayerViewIdentityRuntime.Instance.RetireEndedWorld();
             ClearSpectatorView();
-        }
-
-        /// <summary>
-        /// Selects a report viewpoint for an eliminated participant while preserving their positive
-        /// controlled/local player ID. Call on Unity's main thread in a ready multiplayer-type game
-        /// (including local skirmish), with Vanilla's local spectator flag already enabled. A current
-        /// observed official loss or confirmed lord death is required; no living lord alone is not proof.
-        /// Foreign views require Save and Chore identity protection. The unchanged own view remains
-        /// available without that optional protection. This grants no command/control permission.
-        /// Confirmed changes use SubscribeChanges; failed writes roll back and uncertainty fails closed.
-        /// </summary>
-        public static bool TrySetEliminatedPlayerView(int playerId)
-        {
-            if (!Internal.UnityMainThreadDispatch.IsMainThread || localPlayerIdHook == null ||
-                playerId < 1 || playerId > 8) return false;
-            object engineGate = PlayerViewIdentityRuntime.Instance.EngineGate ?? perspectiveEngineGate;
-            if (engineGate == null) return false;
-            try
-            {
-                lock (engineGate)
-                {
-                    var context = MissionLifecycleService.ActiveContext;
-                    var state = GameData.Instance?.lastGameState;
-                    int actual = GetControlledPlayerId();
-                    var observations = ApiSharedRuntime.ProcessInstance.PlayerDefeatState;
-                    var runtime = PlayerViewIdentityRuntime.Instance;
-                    var core = runtime.Identity;
-                    if (context == null || state == null || actual < 1 || actual > 8 ||
-                        state.game_type != (int)eGameTypeModes.GAMETYPE_MULTIPLAYER || state.spectatorMode == 0 ||
-                        !state.is_human_or_skirmish_player(playerId) || observations == null ||
-                        !observations.TryGetState(context.SessionId, actual, out var snapshot) || !snapshot.IsEliminated) return false;
-                    if (viewLease != null && (core == null || !core.IsOwned(viewOwner, viewLease))) viewLease = null;
-                    if (core?.CurrentLease != null && !core.IsOwned(viewOwner, viewLease)) return false;
-                    if (playerId == actual && viewLease == null &&
-                        GetRawNativeViewPlayerId() == actual)
-                    {
-                        long ownWorld = MissionLifecycleService.NativeWorld?.Sequence ?? 0;
-                        return TryChangeViewCore(actual, GetRawNativeViewPlayerId, KeepNativeView, out _, actual,
-                            () => ownWorld > 0 && MissionLifecycleService.NativeWorld?.Sequence == ownWorld &&
-                                MissionLifecycleService.ActiveContext?.SessionId == context.SessionId);
-                    }
-                    if (!runtime.ForeignViewsReady || core == null || core.IsScopeActive) return false;
-                    if (viewLease == null)
-                    {
-                        long world = MissionLifecycleService.NativeWorld?.Sequence ?? 0;
-                        if (!core.TryBind(viewOwner, world, actual, out viewLease, out _)) return false;
-                    }
-                    if (!core.IsCurrent(viewOwner, viewLease) || viewLease.Human != actual || core.Failure != null) return false;
-                    var selectedLease = viewLease;
-                    bool changed = TryChangeViewCore(playerId, GetRawNativeViewPlayerId,
-                        EngineInterface.SetEditorPlayer, out string failure, actual,
-                        () => core.IsCurrent(viewOwner, selectedLease) &&
-                            MissionLifecycleService.ActiveContext?.SessionId == context.SessionId);
-                    if (!changed) NativeApiLog.Error(transitionLog, "ELIMINATED_PLAYER_VIEW_FAILED: " + failure);
-                    return changed;
-                }
-            }
-            catch (Exception error)
-            { NativeApiLog.Error(transitionLog, "ELIMINATED_PLAYER_VIEW_FAILED: " + error); return false; }
-            finally { changes.Drain(); }
-        }
-
-        private static void KeepNativeView(int playerId) { }
-
-        /// <summary>
-        /// Restores an eliminated participant's own native view before releasing its identity protection.
-        /// An ended native world is retired without writing into its replacement. On restoration failure
-        /// protection is retained. No gameplay permission is granted or revoked by this helper.
-        /// </summary>
-        public static void ClearEliminatedPlayerView()
-        {
-            // An original spectator's input control also holds a positive override; it is not an
-            // eliminated-participant view and stays with ClearSpectatorControl/ClearSpectatorView.
-            if (viewLease != null || (!inputControl.IsEngaged &&
-                Volatile.Read(ref identityOverrideActive) != 0 && Volatile.Read(ref identityOverridePlayerId) > 0))
-                ClearSpectatorView();
-        }
-
-        private static void OnViewIdentityFailure(ControlSaveIdentity.FailureRecord failure)
-        {
-            var runtime = PlayerViewIdentityRuntime.Instance;
-            if (runtime.EngineGate == null) return;
-            try
-            {
-                lock (runtime.EngineGate)
-                    TryInvalidateOwnedView(runtime.Identity, viewOwner, viewLease, failure);
-            }
-            finally { changes.Drain(); }
-        }
-
-        // Validation and marking share the lifecycle's engine monitor. Drain after
-        // leaving it, so observers cannot run under the native critical section.
-        internal static bool TryInvalidateOwnedView(ControlSaveIdentity core, object owner,
-            ControlSaveIdentity.Lease ownedLease, ControlSaveIdentity.FailureRecord failure)
-        {
-            if (failure == null || core == null || !ReferenceEquals(ownedLease, failure.Lease) ||
-                !core.IsCurrent(owner, ownedLease)) return false;
-            lock (viewChangeGate)
-            {
-                if (Interlocked.Exchange(ref viewUncertain, 1) != 0) return true;
-                changes.Enqueue(Volatile.Read(ref selectedSpectatorPlayerId), -1, PlayerPerspectiveChangeReason.Uncertain);
-            }
-            return true;
         }
 
         // The injected delegates also let the transaction be tested without a running game.
@@ -595,10 +257,9 @@ namespace APIShared
             }
         }
 
-        // Shared production release path; fixtures combine it with LocalControlRuntime
-        // and the exact same core to prove that public view cleanup cannot steal control.
-        internal static bool TryClearOwnedView(ControlSaveIdentity core, object owner,
-            ref ControlSaveIdentity.Lease ownedLease, out string reason)
+        // Shared release path of an owned view lease; only the exact owner and lease release it.
+        internal static bool TryClearOwnedView(PlayerViewIdentity core, object owner,
+            ref PlayerViewIdentity.Lease ownedLease, out string reason)
         {
             reason = null;
             var captured = ownedLease;

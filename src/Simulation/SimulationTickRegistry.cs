@@ -1,3 +1,4 @@
+using APIShared.Events;
 using System;
 using System.Threading;
 
@@ -12,7 +13,7 @@ namespace APIShared.Simulation
         private readonly ReadSimulationTick read;
         private readonly Action<Action<int>> activate;
         private readonly Action<string, Exception> error;
-        private Registration[] registrations = Array.Empty<Registration>();
+        private readonly OwnedCallbacks<Action<int>> registrations = new OwnedCallbacks<Action<int>>();
         private bool activated, hasTick;
         private long lastSession, failures;
         private int lastTick, publishing;
@@ -33,22 +34,14 @@ namespace APIShared.Simulation
             { reason = "Owner GUID, registration ID and a callback are required."; return false; }
             lock (sync)
             {
-                foreach (Registration existing in registrations)
-                    if (existing.Owner == owner && existing.Id == id)
-                    { reason = "This owner already registered that ID."; return false; }
+                // The source starts with the first accepted registration; a duplicate implies it already runs.
                 if (!activated)
                 {
                     try { activate(OnSourceTick); activated = true; }
                     catch (Exception ex) { reason = "Simulation tick source unavailable: " + ex.Message; return false; }
                 }
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(owner, id, callback, order);
-                Array.Sort(next, Compare);
-                Volatile.Write(ref registrations, next);
+                return registrations.TryAdd(owner, id, callback, out reason, order);
             }
-            reason = string.Empty;
-            return true;
         }
 
         internal bool TryGetCurrentTick(out int mapTick)
@@ -62,7 +55,7 @@ namespace APIShared.Simulation
         // The incoming SE tick is deliberately ignored: it counts local engine runs, not map steps.
         internal void OnSourceTick(int ignoredLocalTick)
         {
-            Registration[] snapshot = Volatile.Read(ref registrations);
+            var snapshot = registrations.Snapshot;
             if (snapshot.Length == 0 || Interlocked.CompareExchange(ref publishing, 1, 0) != 0) return;
             try
             {
@@ -71,7 +64,7 @@ namespace APIShared.Simulation
                 lastSession = session;
                 lastTick = tick;
                 hasTick = true;
-                foreach (Registration registration in snapshot)
+                foreach (var registration in snapshot)
                     try { registration.Callback(tick); }
                     catch (Exception ex)
                     {
@@ -87,22 +80,6 @@ namespace APIShared.Simulation
         {
             try { error?.Invoke(operation, ex); }
             catch { /* Diagnostics never interrupt another callback or the native simulation. */ }
-        }
-
-        private static int Compare(Registration a, Registration b)
-        {
-            int result = a.Order.CompareTo(b.Order);
-            if (result == 0) result = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-            return result != 0 ? result : StringComparer.Ordinal.Compare(a.Id, b.Id);
-        }
-
-        private sealed class Registration
-        {
-            internal readonly string Owner, Id;
-            internal readonly Action<int> Callback;
-            internal readonly int Order;
-            internal Registration(string owner, string id, Action<int> callback, int order)
-            { Owner = owner; Id = id; Callback = callback; Order = order; }
         }
     }
 }

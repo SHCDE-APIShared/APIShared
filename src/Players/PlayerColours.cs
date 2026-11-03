@@ -15,7 +15,7 @@ namespace APIShared
     /// image resources use the UI order red, orange, yellow, blue, black/gray, purple, light blue, green,
     /// converted from the palette with <c>Platform_Multiplayer.Instance.UIColourRemap</c>.
     /// </remarks>
-    public static class PlayerColors
+    public static class PlayerColours
     {
         private const int FirstPlayerId = 1;
         private const int LastPlayerId = 8;
@@ -24,7 +24,7 @@ namespace APIShared
 
         /// <summary>
         /// Gets the UI colour Vanilla's unit HUD sprite update (<c>MainViewModel.UpdateUITroopSprites</c>) uses for
-        /// <paramref name="playerId"/>: UI order 1..8 as described on <see cref="PlayerColors"/>, never the material palette.
+        /// <paramref name="playerId"/>: UI order 1..8 as described on <see cref="PlayerColours"/>, never the material palette.
         /// </summary>
         /// <remarks>
         /// Player IDs are the one-based native player slots 1..8. The value is read from Vanilla's current mapping on
@@ -69,6 +69,7 @@ namespace APIShared
             uiColour = ui;
             return true;
         }
+
 
         // Arabic HUD variants for a non-local player, when Vanilla exposes that player's lord type: only human
         // multiplayer members carry the native lord type Vanilla registered (RegisterMPPlayer). AI members, single

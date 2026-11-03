@@ -71,9 +71,8 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception error) { result.Add(Failed(registration, error, true)); }
             }
-            // An explicit dynamic endpoint used to win before authoring considered a
-            // savegame-excluded panel. Preserve that precedence and avoid probing its
-            // shadowed panel; only otherwise unrepresented authoring panels need checks.
+            // An explicit dynamic endpoint takes precedence over a savegame-excluded authoring
+            // panel, which is then not probed; only otherwise unrepresented authoring panels need checks.
             foreach (var registration in authoringOnly)
             {
                 if (result.Any(item => item.ModGuid == registration.Guid &&
@@ -116,9 +115,8 @@ namespace APIShared.ModSettings
             var duplicate = host.GroupBy(property => property.Name, StringComparer.Ordinal).FirstOrDefault(group => group.Skip(1).Any());
             if (duplicate != null)
                 return Reject(registration, ModSettingsParticipantStatus.InvalidHostSettings, "duplicate SyncHostOnly property " + duplicate.Key);
-            // Historically authoring separately validated savegame-excluded endpoints.
-            // Preserve those current-value probes without broadening the savegame opt-out
-            // or adding probes to ordinary automatic participants.
+            // Authoring validates savegame-excluded endpoints with current-value probes, without
+            // broadening the savegame opt-out or adding probes to ordinary automatic participants.
             if (checkCurrentValues)
                 foreach (var property in host)
                 {

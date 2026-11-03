@@ -14,6 +14,7 @@ namespace APIShared.Simulation
         /// Call synchronously on the simulation thread or in a lifecycle callback while native state is
         /// stopped/locked. This does not take an engine lock, dispatch threads, or authorize mutations
         /// in an otherwise unsuitable callback. The expected session ID is process-local, not peer data.
+        /// For the fully started mission without a context use <see cref="SimulationTickEvents.TryGetCurrentTick(out int)"/>.
         /// </remarks>
         /// <param name="expectedMission">Context from the central mission lifecycle.</param>
         /// <param name="mapTick">Native counter on success; ignore its value on failure.</param>

@@ -1,10 +1,31 @@
 # Native binary update contracts
 
+**Contents**
+
+- [Authenticated Chore context and submission](#authenticated-chore-context-and-submission)
+- [Spectator input control boundaries](#spectator-input-control-boundaries)
+- [Player-view identity: common save writer and raw Chore submission](#player-view-identity-common-save-writer-and-raw-chore-submission)
+- [Synchronized-save archive context](#synchronized-save-archive-context)
+- [Native field knowledge](#native-field-knowledge)
+- [AI market sell policies](#ai-market-sell-policies)
+- [Fixes wheat-sale startup correction](#fixes-wheat-sale-startup-correction)
+- [Pathfinding table replacements](#pathfinding-table-replacements)
+- [Audio](#audio)
+- [Explicit gate-routing backend](#explicit-gate-routing-backend)
+- [Assassin reconstruction connection rule](#assassin-reconstruction-connection-rule)
+- [Registered native sites](#registered-native-sites)
+- [Workshop staging cleanup](#workshop-staging-cleanup)
+- [Rounded fear-popularity SE adapter](#rounded-fear-popularity-se-adapter)
+- [Plague standing heights](#plague-standing-heights)
+- [Shared visible-map entry and pause-menu actions](#shared-visible-map-entry-and-pause-menu-actions)
+- [Managed Script Extender and game targets of Lord presentation and move diagnostics](#managed-script-extender-and-game-targets-of-lord-presentation-and-move-diagnostics)
+- [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
+
 ## Authenticated Chore context and submission
 
 Owner: `Networking.NativeChoreContext` / `NativeChoreDispatch` / `NativeChoreTransport`. Reference native
 SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
-This adds no native hook and does not replace SE's opcode-106 handler.
+No native hook is installed; SE's opcode-106 handler stays in place.
 
 The ChoreManager base is supplied by SE's public resolved `ChoreManagerVA`, must
 equal module `+0x8574320` for the reference image and must fit the complete accessed
@@ -31,8 +52,8 @@ scopes in `finally`; invalid nested calls must not inherit them. Receivers requi
 the exact packet ID and unchanged native tuple before and after consumer validation.
 Do not invoke consumer activation/payload/authority predicates before this context
 is verified; rejected Steam/worker deliveries must not run game-state callbacks.
-Unrelated registered packet IDs avoid native reads; old dispatch order and behavior
-are retained. This adds no native patch, and the managed hook is never torn down.
+Unrelated registered packet IDs avoid native reads and keep SE's dispatch order and
+behavior. No native patch is installed, and the managed hook is never torn down.
 
 Raw submission binds SE's installed `SendScriptExtenderChorePayload(byte[]) -> bool`
 and checks its loaded IL calls: one native queue delegate invocation, engine
@@ -52,17 +73,17 @@ field and private engine monitor are validated reflection bindings, not direct
 publicized-assembly accesses. Recheck their mutable monitor/queue bindings before
 each send. The outer wrapper holds that same monitor while
 checking real local identity against the native enqueue view and clears staging
-in `finally`. It never calls the public Steam-fallback sender. The old channel
-contracts remain unchanged.
+in `finally`. It never calls the public Steam-fallback sender. Regular Chore channels do not use
+this path.
 
 Before enqueue, inspect the next available native slot under that same monitor.
 `0x20950` starts after the cursor at manager `+0x370BF4`, wraps over 500 entries
 and accepts state zero or signed-byte state >=10 at slot `+9`. After 500 failed
-checks it still returns an active slot, which `0x23990` overwrites. The additive
+checks it still returns an active slot, which `0x23990` overwrites. The authenticated
 sender therefore refuses a full queue. This bounded event-time check grants no
-global peer capacity reservation: the control protocol still needs a bounded
+global peer capacity reservation: a protocol on top of the channel needs its own bounded
 in-flight native-packet window, including peer acknowledgements and other traffic.
-Do not burst the complete logical reassembly budget into Vanilla's 500 slots.
+Do not burst a complete logical reassembly budget into Vanilla's 500 slots.
 
 There is no unknown-image layout fallback: source attribution needs the entire
 receive/schedule/dispatch chain, and a matching function prologue cannot establish
@@ -84,7 +105,7 @@ window without thread suspension, otherwise only outside a running mission with
 suspension). Hash-bound; any other image skips the feature (one Info line) and leaves
 Vanilla unchanged. Without a registered consumer nothing is installed. Actor zero
 follows both complete original blocks. This grants full Vanilla input of the chosen
-player; it is not a rights/permission service (that path remains WIP).
+player; it is not a rights/permission service.
 
 Vanilla zeroes the native view for a spectator at two places before map input:
 
@@ -124,16 +145,9 @@ by setting a view. Switching players first runs Vanilla's deselection (GameActio
 unselect via `0x19A5B0`/`0x23990` with the current view as source) while the old
 view is current. Whether that path releases every tribe reservation (`+0x2A`) is
 statically unproven; it is identical to an ordinary Vanilla deselection.
-For the WIP rights-gated runtime: before wiring local-control retirement, establish a native queue reset/drain contract:
-`SinglePlayerNativeQueue.End` clears managed sidecars, not native Chore slots.
-`ControlHandlerBridge` follows the original handler when demand is zero, so a view
-restoration or managed cleanup alone is not proof that queued foreign commands
-cannot reach Vanilla. This remains a prerequisite of the unfinished control backend.
 The stubs load the actor cell once per decision, so a concurrent change cannot mix
 two actor states; every actor write also holds the engine monitor, which serializes
-`DLL_RunTick`. The WIP `LocalControlRuntime` must use `LocalInputControl` as the actor
-owner before it is wired; it refuses a protected save lease while the actor is
-suspended (-1): the blocked branch writes view 0, which the protected writer must reject.
+`DLL_RunTick`. A suspended actor (-1) writes view 0 in the blocked branch.
 
 For NativeX64 Indirect/10 and Indirect/6, validate both prepared and installed forms,
 pointer slot, padding and generated stub destinations. The relocated RunTick MOV's
@@ -150,94 +164,64 @@ identify the surrounding spectator/input lifetime, view storage or later command
 effects. Updates must re-audit both spans, the dispatcher's nested branch conditions,
 `0x897F0` and the view cell before admitting another image.
 
-## Eliminated participant view protection
+## Player-view identity: common save writer and raw Chore submission
 
-`PlayerViewIdentityRuntime` connects the common writer guard below to positive-player
-view leases. Confirmed eliminated participants use it through `PlayerPerspectiveAPI`;
-the developing local-control runtime receives this neutral runtime and derives the
-same engine monitor and identity core from it. This does not enable the unfinished
-foreign-control backend. Reference SHA-256 is
-`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
-The local view cell must match the Extender-resolved address at module RVA
-`0x88E3D70` and remain inside the image. Unsupported hashes or unavailable
-writer/send protection reject only foreign participant views.
+Owner: `PlayerViewIdentityRuntime` (src/Players/ViewIdentity) with `PlayerViewSaveScope`, registry
+group `Players.ViewIdentity`. Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`. Both adapters are installed
+during the existing startup window and protect the original participant identity while an
+eliminated participant shows a foreign view. Unsupported hashes or an unavailable writer/send
+protection disable only foreign eliminated-participant views; original-spectator views and
+spectator input control do not depend on them. The local view cell must match the
+Extender-resolved address at module RVA `0x88E3D70` (`NativeViewCell.Rva`) and remain inside
+the image. Usage and the lease model: [player views and control](docs/PLAYER_CONTROL.md#implementation).
 
-The process-lifetime managed raw-send hook targets the installed internal static
-`GameNetworkAPI.SendScriptExtenderChorePayload(byte[]) : bool`, validated by the
-same loaded-IL/engine-monitor/native-queue contract as `NativeChoreTransport`.
-The authenticated transport enters the identity scope before its existing raw
-view/actual-player check; the raw hook covers direct Extender Chore sends too.
-No new native queue hook is installed. Re-audit the entire queue `0x23990`:
-slot source `+4` and command ID `+12` use the local view before serialization
-`0x23800`, and the immediate branch may synchronously execute a handler.
-Protect the full original submission rather than rewriting a header afterwards.
-Preserve an already-queued result even if restoration fails; protection rejection
-must not return the false result that SE uses to select its Steam fallback.
-
-The writer guard is installed during the existing startup window and uses its
-existing exclusive site; normal and synchronized saves protect the original
-participant. Recheck all writer callers, native-world/lifecycle invalidation,
-positive local identity, nested callbacks and Vanilla load/remapping on updates.
-Both adapters serialize the lease check and original operation with the same
-engine monitor, including unbound calls. Known Vanilla writer callers already
-hold that monitor; retaining the adapter boundary also prevents a concurrent
-lease acquisition from bypassing protection. Dormant Save/send fixtures verify
-the monitor boundary and zero managed allocations after warm-up.
-Unbound original callbacks also retain the scope depth, preventing reentrant
-view acquisition before a Save or immediate Chore execution has completed.
-
-Identity ownership is shared, not duplicated per role: one `ControlSaveIdentity`
-core issues immutable leases containing owner, native-world epoch, original human
-ID and token. View changes and ordinary release must verify the exact owning lease
-before and after native adapters. A competing role cannot adopt an existing lease;
-its failed acquisition or cleanup must leave that lease intact. `LocalControlRuntime`
-binds its original controller at Begin and stores only its own lease. A direct
-return to Vanilla input confirms suspension before restoring/releasing that lease;
-a failed final input write must leave a safe suspended actor. Ordinary role release
-refuses an ended world; only the neutral root retires it at the existing lifecycle
-invalidation boundary, without native writes. Re-audit reentrant release/replacement,
-nested Save/send scopes and failure delivery against this ownership contract. Stale
-captured failures must neither fault a replacement owner nor reset its deduplication
-state; the common writer's error has one coordinated drain.
-
-## Optional active-human control-view save identity
-
-Owner: `PlayerControl.ControlSaveNative`, registry group `Players.ControlSaveIdentity`.
-Reference native SHA-256:
-`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
-The common writer at `0x52B0` has Win64 signature
+**Common save writer.** The writer at `0x52B0` has Win64 signature
 `ulong (nativeManager, sectionTable, byte mapSave)`. Its three current callers
 are `0x13030`, `0x816B0` and `0x86F80`. The table at RVA `0x336B20`, row 103,
-serializes four bytes from native viewpoint RVA `0x88E3D70`; a foreign view must
-not replace the original active human's saved identity.
-
-The only admitted detour is NativeX64 Indirect/10, replacing
-`48 89 5C 24 10 48 89 74 24 18`, two five-byte register-save MOV instructions.
+serializes four bytes from the native view; a foreign view must not replace the
+original participant's saved identity. The only admitted detour is NativeX64 Indirect/10,
+replacing `48 89 5C 24 10 48 89 74 24 18`, two five-byte register-save MOV instructions.
 Continuation `0x52BA` starts `55 57` (push rbp/rdi). The complete PE unwind range
 ends at `0x5AD8`; direct branches/calls and current xrefs have no interior entry.
 Validate pristine/live bytes, prepared span and original target before publication;
 after publication verify the indirect pointer slot, padding, displaced bytes and
 exact `+10` trampoline return. SE's later append hook at `0x5A4C` stays intact.
-Installation is permitted only in the existing startup patch window, using its
-non-suspending backend. There is no lazy or late installation.
+Installation is permitted only in the startup patch window, using its non-suspending
+backend; there is no lazy or late installation.
 
-No unknown-image fallback: this generic prologue cannot establish writer identity,
-section-table semantics, argument ABI or native viewpoint storage. A mismatch
-leaves active-human view protection unavailable; original-spectator single-owner
-control has no dependency on it. Re-audit the full writer/section flow and callers,
-the preparation helpers `0xB8220`/`0x186040` and archive append before admitting a
-new image. The guard changes only the runtime-owned native view cell during the
-writer scope, restores it in `finally`, and suppresses stale restoration after a
-lease release or world replacement, including replacement inside a throwing setter
-before the writer runs. Lease transitions recheck the world after adapter reads;
-an old read cannot release or replace another identity. The central lifecycle's
-private native-world identity survives metadata refreshes but is invalidated before
-load/unload observers; repeated loads get new identities even within one attempt.
-Failed restoration retains human identity
-protection and must block the dependent view lease until recovery. Shared identity
-protection and its private machine fixtures do not establish a complete foreign-command
-backend or live-game Save acceptance. Public eliminated-player perspective helpers
-use this guard independently of that unfinished backend.
+**Raw Chore submission.** The process-lifetime managed raw-send hook targets the installed
+internal static `GameNetworkAPI.SendScriptExtenderChorePayload(byte[]) : bool`, resolved and
+validated by `NativeChoreTransport.ResolveSubmissionMethod` (loaded-IL, engine monitor and
+native-queue contract). The authenticated transport enters the identity scope before its
+raw view/actual-player check; the raw hook covers direct Extender Chore sends too. No native
+queue hook is installed. Re-audit the entire queue `0x23990`: slot source `+4` and command ID
+`+12` use the local view before serialization `0x23800`, and the immediate branch may
+synchronously execute a handler. Protect the full original submission rather than rewriting
+a header afterwards. Preserve an already-queued result even if restoration fails; protection
+rejection must not return the false result that SE uses to select its Steam fallback.
+
+**Scopes and ownership.** Both adapters serialize the lease check and original operation with
+the same engine monitor, including unbound calls; known Vanilla writer callers already hold
+that monitor, and the boundary prevents a concurrent lease acquisition from bypassing
+protection. Unbound original callbacks retain the scope depth, preventing reentrant view
+acquisition before a Save or immediate Chore execution has completed. The guard changes only
+the runtime-owned native view cell during the scope, restores it in `finally`, and suppresses
+stale restoration after a lease release or world replacement, including replacement inside a
+throwing setter before the writer runs. Lease transitions recheck the world after adapter
+reads. The central lifecycle's private native-world identity survives metadata refreshes but
+is invalidated before load/unload observers; repeated loads get new identities even within
+one attempt. Failed restoration retains the identity protection and blocks the dependent view
+until recovery. Stale captured failures must neither fault a replacement owner nor reset its
+deduplication state; the common writer's error has one coordinated drain. Dormant Save/send
+fixtures verify the monitor boundary and zero managed allocations after warm-up.
+
+No unknown-image fallback: the generic writer prologue cannot establish writer identity,
+section-table semantics, argument ABI or native viewpoint storage. Re-audit the full
+writer/section flow and callers, the preparation helpers `0xB8220`/`0x186040`, archive
+append, native-world/lifecycle invalidation, positive local identity, nested callbacks and
+Vanilla load/remapping before admitting a new image. These fixtures do not establish
+live-game Save acceptance.
 
 ## Synchronized-save archive context
 
@@ -694,14 +678,14 @@ Native flow: scheduler 0xD1AD0 -> updater 0xCB090 (eligibility, fixed-mode and s
 population bypasses retained) -> SE contribution calculation -> remaining timed event
 penalties -> final 0..10000 clamp/history/speech. Report producer 0x19D960 independently
 uses the signed fear level; public report correction consumes the same rounded result.
-The additive fixed-level contribution API (0.15.0) selects absolute report points at
+The fixed-level contribution API selects absolute report points at
 this same boundary. It does not alter the IL/native site, signed input provenance,
 worst-source ordering or hook lifetime; unlisted levels retain the original SE path
 unless an earlier applicable registration supplies a contribution.
 Native game/report ABI changes still require their own audit. CLI fixtures validate
 rewriting and JIT preparation; actual Mono/game and multiplayer acceptance are separate.
 
-# Plague standing heights
+## Plague standing heights
 
 Reference image: SHA-256 FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
 Revalidated 2026-10-23 against the installed DLL and installed RedBird/Iced binaries.
@@ -712,7 +696,7 @@ The native service is hash-bound: matching individual instructions cannot establ
 manager, field, grid and table contracts on a different image. Unsupported images
 disable only this capability. There is no unverified pattern-only layout fallback.
 
-## Native flow and sites
+### Native flow and sites
 
 Natural D17D0 and catapult impact 9C730 create Disease (22) through 9B2B0. Slots
 use E8-byte records and sentinel 0. 9F960 advances movement; 9C730 visits the native
@@ -737,7 +721,7 @@ branches and actual RedBird displacement; compare own live spans before committi
 Pristine context.Memory is a snapshot, not evidence of live bytes. C07C0 and its
 jump tables through C087F must also remain unmodified live.
 
-## Data and ABI
+### Data and ABI
 
 Image-relative data: projectile manager 2F7A680; byte height grid 4DDD350,
 uint properties 48F71B0, signed-short building IDs 4B6AA50 (320800 tiles).
@@ -774,7 +758,7 @@ publishes the complete aggregated policy. Each category uses its largest active
 owner tolerance, ground the largest overall; zero snapshot replays all four original
 blocks. No per-candidate managed callback, allocation, new RNG or global scan.
 
-## Ownership, publication and verification
+### Ownership, publication and verification
 
 APIShared claims all four spans in its native site registry, prepares the complete
 transaction with InstallOnCommit=false, validates handles and uses NativeHookPublication
@@ -784,8 +768,7 @@ Private helper memory is written RW once and changed to RX before publication.
 Only unpublished candidates can be rolled back. Published hooks never use Unity
 teardown; OnTick is a durable, isolated support-diagnostic subscriber.
 
-The API extension is additive: IApiShared is unchanged, preserving external interface
-implementations. Contracts and composition: docs/THIRD_PARTY_GUIDE.md. Tests in
+Contracts and composition: docs/THIRD_PARTY_GUIDE.md. Tests in
 tests/PlagueHeight.NativeTests execute production generators and the complete native
 damage routine, backend displacement, all 16 masks, signed tolerance boundaries,
 configured tolerances, live surface changes, independent owners and ABI preservation.
@@ -797,7 +780,7 @@ Prior user game evidence covers cloud-edge movement, wall demolition and tower c
 New category UI, real multiplayer and full save/treatment roundtrips require game
 acceptance; isolated execution tests do not establish these outcomes.
 
-## Shared visible-map entry and pause-menu actions (0.18.0)
+## Shared visible-map entry and pause-menu actions
 
 Audited image SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
 `0x41D60`: Win64 void `(map, left, right, top, bottom, zoom)`, arguments 5/6 at
@@ -837,7 +820,7 @@ A foreign layout that moved a button keeps the menu unchanged and reports the fa
 Popup sizing reads Unity screen height only on the UI thread; its opt-in disables the
 competing SE scaler only for that popup.
 
-## Managed Script Extender and game targets of Lord presentation and move diagnostics (0.20.0)
+## Managed Script Extender and game targets of Lord presentation and move diagnostics
 
 These are managed hooks; they claim no native site. Re-audit them after a Script
 Extender or managed game update.
@@ -849,7 +832,8 @@ Extender or managed game update.
   titles), and the SE `GameAIManagerAPI` members `IsSupportedCustomLord`,
   `TryGetDisplayName`, `TryGetLordTitle`, `TryGetLordDetails`, `TryGetFace`,
   `TryGetJoinAudio`, `TryGetLeaveAudio`, `TryGetCurrentSpeechText`, `TryGetLuaInitPath`
-  and the internal `TryGetVideoAndAudio`. Portraits use the private
+  and, through the single owner `LordMediaResolverRuntime`, the internal `TryGetVideoAndAudio`
+  (packaged claims first, then the missing-identity correction). Portraits use the private
   `GameAssetManagerAPI.TryLoadTexture(string, out Texture2D)` through reflection.
   Clip selection must keep using `DeterministicRandom.Next(0, count)` exactly where SE does.
 - `CoopLordRestartPresentation`: IL edit of `Platform_Multiplayer.StartGame(MultiplayerSetupData,
@@ -860,7 +844,7 @@ Extender or managed game update.
   requires exactly two `LogHelper.Error(string,string,string)` branches and one native
   dispatch. A mismatch logs `SE_MOVE_FAILURE_CONTEXT` and keeps the original wrapper.
 
-## Enemy-unit proximity and Peace Time (2026-11-02)
+## Enemy-unit proximity and Peace Time
 
 Reference native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
 
@@ -878,7 +862,7 @@ Reference native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77
   coordinate, death/state and Assassin/Bedouin filters must remain byte-equivalent.
   Fixed layouts have no speculative unknown-build fallback.
 - The native loop uses strict squared Euclidean `< radius*radius`. Public supplied
-  radii are nonnegative and at most46340. Unsupported raw inputs retain the
+  radii are nonnegative and at most 46340. Unsupported raw inputs retain the
   original path; independent valid policy vetoes still apply.
 - `PeaceTimeState` reads the native active byte at `0x38722DC`, anchored by the
   RIP-relative load at `0xCA874` in updater `0xCA870`. Native initializer `0xCA900`,

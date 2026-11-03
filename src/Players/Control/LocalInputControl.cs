@@ -8,7 +8,6 @@ namespace APIShared.PlayerControl
     // transition runs under the engine monitor, which also serializes DLL_RunTick, so an
     // input pass sees either the old or the new actor. PlayerPerspectiveAPI couples it to
     // the view transaction: the bridge admits input only while actor == native view.
-    // Independent of the rights/grant session (WIP), which must reuse this owner later.
     internal sealed class LocalInputControl
     {
         internal const int SuspendedActor = -1;

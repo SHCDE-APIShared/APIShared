@@ -16,21 +16,21 @@ namespace APIShared
     internal sealed class PlayerViewIdentityOwner
     {
         internal readonly string Name;
-        private readonly Action<ControlSaveIdentity.FailureRecord> onFailure;
-        internal PlayerViewIdentityOwner(string name, Action<ControlSaveIdentity.FailureRecord> onFailure)
+        private readonly Action<PlayerViewIdentity.FailureRecord> onFailure;
+        internal PlayerViewIdentityOwner(string name, Action<PlayerViewIdentity.FailureRecord> onFailure)
         { Name = name; this.onFailure = onFailure; }
-        internal void Notify(ControlSaveIdentity.FailureRecord failure) => onFailure?.Invoke(failure);
+        internal void Notify(PlayerViewIdentity.FailureRecord failure) => onFailure?.Invoke(failure);
     }
 
-    // One process root supplies the exact same core to the native writer, raw
-    // sender, perspective facade and (when wired) local control runtime.
+    // One process root supplies the exact same core to the native save writer, the raw
+    // Chore sender and the perspective facade.
     internal sealed class PlayerViewIdentityRuntime
     {
         internal static readonly PlayerViewIdentityRuntime Instance = new PlayerViewIdentityRuntime();
         private delegate bool SendCall(byte[] payload);
         private object engineGate;
         private FieldInfo engineMonitor;
-        private volatile ControlSaveIdentity identity;
+        private volatile PlayerViewIdentity identity;
         private Hook sendHook;
         private Func<byte[], bool> originalSend;
         private bool ready;
@@ -39,14 +39,14 @@ namespace APIShared
         private readonly Func<Action, bool> enqueue;
         private readonly Action<string> writeError;
         private readonly object failureGate = new object();
-        private ControlSaveIdentity.Lease reportedLease;
+        private PlayerViewIdentity.Lease reportedLease;
         private readonly HashSet<string> reportedFailures = new HashSet<string>(StringComparer.Ordinal);
 
         private PlayerViewIdentityRuntime()
         { enqueue = Internal.UnityMainThreadDispatch.TryEnqueue; writeError = LogError; }
         // Fixtures use the production adapters with a single shared core and no
         // game hooks; they never replace the process root or its private fields.
-        internal PlayerViewIdentityRuntime(ControlSaveIdentity identity, object engineGate,
+        internal PlayerViewIdentityRuntime(PlayerViewIdentity identity, object engineGate,
             Func<Action, bool> enqueue, Action<string> writeError)
         {
             this.identity = identity;
@@ -55,9 +55,9 @@ namespace APIShared
             this.writeError = writeError ?? throw new ArgumentNullException(nameof(writeError));
         }
         internal object EngineGate => engineGate;
-        internal ControlSaveIdentity Identity => identity;
+        internal PlayerViewIdentity Identity => identity;
         internal int ProtectedPlayerId => identity?.ProtectedHumanId ?? 0;
-        internal bool ForeignViewsReady => ready && ControlSaveNative.IsBoundTo(identity);
+        internal bool ForeignViewsReady => ready && PlayerViewSaveScope.IsBoundTo(identity);
 
         internal void Initialize(CrusaderLibraryLoadContext context, string hash, ManualLogSource log)
         {
@@ -65,29 +65,25 @@ namespace APIShared
             logger = log;
             if (engineGate == null)
             {
-                engineMonitor = typeof(EngineInterface).GetField("threadLock", BindingFlags.Static | BindingFlags.NonPublic);
+                engineMonitor = Internal.EngineMonitor.Field;
                 engineGate = engineMonitor?.GetValue(null);
             }
-            if (engineGate == null || engineMonitor.FieldType != typeof(object))
+            if (engineGate == null || engineMonitor == null)
                 throw new MissingFieldException("EngineInterface", "private static object threadLock");
             // Original spectators and own views need only the shared monitor;
             // unsupported optional native protection must not remove that path.
             if (!string.Equals(hash, ApiSharedRuntime.SupportedHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Participant views require the audited native image.");
             viewAddress = SHCDESE.GameGlobals.GameGlobalsManager.Instance.LocalPlayerIdVA;
-            if (viewAddress != unchecked((ulong)context.ModuleHandle.ToInt64()) + 0x88E3D70UL ||
-                0x88E3D74UL > (ulong)context.Memory.Length)
+            if (viewAddress != unchecked((ulong)context.ModuleHandle.ToInt64()) + (ulong)NativeViewCell.Rva ||
+                (ulong)NativeViewCell.Rva + 4 > (ulong)context.Memory.Length)
                 throw new InvalidOperationException("Participant native view cell differs from the audited image.");
             // Never replace a core after a partially successful startup: the
             // published native writer may already hold this instance forever.
-            if (identity == null) identity = new ControlSaveIdentity(InEngineContext, IsCurrentWorld,
+            if (identity == null) identity = new PlayerViewIdentity(InEngineContext, IsCurrentWorld,
                 PlayerPerspectiveAPI.GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer);
-            ControlSaveNative.Initialize(context, hash, identity, log);
-            MethodInfo method = typeof(GameNetworkAPI).GetMethod("SendScriptExtenderChorePayload",
-                BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(byte[]) }, null);
-            if (method == null || method.ReturnType != typeof(bool))
-                throw new MissingMethodException("GameNetworkAPI", "SendScriptExtenderChorePayload(byte[])");
-            Networking.NativeChoreTransport.ValidateSubmissionMethod(method);
+            PlayerViewSaveScope.Initialize(context, hash, identity, log);
+            MethodInfo method = Networking.NativeChoreTransport.ResolveSubmissionMethod();
             Hook candidate = null;
             try
             {
@@ -146,14 +142,14 @@ namespace APIShared
             }
             finally { ObserveFailure(core); }
         }
-        internal void ObserveFailure(ControlSaveIdentity core)
+        internal void ObserveFailure(PlayerViewIdentity core)
         {
             if (core == null || !ReferenceEquals(core, identity)) return;
             var failure = core.LastFailure;
             if (failure == null) return;
             ObserveFailure(core, failure);
         }
-        internal void ObserveFailure(ControlSaveIdentity core, ControlSaveIdentity.FailureRecord failure)
+        internal void ObserveFailure(PlayerViewIdentity core, PlayerViewIdentity.FailureRecord failure)
         {
             if (core == null || failure == null || !ReferenceEquals(core, identity)) return;
             lock (failureGate)
@@ -170,7 +166,7 @@ namespace APIShared
                     if (ReferenceEquals(reportedLease, failure.Lease)) reportedFailures.Remove(failure.Reason);
         }
         // Allocation stays behind the dormant/already-reported checks.
-        private bool QueueFailure(ControlSaveIdentity.FailureRecord failure) => enqueue(() => {
+        private bool QueueFailure(PlayerViewIdentity.FailureRecord failure) => enqueue(() => {
             var owner = failure.Lease.Owner as PlayerViewIdentityOwner;
             try { writeError("PLAYER_VIEW_IDENTITY_FAILED: owner=" + (owner?.Name ?? "internal") +
                 ", world=" + failure.Lease.Epoch + ", token=" + failure.Lease.Token + ": " + failure.Reason); }
