@@ -15,6 +15,8 @@ The recommended installation is through the
 [Steam Workshop](https://steamcommunity.com/workshop/filedetails/?id=3818609220).
 Downloads are also available from [releases](https://github.com/SHCDE-APIShared/APIShared/releases).
 If your mod pack already includes APIShared, use that copy. SerpsModsHost is not required.
+On Linux/Proton, see [Linux paths and first-install repair](docs/WORKSHOP.md#linux-paths-and-first-install-repair)
+for path configuration and the separate manual patcher from the releases.
 
 ## Use
 

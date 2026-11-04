@@ -13,14 +13,19 @@
     {
       "Version": "0.27.0",
       "Changes": [
-        "Add owner-bound mapper selection camera observations with scoped suppression of automatic building centering, preserving selection, player identity and other camera calls."
+        "Add owner-bound mapper selection camera observations with scoped suppression of automatic building centering, preserving selection, player identity and other camera calls.",
+        "Linux/Proton Workshop updater: host commands and updater handoffs report their output and exit code through files in an owned run directory, because Unity's Mono reports Linux programs started under Wine as exited at once. Steam's reaper and pressure-vessel wrappers are no longer mistaken for the running game, and an automatic handoff refuses before readiness when the game is not visible.",
+        "Linux/Proton: resolve Wine dosdevices drive links for non-Z: drives (Proton 10 and older) and retry a failed shared Proton context instead of caching the failure. Real Proton publishing and update tests are still recommended; automated tests do not certify Linux support."
       ]
     },
     {
       "Version": "0.26.0",
       "Changes": [
         "Add ModApiClient.Ui with shared deferred Unity dispatch and owner-bound coalesced, monotonic delayed and explicitly continuous presentation work.",
-        "Share one process-owned frame publisher across managed UI services; preserve GUI completion phases, lobby fallback frames and decisive save-load checks. While the side-HUD host is missing, its search retries at most every 100 ms instead of every frame; known HUD, property and registration changes search immediately."
+        "Share one process-owned frame publisher across managed UI services; preserve GUI completion phases, lobby fallback frames and decisive save-load checks. While the side-HUD host is missing, its search retries at most every 100 ms instead of every frame; known HUD, property and registration changes search immediately.",
+        "Multiplayer: while an eliminated participant views another player, native network timing and heartbeat reads keep the participant's own identity instead of the viewed player; reports still show the selected player. Foreign participant views are offered only when all four native read sites validate.",
+        "Script Extender fix: the campfire's floating popularity mask matches its displayed value (red below 40, neutral 40 to 59, green from 60). Other floating icons and simulation state are unchanged.",
+        "Linux/Proton: translate host paths through the active Wine drive mappings instead of an assumed Z: drive, with an optional APIShared.ProtonPaths.cfg override. Releases add a separate manual APIShared.ProtonWorkshopFix patcher asset for first Script Extender installations under Proton; it is not part of the APIShared package and stays inactive on Windows."
       ]
     },
     {
