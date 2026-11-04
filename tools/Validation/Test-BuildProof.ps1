@@ -1,4 +1,23 @@
+[CmdletBinding()]
+param([switch]$ReuseOnly)
 $ErrorActionPreference='Stop'
+if($ReuseOnly){
+    . (Join-Path $PSScriptRoot '../BuildProof.ps1')
+    $script:valid=$true;$script:builds=0
+    # The integrity assertion is the external boundary here; its actual hash/package
+    # rejection cases remain covered below. This exercises the production reuse decision.
+    function Assert-ApiBuildProof {param($Root,[switch]$Release) if(-not$script:valid){throw 'stale full-build evidence'};return @{TestMode='full';Commit='fixture'}}
+    $null=Invoke-ApiValidatedReleaseBuild 'fixture' {$script:builds++;throw 'valid proof must not rebuild'}
+    if($script:builds-ne0){throw 'Matching tested package was rebuilt'}
+    $script:valid=$false
+    $null=Invoke-ApiValidatedReleaseBuild 'fixture' {$script:builds++;$script:valid=$true}
+    if($script:builds-ne1){throw 'Stale proof did not rebuild exactly once'}
+    $script:valid=$false;$rejected=$false
+    try{$null=Invoke-ApiValidatedReleaseBuild 'fixture' {}}catch{$rejected=$true}
+    if(-not$rejected){throw 'Build without valid final evidence was accepted'}
+    Write-Host 'PASS: matching full-build evidence reused; stale evidence rebuilds; final evidence remains mandatory.'
+    exit 0
+}
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('ApiSharedProof-'+[Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($temp) | Out-Null
 function Check([bool]$value,[string]$message) { if(-not$value){throw $message} }

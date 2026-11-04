@@ -30,16 +30,19 @@ $releaseList = Invoke-ApiReleaseGitHub @('release', 'list', '--repo', $repositor
 if ($releaseList.ExitCode -ne 0) { throw ('Could not determine the previous APIShared release. ' + $releaseList.Diagnostic) }
 $previousVersion = Get-ApiPreviousReleaseVersion ($releaseList.Output | ConvertFrom-Json -ErrorAction Stop) $version
 $changeNotes = Get-ApiReleaseChangeNotes $manifest $previousVersion
+. (Join-Path $root 'tools/BuildProof.ps1')
 if (-not $PrepareOnly) {
+    $buildEvidence = Invoke-ApiValidatedReleaseBuild $root {
     $previousBranchPinned = $env:SHCDE_BRANCH_PINNED
     try {
         $env:SHCDE_BRANCH_PINNED = $commit
         & (Join-Path $root 'build.bat') /nopause /noinstall
     } finally { $env:SHCDE_BRANCH_PINNED = $previousBranchPinned }
     if ($LASTEXITCODE -ne 0) { throw 'The release build or regression tests failed.' }
+    }
+} else {
+    $buildEvidence = Assert-ApiBuildProof $root -Release
 }
-. (Join-Path $root 'tools/BuildProof.ps1')
-$buildEvidence = Assert-ApiBuildProof $root -Release
 $package = Join-Path $root 'BepInEx\plugins\APIShared_Serp'
 $dll = Join-Path $package 'APIShared.dll'
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Version -ne $parsed) { throw 'Assembly and manifest versions differ.' }

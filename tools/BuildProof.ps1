@@ -103,6 +103,21 @@ function Get-ApiPackageFiles([string]$Root) {
         [pscustomobject]@{ Path=$_.FullName.Substring($package.Length+1).Replace('\','/'); Sha256=(Get-ApiFileHash $_.FullName) }
     })
 }
+function Get-ApiCheckInputFingerprint([string]$Root,[string]$GameDir,[string]$ExtenderDir,[string]$MSBuild,[string]$Tools) {
+    $rows=[Collections.Generic.List[string]]::new()
+    $rows.Add((Get-ApiInputState $Root $GameDir $ExtenderDir $MSBuild).Fingerprint)
+    $rows.Add([IO.Path]::GetFullPath($Root));$rows.Add($Tools)
+    foreach($file in Get-ApiMaintainedFiles $Root|Where-Object {$_.Extension-in@('.md','.yml','.yaml')-or$_.Name-in@('.gitignore','.gitattributes','global.json')}){$rows.Add($file.FullName+':'+(Get-ApiFileHash $file.FullName))}
+    $native=Join-Path $GameDir 'Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/CrusaderDE.dll'
+    $rows.Add('native:'+(Get-ApiFileHash $native));$rows.Sort([StringComparer]::Ordinal)
+    $sha=[Security.Cryptography.SHA256]::Create();try{return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($rows-join"`n")))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+}
+function Invoke-ApiValidatedReleaseBuild([string]$Root,[scriptblock]$Build) {
+    try{$proof=Assert-ApiBuildProof $Root -Release;Write-Host 'Reusing the matching full APIShared build and verified package.';return $proof}
+    catch{Write-Host ('A fresh APIShared release build is required: '+$_.Exception.Message)}
+    & $Build | Out-Host
+    return (Assert-ApiBuildProof $Root -Release)
+}
 function Write-ApiBuildProof([string]$Root, [string]$GameDir, [string]$ExtenderDir, [string]$MSBuild, $InitialState, [ValidateSet('full','quick','none')][string]$TestMode = 'full') {
     $final = Get-ApiInputState $Root $GameDir $ExtenderDir $MSBuild
     if ($InitialState.Fingerprint -ne $final.Fingerprint) { throw 'APIShared inputs changed during the build. Build again.' }
