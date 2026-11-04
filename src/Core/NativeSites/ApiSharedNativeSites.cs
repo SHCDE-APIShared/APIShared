@@ -32,6 +32,14 @@ namespace APIShared
         internal const string PlayerViewIdentitySite = "Players.ViewIdentity";
         internal const string PlayerViewNetwork = "Players.ViewNetworkIdentity";
         internal const string PlayerControlInput = "Players.ControlInput";
+        internal const string MapperCamera = "Presentation.MapperSelectionCamera";
+
+        internal static NativeSiteSpan[] MapperCameraSpans() => new[] {
+            Exclusive(Presentation.MapperCameraNative.Rva, Presentation.MapperCameraNative.DisplacedLength),
+            Observe(Presentation.MapperCameraNative.Rva + Presentation.MapperCameraNative.DisplacedLength,
+                Presentation.MapperCameraNative.Window.Length - Presentation.MapperCameraNative.DisplacedLength),
+            Observe(Presentation.MapperCameraNative.CallerRva, Presentation.MapperCameraNative.Caller.Length)
+        };
 
         // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
         internal static NativeSiteSpan[] VisibleMapRenderSpans() => new[] {
@@ -220,6 +228,7 @@ namespace APIShared
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
+            Group(MapperCamera, MapperCameraSpans()),
             Group(PlayerControlInput, PlayerControlInputSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans())
         };

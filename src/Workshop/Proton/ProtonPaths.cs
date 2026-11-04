@@ -15,18 +15,24 @@ namespace APIShared.Workshop.Proton
     {
         private readonly IWinePathApi api;
         private readonly Func<string, bool> exists;
+        private readonly Func<string, string> resolveDriveLink;
+        private readonly Dictionary<string, string> driveRoots = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly string hostOverride;
         internal string WindowsGameRoot { get; }
         internal bool HasGameOverride => hostOverride != null;
 
-        internal ProtonPaths(string windowsGameRoot, ProtonPathOptions options, IWinePathApi api)
-            : this(windowsGameRoot, options, api, p => File.Exists(p) || Directory.Exists(p)) { }
+        internal ProtonPaths(string windowsGameRoot, ProtonPathOptions options, IWinePathApi api, Func<string, string> resolveDriveLink = null)
+            : this(windowsGameRoot, options, api, p => File.Exists(p) || Directory.Exists(p), resolveDriveLink) { }
 
         // Existence is the filesystem boundary, injectable for portable translation tests.
-        internal ProtonPaths(string windowsGameRoot, ProtonPathOptions options, IWinePathApi api, Func<string, bool> exists)
+        // resolveDriveLink receives "<prefix>/dosdevices/<x>:" and returns the host target of
+        // Wine's own drive link; it is required only where Wine reports that unresolved form.
+        internal ProtonPaths(string windowsGameRoot, ProtonPathOptions options, IWinePathApi api, Func<string, bool> exists,
+            Func<string, string> resolveDriveLink = null)
         {
             this.api = api ?? throw new ArgumentNullException(nameof(api));
             this.exists = exists ?? throw new ArgumentNullException(nameof(exists));
+            this.resolveDriveLink = resolveDriveLink;
             WindowsGameRoot = WindowsAbsolute(windowsGameRoot).TrimEnd('\\');
             if (WindowsGameRoot.Length == 2) WindowsGameRoot += "\\";
             if (!string.IsNullOrEmpty(options?.HostGameDirectory)) hostOverride = HostAbsolute(options.HostGameDirectory);
@@ -40,13 +46,43 @@ namespace APIShared.Workshop.Proton
             if (hostOverride != null && WithinGame(path, out suffix)) return JoinHost(hostOverride, suffix);
             string host;
             if (!api.IsWine || !api.TryToUnix(path, out host)) throw new IOException("Wine could not translate path to the Linux host: " + path);
-            host = HostAbsolute(host);
+            host = Canonical(path, HostAbsolute(host));
             string roundTrip, translated;
             if (!api.TryToWindows(host, out roundTrip) || !api.TryToUnix(roundTrip, out translated) ||
-                !string.Equals(HostAbsolute(translated), host, StringComparison.Ordinal))
+                !string.Equals(Canonical(roundTrip, HostAbsolute(translated)), host, StringComparison.Ordinal))
                 throw new IOException("Wine path translation failed its round-trip check: " + path);
             return host;
         }
+
+        // Wine before 10.13 (Proton 10 and older) reports every drive except a Z: mapped to
+        // "/" as "<prefix>/dosdevices/<x>:/...", whose drive component is a symlink that the
+        // host updaters' link checks refuse. Later Wine reports the server's realpath, which
+        // never matches here. Only Wine's own drive link is resolved; links below the drive
+        // root stay visible to every later link check.
+        private string Canonical(string windowsPath, string host)
+        {
+            if (windowsPath == null || windowsPath.Length < 3 || windowsPath[1] != ':' || !char.IsLetter(windowsPath[0])) return host;
+            var match = DriveLink.Match(host);
+            if (!match.Success) return host;
+            if (match.Groups[2].Value[0] != char.ToLowerInvariant(windowsPath[0]))
+                throw new IOException("Wine reported another drive link for " + windowsPath + ": " + host);
+            string link = match.Groups[1].Value, root;
+            lock (driveRoots)
+            {
+                if (!driveRoots.TryGetValue(link, out root))
+                {
+                    if (resolveDriveLink == null) throw new IOException("Wine drive link cannot be resolved for the Linux host: " + link);
+                    string resolved = resolveDriveLink(link);
+                    try { root = HostAbsolute(resolved ?? ""); }
+                    catch (ArgumentException error) { throw new IOException("Wine drive link resolved to an invalid Linux path: " + link, error); }
+                    driveRoots.Add(link, root);
+                }
+            }
+            string rest = match.Groups[3].Value;
+            return root == "/" ? (rest.Length == 0 ? "/" : rest) : root + rest;
+        }
+        private static readonly System.Text.RegularExpressions.Regex DriveLink = new System.Text.RegularExpressions.Regex(
+            "^(/.+?/dosdevices/([a-z]):)(/.*)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         internal string ToHostTarget(string windowsPath)
         {
@@ -70,7 +106,7 @@ namespace APIShared.Workshop.Proton
             string host = HostAbsolute(hostPath), windows, again;
             if (!api.IsWine || !api.TryToWindows(host, out windows)) throw new IOException("Wine could not translate Linux path: " + host);
             windows = WindowsAbsolute(windows);
-            if (!exists(windows) || !api.TryToUnix(windows, out again) || !string.Equals(HostAbsolute(again), host, StringComparison.Ordinal))
+            if (!exists(windows) || !api.TryToUnix(windows, out again) || !string.Equals(Canonical(windows, HostAbsolute(again)), host, StringComparison.Ordinal))
                 throw new IOException("Linux path does not identify the same existing Wine file: " + host);
             return windows;
         }

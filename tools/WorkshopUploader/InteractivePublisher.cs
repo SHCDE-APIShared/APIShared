@@ -30,7 +30,9 @@ internal static partial class Program
         if (value.StartsWith("/", StringComparison.Ordinal) && WinePathInterop.Instance.IsWine) {
             if (!ProtonProcess.ConfirmLinuxWine(WinePathInterop.Instance, TimeSpan.FromSeconds(2)))
                 throw new PlatformNotSupportedException("Linux host path input requires confirmed Linux Wine/Proton.");
-            var paths = new ProtonPaths(Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory), new ProtonPathOptions(), WinePathInterop.Instance);
+            string bash = ProtonExecutionContext.FindHostBash(WinePathInterop.Instance, null);
+            var paths = new ProtonPaths(Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory), new ProtonPathOptions(), WinePathInterop.Instance,
+                link => ProtonProcess.ResolveDriveLink(WinePathInterop.Instance, bash, link, ProtonExecutionContext.DriveLinkBudget));
             return paths.ToWindowsExisting(value);
         }
         return Path.GetFullPath(value);

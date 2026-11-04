@@ -24,11 +24,12 @@ WRAPPER
 chmod +x "$fakebin/xdg-open" "$fakebin/mv" "$fakebin/find"
 export PATH="$fakebin:$PATH" PROTON_FIX_REAL_MV="$real_mv" PROTON_FIX_REAL_FIND="$real_find" PROTON_FIX_RESTART_LOG="$fixture/restart.log"
 unset SCDEModManagerLaunchId
-game_pid= updater_pid=
+game_pid= updater_pid= wrapper_pid=
 stop_owned() {
     if [[ -n $updater_pid ]] && kill -0 "$updater_pid" 2>/dev/null; then kill "$updater_pid"; wait "$updater_pid" 2>/dev/null || true; fi
     if [[ -n $game_pid ]] && kill -0 "$game_pid" 2>/dev/null; then kill "$game_pid"; wait "$game_pid" 2>/dev/null || true; fi
-    updater_pid=; game_pid=
+    if [[ -n $wrapper_pid ]] && kill -0 "$wrapper_pid" 2>/dev/null; then kill "$wrapper_pid"; wait "$wrapper_pid" 2>/dev/null || true; fi
+    updater_pid=; game_pid=; wrapper_pid=
 }
 trap stop_owned EXIT
 fail() { printf 'FAIL: %s\nEvidence retained: %s\n' "$1" "$fixture" >&2; exit 1; }
@@ -62,6 +63,15 @@ unchanged() {
     [[ $(cat -- "$game/BepInEx/plugins/Sample/Sample.dll") == old && $(cat -- "$game/_SE/Sample.json") == old-metadata && -d $staging ]] || fail 'refused/cancelled updater changed installed files or discarded staging'
 }
 start_game() { bash -c 'exec -a "$1" sleep 30' fixture "$exe" & game_pid=$!; }
+# Steam's reaper/launch wrapper shape: the game path is a later argument and the process
+# outlives the game while it waits for descendants. '; :' keeps Bash from exec'ing sleep.
+start_wrapper() { bash -c 'sleep 60; :' reaper SteamLaunch AppId=3024040 -- "$game/$exe" >/dev/null 2>&1 & wrapper_pid=$!; }
+# Wine's shape: loader as argv[0], the Windows program path as argv[1].
+start_wine_game() {
+    local program="Z:\\owned\\$exe"
+    printf 'sleep 30\n' > "$case_dir/$program"
+    (cd -- "$case_dir" && exec -a "$case_dir/wine64" bash "$program") >/dev/null 2>&1 & game_pid=$!
+}
 wait_ready() {
     for ((n=0;n<100;n++)); do
         [[ ! -f $run/ready.flag ]] || return 0
@@ -109,6 +119,22 @@ metadata_line=$(grep -n 'updated _SE/Sample.json' "$run/journal.log" | cut -d: -
 [[ $payload_line -lt $metadata_line ]] || fail 'metadata preceded payload'
 grep -q ' committed$' "$run/journal.log" || fail 'commit not journaled'
 printf 'PASS: payload, deletion, metadata-last and completion; updater does not match itself as a game.\n'
+
+# Regression: Steam's wrappers name the game as a later argument and wait for every
+# descendant, including this helper. Counting them as the game deadlocked until the
+# 120-second budget. Only Wine's program position may count.
+new_case steam-wrappers
+kill "$game_pid"; wait "$game_pid" 2>/dev/null || true; game_pid=
+start_wrapper
+run_sync --probe
+[[ $code != 0 ]] && grep -q 'not visible' "$case_dir/output.log" || fail 'a Steam wrapper alone was treated as the running game'
+start_wine_game
+run_sync --probe
+[[ $code == 0 ]] || fail 'the Wine loader layout (program as argv[1]) was not recognized'
+run_after_exit
+[[ $code == 0 && $(cat -- "$game/BepInEx/plugins/Sample/Sample.dll") == new ]] || fail 'a live Steam wrapper delayed or prevented installation after game exit'
+kill -0 "$wrapper_pid" 2>/dev/null || fail 'the wrapper fixture ended early, so the case proves nothing'
+printf 'PASS: Steam wrappers are not the game; the Wine program position is.\n'
 
 new_case changed-source
 printf altered > "$staging/BepInEx/plugins/Sample/Sample.dll"

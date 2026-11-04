@@ -2124,6 +2124,20 @@ APIShared.Presentation.IngameMenuSlotState | public sealed class APIShared.Prese
 APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuActionInfo Current { get; }
 APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuSlot Slot { get; }
 APIShared.Presentation.IngameMenuSlotState | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.IngameMenuActionInfo> Claims { get; }
+APIShared.Presentation.MapperSelectionCameraEvents | public static class APIShared.Presentation.MapperSelectionCameraEvents
+APIShared.Presentation.MapperSelectionCameraEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Presentation.MapperSelectionCameraPreEventArgs> pre, System.Action<APIShared.Presentation.MapperSelectionCameraPostEventArgs> post, out string reason, int order = 0)
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public sealed class APIShared.Presentation.MapperSelectionCameraPostEventArgs
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public System.Exception Exception { get; }
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public bool SuppressionActive { get; }
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public int Mapper { get; }
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public int Result { get; }
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public long SessionId { get; }
+APIShared.Presentation.MapperSelectionCameraPostEventArgs | public object State { get; }
+APIShared.Presentation.MapperSelectionCameraPreEventArgs | public sealed class APIShared.Presentation.MapperSelectionCameraPreEventArgs
+APIShared.Presentation.MapperSelectionCameraPreEventArgs | public bool SuppressCamera { get; set; }
+APIShared.Presentation.MapperSelectionCameraPreEventArgs | public int Mapper { get; }
+APIShared.Presentation.MapperSelectionCameraPreEventArgs | public long SessionId { get; }
+APIShared.Presentation.MapperSelectionCameraPreEventArgs | public object State { get; set; }
 APIShared.Presentation.MissionOverContinuation | public sealed class APIShared.Presentation.MissionOverContinuation
 APIShared.Presentation.MissionOverContinuation | public bool TryInvoke()
 APIShared.Presentation.MissionOverEvents | public static class APIShared.Presentation.MissionOverEvents

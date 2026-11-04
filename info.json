@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.26.0",
+  "Version": "0.27.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.27.0",
+      "Changes": [
+        "Add owner-bound mapper selection camera observations with scoped suppression of automatic building centering, preserving selection, player identity and other camera calls."
+      ]
+    },
     {
       "Version": "0.26.0",
       "Changes": [

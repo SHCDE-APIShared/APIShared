@@ -121,12 +121,18 @@ validate_inventory() {
 }
 validate_inventory
 running() {
-    local command argument name=${executable,,}
+    local command argument position name=${executable,,}
     for command in /proc/[0-9]*/cmdline; do
         [[ -r $command ]] || continue
-        while IFS= read -r -d '' argument; do
+        # Only argv[0] or argv[1] identifies the game: Wine keeps the program there
+        # (after its loader). Steam's reaper, steam-launch-wrapper, pressure-vessel and
+        # Proton's script name the game only as a later argument while they wait for
+        # every descendant, including this helper; counting them never ends the wait.
+        position=0
+        while (( position < 2 )) && IFS= read -r -d '' argument; do
             argument=${argument//\\//}; argument=${argument,,}
             if [[ $argument == "$name" || $argument == */"$name" ]]; then return 0; fi
+            position=$((position + 1))
         done 2>/dev/null < "$command"
     done
     return 1

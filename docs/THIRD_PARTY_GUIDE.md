@@ -39,6 +39,7 @@
 - [Multiplayer map lookup and lobby system hints](#multiplayer-map-lookup-and-lobby-system-hints)
 - [End-screen presentation](#end-screen-presentation)
 - [Shared render and pause-menu presentation](#shared-render-and-pause-menu-presentation)
+- [Mapper selection camera](#mapper-selection-camera)
 - [Lord statistic columns](#lord-statistic-columns)
 - [Packaged Lord presentation](#packaged-lord-presentation)
 
@@ -1553,4 +1554,47 @@ if (PackagedLordPresentation.TryRegister(pluginGuid, "mission-lords", out var pr
     });
 // Retain the registration and call presentation.SetEntries(null) when leaving this selection.
 ```
+
+## Mapper selection camera
+
+`APIShared.Presentation.MapperSelectionCameraEvents` owns the managed
+`EngineInterface.StartMapperItem(int)` boundary and the narrowly filtered native
+family-building camera call. Register from Unity after native initialization, for
+example in `ApiShared.WhenReady` on its startup callback. A late worker-thread
+readiness callback is not a Unity dispatcher. `TryRegister(ownerGuid, id, pre,
+post, out reason, order)` returns false when the audited native contract,
+initialization or unique registration identity is unavailable.
+
+Pre receives immutable `Mapper` and `SessionId`. Its only camera decision is
+`SuppressCamera`; it cannot cancel selection, rewrite the mapper/player, or change
+the result. Successful requests combine with OR. Pre also has registration-private
+`State`. A throwing Pre loses its suppression request, while preserving its State
+for its matching cleanup Post. Pre arguments freeze when that callback ends.
+
+Callbacks run synchronously on Unity under the existing engine monitor, outside
+registration locks. Pre order is ascending order/owner/ID; Post order is reversed.
+An immutable registration snapshot serves the whole invocation; registrations made
+inside a callback join the next invocation. No replay or deregistration is supplied.
+Each registration's errors are isolated and logged once. Callbacks must not wait
+for another thread that needs the engine monitor.
+
+The original managed selection runs exactly once. Post always follows entered Pre
+callbacks, including original exceptions, after this invocation's native demand
+has been restored. Post supplies `Mapper`, `SessionId`, private `State`, original
+`Result`, original `Exception`, and `SuppressionActive`. Result is -1 on an original
+exception, which is rethrown unchanged after Post. `SuppressionActive` means the
+scope was armed, not that a native camera request occurred or selection succeeded.
+Nested originals have independent scopes. Commands issued from notification
+callbacks bypass notification and suppression, then restore any enclosing demand.
+Session/world invalidation prevents arming or restoring stale demand.
+
+The native bridge omits only mapper selection's automatic centering. All other
+camera callers retain the complete original path. Native view, control identity,
+resource/footprint checks and placement ownership are unchanged. Consumers retain
+their gameplay-mode and permission policy. For an optional replacement jump, keep
+the selected owner/building identity in State, then revalidate scene, session,
+world, owner, alive/type/global ID and tile in a successful Post before making an
+immediate Unity camera change. Missing or stale targets should keep the camera
+stationary; do not clear unrelated camera reports or enqueue stale cross-mission
+camera work. This broker does not select a building or move the camera itself.
 

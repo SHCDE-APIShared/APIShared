@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace APIShared.Workshop.Proton
 {
@@ -40,9 +41,18 @@ namespace APIShared.Workshop.Proton
             foreach (string host in new[] { "/bin/bash", "/usr/bin/bash" }) {
                 string shell;
                 if (!api.TryToWindows(host, out shell) || !File.Exists(shell)) continue;
-                return Capture(new ProcessStartInfo(shell, Quote("-c") + " " + Quote("uname -s")), Remaining(elapsed, budget)).Trim() == "Linux";
+                return RunHost(api, shell, new[] { "-c", "uname -s" }, Remaining(elapsed, budget)).Trim() == "Linux";
             }
             return false;
+        }
+
+        // Resolves exactly one Wine drive link ("<prefix>/dosdevices/<x>:") on the host. The
+        // fixed program text receives the link as a separate argument; ProtonPaths validates
+        // and caches the result, so this runs at most once per drive and process.
+        internal static string ResolveDriveLink(IWinePathApi api, string bash, string link, TimeSpan budget)
+        {
+            string output = RunHost(api, bash, new[] { "-c", "realpath -e -- \"$1\"", "apishared-drive-root", link }, budget);
+            return output.EndsWith("\n", StringComparison.Ordinal) ? output.Substring(0, output.Length - 1) : output;
         }
 
         internal static TimeSpan Remaining(Stopwatch elapsed, TimeSpan budget)
@@ -52,33 +62,131 @@ namespace APIShared.Workshop.Proton
             return remaining;
         }
 
-        internal static string Capture(ProcessStartInfo start, TimeSpan budget)
+        // Runs host Bash with these arguments and returns its standard output. A nonzero
+        // exit throws IOException with the standard error text; an unfinished run throws
+        // TimeoutException and is left running, because it cannot be killed (see HostRun).
+        internal static string RunHost(IWinePathApi api, string bash, IEnumerable<string> bashArguments, TimeSpan budget)
         {
             if (budget <= TimeSpan.Zero) throw new TimeoutException("No time remains for the Linux host process.");
-            var elapsed = Stopwatch.StartNew();
-            start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
-            start.RedirectStandardOutput = true; start.RedirectStandardError = true;
-            using (var process = Process.Start(start)) {
-                if (process == null) throw new IOException("Linux host process did not start.");
-                try {
-                    Task<string> output = process.StandardOutput.ReadToEndAsync(), error = process.StandardError.ReadToEndAsync();
-                    int milliseconds = (int)Math.Min(int.MaxValue, Math.Max(1, Remaining(elapsed, budget).TotalMilliseconds));
-                    if (!process.WaitForExit(milliseconds))
-                        throw new TimeoutException("Linux host process did not finish within its time budget.");
-                    if (!Task.WaitAll(new Task[] { output, error }, (int)Math.Min(int.MaxValue, Math.Max(1, Remaining(elapsed, budget).TotalMilliseconds))))
-                        throw new TimeoutException("Linux host process output did not close within its time budget.");
-                    if (process.ExitCode != 0) throw new IOException("Linux host process failed (exit " + process.ExitCode + "): " + error.Result.Trim());
-                    return output.Result;
-                } catch {
-                    // Only the child created above is owned here. Close redirected
-                    // streams too: an exited shell's descendant may retain its pipe.
-                    try { if (!process.HasExited) process.Kill(); }
-                    catch (Exception cleanup) when (cleanup is InvalidOperationException || cleanup is System.ComponentModel.Win32Exception || cleanup is NotSupportedException) { }
-                    try { process.StandardOutput.Close(); } catch (Exception cleanup) when (cleanup is IOException || cleanup is InvalidOperationException) { }
-                    try { process.StandardError.Close(); } catch (Exception cleanup) when (cleanup is IOException || cleanup is InvalidOperationException) { }
-                    throw;
-                }
+            using (var run = HostRun.Start(api, bash, bashArguments)) return run.Wait(budget);
+        }
+    }
+
+    // Under Wine a started Linux program has no Windows process: ntdll's fork_and_exec
+    // (Proton 10 and 11) returns process handle 0 and, for CREATE_NO_WINDOW or a GUI parent,
+    // connects the program's stdin/stdout to /dev/null. Unity's Mono System.dll then reports
+    // such a Process as exited at once with ExitCode 0 and empty output, and Kill cannot
+    // reach it. Host programs therefore report through files in an owned run directory and
+    // the Process object is never consulted. The protocol behaves the same with a native
+    // Linux or Windows Bash in tests. A run cannot be stopped from here; long-running
+    // updaters observe their own cancel files instead.
+    internal sealed class HostRun : IDisposable
+    {
+        // Fixed program text; every value arrives as a separate argument. $BASH is the
+        // interpreter running this wrapper, so the payload runs in the same host Bash.
+        private const string Wrapper =
+            "d=$1; shift; \"$BASH\" \"$@\" </dev/null >\"$d/out\" 2>\"$d/err\"; c=$?; " +
+            "printf '%s\\n' \"$c\" >\"$d/code.tmp\" && mv -f -- \"$d/code.tmp\" \"$d/code\"";
+        private static readonly string[] OwnedFiles = { "out", "err", "code", "code.tmp" };
+        internal string RunDirectory { get; }
+        private HostRun(string directory) { RunDirectory = directory; }
+
+        internal static HostRun Start(IWinePathApi api, string bash, IEnumerable<string> bashArguments) =>
+            Start(api, bash, bashArguments, Path.Combine(Path.GetTempPath(), "apishared-host"));
+
+        internal static HostRun Start(IWinePathApi api, string bash, IEnumerable<string> bashArguments, string baseDirectory)
+        {
+            if (api == null) throw new ArgumentNullException(nameof(api));
+            if (string.IsNullOrEmpty(bash)) throw new ArgumentException("A host Bash is required.", nameof(bash));
+            var arguments = (bashArguments ?? Enumerable.Empty<string>()).ToArray();
+            Directory.CreateDirectory(baseDirectory);
+            Prune(baseDirectory);
+            string directory = Path.Combine(baseDirectory, "r-" + Guid.NewGuid().ToString("N").Substring(0, 16));
+            if (Directory.Exists(directory)) throw new IOException("Owned host run already exists: " + directory);
+            Directory.CreateDirectory(directory);
+            try {
+                // Wine's own path form suffices: Bash may write through Wine's drive links.
+                string host;
+                if (!api.TryToUnix(directory, out host)) throw new IOException("Wine could not translate the host run directory: " + directory);
+                host = ProtonPaths.HostAbsolute(host);
+                var start = new ProcessStartInfo(bash, string.Join(" ",
+                    new[] { "-c", Wrapper, "apishared-host", host }.Concat(arguments).Select(ProtonProcess.Quote))) {
+                    UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
+                };
+                using (Process.Start(start)) { }
+            } catch {
+                DeleteOwned(directory); // The program did not start, so nothing writes here.
+                throw;
             }
+            return new HostRun(directory);
+        }
+
+        // True once the wrapper has atomically published the program's exit code.
+        internal bool TryGetExit(out int code)
+        {
+            code = 0;
+            string path = Path.Combine(RunDirectory, "code");
+            if (!File.Exists(path)) return false;
+            string text;
+            try { text = File.ReadAllText(path).Trim(); }
+            catch (IOException) { return false; }
+            if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out code))
+                throw new IOException("Linux host run published an invalid exit record: " + path);
+            return true;
+        }
+
+        internal string Output => Read("out");
+        internal string Error => Read("err");
+
+        internal string Wait(TimeSpan budget)
+        {
+            var elapsed = Stopwatch.StartNew();
+            int code;
+            while (!TryGetExit(out code)) {
+                if (elapsed.Elapsed >= budget) throw new TimeoutException("Linux host process did not finish within its time budget.");
+                Thread.Sleep(20);
+            }
+            if (code != 0) throw new IOException("Linux host process failed (exit " + code + "): " + Error.Trim());
+            return Output;
+        }
+
+        // A run without an exit record may still write; it stays until a later prune.
+        public void Dispose()
+        {
+            if (File.Exists(Path.Combine(RunDirectory, "code"))) DeleteOwned(RunDirectory);
+        }
+
+        private string Read(string name)
+        {
+            string path = Path.Combine(RunDirectory, name);
+            try { return File.Exists(path) ? File.ReadAllText(path, new UTF8Encoding(false)) : ""; }
+            catch (IOException) { return ""; }
+        }
+
+        // Removes only the owned file names; any other entry keeps its directory.
+        private static void DeleteOwned(string directory)
+        {
+            try {
+                foreach (string name in OwnedFiles) {
+                    string file = Path.Combine(directory, name);
+                    if (File.Exists(file)) File.Delete(file);
+                }
+                Directory.Delete(directory, false);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        // Handoff runs outlive the game and abandoned runs never finish; drop them after a day.
+        private static void Prune(string baseDirectory)
+        {
+            try {
+                DateTime limit = DateTime.UtcNow.AddDays(-1);
+                foreach (string directory in Directory.GetDirectories(baseDirectory, "r-*"))
+                    if (Directory.GetLastWriteTimeUtc(directory) < limit) DeleteOwned(directory);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -86,7 +194,25 @@ namespace APIShared.Workshop.Proton
     {
         internal ProtonPaths Paths { get; }
         internal string BashPath { get; }
-        private ProtonExecutionContext(ProtonPaths paths, string bash) { Paths = paths; BashPath = bash; }
+        internal IWinePathApi Api { get; }
+        private ProtonExecutionContext(ProtonPaths paths, string bash, IWinePathApi api) { Paths = paths; BashPath = bash; Api = api; }
+
+        internal static readonly TimeSpan DriveLinkBudget = TimeSpan.FromSeconds(2);
+
+        // Configured WineBashPath first, otherwise the reverse translation of the host Bash.
+        internal static string FindHostBash(IWinePathApi api, string configured)
+        {
+            if (!string.IsNullOrEmpty(configured)) {
+                string bash = ProtonPaths.WindowsAbsolute(configured);
+                if (!File.Exists(bash)) throw new FileNotFoundException("Configured WineBashPath does not exist.", bash);
+                return bash;
+            }
+            foreach (string host in new[] { "/bin/bash", "/usr/bin/bash" }) {
+                string candidate;
+                if (api.TryToWindows(host, out candidate) && File.Exists(candidate)) return candidate;
+            }
+            throw new FileNotFoundException("Host Bash could not be resolved through Wine. Configure WineBashPath in APIShared.ProtonPaths.cfg.");
+        }
 
         internal static ProtonExecutionContext Create(string windowsGameRoot, ProtonPathOptions options, TimeSpan budget)
         {
@@ -98,37 +224,29 @@ namespace APIShared.Workshop.Proton
             if (api == null || !api.IsWine) throw new PlatformNotSupportedException("This updater correction is only available under Linux Wine/Proton.");
             var elapsed = Stopwatch.StartNew();
             options = options ?? new ProtonPathOptions();
-            var paths = new ProtonPaths(windowsGameRoot, options, api);
-            paths.ToHostExisting(paths.WindowsGameRoot);
-            ProtonProcess.Remaining(elapsed, budget);
-            string bash = options.WineBashPath;
-            if (!string.IsNullOrEmpty(bash)) {
-                bash = ProtonPaths.WindowsAbsolute(bash);
-                if (!File.Exists(bash)) throw new FileNotFoundException("Configured WineBashPath does not exist.", bash);
-            } else {
-                foreach (string host in new[] { "/bin/bash", "/usr/bin/bash" }) {
-                    string candidate;
-                    if (api.TryToWindows(host, out candidate) && File.Exists(candidate)) { bash = candidate; break; }
-                }
-                if (string.IsNullOrEmpty(bash)) throw new FileNotFoundException("Host Bash could not be resolved through Wine. Configure WineBashPath in APIShared.ProtonPaths.cfg.");
-            }
+            string bash = null;
+            // Construction validates the explicit values without calling Wine. The drive-link
+            // resolver needs the host Bash, so no path is translated before Linux is confirmed.
+            var paths = new ProtonPaths(windowsGameRoot, options, api, link => ProtonProcess.ResolveDriveLink(api, bash, link, DriveLinkBudget));
+            bash = FindHostBash(api, options.WineBashPath);
             if (!ProtonProcess.IsLinuxWine(api)) {
-                string kernel = ProtonProcess.Capture(new ProcessStartInfo(bash,
-                    ProtonProcess.Quote("-c") + " " + ProtonProcess.Quote("uname -s")), ProtonProcess.Remaining(elapsed, budget));
+                string kernel = ProtonProcess.RunHost(api, bash, new[] { "-c", "uname -s" }, ProtonProcess.Remaining(elapsed, budget));
                 if (kernel.Trim() != "Linux") throw new PlatformNotSupportedException("The Wine host was not confirmed as Linux.");
             }
-            var context = new ProtonExecutionContext(paths, bash);
+            paths.ToHostExisting(paths.WindowsGameRoot);
+            ProtonProcess.Remaining(elapsed, budget);
+            var context = new ProtonExecutionContext(paths, bash, api);
             context.ValidateGameIdentity(ProtonProcess.Remaining(elapsed, budget));
             return context;
         }
 
-        internal ProcessStartInfo CreateStartInfo(string hostScript, IEnumerable<string> arguments)
-        {
-            hostScript = ProtonPaths.HostAbsolute(hostScript);
-            return new ProcessStartInfo(BashPath, string.Join(" ", new[] { hostScript }.Concat(arguments ?? Enumerable.Empty<string>()).Select(ProtonProcess.Quote))) {
-                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
-            };
-        }
+        // Starts a host script ("$BASH" script arguments...) whose completion is observed
+        // only through the returned run (see HostRun).
+        internal HostRun StartScript(string hostScript, IEnumerable<string> arguments) =>
+            HostRun.Start(Api, BashPath, new[] { ProtonPaths.HostAbsolute(hostScript) }.Concat(arguments ?? Enumerable.Empty<string>()));
+
+        internal string RunScript(string hostScript, IEnumerable<string> arguments, TimeSpan budget) =>
+            ProtonProcess.RunHost(Api, BashPath, new[] { ProtonPaths.HostAbsolute(hostScript) }.Concat(arguments ?? Enumerable.Empty<string>()), budget);
 
         internal void ValidateGameIdentity(TimeSpan budget)
         {
@@ -146,8 +264,7 @@ namespace APIShared.Workshop.Proton
             try {
                 string hostMarker = Paths.ToHostExisting(marker);
                 const string command = "test \"$(cat -- \"$1\")\" = \"$2\"";
-                var start = new ProcessStartInfo(BashPath, string.Join(" ", new[] { "-c", command, "apishared-path-probe", hostMarker, token }.Select(ProtonProcess.Quote)));
-                ProtonProcess.Capture(start, ProtonProcess.Remaining(elapsed, budget));
+                ProtonProcess.RunHost(Api, BashPath, new[] { "-c", command, "apishared-path-probe", hostMarker, token }, ProtonProcess.Remaining(elapsed, budget));
             } catch (Exception error) {
                 throw new IOException("Configured HostGameDirectory does not identify the active game directory; automatic installation was refused.", error);
             } finally {

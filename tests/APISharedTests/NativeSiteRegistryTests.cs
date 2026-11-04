@@ -51,6 +51,7 @@ namespace APISharedTests
                 (0x27FEB, 7, ApiSharedNativeSites.PlayerViewNetwork),
                 (0x27FFF, 7, ApiSharedNativeSites.PlayerViewNetwork),
                 (0x28019, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x45F20, 7, ApiSharedNativeSites.MapperCamera),
                 (0x41D60, 10, ApiSharedNativeSites.VisibleMapRender)
             };
             foreach (var expected in expectedWriters)
@@ -90,6 +91,7 @@ namespace APISharedTests
                 ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook"),
                 ("APIShared.ScriptExtenderFixes.SynchronizedSaveRuntime", "Initialize", -1, m => m.Name == "Commit"),
                 ("APIShared.PlayerControl.PlayerViewNetworkNative", "Initialize", -1, m => m.Name == "Enable"),
+                ("APIShared.Presentation.MapperCameraNative", "Initialize", -1, m => m.Name == "Enable"),
                 ("APIShared.Presentation.VisibleMapRenderEvents", "EnsureInstalled", -1, m => m.Name == "Enable")
             };
             using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))

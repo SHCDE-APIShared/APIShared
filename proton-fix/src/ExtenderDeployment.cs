@@ -48,9 +48,8 @@ namespace APIShared.ProtonWorkshopFix
                 string executable;
                 using (var self = Process.GetCurrentProcess()) executable = self.MainModule.FileName;
                 prepared = Prepare(staging, root, manifest, executable);
-                var start = prepared.Context.CreateStartInfo(prepared.Context.Paths.ToHostExisting(prepared.Script),
-                    new[] { prepared.Context.Paths.ToHostExisting(prepared.Request), prepared.Hash, "--probe" });
-                ProtonProcess.Capture(start, TimeSpan.FromSeconds(5));
+                prepared.Context.RunScript(prepared.Context.Paths.ToHostExisting(prepared.Script),
+                    new[] { prepared.Context.Paths.ToHostExisting(prepared.Request), prepared.Hash, "--probe" }, TimeSpan.FromSeconds(5));
                 retrySnapshots.Remove(manager);
                 retrySnapshots.Add(manager, new RetrySnapshot { Hash = prepared.Hash });
                 return true;
@@ -66,7 +65,7 @@ namespace APIShared.ProtonWorkshopFix
         internal static bool Launch(object manager, string staging, string target, string deleteManifest, string gameExe, int gamePid)
         {
             Prepared prepared = null;
-            Process child = null;
+            HostRun child = null;
             try
             {
                 if (!EligiblePlatform() || !RetryGate.CanLaunch(manager)) return false;
@@ -76,17 +75,17 @@ namespace APIShared.ProtonWorkshopFix
                     throw new IOException("Prepared Workshop files changed after the retry preflight; installation was refused.");
                 using (var self = Process.GetCurrentProcess())
                     if (gamePid != self.Id) throw new InvalidDataException("Extender game PID differs from this process.");
-                var start = prepared.Context.CreateStartInfo(prepared.Context.Paths.ToHostExisting(prepared.Script),
+                // The child journals failures to its own run directory. Under Wine it has no
+                // process handle (see HostRun); its exit record replaces HasExited, and the
+                // cancel file is the only way to stop it.
+                child = prepared.Context.StartScript(prepared.Context.Paths.ToHostExisting(prepared.Script),
                     new[] { prepared.Context.Paths.ToHostExisting(prepared.Request), prepared.Hash });
-                // The child journals failures to its own run directory. It does not inherit pipes
-                // whose closure would prevent the parent from leaving after confirmed readiness.
-                child = Process.Start(start);
-                if (child == null) throw new IOException("Linux deployment process did not start.");
                 string ready = PatcherFiles.Inside(prepared.Directory, "ready.flag");
                 var elapsed = Stopwatch.StartNew();
+                int code;
                 while (elapsed.Elapsed < TimeSpan.FromSeconds(20))
                 {
-                    if (child.HasExited) throw new IOException("Linux deployment rejected its request (exit " + child.ExitCode + "). Inspect " + prepared.Directory);
+                    if (child.TryGetExit(out code)) throw new IOException("Linux deployment rejected its request (exit " + code + "). Inspect " + prepared.Directory);
                     try
                     {
                         PatcherFiles.CheckLinks(ready);
@@ -94,12 +93,12 @@ namespace APIShared.ProtonWorkshopFix
                         {
                             // Recheck child state after reading readiness; a leftover flag from a
                             // process that already failed cannot authorize the Extender's Kill().
-                            if (child.HasExited) throw new IOException("Linux deployment exited before handoff confirmation.");
+                            if (child.TryGetExit(out code)) throw new IOException("Linux deployment exited before handoff confirmation.");
                             PatcherLog.Info("Linux deployment handoff confirmed; Extender may close the game. Evidence: " + prepared.Directory);
                             return true;
                         }
                     }
-                    catch (IOException) { if (child.HasExited) throw; }
+                    catch (IOException) { if (child.TryGetExit(out code)) throw; }
                     Thread.Sleep(100);
                 }
                 throw new TimeoutException("Linux deployment readiness timed out; game remains running. Inspect " + prepared.Directory);
@@ -107,11 +106,6 @@ namespace APIShared.ProtonWorkshopFix
             catch (Exception error)
             {
                 Cancel(prepared);
-                if (child != null)
-                {
-                    try { if (!child.HasExited) { child.Kill(); child.WaitForExit(1000); } }
-                    catch (Exception stopError) { PatcherLog.Warning("Could not stop owned Linux updater after cancellation: " + stopError.Message); }
-                }
                 PatcherLog.Error("Linux deployment was not handed off: " + error.Message);
                 return false;
             }
@@ -178,9 +172,8 @@ namespace APIShared.ProtonWorkshopFix
             // Find is executed directly with a fixed program string and a separate path
             // argument. Refuse staged links/devices/FIFOs before opening files for hashing.
             const string typeProbe = "find \"$1\" -mindepth 1 ! -type d ! -type f -print -quit";
-            var probe = new ProcessStartInfo(context.BashPath, string.Join(" ",
-                new[] { "-c", typeProbe, "apishared-staging-types", hostStaging }.Select(ProtonProcess.Quote)));
-            if (ProtonProcess.Capture(probe, TimeSpan.FromSeconds(5)).Length != 0)
+            if (ProtonProcess.RunHost(context.Api, context.BashPath,
+                new[] { "-c", typeProbe, "apishared-staging-types", hostStaging }, TimeSpan.FromSeconds(5)).Length != 0)
                 throw new InvalidDataException("Extender staging contains a link or nonregular file; no source was opened.");
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var elapsed = Stopwatch.StartNew();

@@ -153,6 +153,9 @@ path API. Mapped S:, Z: and user-defined drives use the same resolver;
 interpreter discovery uses the reverse translation of `/bin/bash` or `/usr/bin/bash`.
 This applies to installation, status queries, recovery and history maintenance.
 The publisher uses the same native translation for author-supplied host paths.
+Wine before 10.13 (Proton 10 and older) reports drives other than a root-mapped Z:
+through the prefix's `dosdevices/<x>:` link; APIShared resolves only that drive link
+once per drive with host `realpath`, so the link checks below the drive root still apply.
 Only a confirmed Linux Wine/Proton host activates this path. Native Windows keeps
 the existing PowerShell updater and does not read the new configuration or retry state.
 Both Linux updaters require host Bash, flock and GNU coreutils.
@@ -196,7 +199,9 @@ Remove or replace it only with the game closed.
 
 Automated path, IL, counter and package checks exercise separate boundaries.
 The native Bash fixtures are required by the Linux CI job; they do not run Wine,
-Unity Mono or Steam. Real argument conversion, hook activation after startup cleanup,
+Unity Mono or Steam. The [host-run protocol](#linux-host-processes-and-game-exit-detection)
+under Unity Mono, game-exit detection beside Steam's wrapper processes, real argument
+conversion, hook activation after startup cleanup,
 first installation without APIShared on S:, Z: and a custom mapping, configuration
 overrides, a failed one-time retry, Steam restart and subsequent APIShared status and
 recovery still require Proton acceptance. Test APIShared's updater both with and
@@ -230,13 +235,37 @@ The staging callback only cleans obsolete APIShared package files. Foreign map p
 
 The owner-bound `ModApiClient.Workshop` capability handles a different schema, `apishared-workshop.json`, and exclusively declared loose `Payload` files. `WorkshopPackageCodec`, `WorkshopPaths`, `WorkshopInstallation`, `WorkshopTransaction` and `WorkshopPublishing` contain testable file policy without game dependencies. `WorkshopRuntime` captures Steam state on Unity and delegates file preparation to workers. `WorkshopSteamUpload` roots its own call-results and never uses Vanilla's stateful upload singleton. The view is presentation state rather than persisted lobby settings. Callbacks are retained by static fields and Extender publishers after plugin-component destruction.
 
-Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend reaches host Bash through the active Wine mappings, requires flock/coreutils and conservatively waits for all matching game executables.
+Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend reaches host Bash through the active Wine mappings, requires flock/coreutils and waits for the game process as described under [Linux host processes](#linux-host-processes-and-game-exit-detection).
 
 Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself is distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
 
 Dialog recovery uses an internal `APISHARED-WORKSHOP-RECOVERY-1` operation file: restart/stop followed by interrupted transaction IDs and SHA-256 pins of their operation lists and journals. Existing installation protocols 1 and 2 are retained. Confirmed complete repairs carry `supersedes.tsv` plus its hash; launch pins that hash separately. Only a committed replacement with unchanged reference bytes resolves the original transactions. Original journals and backups remain intact while unresolved, including when replacement itself fails; validated resolved history follows the retention policy above. Recovery does not change public Workshop signatures or automatically repair a current receipt.
 
 The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Review the staging semantics when the Extender changes and run the installed-contract and transformation checks; see [Workshop staging cleanup](../UpdateToNewDLL.md#workshop-staging-cleanup). These contracts concern managed Workshop staging, not native gameplay hooks.
+
+### Linux host processes and game-exit detection
+
+Under Wine a Linux program started by the game has no Windows process. ntdll's
+`fork_and_exec` (Proton 10 and 11) returns process handle 0, detaches the program with
+`setsid` and connects its stdin/stdout to `/dev/null`. Unity's Mono `Process` then
+reports it as exited at once with exit code 0 and empty output, and `Kill` cannot reach
+it. `HostRun` in `src/Workshop/Proton/ProtonProcess.cs` therefore never consults the
+`Process` object: a fixed Bash wrapper runs the requested arguments in the same host
+Bash and atomically publishes stdout, stderr and the exit code as files in an owned run
+directory under the Wine temp folder. Short commands wait for that record within their
+budget; an unfinished run is reported as a timeout and keeps running. Updater handoffs
+replace `HasExited` with the exit record and are stopped only through their cancel files.
+Linux history maintenance keeps the transaction state gate after its timeout until the
+pass publishes its exit record, as for a child that survived its kill.
+
+Wine's double fork turns every updater into an orphan that Steam's subreapers (`reaper`
+and pressure-vessel's `pv-adverb`) adopt. They wait for all descendants and name the game
+only as a later argument. Both Linux updaters therefore count a process as the game only
+when argv[0] or argv[1] names the game executable, which is Wine's program position after
+its loader. An automatic APIShared handoff refuses before readiness when that game is not
+visible, so a detector mismatch keeps the game open. A Steam restart requested while Steam
+still tracks the old launch can fail; the update itself is unaffected and the game is then
+started manually.
 
 ### Independent Linux first-install patcher
 

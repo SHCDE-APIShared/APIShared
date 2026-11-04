@@ -1,5 +1,11 @@
 # API catalog
 
+Local mapper-selection camera policies are available through
+`APIShared.Presentation.MapperSelectionCameraEvents`: ordered owner-bound Pre/Post
+callbacks can suppress only the automatic family-building camera call while the
+original mapper selection still runs once. See the
+[mapper camera contract](THIRD_PARTY_GUIDE.md#mapper-selection-camera).
+
 ## Native simulation ticks
 
 Requires APIShared 0.22.0 or later (`SimulationClock`: 0.23.0 or later).
