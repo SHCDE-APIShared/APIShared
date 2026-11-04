@@ -350,7 +350,21 @@ namespace APIShared
         private void OnBeforeRender()
         {
             if (activeSurfaces == UnitHudSurface.None && !hasActionButtons && !pendingPresentation && !refreshRequested && recruitmentLease == null) return;
-            OnActiveBeforeRender();
+            try { OnActiveBeforeRender(); }
+            finally { UpdateFrameDemand(); }
+        }
+
+        private bool frameDemand;
+        private void UpdateFrameDemand()
+        {
+            lock (sync)
+            {
+                if (frameWork == null) return;
+                bool demand = activeSurfaces != UnitHudSurface.None || hasActionButtons ||
+                    pendingPresentation || refreshRequested || recruitmentLease != null;
+                if (demand == frameDemand) return;
+                frameDemand = demand; frameWork.SetContinuous(demand);
+            }
         }
 
         private void OnActiveBeforeRender()
@@ -465,7 +479,7 @@ namespace APIShared
             }
             catch (Exception ex)
             {
-                lock (sync) { restoreSurfaces |= surfaces; restoreImages |= images; pendingPresentation = true; }
+                lock (sync) { restoreSurfaces |= surfaces; restoreImages |= images; pendingPresentation = true; UpdateFrameDemand(); }
                 LogCallbackFailure("activation restoration", ex);
             }
         }

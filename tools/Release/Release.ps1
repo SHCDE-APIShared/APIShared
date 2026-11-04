@@ -76,10 +76,17 @@ $hash = (Get-ApiFileHash $asset)
 $utf8 = [Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText("$asset.sha256", "$hash  $([IO.Path]::GetFileName($asset))`r`n", $utf8)
 $assets = @($asset, "$asset.sha256")
+# First-install repair is an independent manual asset, never part of the APIShared
+# ZIP/map. It must carry its own successful source/assembly proof.
+. (Join-Path $root 'tools/ProtonWorkshopFixPackage.ps1')
+& (Join-Path $root 'tools/Build-ProtonWorkshopFix.ps1')
+$protonFix = New-ProtonFixAsset $root $output $version
+$assets += $protonFix.Assets
 $fileRecords = @(Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
     [ordered]@{ Path = $_.FullName.Substring($staging.Length).TrimStart('\').Replace('\','/'); Sha256 = (Get-ApiFileHash $_.FullName); Size = $_.Length }
 })
 $provenance = [ordered]@{ SchemaVersion = 1; Mod = 'APIShared'; PluginGuid = 'APIShared_Serp'; Version = $version; Tag = $tag; Commit = $commit; Package = [ordered]@{ Sha256 = $hash; Files = $fileRecords } }
+$provenance.ProtonWorkshopFix = [ordered]@{ File=[IO.Path]::GetFileName($protonFix.Path); Sha256=$protonFix.Sha256; Provenance=[IO.Path]::GetFileName($protonFix.Provenance); Installation='Separate manual patcher; not included in the APIShared ZIP/map' }
 if ($WorkshopPackagerPath) {
     if (-not (Test-Path -LiteralPath $WorkshopPackagerPath -PathType Leaf) -or -not (Test-Path -LiteralPath $PreviewPath -PathType Leaf)) { throw 'Workshop packager and preview are required.' }
     . (Join-Path $root 'tools/WorkshopPackage.ps1')

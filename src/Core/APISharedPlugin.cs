@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.25.0";
+        public const string PluginVersion = "0.27.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -37,6 +37,9 @@ namespace APIShared
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
             ScriptExtenderFixes.LordMediaResolverRuntime.Initialize(RuntimeLogger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
+            // A frame-service failure must not prevent independent managed/native publication.
+            try { Presentation.UiWorkRuntime.Initialize(RuntimeLogger); }
+            catch (Exception error) { NativeApiLog.Error(RuntimeLogger, "Shared Unity work initialization failed: " + error); }
             ScriptExtenderFixes.LobbyMismatchRuntime.Initialize(RuntimeLogger);
             Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
@@ -100,6 +103,7 @@ namespace APIShared
                 new NativeInitializationStep("Assassin attack control", () => AssassinAttackControlAPI.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("visible map rendering", () => Presentation.VisibleMapRenderEvents.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("mapper selection camera", () => Presentation.MapperSelectionCameraEvents.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
@@ -121,6 +125,7 @@ namespace APIShared
                     installAivBuildStep: true)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
+                new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.
                 new NativeInitializationStep("interpolate event reuse", () => ScriptExtenderFixes.InterpolateEventReuseRuntime.Initialize(Config, RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.

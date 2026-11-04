@@ -39,18 +39,22 @@ namespace APIShared.PlayerControl
         private readonly Func<long, bool> isCurrentLocalWorld;
         private readonly Func<int> readView;
         private readonly Action<int> writeView;
+        private readonly Action<int> publishNetworkIdentity;
         private BoundState binding;
         private long nextToken;
         private int saveDepth;
         private bool changingIdentity;
 
         internal PlayerViewIdentity(Func<bool> inEngineContext, Func<long, bool> isCurrentLocalWorld,
-            Func<int> readView, Action<int> writeView)
+            Func<int> readView, Action<int> writeView, Action<int> publishNetworkIdentity = null)
         {
             this.inEngineContext = inEngineContext ?? throw new ArgumentNullException(nameof(inEngineContext));
             this.isCurrentLocalWorld = isCurrentLocalWorld ?? throw new ArgumentNullException(nameof(isCurrentLocalWorld));
             this.readView = readView ?? throw new ArgumentNullException(nameof(readView));
             this.writeView = writeView ?? throw new ArgumentNullException(nameof(writeView));
+            // Process-lifetime native data cell; the adapter is nonthrowing and never
+            // calls observers. Publish only while the same engine monitor is held.
+            this.publishNetworkIdentity = publishNetworkIdentity;
         }
 
         // Hot identity observation performs no lock, game lookup or allocation.
@@ -83,6 +87,7 @@ namespace APIShared.PlayerControl
                 var next = new Lease(owner, epoch, ++nextToken, actualHuman);
                 if (Interlocked.CompareExchange(ref binding, new BoundState(next, null), null) != null)
                 { reason = "Another view identity was acquired during validation."; return false; }
+                publishNetworkIdentity?.Invoke(actualHuman);
                 lease = next;
                 return true;
             }
@@ -237,7 +242,11 @@ namespace APIShared.PlayerControl
             {
                 var current = Volatile.Read(ref binding);
                 if (current == null || !ReferenceEquals(current.Lease, lease)) return false;
-                if (ReferenceEquals(Interlocked.CompareExchange(ref binding, null, current), current)) return true;
+                if (ReferenceEquals(Interlocked.CompareExchange(ref binding, null, current), current))
+                {
+                    publishNetworkIdentity?.Invoke(0);
+                    return true;
+                }
             }
         }
 

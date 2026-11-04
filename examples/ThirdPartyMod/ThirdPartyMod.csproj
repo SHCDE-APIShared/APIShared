@@ -31,6 +31,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="SettingsSearchExample.cs"/>
+    <Compile Include="UiWorkExample.cs" />
     <Compile Include="StatisticsExample.cs"/>
     <Compile Include="NativeFieldExample.cs" />
     <Compile Include="AiMarketSellExample.cs"/>

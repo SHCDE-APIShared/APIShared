@@ -216,6 +216,43 @@ until recovery. Stale captured failures must neither fault a replacement owner n
 deduplication state; the common writer's error has one coordinated drain. Dormant Save/send
 fixtures verify the monitor boundary and zero managed allocations after warm-up.
 
+**Native network identity reads.** The same lease also supplies one process-lifetime
+participant data cell to four pure-native read substitutions. These do not enter managed
+code or temporarily change the report viewpoint. All sites are prepared and validated
+before publishing the group, and all must be available before admitting a foreign
+eliminated-participant view. The admitted backend is NativeX64 `Indirect` (minimum six
+bytes), with these complete single-instruction displaced spans:
+
+| Purpose | RVA / exclusive end | Original instruction | First unchanged continuation |
+|---|---|---|---|
+| Timing participant | `0x869D2` / `0x869D8` | `8B 15 98 D3 85 08`, `mov edx,[rip+nativeView]` | `49 8B CE`, `mov rcx,r14` |
+| Heartbeat progress | `0x27FEB` / `0x27FF2` | `48 63 8B 50 FA 36 00`, `movsxd rcx,[rbx+0x36FA50]` | `8B 05 60 DF 63 03`, `mov eax,[rip+tick]` |
+| Heartbeat acknowledgement | `0x27FFF` / `0x28006` | `48 63 8B 50 FA 36 00`, `movsxd rcx,[rbx+0x36FA50]` | `8B 05 4C DF 63 03`, `mov eax,[rip+tick]` |
+| Heartbeat timestamp | `0x28019` / `0x28020` | `48 63 8B 50 FA 36 00`, `movsxd rcx,[rbx+0x36FA50]` | `89 84 8B 78 D0 14 00`, `mov [rbx+rcx*4+0x14D078],eax` |
+
+`DLL_RunTick` (`0x86680`) forwards the timing participant through `0x24E80` to
+`0x1F9B0`, where local progress is compared with the registered humans' progress. The
+heartbeat producer (`0x27F30`) writes self progress, acknowledgement and time at manager
+`+0x14D030/+0x14D054/+0x14D078` indexed by the participant. Its manager `+0x36FA50`
+aliases native view RVA `0x88E3D70`; reading a report viewpoint here incorrectly changes
+the self index. The `DAT_188575204` gate is connection pause, written by
+`DLL_ConnectionPause` (`0x81360`), not the spectator or defeat flag. Preserve this gate,
+manager role flag `+0x9A0`, declared local identity `+0x8A8`, participant registration,
+received-peer indexes and authenticated sending unchanged.
+
+Validate every pristine instruction and continuation, the timing RIP target, prepared
+and installed spans, indirect entry and exact trampoline continuation. Full surrounding
+function branches and current xrefs have no entry inside these four displaced spans.
+The dormant cell-zero branch executes the original relocated read; active values retain
+MOV's EDX zero-extension or MOVSXD's RCX result semantics. Save/restore flags and the
+scratch register on every branch; neither branch may allocate, call managed code, write
+the native view or change other registers, SIMD state or stack position. Publish/clear
+the data cell only with the exact current lease under the engine monitor, and retain
+all published code/data until process exit. Unsupported hashes have no fallback: re-audit
+timing, heartbeat, transport/role identity and native-view aliases before admitting another
+image. Executable private-memory fixtures cover the four entries and continuations;
+they do not establish live host/client pacing acceptance.
+
 No unknown-image fallback: the generic writer prologue cannot establish writer identity,
 section-table semantics, argument ABI or native viewpoint storage. Re-audit the full
 writer/section flow and callers, the preparation helpers `0xB8220`/`0x186040`, archive
@@ -649,6 +686,42 @@ The development dependency bootstrap follows the same SE policy for
 and a dry transformation/compilation precede installation. Pair ownership and the
 BepInEx binary gate remain separate requirements; SE hashes are diagnostic only.
 
+The optional [Linux first-install patcher](docs/WORKSHOP.md#independent-linux-first-install-patcher)
+has separate managed launcher and attempt-counter contracts. When updating the
+Extender, run its [independent build and checks](CONTRIBUTING.md#building-and-checking-the-optional-proton-patcher)
+as well; the ordinary APIShared build does not build or validate that patcher.
+
+## Campfire popularity popup
+
+Native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+The popup is a Unity Fly, not a Noesis WGT_Popularity or book/report widget.
+Producer `0xB5690` selects campground projectile type 41 (SE
+`ProjectileType.EconomyIndicator2`) and calls spawn `0x9B2B0`. Spawn immediately
+dispatches its updater through `0x2DA9C0` at `0x9BA06`. Only after spawn returns
+does `0xB5845` store the campground owner's current popularity divided by 100 into
+projectile offset `0xD8`. Updater `0x9AC20` reads that same snapshot and writes mask
+frame `0xD4`: 130 below 40, 129 below 60, otherwise 128. The snapshot stays fixed
+for the popup lifetime; subsequent popularity changes create a later popup.
+
+Packet builder `0x1A13C0` exports `0xD4` and `0xD8` as the 21-short record's
+infoType and infoData fields. Managed `GameMap.addUpdateFly` creates the icon and
+digits once, and its existing-object branch never refreshes them. Consequently
+the first render can retain the old red mask beside the new number 98.
+
+`PopularityWorldPopupRuntime` owns one permanent managed IL hook. The loaded
+public instance method must return void and accept fourteen parameters, all Int32
+except the sixth (Single). Semantic IL guards require exactly one direct store
+from IL arguments 12, 13 and 14 into Fly.gameObjectType, infoType and infoData,
+respectively. A dry transformation precedes publication. Only argument 13 is
+normalized, only for type 41, using the native snapshot thresholds. No native
+memory, popup number, cache, child sprite, original branch or player identity is
+changed. Unknown native/managed contracts skip this optional correction.
+`PopularityDisplay.Tests` checks thresholds and unrelated icons; APISharedTests
+transforms and emits the actual installed method, preserving its original body,
+and executes a boundary fixture to verify first-call output and unchanged arguments.
+The unchanged Unity body cannot be JIT-prepared in the standalone .NET host because
+of its Unity ECalls. Actual Mono/game acceptance remains separate.
+
 ## Rounded fear-popularity SE adapter
 
 `Economy/FearPopularityRuntime` installs a permanent managed IL hook, without a new
@@ -887,3 +960,66 @@ executing a private relocated copy. Only external display/remove calls at
 `0x1A2980`/`0x1A42B0` and the sound tail jump at `0x2940` become private RET
 stubs. Timer reads, comparisons and active-flag writes remain original. Review
 all three external edges and R11 liveness when updating this fixture.
+
+## Mapper selection camera broker
+
+Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`Presentation.MapperSelectionCameraEvents` owns the public managed
+`EngineInterface.StartMapperItem(int) : int` hook. Its loaded signature and
+`EngineInterface.threadLock` private static object contract are checked before
+initialization. A permanent native bridge is required before camera policies are
+accepted; consumers do not install competing camera or mapper hooks.
+
+Vanilla start export `0x87830` calls dispatcher `0x8BD60`. Its family branches
+validate the first-family entry via `0xCC140` using the current native view, then
+converge at CALL `0x8BF96` (`E8 85 9F FB FF`) to `0x45F20`; its return address is
+`0x8BF9B`. Families are stores 0x34, tradepost 0x4D, Bedouin stockade 0x4F,
+granary 0x50, armoury 0x51, wooden/stone barracks 0x56/0x57 and engineers/tunnelers
+guild 0x58/0x59. Two compound-building branches additionally check their current
+footprint completion. Camera inputs are building begin tile plus one on each axis.
+The complete start dispatcher, camera helper, pending-target writer and clamp were
+audited: 575 decoded instructions matched the installed image. Their internal
+function labels remain candidate names; the stated operands/control flow are
+instruction-backed facts for this reference image.
+
+Camera helper `0x45F20` is twenty bytes:
+`49 63 C0 4C 8D 04 40 42 03 94 81 6C E1 61 00 E9 EC A2 00 00`.
+The only admitted backend is NativeX64 Indirect. Its six-byte minimum rounds to
+the two complete instructions `[0x45F20,0x45F27)` (3-byte MOVSXD RAX,R8D and
+4-byte LEA R8,[RAX+RAX*2]). Continuation is ADD EDX,[RCX+R8*4+0x61E16C], then
+tail JMP `0x50220`. Full function control flow/xrefs have no inner entry into the
+seven-byte span. Validate the pristine complete function and mapper CALL, live
+exclusive entry/caller, exact prepared/installed Indirect/7 scheme, pointer slot,
+entry padding, generated intermediary bytes and trampoline continuation. An
+adjacent hook beginning at the continuation is permitted. Current local Extender,
+canonical Fixes, APIShared and BFQoL sources have no competing site here.
+
+Do not place a standard context hook directly at the mapper CALL: its fourteen-byte
+minimum would include another switch entry at `0x8BFA0`, targeted by the computed
+jump at `0x8BE82`. The function-entry intermediary instead checks one private data
+cell and the incoming native return address. Only nonzero scoped demand AND exact
+mapper return `0x8BF9B` returns without camera work. Every other call tail-jumps
+through the complete original trampoline. Preserve all flags, R11 and stack on both
+branches; no managed callback, SIMD change or native-view write occurs there.
+
+`0x45F20` translates the tile through the camera manager's table and tail-calls
+`0x50220`, which writes pending target +0x7C/+0x80/+0x84, native camera offsets
++0x98/+0x9C and clamp-derived +0xA0/+0xA4 through `0x4B270`. Serializer `0x19D960`
+exports the pending target into PlayStateReturnData +0x554/+0x556/+0x558 and clears
+its XY qword afterwards. The managed report may therefore override a Unity-only
+postfix later. Clearing only pending XY is insufficient and can discard another
+legitimate camera request. Suppression skips the producer and all these camera
+side effects, retaining mapper selection and every placement validation path.
+
+Scoped demand is changed only under the existing engine monitor, restored in finally
+before Post, and cleared on lifecycle invalidation. Nested scopes restore the parent
+only in the same native world. Partial publication retains code/data roots with zero
+demand; native or managed initialization failure prevents policy registration. No
+unknown-hash fallback is supplied: this small generic helper cannot establish the
+camera fields, shared mapper caller or return-address meaning on another image.
+Re-audit the entire chain and registry on updates. Source tests cover ordering,
+private State, original/callback exceptions, recursion, world replacement and dormant
+allocation behavior. The executable private-memory harness uses the real Indirect
+backend and matching/nonmatching callers, checking every GPR/XMM, flags and stack.
+Those fixtures do not establish live camera framing or host/client game acceptance.

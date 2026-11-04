@@ -57,11 +57,13 @@ namespace APIShared
         internal object EngineGate => engineGate;
         internal PlayerViewIdentity Identity => identity;
         internal int ProtectedPlayerId => identity?.ProtectedHumanId ?? 0;
-        internal bool ForeignViewsReady => ready && PlayerViewSaveScope.IsBoundTo(identity);
+        internal bool ForeignViewsReady => ready && PlayerViewSaveScope.IsBoundTo(identity) && PlayerViewNetworkNative.IsReady;
 
         internal void Initialize(CrusaderLibraryLoadContext context, string hash, ManualLogSource log)
         {
             if (ready) return;
+            if (sendHook != null)
+                throw new InvalidOperationException("Player-view Chore identity publication failed; the retained hook cannot be retried.");
             logger = log;
             if (engineGate == null)
             {
@@ -78,26 +80,36 @@ namespace APIShared
             if (viewAddress != unchecked((ulong)context.ModuleHandle.ToInt64()) + (ulong)NativeViewCell.Rva ||
                 (ulong)NativeViewCell.Rva + 4 > (ulong)context.Memory.Length)
                 throw new InvalidOperationException("Participant native view cell differs from the audited image.");
+            PlayerViewNetworkNative.Initialize(context, hash, log);
             // Never replace a core after a partially successful startup: the
             // published native writer may already hold this instance forever.
             if (identity == null) identity = new PlayerViewIdentity(InEngineContext, IsCurrentWorld,
-                PlayerPerspectiveAPI.GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer);
+                PlayerPerspectiveAPI.GetRawNativeViewPlayerId, EngineInterface.SetEditorPlayer,
+                PlayerViewNetworkNative.WriteProtectedPlayer);
             PlayerViewSaveScope.Initialize(context, hash, identity, log);
             MethodInfo method = Networking.NativeChoreTransport.ResolveSubmissionMethod();
             Hook candidate = null;
+            bool publicationAttempted = false;
             try
             {
                 candidate = new Hook(method, (SendCall)SendProtected,
                     new HookConfig { ManualApply = true, ID = "APIShared.PlayerPerspective.ChoreIdentity" });
                 originalSend = candidate.GenerateTrampoline<Func<byte[], bool>>();
-                candidate.Apply(); sendHook = candidate; ready = true;
+                // Apply can publish before throwing. Root the hook and its usable
+                // original first, and never infer rollback safety from its result.
+                sendHook = candidate;
+                publicationAttempted = true;
+                candidate.Apply();
+                if (!candidate.IsApplied) throw new InvalidOperationException("Player-view Chore identity hook publication incomplete.");
+                ready = true;
             }
             catch
             {
-                try { candidate?.Undo(); candidate?.Dispose(); } catch { } // Unpublished candidate only.
+                if (!publicationAttempted)
+                    try { candidate?.Undo(); candidate?.Dispose(); } catch { } // No Apply attempt, so still unpublished.
                 throw;
             }
-            NativeApiLog.Info(log, "PLAYER_VIEW_IDENTITY: one core for Save, Chore and local identity; native view=reference-rva 0x88E3D70; process lifetime.");
+            NativeApiLog.Info(log, "PLAYER_VIEW_IDENTITY: one core for Save, Chore, network timing and local identity; native view=reference-rva 0x88E3D70; process lifetime.");
         }
         private bool InEngineContext() => engineGate != null && Monitor.IsEntered(engineGate) &&
             ReferenceEquals(engineMonitor.GetValue(null), engineGate) &&

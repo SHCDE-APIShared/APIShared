@@ -108,6 +108,7 @@ namespace APIShared
                     return Fail("The recruitment ticket is no longer active.", out diagnostic);
                 recruitmentLease = null;
                 refreshRequested = true;
+                UpdateFrameDemand();
             }
             diagnostic = Available($"Recruitment completed with {matchedCount} matched units: {reason ?? string.Empty}");
             return true;
@@ -134,6 +135,7 @@ namespace APIShared
             activeImages = imageView.Length != 0;
             refreshRequested = surfaces != UnitHudSurface.None || activeImages || restoreSurfaces != UnitHudSurface.None || restoreImages;
             pendingPresentation = refreshRequested;
+            UpdateFrameDemand();
         }
 
         private void SetOwnerActive(string owner, bool active)
@@ -182,6 +184,7 @@ namespace APIShared
                 foreach (var item in actionButtons.Where(x => x.Owner == owner)) item.Version++;
                 refreshRequested = true;
                 pendingPresentation = true;
+                UpdateFrameDemand();
             }
         }
 

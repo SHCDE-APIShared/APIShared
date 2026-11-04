@@ -202,17 +202,29 @@ restore_rows() {
     done
 }
 running() {
-    local command argument executable='stronghold crusader definitive edition.exe'
+    local command argument position executable='stronghold crusader definitive edition.exe'
     for command in /proc/[0-9]*/cmdline; do
         [[ -r $command ]] || continue
         # Bash builtins avoid spawning tr/grep for every host process before
         # every file operation. Preserve case-insensitive Unix/Wine path matching.
-        while IFS= read -r -d '' argument; do
+        # Only argv[0] or argv[1] identifies the game: Wine keeps the program there
+        # (after its loader). Steam's reaper, steam-launch-wrapper, pressure-vessel and
+        # Proton's script name the game only as a later argument while they wait for
+        # every descendant, including this updater; counting them never ends the wait.
+        position=0
+        while (( position < 2 )) && IFS= read -r -d '' argument; do
             argument=${argument//\\//}; argument=${argument,,}
             if [[ $argument == "$executable" || $argument == */"$executable" ]]; then return 0; fi
+            position=$((position + 1))
         done 2>/dev/null < "$command"
     done
     return 1
+}
+# An automatic handoff (--restart) starts from the running game. If the detector
+# cannot see that game now, a later "not running" proves nothing: refuse before
+# readiness, so the game stays open. Manual recovery runs with the game closed.
+require_visible_game() {
+    [[ $recover != --restart ]] || running || { record 'failure Calling game is not visible to the Linux process detector; no handoff'; exit 1; }
 }
 restart_game() {
     # A desktop launcher can fail or wait for its client. Do not hold apply.lock
@@ -252,6 +264,7 @@ if [[ $protocol == APISHARED-WORKSHOP-RECOVERY-1 ]]; then
         for target in "${old_targets[@]}"; do [[ -z ${recovery_targets[${target,,}]:-} ]]; recovery_targets[${target,,}]=1; done
         restore_preflight "$dir"; recovery_dirs+=("$dir")
     done
+    require_visible_game
     printf '%s' "$expected" > "$(inside "$transaction" ready.flag)"
     publish_activity waiting
     step='recovery waiting for game exit'
@@ -327,6 +340,7 @@ for other in "$state"/Transactions/*/journal.log; do
     fi
 done
 if [[ ${#begun[@]} -gt 0 && $recover != --recover ]]; then record 'failure Interrupted transaction; use --recover'; exit 1; fi
+require_visible_game
 printf '%s' "$expected" > "$(inside "$transaction" ready.flag)"
 publish_activity waiting
 if [[ $recover == --recover ]]; then cancel=$(inside "$transaction" recovery-cancel.flag); else cancel=$(inside "$transaction" cancel.flag); fi

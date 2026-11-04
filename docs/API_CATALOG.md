@@ -1,5 +1,11 @@
 # API catalog
 
+Local mapper-selection camera policies are available through
+`APIShared.Presentation.MapperSelectionCameraEvents`: ordered owner-bound Pre/Post
+callbacks can suppress only the automatic family-building camera call while the
+original mapper selection still runs once. See the
+[mapper camera contract](THIRD_PARTY_GUIDE.md#mapper-selection-camera).
+
 ## Native simulation ticks
 
 Requires APIShared 0.22.0 or later (`SimulationClock`: 0.23.0 or later).
@@ -115,7 +121,9 @@ They require no capability acquisition or consumer registration and are implemen
 separately in `src/ScriptExtenderFixes`. Unsupported dependency implementations are
 skipped without disabling the public services below. The popularity display correction
 automatically follows changed SE contribution values in reports and building panels,
-without modifying simulation or requiring consumer registration. The interpolate-event
+without modifying simulation or requiring consumer registration. A separate world-popup
+correction selects the campfire mask from its own displayed popularity snapshot before
+Vanilla caches it. The interpolate-event
 correction reuses SE's per-unit event object only while every subscriber provably
 reads it synchronously; other subscribers keep SE's allocation.
 The Lord media correction treats absent custom Lord identities as unavailable optional
@@ -153,6 +161,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; host/per-player publication waits for the appropriate lobby/transport identity; personal persistence remains isolated ([guide](MOD_SETTINGS.md#presets-without-serpsmodshost)) |
 | `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
+| `ModApiClient.Ui` | Owner-bound deferred Unity posts and coalesced before-render refresh demand | Managed initialization; pause-capable, thread-safe request/delay/cancel/continuous handles; [contract](THIRD_PARTY_GUIDE.md#deferred-unity-work-and-refresh-demand) |
 | `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
 | `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, explicit takeovers, cached occupancy, optional consumer-defined tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
 | `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
@@ -617,6 +626,9 @@ owned-item queries, upload preparation, installation plans and explicit applicat
 Steam entry points require initialized Steamworks on Unity. Planning does not
 change installed files; application requires consent and uses a post-exit updater.
 See [Workshop contracts and workflows](WORKSHOP.md).
+
+See [Linux deployment](WORKSHOP.md#linux-paths-and-first-install-repair) for path
+configuration, the separate first-install repair and platform acceptance limits.
 
 ## Situational audio
 

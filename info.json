@@ -3,7 +3,7 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.25.0",
+  "Version": "0.27.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
@@ -11,15 +11,33 @@
   "NetworkMode": 1,
   "SerpChangelog": [
     {
+      "Version": "0.27.0",
+      "Changes": [
+        "Add owner-bound mapper selection camera observations with scoped suppression of automatic building centering, preserving selection, player identity and other camera calls.",
+        "Linux/Proton Workshop updater: host commands and updater handoffs report their output and exit code through files in an owned run directory, because Unity's Mono reports Linux programs started under Wine as exited at once. Steam's reaper and pressure-vessel wrappers are no longer mistaken for the running game, and an automatic handoff refuses before readiness when the game is not visible.",
+        "Linux/Proton: resolve Wine dosdevices drive links for non-Z: drives (Proton 10 and older) and retry a failed shared Proton context instead of caching the failure. Real Proton publishing and update tests are still recommended; automated tests do not certify Linux support."
+      ]
+    },
+    {
+      "Version": "0.26.0",
+      "Changes": [
+        "Add ModApiClient.Ui with shared deferred Unity dispatch and owner-bound coalesced, monotonic delayed and explicitly continuous presentation work.",
+        "Share one process-owned frame publisher across managed UI services; preserve GUI completion phases, lobby fallback frames and decisive save-load checks. While the side-HUD host is missing, its search retries at most every 100 ms instead of every frame; known HUD, property and registration changes search immediately.",
+        "Multiplayer: while an eliminated participant views another player, native network timing and heartbeat reads keep the participant's own identity instead of the viewed player; reports still show the selected player. Foreign participant views are offered only when all four native read sites validate.",
+        "Script Extender fix: the campfire's floating popularity mask matches its displayed value (red below 40, neutral 40 to 59, green from 60). Other floating icons and simulation state are unchanged.",
+        "Linux/Proton: translate host paths through the active Wine drive mappings instead of an assumed Z: drive, with an optional APIShared.ProtonPaths.cfg override. Releases add a separate manual APIShared.ProtonWorkshopFix patcher asset for first Script Extender installations under Proton; it is not part of the APIShared package and stays inactive on Windows."
+      ]
+    },
+    {
       "Version": "0.25.0",
       "Changes": [
         "Add shared enemy-unit building proximity policies and a validated active Peace Time reader; consumers compose overrides, limits and authoritative vetoes.",
         "Add ObserverCommandExceptions: mods can allow single local commands of a confirmed observer (such as an eliminated participant viewing another player) that an enforcing mod would otherwise veto.",
         "TrySetSpectatorControl: after an unconfirmed view rollback, GetLocalPlayerId reports the spectator identity instead of the failed target; ClearEliminatedPlayerView does not end an original spectator's input control.",
         "Add PresetLobbyModSettingsViewModel.IsApplyingMissionSettingsSnapshot so consumers can lock individual settings during a mission while authoritative mission restores still apply.",
-        "Rename PlayerColors to PlayerColours and the namespace APIShared.Content.Lords to APIShared.Lords (both unreleased before this version).",
-        "Packaged Lord media and the Lord media correction share one Script Extender hook; the unfinished multi-owner and multiplayer control backend is not part of this build.",
-        "Documentation: every native world change clears a selected original-spectator view with a Cleared notification; player views and control, Script Extender fixes and mod settings have their own guides."
+        "Packaged Lord media and the Lord media correction share one Script Extender hook.",
+        "Behavior change: a TrySetSpectatorView selection no longer survives native world changes; every load, unload or new mission clears it with a Cleared notification (in 0.16.3 it persisted). Consumers must select the view again for each mission. TrySetSpectatorView also returns false while another role owns the participant view or a Save/send scope is active.",
+        "Documentation: player views and control, Script Extender fixes and mod settings have their own guides."
       ]
     },
     {
@@ -27,8 +45,8 @@
       "Changes": [
         "Add immutable current player-defeat snapshots and ordered state observers, including loaded losses, without replaying existing transition events.",
         "Add eliminated-participant perspectives that preserve positive local identity, protect Save and Chore submission identity, and retain the original-spectator contract.",
-        "Add spectator input control: an original offline spectator controls one chosen player with Vanilla input (TryRegisterSpectatorControl installs the input hooks only on demand; TrySetSpectatorControl, ClearSpectatorControl, GetInputControlledPlayerId); rights-gated, multi-owner and multiplayer control remain WIP.",
-        "Add PlayerColors.TryGetUiColour (Vanilla's UI/portrait colour of a player) and the exclusive UnitHudSpriteColours lease that draws the unit HUD sprites in another player's colour on the existing sprite hook, restoring Vanilla's values on release and mission end.",
+        "Add spectator input control: an original offline spectator controls one chosen player with Vanilla input (TryRegisterSpectatorControl installs the input hooks only on demand; TrySetSpectatorControl, ClearSpectatorControl, GetInputControlledPlayerId).",
+        "Add PlayerColours.TryGetUiColour (Vanilla's UI/portrait colour of a player) and the exclusive UnitHudSpriteColours lease that draws the unit HUD sprites in another player's colour on the existing sprite hook, restoring Vanilla's values on release and mission end.",
         "Add ModApiClient.TryGetPlagueHeightPolicy for reading the active plague standing-height policy."
       ]
     },
@@ -38,8 +56,6 @@
         "Add mission-scoped SimulationClock reads after native initialization and overflow-safe elapsed ticks.",
         "Add ModNetworkClient.RegisterAuthenticatedChore: Chore channels whose sender is verified from the executing native slot, submitted once through the raw Chore queue without Steam fallback.",
         "Invalidate native clock access before nested/repeated loads and retirement; preserve ready-only tick events and existing Extender clocks.",
-        "Documentation: record the breaking change made in 0.21.0 - the options-less IngameMenuActions.TryRegister overload and the APISharedMenuActionButtonStyle resource were removed; register with IngameMenuActionOptions.",
-        "IModSettingsPersonalPersistenceBackend is optional again: existing backends with personal settings are accepted and persist those values in the preset storage.",
         "Clients that previously joined as host restore their own mission-independent Host values before persisting; personal edits no longer fail while another mission's restart preparation is pending.",
         "Migration note: multiplayer saves written before 0.20.0 now load with SaveContext.IsSaveFile=true; handlers branching on it must accept map-format records.",
         "Coop restart Lord presentation can no longer abort a game start on invalid lobby data.",

@@ -43,6 +43,7 @@ namespace APIShared
         private bool mapStarted;
         private int lastObservedFrame = -1;
         private volatile bool hasObservers;
+        private Presentation.IUiFrameWorkRegistration frameWork;
         private readonly Func<LobbyStateSnapshot> capture;
         private readonly Func<object> captureLobbyInstance;
         private object lastObservedLobbyInstance;
@@ -96,7 +97,8 @@ namespace APIShared
                 service = null;
                 if (candidate != null)
                 {
-                    Application.onBeforeRender -= candidate.OnBeforeRender;
+                    candidate.frameWork?.SetContinuous(false);
+                    candidate.frameWork?.CancelPending();
                     candidate.mapStartSubscription?.Dispose();
                     candidate.mapUnloadSubscription?.Dispose();
                 }
@@ -152,7 +154,8 @@ namespace APIShared
             if (mapStartSubscription == null || mapUnloadSubscription == null)
                 throw new InvalidOperationException("Lobby-state map subscriptions could not be created.");
 
-            Application.onBeforeRender += OnBeforeRender;
+            if (!Presentation.UiWorkRuntime.TryRegister(APISharedPlugin.PluginGuid, "internal/10-lobby",
+                OnBeforeRender, 0, out frameWork, out string frameReason)) throw new InvalidOperationException(frameReason);
             ObserveDirtyNow();
         }
 
@@ -251,6 +254,7 @@ namespace APIShared
             {
                 mapStarted = true;
                 dirty = false;
+                frameWork?.SetContinuous(false);
             }
         }
 
@@ -260,6 +264,7 @@ namespace APIShared
             {
                 mapStarted = false;
                 dirty = true;
+                frameWork?.SetContinuous(hasObservers);
             }
             ObserveDirtyNow();
         }
@@ -504,6 +509,8 @@ namespace APIShared
                 });
                 replay = current;
                 hasObservers = true;
+                // The existing fallback is a 15-render-frame contract, independent of FPS/time.
+                frameWork?.SetContinuous(!mapStarted);
             }
 
             // First demand captures now, rather than replaying an unused stale cache.

@@ -53,8 +53,11 @@ reports; it never grants gameplay permission. `ClearEliminatedPlayerView()` rest
 own native view before releasing the identity protection (a failure keeps the
 protection) and does not affect an original spectator's input control.
 
-Foreign views need the identity protection described under [Implementation](#implementation);
-the own view stays available without it. Saves serialize the original participant
+Foreign views need the identity protection described under [Implementation](#implementation),
+including the native network timing and heartbeat reads. Those reads retain the original
+participant while reports show the selected player; selecting a view does not register
+another network participant or change the transport sender. The own view stays available
+without it. Saves serialize the original participant
 identity, so Vanilla's load and remapping resolve the participant again. After loading,
 re-enable an eliminated participant from the current loss snapshot, starting with their
 own view; no spectator Save marker is needed.
@@ -140,7 +143,8 @@ cleared and `GetLocalPlayerId` reports the spectator identity again.
 
 **Identity protection.** `PlayerViewIdentityRuntime` (src/Players/ViewIdentity) owns one
 process-wide `PlayerViewIdentity` core. The common Save writer (`PlayerViewSaveScope`), the
-raw Chore submission and the local-ID correction use that same core. While a foreign
+raw Chore submission, native network timing/heartbeat reads and the local-ID correction
+use that same core. While a foreign
 participant view is active, a save or raw Chore submission temporarily runs with the
 original identity under the engine monitor, including nested saves and synchronous packet
 callbacks; the published view does not change during those scopes, and view changes are
@@ -155,6 +159,18 @@ acquisition. Ordinary release refuses an ended world; the lifecycle's world inva
 retires it without native writes. Failure delivery is bound to the originating lease, so a
 delayed observation cannot invalidate a newer owner's view. Hooks stay installed for the
 process; the dormant paths add no allocations.
+
+**Network identity reads.** Four permanent native stubs substitute only the timing player
+argument and the three heartbeat self-progress indexes. The original participant comes
+from the same view lease, published through a process-lifetime data cell under the engine
+monitor. With cell zero, every stub follows its original relocated instruction, including
+nonpositive spectator values. With an active participant lease, only the original output
+register changes to that participant; flags, other registers and the stack are preserved.
+The native report viewpoint is never written by these stubs. Role flags, participant
+registration, received peer indexes and authenticated transport stay unchanged. All four
+sites must validate and publish before foreign participant views become available; an
+unavailable site leaves those views disabled. Ending the exact lease clears the cell;
+an old release cannot clear a replacement owner's identity.
 
 **Spectator input boundaries.** Vanilla zeroes the native view for spectators at two input
 boundaries: in `DLL_RunTick` and in the input dispatcher's nested re-dispatch. Startup only

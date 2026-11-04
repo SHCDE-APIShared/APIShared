@@ -39,6 +39,7 @@
 - [Multiplayer map lookup and lobby system hints](#multiplayer-map-lookup-and-lobby-system-hints)
 - [End-screen presentation](#end-screen-presentation)
 - [Shared render and pause-menu presentation](#shared-render-and-pause-menu-presentation)
+- [Mapper selection camera](#mapper-selection-camera)
 - [Lord statistic columns](#lord-statistic-columns)
 - [Packaged Lord presentation](#packaged-lord-presentation)
 
@@ -59,6 +60,46 @@ Install the complete APIShared package and reference its assemblies with
 Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client, logger, settings and callbacks in a static runtime or a long-lived publisher. Register managed lifecycle services from `Awake`, after the hard APIShared dependency has initialized. Acquire native services in `WhenReady`. Never treat a native failure as proof that all managed services failed. `WhenReady` is a terminal global-state notification, not a Unity-thread dispatcher: late callbacks run synchronously on the registering thread, early callbacks on the initialization publisher thread. Call Unity/Noesis operations only from a known Unity-thread entry point.
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
+
+## Deferred Unity work and refresh demand
+
+Requires APIShared 0.26.0 or later.
+
+`ApiShared.ForMod(yourGuid).Ui` provides presentation work independently of native
+or network readiness. `TryPost(Action)` always defers through the existing validated
+Unity synchronization context, even on Unity. FIFO means enqueue order; a nested
+post may run in the same drain. It is not a next-frame or render-phase promise.
+False means unavailable; accepted work is not durable across context failure or
+shutdown. `Network.TryPostPresentation` retains its existing contract and queue.
+
+Register a stable owner-local ID with `TryRegisterBeforeRender(id, callback, out
+registration, out reason, order)`. Registrations are process-lived and initially
+dormant. Handles are thread-safe: `Request()` coalesces refreshes; `RequestAfter(delay)`
+keeps the earliest nonnegative monotonic deadline, and zero is immediate. An immediate
+request satisfies an older deferred refresh. Invalid/overflowing delays throw before
+changing demand. Delays run on the first rendered frame at/after the deadline,
+including while paused, without catch-up calls. They are refresh requests, not action timers.
+
+`SetContinuous(true)` requests every rendered frame; false preserves separately
+pending work. `CancelPending()` clears uncaptured immediate/deferred work, leaving
+continuous demand unchanged. Each callback runs at most once per rendered frame.
+The service freezes a pass and consumes current requests before invoking callbacks;
+requests or toggles during it apply to later frames. A canceled frozen callback may
+still run once. Keep current session/HUD guards and never permanently capture a map's
+view. Callbacks and diagnostic failures are isolated, outside registry locks.
+
+Ordering is `order`, ordinal owner GUID, then ordinal registration ID. No ordering
+against foreign Unity callbacks or Vanilla GUI writes is promised. Use the existing
+`PresentationEvents.GuiChecks` for post-Vanilla HUD writes, concrete input events for
+input, and simulation events for gameplay. Do not throttle commands, authorization,
+input protection or decisive save/load checks. Use bounded delays only for presentation
+whose latency permits them. See the compiled [example](../examples/ThirdPartyMod/UiWorkExample.cs).
+
+One static publisher survives startup cleanup. Dormant, waiting and steady continuous
+scheduler paths allocate nothing after warm-up; real demand changes may allocate
+copy-on-write snapshots. Callback cost and application-level scans remain the consumer's
+responsibility. Internal lobby fallback remains 15 rendered frames; save preparation
+continues every frame only while pending and not already loading.
 
 ## Namespaces and packaging
 
@@ -1513,4 +1554,47 @@ if (PackagedLordPresentation.TryRegister(pluginGuid, "mission-lords", out var pr
     });
 // Retain the registration and call presentation.SetEntries(null) when leaving this selection.
 ```
+
+## Mapper selection camera
+
+`APIShared.Presentation.MapperSelectionCameraEvents` owns the managed
+`EngineInterface.StartMapperItem(int)` boundary and the narrowly filtered native
+family-building camera call. Register from Unity after native initialization, for
+example in `ApiShared.WhenReady` on its startup callback. A late worker-thread
+readiness callback is not a Unity dispatcher. `TryRegister(ownerGuid, id, pre,
+post, out reason, order)` returns false when the audited native contract,
+initialization or unique registration identity is unavailable.
+
+Pre receives immutable `Mapper` and `SessionId`. Its only camera decision is
+`SuppressCamera`; it cannot cancel selection, rewrite the mapper/player, or change
+the result. Successful requests combine with OR. Pre also has registration-private
+`State`. A throwing Pre loses its suppression request, while preserving its State
+for its matching cleanup Post. Pre arguments freeze when that callback ends.
+
+Callbacks run synchronously on Unity under the existing engine monitor, outside
+registration locks. Pre order is ascending order/owner/ID; Post order is reversed.
+An immutable registration snapshot serves the whole invocation; registrations made
+inside a callback join the next invocation. No replay or deregistration is supplied.
+Each registration's errors are isolated and logged once. Callbacks must not wait
+for another thread that needs the engine monitor.
+
+The original managed selection runs exactly once. Post always follows entered Pre
+callbacks, including original exceptions, after this invocation's native demand
+has been restored. Post supplies `Mapper`, `SessionId`, private `State`, original
+`Result`, original `Exception`, and `SuppressionActive`. Result is -1 on an original
+exception, which is rethrown unchanged after Post. `SuppressionActive` means the
+scope was armed, not that a native camera request occurred or selection succeeded.
+Nested originals have independent scopes. Commands issued from notification
+callbacks bypass notification and suppression, then restore any enclosing demand.
+Session/world invalidation prevents arming or restoring stale demand.
+
+The native bridge omits only mapper selection's automatic centering. All other
+camera callers retain the complete original path. Native view, control identity,
+resource/footprint checks and placement ownership are unchanged. Consumers retain
+their gameplay-mode and permission policy. For an optional replacement jump, keep
+the selected owner/building identity in State, then revalidate scene, session,
+world, owner, alive/type/global ID and tile in a successful Post before making an
+immediate Unity camera change. Missing or stale targets should keep the camera
+stationary; do not clear unrelated camera reports or enqueue stale cross-mission
+camera work. This broker does not select a building or move the camera itself.
 
