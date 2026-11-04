@@ -43,6 +43,18 @@ stage() {
 stage control
 code=$(run "$game" "$dir" "$(hash_file "$dir/operations.tsv")" --fixture "")
 [[ $code == 0 ]] && grep -qx committed "$dir/journal.log" || fail "control installation exited $code"
+
+# 3. An automatic handoff refuses before readiness when the game is not visible, also
+#    while a Steam wrapper names the game as a later argument: such wrappers wait for
+#    every descendant, including this updater, so counting them never ends the wait.
+stage invisible
+bash -c 'sleep 60; :' reaper SteamLaunch AppId=3024040 -- "$game/Stronghold Crusader Definitive Edition.exe" >/dev/null 2>&1 & wrapper_pid=$!
+code=$(run "$game" "$dir" "$(hash_file "$dir/operations.tsv")" --restart "")
+kill "$wrapper_pid" 2>/dev/null || true; wait "$wrapper_pid" 2>/dev/null || true
+[[ $code == 1 && ! -e $dir/ready.flag ]] || fail "handoff without a visible game exited $code or published readiness"
+grep -q 'not visible' "$dir/journal.log" || fail 'invisible-game refusal was not journaled'
+[[ ! -e $game/BepInEx/plugins/Example/Small.dll ]] || fail 'refused handoff changed installed files'
+printf 'PASS: Linux handoff refuses an invisible game; Steam wrappers are not the game.\n'
 # M3 pause/resume and game-process ownership are exercised by test-workshop-coordination.sh.
 printf 'PASS: Linux finished-target refusal and ordinary installation control.
 Evidence retained: %s\n' "$fixture"

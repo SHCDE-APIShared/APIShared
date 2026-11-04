@@ -1,4 +1,61 @@
+[CmdletBinding()]
+param([switch]$CacheOnly)
 $ErrorActionPreference = 'Stop'
+$cacheRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+. (Join-Path $cacheRoot 'tools/BuildChecks.ps1')
+. (Join-Path $cacheRoot 'tools/BuildProof.ps1')
+$cacheFixture=Join-Path ([IO.Path]::GetTempPath()) ('api-step-'+[guid]::NewGuid().ToString('N').Substring(0,8))
+[void][IO.Directory]::CreateDirectory($cacheFixture)
+try {
+$cacheInput=Join-Path $cacheFixture 'input.txt';[IO.File]::WriteAllText($cacheInput,'first')
+$fingerprint={Get-ApiFileHash $cacheInput}.GetNewClosure()
+$effects=[Collections.Generic.List[string]]::new()
+$action={$effects.Add('executed')}
+function Cache-Context {$value=New-ApiBuildContext full;Initialize-ApiStepCache $value $cacheFixture $fingerprint;return $value}
+$first=Cache-Context
+Invoke-ApiBuildStep $first pure -Cacheable -Action $action
+try{Invoke-ApiBuildStep $first later-failure -Cacheable -Action {throw 'intentional fixture failure'}}catch{}
+$second=Cache-Context
+Invoke-ApiBuildStep $second pure -Cacheable -Action $action
+if($effects.Count-ne1-or$second.Steps[0].Status-cne'Reused'){throw 'A later failure lost a previously passed check'}
+$failures=[Collections.Generic.List[int]]::new()
+$failureAction={$failures.Add(1);throw 'intentional failure'}
+foreach($n in 1..2){try{Invoke-ApiBuildStep $second never-passed -Cacheable -Action $failureAction}catch{}}
+if($failures.Count-ne2){throw 'A failed check was cached'}
+[IO.File]::WriteAllText($cacheInput,'second');Invoke-ApiBuildStep $second pure -Cacheable -Action $action
+if($effects.Count-ne2){throw 'Changed content reused an old check'}
+$oldCacheEnv=$env:SHCDE_STEP_CACHE_FIXTURE
+try{$env:SHCDE_STEP_CACHE_FIXTURE='changed';Invoke-ApiBuildStep $second pure -Cacheable -Action $action}finally{$env:SHCDE_STEP_CACHE_FIXTURE=$oldCacheEnv}
+if($effects.Count-ne3){throw 'Changed runtime context reused an old check'}
+foreach($n in 1..4){Invoke-ApiBuildStep $second always-build -Category compile -When always -Cacheable -Action $action}
+if($effects.Count-ne7){throw 'Compilation was cached'}
+foreach($n in 1..4){[IO.File]::WriteAllText($cacheInput,('value'+$n));Invoke-ApiBuildStep $second pure -Cacheable -Action $action}
+$cacheRows=@(Read-ApiStepCache $second.Cache.Path)
+if(@($cacheRows|Where-Object Name -eq pure).Count-ne2-or(Get-Item -LiteralPath $second.Cache.Path).Length-gt8MB){throw 'Check metadata did not retain exactly two bounded successes'}
+[IO.File]::WriteAllText($second.Cache.Path,'invalid metadata');Invoke-ApiBuildStep $second pure -Cacheable -Action $action
+if($second.Steps[$second.Steps.Count-1].Status-cne'Passed'-or@(Read-ApiStepCache $second.Cache.Path).Count-ne1){throw 'Invalid metadata was accepted or not replaced by a new passed result'}
+$originalStateProvider=(Get-Item Function:Get-ApiInputState).ScriptBlock
+try {
+    # Replace only the already-tested base state boundary; exercise the actual
+    # production extension's documentation/native/tool invalidation below.
+    function Get-ApiInputState {param($Root,$GameDir,$ExtenderDir,$MSBuild) return @{Fingerprint=(Get-ApiFileHash $cacheInput)}}
+    $native=Join-Path $cacheFixture 'game/Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/CrusaderDE.dll'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $native));[IO.File]::WriteAllText($native,'native first')
+    $doc=Join-Path $cacheFixture 'contract.md';[IO.File]::WriteAllText($doc,'first contract')
+    $game=Join-Path $cacheFixture 'game'
+    $a=Get-ApiCheckInputFingerprint $cacheFixture $game '' '' 'tools first'
+    [IO.File]::WriteAllText($doc,'changed contract');$b=Get-ApiCheckInputFingerprint $cacheFixture $game '' '' 'tools first'
+    [IO.File]::WriteAllText($native,'changed native');$c=Get-ApiCheckInputFingerprint $cacheFixture $game '' '' 'tools first'
+    $d=Get-ApiCheckInputFingerprint $cacheFixture $game '' '' 'changed tools'
+    if($a-ceq$b-or$b-ceq$c-or$c-ceq$d){throw 'Production cache fingerprint omitted documentation, native bytes or tools'}
+} finally {Set-Item Function:Get-ApiInputState $originalStateProvider}
+Write-Host 'PASS: successful leaf reuse after failure; content/context invalidation, uncached failures/compilation, bounded metadata and corrupt-cache recovery.'
+} finally {
+    $full=[IO.Path]::GetFullPath($cacheFixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')+'\'
+    if(-not$full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)-or[IO.Path]::GetFileName($full)-cnotmatch'^api-step-[0-9a-f]{8}$'){throw 'Unsafe cache fixture cleanup'}
+    if(Test-Path -LiteralPath $full){Remove-Item -LiteralPath $full -Recurse -Force}
+}
+if($CacheOnly){exit 0}
 # A surrounding branch build marks its own process as already dispatched. The fixture
 # must exercise the top-level selection, so it must not inherit that marker.
 foreach ($name in @('SHCDE_BRANCH_SOURCE_ROOT','SHCDE_BRANCH_PINNED')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }

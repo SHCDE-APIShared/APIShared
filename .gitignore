@@ -9,6 +9,8 @@
 /.vs/
 /.local/
 /.release-output/
+# Local build/test/analysis work areas and their run records.
+/.work/
 *.log
 
 TestResults/

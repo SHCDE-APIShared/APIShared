@@ -48,8 +48,8 @@ namespace LobbyModSettingsPresetTests
             settings.System_EnterMissionPreset(snapshot, "Trail", false);
             Assert(settings.HostSettingsOpacity == 0.65f && settings.ClientSettingsOpacity == 1f,
                 "Mission activation did not update the presentation.");
-            Assert(!settings.CanEditHostSettings && !settings.CanEditClientSettings,
-                "Opacity must not remove the mission read-only lock.");
+            Assert(!settings.CanEditHostSettings && settings.CanEditClientSettings,
+                "Host mission lock must preserve personal editability.");
             Assert(notifications.Contains(nameof(settings.HostSettingsOpacity)), "Snapshot did not notify opacity.");
             notifications.Clear();
             settings.System_ExitMissionPreset();

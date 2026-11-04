@@ -27,6 +27,64 @@ namespace APIShared
         internal const string GateComparisons = "GateRouting.Comparisons";
         internal const string GateDescent = "GateRouting.Descent";
         internal const string BuildingRepair = "Buildings.RepairQuote";
+        internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
+        internal const string VisibleMapRender = "Presentation.VisibleMapRender";
+        internal const string PlayerViewIdentitySite = "Players.ViewIdentity";
+        internal const string PlayerViewNetwork = "Players.ViewNetworkIdentity";
+        internal const string PlayerControlInput = "Players.ControlInput";
+        internal const string MapperCamera = "Presentation.MapperSelectionCamera";
+
+        internal static NativeSiteSpan[] MapperCameraSpans() => new[] {
+            Exclusive(Presentation.MapperCameraNative.Rva, Presentation.MapperCameraNative.DisplacedLength),
+            Observe(Presentation.MapperCameraNative.Rva + Presentation.MapperCameraNative.DisplacedLength,
+                Presentation.MapperCameraNative.Window.Length - Presentation.MapperCameraNative.DisplacedLength),
+            Observe(Presentation.MapperCameraNative.CallerRva, Presentation.MapperCameraNative.Caller.Length)
+        };
+
+        // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
+        internal static NativeSiteSpan[] VisibleMapRenderSpans() => new[] {
+            Exclusive(Presentation.VisibleMapRenderEvents.Rva, Presentation.VisibleMapRenderEvents.Entry.Length)
+        };
+
+        internal static NativeSiteSpan[] SynchronizedSaveSpans() => new[] {
+            Exclusive(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva, ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength),
+            Observe(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva + ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength,
+                ScriptExtenderFixes.SynchronizedSaveRuntime.Entry.Length - ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength)
+        };
+
+        internal static NativeSiteSpan[] PlayerViewIdentitySpans() => new[] {
+            Exclusive(PlayerControl.PlayerViewSaveScope.Rva, PlayerControl.PlayerViewSaveScope.DisplacedLength),
+            Observe(PlayerControl.PlayerViewSaveScope.Rva + PlayerControl.PlayerViewSaveScope.DisplacedLength,
+                PlayerControl.PlayerViewSaveScope.Entry.Length - PlayerControl.PlayerViewSaveScope.DisplacedLength)
+        };
+
+        internal static NativeSiteSpan[] PlayerViewNetworkSpans()
+        {
+            var spans = new List<NativeSiteSpan>();
+            foreach (var site in PlayerControl.PlayerViewNetworkNative.Sites)
+            {
+                int rva = PlayerControl.PlayerViewNetworkNative.Rva(site);
+                int displaced = PlayerControl.PlayerViewNetworkBridge.DisplacedLength(site);
+                spans.Add(Exclusive(rva, displaced));
+                spans.Add(Observe(rva + displaced,
+                    PlayerControl.PlayerViewNetworkBridge.WindowLength(site) - displaced));
+            }
+            return spans.ToArray();
+        }
+
+        // Both spectator-input boundaries; each continuation instruction is decoded and must stay intact.
+        internal static NativeSiteSpan[] PlayerControlInputSpans()
+        {
+            var spans = new List<NativeSiteSpan>();
+            foreach (var site in new[] { PlayerControl.ControlInputSite.RunTick, PlayerControl.ControlInputSite.Dispatcher })
+            {
+                int rva = site == PlayerControl.ControlInputSite.RunTick ? PlayerControl.ControlInputNative.RunTickRva : PlayerControl.ControlInputNative.DispatcherRva;
+                int displaced = PlayerControl.ControlInputBridge.DisplacedLength(site);
+                spans.Add(Exclusive(rva, displaced));
+                spans.Add(Observe(rva + displaced, PlayerControl.ControlInputBridge.WindowLength(site) - displaced));
+            }
+            return spans.ToArray();
+        }
 
         // AIV detour: the backend's displacement is not fixed here, so the claim covers the
         // instruction-aligned prologue any patch of up to 14 bytes displaces (2+1+1+1+2+2+2+2+4).
@@ -166,7 +224,13 @@ namespace APIShared
             Group(GateMovement, GateMovementSpans()),
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
-            Group(BuildingRepair, BuildingRepairSpans())
+            Group(BuildingRepair, BuildingRepairSpans()),
+            Group(SynchronizedSave, SynchronizedSaveSpans()),
+            Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
+            Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
+            Group(MapperCamera, MapperCameraSpans()),
+            Group(PlayerControlInput, PlayerControlInputSpans()),
+            Group(VisibleMapRender, VisibleMapRenderSpans())
         };
 
         // Claims a group for APIShared before installation. Throws the service's own failure type

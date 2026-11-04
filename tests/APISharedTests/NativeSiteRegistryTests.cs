@@ -45,7 +45,14 @@ namespace APISharedTests
                 (0x113BC0, 10, ApiSharedNativeSites.GateMovement), (0x8F251, 29, ApiSharedNativeSites.GateMovement),
                 (0x8F1BF, 14, ApiSharedNativeSites.GateMovement), (0xDB857, 17, ApiSharedNativeSites.GateMovement),
                 (0xE2705, 20, ApiSharedNativeSites.GateComparisons), (0xE3024, 20, ApiSharedNativeSites.GateComparisons),
-                (0x185D55, 20, ApiSharedNativeSites.GateDescent)
+                (0x185D55, 20, ApiSharedNativeSites.GateDescent),
+                (0x13030, 6, ApiSharedNativeSites.SynchronizedSave),
+                (0x869D2, 6, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x27FEB, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x27FFF, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x28019, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x45F20, 7, ApiSharedNativeSites.MapperCamera),
+                (0x41D60, 10, ApiSharedNativeSites.VisibleMapRender)
             };
             foreach (var expected in expectedWriters)
             {
@@ -55,7 +62,7 @@ namespace APISharedTests
             }
             MsAssert.AreEqual(91, registry.Registrations.Count(r => r.Name == ApiSharedNativeSites.Audio && r.Mode == NativeSiteMode.Observe),
                 "every decoded audio catalog CALL site is observed");
-            foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17) })
+            foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17), (0x13036, 13) })
                 MsAssert.AreEqual(1, registry.Registrations.Count(r => r.Rva == observed.Item1 && r.Length == observed.Item2 && r.Mode == NativeSiteMode.Observe),
                     $"observed span 0x{observed.Item1:X}+{observed.Item2}");
             MsAssert.AreEqual(0, registry.Registrations.Count(r => r.Mode == NativeSiteMode.ChainableEntry || r.Mode == NativeSiteMode.CallOnly),
@@ -81,7 +88,11 @@ namespace APISharedTests
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallMovement", -1, m => m.Name == "InstallMovementHooks"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallComparisons", -1, m => m.Name == "InstallComparisonHooks"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallDescent", -1, m => m.Name == "Commit"),
-                ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook")
+                ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook"),
+                ("APIShared.ScriptExtenderFixes.SynchronizedSaveRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.PlayerControl.PlayerViewNetworkNative", "Initialize", -1, m => m.Name == "Enable"),
+                ("APIShared.Presentation.MapperCameraNative", "Initialize", -1, m => m.Name == "Enable"),
+                ("APIShared.Presentation.VisibleMapRenderEvents", "EnsureInstalled", -1, m => m.Name == "Enable")
             };
             using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
             {

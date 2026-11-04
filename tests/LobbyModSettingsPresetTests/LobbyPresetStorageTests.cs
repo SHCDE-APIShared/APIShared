@@ -49,6 +49,10 @@ namespace LobbyModSettingsPresetTests
             Assert.AreEqual(3, MessagePackSerializer.Deserialize<int>(externalRead["__SerpPresetSchemaVersion"]));
             Assert.AreEqual(123, MessagePackSerializer.Deserialize<int>(externalRead["setting"]));
             Assert.AreEqual(1, storage.TestWriteCount);
+            Assert.AreEqual(1L, storage.SuccessfulWrites);
+            Assert.AreEqual(0L, storage.FailedWrites);
+            Assert.AreEqual("published", storage.LastWriteResult);
+            Assert.AreEqual(filePath, storage.FilePath);
             Assert.AreEqual(0, Directory.GetFiles(directory, "*.tmp").Length);
         }
 
@@ -62,12 +66,17 @@ namespace LobbyModSettingsPresetTests
                 storage.Write(new Dictionary<string, byte[]> { ["value"] = new byte[] { 2 } });
                 CollectionAssert.AreEqual(original, File.ReadAllBytes(filePath));
                 Assert.AreEqual(1, storage.TestWriteCount);
+                Assert.AreEqual(1L, storage.FailedWrites);
+                Assert.AreNotEqual("published", storage.LastWriteResult);
                 Assert.AreEqual(0, Directory.GetFiles(directory, "*.tmp").Length);
             }
             storage.Write(new Dictionary<string, byte[]> { ["value"] = new byte[] { 2 } });
             Assert.IsTrue(storage.TryRead(out Dictionary<string, byte[]> updated));
             CollectionAssert.AreEqual(new byte[] { 2 }, updated["value"]);
             Assert.AreEqual(2, storage.TestWriteCount);
+            Assert.AreEqual(2L, storage.SuccessfulWrites);
+            Assert.AreEqual(1L, storage.FailedWrites);
+            Assert.AreEqual("published", storage.LastWriteResult);
         }
 
         [TestMethod]

@@ -95,6 +95,34 @@ namespace LobbyModSettingsPresetTests
         }
 
         [TestMethod]
+        [DataRow("Map")]
+        [DataRow("Trail")]
+        [DataRow("Savegame")]
+        public void MissionContextRemainsVisibleAfterPersonalPresetAndEdits(string context)
+        {
+            WritePersonal(LegacyPresets, "mission-choice", 31);
+            var settings = StartDocuments();
+            settings.Number = 23;
+            byte[] personal = File.ReadAllBytes(NewFile);
+            settings.System_EnterMissionPreset(settings.System_CreateCurrentWorkingSnapshot(), context, true);
+            var preset = settings.System_TestPublishedPresets.Single(p => p.Id == "mission-choice");
+            settings.System_TestLoadPreset(preset.StableId);
+            string status = settings.System_TestPresetStatusText;
+            Assert(status.StartsWith(context + " · ") && status.Contains("mission-choice"), "Personal preset hid the mission context.");
+            settings.Number = 99;
+            Assert(settings.System_TestPresetStatusText.StartsWith(context + " · ") && settings.System_TestPresetStatusText != status,
+                "Mission edit did not retain context and modified attribution.");
+            var log = settings.CaptureRuntimeLogSettings(null);
+            var metadata = (System.Collections.Generic.Dictionary<string, object>)log["context"];
+            Assert((string)metadata["kind"] == context && (string)metadata["persistence"] == "temporary" &&
+                (string)metadata["preset"] == preset.StableId && (bool)metadata["modified"], "Support log lost mission/preset attribution.");
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(NewFile));
+            settings.System_ExitMissionPreset();
+            Assert(settings.Number == 23, "Mission preset edit replaced personal values.");
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(NewFile));
+        }
+
+        [TestMethod]
         public void InvalidNewPresetDoesNotHideValidOldPresetAndLocalDuplicatesRemainRejected()
         {
             string oldPath = WritePersonal(LegacyPresets, "shared", 31);

@@ -47,7 +47,7 @@ foreach ($check in @('Test-PermanentHooks.ps1')) {
     Invoke-ApiBuildStep $BuildContext $check -When checked -Action { & (Join-Path $PSScriptRoot $check) }
 }
 foreach ($check in @('Test-DependencyMetadata.ps1','Test-Documentation.ps1','Test-WorkshopPackaging.ps1','Test-PublisherPackage.ps1','Test-BuildProof.ps1','Test-ShellScripts.ps1','Test-WorkshopMigration.ps1')) {
-    Invoke-ApiBuildStep $BuildContext $check -Action { & (Join-Path $PSScriptRoot $check) }
+    Invoke-ApiBuildStep $BuildContext $check -Cacheable:($check -in @('Test-Documentation.ps1','Test-ShellScripts.ps1')) -Action { & (Join-Path $PSScriptRoot $check) }
 }
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     foreach ($check in @('Test-GitHubRelease.ps1','Test-WorkshopRecovery.ps1','Test-WorkshopCoordination.ps1','Test-WorkshopMaintenance.ps1')) {

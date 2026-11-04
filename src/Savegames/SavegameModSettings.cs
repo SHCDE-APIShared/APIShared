@@ -146,7 +146,7 @@ namespace APIShared
         /// <summary>Inspects participants for automatic savegames or Map/Trail authoring using
         /// the same caller-thread, snapshot-factory and read-only metadata contract as the default query.</summary>
         /// <remarks>MissionAuthoring does not apply savegame-only exclusions. For those excluded
-        /// endpoints not represented by an explicit dynamic provider, it preserves the historical
+        /// endpoints not represented by an explicit dynamic provider, it runs the
         /// authoring current-value serialization probes before checking the disabled snapshot.
         /// Consumer-specific authoring opt-outs remain with consumers.</remarks>
         /// <exception cref="ArgumentOutOfRangeException">The purpose is not supported.</exception>
@@ -173,6 +173,11 @@ namespace APIShared
                 useChosenCurrent = SavegameLoadDecision.UseCurrent(state, useCurrentSettings);
                 legacyChoice = legacy;
             }
+            NativeApiLog.Info(log, "Savegame settings source selected: file=" + path + ",recordState=" + state +
+                ",requestedCurrent=" + useCurrentSettings + ",effectiveSource=" +
+                (legacy || SavegameLoadDecision.UseCurrent(state, useCurrentSettings) ? "current-host-settings" : "saved-host-settings") +
+                ",choice=" + (legacy ? "forced-no-usable-record" : "host-choice-subject-to-author-rules") +
+                "; existing Trail author rules and current personal/client settings remain applicable.");
         }
 
         private static Dictionary<string, byte[]> ResolveStartupSnapshot(string modId, CompatibleMod participant,
@@ -185,23 +190,7 @@ namespace APIShared
                     {
                         throw new InvalidDataException("Savegame baseline unavailable: " + modId);
                     }
-                    // Player-owned and local values are outside the savegame host contract.
-                    foreach (PropertyInfo property in participant.PersonalProperties)
-                    {
-                        try
-                        {
-                            object value = property.GetValue(participant.Endpoint);
-                            if (value != null)
-                                snapshot[property.Name] = MessagePackSerializer.Serialize(property.PropertyType, value);
-                        }
-                        catch (Exception error)
-                        {
-                            MarkRestoreFailed();
-                            NativeApiLog.Error(log, "Could not preserve local setting " +
-                                modId + "." + property.Name + ": " + error.Message);
-                            throw new InvalidDataException("Cannot prepare a save without preserving personal setting " + modId + "." + property.Name, error);
-                        }
-                    }
+                    // Personal values are never captured into a save-owned mission snapshot.
                     if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
                         OverlaySavedHostProperties(snapshot, participant.Properties, stored, modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
@@ -290,8 +279,8 @@ namespace APIShared
             lock (Sync) { if (chosenCurrent == null) fallback = CaptureCompatibleHostSettings(); }
             lock (Sync)
             {
-                // Multiplayer saves use OnLoadMap, whose Extender LoadContext is
-                // incorrectly marked as a map. The confirmed entry owns this read.
+                // Multiplayer saves use OnLoadMap. The confirmed preparation owns
+                // this read, including an authoritative absence of metadata.
                 if (multiplayer) loaded = PreparedRecordForStart;
                 else
                 {
@@ -434,6 +423,10 @@ namespace APIShared
                 if (chosenPath != null &&
                     !string.Equals(chosenPath, Normalize(context.FilePath), StringComparison.OrdinalIgnoreCase))
                     return;
+                // Host provenance (including a missing record) remains authoritative
+                // through both archive callbacks and a delayed client start. Local
+                // Coop uses this same confirmed load phase without real networking.
+                if (SavegameLoadCoordinator.IsLoadingMultiplayerSave) return;
                 loaded = record;
             }
         }
@@ -445,12 +438,14 @@ namespace APIShared
 
         // An unreadable APIShared record (damaged appended archive, newer schema, invalid
         // mode) never blocks the save itself: it loads like a save without a record,
-        // with the current host settings, as APIShared 0.9.2 did.
+        // with the current host settings.
         private static SavegameModSettingsRecord ReadRecordForLoad(string path, out bool legacy)
         {
             RecordReadState read = ReadRecord(path, out SavegameModSettingsRecord record);
-            if (read == RecordReadState.Invalid)
-                NativeApiLog.Warning(log, "Savegame ModSettings record is unreadable or unsupported; loading with current host settings: " + path);
+            if (read != RecordReadState.Valid)
+                NativeApiLog.Warning(log, "Savegame ModSettings fallback: file=" + path + ",record=" + read +
+                    ",entry=" + EntryName + ",source=current-host-settings,choice=forced-no-usable-record; " +
+                    "saved host settings cannot be restored because the record is missing, unreadable or unsupported.");
             legacy = read != RecordReadState.Valid;
             return record;
         }
@@ -478,7 +473,8 @@ namespace APIShared
             }
             catch (Exception error)
             {
-                NativeApiLog.Error(log, "Could not inspect savegame ModSettings: " + error.Message);
+                NativeApiLog.Error(log, "Could not inspect savegame ModSettings: file=" + path +
+                    ",entry=" + EntryName + ",error=" + error);
                 return RecordReadState.Invalid;
             }
         }
@@ -650,7 +646,7 @@ namespace APIShared
                 new ModSettingsParticipantDiscovery.Registration {
                     Guid = pair.Key, Name = pair.Key, Model = pair.Value,
                     IsDynamic = () => pair.Value.System_HasDynamicSettings,
-                    DynamicProperties = () => ModSettingsApplication.GetHostProperties(pair.Value)
+                    DynamicProperties = () => ModSettingsApplication.GetMissionHostProperties(pair.Value)
                 }).ToArray();
             var result = ModSettingsParticipantDiscovery.Inspect(lobby, configurations, purpose);
             foreach (var item in result.Where(item => item.Status == ModSettingsParticipantStatus.InspectionFailed))

@@ -13,7 +13,7 @@ Audio. Consumer settings remain outside APIShared.
 
 ## Public audio contracts
 
-Requires APIShared **0.8.0** or newer; declare this minimum version in both plugin
+Requires APIShared 0.8.0 or later; declare this minimum version in both plugin
 and manifest dependencies when using these audio contracts.
 
 `APIShared.Audio.SoundEvents.TryRegister(ownerGuid, registrationId, pre, post,
@@ -61,7 +61,8 @@ imply in-game confirmation.
 `ArabianIdleContextAvailable`/`ContextDiagnostic` independently report native
 context support. Missing native context leaves generic sound rules usable.
 Unsupported binaries, occupied entries and changed IL fail closed. Only the
-current audited managed/native/backend identities are supported. Callback
+current audited native identity is supported; managed playback is gated by its IL
+contract and the RedBird backend by a minimum version plus the validated hook. Callback
 failures are counted and logged at bounded intervals. Settings and consumer
 policies remain with consumers; no global sound defaults change.
 
@@ -406,8 +407,8 @@ when a Pre has a matching Accepted/Post receiver. Static factories receive
 explicit context rather than capturing invocation objects. Public args and
 results are not pooled and can still be retained by observers.
 
-Permanent native bridges remain installed without audio demand, but a dormant call
-no longer enters managed code. SoundNativeDemand keeps two bytes in process-lifetime
+Permanent native bridges remain installed without audio demand; a dormant call does
+not enter managed code. SoundNativeDemand keeps two bytes in process-lifetime
 unmanaged memory: the wrapper byte is native context ready AND (playback OR source
 demand); the emitter byte is ready AND playback demand. Every transition that can
 change them is owned and republishes both under one lock: a count change in either
@@ -425,15 +426,15 @@ positional sound of the map (workers, animals, buildings) jumps straight to the
 trampoline: OnWrapper would only have forwarded it unchanged, so no observable
 behavior changes. The filter uses R10 as scratch, which is volatile in Win64 and
 validated not to be read by either displaced wrapper prologue. The emitter bridge
-no longer tests the playback demand byte but an "armed" counter that OnWrapper
+tests an "armed" counter, not the playback demand byte, that OnWrapper
 raises only around a matched soldier source with playback demand; all other emitter
 calls stay native. The emitter demand byte remains as the documented upper bound
-(armed implies context ready and playback demand). The table below predates both
-filters. Same harness after them (minimum of 31 samples, 0 bytes per call in every
-mode): unhooked 2.65 ns, dormant 4.08 ns, source demand with unattributed origin
-4.03 ns, playback demand with unattributed origin 3.58 ns (was 164.29 ns), playback
-demand with catalog origin and rejected attribution 84.64 ns (was 226.77 ns; the
-emitter no longer enters managed code). Desktop CLR, not Unity Mono.
+(armed implies context ready and playback demand). The table below was measured without both filters. Same harness with the filters
+(minimum of 31 samples, 0 bytes per call in every mode): unhooked 2.65 ns, dormant
+4.08 ns, source demand with unattributed origin 4.03 ns, playback demand with
+unattributed origin 3.58 ns (without filters 164.29 ns), playback demand with catalog
+origin and rejected attribution 84.64 ns (without filters 226.77 ns; the emitter does
+not enter managed code). Desktop CLR, not Unity Mono.
 
 The filter bitmap holds only the union of currently selected sources
 ([source selections](#source-selections)). SoundNativeDemand keeps one count of

@@ -1,12 +1,10 @@
 # API compatibility baseline
 
-The 2026-10-22 NativeKnowledge source integration adds its public surface without
-a mod build, as requested by the maintainer. The unchanged catalog/reader types
-were formatted from their previously verified isolated fixture after source-hash
-comparison; `NativeFieldReader.TryGetCurrent` was added with its reviewed source
-signature. This records the intended additive contract, not a successful build of
-the current working tree. The full compiled-surface comparison and the transferred
-Core.Tests cases remain due at the next authorized build.
+The compiled-surface comparison that the 2026-10-22 NativeKnowledge source integration
+left open has been run. On 2026-11-03, `build.bat /workspace /tests:full /nopause /noinstall`
+built commit `7beefa3` (0.26.0; only the `info.json` changelog text changed in the working
+tree) and passed: `PublicSurfaceMatchesTheBaseline` and the other `APISharedTests` (536 passed,
+the opt-in friend-consumer rescan skipped) and all 361 Core.Tests cases.
 
 The checked-in baseline catches accidental binary and source breaks of the managed API,
 including the internals that `InternalsVisibleTo` consumers compile against. Intentional

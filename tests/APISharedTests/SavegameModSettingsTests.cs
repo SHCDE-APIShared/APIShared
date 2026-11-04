@@ -54,7 +54,7 @@ namespace APISharedTests
                 try { settingsType.GetMethod("ResolveStartupSnapshot", privateFlags).Invoke(null,
                     new object[] { "foreign.fixture", participant, null, null, null, false }); }
                 catch (TargetInvocationException error) { rejected = error.InnerException is System.IO.InvalidDataException; }
-                check(rejected, "an unreadable personal setting silently fell back instead of blocking preparation");
+                check(!rejected, "save preparation must not read or snapshot personal properties");
             }
             finally { failureField.SetValue(null, previousFailure); }
             var lease = new SavegameMissionPresetLease();

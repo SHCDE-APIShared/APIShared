@@ -2,6 +2,7 @@ using APIShared.ScriptExtenderFixes;
 using BepInEx.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
 using MonoMod.Utils;
 using System;
 using System.Collections.Concurrent;
@@ -9,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,13 +50,75 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void UnknownOrPartiallyMatchingBinariesAreRejected()
+        public void LoadedNativeMustBeTheBundledPartnerWithoutAFixedFingerprint()
         {
-            Assert.IsTrue(ScriptExtenderFixesRuntime.Supports(ScriptExtenderFixesRuntime.ManagedHash, ScriptExtenderFixesRuntime.NativeHash));
-            Assert.IsFalse(ScriptExtenderFixesRuntime.Supports("unknown", ScriptExtenderFixesRuntime.NativeHash));
-            Assert.IsFalse(ScriptExtenderFixesRuntime.Supports(ScriptExtenderFixesRuntime.ManagedHash, "unknown"));
-            Assert.IsFalse(ScriptExtenderFixesRuntime.Supports(null, null));
+            string directory = Path.Combine(Path.GetTempPath(), "APIShared-ImGuiPair-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string bundled = Path.Combine(directory, "bundled.dll"), same = Path.Combine(directory, "same.dll"),
+                    changed = Path.Combine(directory, "changed.dll"), shorter = Path.Combine(directory, "shorter.dll");
+                File.WriteAllBytes(bundled, new byte[] { 1, 2, 3, 4 });
+                File.WriteAllBytes(same, new byte[] { 1, 2, 3, 4 });
+                File.WriteAllBytes(changed, new byte[] { 1, 2, 3, 5 });
+                File.WriteAllBytes(shorter, new byte[] { 1, 2, 3 });
+                Assert.IsTrue(ScriptExtenderFixesRuntime.SameContent(bundled, same));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, changed));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, shorter));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, Path.Combine(directory, "missing.dll")));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(null, null));
+            }
+            finally { Directory.Delete(directory, true); }
         }
+
+        // Replaces the former MonoMod file fingerprints: the installed MonoMod must route the
+        // edited ILHook body and Detour's original backup through the scoped compiler and
+        // preserve every argument of a thiscall calli. Each case needs its own probe method
+        // because Detour caches one original backup per method and process.
+        [TestMethod]
+        public void MonoModProbeRequiresRoutedBodiesAndBackupsAndPreservedNativeArguments()
+        {
+            var probe = typeof(ImGuiShutdownTests).GetMethod(nameof(RoutedProbe), BindingFlags.Public | BindingFlags.Static);
+            var compiler = new ImGuiShutdownCompiler(new[] { probe });
+            var candidates = new List<ILHook>();
+            compiler.Hook.Apply();
+            try
+            {
+                ImGuiShutdownProbe.Verify(compiler, probe, candidates);
+                Assert.AreEqual(1, candidates.Count);
+                Assert.IsTrue(candidates[0].IsApplied);
+                Assert.IsTrue(compiler.RoutedCount(probe) >= 2, "edited body and original backup");
+            }
+            finally
+            {
+                foreach (var candidate in candidates) candidate.Dispose();
+                compiler.Hook.Dispose();
+            }
+        }
+
+        [TestMethod]
+        public void MonoModProbeRejectsGenerationThatBypassesTheScopedCompiler()
+        {
+            var probe = typeof(ImGuiShutdownTests).GetMethod(nameof(UnroutedProbe), BindingFlags.Public | BindingFlags.Static);
+            // Compiler hook deliberately not applied: MonoMod generates without routing.
+            var compiler = new ImGuiShutdownCompiler(new[] { probe });
+            var candidates = new List<ILHook>();
+            try
+            {
+                Assert.ThrowsExactly<InvalidOperationException>(() => ImGuiShutdownProbe.Verify(compiler, probe, candidates));
+                Assert.AreEqual(1, candidates.Count, "the failed probe remains a rollback candidate");
+            }
+            finally
+            {
+                foreach (var candidate in candidates) candidate.Dispose();
+                compiler.Hook.Dispose();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static int RoutedProbe(IntPtr self, uint first, uint second) => -1;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static int UnroutedProbe(IntPtr self, uint first, uint second) => -1;
 
         [TestMethod]
         public void DisabledConfigurationDoesNotResolveOrPatchDependencies()

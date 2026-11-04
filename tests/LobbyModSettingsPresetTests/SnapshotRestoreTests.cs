@@ -104,7 +104,7 @@ namespace LobbyModSettingsPresetTests
             Assert.AreEqual(17, host.Target.HostAmount);
             Assert.AreEqual(19, host.Target.SecondHostAmount);
             Assert.AreEqual(5, host.Target.LocalAmount);
-            Assert.IsTrue(origins.Count >= 3 && origins.All(origin => origin == LobbyModSettingsChangeOrigin.InitialLoad));
+            Assert.IsTrue(origins.Count >= 2 && origins.All(origin => origin == LobbyModSettingsChangeOrigin.InitialLoad));
             Assert.IsFalse(host.Publications.Any(name => name == nameof(Settings.HostAmount) || name == nameof(Settings.SecondHostAmount)));
             CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
         }
@@ -132,6 +132,34 @@ namespace LobbyModSettingsPresetTests
             CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
         }
 
+        public sealed class IndependentHostSettings
+        {
+            [SyncHostOnly] public int Amount { get; set; } = 17;
+            [SyncHostOnly, MissionIndependent] public int PersonalHost { get; set; } = 23;
+        }
+
+        [TestMethod]
+        public void FormerClientRestoresMissionIndependentHostValuesBeforePersisting()
+        {
+            var settings = new IndependentHostSettings();
+            var host = new Host { SettingsTargetOverride = settings };
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = false;
+            settings.PersonalHost = 77; // Received from the remote host by the authorized sync setter.
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(new Dictionary<string, byte[]> {
+                [nameof(IndependentHostSettings.Amount)] = MessagePackSerializer.Serialize(91) }, "Trail", false);
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = true;
+            controller.RestorePersonalHostIfPending();
+            Assert.AreEqual(17, settings.Amount);
+            Assert.AreEqual(23, settings.PersonalHost, "A foreign host's mission-independent value survived the return to local host.");
+            controller.PersistCurrentPersonalValues();
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath), "A foreign host value was persisted as this peer's own.");
+        }
+
         [TestMethod]
         public void SetterFailureRetainsMissionMetadataAndCleanupCanBeRetried()
         {
@@ -154,6 +182,70 @@ namespace LobbyModSettingsPresetTests
             controller.ExitMissionPreset();
             Assert.AreEqual(19, host.Target.SecondHostAmount);
             Assert.IsFalse(controller.IsApplyingSnapshot);
+        }
+
+        [TestMethod]
+        public void RestartStatusDoesNotAccumulateContextPrefixes()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            const string status = "Map · Based on: My choice (modified)";
+            for (int round = 0; round < 4; round++)
+            {
+                controller.RestorePreparationLabel(round == 0 ? status : controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+                Assert.AreEqual(status, controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+            }
+            // A legacy journal of an edited context without a source preset has only "<context> (modified)".
+            controller.RestorePreparationLabel("Map (modified)");
+            Assert.AreEqual("Map (geändert)", controller.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+        }
+
+        [TestMethod]
+        public void RestartStatusIsCapturedRawAndRenderedInTheCurrentLanguage()
+        {
+            var host = new Host { MissionPresetEditable = true };
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            host.Target.HostAmount = 55;
+            Assert.IsTrue(controller.TryCaptureMissionStatus(out string label, out string preset, out bool modified));
+            Assert.AreEqual(("Map", "", true), (label, preset, modified));
+
+            // Restart: the session re-enters the same context, then restores the captured state.
+            var restartedHost = new Host { MissionPresetEditable = true };
+            var restarted = Start(restartedHost);
+            restartedHost.HasMissionContext = true;
+            restarted.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            restarted.RestoreMissionStatus(label, preset, modified);
+            Assert.AreEqual("Map (geändert)", restarted.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+            restartedHost.Target.HostAmount = 56;
+            Assert.AreEqual("Map (geändert)", restarted.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+
+            // A source loaded into the working copy stays attributed; an unavailable preset keeps its name.
+            restarted.RestoreMissionStatus("Trail", "missing-preset", false);
+            Assert.AreEqual("Map · Basierend auf: Trail", restarted.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+        }
+
+        [TestMethod]
+        public void ExitSupportLogDescribesTheLeavingDraftBeforeRestoringPersonalMetadata()
+        {
+            using var log = new BepInEx.Logging.ManualLogSource("Draft support fixture");
+            var messages = new List<string>();
+            log.LogEvent += (_, e) => messages.Add(e.Data.ToString());
+            var host = new Host();
+            var controller = Start(host, log);
+            host.HasMissionContext = true;
+            host.MissionPresetEditable = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            host.Target.HostAmount = 99;
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            string exit = messages.Single(m => m.Contains("action=exit"));
+            Assert.IsTrue(exit.Contains("leavingSourceLabel=Map") && exit.Contains("leavingModified=True") &&
+                exit.Contains("personalModified=False"), "Exit conflated edited mission values with restored personal metadata.");
+            Assert.AreEqual(17, host.Target.HostAmount);
         }
 
         [TestMethod]

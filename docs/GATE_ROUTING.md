@@ -84,6 +84,6 @@ remain authoritative. Unknown builds fail acquisition.
 Independent registry tests cover ordering, duplicate keys, passive registration,
 invalid identities, per-contributor failures and invalidation. Consumer fixtures
 cover immutable masks, cache identities, inline register/flag preservation and
-native execution. These APIs are available since APIShared 0.9.0.
+native execution. Requires APIShared 0.9.0 or later.
 Before distribution, declare the minimum published release containing them;
 a matching local development version alone does not establish package availability.

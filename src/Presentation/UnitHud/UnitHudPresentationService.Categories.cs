@@ -350,7 +350,21 @@ namespace APIShared
         private void OnBeforeRender()
         {
             if (activeSurfaces == UnitHudSurface.None && !hasActionButtons && !pendingPresentation && !refreshRequested && recruitmentLease == null) return;
-            OnActiveBeforeRender();
+            try { OnActiveBeforeRender(); }
+            finally { UpdateFrameDemand(); }
+        }
+
+        private bool frameDemand;
+        private void UpdateFrameDemand()
+        {
+            lock (sync)
+            {
+                if (frameWork == null) return;
+                bool demand = activeSurfaces != UnitHudSurface.None || hasActionButtons ||
+                    pendingPresentation || refreshRequested || recruitmentLease != null;
+                if (demand == frameDemand) return;
+                frameDemand = demand; frameWork.SetContinuous(demand);
+            }
         }
 
         private void OnActiveBeforeRender()
@@ -396,13 +410,7 @@ namespace APIShared
                     {
                         // A refresh bypasses the public detour entry, preventing resolver-driven
                         // refresh requests or later hook chains from recursively re-entering us.
-                        updateSpritesActive = true;
-                        try
-                        {
-                            updateSpritesOriginal(main, lastSpriteColour, lastSpriteArabic);
-                            ApplyImageOverrides(main, lastSpriteColour, lastSpriteArabic);
-                        }
-                        finally { updateSpritesActive = false; }
+                        DrawSprites(main, clearRecorded: false, applyOverrides: true);
                     }
                 }
             });
@@ -457,14 +465,7 @@ namespace APIShared
                 {
                     if (IsImageOverrideContextReady())
                     {
-                        updateSpritesActive = true;
-                        try
-                        {
-                            updateSpritesOriginal(main, lastSpriteColour, lastSpriteArabic);
-                            originalImages.Clear(); appliedImages.Clear();
-                            if (activeImages) ApplyImageOverrides(main, lastSpriteColour, lastSpriteArabic);
-                        }
-                        finally { updateSpritesActive = false; }
+                        DrawSprites(main, clearRecorded: true, applyOverrides: activeImages);
                     }
                     else
                     {
@@ -478,7 +479,7 @@ namespace APIShared
             }
             catch (Exception ex)
             {
-                lock (sync) { restoreSurfaces |= surfaces; restoreImages |= images; pendingPresentation = true; }
+                lock (sync) { restoreSurfaces |= surfaces; restoreImages |= images; pendingPresentation = true; UpdateFrameDemand(); }
                 LogCallbackFailure("activation restoration", ex);
             }
         }

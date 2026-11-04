@@ -115,7 +115,12 @@ namespace APIShared.ModSettings
                     {
                         bool backend = item.Value is PresetLobbyModSettingsViewModel model && model.System_HasApplicationBackend;
                         if (backend) ((PresetLobbyModSettingsViewModel)item.Value).System_RefreshOwnConfiguration();
-                        var properties = ModSettingsApplication.GetHostProperties(item.Value).ToDictionary(property => property.Name, StringComparer.Ordinal);
+                        var properties = ModSettingsApplication.GetMissionHostProperties(item.Value).ToDictionary(property => property.Name, StringComparer.Ordinal);
+                        if (properties.Count == 0)
+                        {
+                            document.Mods.Remove(item.Key);
+                            continue;
+                        }
                         MissionModSettingsEntry entry = null;
                         var removedNames = Array.Empty<string>();
                         if (entries.ContainsKey(item.Key))
@@ -158,6 +163,8 @@ namespace APIShared.ModSettings
                             var resumed = ModSettingsApplication.ResumeSnapshot(item.Key);
                             if (resumed != null) snapshot = MissionModSettingsPreparation.CopySnapshot(resumed);
                         }
+                        snapshot = snapshot.Where(value => properties.ContainsKey(value.Key)).ToDictionary(
+                            value => value.Key, value => value.Value == null ? null : (byte[])value.Value.Clone(), StringComparer.Ordinal);
                         prepared.Add(Tuple.Create(item.Key, item.Value, snapshot, entry != null));
                     }
                     beforeApply?.Invoke(document);

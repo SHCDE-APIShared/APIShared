@@ -79,13 +79,22 @@ namespace APIShared.ModSettings
         public Visibility System_SettingsSourceVisibility =>
             presetController?.HasPersistentSettings == true ? Visibility.Visible : Visibility.Collapsed;
 
-        /// <summary>Application notice or the current source/modified description.</summary>
-        public string System_PresetStatusText => !string.IsNullOrEmpty(System_ApplicationNotice) ? System_ApplicationNotice : presetController?.GetStatusText(
-            ResolveSettingsUiTextSafe("Common.PresetBasedOn", APIShared.Localization.UiText.English("Common.PresetBasedOn")),
-            ResolveSettingsUiTextSafe("Common.PresetModified", APIShared.Localization.UiText.English("Common.PresetModified")),
-            ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", APIShared.Localization.UiText.English("Common.PresetSourcePersonal")),
-            ResolveSettingsUiTextSafe("Common.PresetSourceBundled", APIShared.Localization.UiText.English("Common.PresetSourceBundled")),
-            ResolveSettingsUiTextSafe("Common.PresetSourceExternal", APIShared.Localization.UiText.English("Common.PresetSourceExternal"))) ?? string.Empty;
+        /// <summary>Application notice and the current source/modified description, joined only when both exist.</summary>
+        public string System_PresetStatusText
+        {
+            get
+            {
+                string status = presetController?.GetStatusText(
+                    ResolveSettingsUiTextSafe("Common.PresetBasedOn", APIShared.Localization.UiText.English("Common.PresetBasedOn")),
+                    ResolveSettingsUiTextSafe("Common.PresetModified", APIShared.Localization.UiText.English("Common.PresetModified")),
+                    ResolveSettingsUiTextSafe("Common.PresetSourcePersonal", APIShared.Localization.UiText.English("Common.PresetSourcePersonal")),
+                    ResolveSettingsUiTextSafe("Common.PresetSourceBundled", APIShared.Localization.UiText.English("Common.PresetSourceBundled")),
+                    ResolveSettingsUiTextSafe("Common.PresetSourceExternal", APIShared.Localization.UiText.English("Common.PresetSourceExternal"))) ?? string.Empty;
+                string notice = System_ApplicationNotice;
+                if (string.IsNullOrEmpty(notice)) return status;
+                return string.IsNullOrEmpty(status) ? notice : notice + " · " + status;
+            }
+        }
 
         /// <summary>Shows nonempty source/application status.</summary>
         public Visibility System_PresetStatusVisibility =>
@@ -583,6 +592,8 @@ namespace APIShared.ModSettings
                         source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceTrail", APIShared.Localization.UiText.English("Common.SettingsSourceTrail"));
                     else if (source.Kind == ModSettingsWorkingSourceKind.Map)
                         source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourceMap", APIShared.Localization.UiText.English("Common.SettingsSourceMap"));
+                    else if (source.Kind == ModSettingsWorkingSourceKind.Personal)
+                        source.DisplayName = ResolveSettingsUiTextSafe("Common.SettingsSourcePersonal", APIShared.Localization.UiText.English("Common.SettingsSourcePersonal"));
                     settingsSources.Add(source);
                 }
             }
@@ -614,7 +625,10 @@ namespace APIShared.ModSettings
                 if (source == null || !System_CanLoadSettingsSource) return;
                 try
                 {
-                    System_RefreshOwnConfiguration();
+                    // The personal source captures its own values and rollback state before applying.
+                    // Refreshing desired values here would erase the mission draft on failure.
+                    bool personal = string.Equals(source.Id, ModSettingsWorkingSourceRegistry.PersonalSettingsId, StringComparison.Ordinal);
+                    if (!personal) System_RefreshOwnConfiguration();
                     if (string.Equals(source.Id, ModSettingsWorkingSourceRegistry.ModDefaultsId, StringComparison.Ordinal))
                     {
                         System_LoadModDefaults();
@@ -622,7 +636,7 @@ namespace APIShared.ModSettings
                     else
                     {
                         ModSettingsWorkingSourceRegistry.Apply(presetController.TargetGuid, source.Id);
-                        System_CommitConfiguration();
+                        if (!personal) System_CommitConfiguration();
                     }
                     DismissPresetStatus();
                     RaiseAccessProperties();

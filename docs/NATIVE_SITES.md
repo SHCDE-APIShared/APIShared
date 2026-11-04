@@ -172,6 +172,12 @@ spans are built from each service's native contract constants in
 | `GateRouting.Comparisons` | Exclusive 0xE2705/20, 0xE3024/20 | Provider's `InstallComparisons` |
 | `GateRouting.Descent` | Exclusive 0x185D55/20; Observe 0x185934/4 | Provider's `InstallDescent` |
 | `Buildings.RepairQuote` | Observe 0xD51A0/17 (validated entry that the repair quote calls) | First repair capability acquisition |
+| `Savegames.SynchronizedSaveContext` | Exclusive 0x13030/6 (Chore 39 save handler entry); Observe 0x13036/13 (validated continuation) | LibraryLoaded, after the managed archive-context correction |
+| `Players.ViewIdentity` | Exclusive 0x52B0/10 (common save-writer entry); Observe 0x52BA/2 (validated continuation) | LibraryLoaded startup window (player-view identity); audited hash only; required for foreign eliminated-participant views. See [player views and control](PLAYER_CONTROL.md#implementation) |
+| `Players.ViewNetworkIdentity` | Exclusive 0x869D2/6, 0x27FEB/7, 0x27FFF/7, 0x28019/7; Observe 0x869D8/3, 0x27FF2/6, 0x28006/6, 0x28020/7 (validated continuations) | LibraryLoaded startup window; audited hash only; timing and heartbeat reads use the protected participant without changing the native view. All four bridges must be ready before a foreign eliminated-participant view is allowed. |
+| `Presentation.MapperSelectionCamera` | Exclusive 0x45F20/7; Observe 0x45F27/13 (camera continuation), 0x8BF96/5 (mapper caller) | LibraryLoaded startup window; audited hash only; a private demand cell and exact return-address filter suppress only mapper-selection centering. Other camera callers retain the complete original function. See [mapper camera](THIRD_PARTY_GUIDE.md#mapper-selection-camera). |
+| `Players.ControlInput` | Exclusive 0x868F6/10 (RunTick spectator-input CMOVNE/store); Observe 0x86900/4 (validated continuation); Exclusive 0x8D128/6 (dispatcher re-dispatch CMOVNE/XOR); Observe 0x8D12E/6 (validated native-view store) | First `TryRegisterSpectatorControl` (LibraryLoaded startup window, or outside a mission with thread suspension); audited hash only; both stubs stay dormant with actor zero. See [player views and control](PLAYER_CONTROL.md#spectator-input-control) |
+| `Presentation.VisibleMapRender` | Exclusive 0x41D60/10 (visible-map render entry; consumers register observers through `VisibleMapRenderEvents`) | First visible-map render registration |
 
 A conflict with another owner's earlier registration fails that APIShared service
 closed through its existing path (capability diagnostic `Conflict` or its install

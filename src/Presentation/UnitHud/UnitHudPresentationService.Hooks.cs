@@ -26,6 +26,7 @@ namespace APIShared
         private delegate void GameActionDelegate(Enums.KeyFunctions command, int value1, int value2, int value3);
         private delegate void UpdateSpritesDelegate(MainViewModel self, int colour, bool arabic);
         private delegate void CreateTroopDelegate(MainViewModel self, object parameter);
+        private Presentation.IUiFrameWorkRegistration frameWork;
 
         internal static bool TryCreate(
             string hash,
@@ -79,8 +80,10 @@ namespace APIShared
                 service = null;
                 if (candidate != null)
                 {
-                    UnityEngine.Application.onBeforeRender -= candidate.OnBeforeRender;
+                    candidate.frameWork?.SetContinuous(false);
+                    candidate.frameWork?.CancelPending();
                     candidate.mapUnloadSubscription?.Dispose();
+                    candidate.spriteMissionStartSubscription?.Dispose();
                 }
                 for (int i = installed.Count - 1; i >= 0; i--)
                 {
@@ -126,8 +129,14 @@ namespace APIShared
             mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => {
                 ResetRecruitment();
                 ResetActionButtonPresentation();
+                EndSpriteColourLease();
             });
-            UnityEngine.Application.onBeforeRender += OnBeforeRender;
+            spriteMissionStartSubscription = APIShared.Internal.MissionEvents.Started.Subscribe(_ => OnSpriteMissionStarted());
+            if (!Presentation.UiWorkRuntime.TryRegister(APISharedPlugin.PluginGuid, "internal/30-unit-hud",
+                OnBeforeRender, 0, out frameWork, out string frameReason)) throw new InvalidOperationException(frameReason);
+            // Public providers may use dynamic predicates without invalidation notifications.
+            // Retain the existing demand guard and presentation cadence for those providers.
+            UpdateFrameDemand();
         }
 
         private static Hook PrepareHook(MethodInfo method, Delegate callback, string id, List<Hook> installed)
@@ -221,6 +230,7 @@ namespace APIShared
                 if (recruitmentLease != null && recruitmentLease.Ticket.BaseUnitType == type)
                 {
                     refreshRequested = true;
+                    UpdateFrameDemand();
                     return;
                 }
             }
@@ -268,11 +278,13 @@ namespace APIShared
             updateSpritesActive = true;
             try
             {
-                updateSpritesOriginal(self, colour, arabic);
+                // Vanilla's request stays the restore value; a sprite-colour lease only changes what is drawn.
+                ResolveSpriteColours(colour, arabic, out int drawColour, out bool drawArabic);
+                updateSpritesOriginal(self, drawColour, drawArabic);
                 lastSpriteColour = colour;
                 lastSpriteArabic = arabic;
                 hasSpriteContext = true;
-                if (activeImages && IsImageOverrideContextReady()) ApplyImageOverrides(self, colour, arabic);
+                if (activeImages && IsImageOverrideContextReady()) ApplyImageOverrides(self, drawColour, drawArabic);
             }
             finally { updateSpritesActive = false; }
         }

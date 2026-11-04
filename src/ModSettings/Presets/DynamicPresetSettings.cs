@@ -24,6 +24,26 @@ namespace APIShared.ModSettings
         public string DisplayName { get; set; }
         /// <summary>Whether changes to this setting require startup application instead of live application.</summary>
         public bool RequiresRestart { get; set; }
+        /// <summary>Opt-in for host settings that remain personal and cannot be supplied by missions. Local settings are always independent.</summary>
+        public bool MissionIndependent { get; set; }
+    }
+
+    /// <summary>Keeps a SyncHostOnly property personal across mission contexts. Does not grant clients host authority.</summary>
+    /// <remarks>Map, Trail and Savegame sources cannot capture or restore this property. Use
+    /// CanEditMissionIndependentHostSettings for its UI outside a mission-disabled host container.</remarks>
+    [AttributeUsage(AttributeTargets.Property, Inherited = true)]
+    public sealed class MissionIndependentAttribute : Attribute { }
+
+    /// <summary>Optional separated persistence for application backends with personal settings.</summary>
+    /// <remarks>Required when such a backend exposes Local or mission-independent Host properties.
+    /// Call on the Unity thread. Validate and atomically persist only the supplied owned keys;
+    /// preserve active mission values and pending startup Host values/context, rebasing personal
+    /// startup keys where necessary. Failure must leave own values
+    /// unchanged and propagate. This operation must not apply values to the running game.</remarks>
+    public interface IModSettingsPersonalPersistenceBackend
+    {
+        /// <summary>Persists a detached subset of personally owned values without changing mission state.</summary>
+        void PersistPersonalValues(Dictionary<string, object> values);
     }
 
     /// <summary>Marks a property whose changed value must be staged for startup application.</summary>
@@ -102,6 +122,8 @@ namespace APIShared.ModSettings
         internal bool CanWrite => reflected?.CanWrite ?? true;
         internal bool IsDynamic => dynamic != null;
         internal bool RequiresRestart => dynamic?.RequiresRestart ?? reflected.IsDefined(typeof(RequiresRestartAttribute), true);
+        internal bool MissionIndependent => GetCustomAttribute<SyncHostOnlyAttribute>() == null ||
+            (dynamic?.MissionIndependent ?? reflected.IsDefined(typeof(MissionIndependentAttribute), true));
         internal object DefaultValue => dynamic?.DefaultValue;
         internal object GetValue(object owner) => reflected != null ? reflected.GetValue(owner) : provider.ReadValue(Name);
         internal void SetValue(object owner, object value)

@@ -40,9 +40,9 @@ namespace LobbyModSettingsPresetTests
             typeof(GameXAMLManagerAPI).GetProperty(nameof(GameXAMLManagerAPI.CurrentLobbyModSettingsChangeOrigin))
                 .GetSetMethod(true).Invoke(GameXAMLManagerAPI.Instance, new object[] { origin });
 
-        private LobbyPresetController Start(Host host)
+        private LobbyPresetController Start(Host host, BepInEx.Logging.ManualLogSource log = null)
         {
-            var controller = new LobbyPresetController(host, null, Path.Combine(directory, "Example.dll"),
+            var controller = new LobbyPresetController(host, log, Path.Combine(directory, "Example.dll"),
                 Name, "Foreign.Author.Example", new Version(1, 0), false);
             host.Target.Changed = controller.AfterPropertyChanged;
             controller.CaptureDefaults();
@@ -85,12 +85,12 @@ namespace LobbyModSettingsPresetTests
             host.Target.HostAmount = 123;
             host.Target.LocalAmount = 42;
             Assert.AreEqual(123, MessagePackSerializer.Deserialize<int>(controller.CreateCurrentMissionSnapshot()[nameof(Settings.HostAmount)]));
-            CollectionAssert.AreEqual(before, File.ReadAllBytes(SettingsPath));
+            Assert.AreEqual(42, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.LocalAmount)]));
             host.HasMissionContext = false;
             host.MissionPresetEditable = false;
             controller.ExitMissionPreset();
             Assert.AreEqual(17, host.Target.HostAmount);
-            Assert.AreEqual(5, host.Target.LocalAmount);
+            Assert.AreEqual(42, host.Target.LocalAmount);
             Assert.AreEqual(17, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.HostAmount)]));
         }
         [TestMethod]

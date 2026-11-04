@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace APIShared
 {
@@ -15,6 +16,48 @@ namespace APIShared
         private MissionContext pending;
         private MissionInitializationPhase phase;
         private readonly HashSet<MissionInitializationPhase> reached = new HashSet<MissionInitializationPhase>();
+        private NativeClockState nativeClock;
+        private long nativeWorldSequence;
+        private int nativeLoadDepth;
+        private bool nativeLoadFailed;
+        internal NativeClockState NativeClock => Volatile.Read(ref nativeClock);
+        internal sealed class NativeClockState
+        {
+            internal readonly MissionContext Context;
+            internal readonly NativeWorldState World;
+            internal NativeClockState(MissionContext context, NativeWorldState world) { Context = context; World = world; }
+        }
+        // Distinct from a context/clock snapshot: metadata checkpoints may replace
+        // those while the actual native world remains the same. A successful new
+        // load gets a fresh identity even within one mission-start attempt. The
+        // existing load/unload boundaries invalidate it before notifying observers.
+        internal sealed class NativeWorldState
+        {
+            internal readonly long Sequence, Mission;
+            internal NativeWorldState(long sequence, long mission) { Sequence = sequence; Mission = mission; }
+        }
+        internal void InvalidateNativeClock() => Volatile.Write(ref nativeClock, null);
+        internal void BeginNativeLoad(long id)
+        {
+            if (Context?.SessionId != id) return;
+            InvalidateNativeClock();
+            if (nativeLoadDepth == 0) nativeLoadFailed = false;
+            nativeLoadDepth++;
+        }
+        internal void CompleteNativeLoad(long id, bool success)
+        {
+            if (Context?.SessionId != id) return;
+            if (!success) nativeLoadFailed = true;
+            if (nativeLoadDepth > 0) nativeLoadDepth--;
+            if (success && !nativeLoadFailed && nativeLoadDepth == 0 && nativeWorldSequence < long.MaxValue)
+                Volatile.Write(ref nativeClock, new NativeClockState(Context, new NativeWorldState(++nativeWorldSequence, id)));
+        }
+        private void RefreshNativeClock(MissionContext context)
+        {
+            var current = NativeClock;
+            if (current != null && nativeLoadDepth == 0)
+                Volatile.Write(ref nativeClock, new NativeClockState(context, current.World));
+        }
         internal MissionContext Current { get; private set; }
         internal MissionContext Context => pending ?? Current;
         internal MissionLifecycleState(Action<Exception> error) { this.error = error; }
@@ -41,6 +84,8 @@ namespace APIShared
             var old = Context;
             bool started = Current != null;
             var oldPhase = phase;
+            InvalidateNativeClock();
+            nativeLoadDepth = 0;
             long id = ++sequence;
             Current = null;
             pending = seed.With(id, seed.Mode);
@@ -68,6 +113,7 @@ namespace APIShared
             if (!IsPending(id) || !reached.Add(next)) return;
             pending = context.With(id, context.Mode);
             phase = next;
+            RefreshNativeClock(pending);
             Publish(new MissionLifecycleNotification(pending, MissionLifecycleKind.Initialization,
                 phase, MissionEndReason.None, false));
         }
@@ -76,6 +122,7 @@ namespace APIShared
             if (!IsPending(id)) return;
             Current = context.With(id, context.Mode);
             pending = null;
+            RefreshNativeClock(Current);
             phase = MissionInitializationPhase.ManagedReady;
             Publish(new MissionLifecycleNotification(Current, MissionLifecycleKind.Start, phase, MissionEndReason.None, true));
         }
@@ -84,6 +131,8 @@ namespace APIShared
             var old = Context;
             if (old == null || (expected.HasValue && old.SessionId != expected.Value)) return;
             bool started = Current != null;
+            InvalidateNativeClock();
+            nativeLoadDepth = 0;
             Current = null; pending = null;
             var oldPhase = phase;
             phase = MissionInitializationPhase.None;

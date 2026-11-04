@@ -64,7 +64,7 @@ namespace APIShared.Networking
     public sealed class ChoreChannelOptions<T> where T : class
     {
         /// <summary>Maximum body plus packet-ID bytes, from 2 through 1200. Oversized sends are rejected, never split.</summary>
-        public int MaximumPayloadBytes { get; set; } = 1200;
+        public int MaximumPayloadBytes { get; set; } = ChoreSendPolicy.MaximumPayloadBytes;
         /// <summary>Optional logical enable check, evaluated on the caller for sends and synchronously for Chore receives. Must return the same value on every peer in receive context.</summary>
         /// <remarks>
         /// Every peer, including the sender, evaluates it again when the Chore is received. A peer that returns

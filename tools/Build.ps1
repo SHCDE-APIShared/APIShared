@@ -55,6 +55,13 @@ try {
     }
     if (-not $msbuild -or -not (Test-Path -LiteralPath $msbuild)) { throw 'MSBuild was not found. Set SHCDE_MSBUILD.' }
     $inputState = Get-ApiInputState $root $game $extender $msbuild
+    $cacheTools=@(foreach($name in @('powershell.exe','dotnet','git','bash')){$tool=Get-Command $name -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1;if($tool){$tool.Source+':'+(Get-ApiFileHash $tool.Source)}else{$name+':absent'}})-join"`n"
+    $sdkVersion=((& dotnet --version)-join'').Trim()
+    $dotnetRoot=Split-Path -Parent (Get-Command dotnet -CommandType Application|Select-Object -First 1).Source
+    foreach($compiler in @((Join-Path $dotnetRoot ("sdk/$sdkVersion/Roslyn/bincore/csc.dll")),(Join-Path (Split-Path -Parent $msbuild) 'Roslyn/csc.exe'))){if(Test-Path -LiteralPath $compiler){$cacheTools+="`nCompiler:"+$compiler+':'+(Get-ApiFileHash $compiler)}}
+    $cacheTools+="`nSDK:"+$sdkVersion+"`nRuntime:"+((& dotnet --list-runtimes)-join'|')+"`nArgs:"+($choices-join'|')
+    $cacheFingerprint={Get-ApiCheckInputFingerprint $root $game $extender $msbuild $cacheTools}.GetNewClosure()
+    Initialize-ApiStepCache $context $root $cacheFingerprint
     $proofPath = Join-Path $root '.local/build-proof.json'
     if (Test-Path -LiteralPath $proofPath) { Remove-Item -LiteralPath $proofPath }
     if ($NoInstall -eq 0 -and (Get-Process -Name 'Stronghold Crusader Definitive Edition' -ErrorAction SilentlyContinue)) { throw 'Close the game before installation.' }
@@ -69,7 +76,7 @@ try {
     }
     $results = Join-Path $root '.local/test-results'
     foreach ($project in @('Content.Tests/Content.Tests.csproj','PopularityDisplay.Tests/PopularityDisplay.Tests.csproj','Core.Tests/Core.Tests.csproj','APISharedTests/APISharedTests.csproj','LobbyModSettingsPresetTests/LobbyModSettingsPresetTests.csproj')) {
-        Invoke-ApiBuildStep $context $project -Action {
+        Invoke-ApiBuildStep $context $project -Cacheable:($project -ne 'APISharedTests/APISharedTests.csproj') -Action {
             Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
         }
     }

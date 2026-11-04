@@ -178,6 +178,17 @@ records the mode; only `full` is accepted as a tested SDK for cache reuse or rel
 Reduced builds still retain machine paths for the next build. After updating the
 evidence format, an older proof needs one fresh full build.
 
+Successful independent checks can be reused after a later build failure. The local
+check cache matches source and documentation content, native/reference and tool
+hashes, arguments and process context; failures and reduced-mode skips are never
+cached. Compilation, package/install safety checks and current-state validation
+always run. Metadata retains at most two results per check and 512 records within
+8 MiB; it stores no binaries or copied logs. Corrupt or mismatched metadata reruns
+the check. Release preparation also reuses a complete matching full-build proof,
+rechecking package hashes instead of repeating the preceding preparation build.
+Reused checks are explicitly marked `Reused` in the step log and build-steps JSON;
+they retain the prior successful result rather than claiming a new test execution.
+
 ### Results and build evidence
 
 The full build driver writes TRX results to `.local/test-results` and records a
@@ -200,6 +211,27 @@ actual hook coexistence in the game.
 Release checks accept a clean subsequent commit when every recorded build input
 and package hash still matches. The recorded build commit is retained; changes to
 compiled sources, packaging inputs or delivered files invalidate the evidence.
+
+### Building and checking the optional Proton patcher
+
+The [independent first-install patcher](docs/WORKSHOP.md#independent-linux-first-install-patcher)
+has a separate build and is not built or installed by the ordinary APIShared driver.
+With the [Setup](#setup) dependencies available, `proton-fix/build.bat /nopause`
+builds the current patcher sources and runs its Extender IL, retry and package checks.
+To also prepare its manual ZIP without installing it, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Build-ProtonWorkshopFix.ps1 -Package
+```
+
+Its source, embedded script and reference fingerprints plus assembly hash are recorded
+separately in `.local/ProtonWorkshopFix/build-proof.json`. Packaging rejects stale
+evidence, unexpected dependencies and extra, missing or modified archive entries.
+The native host-script fixtures run with
+`bash tools/Validation/test-proton-extender-updater.sh` on Linux with Bash, flock
+and GNU coreutils; the Linux CI job requires them and retains their evidence.
+Desktop delegate generation and native shell fixtures do not replace the
+[live platform acceptance](docs/WORKSHOP.md#platform-acceptance-limits).
 
 ## Compatibility and releases
 
@@ -224,9 +256,10 @@ Either maintainer may prepare releases from a tested, release-ready `main` revis
 in a committed and pushed standalone checkout:
 `release.bat` builds and creates a GitHub draft. Version bumps belong to release preparation,
 not test iterations.
-The release driver creates build evidence, checksums and provenance; it does not
-automatically test consumer mods in the game. For changes affecting
-shared runtime behavior or compatibility, test the relevant consumer sets against
+The release driver creates build evidence, checksums and provenance. It also builds
+the optional Proton patcher as a separate manual ZIP, excluded from the normal
+APIShared ZIP/map. It does not automatically test consumer mods in the game.
+For changes affecting shared runtime behavior or compatibility, test the relevant consumer sets against
 the same pinned APIShared revision and record the checks performed and remaining gaps.
 
 ## Documentation with a change

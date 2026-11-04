@@ -30,6 +30,8 @@ namespace APIShared
         private BuildingRepairService buildingRepair;
         private CoopAiStartImportService coopAiStartImport;
         internal RepairTooltipViewModel RepairTooltip { get; } = new RepairTooltipViewModel();
+        // Shared defeat observations (state snapshots) for internal readers such as eliminated-participant views.
+        internal PlayerDefeatService PlayerDefeat => playerDefeat;
         private NativeCapabilityDiagnostic buildingRepairDiagnostic = Pending(NativeCapabilityIds.BuildingRepair);
         private long nativeModuleBase;
         private NativeCapabilityDiagnostic missionLifecycleDiagnostic = Pending(NativeCapabilityIds.MissionLifecycle);
@@ -46,6 +48,8 @@ namespace APIShared
         internal NativeOwnershipRegistry NativeOwnership { get; } = new NativeOwnershipRegistry();
 
         internal static ApiSharedRuntime ProcessInstance { get; } = new ApiSharedRuntime();
+        // For lazily installed services without their own logger; null before managed initialization.
+        internal ManualLogSource Logger => System.Threading.Volatile.Read(ref log);
 
         public NativeApiState State { get { lock (sync) return state; } }
 
@@ -88,8 +92,17 @@ namespace APIShared
                 if (hudExtrasButtons == null && hudExtrasDiagnostic == null &&
                     ManagedMemberContracts.TryValidate(NativeCapabilityIds.HudExtrasButtons, logger, out hudExtrasDiagnostic))
                 {
-                    hudExtrasButtons = new HudExtrasButtonsService(logger);
-                    hudExtrasButtons.Start();
+                    try
+                    {
+                        var candidate = new HudExtrasButtonsService(logger);
+                        candidate.Start();
+                        hudExtrasButtons = candidate;
+                    }
+                    catch (Exception error)
+                    {
+                        hudExtrasDiagnostic = Faulted(NativeCapabilityIds.HudExtrasButtons, error.Message);
+                        NativeApiLog.Error(logger, "Side-HUD frame service unavailable: " + error);
+                    }
                 }
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
@@ -113,6 +126,7 @@ namespace APIShared
                         missionLifecycle,
                         out playerDefeat,
                         out playerDefeatDiagnostic);
+                PlayerPerspectiveAPI.BindLifecycle(missionLifecycle);
                 if (lobbyState != null ||
                     lobbyStateDiagnostic.State != NativeCapabilityState.Pending)
                 {
@@ -361,6 +375,24 @@ namespace APIShared
                 capability = unitHudPresentation.Bind(ownerGuid);
                 diagnostic = unitHudDiagnostic;
                 return true;
+            }
+        }
+
+        // Static brokers on the Unit HUD hooks (UnitHudSpriteColours) need the installed service, not a facade.
+        internal bool TryGetUnitHudService(out UnitHudPresentationService service, out string reason)
+        {
+            lock (sync)
+            {
+                service = unitHudPresentation;
+                if (service != null)
+                {
+                    reason = null;
+                    return true;
+                }
+                reason = state == NativeApiState.Pending
+                    ? "APIShared native initialization has not completed; the Unit HUD presentation hooks are not installed yet."
+                    : $"Unit HUD presentation is unavailable ({unitHudDiagnostic.State}): {unitHudDiagnostic.Reason}";
+                return false;
             }
         }
 

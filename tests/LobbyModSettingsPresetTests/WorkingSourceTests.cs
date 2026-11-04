@@ -30,7 +30,7 @@ namespace LobbyModSettingsPresetTests
                 settings.System_EnterMissionPreset(snapshot, "Trail", true);
                 provider.Publish("coop:package:fingerprint:1:1");
                 var sources = ModSettingsWorkingSourceRegistry.GetProviderSources(TargetGuid);
-                Assert(changes == 2 && sources.Count == 2 && sources.Single(source => source.IsPreferred).Id == ModSettingsWorkingSourceRegistry.TrailId,
+                Assert(changes == 2 && sources.Count == 3 && sources.Single(source => source.IsPreferred).Id == ModSettingsWorkingSourceRegistry.TrailId,
                     "Late Trail publication did not forward source invalidation and preferred identity.");
                 settings.Number = 99;
                 ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.TrailId);
@@ -42,6 +42,13 @@ namespace LobbyModSettingsPresetTests
 
                 settings.System_LoadModDefaults();
                 Assert(settings.Number == 5, "Mod defaults no longer reset independently of the Trail.");
+                ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.PersonalSettingsId);
+                Assert(settings.Number == 23 && settings.IsMissionPresetActive && settings.MissionPresetEditable,
+                    "Personal reset did not restore the stored values within the editable mission.");
+                Assert(settings.System_TestPresetStatusText.Contains("Personal Settings"), "Personal reset lost its source attribution.");
+                settings.Number = 101;
+                ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.PersonalSettingsId);
+                Assert(settings.Number == 23, "A temporary edit replaced the personal reset source.");
                 ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.MapId);
                 Assert(settings.Number == 37, "Map reset no longer works alongside a Trail source.");
                 provider.Entry = new MissionModSettingsEntry { PlayerSettings = new[] { nameof(settings.Number) } };
@@ -58,6 +65,7 @@ namespace LobbyModSettingsPresetTests
                 Assert(ModSettingsWorkingSourceRegistry.GetProviderSources(TargetGuid).Count == 0, "Leaving the mission retained a stale source.");
                 settings.System_ExitMissionPreset();
                 Assert(settings.Number == 23, "Exit did not restore personal settings.");
+                Assert(StartDocuments().Number == 23, "Restart loaded temporary reset values as personal settings.");
             }
             finally
             {
@@ -82,6 +90,8 @@ namespace LobbyModSettingsPresetTests
                 provider.Publish("readonly");
                 Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExactly<InvalidOperationException>(() =>
                     ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.TrailId));
+                Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.PersonalSettingsId));
                 Assert(settings.Number == 77, "Read-only Trail accepted a reset.");
                 settings.System_ExitMissionPreset();
                 settings.System_EnterMissionPreset(snapshot, "Trail", true);
@@ -90,6 +100,8 @@ namespace LobbyModSettingsPresetTests
                     .SetValue(settings, false);
                 ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.TrailId);
                 Assert(settings.Number == 77, "Client reset replaced host-owned mission values.");
+                ModSettingsWorkingSourceRegistry.Apply(TargetGuid, ModSettingsWorkingSourceRegistry.PersonalSettingsId);
+                Assert(settings.Number == 77, "Personal reset replaced authenticated host-owned client values.");
                 CollectionAssert.AreEqual(personal, File.ReadAllBytes(NewFile));
             }
             finally
@@ -117,6 +129,7 @@ namespace LobbyModSettingsPresetTests
             internal void Clear() { context = null; SourcesChanged?.Invoke(); }
             public IReadOnlyList<ModSettingsWorkingSource> GetSources(string guid) => context == null
                 ? Array.Empty<ModSettingsWorkingSource>() : new[] {
+                    new ModSettingsWorkingSource { Id = ModSettingsWorkingSourceRegistry.PersonalSettingsId, Kind = ModSettingsWorkingSourceKind.Personal },
                     new ModSettingsWorkingSource { Id = ModSettingsWorkingSourceRegistry.TrailId, Kind = ModSettingsWorkingSourceKind.Trail,
                         IsPreferred = true, PreferenceContextId = context },
                     new ModSettingsWorkingSource { Id = ModSettingsWorkingSourceRegistry.MapId, Kind = ModSettingsWorkingSourceKind.Map,
@@ -124,6 +137,12 @@ namespace LobbyModSettingsPresetTests
             public void Apply(string guid, string id)
             {
                 Applies++;
+                if (id == ModSettingsWorkingSourceRegistry.PersonalSettingsId)
+                {
+                    settings.System_ApplyMissionPresetSnapshot(settings.System_CreatePlayerMissionPresetSnapshot(), "Personal Settings");
+                    settings.System_CommitConfiguration();
+                    return;
+                }
                 MissionModSettingsEntry entry = id == ModSettingsWorkingSourceRegistry.ModDefaultsId ? null :
                     id == ModSettingsWorkingSourceRegistry.TrailId ? Entry :
                     new MissionModSettingsEntry { Overrides = new Dictionary<string, object> { [nameof(FakeSettings.Number)] = 37L } };

@@ -34,6 +34,7 @@ namespace APIShared
         private static DateTime deadline;
         private static bool acknowledged, released, loading, initialized;
         private static ulong hostId;
+        private static Presentation.IUiFrameWorkRegistration frameWork;
         private static string localSavePath, localSaveHash;
         // This peer's digests of the declared simulation records in its own copy of the selected save.
         private static IReadOnlyList<SavegameRecordDigest> localRecords;
@@ -55,7 +56,8 @@ namespace APIShared
                 original = candidate.GenerateTrampoline<HostLoad>();
                 candidate.Apply();
                 hook = candidate;
-                Application.onBeforeRender += Tick;
+                if (!Presentation.UiWorkRuntime.TryRegister(APISharedPlugin.PluginGuid, "internal/20-save-load",
+                    Tick, 0, out frameWork, out string frameReason)) throw new InvalidOperationException(frameReason);
                 initialized = true;
                 NativeApiLog.Debug(log, "SAVE_SETTINGS_PREPARATION_READY: permanent host-load gate installed after startup cleanup.");
             }
@@ -133,6 +135,7 @@ namespace APIShared
                 Tick(); // Solo host: no network echo, no artificial delay.
             }
             catch (Exception error) { Abort(error.Message); }
+            finally { ScheduleWaitingCheck(); }
         }
 
         private static void Send(SavegameLoadPacket packet)
@@ -295,6 +298,14 @@ namespace APIShared
                 }
             }
             catch (Exception error) { Abort(error.Message); }
+            finally { ScheduleWaitingCheck(); }
+        }
+
+        private static void ScheduleWaitingCheck()
+        {
+            // Preserve every original preparation/roster/authorization check per frame.
+            // Dormant and already loading preparations create no frame demand.
+            frameWork?.SetContinuous(pending != null && !loading);
         }
 
         // A confirmed multiplayer save load is running: from ValidateStart until FinishLoad or Abort.
@@ -321,6 +332,7 @@ namespace APIShared
             if (SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint || !ModSettings.ModSettingsApplication.PrepareLaunch())
                 throw new InvalidOperationException("Multiplayer save settings changed before loading.");
             loading = true;
+            ScheduleWaitingCheck();
         }
         private static void Retire(string token)
         {
@@ -349,6 +361,8 @@ namespace APIShared
                 Retire(pending.Token);
             }
             pending = null; agreement = null; record = null; owner = null;
+            frameWork?.CancelPending();
+            frameWork?.SetContinuous(false);
             localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
             SavegameModSettings.CancelLoadChoice();
@@ -377,6 +391,8 @@ namespace APIShared
         {
             if (pending != null) Retire(pending.Token);
             pending = null; agreement = null; record = null; owner = null;
+            frameWork?.CancelPending();
+            frameWork?.SetContinuous(false);
             localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
         }

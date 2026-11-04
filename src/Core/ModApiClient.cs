@@ -15,6 +15,7 @@ namespace APIShared
             this.api = api ?? throw new ArgumentNullException(nameof(api));
             Network = new Networking.ModNetworkClient(ownerGuid);
             Workshop = new Workshop.WorkshopClient(ownerGuid);
+            Ui = new Presentation.UiWorkClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
@@ -23,6 +24,8 @@ namespace APIShared
         public Networking.ModNetworkClient Network { get; }
         /// <summary>Owner-bound Workshop upload, receipt-based installation and catalog service. Steam calls require the Unity thread; planning never installs files.</summary>
         public Workshop.WorkshopClient Workshop { get; }
+        /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
+        public Presentation.UiWorkClient Ui { get; }
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 
@@ -76,6 +79,13 @@ namespace APIShared
         /// <summary>Acquires the optional native plague standing-height service. No policy is activated by acquisition.</summary>
         public bool TryGetPlagueHeight(out IPlagueHeightCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             PlagueHeightService.TryGet(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Reads the effective plague standing-height policy of all owners (the one the native damage
+        /// path applies). Any thread; no allocation, lock or callback. Returns false with an inactive policy when
+        /// the service is unavailable (then the native path is Vanilla). The value changes only when an owner sets
+        /// a policy, which owners do on the main thread before/after simulation, identically on all peers.</summary>
+        public bool TryGetPlagueHeightPolicy(out PlagueHeightPolicy policy, out NativeCapabilityDiagnostic diagnostic) =>
+            PlagueHeightService.TryGetPolicy(out policy, out diagnostic);
 
         /// <summary>Acquires building repair quotes and tooltip presentation for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IBuildingRepairCapability"/> for operation/thread contracts.</summary>
         public bool TryGetBuildingRepair(out IBuildingRepairCapability capability, out NativeCapabilityDiagnostic diagnostic) =>

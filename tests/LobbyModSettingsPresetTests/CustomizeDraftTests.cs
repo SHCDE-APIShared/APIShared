@@ -5,6 +5,7 @@ using SHCDESE.API.Components.Network;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace LobbyModSettingsPresetTests
 {
@@ -13,11 +14,57 @@ namespace LobbyModSettingsPresetTests
         private sealed class DraftSettings : PresetLobbyModSettingsViewModel
         {
             private bool enabled = true;
-            private int first = 5, second = 7, local = 9;
+            private int first = 5, second = 7, local = 9, personalHost = 13, player = 15;
+            [SyncHostOnly, MissionIndependent] public int PersonalHost { get => personalHost; set { personalHost = value; OnPropertyChanged(nameof(PersonalHost)); } }
+            [SyncPerPlayer] public int Player { get => player; set { player = value; OnPropertyChanged(nameof(Player)); } }
+            public int[] PlayerData { get; } = new int[9];
+            private int[] values = new[] { 1, 2 };
             [SyncHostOnly] public bool EnableMod { get => enabled; set { enabled = value; OnPropertyChanged(nameof(EnableMod)); } }
             [SyncHostOnly] public int First { get => first; set { first = value; OnPropertyChanged(nameof(First)); } }
             [SyncHostOnly] public int Second { get => second; set { second = value; OnPropertyChanged(nameof(Second)); } }
             [PresetLocal] public int Local { get => local; set { local = value; OnPropertyChanged(nameof(Local)); } }
+            [PresetLocal] public int[] Values { get => values; set { values = value; OnPropertyChanged(nameof(Values)); } }
+        }
+
+        [TestMethod]
+        public void PersonalResetKeepsMapAndTrailContextFilesAndArrayOwnership()
+        {
+            foreach (string label in new[] { "Map", "Trail" })
+            {
+                var model = new DraftSettings();
+                string assembly = Path.Combine(testRoot, label + "Personal.dll");
+                string guid = "Foreign.Personal." + label;
+                model.PreparePresets(null, assembly, label, guid, new Version(1, 0));
+                model.ActivatePresets();
+                model.First = 23; model.Second = 42; model.Local = 11;
+                model.Values = new[] { 17, 18 };
+                byte[] file = File.ReadAllBytes(new PersonalSettingsPaths(assembly, guid).SettingsFile);
+                var source = model.System_CreatePlayerMissionPresetSnapshot();
+                source[nameof(model.First)] = MessagePackSerializer.Serialize(91);
+                source[nameof(model.Values)] = MessagePackSerializer.Serialize(new[] { 31, 32 });
+                model.System_EnterMissionPreset(source, label, true);
+                model.System_ImportPresetJson(ModSettingsPresetJson.Serialize(guid, "different", "Different", "", "", "",
+                    new Dictionary<string, PublishedPresetSetting> {
+                        [nameof(model.First)] = new PublishedPresetSetting { Mode = PublishedPresetValueMode.Fixed, Value = 77L } }));
+                model.System_TestLoadPreset(model.System_TestPublishedPresets.Single(p => p.Id == "different").StableId);
+                Assert(model.First == 77, "Preset did not replace the source value.");
+                var personal = model.System_CreatePlayerMissionPresetSnapshot();
+                model.System_ApplyMissionPresetSnapshot(personal, "Personal Settings");
+                Assert(model.First == 23 && model.Second == 42 && model.Local == 11 && model.MissionPresetEditable && model.IsMissionPresetActive,
+                    "Personal reset read the current mission/preset or exited the editable context.");
+                CollectionAssert.AreEqual(new[] { 17, 18 }, model.Values);
+                personal[nameof(model.Values)][0] ^= 1;
+                model.Values = new[] { 999, 18 };
+                file = File.ReadAllBytes(new PersonalSettingsPaths(assembly, guid).SettingsFile);
+                CollectionAssert.AreEqual(new[] { 999, 18 }, MessagePackSerializer.Deserialize<int[]>(model.System_CreatePlayerMissionPresetSnapshot()[nameof(model.Values)]));
+                model.System_ApplyMissionPresetSnapshot(source, label);
+                Assert(model.First == 91 && model.System_TestPresetStatusText == label, "Personal reset destroyed the original mission source.");
+                CollectionAssert.AreEqual(file, File.ReadAllBytes(new PersonalSettingsPaths(assembly, guid).SettingsFile));
+                model.System_ExitMissionPreset();
+                Assert(model.First == 23 && model.Local == 11, "Exit did not restore personal settings.");
+                CollectionAssert.AreEqual(new[] { 999, 18 }, model.Values);
+                CollectionAssert.AreEqual(file, File.ReadAllBytes(new PersonalSettingsPaths(assembly, guid).SettingsFile));
+            }
         }
 
         [TestMethod]
@@ -46,9 +93,10 @@ namespace LobbyModSettingsPresetTests
             session.Apply(document, endpoints, MissionModSettingsApplicationKind.Materialized);
             Assert(model.First == 77 && model.Second == 88 && model.Local == 99, "Start resolved the original rules again or lost the local draft.");
             Assert(!model.MissionPresetEditable, "Started draft remained editable.");
-            CollectionAssert.AreEqual(personal, File.ReadAllBytes(path));
+            Assert(MessagePackSerializer.Deserialize<int>(model.System_CreatePlayerMissionPresetSnapshot()[nameof(model.Local)]) == 99, "Local edit was not personally stored.");
+            personal = File.ReadAllBytes(path);
             session.Exit();
-            Assert(model.EnableMod && model.First == 23 && model.Second == 42 && model.Local == 11, "Personal values were not restored.");
+            Assert(model.EnableMod && model.First == 23 && model.Second == 42 && model.Local == 99, "Host restoration reverted a personal edit.");
             CollectionAssert.AreEqual(personal, File.ReadAllBytes(path));
         }
 
@@ -98,5 +146,67 @@ namespace LobbyModSettingsPresetTests
             session.Exit();
             Assert(model.EnableMod && model.First == 23, "Empty Trail replaced the personal state.");
         }
+        [TestMethod]
+        [DataRow("Map")]
+        [DataRow("Trail")]
+        [DataRow("Savegame")]
+        public void MissionSnapshotsPreserveEveryPersonalScopeAndIgnoreOldOverrides(string label)
+        {
+            var model = new DraftSettings();
+            string assembly = Path.Combine(testRoot, label + "Independent.dll");
+            string guid = "Tests.Independent." + label;
+            model.PreparePresets(null, assembly, label, guid, new Version(1, 0));
+            model.ActivatePresets();
+            model.First = 23;
+            var stale = model.System_CreateCurrentWorkingSnapshot();
+            stale[nameof(model.First)] = MessagePackSerializer.Serialize(91);
+            stale[nameof(model.Local)] = MessagePackSerializer.Serialize(888);
+            stale[nameof(model.Player)] = MessagePackSerializer.Serialize(888);
+            stale[nameof(model.PersonalHost)] = MessagePackSerializer.Serialize(888);
+            model.System_EnterMissionPreset(stale, label, false);
+            Assert(model.First == 91 && model.Local == 9 && model.Player == 15 && model.PersonalHost == 13,
+                "An old full mission snapshot replaced personal values.");
+            model.Local = 99; model.Player = 101; model.PersonalHost = 103;
+            var own = model.System_CreatePlayerMissionPresetSnapshot();
+            Assert(MessagePackSerializer.Deserialize<int>(own[nameof(model.First)]) == 23 &&
+                MessagePackSerializer.Deserialize<int>(own[nameof(model.PersonalHost)]) == 103,
+                "Personal persistence contains mission host values or lost the independent host edit.");
+            Assert(model.CanEditClientSettings && model.CanEditMissionIndependentHostSettings && !model.CanChangePreset,
+                "Personal editability changed preset loading or host authority.");
+            var captured = MissionModSettingsPreparation.CaptureEntry(model, _ => PublishedPresetValueMode.Fixed);
+            Assert(!captured.Overrides.ContainsKey(nameof(model.PersonalHost)) &&
+                !captured.Overrides.ContainsKey(nameof(model.Local)) && !captured.Overrides.ContainsKey(nameof(model.Player)),
+                "Mission authoring captured personal properties.");
+            model.System_ExitMissionPreset();
+            Assert(model.First == 23 && model.Local == 99 && model.Player == 101 && model.PersonalHost == 103,
+                "Mission exit reverted accepted personal changes.");
+            var restarted = new DraftSettings();
+            restarted.PreparePresets(null, assembly, label, guid, new Version(1, 0)); restarted.ActivatePresets();
+            Assert(restarted.First == 23 && restarted.Local == 99 && restarted.Player == 101 && restarted.PersonalHost == 103,
+                "Personal scopes did not survive process restart.");
+        }
+
+        [TestMethod]
+        public void MixedPresetInCustomizePersistsPersonalValuesAndKeepsHostDraftTemporary()
+        {
+            var model = new DraftSettings();
+            string assembly = Path.Combine(testRoot, "MixedIndependent.dll");
+            string guid = "Tests.MixedIndependent";
+            model.PreparePresets(null, assembly, "Mixed", guid, new Version(1, 0)); model.ActivatePresets();
+            model.First = 23;
+            var snapshot = model.System_CreateCurrentWorkingSnapshot();
+            model.System_EnterMissionPreset(snapshot, "Trail", true);
+            model.System_ImportPresetJson(ModSettingsPresetJson.Serialize(guid, "mixed", "Mixed", "", "", "",
+                new Dictionary<string, PublishedPresetSetting> {
+                    [nameof(model.First)] = new PublishedPresetSetting { Mode = PublishedPresetValueMode.Fixed, Value = 77L },
+                    [nameof(model.Local)] = new PublishedPresetSetting { Mode = PublishedPresetValueMode.Fixed, Value = 99L },
+                    [nameof(model.PersonalHost)] = new PublishedPresetSetting { Mode = PublishedPresetValueMode.Fixed, Value = 103L }
+                }));
+            model.System_TestLoadPreset(model.System_TestPublishedPresets.Single(p => p.Id == "mixed").StableId);
+            Assert(model.First == 77 && model.Local == 99 && model.PersonalHost == 103, "Mixed preset application failed.");
+            model.System_ExitMissionPreset();
+            Assert(model.First == 23 && model.Local == 99 && model.PersonalHost == 103, "Mixed preset persisted a host draft or lost personal values.");
+        }
+
     }
 }

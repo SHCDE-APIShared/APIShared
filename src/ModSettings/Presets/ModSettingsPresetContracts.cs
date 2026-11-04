@@ -106,6 +106,8 @@ namespace APIShared.ModSettings
         public string DisplayName { get; internal set; } = string.Empty;
         /// <summary>Whether changes to this setting require startup application instead of live application.</summary>
         public bool RequiresRestart { get; internal set; }
+        /// <summary>Whether mission sources must preserve the current personal value, independently of network ownership.</summary>
+        public bool MissionIndependent { get; internal set; }
         /// <summary>Host, per-player or local ownership used for preset filtering and application.</summary>
         public PresetSettingScope Scope { get; internal set; }
     }
