@@ -178,6 +178,17 @@ records the mode; only `full` is accepted as a tested SDK for cache reuse or rel
 Reduced builds still retain machine paths for the next build. After updating the
 evidence format, an older proof needs one fresh full build.
 
+Successful independent checks can be reused after a later build failure. The local
+check cache matches source and documentation content, native/reference and tool
+hashes, arguments and process context; failures and reduced-mode skips are never
+cached. Compilation, package/install safety checks and current-state validation
+always run. Metadata retains at most two results per check and 512 records within
+8 MiB; it stores no binaries or copied logs. Corrupt or mismatched metadata reruns
+the check. Release preparation also reuses a complete matching full-build proof,
+rechecking package hashes instead of repeating the preceding preparation build.
+Reused checks are explicitly marked `Reused` in the step log and build-steps JSON;
+they retain the prior successful result rather than claiming a new test execution.
+
 ### Results and build evidence
 
 The full build driver writes TRX results to `.local/test-results` and records a
