@@ -1618,3 +1618,9 @@ immediate Unity camera change. Missing or stale targets should keep the camera
 stationary; do not clear unrelated camera reports or enqueue stale cross-mission
 camera work. This broker does not select a building or move the camera itself.
 
+
+## Ally gifts and send-dialog extensions
+
+Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section without replacing existing controls or owning another mod's layout. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local registration.
+
+Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion.

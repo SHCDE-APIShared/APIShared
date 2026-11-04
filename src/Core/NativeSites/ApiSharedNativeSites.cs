@@ -226,6 +226,7 @@ namespace APIShared
             Group(HealthInitialization, HealthInitializationSpans()),
             Group(PlagueHeight, PlagueHeightSpans()),
             Group(AiMarketSell, AiMarketSellSpans()),
+            Group(AllyTransfersNative.SiteName, AllyTransfersNative.Spans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),

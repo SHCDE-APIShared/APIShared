@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.28.0",
+  "Version": "0.29.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.29.0",
+      "Changes": [
+        "Add cooperative sections and immutable selection observations for the Vanilla ally goods dialog, preserving independent mod controls and quantity commands.",
+        "Add synchronous bounded ally gifts, physical storage queries and native transfer observations with explicit veto and measured balance changes."
+      ]
+    },
     {
       "Version": "0.28.0",
       "Changes": [

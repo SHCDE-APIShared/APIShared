@@ -10,7 +10,7 @@ namespace ThirdPartyMod
 {
     [BepInPlugin(Guid, "APIShared Example", "1.0.0")]
     [BepInDependency("000shcdese", "2.14.0")]
-    [BepInDependency("APIShared_Serp", "0.28.0")]
+    [BepInDependency("APIShared_Serp", "0.29.0")]
     public sealed class ExamplePlugin : BaseUnityPlugin
     {
         public const string Guid = "Example.Author.APISharedDemo";
@@ -37,6 +37,7 @@ namespace ThirdPartyMod
             HudExample.RegisterSideButtons(Api, Log);
             Api.WhenReady(OnReady);
             CrusaderLibrary.Instance.LibraryLoaded += _ => {
+                AllyGoodsExample.Register(Guid, Log);
                 AiMarketSellExample.Register(Log);
                 HealthExample.Register(Log);
             };

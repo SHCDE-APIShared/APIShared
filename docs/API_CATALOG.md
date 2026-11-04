@@ -784,3 +784,9 @@ distinguishes mission/host restoration from local preset/reset actions. See
 APIShared corrects selected Script Extender defects without consumer registration, for example
 save-only record persistence in synchronized saves and the classification of multiplayer
 save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
+
+## Ally gifts and the goods dialog
+
+`Economy.AllyTransfers` exposes synchronous bounded gifts and physical capacity observations. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
+
+`Presentation.AllyGoodsPanelExtensions` coordinates independent sections beneath the existing send-goods dialog and publishes immutable selection contexts. See [dialog extension contract](ALLY_GOODS_PANEL.md).

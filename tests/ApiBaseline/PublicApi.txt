@@ -335,6 +335,57 @@ APIShared.Economy.AiMarketSellSafety | public enum APIShared.Economy.AiMarketSel
 APIShared.Economy.AiMarketSellSafety | LimitQuantityToStock = 2
 APIShared.Economy.AiMarketSellSafety | NonNegativeReserve = 1
 APIShared.Economy.AiMarketSellSafety | None = 0
+APIShared.Economy.AllyTransferCapacity | public sealed class APIShared.Economy.AllyTransferCapacity
+APIShared.Economy.AllyTransferCapacity | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferCapacity | public bool HasStorage { get; }
+APIShared.Economy.AllyTransferCapacity | public int AmountStored { get; }
+APIShared.Economy.AllyTransferCapacity | public int FreeAmount { get; }
+APIShared.Economy.AllyTransferCapacity | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferEvents | public static class APIShared.Economy.AllyTransferEvents
+APIShared.Economy.AllyTransferEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Economy.AllyTransferPreEventArgs> pre, System.Action<APIShared.Economy.AllyTransferPostEventArgs> post, out string reason, int order = 0)
+APIShared.Economy.AllyTransferEvents | public static long CallbackFailures { get; }
+APIShared.Economy.AllyTransferPostEventArgs | public sealed class APIShared.Economy.AllyTransferPostEventArgs
+APIShared.Economy.AllyTransferPostEventArgs | public APIShared.Economy.AllyTransferResult Result { get; }
+APIShared.Economy.AllyTransferPostEventArgs | public int GoodId { get; }
+APIShared.Economy.AllyTransferPostEventArgs | public object State { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public sealed class APIShared.Economy.AllyTransferPreEventArgs : APIShared.Events.InterceptionPreEventArgs
+APIShared.Economy.AllyTransferPreEventArgs | public int Amount { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public int GoodId { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public int SenderPlayerId { get; }
+APIShared.Economy.AllyTransferRequest | public sealed class APIShared.Economy.AllyTransferRequest
+APIShared.Economy.AllyTransferRequest | public .ctor(int senderId, int recipientId, SHCDESE.Interop.eGoods good, int maximumAmount, int minimumSenderRemaining = 0, int maximumRecipientAmount = 2147483647)
+APIShared.Economy.AllyTransferRequest | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferRequest | public int MaximumAmount { get; }
+APIShared.Economy.AllyTransferRequest | public int MaximumRecipientAmount { get; }
+APIShared.Economy.AllyTransferRequest | public int MinimumSenderRemaining { get; }
+APIShared.Economy.AllyTransferRequest | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferRequest | public int SenderPlayerId { get; }
+APIShared.Economy.AllyTransferResult | public sealed class APIShared.Economy.AllyTransferResult
+APIShared.Economy.AllyTransferResult | public APIShared.Economy.AllyTransferStatus Status { get; }
+APIShared.Economy.AllyTransferResult | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferResult | public bool HasNestedTransfer { get; }
+APIShared.Economy.AllyTransferResult | public bool OriginalWasCalled { get; }
+APIShared.Economy.AllyTransferResult | public bool WasVetoed { get; }
+APIShared.Economy.AllyTransferResult | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferResult | public int RequestedAmount { get; }
+APIShared.Economy.AllyTransferResult | public int SenderPlayerId { get; }
+APIShared.Economy.AllyTransferResult | public int? TransferredAmount { get; }
+APIShared.Economy.AllyTransferResult | public long? RecipientCredit { get; }
+APIShared.Economy.AllyTransferResult | public long? SenderDebit { get; }
+APIShared.Economy.AllyTransferStatus | public enum APIShared.Economy.AllyTransferStatus : int
+APIShared.Economy.AllyTransferStatus | Completed = 2
+APIShared.Economy.AllyTransferStatus | Faulted = 4
+APIShared.Economy.AllyTransferStatus | Rejected = 0
+APIShared.Economy.AllyTransferStatus | Uncertain = 3
+APIShared.Economy.AllyTransferStatus | Vetoed = 1
+APIShared.Economy.AllyTransfers | public static class APIShared.Economy.AllyTransfers
+APIShared.Economy.AllyTransfers | public const int MaximumTransferAmount = 32767
+APIShared.Economy.AllyTransfers | public static System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eGoods> SupportedGoods { get; }
+APIShared.Economy.AllyTransfers | public static bool IsAvailable { get; }
+APIShared.Economy.AllyTransfers | public static bool IsSupportedGood(SHCDESE.Interop.eGoods good)
+APIShared.Economy.AllyTransfers | public static bool TryExecute(APIShared.Economy.AllyTransferRequest request, out APIShared.Economy.AllyTransferResult result, out string reason)
+APIShared.Economy.AllyTransfers | public static bool TryGetCapacity(int recipientId, SHCDESE.Interop.eGoods good, out APIShared.Economy.AllyTransferCapacity capacity, out string reason)
 APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPopularity
 APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
@@ -2118,6 +2169,30 @@ APIShared.PlayerPerspectiveChangeReason | public enum APIShared.PlayerPerspectiv
 APIShared.PlayerPerspectiveChangeReason | Cleared = 1
 APIShared.PlayerPerspectiveChangeReason | Selected = 0
 APIShared.PlayerPerspectiveChangeReason | Uncertain = 2
+APIShared.Presentation.AllyGoodsPanelContext | public sealed class APIShared.Presentation.AllyGoodsPanelContext
+APIShared.Presentation.AllyGoodsPanelContext | public SHCDESE.Interop.eGoods? Good { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool HasSelection { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool IsOpen { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool IsRequestMode { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool IsSendMode { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int LocalPlayerId { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int RecipientPlayerId { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int ViewedPlayerId { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int? Amount { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public long PanelGeneration { get; }
+APIShared.Presentation.AllyGoodsPanelExtensions | public static class APIShared.Presentation.AllyGoodsPanelExtensions
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryGetContext(out APIShared.Presentation.AllyGoodsPanelContext context)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TrySubscribeContext(string ownerGuid, string registrationId, System.Action<APIShared.Presentation.AllyGoodsPanelContext> changed, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public sealed class APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding : SHCDESE.NoesisUtil.INoesisElementBindingAware
+APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public .ctor()
+APIShared.Presentation.AllyGoodsSectionContext | public sealed class APIShared.Presentation.AllyGoodsSectionContext
+APIShared.Presentation.AllyGoodsSectionContext | public APIShared.Presentation.AllyGoodsPanelContext Selection { get; }
+APIShared.Presentation.AllyGoodsSectionContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.AllyGoodsSectionRegistration | public sealed class APIShared.Presentation.AllyGoodsSectionRegistration
+APIShared.Presentation.AllyGoodsSectionRegistration | public void RequestContentRefresh()
+APIShared.Presentation.AllyGoodsSectionRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.AllyGoodsSectionRegistration | public void SetVisible(bool visible)
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }
