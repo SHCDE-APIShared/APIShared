@@ -64,11 +64,20 @@ jobs:
           bash tools/Validation/test-workshop-maintenance.sh
           mkdir -p .local/proton-shell
           TMPDIR="$PWD/.local/proton-shell" bash tools/Validation/test-proton-extender-updater.sh
+      - name: Archive Proton shell evidence
+        if: always()
+        shell: bash
+        run: |
+          if [[ -d .local/proton-shell ]]; then
+            # Preserve Linux names, symlinks and FIFOs behind an upload-safe filename.
+            tar -cf proton-shell-evidence.tar -C .local proton-shell
+            tar --compare -f proton-shell-evidence.tar -C .local
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workshop-linux-evidence
           path: |
-            .local/proton-shell/**
+            proton-shell-evidence.tar
             TestResults/*.trx
             .local/recovery-tests/**/journal.log
