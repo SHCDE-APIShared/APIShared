@@ -5,6 +5,7 @@
     
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
     <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
     <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>

@@ -317,6 +317,7 @@ APIShared.Economy.AiMarketSellQuantityContext | public int Good { get; }
 APIShared.Economy.AiMarketSellQuantityContext | public int OriginalAmount { get; }
 APIShared.Economy.AiMarketSellQuantityContext | public int PlayerId { get; }
 APIShared.Economy.AiMarketSellQuantityContext | public int Stock { get; }
+APIShared.Economy.AiMarketSellQuantityContext | public void Contribute(APIShared.Modifiers.ValueModifierContribution contribution)
 APIShared.Economy.AiMarketSellRegistration | public sealed class APIShared.Economy.AiMarketSellRegistration
 APIShared.Economy.AiMarketSellRegistration | public bool IsEnabled { get; }
 APIShared.Economy.AiMarketSellRegistration | public int CallbackErrorCount { get; }
@@ -329,6 +330,7 @@ APIShared.Economy.AiMarketSellReserveContext | public int OriginalReserve { get;
 APIShared.Economy.AiMarketSellReserveContext | public int PlayerId { get; }
 APIShared.Economy.AiMarketSellReserveContext | public int Reserve { get; set; }
 APIShared.Economy.AiMarketSellReserveContext | public int Stock { get; }
+APIShared.Economy.AiMarketSellReserveContext | public void Contribute(APIShared.Modifiers.ValueModifierContribution contribution)
 APIShared.Economy.AiMarketSellSafety | public enum APIShared.Economy.AiMarketSellSafety : int
 APIShared.Economy.AiMarketSellSafety | LimitQuantityToStock = 2
 APIShared.Economy.AiMarketSellSafety | NonNegativeReserve = 1
@@ -337,7 +339,9 @@ APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPop
 APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
 APIShared.Economy.FearPopularityRegistration | public sealed class APIShared.Economy.FearPopularityRegistration
+APIShared.Economy.FearPopularityRegistration | public void SetFactor(decimal? factor, APIShared.Modifiers.ValueModifierStage stage = (APIShared.Modifiers.ValueModifierStage)0)
 APIShared.Economy.FearPopularityRegistration | public void SetLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, int> contributions)
+APIShared.Economy.FearPopularityRegistration | public void SetLevelModifiers(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityModifierValues> contributions)
 APIShared.Economy.FearPopularityRegistration | public void SetMultiplier(decimal? multiplier)
 APIShared.Economy.FearPopularityRegistration | public void SetTargetedLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityOverrideValues> contributions)
 APIShared.Economy.MarketPriceDirection | public enum APIShared.Economy.MarketPriceDirection : int
@@ -347,6 +351,18 @@ APIShared.Economy.MarketPriceEvents | public static class APIShared.Economy.Mark
 APIShared.Economy.MarketPriceEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Economy.MarketPricePreEventArgs> pre, System.Action<APIShared.Economy.MarketPricePostEventArgs> post, out string reason, int order = 0)
 APIShared.Economy.MarketPriceEvents | public static int CalculateTradeTotal(int basePrice, int amount)
 APIShared.Economy.MarketPriceEvents | public static long CallbackFailures { get; }
+APIShared.Economy.MarketPriceModifierContext | public struct APIShared.Economy.MarketPriceModifierContext
+APIShared.Economy.MarketPriceModifierContext | public .ctor(SHCDESE.Interop.eGoods good, APIShared.Economy.MarketPriceDirection direction, bool isAIPlayer, int originalBasePrice)
+APIShared.Economy.MarketPriceModifierContext | public APIShared.Economy.MarketPriceDirection Direction { get; }
+APIShared.Economy.MarketPriceModifierContext | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.MarketPriceModifierContext | public bool IsAIPlayer { get; }
+APIShared.Economy.MarketPriceModifierContext | public int OriginalBasePrice { get; }
+APIShared.Economy.MarketPriceModifierHandle | public sealed class APIShared.Economy.MarketPriceModifierHandle
+APIShared.Economy.MarketPriceModifierHandle | public void SetEnabled(bool enabled)
+APIShared.Economy.MarketPriceModifiers | public static class APIShared.Economy.MarketPriceModifiers
+APIShared.Economy.MarketPriceModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Economy.MarketPriceModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Economy.MarketPriceModifierHandle handle, out string reason, int order = 0)
+APIShared.Economy.MarketPriceModifiers | public static long CallbackFailures { get; }
+APIShared.Economy.MarketPriceModifiers | public static void Refresh()
 APIShared.Economy.MarketPricePostEventArgs | public sealed class APIShared.Economy.MarketPricePostEventArgs
 APIShared.Economy.MarketPricePostEventArgs | public APIShared.Economy.MarketPriceDirection Direction { get; }
 APIShared.Economy.MarketPricePostEventArgs | public bool HasNativeManager { get; }
@@ -363,8 +379,13 @@ APIShared.Economy.MarketPricePreEventArgs | public int Amount { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int Good { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int PlayerId { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int ReplacementTotal { get; set; }
+APIShared.Economy.PopularityModifierValues | public struct APIShared.Economy.PopularityModifierValues
+APIShared.Economy.PopularityModifierValues | public .ctor(APIShared.Modifiers.ValueModifierContribution human, APIShared.Modifiers.ValueModifierContribution ai)
+APIShared.Economy.PopularityModifierValues | public APIShared.Modifiers.ValueModifierContribution AI { get; }
+APIShared.Economy.PopularityModifierValues | public APIShared.Modifiers.ValueModifierContribution Human { get; }
 APIShared.Economy.PopularityOverrideRegistration | public sealed class APIShared.Economy.PopularityOverrideRegistration
 APIShared.Economy.PopularityOverrideRegistration | public void SetContributions(System.Collections.Generic.IReadOnlyDictionary<APIShared.Economy.PopularitySource, APIShared.Economy.PopularityOverrideValues> contributions)
+APIShared.Economy.PopularityOverrideRegistration | public void SetModifiers(System.Collections.Generic.IReadOnlyDictionary<APIShared.Economy.PopularitySource, APIShared.Economy.PopularityModifierValues> contributions)
 APIShared.Economy.PopularityOverrideValues | public struct APIShared.Economy.PopularityOverrideValues
 APIShared.Economy.PopularityOverrideValues | public .ctor(int? humanPoints, int? aiPoints)
 APIShared.Economy.PopularityOverrideValues | public int? AIPoints { get; }
@@ -687,6 +708,38 @@ APIShared.GatehouseTimingValues | public const double VanillaAiDelaySeconds = 30
 APIShared.GatehouseTimingValues | public const double VanillaAiDistanceTiles = 25d
 APIShared.GatehouseTimingValues | public const double VanillaHumanDelaySeconds = 2.5d
 APIShared.GatehouseTimingValues | public const double VanillaHumanDistanceTiles = 17.5d
+APIShared.Health.HealthInitializationReason | public enum APIShared.Health.HealthInitializationReason : int
+APIShared.Health.HealthInitializationReason | Created = 1
+APIShared.Health.HealthInitializationReason | MissionStart = 0
+APIShared.Health.HealthInitializationReason | SaveLoaded = 3
+APIShared.Health.HealthInitializationReason | TypeInitialized = 2
+APIShared.Health.HealthLegacyBasis | public struct APIShared.Health.HealthLegacyBasis
+APIShared.Health.HealthLegacyBasis | public .ctor(int unitId, uint globalId, uint maximum)
+APIShared.Health.HealthLegacyBasis | public int UnitId { get; }
+APIShared.Health.HealthLegacyBasis | public uint GlobalId { get; }
+APIShared.Health.HealthLegacyBasis | public uint Maximum { get; }
+APIShared.Health.HealthModifierContext | public struct APIShared.Health.HealthModifierContext
+APIShared.Health.HealthModifierContext | public .ctor(APIShared.Health.HealthObjectKind kind, int objectId, uint globalId, int playerId, bool isAIPlayer, SHCDESE.Interop.eChimps unitType, SHCDESE.Interop.eStructs buildingType, uint originalMaximumHealth, APIShared.Health.HealthInitializationReason reason)
+APIShared.Health.HealthModifierContext | public APIShared.Health.HealthInitializationReason Reason { get; }
+APIShared.Health.HealthModifierContext | public APIShared.Health.HealthObjectKind Kind { get; }
+APIShared.Health.HealthModifierContext | public SHCDESE.Interop.eChimps UnitType { get; }
+APIShared.Health.HealthModifierContext | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Health.HealthModifierContext | public bool IsAIPlayer { get; }
+APIShared.Health.HealthModifierContext | public int ObjectId { get; }
+APIShared.Health.HealthModifierContext | public int PlayerId { get; }
+APIShared.Health.HealthModifierContext | public uint GlobalId { get; }
+APIShared.Health.HealthModifierContext | public uint OriginalMaximumHealth { get; }
+APIShared.Health.HealthModifierHandle | public sealed class APIShared.Health.HealthModifierHandle
+APIShared.Health.HealthModifierHandle | public bool IsEnabled { get; }
+APIShared.Health.HealthModifierHandle | public void SetEnabled(bool value)
+APIShared.Health.HealthModifiers | public static class APIShared.Health.HealthModifiers
+APIShared.Health.HealthModifiers | public static bool IsAvailable { get; }
+APIShared.Health.HealthModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Health.HealthModifierHandle handle, out string reason, int order = 0)
+APIShared.Health.HealthModifiers | public static bool TryRegisterLegacyBasisProvider(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthLegacyBasis[]> provider, out string reason, int order = 0)
+APIShared.Health.HealthModifiers | public static string UnavailableReason { get; }
+APIShared.Health.HealthObjectKind | public enum APIShared.Health.HealthObjectKind : int
+APIShared.Health.HealthObjectKind | Building = 1
+APIShared.Health.HealthObjectKind | Unit = 0
 APIShared.HudExtrasButtonContext | public sealed class APIShared.HudExtrasButtonContext
 APIShared.HudExtrasButtonContext | public Noesis.FrameworkElement Hud { get; }
 APIShared.HudExtrasButtonDefinition | public sealed class APIShared.HudExtrasButtonDefinition
@@ -1556,6 +1609,22 @@ APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSiz
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float FontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float MaximumWidth { get; }
+APIShared.Modifiers.ValueModifierCalculator | public static class APIShared.Modifiers.ValueModifierCalculator
+APIShared.Modifiers.ValueModifierCalculator | public static decimal Calculate(decimal baseline, System.Collections.Generic.IEnumerable<APIShared.Modifiers.ValueModifierContribution> orderedContributions, decimal minimumValue, decimal maximumValue)
+APIShared.Modifiers.ValueModifierContribution | public struct APIShared.Modifiers.ValueModifierContribution
+APIShared.Modifiers.ValueModifierContribution | public APIShared.Modifiers.ValueModifierKind Kind { get; }
+APIShared.Modifiers.ValueModifierContribution | public APIShared.Modifiers.ValueModifierStage Stage { get; }
+APIShared.Modifiers.ValueModifierContribution | public decimal Value { get; }
+APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution Factor(decimal factor, APIShared.Modifiers.ValueModifierStage stage = (APIShared.Modifiers.ValueModifierStage)0)
+APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution FixedValue(decimal value)
+APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution None { get; }
+APIShared.Modifiers.ValueModifierKind | public enum APIShared.Modifiers.ValueModifierKind : int
+APIShared.Modifiers.ValueModifierKind | Factor = 1
+APIShared.Modifiers.ValueModifierKind | FixedValue = 2
+APIShared.Modifiers.ValueModifierKind | None = 0
+APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
+APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
+APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
 APIShared.NativeApiState | public enum APIShared.NativeApiState : int
 APIShared.NativeApiState | Pending = 0
 APIShared.NativeApiState | Ready = 1

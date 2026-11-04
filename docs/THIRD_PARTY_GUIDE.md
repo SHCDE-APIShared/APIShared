@@ -27,6 +27,7 @@
 - [HUD integration](#hud-integration)
 - [Sharing action and HUD hooks](#sharing-action-and-hud-hooks)
 - [Sharing native market price queries](#sharing-native-market-price-queries)
+- [Staged values and health](#staged-values-and-health)
 - [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
 - [Assassin obstacle completion](#assassin-obstacle-completion)
 - [Gate access contributions](#gate-access-contributions)
@@ -891,6 +892,25 @@ the best run in ns per call; every run was faster after the change.
 Timing is indicative and not asserted; the host also ran unrelated work (21 to 51%
 CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
+
+## Staged values and health
+
+APIShared 0.28.0 adds shared `BeforeFixedValue` and opt-in `AfterFixedValue`
+composition for numerical policies. The normal stage is the default; after-stage
+factors also multiply a winning fixed value. Existing legacy APIs keep their
+meaning, including the absolute coefficient in fear `SetMultiplier`. Read the
+[numeric contract and economy APIs](VALUE_MODIFIERS.md) before mixing policies.
+
+For maximum HP, register `HealthModifiers` after `LibraryLoaded` and enable
+immutable contributions at synchronized mission boundaries. APIShared captures
+the completed native basis and freezes each generation after one application.
+See [the health contract](HEALTH.md) for save migration, category ownership,
+limits, linked siege towers and the [compiled example](../examples/ThirdPartyMod/HealthExample.cs).
+
+For market prices use [MarketPriceModifiers](MARKET_PRICE_MODIFIERS.md) to compose
+per-lot base prices across manual trade, AI, autotrade, HUD and valuation. Existing
+low-level query veto totals remain distinct and compatible. ExtraFeatures' AI
+exception now omits only its own factors, allowing other registered mods to work.
 
 ## Sharing native market price queries
 

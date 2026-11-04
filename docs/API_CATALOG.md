@@ -1,5 +1,19 @@
 # API catalog
 
+## Staged values and maximum health
+
+APIShared 0.28.0 adds `APIShared.Modifiers.ValueModifierStage` and the exact,
+overflow-safe [numeric composition contract](VALUE_MODIFIERS.md). Normal factors
+precede the winning fixed value; opt-in `AfterFixedValue` factors also multiply it.
+HP, market base prices, popularity, fear popularity and AI sale policies expose
+these stages while retaining their own safety and legacy contracts.
+
+`APIShared.Health.HealthModifiers` coordinates initialization-only unit/building
+HP, process-rooted policy handles, saved original bases and linked siege towers.
+See [health lifetime, migration and safety](HEALTH.md).
+`APIShared.Economy.MarketPriceModifiers` composes native per-lot base prices,
+including Human/AI contextual policies. See [market composition](MARKET_PRICE_MODIFIERS.md).
+
 Local mapper-selection camera policies are available through
 `APIShared.Presentation.MapperSelectionCameraEvents`: ordered owner-bound Pre/Post
 callbacks can suppress only the automatic family-building camera call while the

@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Economy/PopularityModifiers.cs" Link="Production/PopularityModifiers.cs" />
     <Compile Include="../../src/Economy/FearPopularity.cs" Link="Production/FearPopularity.cs" />
     <Compile Include="../../src/Economy/PopularityOverrides.cs" Link="Production/PopularityOverrides.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/PopularityReport.cs" Link="Production/PopularityReport.cs" />

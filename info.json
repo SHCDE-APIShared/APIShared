@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.27.0",
+  "Version": "0.28.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.28.0",
+      "Changes": [
+        "Add ordered BeforeFixedValue and opt-in AfterFixedValue numeric contributions for shared health, market base prices, popularity, fear popularity and AI sale policies while preserving existing API meanings and final safety rules.",
+        "Coordinate initialization-only unit and building maximum HP from saved original bases, including same-slot type transitions, legacy Lord import and jointly bounded siege towers; keep maxima frozen after initialization.",
+        "Compose native market lot prices across transaction and display paths, preserve legacy total-price vetoes and direct foreign fixed values, and retain bounded save ownership without multiplier compounding."
+      ]
+    },
     {
       "Version": "0.27.0",
       "Changes": [

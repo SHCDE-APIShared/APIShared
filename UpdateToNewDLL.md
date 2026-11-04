@@ -2,6 +2,7 @@
 
 **Contents**
 
+- [Shared health initialization](#shared-health-initialization)
 - [Authenticated Chore context and submission](#authenticated-chore-context-and-submission)
 - [Spectator input control boundaries](#spectator-input-control-boundaries)
 - [Player-view identity: common save writer and raw Chore submission](#player-view-identity-common-save-writer-and-raw-chore-submission)
@@ -20,6 +21,62 @@
 - [Shared visible-map entry and pause-menu actions](#shared-visible-map-entry-and-pause-menu-actions)
 - [Managed Script Extender and game targets of Lord presentation and move diagnostics](#managed-script-extender-and-game-targets-of-lord-presentation-and-move-diagnostics)
 - [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
+
+## Shared health initialization
+
+Owner: `Health.HealthNativeObserver` and `Health.HealthRuntime`; public lifetime
+contract: [shared HP](docs/HEALTH.md). Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+
+The common unit type initializer at RVA `0x19A240` has ABI
+`void(void* unitManager, int gameId, int chimpType)` (RCX/EDX/R8D).
+Reference prologue, 26 bytes:
+`48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20`.
+The first two five-byte instructions store RBX/RBP in caller shadow space.
+Only the productive RedBird NativeX64 Indirect scheme is allowed: ten displaced
+bytes, continuation at +10. Validate full reference/live bytes, scheme, target,
+chain depth, FF25 pointer, NOP padding, relocated instructions, trampoline return
+and untouched continuation through `NativeIndirectEntry`. The private backend
+fixture exercises this contract; it does not modify game memory. Full feature
+audit found no incoming targets inside the displaced prefix, and local Extender
+and Fixes sources do not own this entry. The native-site registry reserves this
+prefix and observes the remaining prologue before publication.
+
+The original always runs exactly once. Its callback only queues a verified game/
+global/type identity, never applies HP. Lord creation at `0xC23C0` applies profile
+HP after this initializer returns; completed simulation ticks therefore process
+queued units. Recruitment/worker/disband paths can reuse both slot and GlobalId,
+including the same type, so every observed initialization starts a fresh generation.
+Save-loaded generations must be imported before issuing a new serial. Existing
+building-spawn Post events similarly queue buildings until outer integration.
+The startup-prepared transaction and callback remain rooted for process lifetime;
+published hooks are logically dormant when unsupported or without enabled demand.
+
+Required interop layouts are hash-bound and checked before publication:
+GameUnit stride `0x490`, current/max `0x3C4/0x3C8`, percentage `0x2D0`, blocks
+`0x34`; GameBuilding stride `0x32C`, signed current/unsigned max `0x10C/0x10E`.
+Siege tower unit type58 and proxy building69 use reciprocal ID/global pairs at
+unit `0x334/0x364` and building `0x110/0x114`. Proxy deployment at `0x15ECE0`
+may happen much later. Both native damage directions (`0x7EB00`, `0x15ECE0`)
+multiply unit maximum and building health in signed Int32; retain their arithmetic
+and jointly bound the pair, including future proxy creation. Unit HP-percentage
+readers use signed `current * 100`; building repair at `0xD5030` multiplies current
+HP by positive wood/stone costs. These establish the public limits and repair
+cost-dependent bound, rather than the storage types alone.
+
+Load normalizer `0x19C300` can replace healthy unit HP with type/owner defaults;
+new-map normalizer `0x197EF0` does likewise. Saved original bases, including Lord
+profiles and Vanilla Enemy HP, must survive these resets. Building spawn at
+`0xB47E0` uses type-table health at VA `0x1802E7510`, without Enemy HP. Existing
+full-health building normalizers `0xCA110/0xCA5F0` are distinct from repair.
+Do not infer bases by dividing current health or periodically enforce targets.
+
+On an updated DLL audit all callers/writers, outer completion boundaries, load
+normalizers, cache readers, both tower damage directions and repair arithmetic.
+Recheck actual installed Extender field widths/offsets and hook ownership. Unknown
+hashes or conflicting entries fail only this service closed. Real new-game,
+save-loading, spectator, editor exclusion and matching host/client acceptance
+remain necessary beyond the static and private-memory fixtures.
 
 ## Authenticated Chore context and submission
 

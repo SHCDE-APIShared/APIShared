@@ -18,6 +18,7 @@ namespace APIShared
         internal const string GatehouseAutomation = "Gatehouse.Automation";
         internal const string AivBuildStep = "Diagnostics.AivBuildStep";
         internal const string MarketPrices = "Economy.MarketPrices";
+        internal const string HealthInitialization = "Health.TypeInitialization";
         internal const string PlagueHeight = "Projectiles.PlagueHeight";
         internal const string AiMarketSell = "Economy.AiMarketSell";
         internal const string AssassinPath = "Pathfinding.AssassinPath";
@@ -141,6 +142,12 @@ namespace APIShared
             Exclusive(0x29723, 15), Observe(0x29732, 5), Observe(0x2978B, 21)
         };
 
+        internal static NativeSiteSpan[] HealthInitializationSpans() => new[]
+        {
+            Exclusive(Health.HealthNativeObserver.Rva, 10),
+            Observe(Health.HealthNativeObserver.Rva + 10, Health.HealthNativeObserver.Entry.Length - 10)
+        };
+
         internal static NativeSiteSpan[] MarketPriceSpans() => new[]
         {
             Exclusive(MarketPriceNativeRuntime.BuyRva, MarketPriceNativeRuntime.DisplacedLength),
@@ -216,6 +223,7 @@ namespace APIShared
             Group(GatehouseAutomation, GatehouseAutomationSpans()),
             Group(AivBuildStep, AivBuildStepSpans()),
             Group(MarketPrices, MarketPriceSpans()),
+            Group(HealthInitialization, HealthInitializationSpans()),
             Group(PlagueHeight, PlagueHeightSpans()),
             Group(AiMarketSell, AiMarketSellSpans()),
             Group(AssassinPath, AssassinPathSpans()),

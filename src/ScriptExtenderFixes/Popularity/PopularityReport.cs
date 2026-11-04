@@ -38,7 +38,8 @@ namespace APIShared.ScriptExtenderFixes
             result.Ale = Value(active, ale, Ale);
             // A selected contribution replaces the SE product completely. Do not
             // evaluate an irrelevant foreign coefficient (which may overflow) first.
-            if (Economy.FearPopularity.TryCalculate(selection?.Fear,FearLevel, out int roundedFear)) result.Fear = roundedFear;
+            int originalFearCoefficient=active.TryGetValue("GoodBadThingPopModifierMultiplier",out int currentCoefficient)?currentCoefficient:25;
+            if (Economy.FearPopularity.TryCalculate(selection?.Fear,FearLevel,originalFearCoefficient, out int roundedFear)) result.Fear = roundedFear;
             else if (active.TryGetValue("GoodBadThingPopModifierMultiplier", out int fear)) result.Fear = checked(fear * FearLevel);
             if (Fairs != 0) result.Fairs = Value(active, "FairsPopularityEventModifier", Fairs);
             result.Events = Events + result.Fairs - Fairs;

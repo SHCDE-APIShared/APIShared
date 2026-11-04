@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Modifiers;
 
 namespace APIShared.Economy
 {
@@ -130,15 +131,44 @@ namespace APIShared.Economy
                 copied.Add(pair.Key,new PopularityOverrideValues(ToUnits(pair.Value.HumanPoints),ToUnits(pair.Value.AIPoints)));
             }
             lock(sync) {
-                int count=SourceCount; var human=new int?[count]; var ai=new int?[count];
-                foreach(var item in entries) foreach(var pair in ReferenceEquals(item,registration)?copied:item.Values) {
-                    if(pair.Value.HumanPoints.HasValue) human[(int)pair.Key]=pair.Value.HumanPoints;
-                    if(pair.Value.AIPoints.HasValue) ai[(int)pair.Key]=pair.Value.AIPoints;
-                }
-                registration.Values=copied;
-                PopularitySelection.SetSources(human,ai);
+                registration.Values=copied; registration.Modifiers=new Dictionary<PopularitySource,PopularityModifierValues>();
+                Publish();
             }
         }
+        internal static void SetModifiers(PopularityOverrideRegistration registration,IReadOnlyDictionary<PopularitySource,PopularityModifierValues> values)
+        {
+            var copied=new Dictionary<PopularitySource,PopularityModifierValues>();
+            if(values!=null) foreach(var pair in values) {
+                if(!Enum.IsDefined(typeof(PopularitySource),pair.Key)) throw new ArgumentException("Unknown popularity source.",nameof(values));
+                copied.Add(pair.Key,pair.Value);
+            }
+            lock(sync) {registration.Values=new Dictionary<PopularitySource,PopularityOverrideValues>();registration.Modifiers=copied;Publish();}
+        }
+        private static void Publish()
+        {
+                int count=SourceCount; var human=new int?[count]; var ai=new int?[count];
+                var h=new List<ValueModifierContribution>[count];var a=new List<ValueModifierContribution>[count];
+                var typedH=new bool[count];var typedA=new bool[count];
+                foreach(var item in entries) {
+                  foreach(var pair in item.Values) {
+                    if(pair.Value.HumanPoints.HasValue) human[(int)pair.Key]=pair.Value.HumanPoints;
+                    if(pair.Value.AIPoints.HasValue) ai[(int)pair.Key]=pair.Value.AIPoints;
+                    int key=(int)pair.Key;
+                    if(pair.Value.HumanPoints.HasValue) Add(h,key,ValueModifierContribution.FixedValue(pair.Value.HumanPoints.Value/25m));
+                    if(pair.Value.AIPoints.HasValue) Add(a,key,ValueModifierContribution.FixedValue(pair.Value.AIPoints.Value/25m));
+                  }
+                  foreach(var pair in item.Modifiers) {
+                    int key=(int)pair.Key;
+                    if(pair.Value.Human.Kind!=ValueModifierKind.None) {Add(h,key,pair.Value.Human);typedH[key]=true;}
+                    if(pair.Value.AI.Kind!=ValueModifierKind.None) {Add(a,key,pair.Value.AI);typedA[key]=true;}
+                  }
+                }
+                var hp=new ValueModifierPlan[count];var ap=new ValueModifierPlan[count];
+                for(int i=0;i<count;i++){if(typedH[i])hp[i]=ValueModifierPlan.Create(h[i]);if(typedA[i])ap[i]=ValueModifierPlan.Create(a[i]);}
+                PopularitySelection.SetSources(human,ai,hp,ap);
+        }
+        private static void Add(List<ValueModifierContribution>[] values,int key,ValueModifierContribution value)
+        {if(values[key]==null)values[key]=new List<ValueModifierContribution>();values[key].Add(value);}
         internal static int? ToUnits(int? points) => points.HasValue?(int?)checked(points.Value*25):null;
     }
     /// <summary>A retained ordinary-popularity owner registration; use an empty configuration to deactivate.</summary>
@@ -146,11 +176,17 @@ namespace APIShared.Economy
     {
         internal readonly string Owner,Id; internal readonly int Order;
         internal Dictionary<PopularitySource,PopularityOverrideValues> Values=new Dictionary<PopularitySource,PopularityOverrideValues>();
+        internal Dictionary<PopularitySource,PopularityModifierValues> Modifiers=new Dictionary<PopularitySource,PopularityModifierValues>();
         internal PopularityOverrideRegistration(string owner,string id,int order){Owner=owner;Id=id;Order=order;}
         /// <summary>Atomically replaces all source values; null/empty disables this registration.</summary>
         /// <remarks>Copies inputs. Unknown source keys or points*25 overflow throw without changing active state.
         /// Null role values permit earlier applicable policies or the original SE value; zero is an explicit override.</remarks>
         public void SetContributions(IReadOnlyDictionary<PopularitySource,PopularityOverrideValues> contributions) => PopularityOverrides.Set(this,contributions);
+        /// <summary>Atomically replaces this registration with staged role-specific modifiers in report points.</summary>
+        /// <remarks>Inputs are copied. Null/empty disables both old and typed configuration. Before factors apply to
+        /// the original SE contribution; ordered fixed contributions, including legacy registrations, take precedence.
+        /// After factors follow the winning fixed value. Final whole points round away from zero and clamp before *25.</remarks>
+        public void SetModifiers(IReadOnlyDictionary<PopularitySource,PopularityModifierValues> contributions) => PopularityOverrides.SetModifiers(this,contributions);
     }
     // Combined publication is shared by simulation and UI. Each role object is built
     // on writes, never per calculation; one capture fixes both sources and fear.
@@ -158,26 +194,32 @@ namespace APIShared.Economy
     {
         internal readonly int?[] Sources;
         internal readonly FearPopularity.Selection Fear;
-        internal PopularitySelection(int?[] sources,FearPopularity.Selection fear){Sources=sources;Fear=fear;}
+        private readonly ValueModifierPlan[] modifiers;
+        internal PopularitySelection(int?[] sources,FearPopularity.Selection fear,ValueModifierPlan[] modifiers=null){Sources=sources;Fear=fear;this.modifiers=modifiers;}
         private sealed class State {
             internal readonly PopularitySelection Human,AI,Legacy;
             internal readonly bool Targeted;
-            internal State(int?[] h,int?[] a,FearPopularity.Selection fh,FearPopularity.Selection fa,FearPopularity.Selection fl) {
-                Human=new PopularitySelection(h,fh);AI=new PopularitySelection(a,fa);Legacy=new PopularitySelection(null,fl);
-                Targeted=Has(h)||Has(a)||!ReferenceEquals(fh,fl)||!ReferenceEquals(fa,fl);
+            internal State(int?[] h,int?[] a,FearPopularity.Selection fh,FearPopularity.Selection fa,FearPopularity.Selection fl,ValueModifierPlan[] hm=null,ValueModifierPlan[] am=null) {
+                Human=new PopularitySelection(h,fh,hm);AI=new PopularitySelection(a,fa,am);Legacy=new PopularitySelection(null,fl);
+                Targeted=Has(h)||Has(a)||HasPlans(hm)||HasPlans(am)||!ReferenceEquals(fh,fl)||!ReferenceEquals(fa,fl);
             }
+            private static bool HasPlans(ValueModifierPlan[] values){if(values!=null)foreach(var v in values)if(v!=null)return true;return false;}
             private static bool Has(int?[] values){if(values!=null)foreach(var v in values)if(v.HasValue)return true;return false;}
         }
         private static readonly object sync=new object();
         private static int?[] human,ai;
+        private static ValueModifierPlan[] humanModifiers,aiModifiers;
         private static FearPopularity.Selection fearHuman,fearAI,fearLegacy;
         private static State current=new State(null,null,null,null,null);
-        internal static void SetSources(int?[] h,int?[] a){lock(sync){human=h;ai=a;Volatile.Write(ref current,new State(h,a,fearHuman,fearAI,fearLegacy));}}
-        internal static void SetFear(FearPopularity.Selection h,FearPopularity.Selection a,FearPopularity.Selection legacy){lock(sync){fearHuman=h;fearAI=a;fearLegacy=legacy;Volatile.Write(ref current,new State(human,ai,h,a,legacy));}}
+        internal static void SetSources(int?[] h,int?[] a)=>SetSources(h,a,null,null);
+        internal static void SetSources(int?[] h,int?[] a,ValueModifierPlan[] hm,ValueModifierPlan[] am){lock(sync){human=h;ai=a;humanModifiers=hm;aiModifiers=am;Volatile.Write(ref current,new State(h,a,fearHuman,fearAI,fearLegacy,hm,am));}}
+        internal static void SetFear(FearPopularity.Selection h,FearPopularity.Selection a,FearPopularity.Selection legacy){lock(sync){fearHuman=h;fearAI=a;fearLegacy=legacy;Volatile.Write(ref current,new State(human,ai,h,a,legacy,humanModifiers,aiModifiers));}}
         internal static PopularitySelection Legacy => Volatile.Read(ref current).Legacy;
         internal static PopularitySelection Capture(int playerId,IntPtr resources){var state=Volatile.Read(ref current);if(!state.Targeted)return state.Legacy;int kind=PopularityPlayerRuntime.Classify(playerId,resources);return kind==1?state.Human:kind==2?state.AI:state.Legacy;}
         internal static PopularitySelection ForKind(int kind){var s=Volatile.Read(ref current);return kind==1?s.Human:kind==2?s.AI:s.Legacy;}
         internal static bool NeedsPlayer => Volatile.Read(ref current).Targeted;
-        internal static int Resolve(int original,PopularitySelection selection,int source) => selection?.Sources!=null&&selection.Sources[source].HasValue?selection.Sources[source].Value:original;
+        internal static int Resolve(int original,PopularitySelection selection,int source) =>
+            selection?.modifiers!=null&&selection.modifiers[source]!=null?PopularityModifierMath.Resolve(selection.modifiers[source],original):
+            selection?.Sources!=null&&selection.Sources[source].HasValue?selection.Sources[source].Value:original;
     }
 }

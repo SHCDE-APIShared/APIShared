@@ -87,6 +87,9 @@ try {
                 (Join-Path $game 'Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/CrusaderDE.dll'))
         }
     }
+    Invoke-ApiBuildStep $context 'Health.Tests' -Action {
+        Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root 'tests/Health.Tests/Health.Tests.csproj'), '--configuration', 'Release')
+    }
     Invoke-ApiBuildStep $context 'APIShared.csproj' -Category compile -When always -Action {
         Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")
     }
