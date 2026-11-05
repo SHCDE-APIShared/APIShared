@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.30.0",
+  "Version": "0.31.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.31.0",
+      "Changes": [
+        "Add typed Vanilla troop-action buttons with adaptive overflow, an expandable Vanilla-style grid and a persisted local auto-close checkbox; retain legacy host layout and the independent action strip."
+      ]
+    },
     {
       "Version": "0.30.0",
       "Changes": [

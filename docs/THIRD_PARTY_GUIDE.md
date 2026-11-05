@@ -765,9 +765,12 @@ bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton 
 ## HUD integration
 
 Choose the independent side-HUD capability for actions that do not depend on troop
-selection. Choose the Unit HUD's optional action-button interface for actions on the
-current local troop selection. [HudExample](../examples/ThirdPartyMod/HudExample.cs)
-shows both registrations using only public APIs.
+selection. For the small Vanilla troop-action field, use
+`APIShared.Presentation.TroopActionHud.TryRegisterButton`; APIShared places registered
+actions directly while they fit and provides **More actions** on overflow. For the
+separate strip beside Control Groups, use the Unit HUD's optional action-button
+interface. [HudExample](../examples/ThirdPartyMod/HudExample.cs) shows these registrations
+using only public APIs.
 
 Keep stable owner-local IDs and return fresh unattached controls from factories.
 Use the supplied HUD resource scope and player colour rather than retaining transient
@@ -779,6 +782,28 @@ Factories and commands run on the Unity thread and must not block. Troop descrip
 use Vanilla rollover text; side buttons use the mod-options popup by default.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
+
+### Vanilla action-field registration
+
+`TroopActionButtonDefinition` supplies the command, localized rollover text and a
+factory for an unattached Vanilla-styled Button. APIShared controls the button's
+command, enabled state and visibility. Keep the returned handle and call
+`SetVisible(true)` only when the feature applies; new registrations start hidden.
+Priority is nonnegative and followed by owner GUID and button ID for stable ordering.
+Use `RequestButtonRefresh` when sprite/style content must be recreated; prefer the
+handle's simple setters for visibility, availability and rollover text.
+
+Use a context callback to close consumer-owned UI when the own-selection context is
+lost. Menu visibility is separate from context availability. Ordinarily APIShared
+publishes the provided rollover text, including over a disabled button. Supply a
+hover callback only when your mod owns the complete rollover, such as an icon or
+cost metadata; it must handle false when the button is hidden or the HUD ends.
+
+Legacy XAML hosts retain their original two-slot behavior and are not reparented into
+the menu. Migrate those contributions explicitly to the typed factory registration;
+remove their old host and layout binding so the same action is not registered twice.
+The full placement, local auto-close option, lifecycle and failure contracts live in
+[the catalog](API_CATALOG.md#vanilla-troop-action-slots-and-overflow).
 
 ### Unit HUD sprites in another player's colour
 

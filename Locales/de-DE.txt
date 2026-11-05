@@ -176,3 +176,6 @@ Workshop.Recovery.Items=Workshop-Items: {Ids}
 Workshop.Recovery.NoRollback=Wiederherstellung nicht möglich: {Reason}
 IngameMenu.AdditionalActions=Zusätzliche Mod-Aktionen …
 IngameMenu.Back=Zurück
+TroopActions.More=Weitere Aktionen
+TroopActions.AutoClose=Nach Aktion automatisch schließen
+TroopActions.AutoCloseHelp=Schließt dieses Menü nach dem Aufruf einer Aktion. Auswahlwechsel und Außenklick schließen es weiterhin.
