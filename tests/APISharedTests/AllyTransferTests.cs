@@ -22,8 +22,8 @@ namespace APISharedTests
             public bool AreAlliedLiving(int sender, int recipient) => AlliedLiving;
             public bool TryReadStock(int player, eGoods good, out int amount) { Reads++; amount = Stock[player]; return true; }
             public int GetFreeCapacity(int recipient, eGoods good) { CapacityCalls++; return Free; }
-            public AllyTransferResult Execute(int sender, int recipient, eGoods good, int amount) =>
-                AllyTransferEvents.DispatchObserved(Events, sender, recipient, (int)good, amount, Transfer, TryReadStock, true);
+            public AllyTransferResult Execute(AllyTransferRequest request, int amount) =>
+                AllyTransferEvents.DispatchObserved(Events, request.SenderPlayerId, request.RecipientPlayerId, (int)request.Good, amount, Transfer, TryReadStock, true);
             internal void Transfer(int recipient, int good, int amount, int sender)
             { Calls++; LastAmount = amount; Stock[sender] -= amount; Stock[recipient] += amount; Free -= amount; }
         }
@@ -59,6 +59,20 @@ namespace APISharedTests
             world.Stock[1] = int.MaxValue; world.Stock[2] = 0;
             Assert.IsTrue(engine.TryExecute(new AllyTransferRequest(1, 2, eGoods.STORED_GOLD, int.MaxValue), out result, out _));
             Assert.AreEqual(short.MaxValue, result.TransferredAmount);
+        }
+
+        [TestMethod]
+        public void FinalAdmissionReadsCurrentReserveRecipientCeilingStorageAndAllianceAgain()
+        {
+            var world=new World { Free=10 }; world.Stock[1]=100;
+            var engine=new AllyTransfersEngine(world,()=>true);
+            var request=new AllyTransferRequest(1,2,eGoods.STORED_WOOD_PLANKS,10,90,10);
+            Assert.IsTrue(engine.IsStillAdmissible(request,10));
+            world.Stock[1]=99; Assert.IsFalse(engine.IsStillAdmissible(request,10));
+            world.Stock[1]=100; world.Stock[2]=1; Assert.IsFalse(engine.IsStillAdmissible(request,10));
+            world.Stock[2]=0; world.Free=9; Assert.IsFalse(engine.IsStillAdmissible(request,10));
+            world.Free=10; world.AlliedLiving=false; Assert.IsFalse(engine.IsStillAdmissible(request,10));
+            Assert.AreEqual(0,world.Calls);
         }
 
         [TestMethod]

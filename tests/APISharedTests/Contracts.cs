@@ -33,7 +33,8 @@ namespace APISharedTests
             {
                 foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                 {
-                    if (!IsAuditedGateNativeType(type, method, null))
+                    if (!IsAuditedGateNativeType(type, method, null) &&
+                        !IsAuditedAiObservationPointer(type, method.Name, method.ReturnType))
                         AssertSafePublicType(method.ReturnType, $"{type.FullName}.{method.Name} return type");
                     foreach (ParameterInfo parameter in method.GetParameters())
                     {
@@ -65,10 +66,22 @@ namespace APISharedTests
                         foreach (ParameterInfo parameter in constructor.GetParameters())
                             AssertSafePublicType(parameter.ParameterType, $"{type.FullName} constructor parameter {parameter.Name}");
                 foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                    AssertSafePublicType(property.PropertyType, $"{type.FullName}.{property.Name} property type");
+                    if (!IsAuditedAiObservationPointer(type, property.Name, property.PropertyType))
+                        AssertSafePublicType(property.PropertyType, $"{type.FullName}.{property.Name} property type");
                 foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                     AssertSafePublicType(field.FieldType, $"{type.FullName}.{field.Name} field type");
             }
+        }
+        private static bool IsAuditedAiObservationPointer(Type owner, string member, Type actual)
+        {
+            // These two immutable native observations deliberately expose only the invocation's
+            // manager for immediate diagnostic copying. They expose no invocation/ownership API.
+            // Exact member/type exceptions retain the general native-pointer prohibition.
+            if ((owner != typeof(APIShared.Units.AiMilitary.AiGlobalTaskObservation) &&
+                owner != typeof(APIShared.Units.AiMilitary.AiStrategicOrderObservation)) ||
+                (member != "NativeManager" && member != "get_NativeManager")) return false;
+            Assert(actual == typeof(IntPtr), "audited immediate AI observation manager pointer");
+            return true;
         }
         // Explicitly audited advanced native API. No namespace-wide pointer exemption.
         private static bool IsAuditedGateNativeType(Type owner, MethodInfo method, ParameterInfo parameter)

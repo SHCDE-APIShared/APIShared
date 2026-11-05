@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><StartupObject>Program</StartupObject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks><PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Units/AiMilitary/AiInitializationWaitBudget.cs" Link="Production/AiInitializationWaitBudget.cs" />
+    <Compile Include="../../src/Simulation/SimulationClock.cs" Link="Production/SimulationClock.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Orders/AiCurrentOrder.cs" Link="Production/AiCurrentOrder.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Orders/AiOrderLedger.cs" Link="Production/AiOrderLedger.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Orders/AiStrategicRecruitInitializer.cs" Link="Production/AiStrategicRecruitInitializer.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Orders/AiStrategicIntentPolicy.cs" Link="Production/AiStrategicIntentPolicy.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Native/AiStrategicIntent.cs" Link="Production/AiStrategicIntent.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Native/AiGroupWindowPolicy.cs" Link="Production/AiGroupWindowPolicy.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Orders/AiUnitMoveReceipts.cs" Link="Production/AiUnitMoveReceipts.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Orders/AiRecruitMutationReceipts.cs" Link="Production/AiRecruitMutationReceipts.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Native/AiNativeGroup.cs" Link="Production/AiNativeGroup.cs" />
+  </ItemGroup>
+</Project>

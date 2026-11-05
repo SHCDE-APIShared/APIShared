@@ -40,6 +40,12 @@ namespace APIShared
         public bool TryGetMissionLifecycle(out IMissionLifecycleCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetMissionLifecycle(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Acquires semantic military AI admission, protected placement and map declarations.
+        /// Acquisition enables native group-order observation for this process; no unit is changed.
+        /// Completion callbacks use their committing thread and never implicitly dispatch UI work.</summary>
+        public bool TryGetAiMilitary(out Units.AiMilitary.IAiMilitaryCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            Units.AiMilitary.AiMilitaryService.TryGet(OwnerGuid, out capability, out diagnostic);
+
         /// <summary>Acquires exclusive gatehouse distance-origin configuration for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IGatehouseDistanceOriginCapability"/> for operation/thread contracts.</summary>
         public bool TryGetGatehouseDistanceOrigin(out IGatehouseDistanceOriginCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetGatehouseDistanceOrigin(OwnerGuid, out capability, out diagnostic);

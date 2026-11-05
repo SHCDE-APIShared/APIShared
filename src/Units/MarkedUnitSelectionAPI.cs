@@ -92,6 +92,7 @@ namespace APIShared
                 log = logger;
                 installed = true;
                 Statistics.EngineReadbacks.Initialize(readbackGate);
+                Simulation.SimulationWorkPump.Initialize(readbackGate);
                 APIShared.Internal.DebugLogHelper.LogDebug(logger, "MARKED_SELECTION_READY: Harmony input postfix and post-tick hooks installed; Vanilla calls are passed through once.");
             }
             catch (Exception error)
@@ -190,12 +191,18 @@ namespace APIShared
         private static int OnRun(bool mpFrameSkip)
         {
             bool readback = Statistics.EngineReadbacks.HasPending;
-            if (!hasDemand && !readback) return originalRun(mpFrameSkip);
+            bool work = Simulation.SimulationWorkPump.HasPending;
+            if (!hasDemand && !readback && !work) return originalRun(mpFrameSkip);
             Interlocked.Exchange(ref completedTick, 0);
             int result;
             if (readback) Statistics.EngineReadbacks.EnterRun();
+            if (work) Simulation.SimulationWorkPump.EnterRun();
             try { result = originalRun(mpFrameSkip); }
-            finally { if (readback) Statistics.EngineReadbacks.ExitRun(); }
+            finally
+            {
+                if (work) Simulation.SimulationWorkPump.ExitRun();
+                if (readback) Statistics.EngineReadbacks.ExitRun();
+            }
             if (Interlocked.Exchange(ref completedTick, 0) != 0)
             {
                 try { ReconcileAfterRun(); }
@@ -206,6 +213,8 @@ namespace APIShared
 
         private static void OnReturnBuffer(MemoryBuffers self, MemoryBuffers.MemBuffer buffer)
         {
+            if (Simulation.SimulationWorkPump.HasPending && buffer != null && buffer.beingFilled)
+                Simulation.SimulationWorkPump.Drain();
             if (Statistics.EngineReadbacks.HasPending && buffer != null && buffer.beingFilled) Statistics.EngineReadbacks.BeforeBufferPublication();
             if (!hasDemand) { originalReturnBuffer(self, buffer); return; }
             bool completed = buffer != null && buffer.beingFilled;

@@ -43,7 +43,7 @@ namespace APIShared.Economy
         bool AreAlliedLiving(int sender, int recipient);
         bool TryReadStock(int player, eGoods good, out int amount);
         int GetFreeCapacity(int recipient, eGoods good);
-        AllyTransferResult Execute(int sender, int recipient, eGoods good, int amount);
+        AllyTransferResult Execute(AllyTransferRequest request, int amount);
     }
 
     // The production arithmetic and pre-read gates are injected into game-independent fixtures.
@@ -65,7 +65,7 @@ namespace APIShared.Economy
         private bool CanRead(out string reason)
         {
             if (!allowed()) { reason = "A shared synchronous simulation context is required."; return false; }
-            if (AllyTransferEvents.IsDispatching) { reason = "Nested transfer service calls are not permitted."; return false; }
+            if (AllyTransferEvents.IsDispatching || AllyTransfersSeBridge.HasServiceFrame) { reason = "Nested transfer service calls are not permitted."; return false; }
             if (!backend.IsReady) { reason = "The native ally-transfer service is unavailable."; return false; }
             reason = string.Empty; return true;
         }
@@ -83,30 +83,44 @@ namespace APIShared.Economy
         {
             result = Rejected(request);
             if (!CanRead(out reason)) return false;
-            if (request == null || !ValidPlayer(request.SenderPlayerId) || !ValidPlayer(request.RecipientPlayerId) ||
-                request.SenderPlayerId == request.RecipientPlayerId || !AllyTransfers.IsSupportedGood(request.Good) ||
-                request.MaximumAmount <= 0 || request.MinimumSenderRemaining < 0 || request.MaximumRecipientAmount < 0)
-            { reason = "Distinct valid players, a supported good and nonnegative bounds are required."; return false; }
             try
             {
-                if (!backend.AreAlliedLiving(request.SenderPlayerId, request.RecipientPlayerId))
-                { reason = "Both players must have living Lords and belong to the same team."; return false; }
-                if (!backend.TryReadStock(request.SenderPlayerId, request.Good, out int sender) || sender < 0)
-                { reason = "The sender balance is unavailable or negative."; return false; }
-                if (!ReadCapacity(request.RecipientPlayerId, request.Good, out AllyTransferCapacity capacity, out reason)) return false;
-                long amount = Math.Min((long)request.MaximumAmount, AllyTransfers.MaximumTransferAmount);
-                amount = Math.Min(amount, (long)sender - request.MinimumSenderRemaining);
-                amount = Math.Min(amount, (long)request.MaximumRecipientAmount - capacity.AmountStored);
-                amount = Math.Min(amount, capacity.FreeAmount);
-                if (!capacity.HasStorage || amount <= 0)
-                { reason = capacity.HasStorage ? "The operation bounds permit no transfer." : "The recipient has no compatible storage."; return false; }
-                result = backend.Execute(request.SenderPlayerId, request.RecipientPlayerId, request.Good, (int)amount);
+                if (!TryPrepare(request, out int amount, out reason)) return false;
+                result = backend.Execute(request, amount);
                 if (result == null) { result = Rejected(request); reason = "The native operation returned no observation."; return false; }
                 bool success = result.Status == AllyTransferStatus.Completed && result.TransferredAmount.GetValueOrDefault() > 0;
                 reason = success ? string.Empty : "Transfer completion: " + result.Status + ".";
                 return success;
             }
             catch (Exception error) { reason = "Transfer execution failed: " + error.Message; return false; }
+        }
+        // Called after SE Pre and APIShared Pre, immediately before SE's original delegate.
+        // It deliberately does not reject the enclosing shared event's dispatch depth.
+        internal bool IsStillAdmissible(AllyTransferRequest request, int amount)
+        {
+            if (!allowed() || !backend.IsReady) return false;
+            try { return TryPrepare(request, out int current, out _) && current >= amount; }
+            catch { return false; }
+        }
+        private bool TryPrepare(AllyTransferRequest request, out int amount, out string reason)
+        {
+            amount = 0;
+            if (request == null || !ValidPlayer(request.SenderPlayerId) || !ValidPlayer(request.RecipientPlayerId) ||
+                request.SenderPlayerId == request.RecipientPlayerId || !AllyTransfers.IsSupportedGood(request.Good) ||
+                request.MaximumAmount <= 0 || request.MinimumSenderRemaining < 0 || request.MaximumRecipientAmount < 0)
+            { reason = "Distinct valid players, a supported good and nonnegative bounds are required."; return false; }
+                if (!backend.AreAlliedLiving(request.SenderPlayerId, request.RecipientPlayerId))
+                { reason = "Both players must have living Lords and belong to the same team."; return false; }
+                if (!backend.TryReadStock(request.SenderPlayerId, request.Good, out int sender) || sender < 0)
+                { reason = "The sender balance is unavailable or negative."; return false; }
+                if (!ReadCapacity(request.RecipientPlayerId, request.Good, out AllyTransferCapacity capacity, out reason)) return false;
+                long permitted = Math.Min((long)request.MaximumAmount, AllyTransfers.MaximumTransferAmount);
+                permitted = Math.Min(permitted, (long)sender - request.MinimumSenderRemaining);
+                permitted = Math.Min(permitted, (long)request.MaximumRecipientAmount - capacity.AmountStored);
+                permitted = Math.Min(permitted, capacity.FreeAmount);
+                if (!capacity.HasStorage || permitted <= 0)
+                { reason = capacity.HasStorage ? "The operation bounds permit no transfer." : "The recipient has no compatible storage."; return false; }
+                amount = (int)permitted; reason = string.Empty; return true;
         }
         internal static bool ValidPlayer(int player) => player >= 1 && player <= 8;
         private static AllyTransferResult Rejected(AllyTransferRequest request) => new AllyTransferResult(

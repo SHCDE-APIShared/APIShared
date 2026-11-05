@@ -24,10 +24,14 @@ namespace APISharedTests
             int feature = 0;
             foreach (KeyValuePair<string, NativeSiteSpan[]> group in ApiSharedNativeSites.All())
             {
-                // Distinct owners: any overlap between two APIShared features would be refused here.
+                // Distinct owners: independent writers cannot overlap. A call-only client can
+                // invoke another feature's occupied entry without acquiring patch ownership.
                 NativeSiteRegistrationResult result = registry.RegisterSites("Feature" + feature++, group.Key, group.Value);
                 MsAssert.AreEqual(NativeSiteRegistrationStatus.Accepted, result.Status, group.Key + ": " + result.Reason);
-                MsAssert.AreEqual(0, result.SharedWith.Count, group.Key + " shares no byte with another APIShared feature");
+                foreach (NativeSiteRegistration shared in result.SharedWith)
+                    MsAssert.IsTrue(shared.Mode == NativeSiteMode.CallOnly || group.Value.Any(span =>
+                        span.Mode == NativeSiteMode.CallOnly && span.Rva < shared.Rva + shared.Length &&
+                        shared.Rva < span.Rva + span.Length), group.Key + " may share only an explicitly call-only entry");
             }
 
             var expectedWriters = new (int Rva, int Length, string Group)[]
@@ -65,8 +69,21 @@ namespace APISharedTests
             foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17), (0x13036, 13) })
                 MsAssert.AreEqual(1, registry.Registrations.Count(r => r.Rva == observed.Item1 && r.Length == observed.Item2 && r.Mode == NativeSiteMode.Observe),
                     $"observed span 0x{observed.Item1:X}+{observed.Item2}");
-            MsAssert.AreEqual(0, registry.Registrations.Count(r => r.Mode == NativeSiteMode.ChainableEntry || r.Mode == NativeSiteMode.CallOnly),
-                "APIShared's backends refuse occupied entries, so none of its own sites is chainable");
+            MsAssert.AreEqual(0, registry.Registrations.Count(r => r.Mode == NativeSiteMode.ChainableEntry),
+                "APIShared's native patch backends refuse occupied entries; callers do not own patches");
+            var militaryCalls = registry.Registrations.Where(r => r.Name == "Units.AiMilitary.Calls").ToArray();
+            MsAssert.IsTrue(militaryCalls.Length > 0 && militaryCalls.All(r => r.Mode == NativeSiteMode.CallOnly));
+            foreach (var call in militaryCalls)
+                if (registry.TryGetWriter(call.Rva, out var writer))
+                    MsAssert.AreNotEqual(call.Name, writer.Name, "Military live-entry calls cannot acquire a writer claim.");
+            // The Extender already owns this entry. The managed Original.Invoke adapter
+            // must never regain an exclusive native writer claim here.
+            var allyTransfer = registry.Registrations.Single(r => r.Name == APIShared.Economy.AllyTransfersNative.SiteName &&
+                r.Rva == APIShared.Economy.AllyTransfersNative.TransferRva);
+            MsAssert.AreEqual(NativeSiteMode.CallOnly, allyTransfer.Mode);
+            MsAssert.IsFalse(registry.TryGetWriter(allyTransfer.Rva, out _), "SE retains the sole native transfer hook");
+            MsAssert.AreEqual(1, registry.Registrations.Count(r => r.Name == APIShared.Economy.AllyTransfersNative.SiteName &&
+                r.Rva == APIShared.Economy.AllyTransfersNative.CapacityRva && r.Mode == NativeSiteMode.Observe));
         }
 
         [TestMethod]

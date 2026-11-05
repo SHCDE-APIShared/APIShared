@@ -87,12 +87,13 @@ namespace APIShared.ScriptExtenderFixes
 
         internal static void CorrectLoadFlag(ILContext il, bool editorCapable)
         {
+            Instruction[] archiveReads = il.Body.Instructions.Where(i => i.Operand is MethodReference m &&
+                m.Name == "LoadMapArchive" && m.DeclaringType.FullName == typeof(GameMapArchiveManagerAPI).FullName).ToArray();
             Instruction[] stores = il.Body.Instructions.Where(i => i.OpCode == OpCodes.Stfld &&
                 i.Operand is FieldReference field && field.DeclaringType.FullName == typeof(GameMapArchiveManagerAPI).FullName &&
                 field.Name == "_currentFileIsSaveFile" && field.FieldType.FullName == "System.Boolean").ToArray();
             if (stores.Length != 1 || stores[0].Previous?.OpCode != (editorCapable ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0) ||
-                !il.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "LoadMapArchive" &&
-                    m.DeclaringType.FullName == typeof(GameMapArchiveManagerAPI).FullName))
+                archiveReads.Length != 1)
                 throw new InvalidOperationException("Archive load classification contract differs: " + il.Method.FullName);
             var cursor = new ILCursor(il);
             cursor.Goto(stores[0], MoveType.Before);
@@ -100,6 +101,14 @@ namespace APIShared.ScriptExtenderFixes
             cursor.Emit(OpCodes.Ldarg_0);
             if (editorCapable) cursor.EmitDelegate<Func<LoadSaveGameEventArgs, bool>>(e => !e.LoadingEditorMap);
             else cursor.EmitDelegate<Func<MapLoadEventArgs, bool>>(e => e.bMultiplayerSave != 0);
+            cursor = new ILCursor(il);
+            cursor.Emit(OpCodes.Ldarg_0);
+            if (editorCapable) cursor.EmitDelegate<Action<LoadSaveGameEventArgs>>(Savegames.VersionedSaveDataRuntime.BeginArchive);
+            else cursor.EmitDelegate<Action<MapLoadEventArgs>>(Savegames.VersionedSaveDataRuntime.BeginArchive);
+            cursor.Goto(archiveReads[0], MoveType.After);
+            cursor.Emit(OpCodes.Ldarg_0);
+            if (editorCapable) cursor.EmitDelegate<Action<LoadSaveGameEventArgs>>(Savegames.VersionedSaveDataRuntime.CompleteArchive);
+            else cursor.EmitDelegate<Action<MapLoadEventArgs>>(Savegames.VersionedSaveDataRuntime.CompleteArchive);
         }
 
         internal static SaveContext NormalizeSave(SaveContext context) => synchronizedSaveDepth == 0 ? context :

@@ -63,7 +63,7 @@ namespace APIShared.Economy
         internal static AllyTransferResult DispatchObserved(
             InterceptionEvent<AllyTransferPreEventArgs, AllyTransferPostEventArgs> registry,
             int sender, int recipient, int good, int amount, AllyTransfersNative.TransferCall original,
-            ReadBalance read, bool needsResult)
+            ReadBalance read, bool needsResult, Func<bool> admit = null)
         {
             if (depth != 0)
             {
@@ -76,12 +76,12 @@ namespace APIShared.Economy
                 original(recipient, good, amount, sender);
                 return null;
             }
-            return DispatchTracked(registry, sender, recipient, good, amount, original, read);
+            return DispatchTracked(registry, sender, recipient, good, amount, original, read, admit);
         }
 
         private static AllyTransferResult DispatchTracked(
             InterceptionEvent<AllyTransferPreEventArgs, AllyTransferPostEventArgs> registry,
-            int sender, int recipient, int good, int amount, AllyTransfersNative.TransferCall original, ReadBalance read)
+            int sender, int recipient, int good, int amount, AllyTransfersNative.TransferCall original, ReadBalance read, Func<bool> admit)
         {
             depth++;
             nested = false;
@@ -90,8 +90,9 @@ namespace APIShared.Economy
                 var invocation = registry.Begin(new AllyTransferPreEventArgs(sender, recipient, good, amount));
                 bool veto = invocation.Pre.SkipOriginalFunction;
                 long? debit = null, credit = null;
-                bool originalCalled = false, faulted = false;
+                bool originalCalled = false, faulted = false, rejected = false;
                 if (veto) { debit = 0; credit = 0; }
+                else if (admit != null && !admit()) rejected = true;
                 else
                 {
                     int? beforeSender = Read(read, sender, good), beforeRecipient = Read(read, recipient, good);
@@ -111,7 +112,7 @@ namespace APIShared.Economy
                 }
                 bool balanced = !nested && debit.HasValue && credit.HasValue && debit.Value == credit.Value &&
                     debit.Value >= 0 && debit.Value <= Math.Max(0L, amount);
-                AllyTransferStatus status = veto ? AllyTransferStatus.Vetoed : faulted ? AllyTransferStatus.Faulted :
+                AllyTransferStatus status = veto ? AllyTransferStatus.Vetoed : rejected ? AllyTransferStatus.Rejected : faulted ? AllyTransferStatus.Faulted :
                     balanced ? AllyTransferStatus.Completed : AllyTransferStatus.Uncertain;
                 var result = new AllyTransferResult(sender, recipient, (eGoods)good, amount,
                     originalCalled, status, debit, credit, nested);

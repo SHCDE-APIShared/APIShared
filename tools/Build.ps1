@@ -80,7 +80,7 @@ try {
             Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
         }
     }
-    foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests')) {
+    foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests','AiMilitary.NativeTests')) {
         Invoke-ApiBuildStep $context $suite -Action {
             Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
                 '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--',
@@ -89,6 +89,12 @@ try {
     }
     Invoke-ApiBuildStep $context 'Health.Tests' -Action {
         Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root 'tests/Health.Tests/Health.Tests.csproj'), '--configuration', 'Release')
+    }
+    foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests')) {
+        Invoke-ApiBuildStep $context $suite -Action {
+            Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
+                '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")
+        }
     }
     Invoke-ApiBuildStep $context 'APIShared.csproj' -Category compile -When always -Action {
         Invoke-Tool $msbuild @((Join-Path $root 'APIShared.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game", "/p:ExtenderDir=$extender")

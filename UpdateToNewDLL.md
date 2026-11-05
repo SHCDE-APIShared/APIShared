@@ -1018,6 +1018,24 @@ executing a private relocated copy. Only external display/remove calls at
 stubs. Timer reads, comparisons and active-flag writes remain original. Review
 all three external edges and R11 liveness when updating this fixture.
 
+## Ally transfer adapter
+
+Reference native hash: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`Economy.AllyTransfers` uses `0xD7AD0` (585-byte gift primitive) and `0xC5AD0`
+(319-byte capacity query); complete byte digests and all relevant branches are in
+[the transfer contract](docs/ALLY_TRANSFERS.md). Native globals, record layouts,
+capacity semantics and notification quantities remain hash-bound: a prologue
+pattern cannot establish them on a new binary, so unknown hashes fail closed.
+
+The Script Extender already owns the gift entry. Do not install another detour or
+require live pristine bytes at `D7AD0`. Validate the full pristine native bodies,
+the Extender hook/delegate target and its loaded wrapper IL. The managed adapter
+replaces exactly the wrapper's one native Original delegate Invoke, retaining the
+surrounding mutable Pre, skip branch and Post. Recheck argument order, final getters,
+exception paths, recursive calls and opaque return preservation on Extender updates.
+The capacity query stays unpatched. Failure disables this optional service and
+leaves the existing Extender/native behavior active; no late native hook retry.
+
 ## Mapper selection camera broker
 
 Reference native SHA-256:
@@ -1080,3 +1098,69 @@ private State, original/callback exceptions, recursion, world replacement and do
 allocation behavior. The executable private-memory harness uses the real Indirect
 backend and matching/nonmatching callers, checking every GPR/XMM, flags and stack.
 Those fixtures do not establish live camera framing or host/client game acceptance.
+
+## AI military admission and quota accounting
+
+The supported image is SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Re-audit the full role/admission/order/fold/build/load flow, not only entry bytes.
+Public behavior and limits are documented in [AI military admission](docs/AI_MILITARY.md).
+
+- [Native call bindings](src/Units/AiMilitary/Native/AiMilitaryNativeBindings.cs)
+  contain all call-only entry contracts. Keep live SE/Fixes detours in the call
+  path. The direct allocator is `119D60`; the Extender public creation wrapper
+  instead covers `119C00`. These are distinct operations.
+- [Native world/order ownership](src/Units/AiMilitary/Native/AiMilitaryNativeObservers.cs)
+  owns Indirect entry detours at `87D0` (raw restore), `122B40` (strategic dispatch)
+  and `10DF60` (global task-list build). Preserve exact ABI, process roots and
+  inactive native gates. No competing consumer hook is allowed at these entries.
+- [Quota contracts](src/Units/AiMilitary/Quota/AiQuotaNativeContract.cs) identify
+  the instruction-complete spans for fold capture and recruitment comparisons.
+  The native real-count vector must remain unchanged. Contributions must come
+  from the same completed fold consumed by each comparison, including role-22
+  group/global-identity validation and no-demand folds.
+- [Engineering ownership](src/Units/AiMilitary/Engineering/AiMilitaryEngineeringRuntime.cs)
+  covers the six builder entries `A65A0/A8E40/A93C0/A9A30/AA030/AA630`.
+  Preserve historical ALL-contributor reduction, delayed product/crew identity
+  checks and exact Fixes replacement scope. The optional private Fixes method
+  is validated by signature, installed assembly identity and its delete/create IL.
+- [Effective-original broker](src/Units/AiMilitary/Orders/AiMilitaryOrderBroker.cs)
+  augments existing SE managed wrappers. Pre mutations precede native receipts;
+  Post cannot manufacture admission/allocation success. Verify every transformed
+  wrapper against the installed Extender, including reentrant world changes with
+  reused unit and group IDs/global IDs. Never restore old route/group snapshots
+  into a newer world.
+
+The mapper is a group spawn: `93750` dispatches to `118CA0`, resolves a group through
+`DE0C0`/`119C00`, calls `17FEF0` and then `11D370`, while the new unit still needs
+initialization. Invocation capture must prevent this early mapper group admission;
+quarantining only after the next native tick is too late. Map-load quarantine must
+similarly precede initial AI/fold execution, after the entire archive is decoded.
+
+Raw restore success is int 1. The audited zero-result failure branches are:
+`85496 -> 8549B -> 85B4D -> 85B74`,
+`94B15 -> 94B1A -> 96EBE -> 96F1F`, and
+`1006D7 -> 1006DC -> 102550 -> 10256A`.
+They reach their ordinary failure epilogues before AI initialization. Recheck all
+three complete caller paths before allowing the early participant to return zero
+for a failed protection transaction. Keep that failure sticky through retries and
+authoritative over mutable legacy Post results.
+
+Layout checks distinguish serialization origins from public record pointers:
+native unit serialization starts at public GameUnit minus four bytes; tribe
+serialization starts at raw row plus `28`, public GameTribe at plus `2A`.
+The AIC field named `r_AILordMinusOne` is actually one-based on this image.
+Role zero, unmanaged `65535`, unit roles and player storage slots have distinct
+meanings. Nonpositive cover/reserve/wall group counts retain their base slot.
+
+Role-22 `2ECD0` gates both recruitment and building on a physical population below
+20; `14AED0` retires above 20. Additional classification changes neither bound.
+Admission reserves the currently missing regular two-engineer pool without
+claiming unrestricted future construction capacity.
+
+Run `AiMilitary.NativeTests` with the canonical DLL, `AiRecruitOrders.Tests`,
+`AiMilitary.AttackTests`, `MapRecordReadiness.Tests`, and the affected framework,
+save-context, API compatibility and consumer tests. Verify real normal/DevDiag
+Spectator builds separately; temporary diagnosis must stay absent from normal
+assemblies. Fixtures establish native ABI/branch and managed behavior contracts,
+not actual editor/game/save or real host/client acceptance.

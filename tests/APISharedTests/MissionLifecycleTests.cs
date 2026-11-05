@@ -10,6 +10,23 @@ namespace APISharedTests
     [TestCategory("MissionLifecycle")]
     public sealed class MissionLifecycleTests
     {
+        [TestMethod]
+        public void NativeAdmissionAbortUnwindsTheWholeStartAndDoesNotHideUnrelatedExceptions()
+        {
+            int originalCalls = 0, postLoadCalls = 0;
+            int result = MissionLifecycleService.InvokeNativeAdmission<int>(() => {
+                originalCalls++;
+                Action nativeLoad = () => throw new MissionLifecycleService.NativeAdmissionAbort("changed file");
+                nativeLoad();
+                postLoadCalls++; return 1;
+            }, out bool normal);
+            Assert.IsFalse(normal); Assert.AreEqual(0, result);
+            Assert.AreEqual(1, originalCalls); Assert.AreEqual(0, postLoadCalls);
+            Assert.AreEqual(7, MissionLifecycleService.InvokeNativeAdmission(() => 7, out normal));
+            Assert.IsTrue(normal);
+            Assert.ThrowsExactly<InvalidOperationException>(() => MissionLifecycleService.InvokeNativeAdmission<int>(
+                () => throw new InvalidOperationException("original failed"), out _));
+        }
         private static MissionContext Seed(MissionStartKind kind) => new MissionContext(0, kind, default,
             kind == MissionStartKind.EditorCreated ? null : "same.map", "same map", false, 160, 1, 1);
 

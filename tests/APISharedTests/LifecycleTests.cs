@@ -30,10 +30,19 @@ namespace APISharedTests
                 {
                     var call = code[i].Operand as Mono.Cecil.MethodReference;
                     if (call?.Name == "ApplyBeforeLoad") prepare = i;
-                    if (prepare >= 0 && call?.Name == "Invoke" && call.DeclaringType.FullName.StartsWith("System.Func"))
+                    // Admission failures must unwind the entire Vanilla start. Its one original
+                    // delegate invocation now lives in the separately behavior-tested boundary.
+                    if (prepare >= 0 && call?.Name == nameof(APIShared.MissionLifecycleService.InvokeNativeAdmission) &&
+                        call.DeclaringType.FullName == lifecycle.FullName)
                     { rootInvoke = i; break; }
                 }
                 Assert(prepare >= 0 && rootInvoke > prepare, "Root Vanilla load can precede prepared settings.");
+                var boundary = System.Linq.Enumerable.Single(lifecycle.Methods, m => m.Name ==
+                    nameof(APIShared.MissionLifecycleService.InvokeNativeAdmission));
+                Assert(System.Linq.Enumerable.Count(boundary.Body.Instructions, instruction =>
+                    instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "Invoke" &&
+                    method.DeclaringType.FullName.StartsWith("System.Func")) == 1,
+                    "The admission boundary must retain one Original invocation.");
                 var settings = assembly.MainModule.GetType("APIShared.SavegameModSettings");
                 var begin = System.Linq.Enumerable.Single(settings.Methods, m => m.Name == "BeginLoad");
                 bool validates = false, readsDirectly = false, trustsArchiveFlag = false;

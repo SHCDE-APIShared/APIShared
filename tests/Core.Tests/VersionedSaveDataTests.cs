@@ -7,6 +7,73 @@ namespace APIShared.Core.Tests;
 public class VersionedSaveDataTests
 {
     [TestMethod]
+    public void PreparedMigratesOnceAndPostOwnsIndependentEntryBytes()
+    {
+        var extender = new FakeExtender();
+        int migrated = 0;
+        var early = new List<VersionedSaveLoad>();
+        var registration = extender.Registration("Mod.Early", 2, 1, new[] { "value" }, Writes(new()));
+        registration.Scope = VersionedSaveScope.SaveGamesAndMaps;
+        registration.Prepared = early.Add;
+        registration.AddMigration(1, entries => { migrated++; entries.Set("value", new byte[] { 8 }); });
+        var mod = extender.Register(registration);
+        byte[] bytes = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } });
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.MapToPlay, "map.map");
+        mod.Load(bytes);
+        extender.Registry.PrepareLoad();
+        extender.Registry.PrepareLoad();
+        Assert.AreEqual(1, migrated);
+        Assert.AreEqual(1, early.Count);
+        Assert.AreEqual(0, mod.Loads.Count, "Loaded remains a Post notification.");
+        early[0].Entries["value"][0] = 42;
+        mod.Load(bytes); // SE's second read must not replace the prepared result.
+        extender.Registry.EndLoad();
+        Assert.AreEqual(1, migrated);
+        Assert.AreNotSame(early[0], mod.Loads.Single());
+        CollectionAssert.AreEqual(new byte[] { 8 }, mod.Loads[0].Entries["value"]);
+    }
+
+    [TestMethod]
+    public void PreparedReportsMissingRecordsAndDoesNotMoveOtherReadersMigration()
+    {
+        var extender = new FakeExtender();
+        int normalMigration = 0;
+        var early = new List<VersionedSaveLoad>();
+        var first = extender.Registration("Mod.Early", 1, 1, new[] { "value" }, Writes(new()));
+        first.Prepared = early.Add;
+        var earlyMod = extender.Register(first);
+        var normal = extender.Registration("Mod.Normal", 2, 1, new[] { "value" }, Writes(new()));
+        normal.AddMigration(1, _ => normalMigration++);
+        var normalMod = extender.Register(normal);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav");
+        normalMod.Load(SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } }));
+        extender.Registry.PrepareLoad();
+        Assert.AreEqual(VersionedSaveLoadStatus.NoRecord, early.Single().Status);
+        Assert.AreEqual(0, normalMigration);
+        extender.Registry.EndLoad();
+        Assert.AreEqual(1, normalMigration);
+        Assert.AreEqual(early[0].Status, earlyMod.Loads.Single().Status);
+    }
+
+    [TestMethod]
+    public void PreparedFailureKeepsOriginalRecordWithoutSuppressingPost()
+    {
+        var extender = new FakeExtender();
+        var registration = extender.Registration("Mod.Throwing", 1, 1, new[] { "value" },
+            Writes(new() { ["value"] = new byte[] { 99 } }));
+        registration.Prepared = _ => throw new InvalidOperationException("consumer rejected preparation");
+        var mod = extender.Register(registration);
+        byte[] bytes = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } });
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav");
+        mod.Load(bytes);
+        extender.Registry.PrepareLoad();
+        extender.Registry.EndLoad();
+        Assert.AreEqual(1, mod.Loads.Count);
+        Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
+        CollectionAssert.AreEqual(bytes, extender.Save(mod));
+    }
+
+    [TestMethod]
     public void RoundTripRestoresKnownEntriesAndRewritesIdenticalBytes()
     {
         var extender = new FakeExtender();
@@ -668,7 +735,8 @@ public class VersionedSaveDataTests
             var observed = new VersionedSaveDataRegistration(registration.OwnerGuid, registration.SaveDataIdentifier,
                 registration.CurrentVersion, registration.MinimumReaderVersion, registration.KnownEntries, registration.Capture,
                 load => { mod.Loads.Add(load); registration.Loaded(load); })
-            { Scope = registration.Scope, LegacyReader = registration.LegacyReader, SimulationRelevant = registration.SimulationRelevant };
+            { Scope = registration.Scope, LegacyReader = registration.LegacyReader,
+                SimulationRelevant = registration.SimulationRelevant, Prepared = registration.Prepared };
             foreach (var step in registration.Migrations) observed.AddMigration(step.Key, step.Value);
             pendingRegistration = mod;
             Assert.IsTrue(Registry.TryRegister(observed, out var handle, out string reason), reason);

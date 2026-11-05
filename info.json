@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.29.0",
+  "Version": "0.30.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.30.0",
+      "Changes": [
+        "Add owner-bound AI military spawn capture, semantic role admission and protected unmanaged troops, with native current-order initialization and regular/additional recruitment accounting.",
+        "Persist editor map declarations, actual saved army state and cumulative engineering provenance, with early load protection and multiplayer map-record readiness.",
+        "Share strategic/task observations and effective Original receipts across consumers without competing native hooks; retain existing save callback timing with opt-in early preparation."
+      ]
+    },
     {
       "Version": "0.29.0",
       "Changes": [

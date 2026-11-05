@@ -40,8 +40,9 @@ food, weapons/armour and gold. Logs, hides and refined pitch are excluded.
 `AllyTransferEvents.TryRegister` observes the actual gift primitive, including
 Vanilla Chore execution and calls through the safe service. Register after native
 initialization with an owner GUID and owner-local stable ID. Order is ascending
-order, ordinal owner GUID, then ordinal registration ID. Registration and native
-hook ownership last until process exit.
+order, ordinal owner GUID, then ordinal registration ID. Registrations and the
+managed adapter last until process exit. The Script Extender remains the sole
+owner of the native transfer hook.
 
 Pre receives the unchanged sender, recipient, raw goods index and requested
 amount. It may retain owner-private `State` or veto the entire operation with
@@ -49,6 +50,14 @@ amount. It may retain owner-private `State` or veto the entire operation with
 A successful veto is sticky. Failing callback mutations/veto/state roll back.
 Pre must not mutate economy state. Identical deterministic policies are required
 on all peers; callbacks run synchronously on the actual native caller thread.
+
+The boundary is inside the Extender's existing send-goods wrapper, immediately
+around its native Original call. Extender Pre handlers therefore run first;
+these events describe their final effective arguments. An Extender veto prevents
+the primitive and these native-operation events altogether. A service call then
+returns a zero-effect veto result. The safe service rejects redirected arguments
+and checks its bounds again after Extender Pre. Extender Post still runs according
+to the Extender's existing contract; its Boolean return is not a delivery receipt.
 
 Post receives the completion result and private State after normal return, veto
 or a caught call-chain exception. `OriginalWasCalled` does not imply a successful
@@ -58,6 +67,11 @@ changes during the native call; either can be null when readback was unavailable
 completion, or zero for a veto. Unequal deltas, nested transfers and unavailable
 reads remain `Uncertain`; an exception is `Faulted`, without retry or rollback.
 These are observed net changes, not attribution of arbitrary foreign side effects.
+
+If the native Original delegate throws, the adapter publishes its faulted receipt
+and then preserves that exception through the Extender wrapper. Its legacy Post
+is skipped as before. The safe service returns the faulted receipt, including any
+measured partial effects; it never retries the operation.
 
 Recursive native gifts run their original exactly once without recursive events
 and mark the outer attribution uncertain. Starting a service operation from a
@@ -84,20 +98,14 @@ Vanilla and APIShared behavior remains available.
 | `0xD7AD0` | 585-byte `void(recipient, good, amount, sender)` gift primitive | `206BDE68C11D963B744BF671B185935EC32EF05CB1EBB3A479E308095CC03612` |
 | `0xC5AD0` | 319-byte `int(buildingManager, recipient, good)` capacity query | `978F663FC2E2F1FAF8CF89FE73BFD17ABD9FA728F13A57AF1325828DB9E1DDA9` |
 
-The complete pristine and live bodies are checked before publication. The only
-patched span is `D7AD0..D7AD9`: `push rbp` (2), `push rsi` (1), `push r12` (2),
-`sub rsp,40h` (4). NativeX64 `Indirect` has a six-byte minimum and therefore
-displaces nine bytes. No branch or RIP-relative operand occurs in that span;
-the complete current xref dataset has no target in its interior. Its only direct
-code caller is `1A907` in Chore handler `1A6F0`. Backend validation checks the
-actual scheme, displacement, pointer slot, trampoline and `+9` continuation.
-The installed relocator removes the redundant REX `40` prefix from `push rbp`;
-the trampoline therefore has eight relocated bytes before its return jump,
-while the original overwritten span remains nine. Validation admits only the
-exact original prologue or this exact normalized form and checks the following
-jump against the original `+9` continuation.
-Capacity remains unpatched. Both full bodies are registered as shared native-site
-evidence, with only the displaced entry declared exclusive.
+The complete pristine bodies pin native semantics. The loaded Extender already
+hooks `D7AD0` using its `c_game_player_ai_send_good` signature. APIShared installs
+no competing native hook and does not require this live entry to be pristine.
+It validates the loaded managed wrapper and replaces only its single native
+Original delegate invocation with the shared adapter. The enclosing Extender
+Pre, argument changes, veto and Post remain in their original order. Capacity
+remains an unpatched, validated read-only query. The primitive's only direct
+native code caller is `1A907` in Chore handler `1A6F0`.
 
 The managed ally UI calls GameAction 1063, which checks inventory/capacity and
 queues Chore 113 mode 2. The 18-byte payload is a signed-short mode followed by
@@ -122,9 +130,9 @@ Int32 behavior. Existing SE resource-policy callbacks can alter or veto add/sub
 effects; the result deliberately exposes mismatched deltas rather than promising
 atomicity in the presence of such policies.
 
-The SE and canonical Fixes source inventories had no owner of `D7AD0`/`C5AD0` in
-this inspection. SE remains owner of downstream add/sub resource hooks. Live
-body/site checks refuse overlaps rather than chaining an unknown native owner.
-The current tests cover production arithmetic, event completion semantics and
-the installed backend on an isolated executable fixture. They are not game,
+Correction on 2026-11-05: the earlier inspection missed the Extender's own
+`D7AD0` signature hook. A pristine live-entry requirement consequently disabled
+the service at startup. The adapter now reuses that existing owner. SE also
+retains downstream add/sub resource hooks. Tests cover arithmetic, event
+completion and the installed managed wrapper integration; they are not game,
 editor, save/load or real two-peer acceptance evidence.

@@ -97,6 +97,8 @@ namespace APIShared
         private static void Request(Platform_Multiplayer self, string name)
         {
             if (self.activeLobby?.isHost != true) { original(self, name); return; }
+            if (!MapRecordLoadCoordinator.CancelSelection())
+            { ShowBlocked("A confirmed multiplayer map is already starting."); return; }
             if (pending != null)
             {
                 if (pending.SaveName == name) return; // Repeated button callback, not another load.

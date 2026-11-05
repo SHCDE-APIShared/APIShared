@@ -29,6 +29,7 @@
 - [Sharing native market price queries](#sharing-native-market-price-queries)
 - [Staged values and health](#staged-values-and-health)
 - [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
+- [AI military admission](AI_MILITARY.md)
 - [Assassin obstacle completion](#assassin-obstacle-completion)
 - [Gate access contributions](#gate-access-contributions)
 - [Enemy-unit building proximity and Peace Time](#enemy-unit-building-proximity-and-peace-time)

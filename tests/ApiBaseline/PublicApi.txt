@@ -1061,6 +1061,7 @@ APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
+APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBriefingGoldPresentation(out APIShared.IBriefingGoldPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBuildingRepair(out APIShared.IBuildingRepairCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -2531,6 +2532,7 @@ APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.V
 APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.VersionedSaveLegacyReader LegacyReader { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.VersionedSaveScope Scope { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Loaded { get; }
+APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Prepared { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Collections.Generic.IReadOnlyList<string> KnownEntries { get; }
 APIShared.Savegames.VersionedSaveDataRegistration | public bool SimulationRelevant { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public int CurrentVersion { get; }
@@ -2795,6 +2797,117 @@ APIShared.UnitLookupFailure | ManagerUnavailable = 2
 APIShared.UnitLookupFailure | None = 0
 APIShared.UnitLookupFailure | OutOfRange = 3
 APIShared.UnitLookupFailure | Unavailable = 4
+APIShared.Units.AiMilitary.AiGlobalTaskEvents | public static class APIShared.Units.AiMilitary.AiGlobalTaskEvents
+APIShared.Units.AiMilitary.AiGlobalTaskEvents | public static bool IsAvailable { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Units.AiMilitary.AiGlobalTaskObservation> before, System.Action<APIShared.Units.AiMilitary.AiGlobalTaskObservation> after, out string reason)
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public sealed class APIShared.Units.AiMilitary.AiGlobalTaskObservation
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public System.IntPtr NativeManager { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public bool OriginalCompleted { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public int OwnerPlayerId { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public int TargetPlayerId { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public long InvocationId { get; }
+APIShared.Units.AiMilitary.AiGroupRef | public struct APIShared.Units.AiMilitary.AiGroupRef
+APIShared.Units.AiMilitary.AiGroupRef | public .ctor(int tribeId, uint globalId, int playerId)
+APIShared.Units.AiMilitary.AiGroupRef | public int PlayerId { get; }
+APIShared.Units.AiMilitary.AiGroupRef | public int TribeId { get; }
+APIShared.Units.AiMilitary.AiGroupRef | public uint GlobalId { get; }
+APIShared.Units.AiMilitary.AiMilitaryArea | public enum APIShared.Units.AiMilitary.AiMilitaryArea : int
+APIShared.Units.AiMilitary.AiMilitaryArea | Defense = 1
+APIShared.Units.AiMilitary.AiMilitaryArea | Harassment = 2
+APIShared.Units.AiMilitary.AiMilitaryArea | None = 0
+APIShared.Units.AiMilitary.AiMilitaryArea | Siege = 3
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public struct APIShared.Units.AiMilitary.AiMilitaryAssignment
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public .ctor(APIShared.Units.AiMilitary.AiMilitaryRole role, APIShared.Units.AiMilitary.AiRecruitmentMode recruitmentMode)
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public APIShared.Units.AiMilitary.AiMilitaryRole Role { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public APIShared.Units.AiMilitary.AiRecruitmentMode RecruitmentMode { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public sealed class APIShared.Units.AiMilitary.AiMilitaryAssignmentResult
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiGroupRef Group { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiMilitaryAssignment Assignment { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus Status { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiMilitaryReason Reason { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiUnitRef Unit { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public string Detail { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | public enum APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus : int
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Applied = 2
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Declared = 1
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Queued = 0
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Rejected = 3
+APIShared.Units.AiMilitary.AiMilitaryOption | public sealed class APIShared.Units.AiMilitary.AiMilitaryOption
+APIShared.Units.AiMilitary.AiMilitaryOption | public APIShared.Units.AiMilitary.AiMilitaryArea Area { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public APIShared.Units.AiMilitary.AiMilitaryReason Reason { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public APIShared.Units.AiMilitary.AiMilitaryRole Role { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public bool IsAvailable { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public bool IsDeferred { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public string Detail { get; }
+APIShared.Units.AiMilitary.AiMilitaryReason | public enum APIShared.Units.AiMilitary.AiMilitaryReason : int
+APIShared.Units.AiMilitary.AiMilitaryReason | AicMismatch = 4
+APIShared.Units.AiMilitary.AiMilitaryReason | AssignmentFailed = 17
+APIShared.Units.AiMilitary.AiMilitaryReason | CurrentOrderUnknown = 11
+APIShared.Units.AiMilitary.AiMilitaryReason | ExistingAssignment = 16
+APIShared.Units.AiMilitary.AiMilitaryReason | IncompleteCrew = 6
+APIShared.Units.AiMilitary.AiMilitaryReason | InitializationFailed = 14
+APIShared.Units.AiMilitary.AiMilitaryReason | InvalidGroupCount = 5
+APIShared.Units.AiMilitary.AiMilitaryReason | MutationNotAllowed = 13
+APIShared.Units.AiMilitary.AiMilitaryReason | NativeVeto = 12
+APIShared.Units.AiMilitary.AiMilitaryReason | NoAiContext = 3
+APIShared.Units.AiMilitary.AiMilitaryReason | NoAvailableGroup = 8
+APIShared.Units.AiMilitary.AiMilitaryReason | NoAvailableNativeJob = 9
+APIShared.Units.AiMilitary.AiMilitaryReason | NoReachablePath = 10
+APIShared.Units.AiMilitary.AiMilitaryReason | None = 0
+APIShared.Units.AiMilitary.AiMilitaryReason | StaleIdentity = 7
+APIShared.Units.AiMilitary.AiMilitaryReason | Unavailable = 1
+APIShared.Units.AiMilitary.AiMilitaryReason | UnsupportedRoleType = 2
+APIShared.Units.AiMilitary.AiMilitaryReason | WorldEnded = 15
+APIShared.Units.AiMilitary.AiMilitaryRole | public enum APIShared.Units.AiMilitary.AiMilitaryRole : int
+APIShared.Units.AiMilitary.AiMilitaryRole | CastleDefense = 1
+APIShared.Units.AiMilitary.AiMilitaryRole | DefensePatrol = 2
+APIShared.Units.AiMilitary.AiMilitaryRole | EconomyProtection = 4
+APIShared.Units.AiMilitary.AiMilitaryRole | Harassment = 6
+APIShared.Units.AiMilitary.AiMilitaryRole | HarassmentEngineers = 7
+APIShared.Units.AiMilitary.AiMilitaryRole | HomeMoat = 3
+APIShared.Units.AiMilitary.AiMilitaryRole | Intervention = 5
+APIShared.Units.AiMilitary.AiMilitaryRole | None = 0
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeAssassins = 10
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeCover = 15
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeDiversion = 11
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeEngineers = 8
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeLadders = 12
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeMoat = 9
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeReserve = 17
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeShock = 16
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeStorm = 14
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeTunnelers = 13
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeWall = 18
+APIShared.Units.AiMilitary.AiRecruitmentMode | public enum APIShared.Units.AiMilitary.AiRecruitmentMode : int
+APIShared.Units.AiMilitary.AiRecruitmentMode | Additional = 1
+APIShared.Units.AiMilitary.AiRecruitmentMode | Regular = 0
+APIShared.Units.AiMilitary.AiStrategicOrderEvents | public static class APIShared.Units.AiMilitary.AiStrategicOrderEvents
+APIShared.Units.AiMilitary.AiStrategicOrderEvents | public static bool IsAvailable { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Units.AiMilitary.AiStrategicOrderObservation> before, System.Action<APIShared.Units.AiMilitary.AiStrategicOrderObservation> after, out string reason)
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public sealed class APIShared.Units.AiMilitary.AiStrategicOrderObservation
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public System.IntPtr NativeManager { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public bool OriginalCompleted { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public int ActionCode { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public int TribeId { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public long InvocationId { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public long NativeResult { get; }
+APIShared.Units.AiMilitary.AiUnitRef | public struct APIShared.Units.AiMilitary.AiUnitRef : System.IEquatable<APIShared.Units.AiMilitary.AiUnitRef>
+APIShared.Units.AiMilitary.AiUnitRef | public .ctor(int unitId, uint globalId)
+APIShared.Units.AiMilitary.AiUnitRef | public bool Equals(APIShared.Units.AiMilitary.AiUnitRef other)
+APIShared.Units.AiMilitary.AiUnitRef | public int UnitId { get; }
+APIShared.Units.AiMilitary.AiUnitRef | public override bool Equals(object value)
+APIShared.Units.AiMilitary.AiUnitRef | public override int GetHashCode()
+APIShared.Units.AiMilitary.AiUnitRef | public override string ToString()
+APIShared.Units.AiMilitary.AiUnitRef | public uint GlobalId { get; }
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public interface APIShared.Units.AiMilitary.IAiMilitaryCapability
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public System.Collections.Generic.IReadOnlyList<APIShared.Units.AiMilitary.AiMilitaryOption> GetOptions(int playerId, SHCDESE.Interop.eChimps unitType, bool mapEditor)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool IsExcludedFromRecruitmentQuota(APIShared.Units.AiMilitary.AiUnitRef unit)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool RequestAssignment(APIShared.Units.AiMilitary.AiUnitRef unit, APIShared.Units.AiMilitary.AiMilitaryAssignment assignment, System.Action<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> completed, out string reason)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryBeginSpawnScope(int playerId, SHCDESE.Interop.eChimps primaryType, APIShared.Units.AiMilitary.AiMilitaryAssignment assignment, bool mapEditor, bool applyInEditor, System.Action<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> completed, out APIShared.Units.AiMilitary.IAiMilitarySpawnScope scope, out string reason)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryDeclareMapAssignment(APIShared.Units.AiMilitary.AiUnitRef unit, APIShared.Units.AiMilitary.AiMilitaryAssignment assignment, out string reason)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryGetState(APIShared.Units.AiMilitary.AiUnitRef unit, out APIShared.Units.AiMilitary.AiMilitaryAssignmentResult state)
+APIShared.Units.AiMilitary.IAiMilitarySpawnScope | public interface APIShared.Units.AiMilitary.IAiMilitarySpawnScope : System.IDisposable
+APIShared.Units.AiMilitary.IAiMilitarySpawnScope | public System.Collections.Generic.IReadOnlyList<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> Complete()
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4

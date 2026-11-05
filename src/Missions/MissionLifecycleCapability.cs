@@ -194,8 +194,11 @@ namespace APIShared
             tutorial = Hook<Tutorial>(typeof(HUD_Tutorial), nameof(HUD_Tutorial.StartTutorial), self =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
             multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), (self, setup, map, coop, mission) =>
-                Run(new Operation { Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame, Multiplayer = true },
-                    () => multiplayerNew(self, setup, map, coop, mission)));
+            {
+                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true)) return;
+                Run(new Operation { Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
+                    Multiplayer = true, File = map?.filePath }, () => multiplayerNew(self, setup, map, coop, mission));
+            });
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
                 SavegameModSettings.BeginLoad(map?.filePath, true);
@@ -317,6 +320,15 @@ namespace APIShared
         }
 
         private void Run(Operation op, Action original) => Run(op, () => { original(); return true; });
+        internal sealed class NativeAdmissionAbort : Exception
+        { internal NativeAdmissionAbort(string reason) : base(reason) { } }
+
+        internal static T InvokeNativeAdmission<T>(Func<T> original, out bool returnedNormally)
+        {
+            returnedNormally = false;
+            try { T result = original(); returnedNormally = true; return result; }
+            catch (NativeAdmissionAbort) { return default; }
+        }
         private T Run<T>(Operation op, Func<T> original)
         {
             if (executing != null) return original(); // Nested custom-trail -> skirmish belongs to the outer attempt.
@@ -329,7 +341,9 @@ namespace APIShared
             try
             {
                 if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
-                T result = original(); normal = true; return result;
+                T result = InvokeNativeAdmission(original, out normal);
+                if (!normal) op.NativeFailed = true;
+                return result;
             }
             finally
             {
@@ -353,6 +367,8 @@ namespace APIShared
                 });
                 if (op.Kind == MissionStartKind.LoadedSave && waiting == null)
                     SavegameModSettings.FinishLoad();
+                if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null)
+                    MapRecordLoadCoordinator.FinishLoad();
             }
         }
 
@@ -364,6 +380,7 @@ namespace APIShared
             {
                 waiting = null;
                 SavegameModSettings.FinishLoad();
+                MapRecordLoadCoordinator.FinishLoad();
             }
             if (thread || op == null || !state.IsPending(op.Id) || executing != null) return message(self, data, member, thread);
             executing = op;
@@ -390,14 +407,14 @@ namespace APIShared
         private void FailDeferredMessage(Operation op)
         {
             try { Safe(() => state.End(MissionEndReason.Exception, op.Id)); }
-            finally { SavegameModSettings.FinishLoad(); }
+            finally { SavegameModSettings.FinishLoad(); MapRecordLoadCoordinator.FinishLoad(); }
         }
 
         private void CompleteDeferredMessage(Operation op) =>
             Safe(() => CompleteDeferredRestore(
                 () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
                 () => state.Ready(op.Id, Capture(op)),
-                SavegameModSettings.FinishLoad,
+                () => { SavegameModSettings.FinishLoad(); MapRecordLoadCoordinator.FinishLoad(); },
                 error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
 
         internal static void CompleteDeferredRestore(Action restore, Action ready,
@@ -419,11 +436,51 @@ namespace APIShared
         private EngineInterface.LoadMapReturnData CaptureNative(Func<EngineInterface.LoadMapReturnData> original)
         {
             var op = executing;
+            if (op != null && op.Multiplayer && op.Kind == MissionStartKind.NewGame &&
+                !MapRecordLoadCoordinator.ValidateNativeAdmission(op.File, true))
+            {
+                op.NativeFailed = true;
+                MapRecordLoadCoordinator.Abort("The confirmed map file changed before native initialization.");
+                // StartGame does not check errorCode before StartMultiplayerGame/postLoading.
+                // Unwind its entire Original to our outer managed start boundary instead.
+                throw new NativeAdmissionAbort("The confirmed map file changed before native initialization.");
+            }
             Safe(() => { state.InvalidateNativeClock(); if (op != null) state.BeginNativeLoad(op.Id); });
             Safe(() => { if (op != null) state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.BeforeLoad); });
+            long nativeGeneration = Units.AiMilitary.AiMilitaryService.Instance.Generation;
             EngineInterface.LoadMapReturnData result;
             bool returned = false;
-            try { result = original(); returned = true; }
+            try
+            {
+                // Hold the same monitor beyond the nested native wrapper's own lock, closing the
+                // simulation-thread gap before internal state reconciliation. Public notifications
+                // below retain their previous position outside this internal critical section.
+                object engine = Internal.EngineMonitor.Current;
+                if (engine == null) { result = original(); returned = true; }
+                else lock (engine)
+                {
+                    // A synchronous load can be nested inside an old placement callback. Its new
+                    // world must initialize within its own scope, rather than inherit the retired
+                    // parent's mutation receipt. The parent becomes invalid again on return.
+                    using (Units.AiMilitary.Orders.AiRecruitMutationReceipts.Enter(() =>
+                        nativeGeneration == Units.AiMilitary.AiMilitaryService.Instance.Generation))
+                        result = original();
+                    returned = true;
+                    if (nativeGeneration != Units.AiMilitary.AiMilitaryService.Instance.Generation ||
+                        Units.AiMilitary.AiMilitaryService.Instance.DidRawRestoreFail) result.errorCode = 0;
+                    if (result.errorCode != 1 && op != null &&
+                        (Units.AiMilitary.AiMilitaryService.Instance.DidRawRestoreFail ||
+                            op.Multiplayer && op.Kind == MissionStartKind.NewGame))
+                    {
+                        op.NativeFailed = true;
+                        if (op.Kind == MissionStartKind.NewGame)
+                            MapRecordLoadCoordinator.Abort("The multiplayer map could not complete protected native initialization.");
+                        throw new NativeAdmissionAbort("Protected multiplayer map initialization failed.");
+                    }
+                    if (result.errorCode == 1)
+                        Safe(() => Units.AiMilitary.AiMilitaryService.Instance.CompleteNativeLoad());
+                }
+            }
             finally { if (!returned) Safe(() => { if (op != null) state.CompleteNativeLoad(op.Id, false); }); }
             Safe(() =>
             {
@@ -442,7 +499,11 @@ namespace APIShared
             bool abandonedSave = waiting?.Kind == MissionStartKind.LoadedSave;
             waiting = null;
             try { state.End(reason); }
-            finally { if (abandonedSave) SavegameModSettings.FinishLoad(); }
+            finally
+            {
+                if (abandonedSave) SavegameModSettings.FinishLoad();
+                MapRecordLoadCoordinator.FinishLoad();
+            }
         }
         private void Safe(Action action) { try { action(); } catch (Exception ex) { Report(ex); } }
         private void Report(Exception ex) { try { NativeApiLog.Error(log, "Mission lifecycle callback failed: " + ex); } catch { } }

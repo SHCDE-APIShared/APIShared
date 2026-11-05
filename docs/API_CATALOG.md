@@ -1,5 +1,16 @@
 # API catalog
 
+## AI military admission
+
+`ModApiClient.TryGetAiMilitary` exposes semantic military roles, invocation-scoped
+spawn capture, safe native admission, regular/additional recruitment accounting
+and persisted editor declarations. Local mutation is restricted to offline play;
+authored maps use confirmed deterministic load data. See the
+[roles, order, ownership and persistence contracts](AI_MILITARY.md).
+
+`AiStrategicOrderEvents` and `AiGlobalTaskEvents` share process-owned native
+observations with diagnostic consumers without competing hooks.
+
 ## Staged values and maximum health
 
 APIShared 0.28.0 adds `APIShared.Modifiers.ValueModifierStage` and the exact,
