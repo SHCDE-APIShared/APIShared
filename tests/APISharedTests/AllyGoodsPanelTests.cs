@@ -11,6 +11,76 @@ namespace APISharedTests
     {
         [TestMethod]
         [TestCategory("Presentation")]
+        public void IndependentAdornmentProvidersKeepStableOrderAndIdentity()
+        {
+            var registry = new AllyGoodsAdornmentRegistry();
+            Assert.IsFalse(registry.TryRegister("", "marker", (_, __) => null, 0, out _, out _));
+            Assert.IsFalse(registry.TryRegister("a", "marker", null, 0, out _, out _));
+            Assert.IsTrue(registry.TryRegister("z", "marker", (_, __) => null, 0, out var first, out _));
+            var snapshot = registry.Entries;
+            Assert.IsTrue(registry.TryRegister("a", "marker", (_, __) => null, 0, out _, out _));
+            Assert.IsTrue(registry.TryRegister("z", "earlier", (_, __) => null, -1, out _, out _));
+            Assert.IsFalse(registry.TryRegister("z", "marker", (_, __) => null, 99, out _, out _));
+            CollectionAssert.AreEqual(new[] { "z/earlier", "a/marker", "z/marker" },
+                registry.Entries.Select(x => x.Owner + "/" + x.Id).ToArray());
+            Assert.AreEqual(1, snapshot.Length);
+            Assert.AreSame(first, snapshot[0]);
+            // Sections and adornments deliberately have separate owner-local namespaces.
+            Assert.IsTrue(new AllyGoodsSectionRegistry().TryRegister("z", "marker", _ => null, 0, out _, out _));
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void AdornmentCacheIsolatesFailuresAndPreservesSuccessfulViewsAcrossRefresh()
+        {
+            var registry = new AllyGoodsAdornmentRegistry();
+            registry.TryRegister("a", "bad", (_, __) => null, 0, out var bad, out _);
+            registry.TryRegister("b", "good", (_, __) => null, 0, out var good, out _);
+            var cache = new AllyGoodsAdornmentCache<object>();
+            int failures = 0, attempts = 0, creations = 0;
+            Func<object> fail = () => { attempts++; throw new InvalidOperationException("expected"); };
+            Action<Exception> failed = _ => failures++;
+            Assert.IsNull(cache.GetOrCreate(bad, eGoods.STORED_GOLD, fail, failed));
+            var view = cache.GetOrCreate(good, eGoods.STORED_GOLD, () => { creations++; return new object(); }, failed);
+            Assert.IsNull(cache.GetOrCreate(bad, eGoods.STORED_GOLD, fail, failed));
+            Assert.AreEqual(1, attempts);
+            Assert.AreEqual(1, failures);
+            bad.Revision++; good.Revision++;
+            Assert.IsNull(cache.GetOrCreate(bad, eGoods.STORED_GOLD, fail, failed));
+            Assert.AreSame(view, cache.GetOrCreate(good, eGoods.STORED_GOLD, () => { creations++; return new object(); }, failed));
+            Assert.AreEqual(2, attempts);
+            Assert.AreEqual(1, creations);
+            Assert.AreNotSame(view, cache.GetOrCreate(good, eGoods.STORED_WOOD_PLANKS, () => new object(), failed));
+            cache.Clear(); // Bound-host replacement is the only normal successful-view invalidation.
+            Assert.AreNotSame(view, cache.GetOrCreate(good, eGoods.STORED_GOLD, () => new object(), failed));
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void AdornmentRefreshRequestedInsideFailedFactoryIsNotLost()
+        {
+            var registry = new AllyGoodsAdornmentRegistry();
+            registry.TryRegister("a", "marker", (_, __) => null, 0, out var entry, out _);
+            var cache = new AllyGoodsAdornmentCache<object>();
+            Assert.IsNull(cache.GetOrCreate(entry, eGoods.STORED_GOLD, () => { entry.Revision++; return null; }, _ => Assert.Fail()));
+            var retried = new object();
+            Assert.AreSame(retried, cache.GetOrCreate(entry, eGoods.STORED_GOLD, () => retried, _ => Assert.Fail()));
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void AdornmentAnchorsAcceptOnlyExactVanillaGoodsCommands()
+        {
+            Assert.IsTrue(AllyGoodsPanelExtensions.TryParseGoodsCommand("G15", out var gold));
+            Assert.AreEqual(eGoods.STORED_GOLD, gold);
+            Assert.IsTrue(AllyGoodsPanelExtensions.TryParseGoodsCommand("G02", out var wood));
+            Assert.AreEqual(eGoods.STORED_WOOD_PLANKS, wood);
+            foreach (var command in new[] { null, "", "g02", "G2", "G002", "G00", "G99", "G-1", "G 2", "G+2" })
+                Assert.IsFalse(AllyGoodsPanelExtensions.TryParseGoodsCommand(command, out _), command);
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
         public void IndependentSectionsRetainIdentityAndDeterministicOrdering()
         {
             var registry = new AllyGoodsSectionRegistry();

@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.31.0",
+  "Version": "0.32.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.32.0",
+      "Changes": [
+        "Add independent owner-bound adornments on Vanilla ally-goods icons; retain commands, bindings and successful controls across selection changes and refreshes."
+      ]
+    },
     {
       "Version": "0.31.0",
       "Changes": [

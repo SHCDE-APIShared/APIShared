@@ -1,7 +1,7 @@
 # Ally goods dialog extensions
 
 `APIShared.Presentation.AllyGoodsPanelExtensions` provides independent sections below
-Vanilla's **Send goods** dialog. It retains the existing goods selection, amount
+Vanilla's **Send goods** dialog and noninteractive markers on its goods icons. It retains the existing goods selection, amount
 buttons, commands, names, DataContexts and other mods' controls. This is UI only;
 it does not send gifts or authorize gameplay actions.
 
@@ -24,6 +24,40 @@ mods are independent; duplicates within one owner are rejected.
 section's interaction. `RequestContentRefresh` recreates its control and retries a
 failed factory. These methods require Unity. Registrations last until process exit;
 do not unregister or tear down shared hooks on plugin/component destruction.
+
+## Registering goods markers
+
+Use an independent adornment registration for compact status icons on each existing
+goods button. This shares the broker and lifecycle without replacing button content,
+commands, bindings or selection behavior:
+
+    AllyGoodsPanelExtensions.TryRegisterGoodsAdornment(MyGuid, "status",
+        (context, good) => CreateFreshStatusIcon(context, good),
+        out var markers, out string reason);
+
+The factory receives the real button's ware and a factory-time selection context.
+Its `Host` is an attached APIShared container with inherited resources; do not mutate
+that container. Return a fresh unattached element per ware and host. Successful
+controls remain cached across recipient/ware/quantity selection changes and refresh
+requests. Update their own `Visibility` or bound view model on Unity as your state
+changes, then call `markers.RequestRefresh()`. This requests rearrangement and retries
+failed factories; it does not invoke a consumer update callback or recreate successful
+controls. Host recreation creates fresh controls; discard old view references using
+the existing context generation/lifecycle information.
+
+Adornments have their own owner-local ID namespace and sort by ascending order,
+ordinal owner GUID and ID. Multiple providers receive separate ordered slots that
+wrap inside the actual button bounds. Use small icons: oversized content or more
+markers than fit are clipped to the button. Collapsed controls consume no space.
+Pointer input and keyboard navigation are disabled for the overlay. Interactive
+commands belong in a section. No gameplay or automation state belongs in this API.
+
+Only unambiguous `Gxx` buttons with Grid parents are anchored. The scan runs once per
+bound host; geometry follows the actual controls rather than screen coordinates.
+Markers inherit the goods raster's visibility in send and request views. Their
+consumer controls decide whether a marker applies to the current mode. Missing,
+ambiguous or moved anchors leave the existing buttons intact. Marker layout is
+independent of the additional section height and its foreign-writer checks.
 
 ## Selection and quantity
 
@@ -62,7 +96,8 @@ the extension with a diagnostic; foreign controls and dimensions are preserved.
 Arbitrary complete UI replacements are not automatically supported. Consumers
 must not install additional hooks on the goods panel's selection/update methods.
 
-Tests cover independent owner registrations, selection boundaries, zero amounts,
-factory error isolation and the actual private managed-member contract. They do
+Tests cover independent owner registrations, immutable ordering snapshots, selection boundaries,
+zero amounts, factory error isolation, marker cache/refresh semantics, exact goods-command
+parsing and the actual private managed-member contract. They do
 not verify Noesis rendering. In-game checks must cover multiple contributors,
 viewport scaling, HUD recreation and coexistence with quantity/spectator mods.

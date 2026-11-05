@@ -14,7 +14,7 @@ namespace APIShared.Presentation
     /// state reads and observers run synchronously on Unity outside registry locks. Registrations are
     /// process-lived; controls are rebuilt per host. Existing controls, bindings and commands are never
     /// replaced. Consumer commands own gameplay authorization and synchronization. No native hooks are installed.</remarks>
-    public static class AllyGoodsPanelExtensions
+    public static partial class AllyGoodsPanelExtensions
     {
         private const string HostName = "APISharedAllyGoodsExtensionsHost";
         private static readonly AllyGoodsSectionRegistry registry = new AllyGoodsSectionRegistry();
@@ -124,7 +124,7 @@ namespace APIShared.Presentation
         private static void OnGuiChecks(PresentationPostEventArgs args)
         {
             if (!args.OriginalCompleted || !UnityMainThreadDispatch.IsMainThread) return;
-            if (registry.Entries.Length == 0 && observers.Length == 0) return;
+            if (registry.Entries.Length == 0 && observers.Length == 0 && adornmentRegistry.Entries.Length == 0) return;
             try
             {
                 var next = Capture();
@@ -140,7 +140,9 @@ namespace APIShared.Presentation
                         Report("missing-host", new InvalidOperationException("Ally-goods XAML extension host is missing; the existing dialog is preserved."));
                     return;
                 }
+                UpdateAdornments(next);
                 if (blocked) return;
+                if (registry.Entries.Length == 0) return;
                 if (!next.IsSendMode) { Collapse(); return; }
                 if (!ResolveLayout()) return;
                 if (dirty) Rebuild(next);
@@ -250,6 +252,7 @@ namespace APIShared.Presentation
         private static void OnHostUnloaded(object sender, RoutedEventArgs args) => Detach();
         private static void Detach()
         {
+            DetachAdornments();
             Collapse();
             if (host != null) host.Unloaded -= OnHostUnloaded;
             if (surface != null && host != null) host.Children.Remove(surface);

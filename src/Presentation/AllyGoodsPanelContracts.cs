@@ -69,4 +69,18 @@ namespace APIShared.Presentation
         public void RequestContentRefresh()
         { AllyGoodsPanelExtensions.RequireUnity(); entry.Revision++; invalidate(); }
     }
+
+    /// <summary>Process-lifetime, noninteractive goods-marker registration. Access requires the initialized Unity thread.</summary>
+    public sealed class AllyGoodsAdornmentRegistration
+    {
+        private readonly AllyGoodsAdornmentEntry entry;
+        private readonly Action invalidate;
+        internal AllyGoodsAdornmentRegistration(AllyGoodsAdornmentEntry entry, Action invalidate)
+        { this.entry = entry; this.invalidate = invalidate; }
+        /// <summary>Requests rearrangement and retries failed factories on the next open goods-dialog GUI update.
+        /// Successful controls remain cached until host recreation. Update their Visibility or bound presentation
+        /// state on Unity before calling this method; this method invokes no consumer refresh callback.</summary>
+        public void RequestRefresh()
+        { AllyGoodsPanelExtensions.RequireUnity(); entry.Revision++; invalidate(); }
+    }
 }

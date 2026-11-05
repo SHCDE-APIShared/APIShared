@@ -1647,6 +1647,6 @@ camera work. This broker does not select a building or move the camera itself.
 
 ## Ally gifts and send-dialog extensions
 
-Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section without replacing existing controls or owning another mod's layout. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local registration.
+Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.
 
 Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion.
