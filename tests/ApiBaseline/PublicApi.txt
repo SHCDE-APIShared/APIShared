@@ -2216,6 +2216,11 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.ITroopActionButtonRegistration | public interface APIShared.Presentation.ITroopActionButtonRegistration
+APIShared.Presentation.ITroopActionButtonRegistration | public void RequestButtonRefresh()
+APIShared.Presentation.ITroopActionButtonRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.ITroopActionButtonRegistration | public void SetTooltip(string tooltip)
+APIShared.Presentation.ITroopActionButtonRegistration | public void SetVisible(bool visible)
 APIShared.Presentation.IUiFrameWorkRegistration | public interface APIShared.Presentation.IUiFrameWorkRegistration
 APIShared.Presentation.IUiFrameWorkRegistration | public void CancelPending()
 APIShared.Presentation.IUiFrameWorkRegistration | public void Request()
@@ -2405,10 +2410,20 @@ APIShared.Presentation.TooltipText | public sealed class APIShared.Presentation.
 APIShared.Presentation.TooltipText | public .ctor(string text, uint? foregroundArgb = null)
 APIShared.Presentation.TooltipText | public string Text { get; }
 APIShared.Presentation.TooltipText | public uint? ForegroundArgb { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public sealed class APIShared.Presentation.TroopActionButtonDefinition
+APIShared.Presentation.TroopActionButtonDefinition | public .ctor(string buttonId, System.Windows.Input.ICommand command, string tooltip, System.Func<APIShared.UnitHudActionButtonContext, Noesis.Button> buttonFactory, int priority = 0, System.Action<bool> contextChanged = null, System.Action<bool> hoverChanged = null)
+APIShared.Presentation.TroopActionButtonDefinition | public System.Action<bool> ContextChanged { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public System.Action<bool> HoverChanged { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public System.Func<APIShared.UnitHudActionButtonContext, Noesis.Button> ButtonFactory { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public System.Windows.Input.ICommand Command { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public int Priority { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public string ButtonId { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public string Tooltip { get; }
 APIShared.Presentation.TroopActionHud | public static class APIShared.Presentation.TroopActionHud
 APIShared.Presentation.TroopActionHud | public const int CurrentLayoutVersion = 1
 APIShared.Presentation.TroopActionHud | public const string HostNamePrefix = "SerpTroopAction_"
 APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<CrusaderDE.HUD_Troops> refreshVisibility, out string reason)
+APIShared.Presentation.TroopActionHud | public static bool TryRegisterButton(string ownerGuid, APIShared.Presentation.TroopActionButtonDefinition definition, out APIShared.Presentation.ITroopActionButtonRegistration registration, out string reason)
 APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
 APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
 APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()

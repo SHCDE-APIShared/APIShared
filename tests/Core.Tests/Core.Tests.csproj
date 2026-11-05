@@ -70,6 +70,7 @@
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonsService.cs" Link="Production/HudExtrasButtonsService.cs" />
     <Compile Include="../../src/Presentation/UnitHud/UnitHudHoverTextPresenter.cs" Link="Production/UnitHudHoverTextPresenter.cs" />
     <Compile Include="../../src/Presentation/UnitHud/UnitHudActionButtonLayout.cs" Link="Production/UnitHudActionButtonLayout.cs" />
+    <Compile Include="../../src/Presentation/TroopActions/TroopActionOverflowPolicy.cs" Link="Production/TroopActionOverflowPolicy.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchContracts.cs" Link="Production/RouteSearchContracts.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchEvents.cs" Link="Production/RouteSearchEvents.cs" />
     <Compile Include="../../src/GameModes/CustomizedLaunchOrigins.cs" Link="Production/CustomizedLaunchOrigins.cs" />

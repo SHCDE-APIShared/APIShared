@@ -1,4 +1,5 @@
 using APIShared;
+using APIShared.Presentation;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Core.Tests
@@ -6,6 +7,77 @@ namespace Core.Tests
     [TestClass]
     public class UnitHudActionButtonLayoutTests
     {
+        [TestMethod]
+        [DataRow(0, 0)]
+        [DataRow(0, 2)]
+        [DataRow(1, 1)]
+        [DataRow(1, 2)]
+        [DataRow(2, 2)]
+        public void VanillaActionSlotsDoNotReserveAMenuUntilNeeded(int count, int slots)
+        {
+            var decision = TroopActionOverflowPolicy.Decide(count, slots);
+            Assert.AreEqual(count, decision.DirectCount);
+            Assert.AreEqual(0, decision.OverflowCount);
+            Assert.IsFalse(decision.HasMore);
+            Assert.IsFalse(decision.UsesFallbackAnchor);
+        }
+
+        [TestMethod]
+        public void OverflowKeepsTheFirstActionDirectAndMovesTheRestTogether()
+        {
+            string[] orderedActions = { "knight", "assassin", "third-party" };
+            var decision = TroopActionOverflowPolicy.Decide(orderedActions.Length, 2);
+            CollectionAssert.AreEqual(new[] { "knight" }, orderedActions.Take(decision.DirectCount).ToArray());
+            CollectionAssert.AreEqual(new[] { "assassin", "third-party" },
+                orderedActions.Skip(decision.OverflowStart).Take(decision.OverflowCount).ToArray());
+            Assert.IsTrue(decision.HasMore);
+            Assert.IsFalse(decision.UsesFallbackAnchor);
+
+            var afterHidingAnAction = TroopActionOverflowPolicy.Decide(2, 2);
+            Assert.AreEqual(2, afterHidingAnAction.DirectCount);
+            Assert.IsFalse(afterHidingAnAction.HasMore, "Releasing overflow must restore direct access.");
+        }
+
+        [TestMethod]
+        public void OneRemainingSlotBecomesTheMenuAndZeroSlotsUseTheExternalAnchor()
+        {
+            var oneSlot = TroopActionOverflowPolicy.Decide(2, 1);
+            Assert.AreEqual(0, oneSlot.DirectCount);
+            Assert.AreEqual(2, oneSlot.OverflowCount);
+            Assert.IsTrue(oneSlot.HasMore);
+            Assert.IsFalse(oneSlot.UsesFallbackAnchor);
+
+            var noSlots = TroopActionOverflowPolicy.Decide(2, 0);
+            Assert.AreEqual(0, noSlots.DirectCount);
+            Assert.AreEqual(2, noSlots.OverflowCount);
+            Assert.IsTrue(noSlots.HasMore);
+            Assert.IsTrue(noSlots.UsesFallbackAnchor, "Occupied Vanilla slots must never make registered actions unreachable.");
+        }
+
+        [TestMethod]
+        public void InvalidCapacityCannotInventSlotsOrAnEmptyOverflowMenu()
+        {
+            var empty = TroopActionOverflowPolicy.Decide(-1, -1);
+            Assert.AreEqual(0, empty.DirectCount);
+            Assert.IsFalse(empty.HasMore);
+            var occupied = TroopActionOverflowPolicy.Decide(1, -1);
+            Assert.IsTrue(occupied.UsesFallbackAnchor);
+            var bounded = TroopActionOverflowPolicy.Decide(3, 100);
+            Assert.AreEqual(1, bounded.DirectCount, "Only the two established Vanilla action positions are assignable.");
+            Assert.AreEqual(2, bounded.OverflowCount);
+        }
+
+        [TestMethod]
+        public void OpenOverflowLeavesBothDirectAndFallbackOpenersReachable()
+        {
+            // Concrete zero-slot regression: placing the menu immediately above the panel
+            // covered the fallback opener at y=459..496 with the menu's own hit surface.
+            Assert.IsTrue(TroopActionOverflowPolicy.MenuBottom(500, 459) < 459,
+                "A fallback opener above the panel must remain outside the open menu.");
+            Assert.IsTrue(TroopActionOverflowPolicy.MenuBottom(500, 560) < 500,
+                "A normal opener inside the panel leaves the menu above the panel.");
+        }
+
         [TestMethod]
         public void TemplateProvidesAnOpaqueIconAndHitSurfaceAboveVanillaClickShields()
         {

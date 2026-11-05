@@ -176,3 +176,6 @@ Workshop.Recovery.Items=Workshop items: {Ids}
 Workshop.Recovery.NoRollback=Rollback unavailable: {Reason}
 IngameMenu.AdditionalActions=Additional mod actions …
 IngameMenu.Back=Back
+TroopActions.More=More actions
+TroopActions.AutoClose=Close automatically after an action
+TroopActions.AutoCloseHelp=Closes this menu after invoking an action. Selection changes and outside clicks still close it.

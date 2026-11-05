@@ -190,7 +190,21 @@ namespace APIShared.Presentation
             return true;
         }
 
-        private static void CollectOccupiedRectangles(DependencyObject parent, List<ScreenRectangle> result)
+        // The old layout ignores shared hosts while assigning them. The additive typed
+        // registrations subsequently treat those already assigned hosts as occupied.
+        internal static List<Rect> AvailableButtonSlots(HUD_Troops panel)
+        {
+            var result = new List<Rect>(2);
+            if (!(panel?.FindName("UnitControls") is FrameworkElement controls)) return result;
+            var occupied = new List<ScreenRectangle>();
+            CollectOccupiedRectangles(controls, occupied, true);
+            foreach (Thickness margin in new[] { BottomRightMargin, BottomMiddleMargin })
+                if (TryGetSlotRectangle(controls, margin, out ScreenRectangle rectangle) && !IntersectsAny(rectangle, occupied))
+                    result.Add(new Rect(rectangle.Left, rectangle.Top, rectangle.Right - rectangle.Left, rectangle.Bottom - rectangle.Top));
+            return result;
+        }
+
+        private static void CollectOccupiedRectangles(DependencyObject parent, List<ScreenRectangle> result, bool includeSharedHosts = false)
         {
             int childCount = VisualTreeHelper.GetChildrenCount(parent);
             for (int index = 0; index < childCount; index++)
@@ -198,7 +212,7 @@ namespace APIShared.Presentation
                 DependencyObject child = VisualTreeHelper.GetChild(parent, index);
                 if (child is FrameworkElement element)
                 {
-                    if (TroopActionHudLayoutPolicy.IsStandardHostName(element.Name))
+                    if (!includeSharedHosts && TroopActionHudLayoutPolicy.IsStandardHostName(element.Name))
                         continue;
 
                     // Only effectively interactive Vanilla or foreign buttons own a slot.
@@ -211,7 +225,7 @@ namespace APIShared.Presentation
                         result.Add(rectangle);
                     }
                 }
-                CollectOccupiedRectangles(child, result);
+                CollectOccupiedRectangles(child, result, includeSharedHosts);
             }
         }
 

@@ -23,7 +23,7 @@ namespace APIShared.Presentation
     /// <c>SerpTroopAction_&lt;priority&gt;_&lt;id&gt;</c> is parsed. At most two free slots (bottom right,
     /// bottom middle) are assigned; duplicate IDs stay hidden. Everything runs on the Unity thread.
     /// </remarks>
-    public static class TroopActionHud
+    public static partial class TroopActionHud
     {
         /// <summary>Required element-name prefix of a shared troop-action host.</summary>
         public const string HostNamePrefix = TroopActionHudLayoutPolicy.HostNamePrefix;
