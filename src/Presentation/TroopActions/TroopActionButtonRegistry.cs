@@ -10,6 +10,7 @@ namespace APIShared.Presentation
         private readonly List<Entry> entries = new List<Entry>();
         private readonly Action changed;
         private State[] snapshot;
+        private long layoutRevision;
         internal TroopActionButtonRegistry(Action changed) { this.changed = changed; }
         internal bool TryRegister(string owner, TroopActionButtonDefinition definition,
             out ITroopActionButtonRegistration registration, out string reason)
@@ -31,16 +32,19 @@ namespace APIShared.Presentation
                     if (result == 0) result = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
                     return result != 0 ? result : StringComparer.Ordinal.Compare(a.Definition.ButtonId, b.Definition.ButtonId);
                 });
+                layoutRevision++;
                 snapshot = null; registration = entry;
             }
             reason = string.Empty;
             changed?.Invoke();
             return true;
         }
-        internal State[] Capture()
+        internal State[] Capture() => Capture(out _);
+        internal State[] Capture(out long revision)
         {
             lock (gate)
             {
+                revision = layoutRevision;
                 if (snapshot != null) return snapshot;
                 var result = new State[entries.Count];
                 for (int i = 0; i < result.Length; i++) result[i] = new State(entries[i]);
@@ -48,6 +52,10 @@ namespace APIShared.Presentation
             }
         }
         internal bool IsExecutable(Entry entry) { lock (gate) return entry.Visible && entry.Enabled; }
+        // Cosmetic changes and another action's availability do not move page entries.
+        // Recheck this action's live availability together with the rendered membership.
+        internal bool IsExecutable(Entry entry, long revision)
+        { lock (gate) return revision == layoutRevision && entry.Visible && entry.Enabled; }
         internal sealed class State
         {
             internal readonly Entry Entry;
@@ -69,7 +77,7 @@ namespace APIShared.Presentation
             { this.registry = registry; Owner = owner; Definition = definition; Tooltip = definition.Tooltip; }
             public void SetVisible(bool value)
             {
-                lock (registry.gate) { if (Visible == value) return; Visible = value; registry.snapshot = null; }
+                lock (registry.gate) { if (Visible == value) return; Visible = value; registry.layoutRevision++; registry.snapshot = null; }
                 registry.changed?.Invoke();
             }
             public void SetEnabled(bool value)
@@ -85,7 +93,7 @@ namespace APIShared.Presentation
             }
             public void RequestButtonRefresh()
             {
-                lock (registry.gate) { Version++; registry.snapshot = null; }
+                lock (registry.gate) { Version++; registry.layoutRevision++; registry.snapshot = null; }
                 registry.changed?.Invoke();
             }
         }

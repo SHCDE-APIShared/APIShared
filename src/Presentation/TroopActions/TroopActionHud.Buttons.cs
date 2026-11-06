@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Input;
-using BepInEx.Configuration;
 using CrusaderDE;
 using Noesis;
 using R3;
@@ -20,31 +19,26 @@ namespace APIShared.Presentation
             new Dictionary<TroopActionButtonRegistry.Entry, ButtonVisual>();
         private static readonly List<ButtonVisual> eligibleButtons = new List<ButtonVisual>();
         private static readonly UnitHudHoverTextPresenter buttonHover = new UnitHudHoverTextPresenter();
+        private static readonly TroopActionPresentationRetry presentationRetry = new TroopActionPresentationRetry();
         private static IUiFrameWorkRegistration buttonWork;
         private static IDisposable buttonInput, buttonMissionEnd;
-        private static TroopActionMenuPreference menuPreference;
         private static HUD_Troops buttonPanel;
         private static MainHUD buttonRoot;
         private static IngameUIScreens inputRoot;
-        private static Canvas overlay;
-        private static Border menuBorder;
-        private static UniformGrid menuGrid;
-        private static ScrollViewer menuScroll;
-        private static CheckBox autoClose;
-        private static TextBlock autoCloseLabel;
-        private static Button moreButton;
+        private static Canvas overlay, navigation;
+        private static Button nextPageButton, previousPageButton;
+        private static TroopActionPagingSurface pagingSurface;
+        private static TroopActionPagingDecision pagingDecision;
+        private static TroopActionButtonRegistry.State[] renderedStates;
         private static LocalSelectionSnapshot buttonSelection;
-        private static LocalSelectionSnapshot openedSelection;
-        private static bool menuOpen;
-        private static string renderedLocale;
+        private static int currentPage;
+        private static long renderGeneration;
+        private static long renderedLayoutRevision;
         private static int visualColour = -1, visualPlayer = -1;
 
-        internal static void ConfigurePreference(ConfigFile config) =>
-            menuPreference = new TroopActionMenuPreference(config, error => ReportButtonFailure("menu preference", error));
-
-        /// <summary>Registers a permanent owner-local action for Vanilla's free slots and overflow menu.
+        /// <summary>Registers a permanent owner-local action for Vanilla's free slots and additional HUD pages.
         /// Call on the validated Unity thread after managed APIShared initialization. Older providers do not expose this method.</summary>
-        /// <remarks>Initially hidden. Legacy hosts retain their existing slot assignments and are not moved into the menu.
+        /// <remarks>Initially hidden. Legacy hosts retain their existing slot assignments and reserve their positions on every page.
         /// Factory/command/context/hover callbacks run on Unity outside registry locks; errors isolate the entry.
         /// Selection, disabled state and actual visibility are rechecked before invoking a command with its Button parameter.
         /// There is no implicit network authorization or command transport. No unregistration or hook teardown.</remarks>
@@ -103,12 +97,21 @@ namespace APIShared.Presentation
             if (!any) { NotifyContexts(snapshot, false); HideButtons(true); return; }
             if (!TryButtonContext(out MainViewModel main, out UnitHudActionButtonContext context, out LocalSelectionSnapshot selection))
             { NotifyContexts(snapshot, false); HideButtons(true); return; }
-            EnsureButtonOverlay(main);
-            if (!ReferenceEquals(buttonSelection, selection)) CloseMenu();
+            if (!presentationRetry.CanAttempt(main.HUDTroopPanel, main.HUDRoot, snapshot))
+            { HideButtons(true); return; }
+            try { EnsureButtonOverlay(main); }
+            catch
+            {
+                presentationRetry.RecordFailure(main.HUDTroopPanel, main.HUDRoot, snapshot);
+                throw;
+            }
+            if (!ReferenceEquals(buttonSelection, selection)) ResetPage();
             buttonSelection = selection;
             bool appearanceChanged = visualColour != context.PlayerColour || visualPlayer != context.PlayerId;
             visualColour = context.PlayerColour; visualPlayer = context.PlayerId;
             NotifyContexts(snapshot, true);
+            // Context callbacks may publish new visibility. Use their latest immutable view.
+            snapshot = buttons.Capture(out long layoutRevision);
             eligibleButtons.Clear();
             foreach (var state in snapshot)
             {
@@ -116,51 +119,60 @@ namespace APIShared.Presentation
                 visual.Seen = false;
                 if (state.Visible && !visual.Failed) eligibleButtons.Add(visual);
             }
-            var slots = TroopActionHudLayout.AvailableButtonSlots(buttonPanel);
-            var decision = TroopActionOverflowPolicy.Decide(eligibleButtons.Count, slots.Count);
-            if (!decision.HasMore) CloseMenu();
+            TroopActionPageSlots slots = pagingSurface.CaptureSlots();
+            if (!slots.IsReady || slots.FirstSlots.Count == 0 &&
+                (slots.FallbackNavigation.Width <= 0 || slots.FallbackNavigation.Height <= 0))
+            { HideButtons(true); return; }
+            Rect anchor = slots.FirstSlots.Count > 0 ? slots.FirstSlots[0] : slots.FallbackNavigation;
+            // The navigation remains at the first-page anchor on all pages.
+            var laterSlots = slots.LaterSlots;
+            if (slots.FirstSlots.Count > 0)
+                for (int i = laterSlots.Count - 1; i >= 0; i--)
+                    if (SamePosition(laterSlots[i], anchor)) laterSlots.RemoveAt(i);
+            pagingDecision = TroopActionPagingPolicy.Decide(eligibleButtons.Count, slots.FirstSlots.Count, laterSlots.Count);
+            currentPage = pagingDecision.ClampPage(currentPage);
+            var slice = pagingDecision.GetSlice(currentPage);
+            pagingSurface.SetVanillaHidden(currentPage != 0);
             overlay.Visibility = Visibility.Visible;
             GetOverlayScale(out float scaleX, out float scaleY);
+            var pageSlots = currentPage == 0 ? slots.FirstSlots : laterSlots;
+            int offset = currentPage == 0 && pagingDecision.HasNavigation && slots.FirstSlots.Count > 0 ? 1 : 0;
+            renderGeneration++;
+            renderedStates = snapshot;
+            renderedLayoutRevision = layoutRevision;
             for (int i = 0; i < eligibleButtons.Count; i++)
             {
                 ButtonVisual visual = eligibleButtons[i];
-                bool inMenu = i >= decision.DirectCount;
-                if (inMenu && !menuOpen) { HideVisual(visual); continue; }
-                Panel target = inMenu ? (Panel)menuGrid : overlay;
-                PlaceIn(visual.Host, target);
-                if (inMenu && target.Children.IndexOf(visual.Host) != i - decision.DirectCount)
-                {
-                    target.Children.Remove(visual.Host);
-                    target.Children.Insert(i - decision.DirectCount, visual.Host);
-                }
-                visual.Host.Margin = inMenu ? new Thickness(2) : new Thickness(0);
-                visual.Host.LayoutTransform = inMenu ? null : new ScaleTransform(scaleX, scaleY);
-                if (!inMenu) PositionAtScreen(visual.Host, slots[i].X, slots[i].Y);
-                visual.Seen = true;
+                if (i < slice.Start || i >= slice.Start + slice.Count) { HideVisual(visual); continue; }
+                int position = i - slice.Start + offset;
+                PlaceIn(visual.Host, overlay);
+                visual.Host.Margin = new Thickness(0);
+                visual.Host.LayoutTransform = new ScaleTransform(scaleX, scaleY);
+                PositionAtScreen(visual.Host, pageSlots[position].X, pageSlots[position].Y);
+                visual.Seen = true; visual.Page = currentPage;
                 visual.Host.Visibility = Visibility.Visible;
-                // Some Vanilla styles animate the inner Button; the wrapper is the authoritative gate.
+                // Some Vanilla styles animate the inner Button; the wrapper is authoritative.
                 visual.Button.Visibility = Visibility.Visible;
                 visual.Button.IsEnabled = visual.State.Enabled;
                 visual.DisabledHover.Visibility = visual.State.Enabled ? Visibility.Collapsed : Visibility.Visible;
                 if (visual.Hovered && visual.Entry.Definition.HoverChanged == null) ShowButtonRollover(visual, visual.State.Tooltip);
             }
             foreach (var pair in buttonVisuals) if (!pair.Value.Seen) HideVisual(pair.Value);
-            moreButton.Visibility = decision.HasMore ? Visibility.Visible : Visibility.Collapsed;
-            if (decision.HasMore)
+            navigation.Visibility = pagingDecision.HasNavigation ? Visibility.Visible : Visibility.Collapsed;
+            if (pagingDecision.HasNavigation)
             {
-                moreButton.LayoutTransform = new ScaleTransform(scaleX, scaleY);
-                if (decision.UsesFallbackAnchor)
-                {
-                    Point top = buttonPanel.PointToScreen(new Point(buttonPanel.ActualWidth - 36, -41));
-                    PositionAtScreen(moreButton, top.X, top.Y);
-                }
-                else PositionAtScreen(moreButton, slots[decision.DirectCount].X, slots[decision.DirectCount].Y);
+                float width = pagingDecision.UsesFallbackAnchor ? 15 : 36;
+                navigation.Width = nextPageButton.Width = previousPageButton.Width = width;
+                navigation.LayoutTransform = new ScaleTransform(scaleX, scaleY);
+                PositionAtScreen(navigation, anchor.X, anchor.Y);
+                if (nextPageButton.IsMouseOver) ShowNavigationRollover(nextPageButton, true);
+                else if (previousPageButton.IsMouseOver) ShowNavigationRollover(previousPageButton, false);
             }
-            else buttonHover.Close(moreButton);
-            menuBorder.Visibility = menuOpen && decision.HasMore ? Visibility.Visible : Visibility.Collapsed;
-            if (menuOpen && decision.HasMore) LayoutMenu(decision.OverflowCount, scaleX, scaleY);
-            UpdateMenuLocale();
+            else { buttonHover.Close(nextPageButton); buttonHover.Close(previousPageButton); }
         }
+
+        private static bool SamePosition(Rect left, Rect right) =>
+            Math.Abs(left.X - right.X) < 0.5f && Math.Abs(left.Y - right.Y) < 0.5f;
 
         private static bool TryButtonContext(out MainViewModel main, out UnitHudActionButtonContext context, out LocalSelectionSnapshot selection)
         {
@@ -179,7 +191,7 @@ namespace APIShared.Presentation
             var controls = main.HUDTroopPanel.FindName("TroopSelectionControls") as FrameworkElement;
             var unitControls = main.HUDTroopPanel.FindName("UnitControls") as FrameworkElement;
             var back = main.HUDTroopPanel.FindName("UnitBack") as FrameworkElement;
-            if (!InteractiveAncestors(controls) || !InteractiveAncestors(unitControls) || back?.IsVisible == true) return false;
+            if (!InteractiveAncestors(controls) || !InteractiveAncestors(unitControls) || back?.Visibility == Visibility.Visible) return false;
             int player = GameModes.GameModeHelper.IsMapEditor() ? EditorDirector.instance?.ActivePlayerID ?? -1 : GamePlayerManagerAPI.Instance?.GetLocalPlayerId() ?? -1;
             if (!LocalSelectionAPI.TryCapture(player, out selection) || selection.Count == 0) return false;
             int colour = UnitHudPresentationService.ResolveActionColour(SpriteMapping.RemapMPLoadedColour(player), SpriteMapping.remapColours);
@@ -198,85 +210,70 @@ namespace APIShared.Presentation
         private static void EnsureButtonOverlay(MainViewModel main)
         {
             if (ReferenceEquals(buttonPanel, main.HUDTroopPanel) && ReferenceEquals(buttonRoot, main.HUDRoot) && overlay != null) return;
-            ResetButtons();
-            buttonPanel = main.HUDTroopPanel; buttonRoot = main.HUDRoot;
-            // MainHUD is bottom-sized to its HUD contents, not to the viewport. The
-            // enclosing IngameUIScreens grid has the audited full-screen UI dimensions.
-            for (DependencyObject node = buttonRoot; node != null; node = VisualTreeHelper.GetParent(node))
-                if (node is IngameUIScreens screens) { inputRoot = screens; break; }
-            if (!(inputRoot?.Content is Grid root)) throw new InvalidOperationException("In-game screen root grid is unavailable.");
-            overlay = new Canvas { Name = "APISharedTroopActionsOverlay", Visibility = Visibility.Collapsed, ClipToBounds = false };
-            Grid.SetRowSpan(overlay, Math.Max(1, root.RowDefinitions.Count));
-            Grid.SetColumnSpan(overlay, Math.Max(1, root.ColumnDefinitions.Count));
-            Panel.SetZIndex(overlay, 1); root.Children.Add(overlay);
-            moreButton = new Button { Width = 36, Height = 37, Style = buttonPanel.TryFindResource("BTN_Image") as Style,
-                RenderTransformOrigin = new Point(0.5f, 0.5f), RenderTransform = new RotateTransform(90) };
-            PropEx.SetSprite1(moreButton, buttonPanel.TryFindResource("UI-Buttons J028") as ImageSource);
-            PropEx.SetSprite2(moreButton, buttonPanel.TryFindResource("UI-Buttons J029") as ImageSource);
-            PropEx.SetSprite3(moreButton, buttonPanel.TryFindResource("UI-Buttons J030") as ImageSource);
-            PropEx.SetSprite4(moreButton, buttonPanel.TryFindResource("UI-Buttons J028") as ImageSource);
-            ToolTipService.SetIsEnabled(moreButton, false);
-            moreButton.Click += (sender, args) => {
-                if (!TryButtonContext(out _, out _, out var selected) || !ReferenceEquals(selected, buttonSelection)) return;
-                if (menuOpen) CloseMenu(); else { menuOpen = true; openedSelection = selected; }
-                buttonWork.Request();
-            };
-            moreButton.MouseEnter += (_, __) => ShowButtonRollover(moreButton, UiText.Get("TroopActions.More"));
-            moreButton.MouseLeave += (_, __) => buttonHover.Close(moreButton);
-            overlay.Children.Add(moreButton);
-            menuGrid = new UniformGrid { Columns = 1, HorizontalAlignment = HorizontalAlignment.Left };
-            menuScroll = new ScrollViewer { Content = menuGrid, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            autoCloseLabel = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 14, Foreground = new SolidColorBrush(Color.FromArgb(255, 239, 243, 198)) };
-            autoClose = new CheckBox { Content = autoCloseLabel, Style = buttonPanel.TryFindResource("CheckBox_Template") as Style,
-                Margin = new Thickness(2, 6, 2, 0), IsChecked = menuPreference?.Value ?? true, DataContext = main };
-            ToolTipService.SetIsEnabled(autoClose, false);
-            autoClose.Checked += (_, __) => SaveMenuPreference(true);
-            autoClose.Unchecked += (_, __) => SaveMenuPreference(false);
-            autoClose.MouseEnter += (_, __) => ShowButtonRollover(autoClose, UiText.Get("TroopActions.AutoCloseHelp"));
-            autoClose.MouseLeave += (_, __) => buttonHover.Close(autoClose);
-            var stack = new StackPanel(); stack.Children.Add(menuScroll); stack.Children.Add(autoClose);
-            menuBorder = new Border { Padding = new Thickness(8), CornerRadius = new CornerRadius(12),
-                BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
-                Background = new SolidColorBrush(Color.FromArgb(220, 0, 0, 0)), Child = stack, Visibility = Visibility.Collapsed };
-            Panel.SetZIndex(menuBorder, 1); overlay.Children.Add(menuBorder);
-            inputRoot.PreviewMouseDown += OnRootMouseDown;
-            inputRoot.PreviewKeyDown += OnRootKeyDown;
+            try
+            {
+                ResetButtons();
+                buttonPanel = main.HUDTroopPanel; buttonRoot = main.HUDRoot;
+                // MainHUD is bottom-sized to its HUD contents, not to the viewport. The
+                // enclosing IngameUIScreens grid has the audited full-screen UI dimensions.
+                for (DependencyObject node = buttonRoot; node != null; node = VisualTreeHelper.GetParent(node))
+                    if (node is IngameUIScreens screens) { inputRoot = screens; break; }
+                if (!(inputRoot?.Content is Grid root)) throw new InvalidOperationException("In-game screen root grid is unavailable.");
+                overlay = new Canvas { Name = "APISharedTroopActionsOverlay", Visibility = Visibility.Collapsed, ClipToBounds = false };
+                Grid.SetRowSpan(overlay, Math.Max(1, root.RowDefinitions.Count));
+                Grid.SetColumnSpan(overlay, Math.Max(1, root.ColumnDefinitions.Count));
+                Panel.SetZIndex(overlay, 1); root.Children.Add(overlay);
+                pagingSurface = TroopActionPagingSurface.Create(buttonPanel);
+                navigation = new Canvas { Width = 36, Height = 37, Background = Brushes.Transparent,
+                    Visibility = Visibility.Collapsed };
+                nextPageButton = CreatePageButton(true);
+                previousPageButton = CreatePageButton(false);
+                Canvas.SetTop(previousPageButton, 18.5f);
+                navigation.Children.Add(nextPageButton); navigation.Children.Add(previousPageButton);
+                overlay.Children.Add(navigation);
+                inputRoot.PreviewKeyDown += OnRootKeyDown;
+            }
+            catch
+            {
+                ResetButtons();
+                throw;
+            }
         }
 
-        private static void SaveMenuPreference(bool value)
-        { menuPreference?.Set(value); }
-
-        private static void UpdateMenuLocale()
+        private static Button CreatePageButton(bool next)
         {
-            string locale = GameLocale.Current();
-            if (renderedLocale == locale) return;
-            renderedLocale = locale;
-            autoCloseLabel.Text = UiText.Get("TroopActions.AutoClose");
+            var button = new Button { Width = 36, Height = 18.5f,
+                Style = buttonPanel.TryFindResource("BTN_Image") as Style,
+                RenderTransformOrigin = new Point(0.5f, 0.5f),
+                RenderTransform = new RotateTransform(next ? 180 : 0) };
+            PropEx.SetSprite1(button, buttonPanel.TryFindResource("UI-Buttons J028") as ImageSource);
+            PropEx.SetSprite2(button, buttonPanel.TryFindResource("UI-Buttons J029") as ImageSource);
+            PropEx.SetSprite3(button, buttonPanel.TryFindResource("UI-Buttons J030") as ImageSource);
+            PropEx.SetSprite4(button, buttonPanel.TryFindResource("UI-Buttons J028") as ImageSource);
+            ToolTipService.SetIsEnabled(button, false);
+            button.Click += (_, __) => ChangePage(next ? 1 : -1);
+            button.MouseEnter += (_, __) => ShowNavigationRollover(button, next);
+            button.MouseLeave += (_, __) => buttonHover.Close(button);
+            return button;
         }
 
-        private static void LayoutMenu(int count, float scaleX, float scaleY)
+        private static void ShowNavigationRollover(Button button, bool next) =>
+            ShowButtonRollover(button, UiText.Get(next ? "TroopActions.NextPage" : "TroopActions.PreviousPage") +
+                " (" + (currentPage + 1) + "/" + pagingDecision.PageCount + ")");
+
+        private static void ChangePage(int direction)
         {
-            Point panelTop = overlay.PointFromScreen(buttonPanel.PointToScreen(new Point(0, 0)));
-            Point anchor = overlay.PointFromScreen(moreButton.PointToScreen(new Point(36, 0)));
-            float bottom = TroopActionOverflowPolicy.MenuBottom(panelTop.Y, Canvas.GetTop(moreButton));
-            float availableWidth = Math.Max(36, (overlay.ActualWidth - 8) / scaleX - 18);
-            int columns = Math.Max(1, Math.Min(Math.Min(4, count), (int)(availableWidth / 40)));
-            menuGrid.Columns = columns;
-            float width = Math.Min(availableWidth, Math.Max(columns * 40, 210));
-            autoCloseLabel.MaxWidth = Math.Max(20, width - 28);
-            menuScroll.Width = width;
-            // Reserve the footer before limiting the grid; scrolling preserves access to all registered actions.
-            autoClose.Measure(new Size(width, float.PositiveInfinity));
-            float footer = autoClose.DesiredSize.Height + 6;
-            float maxHeight = Math.Max(37, (bottom - 4) / scaleY - footer - 18);
-            menuScroll.MaxHeight = maxHeight;
-            menuGrid.Width = columns * 40;
-            menuBorder.LayoutTransform = new ScaleTransform(scaleX, scaleY);
-            menuBorder.Measure(new Size((width + 18) * scaleX, overlay.ActualHeight));
-            float menuWidth = menuBorder.DesiredSize.Width, menuHeight = menuBorder.DesiredSize.Height;
-            Canvas.SetLeft(menuBorder, Math.Max(4, Math.Min(anchor.X - menuWidth, overlay.ActualWidth - menuWidth - 4)));
-            Canvas.SetTop(menuBorder, Math.Max(4, bottom - menuHeight));
+            if (!TryButtonContext(out var main, out _, out var selected) ||
+                !ReferenceEquals(selected, buttonSelection) || !ReferenceEquals(main.HUDRoot, buttonRoot) ||
+                !ReferenceEquals(main.HUDTroopPanel, buttonPanel)) return;
+            // Vanilla occupancy and consumer visibility may have changed since the last frame.
+            RenderButtons();
+            if (renderedStates == null || !pagingDecision.HasNavigation || !TryButtonContext(out _, out _, out selected) ||
+                !ReferenceEquals(selected, buttonSelection)) return;
+            currentPage = pagingDecision.Move(currentPage, direction);
+            foreach (var pair in buttonVisuals) HideVisual(pair.Value);
+            buttonHover.Close();
+            RenderButtons();
         }
 
         private static void GetOverlayScale(out float x, out float y)
@@ -377,18 +374,16 @@ namespace APIShared.Presentation
         private static void HideVisual(ButtonVisual visual)
         { if (visual.Host != null) visual.Host.Visibility = Visibility.Collapsed; SetButtonHover(visual, false); visual.Seen = false; }
 
-        private static void CloseMenu()
+        private static void ResetPage()
         {
-            menuOpen = false; openedSelection = null;
-            if (menuBorder != null) menuBorder.Visibility = Visibility.Collapsed;
-            foreach (var pair in buttonVisuals)
-                if (pair.Value.Host != null && ReferenceEquals(pair.Value.Host.Parent, menuGrid)) HideVisual(pair.Value);
+            currentPage = 0; renderGeneration++; renderedStates = null;
+            pagingSurface?.SetVanillaHidden(false);
             buttonHover.Close();
         }
 
-        private static void HideButtons(bool close)
+        private static void HideButtons(bool reset)
         {
-            if (close) CloseMenu();
+            if (reset) ResetPage();
             if (overlay != null) overlay.Visibility = Visibility.Collapsed;
             foreach (var pair in buttonVisuals) HideVisual(pair.Value);
         }
@@ -396,22 +391,28 @@ namespace APIShared.Presentation
         private static void ResetButtons()
         {
             NotifyContexts(buttons.Capture(), false); HideButtons(true);
-            if (inputRoot != null) { inputRoot.PreviewMouseDown -= OnRootMouseDown; inputRoot.PreviewKeyDown -= OnRootKeyDown; }
+            if (inputRoot != null) inputRoot.PreviewKeyDown -= OnRootKeyDown;
+            pagingSurface?.Restore(); pagingSurface = null;
             if (overlay?.Parent is Panel parent) parent.Children.Remove(overlay);
             buttonVisuals.Clear(); eligibleButtons.Clear(); overlay = null; buttonPanel = null; buttonRoot = null; inputRoot = null;
-            moreButton = null; menuBorder = null; menuGrid = null; menuScroll = null; autoClose = null;
-            buttonSelection = null; visualColour = visualPlayer = -1; renderedLocale = null;
+            navigation = null; nextPageButton = previousPageButton = null;
+            buttonSelection = null; visualColour = visualPlayer = -1;
+            pagingDecision = default;
+            presentationRetry.Clear();
         }
 
-        private static void OnRootMouseDown(object sender, MouseButtonEventArgs args)
-        { if (menuOpen && !menuBorder.IsMouseOver && !moreButton.IsMouseOver) CloseMenu(); }
+        private static void ReturnToFirstPage()
+        {
+            if (currentPage == 0) return;
+            HideButtons(true);
+            buttonWork?.Request();
+        }
+
         private static void OnRootKeyDown(object sender, KeyEventArgs args)
-        { if (menuOpen && args.Key == Key.Escape) CloseMenu(); }
+        { if (args.Key == Key.Escape) ReturnToFirstPage(); }
         private static void OnButtonInput(UnityInputEventArgs args)
         {
-            if (args.Phase != EventHookPhase.Pre || !menuOpen) return;
-            if (args.Key == UnityEngine.KeyCode.Escape ||
-                args.Key == UnityEngine.KeyCode.Mouse0 && !menuBorder.IsMouseOver && !moreButton.IsMouseOver) CloseMenu();
+            if (args.Phase == EventHookPhase.Pre && args.Key == UnityEngine.KeyCode.Escape) ReturnToFirstPage();
         }
 
         private static void ReportButtonFailure(string identity, Exception error)
@@ -424,7 +425,7 @@ namespace APIShared.Presentation
             internal Grid Host;
             internal Button Button;
             internal Border DisabledHover;
-            internal int Version = -1;
+            internal int Version = -1, Page = -1;
             internal bool Failed = true, Hovered, Seen;
             internal bool? ContextAvailable;
             internal ButtonVisual(TroopActionButtonRegistry.Entry entry) { Entry = entry; }
@@ -439,16 +440,19 @@ namespace APIShared.Presentation
             public bool CanExecute(object parameter) => true;
             public void Execute(object parameter)
             {
-                TroopActionCommandExecution.TryInvoke(visual.Entry.Definition.Command, expectedButton, Authorized,
-                    Completed, error => ReportButtonFailure(visual.Entry.Owner + "/command", error));
+                long generation = renderGeneration;
+                int page = currentPage;
+                TroopActionCommandExecution.TryInvoke(visual.Entry.Definition.Command, expectedButton,
+                    () => Authorized(generation, page), null,
+                    error => ReportButtonFailure(visual.Entry.Owner + "/command", error));
             }
-            private bool Authorized() => ReferenceEquals(visual.Button, expectedButton) && buttons.IsExecutable(visual.Entry) &&
+            private bool Authorized(long generation, int page) => generation == renderGeneration && page == currentPage &&
+                visual.Seen && visual.Page == currentPage && renderedStates != null &&
+                ReferenceEquals(visual.Button, expectedButton) && buttons.IsExecutable(visual.Entry, renderedLayoutRevision) &&
                 !visual.Failed && visual.Host?.IsVisible == true &&
                 buttonVisuals.TryGetValue(visual.Entry, out var live) && ReferenceEquals(live, visual) &&
                 TryButtonContext(out var main, out _, out var selected) && ReferenceEquals(main.HUDRoot, buttonRoot) &&
-                ReferenceEquals(main.HUDTroopPanel, buttonPanel) && ReferenceEquals(selected, buttonSelection) &&
-                (!ReferenceEquals(visual.Host.Parent, menuGrid) || menuOpen && ReferenceEquals(selected, openedSelection));
-            private static void Completed() { if (menuPreference?.Value ?? true) CloseMenu(); }
+                ReferenceEquals(main.HUDTroopPanel, buttonPanel) && ReferenceEquals(selected, buttonSelection);
         }
     }
 }

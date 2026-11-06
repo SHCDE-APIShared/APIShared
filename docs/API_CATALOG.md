@@ -193,7 +193,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
-| `APIShared.Presentation.TroopActionHud` | Shared Vanilla troop-action slots and automatic overflow menu; legacy host visibility/layout coordination | Unity thread; owner-local button IDs; logical activation; independent command/factory failures; process lifetime |
+| `APIShared.Presentation.TroopActionHud` | Shared Vanilla troop-action slots and automatic HUD pages; legacy host visibility/layout coordination | Unity thread; owner-local button IDs; logical activation; independent command/factory failures; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Economy.AiMarketSellPolicies` | Final AI reserve and pre-booking quantity policies, OR-combined native safety | [Contract and example](AI_MARKET_SELL.md); initially disabled; native caller thread; process lifetime |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
@@ -271,7 +271,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs), [button availability](../src/Units/Recruitment/RecruitmentAvailability.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
-| Troop action buttons | [TroopActionHud](../src/Presentation/TroopActions/TroopActionHud.cs), [button contracts](../src/Presentation/TroopActions/TroopActionButtonContracts.cs) | [Legacy layout](../src/Presentation/TroopActions/TroopActionHudLayout.cs), [overflow policy](../src/Presentation/TroopActions/TroopActionOverflowPolicy.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
+| Troop action buttons | [TroopActionHud](../src/Presentation/TroopActions/TroopActionHud.cs), [button contracts](../src/Presentation/TroopActions/TroopActionButtonContracts.cs) | [Legacy layout](../src/Presentation/TroopActions/TroopActionHudLayout.cs), [paging policy](../src/Presentation/TroopActions/TroopActionPagingPolicy.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | In-game tooltip extensions | [Public service](../src/Presentation/Tooltips/TooltipPresentation.cs), [content and positions](../src/Presentation/Tooltips/TooltipContracts.cs) | Shared renderer for buildings, recruitment, siege construction and repair | [Guide](TOOLTIPS.md), [standalone example](../examples/ThirdPartyMod/TooltipExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
@@ -312,7 +312,9 @@ Handles expose `SetVisible`, `SetEnabled`, `SetTooltip`, and `RequestContentRefr
 
 Default popups use the existing modoptions template, including Script Extender resolution scaling and a 60000 ms duration. Empty text suppresses the popup. An optional tooltip factory must return a fresh unattached ToolTip with explicit Style or Template; APIShared sets its Content to the current text and preserves that custom presentation. `RequestContentRefresh` retries factory failures. No screen coordinates or hook lifetimes are exposed.
 
-## Vanilla troop-action slots and overflow
+<a id="vanilla-troop-action-slots-and-overflow"></a>
+
+## Vanilla troop-action slots and pages
 
 `APIShared.Presentation.TroopActionHud.TryRegisterButton` registers a process-lived
 button in the small Vanilla troop-action field. Pass the mod GUID and a
@@ -332,34 +334,44 @@ Commands recheck current context and `CanExecute`, run outside registry locks an
 are exception-isolated. No implicit network command is sent. Consumers retain
 feature authorization and multiplayer synchronization.
 
+If HUD grouping or its namescope is incompatible, Vanilla remains unchanged and
+typed presentation pauses until a HUD or mission reset, a new registration, or an
+explicit `RequestButtonRefresh`; ordinary visibility or enabled-state changes do not retry it.
+
 Visible entries sort by ascending priority, then ordinal owner GUID and button ID.
 Vanilla controls, foreign controls and existing legacy-host assignments reserve
-their positions first. Up to two remaining positions can hold registered buttons.
-When all fit, every entry is direct. On overflow, the last available position becomes
-**More actions**: with two positions the first action stays direct; with one position
-all actions move into the menu. With no free position the opener sits above the
-troop panel. Hidden and failed entries occupy no position; disabled entries remain
-visible and support rollover text. The separate own-troop button strip described
-below keeps its existing layout and paging.
+their positions first. The first page keeps Vanilla actions and uses up to two free
+positions for registered actions. When every action fits, no navigation is shown.
+Otherwise a split navigation button occupies the bottom-right position, or the
+bottom-middle position if the right one is reserved. If both are reserved, narrow
+navigation appears immediately beside the grid at the ordinary Engineer Back
+anchor. The Engineer construction submenu itself remains Vanilla and suspends paging.
 
-The menu uses Vanilla presentation, grows to at most four columns and scrolls
-vertically when the visible screen cannot contain all rows. It contains only the
-entries displaced from direct positions. The **Close automatically after an action**
-checkbox defaults to true and persists locally in BepInEx configuration as
-`TroopActions.AutoCloseMenu`, independently of saves and multiplayer. With the option
-enabled, normal return from an invoked command closes the menu; this is not an
-acknowledgement of native command execution. `CanExecute=false` or a command exception
-keeps it open. A persistence error retains the current in-process choice.
+The upper half points right and advances; the lower half points left and goes back.
+Both directions wrap, including first page to last page through Back. Navigation
+stays in the same position on all pages of the current layout. Further pages use the
+same three-column, two-row action field, temporarily hiding only the Vanilla group
+while its internal state keeps updating. They can hold five registered actions, or
+six when navigation is outside; foreign controls and legacy assignments still
+reserve their positions. Entries already direct on the first page are not repeated.
+Hidden and failed entries occupy no position; disabled entries remain visible and
+support rollover text. The separate own-troop button strip described below keeps
+its existing layout and paging.
 
-The opener toggles the menu; outside clicks, Escape, selection/player changes, a
-different or hidden HUD, the Engineer submenu, mission end and HUD replacement close
-it. The checkbox controls only command-triggered closing. Menu clicks do not become
-world clicks; outside clicks retain ordinary game behavior. If overflow disappears,
-direct positions are restored and the menu closes.
+Invoking an action keeps the current page. There is no overflow popup or auto-close
+checkbox; the former local `TroopActions.AutoCloseMenu` value is no longer read.
+Selection/player changes, a different or hidden HUD, modal menus, the Engineer
+submenu, mission end and HUD replacement return to the first page. If the visible
+action set changes within the same selection, the current page is clamped to the
+remaining pages. If overflow disappears, the first page is restored. Commands
+recheck current page membership as well as selection and command availability, so
+an old button cannot invoke an action that has moved off the current page. HUD clicks
+do not become world clicks; world clicks retain ordinary game behavior. Page state
+is local presentation state and is not saved or synchronized.
 
 The service requires a valid, interactive own-troop selection, including the editor
 where that context exists. Context callbacks report gains/losses of that context for
-a visible registration; opening or closing the menu does not change context.
+a visible registration; changing pages does not change context.
 Rollover text uses the Vanilla troop location, never a popup. If `hoverChanged` is
 supplied, the consumer owns rollover presentation and must clear it on false; this
 also supports rich metadata and disabled-button descriptions. Hover loss is reported
@@ -367,7 +379,7 @@ when a button is hidden or its presentation ends. Callbacks run on the Unity thr
 outside locks and failures do not stop other registrations.
 
 Legacy `SerpTroopAction_` hosts keep their existing contract and slot order. They are
-not automatically moved into the menu: consumers must opt in through the typed
+not automatically moved onto additional pages: consumers must opt in through the typed
 registration. [HudExample](../examples/ThirdPartyMod/HudExample.cs) shows both this
 registration and the independent strip/side-HUD interfaces.
 
@@ -644,8 +656,8 @@ built panel (direct editor launch) refreshes it immediately. Older mod builds th
 install their own setup hook keep working, because every implementation applies the same
 host convention.
 
-The additive typed registration and its overflow behavior are described under
-[Vanilla troop-action slots and overflow](#vanilla-troop-action-slots-and-overflow).
+The additive typed registration and its paging behavior are described under
+[Vanilla troop-action slots and pages](#vanilla-troop-action-slots-and-pages).
 
 ## Native market price queries
 

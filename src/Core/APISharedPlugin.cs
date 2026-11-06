@@ -37,7 +37,6 @@ namespace APIShared
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
             ScriptExtenderFixes.LordMediaResolverRuntime.Initialize(RuntimeLogger);
             APIShared.Internal.UnityMainThreadDispatch.InitializeForCurrentThread();
-            Presentation.TroopActionHud.ConfigurePreference(Config);
             // A frame-service failure must not prevent independent managed/native publication.
             try { Presentation.UiWorkRuntime.Initialize(RuntimeLogger); }
             catch (Exception error) { NativeApiLog.Error(RuntimeLogger, "Shared Unity work initialization failed: " + error); }

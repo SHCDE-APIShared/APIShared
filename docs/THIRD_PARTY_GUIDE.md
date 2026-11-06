@@ -767,7 +767,7 @@ bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton 
 Choose the independent side-HUD capability for actions that do not depend on troop
 selection. For the small Vanilla troop-action field, use
 `APIShared.Presentation.TroopActionHud.TryRegisterButton`; APIShared places registered
-actions directly while they fit and provides **More actions** on overflow. For the
+actions directly while they fit and provides HUD pages on overflow. For the
 separate strip beside Control Groups, use the Unit HUD's optional action-button
 interface. [HudExample](../examples/ThirdPartyMod/HudExample.cs) shows these registrations
 using only public APIs.
@@ -794,16 +794,21 @@ Use `RequestButtonRefresh` when sprite/style content must be recreated; prefer t
 handle's simple setters for visibility, availability and rollover text.
 
 Use a context callback to close consumer-owned UI when the own-selection context is
-lost. Menu visibility is separate from context availability. Ordinarily APIShared
+lost. Page placement is separate from context availability. Ordinarily APIShared
 publishes the provided rollover text, including over a disabled button. Supply a
 hover callback only when your mod owns the complete rollover, such as an icon or
 cost metadata; it must handle false when the button is hidden or the HUD ends.
 
 Legacy XAML hosts retain their original two-slot behavior and are not reparented into
-the menu. Migrate those contributions explicitly to the typed factory registration;
-remove their old host and layout binding so the same action is not registered twice.
-The full placement, local auto-close option, lifecycle and failure contracts live in
-[the catalog](API_CATALOG.md#vanilla-troop-action-slots-and-overflow).
+additional pages. Migrate those contributions explicitly to the typed factory
+registration; remove their old host and layout binding so the same action is not
+registered twice.
+The split navigation button advances through pages with its upper right arrow and
+goes back with its lower left arrow; both wrap. The first page retains Vanilla
+actions, and an action click keeps the chosen page. Consumers do not implement
+navigation or a layout of their own. The full placement, reset, lifecycle and
+failure contracts live in
+[the catalog](API_CATALOG.md#vanilla-troop-action-slots-and-pages).
 
 ### Unit HUD sprites in another player's colour
 

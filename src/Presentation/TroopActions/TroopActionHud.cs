@@ -10,7 +10,8 @@ namespace APIShared.Presentation
 {
     /// <summary>
     /// Single owner of Vanilla's troop-action HUD setup (<c>HUD_Troops.SetuptroopActionsUI(bool)</c>) for
-    /// independently installed mods that add buttons to the troop panel. Mods place a host element named
+    /// independently installed mods that add buttons to the troop panel. Typed registrations use the
+    /// same action field with circular pages; legacy mods place a host element named
     /// <see cref="HostNamePrefix"/>... in the troop panel XAML whose DataContext exposes the documented
     /// layout properties; this service refreshes every registered mod and then lays out all hosts once.
     /// </summary>

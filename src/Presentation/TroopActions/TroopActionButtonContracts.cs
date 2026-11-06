@@ -4,7 +4,7 @@ using Noesis;
 
 namespace APIShared.Presentation
 {
-    /// <summary>A process-lived action in Vanilla's free troop-action slots, with automatic overflow.</summary>
+    /// <summary>A process-lived action in Vanilla's troop-action field, with automatic HUD pages.</summary>
     public sealed class TroopActionButtonDefinition
     {
         /// <summary>Creates an action. Factories and callbacks run on Unity outside registry locks.
@@ -29,7 +29,7 @@ namespace APIShared.Presentation
         public Func<UnitHudActionButtonContext, Button> ButtonFactory { get; }
         /// <summary>Nonnegative ascending priority, followed by ordinal owner GUID and button ID.</summary>
         public int Priority { get; }
-        /// <summary>Optional own-selection availability notification, independent of direct/menu placement and menu opening.</summary>
+        /// <summary>Optional own-selection availability notification, independent of placement and the current HUD page.</summary>
         public Action<bool> ContextChanged { get; }
         /// <summary>Optional replacement for standard rollover handling, including disabled buttons.
         /// True shows consumer-owned Vanilla rollover; false must hide it. Hiding/resetting a hovered entry reports false.</summary>

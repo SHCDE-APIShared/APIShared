@@ -13,69 +13,100 @@ namespace Core.Tests
         [DataRow(1, 1)]
         [DataRow(1, 2)]
         [DataRow(2, 2)]
-        public void VanillaActionSlotsDoNotReserveAMenuUntilNeeded(int count, int slots)
+        public void VanillaActionSlotsDoNotReserveNavigationUntilNeeded(int count, int slots)
         {
-            var decision = TroopActionOverflowPolicy.Decide(count, slots);
+            var decision = TroopActionPagingPolicy.Decide(count, slots, 5);
             Assert.AreEqual(count, decision.DirectCount);
-            Assert.AreEqual(0, decision.OverflowCount);
-            Assert.IsFalse(decision.HasMore);
+            Assert.AreEqual(1, decision.PageCount);
+            Assert.IsFalse(decision.HasNavigation);
             Assert.IsFalse(decision.UsesFallbackAnchor);
+            Assert.AreEqual(0, decision.GetSlice(0).Start);
+            Assert.AreEqual(count, decision.GetSlice(0).Count);
         }
 
         [TestMethod]
-        public void OverflowKeepsTheFirstActionDirectAndMovesTheRestTogether()
+        public void SixArcherActionsKeepOneDirectAndFiveOnTheSecondPage()
         {
-            string[] orderedActions = { "knight", "assassin", "third-party" };
-            var decision = TroopActionOverflowPolicy.Decide(orderedActions.Length, 2);
-            CollectionAssert.AreEqual(new[] { "knight" }, orderedActions.Take(decision.DirectCount).ToArray());
-            CollectionAssert.AreEqual(new[] { "assassin", "third-party" },
-                orderedActions.Skip(decision.OverflowStart).Take(decision.OverflowCount).ToArray());
-            Assert.IsTrue(decision.HasMore);
+            var decision = TroopActionPagingPolicy.Decide(6, 2, 5);
+            Assert.AreEqual(1, decision.DirectCount);
+            Assert.AreEqual(2, decision.PageCount);
+            Assert.AreEqual(1, decision.GetSlice(1).Start);
+            Assert.AreEqual(5, decision.GetSlice(1).Count);
+            Assert.IsTrue(decision.HasNavigation);
             Assert.IsFalse(decision.UsesFallbackAnchor);
 
-            var afterHidingAnAction = TroopActionOverflowPolicy.Decide(2, 2);
+            var afterHidingAnAction = TroopActionPagingPolicy.Decide(2, 2, 5);
             Assert.AreEqual(2, afterHidingAnAction.DirectCount);
-            Assert.IsFalse(afterHidingAnAction.HasMore, "Releasing overflow must restore direct access.");
+            Assert.IsFalse(afterHidingAnAction.HasNavigation, "Releasing overflow must restore direct access.");
+            Assert.AreEqual(0, afterHidingAnAction.ClampPage(1));
         }
 
         [TestMethod]
-        public void OneRemainingSlotBecomesTheMenuAndZeroSlotsUseTheExternalAnchor()
+        public void OneRemainingSlotBecomesNavigationAndZeroSlotsUseTheExternalAnchor()
         {
-            var oneSlot = TroopActionOverflowPolicy.Decide(2, 1);
+            var oneSlot = TroopActionPagingPolicy.Decide(2, 1, 5);
             Assert.AreEqual(0, oneSlot.DirectCount);
-            Assert.AreEqual(2, oneSlot.OverflowCount);
-            Assert.IsTrue(oneSlot.HasMore);
+            Assert.AreEqual(2, oneSlot.GetSlice(1).Count);
+            Assert.IsTrue(oneSlot.HasNavigation);
             Assert.IsFalse(oneSlot.UsesFallbackAnchor);
 
-            var noSlots = TroopActionOverflowPolicy.Decide(2, 0);
+            var noSlots = TroopActionPagingPolicy.Decide(7, 0, 6);
             Assert.AreEqual(0, noSlots.DirectCount);
-            Assert.AreEqual(2, noSlots.OverflowCount);
-            Assert.IsTrue(noSlots.HasMore);
+            Assert.AreEqual(3, noSlots.PageCount);
+            Assert.AreEqual(0, noSlots.GetSlice(1).Start);
+            Assert.AreEqual(6, noSlots.GetSlice(1).Count);
+            Assert.AreEqual(6, noSlots.GetSlice(2).Start);
+            Assert.AreEqual(1, noSlots.GetSlice(2).Count);
+            Assert.IsTrue(noSlots.HasNavigation);
             Assert.IsTrue(noSlots.UsesFallbackAnchor, "Occupied Vanilla slots must never make registered actions unreachable.");
         }
 
         [TestMethod]
-        public void InvalidCapacityCannotInventSlotsOrAnEmptyOverflowMenu()
+        public void RingNavigationTraversesBothEndsAndClampsAfterActionsDisappear()
         {
-            var empty = TroopActionOverflowPolicy.Decide(-1, -1);
-            Assert.AreEqual(0, empty.DirectCount);
-            Assert.IsFalse(empty.HasMore);
-            var occupied = TroopActionOverflowPolicy.Decide(1, -1);
-            Assert.IsTrue(occupied.UsesFallbackAnchor);
-            var bounded = TroopActionOverflowPolicy.Decide(3, 100);
-            Assert.AreEqual(1, bounded.DirectCount, "Only the two established Vanilla action positions are assignable.");
-            Assert.AreEqual(2, bounded.OverflowCount);
+            var mixed = TroopActionPagingPolicy.Decide(8, 2, 5);
+            Assert.AreEqual(3, mixed.PageCount);
+            Assert.AreEqual(2, mixed.Move(0, -1));
+            Assert.AreEqual(0, mixed.Move(2, 1));
+            Assert.AreEqual(1, mixed.Move(2, -1));
+            Assert.AreEqual(0, mixed.Move(1, -1));
+            Assert.AreEqual(1, mixed.Move(0, 1));
+            Assert.AreEqual(2, mixed.Move(1, 1));
+            Assert.AreEqual(2, mixed.GetSlice(2).Count);
+            Assert.AreEqual(6, mixed.GetSlice(2).Start);
+
+            var reduced = TroopActionPagingPolicy.Decide(3, 2, 5);
+            Assert.AreEqual(1, reduced.ClampPage(2));
+            Assert.AreEqual(0, reduced.ClampPage(-1));
+            Assert.AreEqual(2, reduced.GetSlice(2).Count);
         }
 
         [TestMethod]
-        public void OpenOverflowLeavesBothDirectAndFallbackOpenersReachable()
+        public void ForeignReservationsReduceLaterPageCapacityWithoutSkippingActions()
         {
-            // Concrete zero-slot regression: placing the menu immediately above the panel
-            // covered the fallback opener at y=459..496 with the menu's own hit surface.
-            Assert.IsTrue(TroopActionOverflowPolicy.MenuBottom(500, 459) < 459,
-                "A fallback opener above the panel must remain outside the open menu.");
-            Assert.IsTrue(TroopActionOverflowPolicy.MenuBottom(500, 560) < 500,
-                "A normal opener inside the panel leaves the menu above the panel.");
+            var reserved = TroopActionPagingPolicy.Decide(9, 1, 3);
+            Assert.AreEqual(4, reserved.PageCount);
+            var indexes = Enumerable.Range(0, reserved.PageCount)
+                .SelectMany(page => Enumerable.Range(reserved.GetSlice(page).Start, reserved.GetSlice(page).Count)).ToArray();
+            CollectionAssert.AreEqual(Enumerable.Range(0, 9).ToArray(), indexes,
+                "Every registered action must appear once even when foreign buttons reserve slots.");
+        }
+
+        [TestMethod]
+        public void InvalidCapacitiesCannotInventGridSlotsOrUnreachableNavigation()
+        {
+            var empty = TroopActionPagingPolicy.Decide(-1, -1, -1);
+            Assert.AreEqual(0, empty.DirectCount);
+            Assert.AreEqual(1, empty.PageCount);
+            Assert.IsFalse(empty.HasNavigation);
+            Assert.AreEqual(0, empty.Move(20, -1));
+            var bounded = TroopActionPagingPolicy.Decide(20, 100, 100);
+            Assert.AreEqual(5, bounded.DirectCount, "A grid has six fields, including navigation when needed.");
+            Assert.AreEqual(6, bounded.GetSlice(1).Count);
+            var foreignOnly = TroopActionPagingPolicy.Decide(2, 0, 0);
+            Assert.AreEqual(1, foreignOnly.PageCount);
+            Assert.IsFalse(foreignOnly.HasNavigation, "Navigation cannot promise an inaccessible page.");
+            Assert.AreEqual(0, foreignOnly.GetSlice(0).Count);
         }
 
         [TestMethod]

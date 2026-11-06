@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Windows.Input;
 using APIShared.Presentation;
-using BepInEx.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace APISharedTests
@@ -121,7 +119,7 @@ namespace APISharedTests
                 var registry = new TroopActionButtonRegistry(null);
                 registry.TryRegister("owner", Definition("action"), out var handle, out _);
                 handle.SetVisible(true);
-                var entry = registry.Capture()[0].Entry;
+                var entry = registry.Capture(out long revision)[0].Entry;
                 int checks = 0, invoked = 0, completed = 0, failed = 0;
                 var parameter = new object();
                 var command = new Command { CanRun = value => {
@@ -130,10 +128,63 @@ namespace APISharedTests
                     return true;
                 }, Run = _ => invoked++ };
                 Assert.IsFalse(TroopActionCommandExecution.TryInvoke(command, parameter,
-                    () => { checks++; return registry.IsExecutable(entry); }, () => completed++, _ => failed++));
+                    () => { checks++; return registry.IsExecutable(entry, revision); }, () => completed++, _ => failed++));
                 Assert.AreEqual(2, checks); Assert.AreEqual(0, invoked);
                 Assert.AreEqual(0, completed); Assert.AreEqual(0, failed);
             }
+        }
+
+        [TestMethod]
+        public void CommandAcceptsTooltipAndUnrelatedAvailabilityUpdatesDuringCanExecute()
+        {
+            var registry = new TroopActionButtonRegistry(null);
+            registry.TryRegister("owner", Definition("action"), out var handle, out _);
+            registry.TryRegister("owner", Definition("other"), out var other, out _);
+            handle.SetVisible(true); other.SetVisible(true);
+            var rendered = registry.Capture(out long revision);
+            var entry = rendered[0].Entry;
+            int invoked = 0, requests = 0;
+            var command = new Command { CanRun = _ => {
+                requests++;
+                handle.SetTooltip("Dynamic tooltip " + requests);
+                other.SetEnabled(requests % 2 == 0);
+                return true;
+            }, Run = _ => invoked++ };
+            for (int click = 0; click < 3; click++)
+                Assert.IsTrue(TroopActionCommandExecution.TryInvoke(command, null,
+                    () => registry.IsExecutable(entry, revision), null, error => Assert.Fail(error.ToString())));
+            Assert.AreEqual(3, invoked, "Cosmetic changes must not veto an otherwise valid click.");
+            Assert.AreNotSame(rendered, registry.Capture(), "The regression must actually replace the general snapshot.");
+        }
+
+        [TestMethod]
+        [DataRow("hide")]
+        [DataRow("hide-other")]
+        [DataRow("register")]
+        [DataRow("refresh")]
+        [DataRow("refresh-other")]
+        public void CommandRejectsPageMembershipAndFactoryChangesDuringCanExecute(string mutation)
+        {
+            var registry = new TroopActionButtonRegistry(null);
+            registry.TryRegister("owner", Definition("action"), out var handle, out _);
+            registry.TryRegister("owner", Definition("other"), out var other, out _);
+            handle.SetVisible(true); other.SetVisible(true);
+            var entry = registry.Capture(out long revision)[0].Entry;
+            int invoked = 0;
+            var command = new Command { CanRun = parameter => {
+                switch (mutation)
+                {
+                    case "hide": handle.SetVisible(false); break;
+                    case "hide-other": other.SetVisible(false); break;
+                    case "register": registry.TryRegister("owner", Definition("new"), out _, out _); break;
+                    case "refresh": handle.RequestButtonRefresh(); break;
+                    case "refresh-other": other.RequestButtonRefresh(); break;
+                }
+                return true;
+            }, Run = _ => invoked++ };
+            Assert.IsFalse(TroopActionCommandExecution.TryInvoke(command, null,
+                () => registry.IsExecutable(entry, revision), null, error => Assert.Fail(error.ToString())));
+            Assert.AreEqual(0, invoked, "Potentially changed page membership must reject a stale click.");
         }
 
         [TestMethod]
@@ -169,43 +220,27 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void MenuPreferenceDefaultsToAutoCloseAndPersistsForBothConfigSaveModes()
+        public void FailedPresentationRetriesOnlyForNewHudRegistrationOrExplicitRefresh()
         {
-            foreach (bool automatic in new[] { false, true })
-            {
-                string path = Path.GetTempFileName();
-                try
-                {
-                    var errors = new List<Exception>();
-                    var preference = new TroopActionMenuPreference(new ConfigFile(path, false) { SaveOnConfigSet = automatic }, errors.Add);
-                    Assert.IsTrue(preference.Value);
-                    preference.Set(false);
-                    Assert.IsFalse(preference.Value);
-                    var restarted = new TroopActionMenuPreference(new ConfigFile(path, false), errors.Add);
-                    Assert.IsFalse(restarted.Value);
-                    restarted.Set(true);
-                    Assert.IsTrue(new TroopActionMenuPreference(new ConfigFile(path, false), errors.Add).Value);
-                    Assert.AreEqual(0, errors.Count);
-                }
-                finally { File.Delete(path); }
-            }
-        }
-
-        [TestMethod]
-        public void MenuPreferenceWriteFailureRetainsLocalChoiceAndReportsError()
-        {
-            string path = Path.GetTempFileName();
-            try
-            {
-                int failures = 0;
-                var preference = new TroopActionMenuPreference(new ConfigFile(path, false) { SaveOnConfigSet = false }, _ => failures++);
-                File.Delete(path); Directory.CreateDirectory(path);
-                preference.Set(false);
-                Assert.IsFalse(preference.Value); Assert.AreEqual(1, failures);
-                preference.Set(false);
-                Assert.AreEqual(1, failures, "The same choice must not retry disk I/O on every frame.");
-            }
-            finally { if (Directory.Exists(path)) Directory.Delete(path); else File.Delete(path); }
+            var registry = new TroopActionButtonRegistry(() => { });
+            Assert.IsTrue(registry.TryRegister("owner", Definition("first"), out var registration, out _));
+            var gate = new TroopActionPresentationRetry();
+            var panel = new object(); var root = new object();
+            Assert.IsTrue(gate.CanAttempt(panel, root, registry.Capture()));
+            gate.RecordFailure(panel, root, registry.Capture());
+            Assert.IsFalse(gate.CanAttempt(panel, root, registry.Capture()));
+            registration.SetVisible(true); registration.SetEnabled(false); registration.SetTooltip("new text");
+            Assert.IsFalse(gate.CanAttempt(panel, root, registry.Capture()), "Ordinary refreshers must not retry an incompatible HUD every frame.");
+            registration.RequestButtonRefresh();
+            Assert.IsTrue(gate.CanAttempt(panel, root, registry.Capture()));
+            gate.RecordFailure(panel, root, registry.Capture());
+            Assert.IsTrue(gate.CanAttempt(new object(), root, registry.Capture()));
+            Assert.IsTrue(gate.CanAttempt(panel, new object(), registry.Capture()));
+            Assert.IsTrue(registry.TryRegister("owner", Definition("second"), out _, out _));
+            Assert.IsTrue(gate.CanAttempt(panel, root, registry.Capture()));
+            gate.RecordFailure(panel, root, registry.Capture());
+            gate.Clear();
+            Assert.IsTrue(gate.CanAttempt(panel, root, registry.Capture()));
         }
 
         private sealed class Command : ICommand

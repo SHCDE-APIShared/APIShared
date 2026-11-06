@@ -190,26 +190,49 @@ namespace APIShared.Presentation
             return true;
         }
 
-        // The old layout ignores shared hosts while assigning them. The additive typed
-        // registrations subsequently treat those already assigned hosts as occupied.
-        internal static List<Rect> AvailableButtonSlots(HUD_Troops panel)
+        internal static TroopActionPageSlots CapturePageSlots(FrameworkElement controls)
         {
-            var result = new List<Rect>(2);
-            if (!(panel?.FindName("UnitControls") is FrameworkElement controls)) return result;
+            var result = new TroopActionPageSlots();
             var occupied = new List<ScreenRectangle>();
             CollectOccupiedRectangles(controls, occupied, true);
             foreach (Thickness margin in new[] { BottomRightMargin, BottomMiddleMargin })
                 if (TryGetSlotRectangle(controls, margin, out ScreenRectangle rectangle) && !IntersectsAny(rectangle, occupied))
-                    result.Add(new Rect(rectangle.Left, rectangle.Top, rectangle.Right - rectangle.Left, rectangle.Bottom - rectangle.Top));
+                    result.FirstSlots.Add(ToRect(rectangle));
+
+            occupied.Clear();
+            CollectOccupiedRectangles(controls, occupied, true, true);
+            // Row-major positions on Mod pages. Foreign and legacy hosts reserve their areas
+            // even while the Vanilla group is hidden; the caller removes the navigation slot.
+            foreach (Thickness margin in new[] {
+                new Thickness(2, 0, 83, 43), new Thickness(1, 0, 0, 43), new Thickness(80, 0, 0, 43),
+                new Thickness(2, 40, 83, 3), BottomMiddleMargin, BottomRightMargin })
+                if (TryGetSlotRectangle(controls, margin, out ScreenRectangle rectangle) && !IntersectsAny(rectangle, occupied))
+                    result.LaterSlots.Add(ToRect(rectangle));
+
+            // UnitBack's normal horizontal anchor is x=128 in the 130-unit grid. It is
+            // unavailable only in the Engineer submenu, where the pager is excluded entirely.
+            float bottomTop = 40 + (controls.ActualHeight - 40 - 3 - ButtonHeight) * 0.5f;
+            Point first = controls.PointToScreen(new Point(controls.ActualWidth - 2, bottomTop));
+            Point last = controls.PointToScreen(new Point(controls.ActualWidth + 13, bottomTop + ButtonHeight));
+            var fallback = new ScreenRectangle(Math.Min(first.X, last.X), Math.Min(first.Y, last.Y),
+                Math.Max(first.X, last.X), Math.Max(first.Y, last.Y));
+            if (fallback.IsValid && !IntersectsAny(fallback, occupied)) result.FallbackNavigation = ToRect(fallback);
+            result.IsReady = true;
             return result;
         }
 
-        private static void CollectOccupiedRectangles(DependencyObject parent, List<ScreenRectangle> result, bool includeSharedHosts = false)
+        private static Rect ToRect(ScreenRectangle rectangle) =>
+            new Rect(rectangle.Left, rectangle.Top, rectangle.Right - rectangle.Left, rectangle.Bottom - rectangle.Top);
+
+        private static void CollectOccupiedRectangles(DependencyObject parent, List<ScreenRectangle> result,
+            bool includeSharedHosts = false, bool excludeVanilla = false)
         {
             int childCount = VisualTreeHelper.GetChildrenCount(parent);
             for (int index = 0; index < childCount; index++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, index);
+                if (excludeVanilla && TroopActionPagingSurface.IsVanillaMask(child))
+                    continue;
                 if (child is FrameworkElement element)
                 {
                     if (!includeSharedHosts && TroopActionHudLayoutPolicy.IsStandardHostName(element.Name))
@@ -218,15 +241,24 @@ namespace APIShared.Presentation
                     // Only effectively interactive Vanilla or foreign buttons own a slot.
                     if (element is Button &&
                         TroopActionHudLayoutPolicy.IsEffectivelyOccupied(
-                            element.IsVisible,
+                            IsVisibleIgnoringVanillaMask(element),
                             element.IsHitTestVisible) &&
                         TryGetScreenRectangle(element, out ScreenRectangle rectangle))
                     {
                         result.Add(rectangle);
                     }
                 }
-                CollectOccupiedRectangles(child, result, includeSharedHosts);
+                CollectOccupiedRectangles(child, result, includeSharedHosts, excludeVanilla);
             }
+        }
+
+        private static bool IsVisibleIgnoringVanillaMask(DependencyObject element)
+        {
+            for (DependencyObject node = element; node != null; node = VisualTreeHelper.GetParent(node))
+                if (node is UIElement ui && !TroopActionPagingSurface.IsVanillaMask(node) &&
+                    ui.Visibility != Visibility.Visible)
+                    return false;
+            return true;
         }
 
         private static bool TryGetSlotRectangle(
