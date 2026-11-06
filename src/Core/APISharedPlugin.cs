@@ -105,6 +105,7 @@ namespace APIShared
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("visible map rendering", () => Presentation.VisibleMapRenderEvents.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("mapper selection camera", () => Presentation.MapperSelectionCameraEvents.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production bonus", () => Economy.WorkerProductionBonusNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(

@@ -281,6 +281,7 @@ namespace APIShared
                     if (!ModSettings.ModSettingsApplication.PrepareLaunch()) return;
                     if (!FingerprintMatches(true))
                         throw new InvalidOperationException("Prepared host settings changed.");
+                    RequirePreparedLaunchGuards(lobby);
                     released = true;
                     deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
                     if (Humans(lobby).Length > 1) Send(Reply(2));
@@ -293,6 +294,7 @@ namespace APIShared
                 }
                 else if (FingerprintMatches(false) && ModSettings.ModSettingsApplication.PrepareLaunch() && FingerprintMatches(true))
                 {
+                    RequirePreparedLaunchGuards(lobby);
                     SavegameModSettings.AcceptPreparedClient(header.filePath, record);
                     var result = channel.SendToSteamPeer(Reply(1), SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID);
                     if (!result.Submitted) throw new InvalidOperationException(result.Reason);
@@ -331,10 +333,32 @@ namespace APIShared
             // with the host's whole-file hash (client saves can legitimately differ).
             if (HashLocalSave(localSavePath) != localSaveHash)
                 throw new InvalidDataException("Local save changed after readiness confirmation.");
-            if (SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint || !ModSettings.ModSettingsApplication.PrepareLaunch())
+            if (SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint || !ModSettings.ModSettingsApplication.PrepareLaunch() ||
+                SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint)
                 throw new InvalidOperationException("Multiplayer save settings changed before loading.");
+            try { RequirePreparedLaunchGuards(owner.activeLobby); }
+            catch (Exception error)
+            {
+                // BeginLoad has not entered its mission state yet. Revoke this released
+                // preparation now, including remote peers, instead of waiting for timeout.
+                // Cleanup/reporting must never turn the rejection into a normal return.
+                try { Abort(error.Message); }
+                catch (Exception cleanup)
+                {
+                    try { NativeApiLog.Error(log, "Save launch rejection cleanup failed: " + cleanup); }
+                    catch { }
+                }
+                throw;
+            }
             loading = true;
             ScheduleWaitingCheck();
+        }
+        private static void RequirePreparedLaunchGuards(Platform_Multiplayer.MPLobby lobby)
+        {
+            // A previous Ready button does not admit a selected save: preparation can
+            // apply different settings, and peer capability reports are not fingerprints.
+            var decision = Lobby.LobbyLaunchGuards.EvaluatePreparedMultiplayerLoad(Humans(lobby).Length);
+            if (decision.Blocked) throw new InvalidOperationException(decision.Reason);
         }
         private static void Retire(string token)
         {

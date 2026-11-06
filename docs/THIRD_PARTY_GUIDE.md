@@ -1352,6 +1352,13 @@ Vanilla truncates each displayed lobby message at 300 characters. Consumers must
 split longer support reports before sending them and prevent receive/send loops.
 
 `APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
+For blocking Ready/Start and prepared multiplayer-save admission, `LobbyLaunchGuards` supplies a context whose
+`RequiresPeerAgreement` distinguishes the exact Vanilla local Play/Coop branches
+from fresh network lobbies. Prepared saves run the same guards after settings and
+fingerprint validation at host release, client acknowledgement and final start;
+their `HostLoadGame` context has a null lobby receiver, and only a freshly validated
+solo-host roster bypasses peer agreement. In-game MP flags are not lobby evidence. See the
+[launch-guard contract](WORKER_PRODUCTION_BONUS.md#mission-and-multiplayer-responsibility).
 Mods that enforce their own Ready/Start checks register a provider with
 `TryRegisterProvider(owner, id, provider, out diagnostic)`. The provider receives a
 `LobbyLaunchStatusQuery` (lobby ID, host role and the Vanilla view, valid only during
@@ -1621,7 +1628,7 @@ Register with `PackagedLordPresentation.TryRegister(ownerGuid, registrationId, o
 
 The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles in an explicit metadata document are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
 
-Passing null metadata preserves the authored name while runtime full-name lookups obtain the nickname suffix from Vanilla's existing `text.txt` / localized generic-title fallback. The current internal name can identify a peer-local media donor and never replaces the authored name. Invalid nickname subtypes retain the authored name without a suffix. Direct SE metadata-title queries report no title for these entries; the original custom-text path remains available. Null and an explicit `{}` are different claims. The public `MetadataJson` property still returns `{}` for null input, and the pure `ResolveName` / `ResolveTitle` methods keep their metadata-only behavior; persist the original nullable metadata separately when that distinction must survive a roundtrip. This title fallback does not opt into local speech metadata, alter media claims or consume synchronized random numbers.
+Passing null metadata preserves the authored name while runtime full-name lookups obtain the nickname suffix from Vanilla's existing `text.txt` / localized generic-title fallback. The current internal name can identify a peer-local media donor and never replaces the authored name. Invalid nickname subtypes retain the authored name without a suffix. Direct SE metadata-title queries report no title for these entries; the original custom-text path remains available. Null and an explicit `{}` are different claims for full-name and title resolution. Non-title lookups retain their previous equivalence: otherwise identical entries with null and `{}` metadata still share their empty media claim, regardless of slot, owner or publication order. Such a title-policy conflict reports no unambiguous metadata title and retains the original custom-text fallback; it must not consult peer-local SE titles or emit registration-miss errors. The public `MetadataJson` property still returns `{}` for null input, and the pure `ResolveName` / `ResolveTitle` methods keep their metadata-only behavior; persist the original nullable metadata separately when that distinction must survive a roundtrip. This title fallback does not opt into local speech metadata, alter media claims or consume synchronized random numbers.
 
 Omitting the provider GUID means metadata-only presentation. Set `allowGlobalMedia: true` only for an authenticated installed source using the Extender's legacy global asset mode; null alone must never opt into global file lookup. Missing optional media does not change synchronized message-clip selection. Asset providers must contain only verified presentation files and must not impersonate the source mod or register its scripts.
 
@@ -1684,3 +1691,7 @@ camera work. This broker does not select a building or move the camera itself.
 Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.
 
 Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion.
+
+## Fixed worker production bonus
+
+For fixed production percentages, including reductions, use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register once after native initialization, publish synchronized mission-scoped values, and compare peer compatibility before enabling non-Vanilla rules. Keep settings and mode policy in the consumer; the shared owner retains zero-output completion, transport and rendering.

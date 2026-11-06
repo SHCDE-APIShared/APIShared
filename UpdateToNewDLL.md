@@ -1164,3 +1164,15 @@ save-context, API compatibility and consumer tests. Verify real normal/DevDiag
 Spectator builds separately; temporary diagnosis must stay absent from normal
 assemblies. Fixtures establish native ABI/branch and managed behavior contracts,
 not actual editor/game/save or real host/client acceptance.
+
+## Worker production bonus
+
+Owner: `APIShared.Economy.WorkerProductionBonusNativeRuntime`; reference native SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`. The complete site list, original bytes, signature windows, continuations and work-completion entries are maintained in `src/Economy/WorkerProductionBonusNativeDefinition.cs`; instruction generation and footer register maps are in `WorkerProductionBonusNativeAssembly.cs`.
+
+The calculation block is RVA `0x18D976..0x18D987` inside the existing Extender-owned `0x18D940` yield helper. Seven field-worker gates follow successful arrival and precede storage checks; six workshop gates follow production/animation and precede initial storage lookup. Ox checks `0x132A09` and `0x132C17` protect reduced positive loads; reserve check `0x1320B0` protects the separate driver path. Render `0x18D2D6` rejects negative extra-yield display without altering stored carry.
+
+Layout accesses (unit manager, current unit, native mode, stride and worker/footer register contracts) remain hash-bound. A signature match alone does not admit a new layout. Known hashes use reference-byte validation; any allowed fallback must resolve a unique executable-section site and validate the full window, branches and continuation. Unknown layouts fail closed. Validate every site against the immutable load image and own live span, then prepare and validate every actual RedBird displacement before publication. Preserve adjacent ImprovedHunters hooks, particularly Tanner find at `0x13ED8B`; an original-image signature anchor is not a claim over its entire window.
+
+On a game update, re-audit all producer/caller and completion paths, both Ox departure thresholds, driver reserve, render consumer, signed carry, save section 3015, Chore56, checksum and slot clearing. Re-run native execution fixtures and live save/editor/host-client acceptance. Do not enable negative percentages after partial initialization.
+
+All non-calculation guards require the process-only readiness DWORD at coefficient+4. Publish it only after the final installed-hook validation; a partial installation retains coefficient50 and readiness0. Once ready, guards also recognize a saved negative extra-output word even if the current coefficient is50 or the mode is0. Revalidate that valid Vanilla production cannot create negative extra, that zero completion additionally requires Carry0, and that history uses the current producer for workers/Ox, RBX's Ox for driver reserve, and original RAX's record for rendering. Save metadata and raw unit bytes must be restored before simulation resumes; consumers must publish admission at the corresponding pre-simulation lifecycle checkpoint.

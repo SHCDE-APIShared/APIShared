@@ -178,3 +178,4 @@ IngameMenu.AdditionalActions=Additional mod actions …
 IngameMenu.Back=Back
 TroopActions.NextPage=Next action page
 TroopActions.PreviousPage=Previous action page
+LobbyLaunch.GuardFailure=A required mod check failed. The match was not started; see the log for details.

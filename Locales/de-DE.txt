@@ -178,3 +178,4 @@ IngameMenu.AdditionalActions=Zusätzliche Mod-Aktionen …
 IngameMenu.Back=Zurück
 TroopActions.NextPage=Nächste Aktionsseite
 TroopActions.PreviousPage=Vorherige Aktionsseite
+LobbyLaunch.GuardFailure=Eine erforderliche Mod-Prüfung ist fehlgeschlagen. Die Partie wurde nicht gestartet; Details stehen im Log.

@@ -479,7 +479,9 @@ namespace APIShared.GameModes
         private static ExternalCustomizedOrigin CaptureExternalCustomizedOrigin() =>
             CustomizedLaunchOrigins.Capture();
 
-        /// <summary>Reads mission network identity, or lobby authority outside a mission. This alone never grants gameplay permission.</summary>
+        /// <summary>Reads mission network identity, or active-game network flags outside a mission. This alone never grants gameplay permission.</summary>
+        /// <remarks>Active-game flags are false in a fresh multiplayer lobby. Pre-game launch guards use
+        /// <see cref="APIShared.Lobby.LobbyLaunchGuardContext.RequiresPeerAgreement"/> for the actual Vanilla launch branch.</remarks>
         public static bool IsRealMultiplayer(bool multiplayerSave = false) =>
             APIShared.MissionLifecycleService.HasContext ? Capture().IsRealMultiplayer : GameNetworkAPI.IsMultiplayerGame();
 

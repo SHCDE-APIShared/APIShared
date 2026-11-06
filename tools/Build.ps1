@@ -80,7 +80,7 @@ try {
             Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
         }
     }
-    foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests','AiMilitary.NativeTests')) {
+    foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests','AiMilitary.NativeTests','WorkerProductionBonus.NativeTests')) {
         Invoke-ApiBuildStep $context $suite -Action {
             Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
                 '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--',

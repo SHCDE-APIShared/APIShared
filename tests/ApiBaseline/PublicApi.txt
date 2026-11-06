@@ -484,6 +484,18 @@ APIShared.Economy.PopularitySource | TaxPopModifierSmallDonation = 17
 APIShared.Economy.PopularitySource | TaxPopModifierUnaffordableDonation = 27
 APIShared.Economy.PopularitySource | TaxPopModifierUnknownMode = 28
 APIShared.Economy.PopularitySource | TaxPopModifierUsurious = 23
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public sealed class APIShared.Economy.WorkerProductionBonusOverrideRegistration
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public void SetPercent(int? percent)
+APIShared.Economy.WorkerProductionBonusOverrides | public static class APIShared.Economy.WorkerProductionBonusOverrides
+APIShared.Economy.WorkerProductionBonusOverrides | public const int MaximumPercent = 1000
+APIShared.Economy.WorkerProductionBonusOverrides | public const int MinimumPercent = -100
+APIShared.Economy.WorkerProductionBonusOverrides | public const int VanillaPercent = 50
+APIShared.Economy.WorkerProductionBonusOverrides | public static bool IsAvailable { get; }
+APIShared.Economy.WorkerProductionBonusOverrides | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.WorkerProductionBonusOverrideRegistration registration, out string diagnostic, int order = 0)
+APIShared.Economy.WorkerProductionBonusOverrides | public static string CompatibilityKey { get; }
+APIShared.Economy.WorkerProductionBonusOverrides | public static string Diagnostic { get; }
 APIShared.ElevatedMoatAiCapability | public static class APIShared.ElevatedMoatAiCapability
 APIShared.ElevatedMoatAiCapability | public static APIShared.ElevatedMoatAiState Current { get; }
 APIShared.ElevatedMoatAiCapability | public static event System.Action<APIShared.ElevatedMoatAiState> Changed
@@ -926,6 +938,14 @@ APIShared.Lobby.LobbyChatMessage | public string Name { get; }
 APIShared.Lobby.LobbyChatPresentation | public static class APIShared.Lobby.LobbyChatPresentation
 APIShared.Lobby.LobbyChatPresentation | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyChatPresentation | public static bool TryRegisterSystemMessageRule(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyChatMessage, bool> rule, out string diagnostic)
+APIShared.Lobby.LobbyLaunchGuardContext | public sealed class APIShared.Lobby.LobbyLaunchGuardContext
+APIShared.Lobby.LobbyLaunchGuardContext | public APIShared.Lobby.LobbyLaunchOperation Operation { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public CrusaderDE.FRONT_Multiplayer Lobby { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public bool RequiresPeerAgreement { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public string Command { get; }
+APIShared.Lobby.LobbyLaunchGuards | public static class APIShared.Lobby.LobbyLaunchGuards
+APIShared.Lobby.LobbyLaunchGuards | public static bool IsAvailable { get; }
+APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, string> guard, out string diagnostic, int order = 0)
 APIShared.Lobby.LobbyLaunchOperation | public enum APIShared.Lobby.LobbyLaunchOperation : int
 APIShared.Lobby.LobbyLaunchOperation | Ready = 0
 APIShared.Lobby.LobbyLaunchOperation | Start = 1

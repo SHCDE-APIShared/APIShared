@@ -137,6 +137,19 @@ namespace APISharedTests
                     Assert.AreEqual("", call[3]); Assert.AreEqual("", call[4]);
                     Assert.AreEqual(new Random(123).Next(), random.Next(), "A metadata-free claim consumed synchronized RNG.");
                 }
+                foreach (int secondSlot in new[] { 3, 4 }) foreach (bool reverse in new[] { false, true })
+                {
+                    // Same slot models flattened registrations from two owners; different slots model two selected Lords.
+                    var claims = new[] { new PackagedLordPresentationEntry(3, "Lord", "Authored", null),
+                        new PackagedLordPresentationEntry(secondSlot, "Lord", "Authored", "{}") };
+                    entries.SetValue(null, reverse ? claims.Reverse().ToArray() : claims);
+                    var random = new Random(123); rng.SetValue(null, random);
+                    object[] call = { "Lord", AILordMessageType.Taunt1, null, null, null };
+                    Assert.IsTrue((bool)type.GetMethod("TryResolveMedia", flags).Invoke(null, call),
+                        "Different title fallback policies must not release a compatible media claim to local SE data.");
+                    Assert.IsFalse((bool)call[2]); Assert.AreEqual("", call[3]); Assert.AreEqual("", call[4]);
+                    Assert.AreEqual(new Random(123).Next(), random.Next(), "A title-policy conflict changed synchronized RNG consumption.");
+                }
             }
             finally
             {
@@ -182,6 +195,32 @@ namespace APISharedTests
                 Assert.IsTrue((bool)Production("TitleText").Invoke(null, title));
                 Assert.AreEqual("", title[2]);
                 Assert.AreEqual("Authored", fixture.Name((int)Enums.AILords.SK_X1 + 2, 0));
+
+                foreach (int secondSlot in new[] { 3, 4 }) foreach (bool reverse in new[] { false, true })
+                {
+                    var claims = new[] { entry, new PackagedLordPresentationEntry(secondSlot, entry.InternalName, entry.AuthoredName, "{}") };
+                    fixture.SetEntries(reverse ? claims.Reverse().ToArray() : claims);
+                    Assert.IsTrue((bool)Production("IsSupported").Invoke(null, new object[] { null, entry.InternalName }));
+                    object[] text = { null, entry.InternalName, null };
+                    Assert.IsTrue((bool)Production("Display").Invoke(null, text)); Assert.AreEqual("Authored", text[2]);
+                    Assert.IsTrue((bool)Production("DetailText").Invoke(null, new object[] { null, entry.InternalName, null }));
+                    Assert.IsFalse((bool)Production("Portrait").Invoke(null, new object[] { null, entry.InternalName, null }));
+                    Production("Speech").Invoke(null, new object[] { null, entry.InternalName, null });
+                    foreach (string callback in new[] { "Join", "Leave" })
+                    {
+                        text[2] = null;
+                        Assert.IsFalse((bool)Production(callback).Invoke(null, text)); Assert.AreEqual("", text[2]);
+                    }
+                    Assert.IsFalse((bool)Production("LuaPath").Invoke(null, new object[] { fixture.Ai, entry.InternalName, null }));
+                    Assert.IsFalse((bool)Production("TitleText").Invoke(null, title)); Assert.AreEqual("", title[2]);
+                    fixture.LegacyText = ", original custom text";
+                    Assert.AreEqual(fixture.LegacyText, Production("Custom").Invoke(null,
+                        new object[] { null, entry.InternalName.ToLowerInvariant(), 34 }),
+                        "A title-policy conflict must retain the original custom-text result rather than choose either claim.");
+                }
+                object[] unclaimedTitle = { null, "unclaimed", null, 0 };
+                Assert.IsTrue((bool)Production("TitleText").Invoke(null, unclaimedTitle));
+                Assert.AreEqual("original-title", unclaimedTitle[2], "An unrelated identity must retain the original title resolver.");
             }
         }
 
@@ -197,7 +236,7 @@ namespace APISharedTests
             private static LegacyTitleFixture current;
             private readonly FieldInfo entries = typeof(PackagedLordPresentation).GetField("entries", PrivateStatic);
             private readonly object previousEntries;
-            private readonly Dictionary<PropertyInfo, Tuple<object, object>> originals = new Dictionary<PropertyInfo, Tuple<object, object>>();
+            private readonly List<Tuple<PropertyInfo, object, object>> originals = new List<Tuple<PropertyInfo, object, object>>();
             private readonly bool previousMedia = CustomisationFileManager.CustomMediaExists;
             private readonly Func<int, int, string, string> vanilla;
             private readonly Func<PackagedLordPresentationEntry, int, string> runtime;
@@ -208,6 +247,7 @@ namespace APISharedTests
             internal readonly Func<int, int, string> Name;
             internal string LegacyText;
             internal int LegacyLookups;
+            internal readonly GameAIManagerAPI Ai = (GameAIManagerAPI)FormatterServices.GetUninitializedObject(typeof(GameAIManagerAPI));
 
             internal LegacyTitleFixture()
             {
@@ -217,7 +257,14 @@ namespace APISharedTests
                     SetOriginal("customText", nameof(OriginalCustom));
                     SetOriginal("names", nameof(OriginalName));
                     SetOriginal("playerNames", nameof(OriginalPlayer));
-                    SetOriginal("titles", nameof(ForbiddenMetadataTitle));
+                    SetOriginal("titles", nameof(OriginalTitle));
+                    SetOriginal("supported", nameof(ForbiddenSupported));
+                    foreach (string field in new[] { "display", "speech", "join", "leave", "lua" })
+                        SetOriginal(field, nameof(ForbiddenOptionalText));
+                    SetOriginal("details", nameof(ForbiddenDetails));
+                    SetOriginal("faces", nameof(ForbiddenFace));
+                    typeof(GameAIManagerAPI).GetProperty("LordDataDict").GetSetMethod(true).Invoke(Ai,
+                        new object[] { new Dictionary<string, SHCDESE.API.Components.AI.CustomLordEntry>() });
                     CustomisationFileManager.CustomMediaExists = true;
                     platform.gameMembers = new List<Platform_Multiplayer.MPGameMember> {
                         new Platform_Multiplayer.MPGameMember { playerID = 3, skirmishAI = true } };
@@ -264,7 +311,7 @@ namespace APISharedTests
             {
                 object hook = typeof(PackagedLordPresentation).GetField(field, PrivateStatic).GetValue(null);
                 var property = hook.GetType().GetProperty("Original", BindingFlags.Instance | BindingFlags.NonPublic);
-                originals.Add(property, Tuple.Create(hook, property.GetValue(hook)));
+                originals.Add(Tuple.Create(property, hook, property.GetValue(hook)));
                 property.SetValue(hook, Delegate.CreateDelegate(property.PropertyType, FixtureMethod(method)));
             }
             private static string RuntimeName(PackagedLordPresentationEntry entry, int nickname) => current.runtime(entry, nickname);
@@ -280,11 +327,22 @@ namespace APISharedTests
             { current.LegacyLookups++; Assert.AreEqual("peer\\donor", name); Assert.IsTrue(id >= 34 && id <= 41); return current.LegacyText; }
             private static string OriginalName(int lord, int nickname) => "original-name";
             private static string OriginalPlayer(Platform_Multiplayer self, int id, bool active, bool exclude) => "original-player";
-            private static bool ForbiddenMetadataTitle(GameAIManagerAPI self, string name, out string title, int nickname)
-            { title = null; throw new AssertFailedException("An identity-only claim consulted peer-local SE metadata."); }
+            private static bool OriginalTitle(GameAIManagerAPI self, string name, out string title, int nickname)
+            {
+                Assert.AreEqual("unclaimed", name, "A claimed identity consulted peer-local SE metadata.");
+                title = "original-title";
+                return true;
+            }
+            private static bool ForbiddenSupported(GameAIManagerAPI self, string name) => throw new AssertFailedException("A title-policy difference released a supported claim.");
+            private static bool ForbiddenOptionalText(GameAIManagerAPI self, string name, out string text)
+            { text = null; throw new AssertFailedException("A title-policy difference released a non-title text claim."); }
+            private static bool ForbiddenDetails(GameAIManagerAPI self, string name, out SHCDESE.API.Components.AI.LordDetails details)
+            { details = null; throw new AssertFailedException("A title-policy difference released a details claim."); }
+            private static bool ForbiddenFace(GameAIManagerAPI self, string name, out Noesis.ImageSource face)
+            { face = null; throw new AssertFailedException("A title-policy difference released a portrait claim."); }
             public void Dispose()
             {
-                foreach (var item in originals) item.Key.SetValue(item.Value.Item1, item.Value.Item2);
+                foreach (var item in originals) item.Item1.SetValue(item.Item2, item.Item3);
                 entries.SetValue(null, previousEntries); CustomisationFileManager.CustomMediaExists = previousMedia; current = null;
             }
         }

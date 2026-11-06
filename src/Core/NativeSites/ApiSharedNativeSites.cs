@@ -223,6 +223,7 @@ namespace APIShared
             Group(GatehouseAutomation, GatehouseAutomationSpans()),
             Group(AivBuildStep, AivBuildStepSpans()),
             Group(MarketPrices, MarketPriceSpans()),
+            Group(WorkerProductionBonusNativeDefinition.SiteGroup, WorkerProductionBonusNativeRuntime.Spans()),
             Group(HealthInitialization, HealthInitializationSpans()),
             Group(PlagueHeight, PlagueHeightSpans()),
             Group(AiMarketSell, AiMarketSellSpans()),

@@ -165,6 +165,7 @@ spans are built from each service's native contract constants in
 | `Gatehouse.Automation` | Exclusive 0xB7A4E/17, 0xB7BF4/15, 0xC53D5/18, 0xC54A0/16, 0xD5835/15, 0xB79E2/18; Observe 0xC5300/15 | First automation resolver |
 | `Diagnostics.AivBuildStep` | Exclusive 0x51790/17 (the instruction-aligned prologue any patch of up to 14 bytes displaces) | Native publication |
 | `Economy.MarketPrices` | Exclusive 0xCEB10/10, 0xCEB90/10; Observe the rest of each 31-byte helper | First market registration |
+| `Economy.WorkerProductionBonus` | Exclusive calculation 0x18D976/17, seven field and six workshop completion gates, Ox 0x132A09/16 and 0x132C17/16, reserve 0x1320B0/14, render 0x18D2D6/17. Full spans are defined by `WorkerProductionBonusNativeDefinition`; continuation/footer entries are separately validated. | LibraryLoaded; coefficient defaults to 50; historical negative-batch guards remain dormant until every hook validates. See [worker production](WORKER_PRODUCTION_BONUS.md). |
 | `Health.TypeInitialization` | Exclusive 0x19A240/10; Observe remaining 16 prologue bytes | Startup, dormant without active HP policies |
 | `Pathfinding.AssassinPath` | Exclusive 0xD9C40/10, 0xD9F0C/16, 0xD9F1C/15, 0xE19D8/18, 0xE19F9/23, 0xE19C0/14 | First Assassin path registration |
 | `Pathfinding.AssassinAttack` | Exclusive 0x16CD70/10 | First attack guard |

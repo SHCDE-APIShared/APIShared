@@ -72,24 +72,28 @@ namespace APIShared.Presentation
             Volatile.Write(ref entries, owners.Values.SelectMany(x => x.Entries).ToArray());
             lock (speechGate) spoken.Clear();
         }
-        private static PackagedLordPresentationEntry Find(string name)
+        private static PackagedLordPresentationEntry Find(string name, bool distinguishMetadataPresence = false)
         {
             PackagedLordPresentationEntry found = null;
             foreach (var entry in Volatile.Read(ref entries))
                 if (string.Equals(entry.InternalName, name, StringComparison.OrdinalIgnoreCase))
-                { if (found != null && !Equivalent(found, entry)) return null; found = entry; }
+                { if (found != null && !Equivalent(found, entry, distinguishMetadataPresence)) return null; found = entry; }
             return found;
         }
         private static PackagedLordPresentationEntry Slot(int slot)
         {
             PackagedLordPresentationEntry found = null;
             foreach (var entry in Volatile.Read(ref entries)) if (entry.PlayerId == slot)
-            { if (found != null && !Equivalent(found, entry)) return null; found = entry; }
+            { if (found != null && !Equivalent(found, entry, true)) return null; found = entry; }
             return found;
         }
-        private static bool Equivalent(PackagedLordPresentationEntry left, PackagedLordPresentationEntry right) =>
+        // Only name/title resolution distinguishes an absent document from an authored empty one.
+        // Other lookups must retain their former claim, especially media without synchronized RNG draws.
+        private static bool Equivalent(PackagedLordPresentationEntry left, PackagedLordPresentationEntry right,
+            bool distinguishMetadataPresence) =>
             string.Equals(left.InternalName, right.InternalName, StringComparison.OrdinalIgnoreCase) &&
-            left.HasMetadata == right.HasMetadata && left.MetadataJson == right.MetadataJson && left.AuthoredName == right.AuthoredName &&
+            (!distinguishMetadataPresence || left.HasMetadata == right.HasMetadata) &&
+            left.MetadataJson == right.MetadataJson && left.AuthoredName == right.AuthoredName &&
             left.AssetProviderGuid == right.AssetProviderGuid && left.AllowGlobalMedia == right.AllowGlobalMedia;
         internal static bool Claims(int player, string name)
         {
@@ -152,7 +156,15 @@ namespace APIShared.Presentation
         { var entry = Find(name); if (entry == null) return display.Original(self, name, out text); text = entry.Metadata.ResolveName(Locale, entry.AuthoredName); return true; }
         private static bool TitleText(GameAIManagerAPI self, string name, out string text, int nickname)
         {
-            var entry = Find(name); if (entry == null) return titles.Original(self, name, out text, nickname);
+            var entry = Find(name, true);
+            if (entry == null)
+            {
+                if (Find(name) == null) return titles.Original(self, name, out text, nickname);
+                // Compatible non-title claims disagree only on title policy. Keep legacy text;
+                // do not consult peer-local metadata or log a missing SE registration.
+                text = "";
+                return false;
+            }
             // No authored SE title: let the SE custom-text hook retain its original text.txt result.
             // Do not consult a different peer-local metadata document or log a registry miss.
             text = entry.HasMetadata ? entry.Metadata.ResolveTitle(Locale, nickname) : "";
@@ -161,7 +173,7 @@ namespace APIShared.Presentation
         private static string Custom(CustomisationFileManager self, string name, int id)
         {
             // GetCustomLordText IDs 34..41 are the eight nickname titles (subtype = id - 34).
-            var entry = id >= 34 && id <= 41 ? Find(name) : null;
+            var entry = id >= 34 && id <= 41 ? Find(name, true) : null;
             if (entry == null || !entry.HasMetadata) return customText.Original(self, name, id);
             string text = entry.Metadata.ResolveTitle(Locale, id - 34);
             int comma = text.IndexOf(','); return comma < 0 ? text : text.Remove(comma, 1);
