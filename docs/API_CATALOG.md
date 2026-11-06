@@ -171,6 +171,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `ModApiClient.TryGetMissionPlayStateReadiness` | First fresh PlayState after managed mission Start, without a loading/pause timeout; see [guide](THIRD_PARTY_GUIDE.md#current-mission-playstate-readiness) | Unity callbacks and ready replay; immutable session receipt; end/replacement invalidates Current; no HUD/identity/authority guarantee |
 | `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime. The same object implements `ICoopAiStartPreviewCapability` for start-button checks; plans may confirm fewer candidates than they list (`ConfirmedCandidateCount`) |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
 | `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots; startup member check | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
@@ -845,7 +846,8 @@ Consumers without a reference retain the established resolution presets.
 
 Requires APIShared 0.20.0 or later. `APIShared.Presentation.PackagedLordPresentation.TryRegister`
 registers an owner-local presentation snapshot; `APIShared.Lords.LordMetadataDocument` preserves
-complete lordmeta.json inputs, including unknown fields. See the
+complete lordmeta.json inputs, including unknown fields. Null metadata keeps the authored name
+and uses the legacy title fallback at runtime without changing media policy. See the
 [integration contract](THIRD_PARTY_GUIDE.md#packaged-lord-presentation).
 
 ## Enemy-unit building proximity and Peace Time

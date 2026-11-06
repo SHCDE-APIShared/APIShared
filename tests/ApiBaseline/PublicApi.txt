@@ -879,6 +879,9 @@ APIShared.ILobbyStateCapability | public bool TryRegisterObserver(string registr
 APIShared.IMissionLifecycleCapability | public interface APIShared.IMissionLifecycleCapability
 APIShared.IMissionLifecycleCapability | public APIShared.MissionContext Current { get; }
 APIShared.IMissionLifecycleCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.MissionLifecycleNotification> onStart, System.Action<APIShared.MissionLifecycleNotification> onEnd, System.Action<APIShared.MissionLifecycleNotification> onInitialization, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IMissionPlayStateReadinessCapability | public interface APIShared.IMissionPlayStateReadinessCapability
+APIShared.IMissionPlayStateReadinessCapability | public APIShared.MissionContext Current { get; }
+APIShared.IMissionPlayStateReadinessCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.MissionPlayStateReadyNotification> onReady, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlagueHeightCapability | public interface APIShared.IPlagueHeightCapability
 APIShared.IPlagueHeightCapability | public bool TrySetPolicy(bool active, APIShared.PlagueSurfaceCategory categories, int maximumHeightDifference, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlayerDefeatCapability | public interface APIShared.IPlayerDefeatCapability
@@ -1048,6 +1051,9 @@ APIShared.MissionMapType | FreeBuild = 1
 APIShared.MissionMapType | Invasion = 4
 APIShared.MissionMapType | Siege = 3
 APIShared.MissionMapType | Unknown = 0
+APIShared.MissionPlayStateReadyNotification | public sealed class APIShared.MissionPlayStateReadyNotification
+APIShared.MissionPlayStateReadyNotification | public APIShared.MissionContext Context { get; }
+APIShared.MissionPlayStateReadyNotification | public bool IsReplay { get; }
 APIShared.MissionRestart | public static class APIShared.MissionRestart
 APIShared.MissionRestart | public static bool IsInProgress { get; }
 APIShared.MissionRestart | public static void Run(string ownerGuid, System.Action restart)
@@ -1071,6 +1077,7 @@ APIShared.ModApiClient | public bool TryGetGatehouseTiming(out APIShared.IGateho
 APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudExtrasButtonsCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetMissionPlayStateReadiness(out APIShared.IMissionPlayStateReadinessCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeightPolicy(out APIShared.PlagueHeightPolicy policy, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -1700,6 +1707,7 @@ APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse
 APIShared.NativeCapabilityIds | public const string HudExtrasButtons = "hud-extras-buttons"
 APIShared.NativeCapabilityIds | public const string LobbyState = "lobby-state"
 APIShared.NativeCapabilityIds | public const string MissionLifecycle = "mission-lifecycle"
+APIShared.NativeCapabilityIds | public const string MissionPlayStateReadiness = "mission-playstate-readiness"
 APIShared.NativeCapabilityIds | public const string PeaceTimeState = "peace-time-state"
 APIShared.NativeCapabilityIds | public const string PlagueHeight = "plague-height"
 APIShared.NativeCapabilityIds | public const string PlayerDefeat = "player-defeat"

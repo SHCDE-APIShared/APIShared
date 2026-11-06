@@ -40,6 +40,11 @@ namespace APIShared
         public bool TryGetMissionLifecycle(out IMissionLifecycleCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetMissionLifecycle(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Acquires first-current-mission PlayState observation, independent of managed Start and loading duration.
+        /// Register on Unity and retain the capability; its Current receipt is invalidated at mission end/replacement.</summary>
+        public bool TryGetMissionPlayStateReadiness(out IMissionPlayStateReadinessCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetMissionPlayStateReadiness(OwnerGuid, out capability, out diagnostic);
+
         /// <summary>Acquires semantic military AI admission, protected placement and map declarations.
         /// Acquisition enables native group-order observation for this process; no unit is changed.
         /// Completion callbacks use their committing thread and never implicitly dispatch UI work.</summary>

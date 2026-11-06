@@ -13,9 +13,12 @@ namespace APIShared.Presentation
         // Script Extender asset-provider path convention: _SLA_/<escaped provider GUID>/<relative path>.
         private const string ScopedAssetPrefix = "_SLA_/";
         internal readonly LordMetadataDocument Metadata;
+        internal readonly bool HasMetadata;
         internal readonly Dictionary<AILordMessageType, Clip[]> Clips = new Dictionary<AILordMessageType, Clip[]>();
         internal sealed class Clip { internal string Audio, Video; internal LordMetadataDocument Text; }
         /// <summary>Creates a slot-bound entry. The consumer validates source identity and optional private asset provider.</summary>
+        /// <remarks>Null metadata retains the authored name and uses the game's legacy title fallback at runtime.
+        /// An explicit document, including {}, retains its own title semantics. Media policy is unchanged.</remarks>
         public PackagedLordPresentationEntry(int playerId, string internalName, string authoredName,
             string metadataJson, string assetProviderGuid = null, bool allowGlobalMedia = false)
         {
@@ -23,6 +26,7 @@ namespace APIShared.Presentation
                 throw new ArgumentException("A packaged Lord needs a valid player slot and identity.");
             PlayerId = playerId; InternalName = internalName; AuthoredName = authoredName; AssetProviderGuid = assetProviderGuid;
             AllowGlobalMedia = allowGlobalMedia;
+            HasMetadata = metadataJson != null;
             Metadata = LordMetadataDocument.Parse(metadataJson ?? "{}");
             foreach (AILordMessageType category in Enum.GetValues(typeof(AILordMessageType)))
             {

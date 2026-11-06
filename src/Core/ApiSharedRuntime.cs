@@ -26,6 +26,8 @@ namespace APIShared
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;
         private MissionLifecycleService missionLifecycle;
+        private MissionPlayStateReadinessService missionPlayStateReadiness;
+        private NativeCapabilityDiagnostic missionPlayStateReadinessDiagnostic = Pending(NativeCapabilityIds.MissionPlayStateReadiness);
         private BriefingGoldPresentationService briefingGoldPresentation;
         private BuildingRepairService buildingRepair;
         private CoopAiStartImportService coopAiStartImport;
@@ -106,6 +108,9 @@ namespace APIShared
                 }
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
+                if (missionPlayStateReadinessDiagnostic.State == NativeCapabilityState.Pending)
+                    MissionPlayStateReadinessService.TryCreate(missionLifecycle, logger,
+                        out missionPlayStateReadiness, out missionPlayStateReadinessDiagnostic);
                 if (coopAiStartImportDiagnostic.State == NativeCapabilityState.Pending)
                 {
                     // Plans are bound to lifecycle start attempts; without them nothing could be planned safely.
@@ -451,6 +456,25 @@ namespace APIShared
                 diagnostic = missionLifecycleDiagnostic;
                 if (missionLifecycle == null) return false;
                 capability = missionLifecycle.Bind(ownerGuid);
+                return true;
+            }
+        }
+
+        internal bool TryGetMissionPlayStateReadiness(string ownerGuid, out IMissionPlayStateReadinessCapability capability,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            capability = null;
+            if (string.IsNullOrWhiteSpace(ownerGuid))
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.MissionPlayStateReadiness,
+                    NativeCapabilityState.ValidationFailed, string.Empty, "A non-empty owner GUID is required.");
+                return false;
+            }
+            lock (sync)
+            {
+                diagnostic = missionPlayStateReadinessDiagnostic;
+                if (missionPlayStateReadiness == null) return false;
+                capability = missionPlayStateReadiness.Bind(ownerGuid);
                 return true;
             }
         }

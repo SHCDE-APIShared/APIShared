@@ -18,6 +18,7 @@ namespace APISharedTests
         private static readonly (string Id, string Type, string Creator)[] Capabilities =
         {
             (NativeCapabilityIds.MissionLifecycle, "APIShared.MissionLifecycleService", "TryCreate"),
+            (NativeCapabilityIds.MissionPlayStateReadiness, "APIShared.MissionPlayStateReadinessService", "TryCreate"),
             (NativeCapabilityIds.LobbyState, "APIShared.LobbyStateService", "TryCreate"),
             (NativeCapabilityIds.PlayerDefeat, "APIShared.PlayerDefeatService", "TryCreate"),
             (NativeCapabilityIds.BriefingGoldPresentation, "APIShared.BriefingGoldPresentationService", "TryCreate"),

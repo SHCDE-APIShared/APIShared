@@ -41,6 +41,8 @@ namespace APIShared
     {
         /// <summary>Capability for interactive mission initialization, successful starts and ends.</summary>
         public const string MissionLifecycle = "mission-lifecycle";
+        /// <summary>Capability for the first published PlayState of a managed-started mission.</summary>
+        public const string MissionPlayStateReadiness = "mission-playstate-readiness";
         /// <summary>Capability for selecting the native gatehouse distance origin.</summary>
         public const string GatehouseDistanceOrigin = "gatehouse-distance-origin";
         /// <summary>Capability for configuring gatehouse timing and closing distances.</summary>

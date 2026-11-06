@@ -89,7 +89,7 @@ namespace APIShared.Presentation
         }
         private static bool Equivalent(PackagedLordPresentationEntry left, PackagedLordPresentationEntry right) =>
             string.Equals(left.InternalName, right.InternalName, StringComparison.OrdinalIgnoreCase) &&
-            left.MetadataJson == right.MetadataJson && left.AuthoredName == right.AuthoredName &&
+            left.HasMetadata == right.HasMetadata && left.MetadataJson == right.MetadataJson && left.AuthoredName == right.AuthoredName &&
             left.AssetProviderGuid == right.AssetProviderGuid && left.AllowGlobalMedia == right.AllowGlobalMedia;
         internal static bool Claims(int player, string name)
         {
@@ -124,7 +124,17 @@ namespace APIShared.Presentation
             // Same audited conversion as SE, without constructing its native-backed singleton.
             int slot = lord - (int)Enums.AILords.SK_X1 + 1;
             var entry = slot >= 1 && slot <= 8 ? Slot(slot) : null;
-            return entry == null ? names.Original(lord, nickname) : entry.ResolveName(Locale, nickname);
+            return entry == null ? names.Original(lord, nickname) : RuntimeName(entry, nickname);
+        }
+        private static string RuntimeName(PackagedLordPresentationEntry entry, int nickname)
+        {
+            if (entry.HasMetadata) return entry.ResolveName(Locale, nickname);
+            // The current identity can be a peer-local media alias: keep the authored name.
+            // Vanilla's lobby helper takes a zero-based Lord type and resolves text.txt, then its localized title.
+            if (nickname < 0 || nickname > (int)AILordMessageType.Nickname8 - (int)AILordMessageType.Nickname1)
+                return entry.AuthoredName;
+            return LordMetadataDocument.Combine(entry.AuthoredName, Platform_Multiplayer.MPLobbyMember.GetName(
+                (int)Enums.AILords.SK_X1 - 1, nickname, entry.InternalName));
         }
         private static string Player(Platform_Multiplayer self, int player, bool active, bool exclude)
         {
@@ -135,18 +145,24 @@ namespace APIShared.Presentation
                 if (candidate.playerID == player) { member = candidate; break; }
             if (member == null || !member.skirmishAI || active && member.kicked) return playerNames.Original(self, player, active, exclude);
             var state = GameData.Instance?.lastGameState;
-            return state?.computer_names != null && player < state.computer_names.Length ? entry.ResolveName(Locale, state.computer_names[player]) : playerNames.Original(self, player, active, exclude);
+            return state?.computer_names != null && player < state.computer_names.Length ? RuntimeName(entry, state.computer_names[player]) : playerNames.Original(self, player, active, exclude);
         }
         private static bool IsSupported(GameAIManagerAPI self, string name) => Find(name) != null || supported.Original(self, name);
         private static bool Display(GameAIManagerAPI self, string name, out string text)
         { var entry = Find(name); if (entry == null) return display.Original(self, name, out text); text = entry.Metadata.ResolveName(Locale, entry.AuthoredName); return true; }
         private static bool TitleText(GameAIManagerAPI self, string name, out string text, int nickname)
-        { var entry = Find(name); if (entry == null) return titles.Original(self, name, out text, nickname); text = entry.Metadata.ResolveTitle(Locale, nickname); return true; }
+        {
+            var entry = Find(name); if (entry == null) return titles.Original(self, name, out text, nickname);
+            // No authored SE title: let the SE custom-text hook retain its original text.txt result.
+            // Do not consult a different peer-local metadata document or log a registry miss.
+            text = entry.HasMetadata ? entry.Metadata.ResolveTitle(Locale, nickname) : "";
+            return entry.HasMetadata;
+        }
         private static string Custom(CustomisationFileManager self, string name, int id)
         {
             // GetCustomLordText IDs 34..41 are the eight nickname titles (subtype = id - 34).
             var entry = id >= 34 && id <= 41 ? Find(name) : null;
-            if (entry == null) return customText.Original(self, name, id);
+            if (entry == null || !entry.HasMetadata) return customText.Original(self, name, id);
             string text = entry.Metadata.ResolveTitle(Locale, id - 34);
             int comma = text.IndexOf(','); return comma < 0 ? text : text.Remove(comma, 1);
         }

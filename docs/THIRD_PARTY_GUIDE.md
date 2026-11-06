@@ -63,6 +63,33 @@ Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client,
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
 
+## Current-mission PlayState readiness
+
+`ModApiClient.TryGetMissionPlayStateReadiness` supplies the additive
+`IMissionPlayStateReadinessCapability`. Managed lifecycle Start does not imply that
+Vanilla has published a current-mission `GameData.lastGameState`: multiplayer may
+still wait for peers, and presentation can be paused. Register a stable owner-local
+ID through `TryRegisterObserver(id, onReady, out diagnostic)` on Unity. Keep the
+capability and callback for the process lifetime. Already-ready registration may
+replay synchronously before returning; otherwise delivery occurs on Unity when a
+fresh current-mission PlayState is observed. There is no loading-duration deadline.
+
+`MissionPlayStateReadyNotification` contains immutable `Context` and `IsReplay`.
+`Current` is safe to query from any thread and returns the ready current context,
+or null while waiting/outside a mission. End and replacement invalidate it. Before
+performing deferred work, require `capability.Current?.SessionId` to equal the
+receipt's session. Callbacks are exception-isolated and cannot revive an ended
+session. Registrations made inside a callback receive their replay after it exits.
+
+Readiness tracks managed Start plus a nonnull PlayState reference different from
+the earliest pre-initialization reference. It reuses lifecycle, GuiChecks and the
+existing Unity work publisher; GuiChecks completion alone is not readiness. This
+does not authorize gameplay or establish HUD roots, a player identity, converged
+roster, selected report viewpoint or fresh report values after switching views.
+Keep those feature-specific checks. Existing lifecycle Start behavior is unchanged.
+The compiled [example](../examples/ThirdPartyMod/MissionReadinessExample.cs) shows
+registration and session validation.
+
 ## Deferred Unity work and refresh demand
 
 Requires APIShared 0.26.0 or later.
@@ -1592,7 +1619,9 @@ Requires APIShared 0.20.0 or later.
 
 Register with `PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason)` on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.
 
-The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
+The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles in an explicit metadata document are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
+
+Passing null metadata preserves the authored name while runtime full-name lookups obtain the nickname suffix from Vanilla's existing `text.txt` / localized generic-title fallback. The current internal name can identify a peer-local media donor and never replaces the authored name. Invalid nickname subtypes retain the authored name without a suffix. Direct SE metadata-title queries report no title for these entries; the original custom-text path remains available. Null and an explicit `{}` are different claims. The public `MetadataJson` property still returns `{}` for null input, and the pure `ResolveName` / `ResolveTitle` methods keep their metadata-only behavior; persist the original nullable metadata separately when that distinction must survive a roundtrip. This title fallback does not opt into local speech metadata, alter media claims or consume synchronized random numbers.
 
 Omitting the provider GUID means metadata-only presentation. Set `allowGlobalMedia: true` only for an authenticated installed source using the Extender's legacy global asset mode; null alone must never opt into global file lookup. Missing optional media does not change synchronized message-clip selection. Asset providers must contain only verified presentation files and must not impersonate the source mod or register its scripts.
 
