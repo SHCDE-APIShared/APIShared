@@ -475,6 +475,33 @@ writes to the plugin directory. The shorter layout reduces installation-path dep
 it does not provide general long-path support for the game or its preset providers.
 Documents resolution and persistence need validation in the actual Proton prefix.
 
+Restart preparations use a separate installation-owned file at
+`SHCDE/APIShared/Inst/<installation-id>/RestartPreparation.json` below the same
+resolved Documents folder. The ID is the first 16 lowercase hexadecimal characters
+of SHA-256 over the absolute configuration directory, with trailing separators
+removed, `/` changed to `\`, and invariant uppercase applied. A durable migration
+receipt verifies the complete normalized identity, so the short ID cannot silently
+select another installation's preparation. Changing plugin folders or APIShared
+versions does not change this identity; moving the configuration directory does.
+
+The old `BepInEx/config/APIShared/RestartPreparation.json` is imported once when no
+new file or completed migration receipt exists. Migration atomically publishes and
+verifies the original bytes before removing the unchanged old file. Invalid journal
+content remains available at the new location for the existing validation and
+explicit discard flow; it is not converted into defaults. Failed publication retains
+the old file for retry. A failed old-file cleanup is reported and does not restore
+legacy reads. The receipt survives consuming or discarding the journal, preventing
+stale old preparations from reappearing. Journal format, content fingerprints and
+mission ownership checks are unchanged; older APIShared versions do not read the
+new location and no parallel legacy copy is maintained.
+
+Unresolved journal storage remains visible in the restart-preparation UI with an
+error description; the visibility getter does not turn the error into permission
+to launch or modify data. Explicit discard can reset an oversized journal while
+preserving an oversized Documents original in a separate file, or retaining an
+oversized legacy source unchanged. This recovery does not bypass installation
+identity, receipt validation, access errors or failed migration publication.
+
 ### External settings and application backends
 
 Settings adapters can override `DynamicSettingsProvider` with an

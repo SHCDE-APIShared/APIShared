@@ -28,6 +28,7 @@ namespace APIShared
         private void Awake()
         {
             Internal.DebugLogHelper.InitializeDiagnostics(Config, Logger);
+            ModSettings.ModSettingsApplication.InitializeJournalStorage(RuntimeLogger);
             Localization.GameLocale.Initialize();
             var localizationLog = RuntimeLogger;
             Localization.UiText.Configure(Localization.GameLocale.Current,
