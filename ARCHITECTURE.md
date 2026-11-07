@@ -101,8 +101,8 @@ Static interception brokers use `APIShared.Commands`, `APIShared.Presentation`,
 The unit-settled observation broker uses `APIShared.Units`; simulation ticks, the mission
 clock and the Peace Time reader use `APIShared.Simulation`; Lord metadata in the Content
 assembly uses `APIShared.Lords`.
-The formations command engine, work-target policy and MoatMove orchestration
-belong to BugfixesAndQoL and its addon. APIShared supplies the targeted public
+The formations command engine, work-target policy and route core orchestration
+belong to the Pathfinding mod. APIShared supplies the targeted public
 route-search preference events used by that publisher and third-party observers.
 
 ## Finding and extending a feature

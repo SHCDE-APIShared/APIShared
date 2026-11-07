@@ -108,6 +108,24 @@ namespace APIShared.Presentation
         public static void Reflow(HUD_Troops troopPanel) =>
             TroopActionHudLayout.Reflow(troopPanel, Volatile.Read(ref logger));
 
+        /// <summary>A mod is about to show its own troop panel in place of the regular troop actions.</summary>
+        /// <remarks>Unity thread. Close menus and popups that belong to the regular panel. A failing handler
+        /// is isolated and counted in <see cref="CallbackFailures"/>.</remarks>
+        public static event Action ForeignPanelActivating;
+
+        /// <summary>Raises <see cref="ForeignPanelActivating"/>; called by the mod that shows its own panel.</summary>
+        /// <remarks>Unity thread.</remarks>
+        public static void NotifyForeignPanelActivating()
+        {
+            Action handlers = ForeignPanelActivating;
+            if (handlers == null) return;
+            foreach (Action handler in handlers.GetInvocationList())
+            {
+                try { handler(); }
+                catch (Exception) { Interlocked.Increment(ref failures); }
+            }
+        }
+
         /// <summary>Total isolated refresher exceptions.</summary>
         public static long CallbackFailures => Interlocked.Read(ref failures);
 

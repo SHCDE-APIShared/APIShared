@@ -2218,6 +2218,17 @@ APIShared.ObserverCommandRequest | public int ObserverPlayerId { get; }
 APIShared.ObserverCommandRequest | public int StructureId { get; }
 APIShared.ObserverCommandRequest | public int Value2 { get; }
 APIShared.ObserverCommandRequest | public int ViewedPlayerId { get; }
+APIShared.Pathfinding.RouteEngineFeatures | public enum APIShared.Pathfinding.RouteEngineFeatures : int
+APIShared.Pathfinding.RouteEngineFeatures | None = 0
+APIShared.Pathfinding.RouteEngineFeatures | ReplanPolicies = 2
+APIShared.Pathfinding.RouteEngineFeatures | RouteCosts = 4
+APIShared.Pathfinding.RouteEngineFeatures | TileRules = 1
+APIShared.Pathfinding.RouteEngineInfo | public static class APIShared.Pathfinding.RouteEngineInfo
+APIShared.Pathfinding.RouteEngineInfo | public static APIShared.Pathfinding.RouteEngineFeatures Features { get; }
+APIShared.Pathfinding.RouteEngineInfo | public static bool IsActive { get; }
+APIShared.Pathfinding.RouteEngineInfo | public static bool TryReport(string ownerGuid, APIShared.Pathfinding.RouteEngineFeatures features, out string reason)
+APIShared.Pathfinding.RouteEngineInfo | public static string OwnerGuid { get; }
+APIShared.Pathfinding.RouteEngineInfo | public static void Clear(string ownerGuid)
 APIShared.Pathfinding.RouteReplanPolicy | public sealed class APIShared.Pathfinding.RouteReplanPolicy
 APIShared.Pathfinding.RouteReplanPolicy | public .ctor(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
 APIShared.Pathfinding.RouteReplanPolicy | public bool AllowsDetour(int remaining, int replanned)
@@ -2603,7 +2614,9 @@ APIShared.Presentation.TroopActionHud | public const int CurrentLayoutVersion = 
 APIShared.Presentation.TroopActionHud | public const string HostNamePrefix = "SerpTroopAction_"
 APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<CrusaderDE.HUD_Troops> refreshVisibility, out string reason)
 APIShared.Presentation.TroopActionHud | public static bool TryRegisterButton(string ownerGuid, APIShared.Presentation.TroopActionButtonDefinition definition, out APIShared.Presentation.ITroopActionButtonRegistration registration, out string reason)
+APIShared.Presentation.TroopActionHud | public static event System.Action ForeignPanelActivating
 APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
+APIShared.Presentation.TroopActionHud | public static void NotifyForeignPanelActivating()
 APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
 APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
 APIShared.Presentation.UiWorkClient | public sealed class APIShared.Presentation.UiWorkClient

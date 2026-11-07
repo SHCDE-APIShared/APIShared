@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.34.0",
+  "Version": "0.35.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.35.0",
+      "Changes": [
+        "Add RouteEngineInfo so rule mods can see whether a route engine applies their rules, and TroopActionHud.ForeignPanelActivating so regular panel menus can close when another mod shows its own troop panel."
+      ]
+    },
     {
       "Version": "0.34.0",
       "Changes": [

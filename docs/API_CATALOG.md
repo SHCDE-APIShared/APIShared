@@ -280,6 +280,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | — |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
+| Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
@@ -502,8 +503,8 @@ ModSettings UI area alongside the settings search integration.
 
 `APIShared.Pathfinding.RouteSearchEvents.TryRegister(ownerGuid, registrationId,
 pre, post, out reason)` observes participating mods' additional weighted searches.
-The current publisher is BugfixesAndQoL's command runtime, including the MoatMove
-addon. This is a targeted extension point, not a replacement for Script Extender's
+The current publisher is the Pathfinding mod's command runtime, including its route
+core. This is a targeted extension point, not a replacement for Script Extender's
 unit-order Pre/Post events. Cached route reuse and topological reachability queries
 do not publish a new weighted-search event.
 
@@ -566,7 +567,7 @@ Engines read `GetEffect(x, y, player, out penalty)` and follow changes with
 `ReadChanges(ref cursor, buffer)` (tiles packed as `y * MapSize + x`). A result of -1 means changes
 were lost (more than `JournalCapacity` behind or a too small buffer): re-read all rules and continue
 from `Version`. `HasRules` lets engines skip the lookup while no set holds an effect. The current
-engine is MoatMove's anchor mode on the `dev/pathfinding` test line.
+engine is the Pathfinding mod's route core; see `RouteEngineInfo` at runtime.
 
 ## Failure and registration rules
 
