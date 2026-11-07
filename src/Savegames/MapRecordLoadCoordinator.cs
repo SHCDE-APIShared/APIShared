@@ -114,6 +114,34 @@ namespace APIShared
                 throw new InvalidDataException("Local map does not match the current lobby selection.");
             return header;
         }
+        // Local Play/solo Coop load the receiver's selected header directly; their
+        // dummy lobby has no authenticated CRC. Network admission still requires the
+        // canonical name/CRC lookup used by the actual map coordinator. Early Ready
+        // may precede CRC publication, which is pending rather than a legacy selection.
+        internal static bool PrepareSelectedProductionData(FRONT_Multiplayer receiver,bool requiresPeerAgreement)
+        {
+            FileHeader header;
+            if (!requiresPeerAgreement) header = LobbySelectedMapHeader.Read(receiver);
+            else
+            {
+                var lobby = Platform_Multiplayer.Instance?.activeLobby;
+                if (!ReferenceEquals(receiver,null) && !ReferenceEquals(receiver.currentLobby,lobby))
+                    throw new InvalidDataException("The lobby receiver no longer owns the current map selection.");
+                if (lobby == null || string.IsNullOrWhiteSpace(lobby.mapFileName) ||
+                    !int.TryParse(lobby.crc,NumberStyles.Integer,CultureInfo.InvariantCulture,out _))
+                {
+                    Economy.WorkerProductionAgreement.SetPreparedDataPath(null);
+                    return false;
+                }
+                header = Header(lobby);
+            }
+            if (header == null || string.IsNullOrWhiteSpace(header.fileName) || string.IsNullOrWhiteSpace(header.filePath))
+                throw new InvalidDataException("The selected local map header is unavailable.");
+            string path = Path.GetFullPath(header.filePath);
+            if (!File.Exists(path)) throw new FileNotFoundException("The selected local map is unavailable.",path);
+            Economy.WorkerProductionAgreement.SetPreparedDataPath(path);
+            return true;
+        }
         private static bool SameMap(string a, string b) => !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) &&
             string.Equals(Path.GetFileNameWithoutExtension(a), Path.GetFileNameWithoutExtension(b), StringComparison.OrdinalIgnoreCase);
         private static string Hash(string path)
@@ -170,6 +198,7 @@ namespace APIShared
                 if (hostId != local || !humans.Contains(local)) throw new InvalidOperationException("The local host is not the current lobby owner and member.");
                 localPath = Path.GetFullPath(Header(lobby).filePath);
                 localRecords = Capture(localPath, out localHash);
+                Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
                 string fingerprint = Fingerprint(lobby);
                 pending = new SavegameLoadPacket { Operation = 0, Lobby = lobby.id.m_SteamID, Token = Guid.NewGuid().ToString("N"),
                     SaveName = lobby.mapFileName, Checksum = Checksum(lobby), Fingerprint = fingerprint, Roster = Roster(lobby), Records = localRecords };
@@ -225,6 +254,7 @@ namespace APIShared
                 owner = mp; hostId = host; pending = packet; agreement = null;
                 acknowledged = released = loading = false; fingerprintCheckedAt = 0;
                 localPath = Path.GetFullPath(Header(lobby).filePath); localRecords = Capture(localPath, out localHash);
+                Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
                 string mismatch = SavegameRecordComparison.Describe(packet.Records, localRecords, Name(SteamUser.GetSteamID().m_SteamID));
                 if (mismatch != null) throw new InvalidDataException(mismatch);
                 deadline = DateTime.UtcNow.AddSeconds(PreparationSeconds); Tick();
@@ -268,7 +298,10 @@ namespace APIShared
                     if (!FingerprintMatches(false)) throw new InvalidOperationException("Prepared map selection or host settings changed.");
                     if (released || !agreement.Ready || !ModSettings.ModSettingsApplication.PrepareLaunch()) return;
                     if (!FingerprintMatches(true)) throw new InvalidOperationException("Prepared map settings changed before GO.");
-                    CheckFile(); released = true; deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
+                    CheckFile();
+                    if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out bool productionWaiting, out string productionReason))
+                    { if (productionWaiting) return; throw new InvalidOperationException(productionReason); }
+                    released = true; deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
                     if (Humans(owner.activeLobby).Length > 1) Send(Reply(2));
                     NativeApiLog.Debug(log, "MAP_RECORDS_CONFIRMED: all human peers ready; publishing Vanilla GO once.");
                     original(owner);
@@ -278,6 +311,8 @@ namespace APIShared
                 else if (FingerprintMatches(false) && ModSettings.ModSettingsApplication.PrepareLaunch() && FingerprintMatches(true))
                 {
                     CheckFile();
+                    if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out bool productionWaiting, out string productionReason))
+                    { if (productionWaiting) return; throw new InvalidOperationException(productionReason); }
                     var sent = channel.SendToSteamPeer(new MapRecordReadinessPacket { Value = Reply(1) }, hostId);
                     if (!sent.Submitted) throw new InvalidOperationException(sent.Reason);
                     acknowledged = true;
@@ -302,6 +337,8 @@ namespace APIShared
                 CheckFile();
                 if (!FingerprintMatches(true) || !ModSettings.ModSettingsApplication.PrepareLaunch())
                     throw new InvalidOperationException("Multiplayer map settings changed before native load.");
+                if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out _, out string productionReason))
+                    throw new InvalidOperationException(productionReason);
                 System.Threading.Volatile.Write(ref admission, new NativeAdmissionTicket(localPath, localHash));
                 loading = true; Schedule(); return true;
             }
@@ -372,6 +409,8 @@ namespace APIShared
         private static void Clear()
         {
             System.Threading.Volatile.Write(ref admission, null);
+            if (localPath != null && string.Equals(Economy.WorkerProductionAgreement.PreparedDataPath, localPath, StringComparison.OrdinalIgnoreCase))
+                Economy.WorkerProductionAgreement.SetPreparedDataPath(null);
             pending = null; agreement = null; owner = null; localRecords = null; localPath = localHash = null;
             acknowledged = released = loading = false; fingerprintCheckedAt = 0;
             frameWork?.CancelPending(); frameWork?.SetContinuous(false);

@@ -111,6 +111,7 @@ namespace APIShared
                 if (header == null) throw new InvalidDataException("Selected multiplayer save is unavailable.");
                 owner = self;
                 localSavePath = Path.GetFullPath(header.filePath);
+                Economy.WorkerProductionAgreement.SetPreparedSavePath(localSavePath);
                 localSaveHash = HashLocalSave(localSavePath);
                 record = SavegameModSettings.PrepareHostSave(header.filePath);
                 if (HashLocalSave(localSavePath) != localSaveHash) throw new InvalidDataException("Save changed during preparation.");
@@ -225,6 +226,7 @@ namespace APIShared
                 var header = MapFileManager.Instance.GetHeaderFromMpSaveFileName(packet.SaveName);
                 if (!Matches(header, packet)) { Abort("Local save does not match host selection."); return; }
                 localSavePath = Path.GetFullPath(header.filePath);
+                Economy.WorkerProductionAgreement.SetPreparedSavePath(localSavePath);
                 localSaveHash = HashLocalSave(localSavePath);
                 // Taken from this peer's own copy of the selected save, never from earlier in-memory
                 // state, so a previous single-player session or different local settings do not count.
@@ -281,6 +283,8 @@ namespace APIShared
                     if (!ModSettings.ModSettingsApplication.PrepareLaunch()) return;
                     if (!FingerprintMatches(true))
                         throw new InvalidOperationException("Prepared host settings changed.");
+                    if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localSavePath, out bool productionWaiting, out string productionReason))
+                    { if (productionWaiting) return; throw new InvalidOperationException(productionReason); }
                     RequirePreparedLaunchGuards(lobby);
                     released = true;
                     deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
@@ -294,6 +298,8 @@ namespace APIShared
                 }
                 else if (FingerprintMatches(false) && ModSettings.ModSettingsApplication.PrepareLaunch() && FingerprintMatches(true))
                 {
+                    if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localSavePath, out bool productionWaiting, out string productionReason))
+                    { if (productionWaiting) return; throw new InvalidOperationException(productionReason); }
                     RequirePreparedLaunchGuards(lobby);
                     SavegameModSettings.AcceptPreparedClient(header.filePath, record);
                     var result = channel.SendToSteamPeer(Reply(1), SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID);
@@ -336,7 +342,12 @@ namespace APIShared
             if (SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint || !ModSettings.ModSettingsApplication.PrepareLaunch() ||
                 SavegameModSettings.CaptureHostFingerprint() != pending.Fingerprint)
                 throw new InvalidOperationException("Multiplayer save settings changed before loading.");
-            try { RequirePreparedLaunchGuards(owner.activeLobby); }
+            try
+            {
+                if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localSavePath, out _, out string productionReason))
+                    throw new InvalidOperationException(productionReason);
+                RequirePreparedLaunchGuards(owner.activeLobby);
+            }
             catch (Exception error)
             {
                 // BeginLoad has not entered its mission state yet. Revoke this released
@@ -390,6 +401,7 @@ namespace APIShared
             frameWork?.CancelPending();
             frameWork?.SetContinuous(false);
             localSavePath = localSaveHash = null; localRecords = null;
+            Economy.WorkerProductionAgreement.SetPreparedSavePath(null);
             acknowledged = released = loading = false;
             SavegameModSettings.CancelLoadChoice();
             if (!showError) { NativeApiLog.Debug(log, "SAVE_SETTINGS_PREPARATION_CANCELLED: " + reason); return; }
@@ -420,6 +432,7 @@ namespace APIShared
             frameWork?.CancelPending();
             frameWork?.SetContinuous(false);
             localSavePath = localSaveHash = null; localRecords = null;
+            Economy.WorkerProductionAgreement.SetPreparedSavePath(null);
             acknowledged = released = loading = false;
         }
     }

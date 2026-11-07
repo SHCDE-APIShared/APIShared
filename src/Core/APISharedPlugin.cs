@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.33.0";
+        public const string PluginVersion = "0.34.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -86,6 +86,8 @@ namespace APIShared
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("worker production world safety", () => Economy.WorkerProductionWorldSafety.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("worker production yield context", () => Economy.WorkerProductionYieldContext.InitializeManaged(RuntimeLogger)),
                 new NativeInitializationStep("native Chore issuer context and submission", () =>
                     Networking.NativeChoreRuntime.InitializeSubmission(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("shared player-view identity", () =>
@@ -106,6 +108,7 @@ namespace APIShared
                 new NativeInitializationStep("visible map rendering", () => Presentation.VisibleMapRenderEvents.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("mapper selection camera", () => Presentation.MapperSelectionCameraEvents.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production bonus", () => Economy.WorkerProductionBonusNativeRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production output roles", () => Economy.WorkerProductionOutputNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
@@ -121,6 +124,7 @@ namespace APIShared
                 new NativeInitializationStep("native peace-time state", () => Simulation.PeaceTimeState.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("military AI assignment", () =>
                     Units.AiMilitary.AiMilitaryService.Instance.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production state", () => Economy.WorkerProductionStateRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native API publication", () => runtime.Initialize(
                     context.ModuleHandle.ToInt64(),
                     context.Memory,
@@ -131,6 +135,7 @@ namespace APIShared
                     installAivBuildStep: true)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.

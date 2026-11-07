@@ -4,6 +4,12 @@ This guide describes scalar composition for mod authors. Registries still own
 their domain's lifetime, activation, ordering, units and final safety rules.
 The shared arithmetic types live in `APIShared.Modifiers`.
 
+The [production service](WORKER_PRODUCTION_BONUS.md) reuses the exact staged
+composition before final rounding: output-base fractions accumulate in saved
+credits, while fixed percentages round once and reject unsupported results.
+Its visible preflight checks replace silent final clamping; the pure calculator
+and the existing scalar services below retain their documented clamp contracts.
+
 ## Composition and use
 
 `ValueModifierContribution` is an immutable value with `Kind`, `Value` and `Stage`.

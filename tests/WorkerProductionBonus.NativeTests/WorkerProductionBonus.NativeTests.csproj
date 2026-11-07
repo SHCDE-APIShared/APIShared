@@ -6,16 +6,38 @@
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
+    <EnableDefaultCompileItems Condition="'$(MathOnly)' == 'true'">false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Economy/WorkerProductionBonusOverrides.cs" Link="Production/WorkerProductionBonusOverrides.cs" />
+    <Compile Include="../../src/Economy/WorkerProductionModifiers.cs" Link="Production/WorkerProductionModifiers.cs" />
+    <Compile Include="../../src/Economy/WorkerProductionCompiler.cs" Link="Production/WorkerProductionCompiler.cs" />
+    <Compile Include="../../src/Economy/WorkerProductionLaunchBundle.cs" Link="Production/WorkerProductionLaunchBundle.cs" />
+    <Compile Include="../../src/Economy/WorkerProductionModifierRegistry.cs" Link="Production/WorkerProductionModifierRegistry.cs" />
+    <Compile Include="../../src/Modifiers/ValueModifiers.cs" Link="Production/ValueModifiers.cs" />
+    <Compile Include="../../src/GameModes/GameplayModModePolicy.cs" Link="Production/GameplayModModePolicy.cs" />
     <Compile Include="../../src/Economy/WorkerProductionBonusNativeDefinition.cs" Link="Production/WorkerProductionBonusNativeDefinition.cs" />
-    <Compile Include="../../src/Economy/WorkerProductionBonusNativeAssembly.cs" Link="Production/WorkerProductionBonusNativeAssembly.cs" />
+    <Compile Include="../../src/Economy/WorkerProductionBonusNativeAssembly.cs" Link="Production/WorkerProductionBonusNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WorkerProductionStateStore.cs" Link="Production/WorkerProductionStateStore.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WorkerProductionStateAssembly.cs" Link="Production/WorkerProductionStateAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WorkerProductionHotAssembly.cs" Link="Production/WorkerProductionHotAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WorkerProductionOutputNativeDefinition.cs" Link="Production/WorkerProductionOutputNativeDefinition.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WorkerProductionOutputNativeAssembly.cs" Link="Production/WorkerProductionOutputNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
     <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
     <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>
     <Reference Include="RedBird.X64"><HintPath>$(ExtenderDir)/RedBird.X64.dll</HintPath></Reference>
     <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)/SHCDESE.dll</HintPath></Reference>
     <Reference Include="Microsoft.Extensions.Logging.Abstractions"><HintPath>$(ExtenderDir)/Microsoft.Extensions.Logging.Abstractions.dll</HintPath></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(MathOnly)' == 'true'">
+    <Compile Include="RegistryTests.cs" />
+    <Compile Include="CompilerTests.cs" />
+    <Compile Include="ModeFixture.cs" />
+    <Compile Include="MathOnlyProgram.cs" />
+    <Compile Include="../ApiBaseline/ApiSignatures.cs" Link="ApiSignatures.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MathOnly)' != 'true'">
+    <Compile Remove="MathOnlyProgram.cs" />
   </ItemGroup>
 </Project>

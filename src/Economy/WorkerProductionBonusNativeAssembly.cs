@@ -22,7 +22,8 @@ namespace APIShared.Economy
     {
         internal static void Generate(Assembler a, ReadOnlySpan<Instruction> original, ulong back,
             WorkerProductionBonusNativeSite site, ulong imageBase, ulong percentAddress,
-            ulong modeAddress, ulong unitManagerAddress, ulong currentUnitAddress, ulong readyAddress=0)
+            ulong modeAddress, ulong unitManagerAddress, ulong currentUnitAddress, ulong readyAddress=0,
+            WorkerProductionHotAddresses hot=default)
         {
             if(a==null || site==null || back!=imageBase+(uint)site.Rva+(uint)site.Length)
                 throw new InvalidOperationException("Worker production generator continuation differs.");
@@ -30,6 +31,8 @@ namespace APIShared.Economy
             if(length!=site.Length) throw new InvalidOperationException("Worker production displaced block differs.");
             if(site.Kind==WorkerProductionBonusNativeKind.Core)
             {
+                if(hot.IsDefined)
+                { WorkerProductionHotAssembly.Core(a,imageBase,back,percentAddress,modeAddress,unitManagerAddress,hot); return; }
                 // RCX held the now-dead productivity minimum; retain it anyway. The native
                 // ADD at back establishes its own flags before any downstream consumer.
                 var done=a.CreateLabel();
@@ -47,7 +50,12 @@ namespace APIShared.Economy
             a.pushfq(); a.push(rax); a.push(rcx);
             a.mov(rax,readyAddress==0 ? percentAddress+WorkerProductionBonusNativeDefinition.ReadyOffset : readyAddress);
             a.cmp(__dword_ptr[rax],0); a.je(vanilla);
+            // These are audited completed-output phases. Vanilla's positive production
+            // never arrives empty here; an empty cargo must finish even if SE Pre redirected
+            // bonus bookkeeping to another unit, or the old owner has been disabled.
+            if(site.Kind==WorkerProductionBonusNativeKind.ZeroCompletion) a.jmp(active);
             HistoryOrigin(a,site,unitManagerAddress,currentUnitAddress);
+            if(hot.IsDefined) WorkerProductionHotAssembly.BranchHistory(a,hot,unitManagerAddress,active);
             a.cmp(__word_ptr[rcx+WorkerProductionBonusNativeDefinition.BonusYieldOffset],0); a.jl(active);
             a.mov(rax,percentAddress); a.cmp(__dword_ptr[rax],0); a.jge(vanilla);
             a.mov(rax,modeAddress); a.cmp(__dword_ptr[rax],0); a.je(vanilla);
@@ -60,6 +68,7 @@ namespace APIShared.Economy
                 a.mov(rcx,unitManagerAddress);
                 a.cmp(__word_ptr[rax+rcx+WorkerProductionBonusNativeDefinition.CarriedOffset],0);
                 a.jne(vanilla);
+                if(hot.IsDefined) WorkerProductionHotAssembly.ClearCurrentBatch(a,hot,unitManagerAddress,currentUnitAddress);
                 Restore(a);
                 SetupFooter(a,site,imageBase,unitManagerAddress,currentUnitAddress);
                 a.AddUnrestrictedJmp(imageBase+(uint)site.FooterRva);
@@ -97,8 +106,8 @@ namespace APIShared.Economy
             a.Label(ref vanilla); Restore(a); Replay(a,original); a.AddUnrestrictedJmp(back);
         }
 
-        private static void Restore(Assembler a) { a.pop(rcx); a.pop(rax); a.popfq(); }
-        private static void Replay(Assembler a,ReadOnlySpan<Instruction> original)
+        internal static void Restore(Assembler a) { a.pop(rcx); a.pop(rax); a.popfq(); }
+        internal static void Replay(Assembler a,ReadOnlySpan<Instruction> original)
         { foreach(var instruction in original) AddRelocated(a,instruction); }
         private static void AddRelocated(Assembler a,Instruction instruction)
         {
@@ -145,6 +154,8 @@ namespace APIShared.Economy
                 case "Apple": return new[] { F(Register.RBX,WorkerProductionBonusFooterValue.UnitOffset), F(Register.R12,WorkerProductionBonusFooterValue.UnitManager), F(Register.RDI,WorkerProductionBonusFooterValue.Zero), F(Register.RBP,WorkerProductionBonusFooterValue.One), F(Register.R8,WorkerProductionBonusFooterValue.UnitId) };
                 case "Cattle": return new[] { F(Register.RBX,WorkerProductionBonusFooterValue.UnitOffset), F(Register.R13,WorkerProductionBonusFooterValue.UnitManager), F(Register.RDI,WorkerProductionBonusFooterValue.Zero), F(Register.RSI,WorkerProductionBonusFooterValue.One), F(Register.R8,WorkerProductionBonusFooterValue.UnitId), F(Register.R12,WorkerProductionBonusFooterValue.Two) };
                 case "Iron": return new[] { F(Register.RBX,WorkerProductionBonusFooterValue.UnitId), F(Register.RCX,WorkerProductionBonusFooterValue.UnitOffset), F(Register.R15,WorkerProductionBonusFooterValue.UnitManager), F(Register.RSI,WorkerProductionBonusFooterValue.Zero), F(Register.R12,WorkerProductionBonusFooterValue.One) };
+                case "Wheat": return new[] { F(Register.RDX,WorkerProductionBonusFooterValue.UnitId), F(Register.R13,WorkerProductionBonusFooterValue.UnitManager), F(Register.RBP,WorkerProductionBonusFooterValue.BuildingManager), F(Register.RDI,WorkerProductionBonusFooterValue.Zero) };
+                case "BakerStart": case "BakerArrival": return new[] { F(Register.R8,WorkerProductionBonusFooterValue.UnitId), F(Register.R14,WorkerProductionBonusFooterValue.UnitManager), F(Register.RBX,WorkerProductionBonusFooterValue.BuildingManager), F(Register.R12,WorkerProductionBonusFooterValue.Zero), F(Register.R15,WorkerProductionBonusFooterValue.One), F(Register.RSI,WorkerProductionBonusFooterValue.Two) };
                 case "Fletcher": return new[] { F(Register.RBX,WorkerProductionBonusFooterValue.UnitOffset), F(Register.R12,WorkerProductionBonusFooterValue.UnitManager), F(Register.RDI,WorkerProductionBonusFooterValue.Zero), F(Register.RSI,WorkerProductionBonusFooterValue.One), F(Register.R14,WorkerProductionBonusFooterValue.UnitId), F(Register.R15,WorkerProductionBonusFooterValue.Three) };
                 case "Brewer": return new[] { F(Register.RDI,WorkerProductionBonusFooterValue.UnitOffset), F(Register.R15,WorkerProductionBonusFooterValue.UnitManager), F(Register.RSI,WorkerProductionBonusFooterValue.Zero), F(Register.R12,WorkerProductionBonusFooterValue.One), F(Register.RBX,WorkerProductionBonusFooterValue.UnitId) };
                 case "Poleturner": return new[] { F(Register.RBX,WorkerProductionBonusFooterValue.UnitOffset), F(Register.R12,WorkerProductionBonusFooterValue.UnitManager), F(Register.RSI,WorkerProductionBonusFooterValue.Zero), F(Register.R13,WorkerProductionBonusFooterValue.One), F(Register.RBP,WorkerProductionBonusFooterValue.UnitId), F(Register.R14,WorkerProductionBonusFooterValue.Three) };
@@ -156,7 +167,7 @@ namespace APIShared.Economy
         }
 
         private static WorkerProductionBonusFooterRegister F(Register register,WorkerProductionBonusFooterValue value) => new WorkerProductionBonusFooterRegister(register,value);
-        private static void SetupFooter(Assembler a,WorkerProductionBonusNativeSite site,ulong image,ulong units,ulong currentUnit)
+        internal static void SetupFooter(Assembler a,WorkerProductionBonusNativeSite site,ulong image,ulong units,ulong currentUnit)
         {
             a.mov(rax,currentUnit); a.movsxd(rax,__dword_ptr[rax]);
             a.imul(rdx,rax,WorkerProductionBonusNativeDefinition.UnitStride);
@@ -179,10 +190,11 @@ namespace APIShared.Economy
         private static void Move(Assembler a,Register register,ulong value) => a.AddInstruction(Instruction.Create(Code.Mov_r64_imm64,register,value));
         internal static byte[] Assemble(Assembler assembler,ulong address)
         { using(var stream=new MemoryStream()) { assembler.Assemble(new StreamCodeWriter(stream),address); return stream.ToArray(); } }
-        internal static byte[] ExpectedStub(WorkerProductionBonusNativeSite site,ulong image,ulong stub,ulong percent,ulong mode,ulong units,ulong currentUnit,ulong ready=0)
+        internal static byte[] ExpectedStub(WorkerProductionBonusNativeSite site,ulong image,ulong stub,ulong percent,ulong mode,ulong units,ulong currentUnit,ulong ready=0,
+            WorkerProductionHotAddresses hot=default)
         {
             var assembler=new Assembler(64);
-            Generate(assembler,WorkerProductionBonusNativeDefinition.Decode(site.OriginalBytes,image+(uint)site.Rva),image+(uint)site.Rva+(uint)site.Length,site,image,percent,mode,units,currentUnit,ready);
+            Generate(assembler,WorkerProductionBonusNativeDefinition.Decode(site.OriginalBytes,image+(uint)site.Rva),image+(uint)site.Rva+(uint)site.Length,site,image,percent,mode,units,currentUnit,ready,hot);
             // X64InlineHook appends its own continuation after the custom generator, even
             // though our explicit per-branch exits make that final jump unreachable.
             assembler.AddUnrestrictedJmp(image+(uint)site.Rva+(uint)site.Length);

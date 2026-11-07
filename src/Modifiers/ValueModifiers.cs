@@ -109,6 +109,14 @@ namespace APIShared.Modifiers
             Rational result = hasFixed ? multiplier : Rational.FromDecimal(baseline).Multiply(multiplier);
             return Round(result, minimum, maximum);
         }
+        // Cold compilers need the reduced exact value before any receiving-domain rounding
+        // or bounds check. Keep composition identical to Calculate; never round factors apart.
+        internal void GetExactRatio(decimal baseline, out BigInteger resultNumerator, out BigInteger resultDenominator)
+        {
+            Rational result = hasFixed ? multiplier : Rational.FromDecimal(baseline).Multiply(multiplier);
+            resultNumerator = result.Numerator;
+            resultDenominator = result.Denominator;
+        }
         // Popularity baselines use native integer units / 25. Keep that exact ratio allocation-free too.
         internal decimal CalculateRatio(long baselineNumerator, long baselineDenominator, decimal minimum, decimal maximum)
         {

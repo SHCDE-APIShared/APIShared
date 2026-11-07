@@ -37,6 +37,7 @@ namespace APIShared.Economy
             get { var current=Volatile.Read(ref owner); return current!=null && current.publication.IsReady; }
         }
         internal static string Diagnostic => Volatile.Read(ref diagnostic);
+        internal static ulong PercentAddress => owner==null ? 0 : unchecked((ulong)owner.coefficient.ToInt64());
         internal static void Initialize(CrusaderLibraryLoadContext context,string hash,ManualLogSource log)
         {
             lock(Sync)
@@ -107,7 +108,8 @@ namespace APIShared.Economy
                         throw new InvalidOperationException("Worker production backend span differs: "+site.Name);
                 WorkerProductionBonusNativeAssembly.ExpectedStub(site,image,image+0x20000000,
                     unchecked((ulong)coefficient.ToInt64()),image+WorkerProductionBonusNativeDefinition.ModeRva,
-                    image+WorkerProductionBonusNativeDefinition.UnitManagerRva,image+WorkerProductionBonusNativeDefinition.CurrentUnitRva);
+                    image+WorkerProductionBonusNativeDefinition.UnitManagerRva,image+WorkerProductionBonusNativeDefinition.CurrentUnitRva,
+                    hot:WorkerProductionRuntime.HotAddresses(image));
                 Info("Worker production hook resolved: name="+site.Name+"; method="+resolution.Method+
                     "; rva=0x"+site.Rva.ToString("X")+"; span="+site.Length+"; continuation=0x"+(site.Rva+site.Length).ToString("X")+".");
             }
@@ -147,12 +149,13 @@ namespace APIShared.Economy
         private void Generate(Assembler a,ReadOnlySpan<Instruction> original,ulong back,WorkerProductionBonusNativeSite site) =>
             WorkerProductionBonusNativeAssembly.Generate(a,original,back,site,image,unchecked((ulong)coefficient.ToInt64()),
                 image+WorkerProductionBonusNativeDefinition.ModeRva,image+WorkerProductionBonusNativeDefinition.UnitManagerRva,
-                image+WorkerProductionBonusNativeDefinition.CurrentUnitRva);
+                image+WorkerProductionBonusNativeDefinition.CurrentUnitRva,hot:WorkerProductionRuntime.HotAddresses(image));
         private void VerifyPreparedStub(WorkerProductionBonusNativeSite site,X64InlineHook hook)
         {
             byte[] expected=WorkerProductionBonusNativeAssembly.ExpectedStub(site,image,unchecked((ulong)hook.StubAddress.ToInt64()),
                 unchecked((ulong)coefficient.ToInt64()),image+WorkerProductionBonusNativeDefinition.ModeRva,
-                image+WorkerProductionBonusNativeDefinition.UnitManagerRva,image+WorkerProductionBonusNativeDefinition.CurrentUnitRva);
+                image+WorkerProductionBonusNativeDefinition.UnitManagerRva,image+WorkerProductionBonusNativeDefinition.CurrentUnitRva,
+                hot:WorkerProductionRuntime.HotAddresses(image));
             byte[] actual=new byte[expected.Length]; Marshal.Copy(hook.StubAddress,actual,0,actual.Length);
             if(!actual.AsSpan().SequenceEqual(expected)) throw new InvalidOperationException("Worker production generated stub differs: "+site.Name);
         }

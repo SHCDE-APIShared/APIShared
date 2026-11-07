@@ -16,8 +16,10 @@ internal static class Program
     private static void Reset(bool solo = false, bool client = false)
     {
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
+        APIShared.Economy.WorkerProductionAgreement.Waiting=APIShared.Economy.WorkerProductionAgreement.Blocked=false;
+        APIShared.Economy.WorkerProductionAgreement.Checks=0;
         Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
-        Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = 0;
+        Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = 0;Boundary.LookupHeader=null;
         Boundary.Settings = "host-settings"; Boundary.Records = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = null;
         Boundary.Logs.Clear(); Boundary.Sent.Clear();
         Boundary.Presented.Clear();
@@ -121,6 +123,65 @@ internal static class Program
         Check(wire.SequenceEqual(MessagePackSerializer.Serialize(envelope.Value)), "separate packet identity reuses the exact existing readiness wire body");
         var roundTrip = MessagePackSerializer.Deserialize<MapRecordReadinessPacket>(wire);
         Check(roundTrip.Value.Token == envelope.Value.Token && roundTrip.Value.Fingerprint == envelope.Value.Fingerprint, "actual explicit formatter round trip");
+        Reset(solo:true);
+        APIShared.Economy.WorkerProductionAgreement.SetPreparedSavePath("previous-save.sav");
+        MapRecordLoadCoordinator.PrepareSelectedProductionData(null,true);
+        Check(APIShared.Economy.WorkerProductionAgreement.PreparedDataPath==Path.GetFullPath(Boundary.Path),
+            "The actual selected map replaces a previous save before Ready/Play");
+        var selectedView=new CrusaderDE.FRONT_Multiplayer{currentLobby=Mp.activeLobby};
+        selectedView.Select(new FileHeader{fileName="local-selected",filePath=Boundary.Path,crc=456});
+        Mp.activeLobby.crc=null;Mp.activeLobby.mapFileName="stale-network-name";
+        Check(MapRecordLoadCoordinator.PrepareSelectedProductionData(selectedView,false) &&
+            APIShared.Economy.WorkerProductionAgreement.PreparedDataPath==Path.GetFullPath(Boundary.Path),
+            "Solo Play and solo Coop use the exact receiver selection even though their dummy lobby never publishes CRC");
+        Check(!MapRecordLoadCoordinator.PrepareSelectedProductionData(selectedView,true) &&
+            APIShared.Economy.WorkerProductionAgreement.PreparedDataPath==null,
+            "Early network Ready without CRC waits and never substitutes the solo receiver header");
+        Mp.activeLobby.mapFileName="readiness.map";Mp.activeLobby.crc="17";
+        Check(MapRecordLoadCoordinator.PrepareSelectedProductionData(selectedView,true),
+            "A subsequently published network name/CRC resumes canonical selection preparation");
+        Boundary.LookupHeader=new FileHeader{fileName="readiness.map",filePath=Boundary.Path,crc=18};
+        bool rejected=false;try{MapRecordLoadCoordinator.PrepareSelectedProductionData(selectedView,true);}catch(InvalidDataException){rejected=true;}
+        Check(rejected,"A valid network CRC is never relaxed to a different cached header or solo selection");
+        Boundary.LookupHeader=null;
+        selectedView.Select(new FileHeader{fileName="",filePath=Boundary.Path});
+        rejected=false;try{MapRecordLoadCoordinator.PrepareSelectedProductionData(selectedView,false);}catch(InvalidDataException){rejected=true;}
+        Check(rejected,"A local start needs a valid current selected header rather than old lobby data");
+        APIShared.Economy.WorkerProductionAgreement.Waiting=true;Start();
+        Check(Boundary.MapStarts==0,"Pending map production requirements delay GO even after all map-record peers match");
+        APIShared.Economy.WorkerProductionAgreement.Waiting=false;Tick();
+        Check(Boundary.MapStarts==1,"The existing map tick releases GO after production requirements agree");
+        APIShared.Economy.WorkerProductionAgreement.Blocked=true;
+        int mapProductionChecks=APIShared.Economy.WorkerProductionAgreement.Checks;
+        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path,true) &&
+            APIShared.Economy.WorkerProductionAgreement.Checks>mapProductionChecks &&
+            !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path,true),
+            "Final map production failure prevents creating a native admission ticket");
+        Reset(solo:true);APIShared.Economy.WorkerProductionAgreement.Blocked=true;Start();
+        Check(Boundary.MapStarts==0 && Boundary.Popups>0,"Invalid map production records visibly block GO");
+
+        Reset();Start();request=Reply(RequestPacket,0);request.Token=Guid.NewGuid().ToString("N");
+        Reset(client:true);APIShared.Economy.WorkerProductionAgreement.Waiting=true;Receive(request,2001);
+        Check(!Boundary.Sent.OfType<MapRecordReadinessPacket>().Any(packet=>packet.Value.Operation==1),
+            "A client cannot ACK matching map bytes while production requirements are pending");
+        APIShared.Economy.WorkerProductionAgreement.Waiting=false;Tick();
+        Check(Boundary.Sent.OfType<MapRecordReadinessPacket>().Count(packet=>packet.Value.Operation==1)==1,
+            "The existing client map tick acknowledges once production requirements match");
+
+        Reset(solo:true);APIShared.Economy.WorkerProductionAgreement.Waiting=true;Save();
+        Check(Boundary.SaveStarts==0,"Pending production agreement waits without releasing Vanilla or cancelling preparation");
+        APIShared.Economy.WorkerProductionAgreement.Waiting=false;
+        APIShared.Presentation.UiWorkRuntime.Ticks["internal/20-save-load"]();
+        Check(Boundary.SaveStarts==1,"The existing save tick releases exactly once after production agreement completes");
+        Reset(solo:true);APIShared.Economy.WorkerProductionAgreement.Blocked=true;Save();
+        Check(Boundary.SaveStarts==0 && Boundary.Popups>0,"Blocking production requirements visibly reject before Vanilla save loading");
+        Reset(solo:true);Boundary.Path=Path.Combine(AppContext.BaseDirectory,"save-name.sav");File.WriteAllText(Boundary.Path,"valid saved world");
+        Save();APIShared.Economy.WorkerProductionAgreement.Blocked=true;
+        int admittedProductionChecks=APIShared.Economy.WorkerProductionAgreement.Checks;
+        bool productionRejected=false;
+        try{SavegameLoadCoordinator.ValidateStart(Boundary.Path,true);}catch(InvalidOperationException){productionRejected=true;}
+        Check(productionRejected && APIShared.Economy.WorkerProductionAgreement.Checks>admittedProductionChecks &&
+            !SavegameLoadCoordinator.IsLoadingMultiplayerSave,"Final production rejection revokes admission before native loading");
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
         Console.WriteLine("PASS: " + checks + " production map-readiness checks: all-peer records, authority, immutable native tickets, file changes, selection changes and mutual save/map exclusion.");
     }

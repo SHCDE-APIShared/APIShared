@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.33.0",
+  "Version": "0.34.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.34.0",
+      "Changes": [
+        "Add shared WorkerProductionModifiers profiles for exact Human/AI output-base factors and staged fixed production bonuses; retain the legacy bonus override API.",
+        "Expose immutable desired-owner snapshots, exact resolved amounts and structured validation results for consumer settings and diagnostics.",
+        "Coordinate production protection, fractional save data, unit transfers, atomic critical saves and authenticated multiplayer admission through common APIShared owners."
+      ]
+    },
     {
       "Version": "0.33.0",
       "Changes": [

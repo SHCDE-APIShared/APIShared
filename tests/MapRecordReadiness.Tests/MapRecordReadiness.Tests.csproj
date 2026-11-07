@@ -5,6 +5,7 @@
     <Reference Include="MessagePack"><HintPath>$(ExtenderDir)/MessagePack.dll</HintPath></Reference>
     <Reference Include="MessagePack.Annotations"><HintPath>$(ExtenderDir)/MessagePack.Annotations.dll</HintPath></Reference>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.cs" Link="Production/MapRecordLoadCoordinator.cs"/>
+    <Compile Include="../../src/Lobby/LobbySelectedMapHeader.cs" Link="Production/LobbySelectedMapHeader.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadCoordinator.cs" Link="Production/SavegameLoadCoordinator.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadPacket.cs" Link="Production/SavegameLoadPacket.cs"/>

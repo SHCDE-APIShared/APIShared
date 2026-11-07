@@ -496,6 +496,75 @@ APIShared.Economy.WorkerProductionBonusOverrides | public static bool IsAvailabl
 APIShared.Economy.WorkerProductionBonusOverrides | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.WorkerProductionBonusOverrideRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.WorkerProductionBonusOverrides | public static string CompatibilityKey { get; }
 APIShared.Economy.WorkerProductionBonusOverrides | public static string Diagnostic { get; }
+APIShared.Economy.WorkerProductionIssue | public sealed class APIShared.Economy.WorkerProductionIssue
+APIShared.Economy.WorkerProductionIssue | public APIShared.Economy.WorkerProductionIssueCode Code { get; }
+APIShared.Economy.WorkerProductionIssue | public APIShared.Economy.WorkerProductionIssueSeverity Severity { get; }
+APIShared.Economy.WorkerProductionIssue | public SHCDESE.Interop.eChimps? WorkerType { get; }
+APIShared.Economy.WorkerProductionIssue | public bool? IsAIPlayer { get; }
+APIShared.Economy.WorkerProductionIssue | public int? InputAmount { get; }
+APIShared.Economy.WorkerProductionIssue | public string ActualValue { get; }
+APIShared.Economy.WorkerProductionIssue | public string Diagnostic { get; }
+APIShared.Economy.WorkerProductionIssue | public string Limit { get; }
+APIShared.Economy.WorkerProductionIssue | public string LocalizationCode { get; }
+APIShared.Economy.WorkerProductionIssue | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionIssue | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionIssueCode | public enum APIShared.Economy.WorkerProductionIssueCode : int
+APIShared.Economy.WorkerProductionIssueCode | ActivationUnknown = 7
+APIShared.Economy.WorkerProductionIssueCode | BaseAmountOutOfRange = 3
+APIShared.Economy.WorkerProductionIssueCode | FixedBonusOutOfRange = 4
+APIShared.Economy.WorkerProductionIssueCode | NativeUnavailable = 0
+APIShared.Economy.WorkerProductionIssueCode | NegativeBaseAmount = 2
+APIShared.Economy.WorkerProductionIssueCode | PrecisionNotRepresentable = 5
+APIShared.Economy.WorkerProductionIssueCode | PublicationFailed = 8
+APIShared.Economy.WorkerProductionIssueCode | RuntimeFault = 9
+APIShared.Economy.WorkerProductionIssueCode | SavedDenominatorInvalid = 6
+APIShared.Economy.WorkerProductionIssueCode | UnsupportedWorker = 1
+APIShared.Economy.WorkerProductionIssueSeverity | public enum APIShared.Economy.WorkerProductionIssueSeverity : int
+APIShared.Economy.WorkerProductionIssueSeverity | Error = 1
+APIShared.Economy.WorkerProductionIssueSeverity | Warning = 0
+APIShared.Economy.WorkerProductionModifierRegistration | public sealed class APIShared.Economy.WorkerProductionModifierRegistration
+APIShared.Economy.WorkerProductionModifierRegistration | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionModifierRegistration | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionModifierRegistration | public void SetProfile(APIShared.Economy.WorkerProductionProfile profile)
+APIShared.Economy.WorkerProductionModifiers | public static class APIShared.Economy.WorkerProductionModifiers
+APIShared.Economy.WorkerProductionModifiers | public static APIShared.Economy.WorkerProductionStatus Status { get; }
+APIShared.Economy.WorkerProductionModifiers | public static System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eChimps> SupportedWorkers { get; }
+APIShared.Economy.WorkerProductionModifiers | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.WorkerProductionModifierRegistration registration, out string diagnostic, int order = 0)
+APIShared.Economy.WorkerProductionModifiers | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Economy.WorkerProductionStatus> observer, out string diagnostic, int order = 0, bool replayCurrent = true)
+APIShared.Economy.WorkerProductionProfile | public sealed class APIShared.Economy.WorkerProductionProfile
+APIShared.Economy.WorkerProductionProfile | public .ctor(System.Collections.Generic.IDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> baseAmounts = null, APIShared.Modifiers.ValueModifierContribution fixedBonusPercent = default, APIShared.GameModes.GameplayModActivationProfile? activation = null)
+APIShared.Economy.WorkerProductionProfile | public APIShared.GameModes.GameplayModActivationProfile? Activation { get; }
+APIShared.Economy.WorkerProductionProfile | public APIShared.Modifiers.ValueModifierContribution FixedBonusPercent { get; }
+APIShared.Economy.WorkerProductionProfile | public System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> BaseAmounts { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public sealed class APIShared.Economy.WorkerProductionRegistrationSnapshot
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public APIShared.Economy.WorkerProductionProfile DesiredProfile { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public int Order { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public struct APIShared.Economy.WorkerProductionResolvedBaseAmount
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public uint Whole { get; }
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public ulong FractionDenominator { get; }
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public ulong FractionNumerator { get; }
+APIShared.Economy.WorkerProductionStatus | public sealed class APIShared.Economy.WorkerProductionStatus
+APIShared.Economy.WorkerProductionStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WorkerProductionIssue> Issues { get; }
+APIShared.Economy.WorkerProductionStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WorkerProductionRegistrationSnapshot> Registrations { get; }
+APIShared.Economy.WorkerProductionStatus | public bool CanStart { get; }
+APIShared.Economy.WorkerProductionStatus | public bool HasBaseContributions { get; }
+APIShared.Economy.WorkerProductionStatus | public bool HasDesiredProfiles { get; }
+APIShared.Economy.WorkerProductionStatus | public bool IsAvailable { get; }
+APIShared.Economy.WorkerProductionStatus | public bool TryGetResolvedBaseAmount(SHCDESE.Interop.eChimps worker, bool isAIPlayer, int inputAmount, out APIShared.Economy.WorkerProductionResolvedBaseAmount amount)
+APIShared.Economy.WorkerProductionStatus | public int ResolvedFixedBonusPercent { get; }
+APIShared.Economy.WorkerProductionStatus | public long RejectedLocalLaunchSequence { get; }
+APIShared.Economy.WorkerProductionStatus | public long Revision { get; }
+APIShared.Economy.WorkerProductionStatus | public string Digest { get; }
+APIShared.Economy.WorkerProductionStatus | public string PeerReadinessCode { get; }
+APIShared.Economy.WorkerProductionStatus | public string PeerReadinessDiagnostic { get; }
+APIShared.Economy.WorkerProductionStatus | public string RejectedLocalLaunchCode { get; }
+APIShared.Economy.WorkerProductionStatus | public string ServiceKey { get; }
+APIShared.Economy.WorkerProductionValues | public struct APIShared.Economy.WorkerProductionValues
+APIShared.Economy.WorkerProductionValues | public .ctor(APIShared.Modifiers.ValueModifierContribution human, APIShared.Modifiers.ValueModifierContribution ai)
+APIShared.Economy.WorkerProductionValues | public APIShared.Modifiers.ValueModifierContribution AI { get; }
+APIShared.Economy.WorkerProductionValues | public APIShared.Modifiers.ValueModifierContribution Human { get; }
 APIShared.ElevatedMoatAiCapability | public static class APIShared.ElevatedMoatAiCapability
 APIShared.ElevatedMoatAiCapability | public static APIShared.ElevatedMoatAiState Current { get; }
 APIShared.ElevatedMoatAiCapability | public static event System.Action<APIShared.ElevatedMoatAiState> Changed

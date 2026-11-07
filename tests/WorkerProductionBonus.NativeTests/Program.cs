@@ -47,12 +47,17 @@ internal static partial class Program
             native = File.ReadAllBytes(args[0]);
             Check(Convert.ToHexString(SHA256.HashData(native)) == NativeHash, "Audited native identity mismatch.");
             TestRegistry();
+            TestCompilerAndProfiles();
+            TestStateContracts();
             MapPrivateImage();
             try
             {
                 TestOriginalYield();
                 TestRawRecordPersistence();
                 TestProductionGenerators();
+                TestStateChecksum();
+                TestHotProductionCore();
+                TestMillerOutput();
             }
             finally { VirtualFree(image, UIntPtr.Zero, 0x8000); }
             Console.WriteLine($"PASS: {checks} worker-production native assertions. Private native execution; actual game, save/restart and host/client acceptance remain separate.");

@@ -13,6 +13,7 @@ internal static class Boundary
     internal static bool MainThread = true, Prepare = true, SendOk = true;
     internal static ulong Local = 2001, Host = 2001;
     internal static string Settings = "host-settings", Path;
+    internal static FileHeader LookupHeader;
     internal static Action DuringCapture;
     internal static IReadOnlyList<SavegameRecordDigest> Records = Array.Empty<SavegameRecordDigest>();
     internal static readonly Dictionary<Type, Action<object, ulong>> Receivers = new Dictionary<Type, Action<object, ulong>>();
@@ -55,10 +56,19 @@ public sealed class FileHeader { public string fileName, filePath; public uint c
 public sealed class MapFileManager
 {
     public static readonly MapFileManager Instance = new MapFileManager();
-    public FileHeader GetHeaderFromFileNameMP(string name, int crc) => new FileHeader { fileName = name, filePath = Boundary.Path, crc = (uint)crc };
+    public FileHeader GetHeaderFromFileNameMP(string name, int crc) => Boundary.LookupHeader ?? new FileHeader { fileName = name, filePath = Boundary.Path, crc = (uint)crc };
     public FileHeader GetHeaderFromMpSaveFileName(string name) => new FileHeader { fileName = name, filePath = Boundary.Path, xPlaySaveChecksum = 1, xPlaySaveTime = 2 };
 }
-namespace CrusaderDE { internal static class HUD_ConfirmationPopup { internal static void ShowConfirmationOKMessage(string title, Action ok, string reason) { Boundary.Popups++; } } }
+namespace CrusaderDE
+{
+    internal static class HUD_ConfirmationPopup { internal static void ShowConfirmationOKMessage(string title, Action ok, string reason) { Boundary.Popups++; } }
+    internal sealed class FRONT_Multiplayer
+    {
+        private FileHeader selectedMPHeader;
+        public Platform_Multiplayer.MPLobby currentLobby;
+        internal void Select(FileHeader header){selectedMPHeader=header;}
+    }
+}
 namespace MonoMod.RuntimeDetour
 {
     internal sealed class HookConfig { internal bool ManualApply; }
@@ -106,6 +116,27 @@ namespace APIShared.Networking
     }
 }
 namespace APIShared.Localization { internal static class UiText { internal static string Get(string key) => key; } }
+namespace APIShared.Economy
+{
+    // External production agreement only; the real save coordinator below remains under test.
+    internal static class WorkerProductionAgreement
+    {
+        internal static bool Waiting,Blocked;
+        internal static int Checks;
+        internal static string SavePath;
+        internal static string PreparedDataPath=>SavePath;
+        internal static void SetPreparedDataPath(string path){SavePath=path;}
+        internal static void SetPreparedSavePath(string path){SavePath=path;}
+        internal static bool TryPrepareSaveAdmission(string path,out bool waiting,out string diagnostic)
+        {Checks++;SavePath=path;waiting=Waiting;diagnostic=Blocked?"production rejected":"production pending";return !Waiting&&!Blocked;}
+    }
+}
+namespace APIShared.Lobby
+{
+    internal readonly struct LobbyLaunchGuardDecision { internal bool Blocked=>false; internal string Reason=>""; }
+    internal static class LobbyLaunchGuards
+    {internal static LobbyLaunchGuardDecision EvaluatePreparedMultiplayerLoad(int humans)=>default;}
+}
 namespace APIShared.ModSettings { internal static class ModSettingsApplication { internal static bool PrepareLaunch() => Boundary.Prepare; } }
 namespace APIShared.Savegames
 {

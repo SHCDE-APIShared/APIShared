@@ -112,6 +112,7 @@ namespace APIShared.Units.AiMilitary.Native
                 {
                     // All three audited callers branch directly to their ordinary failure return on
                     // zero, before any AI/fold. Never run a partially protected authored world.
+                    if (!Savegames.NativeWorldRestoreParticipants.Restore()) return 0;
                     if (restored != null && !restored()) return 0;
                 }
                 catch (Exception error) { Report("raw-restore", error); return 0; }

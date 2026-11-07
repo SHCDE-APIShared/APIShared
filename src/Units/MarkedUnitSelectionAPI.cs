@@ -53,6 +53,8 @@ namespace APIShared
         private static int selectionRevision;
         private static volatile bool hasDemand;
         private static int completedTick;
+        internal static bool HasRunBoundary => installed;
+        internal static readonly Func<bool,int> ProductionRunOriginal = RunOriginal;
 
         internal static void Initialize(ManualLogSource logger)
         {
@@ -190,6 +192,12 @@ namespace APIShared
 
         private static int OnRun(bool mpFrameSkip)
         {
+            Economy.WorkerProductionRunGate boundary = Economy.WorkerProductionWorldSafety.RunBoundary;
+            return boundary == null ? RunOriginal(mpFrameSkip) : boundary.Run(mpFrameSkip);
+        }
+
+        private static int RunOriginal(bool mpFrameSkip)
+        {
             bool readback = Statistics.EngineReadbacks.HasPending;
             bool work = Simulation.SimulationWorkPump.HasPending;
             if (!hasDemand && !readback && !work) return originalRun(mpFrameSkip);
@@ -213,6 +221,15 @@ namespace APIShared
 
         private static void OnReturnBuffer(MemoryBuffers self, MemoryBuffers.MemBuffer buffer)
         {
+            if (Economy.WorkerProductionWorldSafety.IsFaulted && buffer != null && buffer.beingFilled)
+            {
+                Economy.WorkerProductionWorldSafety.ObserveNativeFault();
+                // Return the reserved slot without publishing its invalid render/MP frame.
+                buffer.beingFilled = false;
+                buffer.gotData = false;
+                originalReturnBuffer(self, buffer);
+                return;
+            }
             if (Simulation.SimulationWorkPump.HasPending && buffer != null && buffer.beingFilled)
                 Simulation.SimulationWorkPump.Drain();
             if (Statistics.EngineReadbacks.HasPending && buffer != null && buffer.beingFilled) Statistics.EngineReadbacks.BeforeBufferPublication();

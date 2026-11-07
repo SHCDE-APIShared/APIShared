@@ -142,7 +142,7 @@ namespace APISharedTests
                     // Same slot models flattened registrations from two owners; different slots model two selected Lords.
                     var claims = new[] { new PackagedLordPresentationEntry(3, "Lord", "Authored", null),
                         new PackagedLordPresentationEntry(secondSlot, "Lord", "Authored", "{}") };
-                    entries.SetValue(null, reverse ? claims.Reverse().ToArray() : claims);
+                    entries.SetValue(null, reverse ? claims.AsEnumerable().Reverse().ToArray() : claims);
                     var random = new Random(123); rng.SetValue(null, random);
                     object[] call = { "Lord", AILordMessageType.Taunt1, null, null, null };
                     Assert.IsTrue((bool)type.GetMethod("TryResolveMedia", flags).Invoke(null, call),
@@ -199,7 +199,7 @@ namespace APISharedTests
                 foreach (int secondSlot in new[] { 3, 4 }) foreach (bool reverse in new[] { false, true })
                 {
                     var claims = new[] { entry, new PackagedLordPresentationEntry(secondSlot, entry.InternalName, entry.AuthoredName, "{}") };
-                    fixture.SetEntries(reverse ? claims.Reverse().ToArray() : claims);
+                    fixture.SetEntries(reverse ? claims.AsEnumerable().Reverse().ToArray() : claims);
                     Assert.IsTrue((bool)Production("IsSupported").Invoke(null, new object[] { null, entry.InternalName }));
                     object[] text = { null, entry.InternalName, null };
                     Assert.IsTrue((bool)Production("Display").Invoke(null, text)); Assert.AreEqual("Authored", text[2]);

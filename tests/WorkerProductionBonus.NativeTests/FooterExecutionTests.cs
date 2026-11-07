@@ -14,7 +14,8 @@ internal static partial class Program
         ["Wood"]=0x12D20C,["Hunter"]=0x131402,["Pitch"]=0x1337E3,["Hops"]=0x135E0F,
         ["Apple"]=0x136D12,["Cattle"]=0x137798,["Iron"]=0x14E4B8,["Fletcher"]=0x12E3DB,
         ["Brewer"]=0x13A74F,["Poleturner"]=0x13BDAA,["Blacksmith"]=0x13CF02,
-        ["Armourer"]=0x13E085,["Tanner"]=0x13E6C2
+        ["Armourer"]=0x13E085,["Tanner"]=0x13E6C2,["Wheat"]=0x134006,
+        ["BakerStart"]=0x139930,["BakerArrival"]=0x139930
     };
 
     private static void TestActualNativeFooters(IntPtr percent)
@@ -53,6 +54,7 @@ internal static partial class Program
             Boundary(0x191070, 24, 100); // fear pause
             Boundary(0x19B930, 48, 104); // next workplace
             Boundary(0xBBB70, 72, 96); // farm validity; force the ordinary completion fallback
+            Boundary(0xBBE00, 72, 96); // Wheat's linked-farm validity; same zero-result fallback
             Boundary(0xB9280, 120, 108); // ingredient building lookup
             Boundary(0xC90E0, 144, 108); // ingredient building validation
             Boundary(0x196280, 168, 108, route: true); // route selection
@@ -66,7 +68,8 @@ internal static partial class Program
             Put(0x87EE30C, 1); Put(0x87EE2F4, 1); Put(0x87EE2F0, 1);
             Word(WorkerProductionBonusNativeDefinition.BuildingManagerRva + 3 * buildingStride + 0x2EC, 0);
 
-            foreach (var site in WorkerProductionBonusNativeDefinition.Sites.Where(s => s.Kind == WorkerProductionBonusNativeKind.ZeroCompletion))
+            foreach (var site in WorkerProductionBonusNativeDefinition.Sites.Where(s => s.Kind == WorkerProductionBonusNativeKind.ZeroCompletion)
+                .Concat(WorkerProductionOutputNativeDefinition.Sites.Where(s => s.Kind == WorkerProductionOutputSiteKind.Zero).Select(s => s.Site)))
             {
                 Console.WriteLine("Executing actual native completion paths: " + site.Name);
                 var original = WorkerProductionBonusNativeDefinition.Decode(site.OriginalBytes, Address(site.Rva));
@@ -87,7 +90,9 @@ internal static partial class Program
                     Word(unit + 0x990, 3); // linked building fixture
                     Put(WorkerProductionBonusNativeDefinition.CurrentUnitRva, UnitId);
                     Put(ModeRva, 99); Marshal.WriteInt32(percent, -50);
-                    harness.ResetInput(); PrepareOriginalInputs(harness, site, 0);
+                    harness.ResetInput();
+                    bool additionalOutput = site.Name == "Wheat" || site.Name.StartsWith("Baker", StringComparison.Ordinal);
+                    if (!additionalOutput) PrepareOriginalInputs(harness, site, 0);
                     PrepareNativeFooterLiveInputs(harness, site);
                     harness.Run();
                     Check(harness.Marker == 1, "Zero output executes the actual complete native footer: " + site.Name);
@@ -97,7 +102,20 @@ internal static partial class Program
                     bool simpleRetirement = site.Name == "Pitch" || site.Name == "Iron";
                     bool immediateWorkshopRetirement = site.Name == "Brewer" || site.Name == "Poleturner" || site.Name == "Blacksmith" || site.Name == "Armourer" || site.Name == "Tanner";
                     bool retired = (simpleRetirement || immediateWorkshopRetirement && fear == 0 && (ingredients == 0 || site.Name == "Tanner")) && workplace == 0;
-                    Check(Word(unit + 0x6E4) == (retired ? 3 : 2), $"Invalid workplace retires with the exact native alive state: {site.Name}; workplace={workplace},fear={fear},ingredients={ingredients},alive={Word(unit + 0x6E4)},queryCalls={Marshal.ReadInt32(observations,48)}.");
+                    if (!additionalOutput)
+                        Check(Word(unit + 0x6E4) == (retired ? 3 : 2), $"Invalid workplace retires with the exact native alive state: {site.Name}; workplace={workplace},fear={fear},ingredients={ingredients},alive={Word(unit + 0x6E4)},queryCalls={Marshal.ReadInt32(observations,48)}.");
+                    if (site.Name == "Wheat")
+                        Check(Word(unit + 0x918) == 2 && Word(unit + 0x920) == 20 && Word(unit + 0x9CC) == 1,
+                            "Wheat invalid-farm fallback retains its native wait/work-cycle state and preserved RSI=1.");
+                    if (site.Name.StartsWith("Baker", StringComparison.Ordinal))
+                    {
+                        Check(Word(unit + 0x6E4) == (ingredients == 0 && workplace == 0 ? 3 : 2),
+                            "Baker's actual invalid-workplace branch138EF1 retires with literal state3.");
+                        if (ingredients != 0) Check(Word(unit + 0x918) == 7 && Word(unit + 0x98E) == ingredientBuilding,
+                            "Baker's actual available-flour route resumes native state7 with its selected building.");
+                        else if (workplace != 0) Check(Word(unit + 0x918) == 2 && Word(unit + 0x920) == 20,
+                            "Baker's actual wait branch retains RSI2 and native cooldown20.");
+                    }
                     // These three workers use the normal delayed-retirement state instead
                     // of deleting immediately. Preserve the distinction; forcing alive=3
                     // here would skip Vanilla's later recovery/retirement attempts.
@@ -149,6 +167,8 @@ internal static partial class Program
             case "Brewer": harness.Set(13, buildings); break; // 139972
             case "Poleturner": harness.Set(7, buildings); break; // 13B44F
             case "Blacksmith": harness.Set(6, buildings); break; // 13C5E8
+            case "Wheat": harness.Set(6, 1); break; // 133DF5; completed-output path keeps the native work-cycle value
+            case "BakerStart": case "BakerArrival": break;
             // Other eight workers have no additional preserved register read on the
             // selected zero-cargo footer paths; the generator establishes their inputs.
             case "Wood": case "Hunter": case "Pitch": case "Apple": case "Cattle":

@@ -58,8 +58,11 @@ internal static partial class Program
                 bool active = value < 0 && mode != 0;
                 if (site.Kind == WorkerProductionBonusNativeKind.ZeroCompletion)
                 {
-                    bool completed = active && amount == 0;
-                    Check(generated.Marker == (completed ? 2 : 1), "Zero completion preserves active/mode/amount gates: " + site.Name);
+                    // This phase is reached only after work has actually completed.
+                    // Any supported upstream Pre (including UnitId redirects) can make
+                    // its physical cargo zero without leaving native extra provenance.
+                    bool completed = amount == 0;
+                    Check(generated.Marker == (completed ? 2 : 1), "Every ready zero-output completion finishes its native work cycle: " + site.Name);
                     if (completed)
                     {
                         var changed = new List<int> { 0, 2 };
@@ -103,7 +106,7 @@ internal static partial class Program
                     Word(WorkerProductionBonusNativeDefinition.UnitManagerRva + UnitId * UnitStride + WorkerProductionBonusNativeDefinition.BonusYieldOffset, extra);
                     generated.ResetInput(); PrepareOriginalInputs(generated, site, amount); generated.Run();
                     bool active = ready != 0 && (extra < 0 || (value < 0 && mode != 0));
-                    bool alternate = site.Kind == WorkerProductionBonusNativeKind.ZeroCompletion ? active && amount == 0 :
+                    bool alternate = site.Kind == WorkerProductionBonusNativeKind.ZeroCompletion ? ready != 0 && amount == 0 :
                         site.Kind == WorkerProductionBonusNativeKind.OxDeparture ? amount < (active ? 1 : 8) : active && amount == 0;
                     Check(generated.Marker == (alternate ? 2 : 1), "Saved-negative provenance and publication gates: " + site.Name);
                     if (site.Kind == WorkerProductionBonusNativeKind.ZeroCompletion)

@@ -447,6 +447,13 @@ namespace APIShared
             }
             Safe(() => { state.InvalidateNativeClock(); if (op != null) state.BeginNativeLoad(op.Id); });
             Safe(() => { if (op != null) state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.BeforeLoad); });
+            string productionRejection=op==null ? null : Economy.WorkerProductionRuntime.ValidateNativeAdmission(Capture(op));
+            if(!string.IsNullOrEmpty(productionRejection))
+            {
+                op.NativeFailed=true;
+                Safe(()=>state.CompleteNativeLoad(op.Id,false));
+                throw new NativeAdmissionAbort(productionRejection);
+            }
             long nativeGeneration = Units.AiMilitary.AiMilitaryService.Instance.Generation;
             EngineInterface.LoadMapReturnData result;
             bool returned = false;

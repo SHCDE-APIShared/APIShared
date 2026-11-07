@@ -66,7 +66,7 @@ load phase; it is not a second public APIShared service runtime.
 | Networking | Owner-bound Chore channels, control-plane messages and presentation dispatch |
 | Units, Pathfinding, Diagnostics | Command interception, recruitment policies, unit settlement, queries and advanced integrations |
 | Audio | Native-record sound presentation, audited source contexts and shared rule events |
-| Economy | Shared native market price query events and validated hook ownership |
+| Economy | Shared market/production rules, exact output compilation, admission and validated native ownership |
 | Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
 
 Participant inspection uses the existing lobby registrations and

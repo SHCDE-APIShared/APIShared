@@ -1175,4 +1175,143 @@ Layout accesses (unit manager, current unit, native mode, stride and worker/foot
 
 On a game update, re-audit all producer/caller and completion paths, both Ox departure thresholds, driver reserve, render consumer, signed carry, save section 3015, Chore56, checksum and slot clearing. Re-run native execution fixtures and live save/editor/host-client acceptance. Do not enable negative percentages after partial initialization.
 
-All non-calculation guards require the process-only readiness DWORD at coefficient+4. Publish it only after the final installed-hook validation; a partial installation retains coefficient50 and readiness0. Once ready, guards also recognize a saved negative extra-output word even if the current coefficient is50 or the mode is0. Revalidate that valid Vanilla production cannot create negative extra, that zero completion additionally requires Carry0, and that history uses the current producer for workers/Ox, RBX's Ox for driver reserve, and original RAX's record for rendering. Save metadata and raw unit bytes must be restored before simulation resumes; consumers must publish admission at the corresponding pre-simulation lifecycle checkpoint.
+All non-calculation guards require the process-only readiness DWORD at coefficient+4. Publish it only after the final installed-hook validation; a partial installation retains coefficient50 and readiness0. At the audited completed-output phases, ready zero-cargo completion always runs the normal footer: an Extender Pre callback may redirect UnitId and leave no negative-extra marker on the physical producing unit. Positive cargo keeps the original route. Ox/reserve guards additionally recognize saved negative extra and coordinated sidecar batch provenance even with coefficient50 or native mode0. History uses the current producer for Ox, RBX's Ox for driver reserve and original RAX's record for rendering. Save metadata and raw unit bytes must be restored before simulation resumes; consumers must publish admission at the corresponding pre-simulation lifecycle checkpoint.
+
+### Production sidecar, unit resynchronization and critical saves
+
+The additional owners are `WorkerProductionStateNativeRuntime`,
+`WorkerProductionCriticalSaveRuntime` and `WorkerProductionSaveUiRuntime`.
+Their field layouts remain bound to the same full native hash above. Unknown
+hashes have no layout fallback and leave this dependent production service
+unavailable. On an update, repeat the complete pack/measure/unpack, checksum,
+save-caller and managed-continuation audit before accepting a new identity.
+
+The private, permanently allocated sidecar has 10000 rows of 32 bytes (slot0 is
+an empty sentinel, game IDs1..9999). It does not enlarge a native unit record or
+change any Extender field type. Offsets are GlobalID u32@0, current native kind
+u16@4, batch flags u16@6, fraction numerator u64@8, denominator u64@16,
+schema u32@24 and reserved u32@28. Nonempty rows use schema1, reserved0,
+reduced `0 <= numerator < denominator <= Int64.MaxValue`; a zero fraction with
+provenance is0/1, and no fraction/provenance is all-zero. Fraction identity is
+slot plus GlobalID: profession changes preserve credits, normalize the stored
+kind and discard old-role batch flags. Save/pack normalization uses a copy;
+saving one peer must not mutate simulation state. Marker flags describe the
+producing operation, not final cargo after native bonuses or Extender Post.
+
+`15710` is the sole Chore56 pack/unpack/measurement owner. Its NativeX64
+Indirect entry displaces two five-byte MOVs; the next five-byte MOV remains
+verified. Native payload2172 becomes2204 only in a world admitted to the
+extended protocol. Mode2 measures without moving payload; mode1 changes its
+own native mode before packing, so capture the original mode. Mode0's native
+skip gate remains authoritative. The original helper transfers ID4, the
+native record0x490 (origin at unit manager+658), and path1000, then the owner
+appends/restores exactly one validated row32. Native manager RVA8574320,
+mode85F8FEC, payload length85F8FF4, transfer unit86C132C, cursor+370BF8,
+unscheduled body+84CD8 and skip+9A0 remain hash-bound. Check the180000-byte
+body limit before the original helper copies anything; its own overflow
+logger runs after copying and cannot provide this protection.
+
+The managed `EngineInterface.ReceiveChore(int, byte[], int)` wrapper validates
+the whole incoming unit packet under the real engine monitor before its
+single native invocation. Extended plain56 packets require their exact2212
+bytes, unscheduled tick0, a valid slot/row/native identity, and a denominator
+dividing the admitted common precision. Compressed125/56 is rejected before
+native decompression; the audited native sender23800 never compresses56.
+Any invalid tail faults and quarantines the world without calling Original;
+it must never partially restore a native record before validating its sidecar.
+
+Checksum span22149..22159 is16 bytes: MOV EDX,[RSP+A0], ADD EDI,ECX,
+MOVSXD RCX,[RBX+36FA50]. The generator mixes the canonical effective row into
+EDI before the original category ADD at22159 and unit store2216F. Empty rows
+are a strict no-op. R12 is the one-based unit ID. Native identity accesses are
+origin+6F0 GlobalID and+6E6 kind; public GameUnit starts at origin+65C, whereas
+the transferred record starts at+658. Do not confuse record GlobalID+98 with
+wire-body GlobalID+9C (the latter includes ID4). Revalidate the entire caller
+loop, category/unit writes, no interior incoming edge, backend displacement,
+generated bytes, installed jump, register/flag/stack preservation and both
+legacy/extended branches. Native execution fixtures run this generator through
+the actual category and unit stores, including profession-change normalization.
+
+Versioned record `APIShared_WorkerProduction`, known entry `state`, uses the
+existing simulation-relevant save/map archive. Its payload is WPS1, schema1,
+capacity10000 and row size32 (four little-endian u32 fields), then the entire
+row table. Prepared decodes only private bytes. The existing AI-owned87D0
+restore detour invokes a narrow internal participant list after all raw
+sections restore and before the first simulation fold; no second87D0 hook
+exists. Validate the whole candidate and native identities before publishing
+rows. Admission/actual restore must compile the same saved denominators and
+rule digest. Missing/invalid required support cannot silently become legacy.
+The participant is connected only after the root mission observer is installed;
+an optional root initialization failure must not change unrelated Vanilla loads.
+87D0 is a file restore (7430 path, binary read open), not an in-memory snapshot.
+Its three direct callers are853F0,94350 and100530. Ordinary save/editor load853F0
+calls87D10 first, which sets scene3665ED8 to40. This scene is not a serialized
+section;71670's CDE60 fold requires7E50, which accepts only scenes12/14/16,
+so that route cannot dispatch182B00 before returning. Other map routes need
+precise mode admission before the direct fold: initflag366A0F8=-1 is not a
+pause (CDE60 normalizes it to0 and can dispatch workers). The engine-run gate
+alone does not cover this direct initializer.
+Legacy CRC/Chore56 remains exact when no base channel or sidecar is required;
+the chosen world protocol is never downgraded mid-mission.
+
+The common native file writer52B0 is reached by86F80 (managed normal/editor/
+quicksave),13030 (synchronized save), and816B0 (trail restart-info). Its ABI is
+`ulong(archive pointer, section-table pointer, map-save byte)`, success1/failure0.
+The existing `PlayerViewSaveScope` exclusively owns its Indirect/10 detour and
+caches the exact native WriterCall once. Inside the existing engine monitor and
+participant-identity protection, WriteOriginal routes through the production
+transaction before that cached native Original. The production owner installs
+no second writer detour or52B0 span; its write/close cohort requires the published
+save scope and remains dormant after partial publication. Preserve the outer
+identity restoration/result/error boundary, including failed and throwing writes.
+The native writer has no existing temporary-file transaction: production freezes
+a validated snapshot in that protected scope before Original, then redirects only
+the native destination slot to a short sibling temporary path. Native path
+object30D0F30, selector+FB0 (RVA30D1EE0), slot1 UTF-16 address31C74B6 and
+capacity1001 characters derive from7430/A850; all three callers select1.
+Save and restore the complete slot and selector in finally. The Extender's
+logical SaveContext keeps its original path, including synchronized null-path
+and trail restart-info source-map contracts. Do not alter map name/header or
+restart-info globals merely to redirect the physical write.
+
+The same publication cohort owns native binary write1DDB94 and close1DBB20,
+both Indirect/10 with two five-byte MOVs and18-byte entry contexts. Write ABI
+is `i32(i32 descriptor, pointer, u32 count)`; close is `i32(i32 descriptor)`.
+All46 static52B0 writes and the Extender ZIP append use1DDB94. The first write
+after its sole successful open is the four-byte native header; bind that file
+descriptor only while this thread is inside the critical52B0 Original. Other
+descriptors and all noncritical calls retain Original.1DDC2C/1DDD4C return the
+actual binary byte count or-1;1DBBB8/1DB978/1DBD14 return0 on close success,
+-1 on failure. Record incomplete/error writes and close failures persistently
+for this transaction, even if a later ZIP append succeeds. Require an observed
+successful close before replacement. Revalidate the whole52B0 writer call list,
+the SE resolved write target, entry boundaries and both trampoline contracts.
+
+After Original, require all native writes and close to have succeeded, this
+exact capture to have completed successfully and
+read the actual temporary archive back: its versioned record must contain the
+current immutable payload byte for byte. Only then commit with APIShared's
+existing atomic file replacement helper. Capture failure, skipped/stale data,
+append omission, native short/error write, close failure or replacement failure
+returns0 and preserves the old target. This verifies actual I/O results and the
+sidecar payload; it does not introduce a parser for every compressed section.
+
+The managed continuation transforms are bound to loaded IL rather than an
+Assembly-CSharp file hash: `EditorDirector.SaveSaveGameOrMap` skips dirty/name
+success writes on a newly failed critical transaction; the existing
+`SaveLoadDialogEvents` owner guards `HUD_LoadSaveRequester.RunOKAction` before
+remembered names and keeps the same request retryable. Both concrete workshop
+save call sites (upload preparation and post-upload local publication) stop
+before preview/upload or .data/success continuations. No managed save-and-quit
+chain exists in the audited assembly; editor exit confirmation is a separate
+scene change. These guards do not change ordinary Vanilla failure semantics.
+
+Validate the complete IL evaluation stack at every injected return and branch
+join. In the audited post-upload closure, a duplicated workshop pathname remains
+on the stack after the void save call; the critical-failure branch must discard
+it, while the success branch retains it for the subsequent `.data` publication.
+Normalize short branches before insertion and reject unaudited exception regions.
+Generate and force JIT compilation of every transformed body in Unity Mono before
+publishing any hook: desktop generation alone did not detect the nonempty-return
+stack. Desktop fixtures substitute only the native-save/UI boundaries for the
+executable regression, because actual Unity ECalls cannot JIT on desktop CLR.

@@ -1694,4 +1694,4 @@ Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the share
 
 ## Fixed worker production bonus
 
-For fixed production percentages, including reductions, use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register once after native initialization, publish synchronized mission-scoped values, and compare peer compatibility before enabling non-Vanilla rules. Keep settings and mode policy in the consumer; the shared owner retains zero-output completion, transport and rendering.
+For actual-output base quantities and fixed percentages, including reductions, use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register a process-held desired profile, inspect and present its typed status, and let shared mission preparation/admission activate the exact rules. Human/AI contributions use staged factors or fixed values. The legacy absolute-percentage facade remains supported. Consumer mods retain settings and localization; APIShared owns mode-profile evaluation, exact saved credits, zero-output completion, transport and rendering.
