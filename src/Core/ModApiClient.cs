@@ -26,6 +26,8 @@ namespace APIShared
         public Workshop.WorkshopClient Workshop { get; }
         /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
         public Presentation.UiWorkClient Ui { get; }
+        /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>
+        public Automation.AutomationClient Automation => new Automation.AutomationClient(this);
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 

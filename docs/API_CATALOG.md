@@ -50,6 +50,17 @@ missions, unfinished/repeated loads and unavailable sources.
 `TryGetElapsedTicks(earlierTick, currentTick, out elapsedTicks)` handles signed wrap
 within the same mission and the forward Int32 half-range.
 
+## In-game test automation
+
+| Entry point | Contract |
+| --- | --- |
+| `ModApiClient.Automation.Start` | Explicit Unity-thread test run, one active run per process, frame-driven steps and monotonic timeouts |
+| `AutomationRun.LoadSave`, `StartSkirmish` | Local game transitions with a matching managed mission receipt |
+| `WaitForPlayState`, `WaitForTicks`, `SetPause`, `ZoomStep` | Separate current-mission readiness, native time, pause state and applied zoom checks |
+| `ClickNoesis`, `InSimulation`, `TrySpawnBuilding` | Local UI input, short Extender operations under the engine monitor, and confirmed building identity |
+
+See [In-game test automation](THIRD_PARTY_GUIDE.md#in-game-test-automation) for usage and limits.
+
 ## Demand-driven engine readback
 
 `APIShared.Statistics.EngineReadbacks` registers prepared raw-copy callbacks at the

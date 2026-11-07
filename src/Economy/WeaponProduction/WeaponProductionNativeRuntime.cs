@@ -164,7 +164,7 @@ namespace APIShared.Economy
         {
             worker = null;
             return unitId > 0 && unitId <= WeaponProductionNativeDefinition.MaxUnitId &&
-                GameUnitManagerAPI.Instance.TryGetUnitById(unitId, out worker) && worker != null &&
+                UnitAccess.TryGetById(unitId, out worker, out _) &&
                 worker->r_AliveState == AliveState.IsAlive && worker->r_UnitChimp == role.Worker && worker->r_GlobalId != 0;
         }
 

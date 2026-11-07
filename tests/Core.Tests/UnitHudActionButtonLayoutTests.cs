@@ -113,7 +113,10 @@ namespace Core.Tests
         public void TemplateProvidesAnOpaqueIconAndHitSurfaceAboveVanillaClickShields()
         {
             var patch = System.Xml.Linq.XDocument.Load(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Fixtures", "HUD_Troops.xaml"));
-            var style = patch.Descendants().Single(e => e.Name.LocalName == "Style" && (string)e.Attribute("TargetType") == "{x:Type Button}");
+            System.Xml.Linq.XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var style = patch.Descendants().Single(e => e.Name.LocalName == "Style" &&
+                (string)e.Attribute(xaml + "Key") == "APISharedTroopActionButtonStyle" &&
+                (string)e.Attribute("TargetType") == "{x:Type Button}");
             var template = style.Descendants().Single(e => e.Name.LocalName == "ControlTemplate");
             var hitSurface = template.Elements().First();
             Assert.AreEqual("Border", hitSurface.Name.LocalName);

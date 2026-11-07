@@ -130,6 +130,32 @@ copy-on-write snapshots. Callback cost and application-level scans remain the co
 responsibility. Internal lobby fallback remains 15 rendered frames; save preparation
 continues every frame only while pending and not already loading.
 
+## In-game test automation
+
+Get the owner-bound client with `ApiShared.ForMod(yourGuid).Automation`. After
+APIShared initialization, explicitly start a run on Unity from your development
+build. A run receives a GUID, a sequence of named `AutomationStep` objects and a
+BepInEx logger. It emits one terminal `INGAME_TEST run=… result=…` line and can
+optionally quit the game. The caller owns scenario selection, activation and
+restoration of external settings and files.
+
+Steps yield `AutomationWait.NextFrame`, `Delay` or `Until`, and may throw to
+fail with context. Each step has a monotonic deadline, including during pause.
+Keep callbacks short. An individual synchronous game call cannot be preempted
+by a frame-based timeout. Use unbound steps to load a local save or start local
+Skirmish, and mission-bound steps for the subsequent assertions. Wait separately
+for fresh PlayState and native tick progress. Capture the current mission before
+using a mission-scoped action. Quitting is explicit and applies after success,
+failure or cancellation.
+
+Use the Extender directly for unit and wall creation inside `InSimulation`.
+Return managed values from that scope and keep native pointers inside it.
+`TrySpawnBuilding` confirms an ordinary single-building placement through the
+existing Extender event. Supply the audited sprite variant for the chosen mapper.
+Noesis clicks send input through the active game view. Verify the outcome as a
+separate assertion. The helpers target local tests and leave lobby and mission
+settings policy to the regular game and APIShared entry points.
+
 ## Namespaces and packaging
 
 Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode contracts. Settings XAML imports `clr-namespace:APIShared.ModSettings;assembly=APIShared`. Compile against the selected APIShared package and check that it contains every API used by your mod; this guide describes the source checkout. Author-specific permission tables belong in consumers, rather than APIShared; construct profiles for your own rules. Command/formation implementations belong to their consuming mods; use the public route-search events for the documented preference extension.

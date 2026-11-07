@@ -190,6 +190,35 @@ APIShared.Audio.SoundTarget | public override string ToString()
 APIShared.Audio.SoundTargetKind | public enum APIShared.Audio.SoundTargetKind : int
 APIShared.Audio.SoundTargetKind | CustomClip = 1
 APIShared.Audio.SoundTargetKind | VanillaEffect = 0
+APIShared.Automation.AutomationClient | public sealed class APIShared.Automation.AutomationClient
+APIShared.Automation.AutomationClient | public APIShared.Automation.AutomationRun Start(System.Guid runId, System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationStep> steps, BepInEx.Logging.ManualLogSource logger, System.Action<APIShared.Automation.AutomationResult> completed = null, bool quitWhenDone = false)
+APIShared.Automation.AutomationResult | public sealed class APIShared.Automation.AutomationResult
+APIShared.Automation.AutomationResult | public APIShared.Automation.AutomationStatus Status { get; }
+APIShared.Automation.AutomationResult | public System.Guid RunId { get; }
+APIShared.Automation.AutomationResult | public string Detail { get; }
+APIShared.Automation.AutomationResult | public string Step { get; }
+APIShared.Automation.AutomationRun | public sealed class APIShared.Automation.AutomationRun
+APIShared.Automation.AutomationRun | public APIShared.Automation.AutomationWait WaitForPlayState(APIShared.MissionContext mission)
+APIShared.Automation.AutomationRun | public APIShared.Automation.AutomationWait WaitForTicks(APIShared.MissionContext mission, int count)
+APIShared.Automation.AutomationRun | public APIShared.MissionContext CurrentMission { get; }
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> ClickNoesis(string elementName)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> LoadSave(string path)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> SetPause(APIShared.MissionContext mission, bool paused)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> StartSkirmish(string map, System.Collections.Generic.IEnumerable<SHCDESE.Interop.AILords> opponents, int? peaceTimeMinutes = null)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> ZoomStep(APIShared.MissionContext mission, bool zoomIn, System.Action<float> actualScale)
+APIShared.Automation.AutomationRun | public T InSimulation<T>(APIShared.MissionContext mission, System.Func<T> action)
+APIShared.Automation.AutomationRun | public bool TrySpawnBuilding(APIShared.MissionContext mission, int playerId, int tileX, int tileY, SHCDESE.Interop.eMappers mapper, int spriteVariation, out int buildingId, out uint globalId)
+APIShared.Automation.AutomationRun | public void Cancel()
+APIShared.Automation.AutomationStatus | public enum APIShared.Automation.AutomationStatus : int
+APIShared.Automation.AutomationStatus | Cancelled = 2
+APIShared.Automation.AutomationStatus | Failed = 1
+APIShared.Automation.AutomationStatus | Passed = 0
+APIShared.Automation.AutomationStep | public sealed class APIShared.Automation.AutomationStep
+APIShared.Automation.AutomationStep | public .ctor(string name, System.TimeSpan timeout, System.Func<APIShared.Automation.AutomationRun, System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait>> execute, bool missionBound = false)
+APIShared.Automation.AutomationWait | public sealed class APIShared.Automation.AutomationWait
+APIShared.Automation.AutomationWait | public static APIShared.Automation.AutomationWait Delay(System.TimeSpan duration)
+APIShared.Automation.AutomationWait | public static APIShared.Automation.AutomationWait NextFrame { get; }
+APIShared.Automation.AutomationWait | public static APIShared.Automation.AutomationWait Until(string description, System.Func<bool> condition)
 APIShared.BriefingGoldAdjuster | public delegate int APIShared.BriefingGoldAdjuster(APIShared.BriefingGoldContext context)
 APIShared.BriefingGoldAdjustmentStage | public enum APIShared.BriefingGoldAdjustmentStage : int
 APIShared.BriefingGoldAdjustmentStage | ModAdjustment = 100
@@ -1199,6 +1228,7 @@ APIShared.MissionStartKind | EditorLoaded = 3
 APIShared.MissionStartKind | LoadedSave = 1
 APIShared.MissionStartKind | NewGame = 0
 APIShared.ModApiClient | public sealed class APIShared.ModApiClient
+APIShared.ModApiClient | public APIShared.Automation.AutomationClient Automation { get; }
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }

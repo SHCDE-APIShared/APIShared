@@ -25,7 +25,8 @@ namespace APIShared.Presentation
         private static HUD_Troops buttonPanel;
         private static MainHUD buttonRoot;
         private static IngameUIScreens inputRoot;
-        private static Canvas overlay, navigation;
+        private static Canvas overlay;
+        private static Grid navigation;
         private static Button nextPageButton, previousPageButton;
         private static TroopActionPagingSurface pagingSurface;
         private static TroopActionPagingDecision pagingDecision;
@@ -162,7 +163,7 @@ namespace APIShared.Presentation
             if (pagingDecision.HasNavigation)
             {
                 float width = pagingDecision.UsesFallbackAnchor ? 15 : 36;
-                navigation.Width = nextPageButton.Width = previousPageButton.Width = width;
+                navigation.Width = width;
                 navigation.LayoutTransform = new ScaleTransform(scaleX, scaleY);
                 PositionAtScreen(navigation, anchor.X, anchor.Y);
                 if (nextPageButton.IsMouseOver) ShowNavigationRollover(nextPageButton, true);
@@ -224,11 +225,13 @@ namespace APIShared.Presentation
                 Grid.SetColumnSpan(overlay, Math.Max(1, root.ColumnDefinitions.Count));
                 Panel.SetZIndex(overlay, 1); root.Children.Add(overlay);
                 pagingSurface = TroopActionPagingSurface.Create(buttonPanel);
-                navigation = new Canvas { Width = 36, Height = 37, Background = Brushes.Transparent,
+                navigation = new Grid { Width = 36, Height = 37, UseLayoutRounding = false,
                     Visibility = Visibility.Collapsed };
+                navigation.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                navigation.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
                 nextPageButton = CreatePageButton(true);
                 previousPageButton = CreatePageButton(false);
-                Canvas.SetTop(previousPageButton, 18.5f);
+                Grid.SetRow(previousPageButton, 1);
                 navigation.Children.Add(nextPageButton); navigation.Children.Add(previousPageButton);
                 overlay.Children.Add(navigation);
                 inputRoot.PreviewKeyDown += OnRootKeyDown;
@@ -242,14 +245,17 @@ namespace APIShared.Presentation
 
         private static Button CreatePageButton(bool next)
         {
-            var button = new Button { Width = 36, Height = 18.5f,
-                Style = buttonPanel.TryFindResource("BTN_Image") as Style,
-                RenderTransformOrigin = new Point(0.5f, 0.5f),
-                RenderTransform = new RotateTransform(next ? 180 : 0) };
+            var button = new Button {
+                Style = buttonPanel.TryFindResource("APISharedTroopPageButtonStyle") as Style
+                    ?? throw new InvalidOperationException("The troop page button style is unavailable."),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                // The template rotates the sprites while its hit surface stays axis-aligned.
+                Tag = new RotateTransform(next ? 180 : 0)
+            };
             PropEx.SetSprite1(button, buttonPanel.TryFindResource("UI-Buttons J028") as ImageSource);
             PropEx.SetSprite2(button, buttonPanel.TryFindResource("UI-Buttons J029") as ImageSource);
             PropEx.SetSprite3(button, buttonPanel.TryFindResource("UI-Buttons J030") as ImageSource);
-            PropEx.SetSprite4(button, buttonPanel.TryFindResource("UI-Buttons J028") as ImageSource);
             ToolTipService.SetIsEnabled(button, false);
             button.Click += (_, __) => ChangePage(next ? 1 : -1);
             button.MouseEnter += (_, __) => ShowNavigationRollover(button, next);
