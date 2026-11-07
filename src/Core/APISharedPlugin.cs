@@ -136,6 +136,7 @@ namespace APIShared
                     installAivBuildStep: true)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),

@@ -78,6 +78,27 @@ namespace LobbyModSettingsPresetTests
         }
 
         [TestMethod]
+        public void MissingLongLegacyJournalDoesNotRequireAReceiptToStartAMission()
+        {
+            string config = Config("empty");
+            while (config.Length < 310) config = Path.Combine(config, "long-directory-ä");
+            string target = ModSettingsApplication.ResetJournalStorageForTests(config);
+            PersonalDataIO.TestBeforeOperation = (operation, path) =>
+            {
+                if (operation == "publish" && path == target + ".migration.json")
+                    throw new IOException("Fixture denies writing an empty migration receipt.");
+            };
+
+            Assert.IsFalse(ModSettingsApplication.HasRestartPreparation);
+            Assert.AreEqual(string.Empty, ModSettingsApplication.DescribeRestartPreparation());
+            ModSettingsApplication.EnterContext("mission|empty");
+            Assert.IsTrue(ModSettingsApplication.PrepareLaunch());
+            ModSettingsApplication.ConfirmStarted();
+            Assert.IsFalse(File.Exists(target));
+            Assert.ThrowsExactly<IOException>(() => ModSettingsApplication.CreateJournalStorage(config).WriteAllBytes(Journal("mission|empty")));
+        }
+
+        [TestMethod]
         public void ConsumedAndDiscardedJournalsNeverReimportLaterLegacyCopies()
         {
             foreach (bool discard in new[] { false, true })

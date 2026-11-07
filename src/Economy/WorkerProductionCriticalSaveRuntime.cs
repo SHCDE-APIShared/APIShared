@@ -125,6 +125,7 @@ namespace APIShared.Economy
                 // A fault is rejected before capture or ANY native file open/truncation.
                 byte[] payload = WorkerProductionStateRuntime.FreezeForSave();
                 if (payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
+                WeaponProductionRuntime.FreezeSave();
                 selector = Marshal.ReadInt32(module + SelectorRva);
                 if (selector != 1) throw new InvalidDataException("The native save path selector differs from the audited save callers.");
                 var chars = new ReadOnlySpan<char>((void*)(module + PathSlotRva), PathCapacity);
@@ -149,6 +150,7 @@ namespace APIShared.Economy
                 finally { nativeIoActive = false; }
                 if (result != 1 || lastFailed) throw new IOException("Native saving returned failure or attempted a nested save.");
                 WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
+                WeaponProductionRuntime.VerifySaveWritten(temporary);
                 // MoveFileExW replacement commits only the verified complete file. Failed capture,
                 // omitted/stale archive records and append errors leave the old destination intact.
                 CommitSavedFile(temporary, destination, payload, in nativeIo);
@@ -163,7 +165,9 @@ namespace APIShared.Economy
                     Marshal.Copy(oldPath, 0, module + PathSlotRva, oldPath.Length);
                     Marshal.WriteInt32(module + SelectorRva, selector);
                 }
-                WorkerProductionStateRuntime.EndSaveCapture(); saving = false;
+                WorkerProductionStateRuntime.EndSaveCapture();
+                WeaponProductionRuntime.EndSaveCapture();
+                saving = false;
                 if (temporary != null)
                     try { if (File.Exists(temporary)) File.Delete(temporary); }
                     catch (Exception error)

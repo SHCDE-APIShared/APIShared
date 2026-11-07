@@ -45,6 +45,7 @@
     <Compile Include="PathfindingReplacementExample.cs" />
     <Compile Include="SaveDataExample.cs" />
     <Compile Include="ModDataExample.cs" />
+    <Compile Include="WeaponProductionExample.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">

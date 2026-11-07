@@ -67,6 +67,9 @@ qualified meanings, exact-storage aliases and evidence independently of game rea
 the existing native hash initialization; availability does not imply image/layout support.
 Reads require an exact typed key and a caller-owned valid complete record view.
 Uncertain meanings require explicit opt-in, which never bypasses unverified storage.
+The two [workshop production fields](../src/NativeKnowledge/FELDKATALOG.md#nkf-000093)
+distinguish the latched current good from the requested next good and retain the
+Extender declaration names as exact-storage aliases.
 See the [integration contract](../src/NativeKnowledge/INTEGRATION.md) and the
 [human-readable field catalog](../src/NativeKnowledge/FELDKATALOG.md).
 
@@ -881,3 +884,13 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 ## Worker production bonus
 
 `APIShared.Economy.WorkerProductionModifiers` composes exact Human/AI actual-output bases and signed fixed percentages through detached desired profiles, typed visible validation status and prepared mission admission. Its process-held `WorkerProductionBonusOverrides` compatibility facade retains absolute percentage registration. Shared zero-output, Ox transport, display and persisted credit ownership stay in APIShared. `APIShared.Lobby.LobbyLaunchGuards` supplies shared Ready/Start and prepared multiplayer-save admission. See the [worker production contract](WORKER_PRODUCTION_BONUS.md).
+
+## Weapon workshop options
+
+`APIShared.Economy.WeaponProduction` registers additional recipes for fletchers,
+poleturners, blacksmiths, armourers and tanners. Each option pairs a native work
+template with an existing weapon or armour good and can set an output base
+amount, manufacturing duration and quantity of the workshop's native ingredient.
+APIShared reserves the original recipes within the four choices per workshop type.
+It supplies the building HUD, Shift selection, synchronized execution and saved
+production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).

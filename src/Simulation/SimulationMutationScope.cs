@@ -7,13 +7,22 @@ namespace APIShared.Simulation
     internal static class SimulationMutationScope
     {
         [ThreadStatic] private static int depth;
+        [ThreadStatic] private static int tickDepth;
         internal static bool IsActive => depth > 0;
-        internal static Scope Enter() { depth++; return new Scope(true); }
+        internal static bool IsTickActive => tickDepth > 0;
+        internal static Scope Enter() { depth++; return new Scope(true, false); }
+        internal static Scope EnterTick() { depth++; tickDepth++; return new Scope(true, true); }
         internal readonly struct Scope : IDisposable
         {
             private readonly bool entered;
-            internal Scope(bool entered) { this.entered = entered; }
-            public void Dispose() { if (entered) depth--; }
+            private readonly bool tick;
+            internal Scope(bool entered, bool tick) { this.entered = entered; this.tick = tick; }
+            public void Dispose()
+            {
+                if (!entered) return;
+                if (tick) tickDepth--;
+                depth--;
+            }
         }
     }
 }

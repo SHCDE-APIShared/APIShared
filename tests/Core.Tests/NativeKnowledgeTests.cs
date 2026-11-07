@@ -13,7 +13,7 @@ internal static class NativeKnowledgeBehaviorChecks
 
     internal static void Run()
     {
-        CatalogIntegrity(); RawReads(); Failures(); UncertaintyAndRejection(); Evolution(); Arrays(); ScalarEncodings(); ProcessPublication();
+        CatalogIntegrity(); RawReads(); WorkshopProductionWords(); Failures(); UncertaintyAndRejection(); Evolution(); Arrays(); ScalarEncodings(); ProcessPublication();
         Console.WriteLine("PASS: " + assertions + " assertions against production catalog/reader. Synthetic buffers only; no gameplay acceptance.");
     }
 
@@ -107,6 +107,27 @@ internal static class NativeKnowledgeBehaviorChecks
         var building = new byte[0x32C]; building[0x10C] = 0xFE; building[0x10D] = 0xFF;
         Check(reader.TryRead(new NativeRecordView(hp.RecordTypeId, building), Key<short>(Catalog, hp.Id), out short health, out _)
             && health == -2, "Building current HP signed word");
+    }
+
+    private static void WorkshopProductionWords()
+    {
+        var current = Field("GameBuilding.BuildingProductionCurrentGood");
+        var next = Field("GameBuilding.BuildingProductionNextGood");
+        Check(current.Id == NativeFieldIds.F000093 && next.Id == NativeFieldIds.F000094,
+            "Each production word has its own permanent identity");
+        Check(Field("GameBuilding.r_NextProducedGoodId").Id == current.Id &&
+            Field("GameBuilding.r_ProducedGoodId").Id == next.Id, "Extender names remain exact-storage aliases");
+
+        // Distinct sentinels catch swapped roles and using manager offsets on GameBuilding*.
+        var bytes = new byte[0x32C];
+        bytes[0x28E] = 0x11;
+        bytes[0x290] = 0xFE; bytes[0x291] = 0xFF;
+        var reader = new NativeFieldReader(Catalog, Hash);
+        var record = new NativeRecordView(NativeRecordTypes.GameBuilding, bytes);
+        Check(reader.TryRead(record, Key<short>(Catalog, current.Id), out short latched, out _) && latched == 17,
+            "Current production reads the latched word from the public building origin");
+        Check(reader.TryRead(record, Key<short>(Catalog, next.Id), out short requested, out _) && requested == -2,
+            "Next production reads the requested signed word without normalization");
     }
 
     private static void Failures()

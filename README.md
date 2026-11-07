@@ -39,5 +39,6 @@ Saved mission restrictions and fixed creator rules remain in force. See
   and [contributing](CONTRIBUTING.md).
 - [Shared worker-production rules](docs/WORKER_PRODUCTION_BONUS.md) for mod authors:
   combine output multipliers and fixed production bonuses through one common service.
+- [Weapon workshop recipes](docs/WEAPON_PRODUCTION.md) for mod authors.
 
 License: MIT.

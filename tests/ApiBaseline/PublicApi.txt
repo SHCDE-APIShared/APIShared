@@ -484,6 +484,53 @@ APIShared.Economy.PopularitySource | TaxPopModifierSmallDonation = 17
 APIShared.Economy.PopularitySource | TaxPopModifierUnaffordableDonation = 27
 APIShared.Economy.PopularitySource | TaxPopModifierUnknownMode = 28
 APIShared.Economy.PopularitySource | TaxPopModifierUsurious = 23
+APIShared.Economy.WeaponProduction | public static class APIShared.Economy.WeaponProduction
+APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
+APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)
+APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buildingId, uint globalId, out APIShared.Economy.WeaponProductionSelection selection)
+APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
+APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
+APIShared.Economy.WeaponProductionOption | public sealed class APIShared.Economy.WeaponProductionOption
+APIShared.Economy.WeaponProductionOption | public APIShared.Economy.WeaponProductionOptionId Id { get; }
+APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods OutputGood { get; }
+APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods TemplateGood { get; }
+APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Economy.WeaponProductionOption | public bool IsVanilla { get; }
+APIShared.Economy.WeaponProductionOption | public int? BaseAmount { get; }
+APIShared.Economy.WeaponProductionOption | public int? IngredientAmount { get; }
+APIShared.Economy.WeaponProductionOption | public int? WorkTicks { get; }
+APIShared.Economy.WeaponProductionOption | public string DisplayName { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public sealed class APIShared.Economy.WeaponProductionOptionDefinition
+APIShared.Economy.WeaponProductionOptionDefinition | public .ctor(SHCDESE.Interop.eStructs buildingType, SHCDESE.Interop.eGoods templateGood, SHCDESE.Interop.eGoods outputGood, string displayName, int? baseAmount = null, int? workTicks = null, int priority = 0)
+APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.WeaponProductionOptionDefinition WithIngredientAmount(int? ingredientAmount)
+APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods OutputGood { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods TemplateGood { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int Priority { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int? BaseAmount { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int? IngredientAmount { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int? WorkTicks { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public string DisplayName { get; }
+APIShared.Economy.WeaponProductionOptionId | public struct APIShared.Economy.WeaponProductionOptionId : System.IEquatable<APIShared.Economy.WeaponProductionOptionId>
+APIShared.Economy.WeaponProductionOptionId | public .ctor(string ownerGuid, string optionId)
+APIShared.Economy.WeaponProductionOptionId | public bool Equals(APIShared.Economy.WeaponProductionOptionId other)
+APIShared.Economy.WeaponProductionOptionId | public override bool Equals(object obj)
+APIShared.Economy.WeaponProductionOptionId | public override int GetHashCode()
+APIShared.Economy.WeaponProductionOptionId | public override string ToString()
+APIShared.Economy.WeaponProductionOptionId | public string OptionId { get; }
+APIShared.Economy.WeaponProductionOptionId | public string OwnerGuid { get; }
+APIShared.Economy.WeaponProductionRegistration | public sealed class APIShared.Economy.WeaponProductionRegistration
+APIShared.Economy.WeaponProductionRegistration | public APIShared.Economy.WeaponProductionOption Option { get; }
+APIShared.Economy.WeaponProductionRegistration | public APIShared.Economy.WeaponProductionRegistrationStatus Status { get; }
+APIShared.Economy.WeaponProductionRegistration | public string Diagnostic { get; }
+APIShared.Economy.WeaponProductionRegistrationStatus | public enum APIShared.Economy.WeaponProductionRegistrationStatus : int
+APIShared.Economy.WeaponProductionRegistrationStatus | AdapterUnavailable = 3
+APIShared.Economy.WeaponProductionRegistrationStatus | Admitted = 1
+APIShared.Economy.WeaponProductionRegistrationStatus | ExcludedByPriority = 2
+APIShared.Economy.WeaponProductionRegistrationStatus | Pending = 0
+APIShared.Economy.WeaponProductionSelection | public sealed class APIShared.Economy.WeaponProductionSelection
+APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Current { get; }
+APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Next { get; }
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public sealed class APIShared.Economy.WorkerProductionBonusOverrideRegistration
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string OwnerGuid { get; }
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string RegistrationId { get; }
@@ -1941,6 +1988,8 @@ APIShared.NativeKnowledge.NativeFieldIds | public const string F000089 = "nkf-00
 APIShared.NativeKnowledge.NativeFieldIds | public const string F000090 = "nkf-000090"
 APIShared.NativeKnowledge.NativeFieldIds | public const string F000091 = "nkf-000091"
 APIShared.NativeKnowledge.NativeFieldIds | public const string F000092 = "nkf-000092"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000093 = "nkf-000093"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000094 = "nkf-000094"
 APIShared.NativeKnowledge.NativeFieldKey<T> | public struct APIShared.NativeKnowledge.NativeFieldKey<T> where T : struct
 APIShared.NativeKnowledge.NativeFieldKey<T> | public string Id { get; }
 APIShared.NativeKnowledge.NativeFieldMeaning | public sealed class APIShared.NativeKnowledge.NativeFieldMeaning

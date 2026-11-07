@@ -5,13 +5,18 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using APIShared.Economy;
+using APIShared.NativeSites;
 using APIShared.Savegames;
 using CrusaderDE;
 using ICSharpCode.SharpZipLib.Zip;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MonoMod.Cil;
 using MonoMod.Utils;
+using RedBird.Abstractions.Hooks;
+using RedBird.Backends.NativeX64;
+using RedBird.X64.Assembly;
 using SHCDESE.Interop;
+using static Iced.Intel.AssemblerRegisters;
 
 namespace APISharedTests
 {
@@ -42,6 +47,61 @@ namespace APISharedTests
         }
         private static void SetRow(byte[] bytes, int offset, WorkerProductionStateRow row)
         { fixed (byte* pointer = &bytes[offset]) *(WorkerProductionStateRow*)pointer = row; }
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int BuildingTransferFixture();
+
+        [TestMethod]
+        public void BuildingRepairEntryUsesTheActualIndirectSixByteBackend()
+        {
+            byte[] prologue = WorkerProductionBonusNativeDefinition.Hex("48895C2408574883EC30");
+            using (var target = ExecutableFunction.Create(a => {
+                a.db(prologue); a.mov(eax, 17); a.add(rsp, 0x30); a.pop(rdi); a.ret();
+            }))
+            {
+                NativeDetour<BuildingTransferFixture> hook = null;
+                var callback = new BuildingTransferFixture(() => hook.Original() + 1);
+                var request = new DetourRequest<BuildingTransferFixture> {
+                    Name = "Private weapon workshop building transfer fixture", Callback = callback,
+                    TargetAddress = unchecked((ulong)target.EntryPoint.ToInt64())
+                };
+                var backend = new NativeDetourBackend(new NativeDetourOptions {
+                    AllowedSchemes = DetourScheme.Indirect, FollowJumps = false, SuspendThreadsDuringPatch = false
+                });
+                try
+                {
+                    hook = (NativeDetour<BuildingTransferFixture>)backend.CreateDetour(in request);
+                    NativeIndirectEntry.Validate(hook, target.EntryPoint, prologue, 6, false);
+                    var invoke = Marshal.GetDelegateForFunctionPointer<BuildingTransferFixture>(target.EntryPoint);
+                    Assert.AreEqual(17, invoke());
+                    hook.Enable();
+                    NativeIndirectEntry.Validate(hook, target.EntryPoint, prologue, 6, true);
+                    Assert.AreEqual(18, invoke(), "The relocated six-byte prologue must resume before SUB RSP and run Original once.");
+                    GC.KeepAlive(callback);
+                }
+                finally { hook?.Dispose(); }
+            }
+        }
+
+        [TestMethod]
+        public void BuildingRepairFrameRequiresItsCompleteUnscheduledRecordAndTail()
+        {
+            var frame = new byte[WeaponProductionTransferNativeRuntime.ExtendedBodyBytes + 8];
+            frame[0] = 57;
+            WorkerProductionStateRuntime.WriteU32(frame, 8, 1);
+            Assert.IsTrue(WeaponProductionTransferNativeRuntime.ValidateFrame(frame, out _),
+                "The exact extended frame with a zero tail clears a stale receiver row.");
+            Assert.IsFalse(WeaponProductionTransferNativeRuntime.ValidateFrame(frame.AsSpan(0, frame.Length - 1), out _));
+            frame[1] = 1;
+            Assert.IsFalse(WeaponProductionTransferNativeRuntime.ValidateFrame(frame, out _));
+            frame[1] = 0;
+            WorkerProductionStateRuntime.WriteU32(frame, 8, 4000);
+            Assert.IsFalse(WeaponProductionTransferNativeRuntime.ValidateFrame(frame, out _));
+            WorkerProductionStateRuntime.WriteU32(frame, 8, 1);
+            frame[frame.Length - 1] = 1;
+            Assert.IsFalse(WeaponProductionTransferNativeRuntime.ValidateFrame(frame, out _),
+                "An arbitrary nonempty tail may not restore over an empty native identity.");
+        }
 
         [TestMethod]
         public void MissingWorldSafetyRejectsStateBeforeAnyHookOrArchiveRegistration()

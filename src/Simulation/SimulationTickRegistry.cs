@@ -65,7 +65,7 @@ namespace APIShared.Simulation
                 lastTick = tick;
                 hasTick = true;
                 foreach (var registration in snapshot)
-                    try { using (SimulationMutationScope.Enter()) registration.Callback(tick); }
+                    try { using (SimulationMutationScope.EnterTick()) registration.Callback(tick); }
                     catch (Exception ex)
                     {
                         Interlocked.Increment(ref failures);

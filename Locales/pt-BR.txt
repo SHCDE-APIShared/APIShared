@@ -186,3 +186,5 @@ WorkerProductionAgreement.Pending=Waiting for all players to confirm the same pr
 WorkerProductionAgreement.Roster=Waiting for the current players to be identified.
 WorkerProductionAgreement.Mismatch=Players have different production rules or support. The match cannot start.
 WorkerProductionAgreement.Protocol=Players use incompatible production support. Update APIShared on every computer.
+WeaponProduction.ShiftHint=Hold Shift to change all your workshops of this type.
+WeaponProduction.SelectionUnavailable=The production selection could not be submitted.

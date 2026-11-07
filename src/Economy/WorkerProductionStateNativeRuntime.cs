@@ -81,7 +81,10 @@ namespace APIShared.Economy
                     (a, instructions, back) => WorkerProductionStateAssembly.GenerateChecksum(a, instructions, back,
                         unchecked((ulong)WorkerProductionStateStore.RowsAddress.ToInt64()),
                         unchecked((ulong)WorkerProductionStateStore.ControlAddress.ToInt64()),
-                        unchecked((ulong)(module + WorkerProductionBonusNativeDefinition.UnitManagerRva).ToInt64())), hookSize: ChecksumEntry.Length);
+                        unchecked((ulong)(module + WorkerProductionBonusNativeDefinition.UnitManagerRva).ToInt64()),
+                        unchecked((ulong)WeaponProductionRuntime.WorkerWireAddress.ToInt64()),
+                        unchecked((ulong)WeaponProductionRuntime.TransferDemandAddress.ToInt64()),
+                        unchecked((ulong)WeaponProductionRuntime.WorkerWireKindsAddress.ToInt64())), hookSize: ChecksumEntry.Length);
                 var result = transaction.Commit();
                 if (!result.IsCompleteSuccess || !chore.Success || !checksum.Success) throw new InvalidOperationException("Production state hooks could not prepare.");
                 NativeIndirectEntry.Validate(chore.Hook, module + ChoreRva, ChoreEntry, false);
@@ -124,7 +127,10 @@ namespace APIShared.Economy
             WorkerProductionStateAssembly.GenerateChecksum(assembler, original, back,
                 unchecked((ulong)WorkerProductionStateStore.RowsAddress.ToInt64()),
                 unchecked((ulong)WorkerProductionStateStore.ControlAddress.ToInt64()),
-                unchecked((ulong)(module + WorkerProductionBonusNativeDefinition.UnitManagerRva).ToInt64()));
+                unchecked((ulong)(module + WorkerProductionBonusNativeDefinition.UnitManagerRva).ToInt64()),
+                unchecked((ulong)WeaponProductionRuntime.WorkerWireAddress.ToInt64()),
+                unchecked((ulong)WeaponProductionRuntime.TransferDemandAddress.ToInt64()),
+                unchecked((ulong)WeaponProductionRuntime.WorkerWireKindsAddress.ToInt64()));
             using (var bytes = new MemoryStream())
             {
                 assembler.Assemble(new StreamCodeWriter(bytes), unchecked((ulong)hook.StubAddress.ToInt64()));
@@ -135,29 +141,34 @@ namespace APIShared.Economy
 
         private static void OnChore()
         {
-            if (!IsAvailable || !WorkerProductionStateRuntime.IsExtended) { chore.Original(); return; }
+            bool baseExtended = WorkerProductionStateRuntime.IsExtended;
+            bool weapons = WeaponProductionRuntime.HasTransferDemand;
+            if ((!IsAvailable || !baseExtended) && !weapons) { chore.Original(); return; }
             if (WorkerProductionWorldSafety.IsFaulted) return;
             try
             {
+                if (weapons && !WeaponProductionTransferNativeRuntime.IsAvailable)
+                    throw new InvalidDataException("Weapon workshop transfer cohort is unavailable.");
+                int bodyLength = ExtendedPayloadBytes + (weapons ? WeaponProductionRuntime.WorkerWireBytes : 0);
                 IntPtr manager = module + ManagerRva;
                 int mode = Marshal.ReadInt32(module + TransferModeRva);
                 // Mode 2 is measurement only: no FieldHelper and no buffer/row mutation.
-                if (mode == 2) { chore.Original(); Marshal.WriteInt32(module + PayloadLengthRva, ExtendedPayloadBytes); return; }
+                if (mode == 2) { chore.Original(); Marshal.WriteInt32(module + PayloadLengthRva, bodyLength); return; }
                 if (mode != 0 && mode != 1) throw new InvalidDataException("Unknown unit transfer mode.");
                 if (mode == 0 && Marshal.ReadInt32(manager + SkipUnpack) != 0)
-                { chore.Original(); Marshal.WriteInt32(module + PayloadLengthRva, ExtendedPayloadBytes); return; }
+                { chore.Original(); Marshal.WriteInt32(module + PayloadLengthRva, bodyLength); return; }
                 int cursor = Marshal.ReadInt32(manager + TransferCursor);
-                if (cursor < 0 || cursor > MaximumBody - ExtendedPayloadBytes)
+                if (cursor < 0 || cursor > MaximumBody - bodyLength)
                     throw new InvalidDataException("The production unit transfer would exceed its unscheduled buffer.");
                 IntPtr payload = manager + UnscheduledBody + cursor;
                 int id = mode == 1 ? Marshal.ReadInt32(module + UnitIdRva) : Marshal.ReadInt32(payload);
                 if (id <= 0 || id >= WorkerProductionStateStore.RowCapacity)
                     throw new InvalidDataException("Invalid unit transfer slot.");
                 WorkerProductionStateRow row;
-                if (mode == 1) row = WorkerProductionStateRuntime.LiveRow(id);
+                if (mode == 1) row = baseExtended ? WorkerProductionStateRuntime.LiveRow(id) : default;
                 else
                 {
-                    if (!ValidateBody(new ReadOnlySpan<byte>((void*)payload, ExtendedPayloadBytes), out string reason))
+                    if (!ValidateUnitTransfer(new ReadOnlySpan<byte>((void*)payload, bodyLength), weapons, out string reason))
                         throw new InvalidDataException(reason);
                     row = *(WorkerProductionStateRow*)((byte*)payload + NativePayloadBytes);
                 }
@@ -167,8 +178,19 @@ namespace APIShared.Economy
                 // Commit the sidecar only after the complete validated native record/path transfer.
                 if (mode == 1) *(WorkerProductionStateRow*)((byte*)payload + NativePayloadBytes) = row;
                 else *WorkerProductionStateStore.RowPointer(id) = row;
-                Marshal.WriteInt32(manager + TransferCursor, cursor + ExtendedPayloadBytes);
-                Marshal.WriteInt32(module + PayloadLengthRva, ExtendedPayloadBytes);
+                if (weapons)
+                {
+                    var tail = new Span<byte>((byte*)payload + ExtendedPayloadBytes, WeaponProductionRuntime.WorkerWireBytes);
+                    if (mode == 1)
+                    {
+                        WeaponProductionRuntime.WriteWorkerWire(id, tail);
+                        if (!ValidateUnitTransfer(new ReadOnlySpan<byte>((void*)payload, bodyLength), true, out string reason))
+                            throw new InvalidDataException(reason);
+                    }
+                    else WeaponProductionRuntime.ReadWorkerWire(id, tail);
+                }
+                Marshal.WriteInt32(manager + TransferCursor, cursor + bodyLength);
+                Marshal.WriteInt32(module + PayloadLengthRva, bodyLength);
             }
             catch (Exception error) { WorkerProductionWorldSafety.Fault("Production unit transfer rejected: " + error.Message); }
         }
@@ -178,26 +200,51 @@ namespace APIShared.Economy
             lock (WorkerProductionWorldSafety.EngineGate)
             {
                 if (WorkerProductionWorldSafety.IsFaulted) return;
-                if (!IsAvailable || !WorkerProductionStateRuntime.IsExtended || (player == -1 && length == -1))
+                bool weapons = WeaponProductionRuntime.HasTransferDemand;
+                if (((!IsAvailable || !WorkerProductionStateRuntime.IsExtended) && !weapons) || (player == -1 && length == -1))
                 { original(player, bytes, length); return; }
-                if (!ValidateReceived(bytes, length, out string reason))
+                if (!ValidateReceived(bytes, length, weapons, out string reason))
                 { WorkerProductionWorldSafety.Fault("Production network packet rejected: " + reason); return; }
                 original(player, bytes, length);
             }
         }
         internal static bool ValidateReceived(byte[] bytes, int length, out string reason)
+            => ValidateReceived(bytes, length, WeaponProductionRuntime.HasTransferDemand, out reason);
+
+        private static bool ValidateReceived(byte[] bytes, int length, bool weapons, out string reason)
         {
             reason = "";
             if (bytes == null || length < 1 || length > bytes.Length)
             { reason = "Invalid Chore packet length."; return false; }
             // Native unit packets are never compressed by 23800. Accepting 125/56 here
             // would bypass validation after native decompression; fail closed instead.
-            if (bytes[0] == 125 && length > 1 && bytes[1] == 56)
-            { reason = "Compressed extended unit transfers are unsupported."; return false; }
+            int opcode = bytes[0] == 125 && length > 1 ? bytes[1] : bytes[0];
+            if (weapons && !WeaponProductionTransferNativeRuntime.IsAvailable && opcode >= 54 && opcode <= 57)
+            { reason = "Native repair requires the complete weapon workshop transfer cohort."; return false; }
+            if (bytes[0] == 125 && (opcode == 56 || (weapons && opcode == 57)))
+            { reason = "Compressed extended production transfers are unsupported."; return false; }
+            if (weapons && bytes[0] == 57)
+                return WeaponProductionTransferNativeRuntime.ValidateFrame(bytes.AsSpan(0, length), out reason);
             if (bytes[0] != 56) return true;
-            if (length != ExtendedPayloadBytes + 8 || bytes[1] != 0 || bytes[2] != 0 || bytes[3] != 0)
+            int bodyLength = ExtendedPayloadBytes + (weapons ? WeaponProductionRuntime.WorkerWireBytes : 0);
+            if (length != bodyLength + 8 || bytes[1] != 0 || bytes[2] != 0 || bytes[3] != 0)
             { reason = "Extended unit transfer requires its exact unscheduled frame length."; return false; }
-            return ValidateBody(bytes.AsSpan(8, ExtendedPayloadBytes), out reason);
+            return ValidateUnitTransfer(bytes.AsSpan(8, bodyLength), weapons, out reason);
+        }
+
+        private static bool ValidateUnitTransfer(ReadOnlySpan<byte> body, bool weapons, out string reason)
+        {
+            if (!ValidateBody(body.Slice(0, ExtendedPayloadBytes), out reason)) return false;
+            if (weapons && !WorkerProductionStateRuntime.IsExtended)
+            {
+                foreach (byte value in body.Slice(NativePayloadBytes, WorkerProductionStateStore.RowSize))
+                    if (value != 0)
+                    { reason = "Unexpected production amount state in a weapon-only unit transfer."; return false; }
+            }
+            if (!weapons || WeaponProductionRuntime.ValidateWorkerWire((int)Read32(body, 0),
+                Read32(body, 4 + 0x98), (eChimps)Read16(body, 4 + 0x8E), body.Slice(ExtendedPayloadBytes))) return true;
+            reason = "Invalid weapon workshop worker row in native unit transfer.";
+            return false;
         }
         internal static bool ValidateBody(ReadOnlySpan<byte> body, out string reason)
             => ValidateBody(body, WorkerProductionRuntime.CurrentCommonDenominator, out reason);
@@ -223,8 +270,8 @@ namespace APIShared.Economy
             // Delivery guards always inspect the actual signed native cargo separately.
             return true;
         }
-        private static uint Read32(ReadOnlySpan<byte> b, int p) => (uint)(b[p] | b[p + 1] << 8 | b[p + 2] << 16 | b[p + 3] << 24);
-        private static ushort Read16(ReadOnlySpan<byte> b, int p) => (ushort)(b[p] | b[p + 1] << 8);
+        internal static uint Read32(ReadOnlySpan<byte> b, int p) => (uint)(b[p] | b[p + 1] << 8 | b[p + 2] << 16 | b[p + 3] << 24);
+        internal static ushort Read16(ReadOnlySpan<byte> b, int p) => (ushort)(b[p] | b[p + 1] << 8);
 
     }
 }

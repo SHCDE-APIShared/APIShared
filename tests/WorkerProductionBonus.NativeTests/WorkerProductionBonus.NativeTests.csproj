@@ -23,6 +23,9 @@
     <Compile Include="../../src/Economy/WorkerProductionHotAssembly.cs" Link="Production/WorkerProductionHotAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Economy/WorkerProductionOutputNativeDefinition.cs" Link="Production/WorkerProductionOutputNativeDefinition.cs" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Economy/WorkerProductionOutputNativeAssembly.cs" Link="Production/WorkerProductionOutputNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WeaponProduction/WeaponProductionNativeDefinition.cs" Link="Production/WeaponProductionNativeDefinition.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WeaponProduction/WeaponProductionNativeAssembly.cs" Link="Production/WeaponProductionNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/WeaponProduction/WeaponProductionNativeDefinition.*.cs;../../src/Economy/WeaponProduction/WeaponProductionNativeAssembly.*.cs" Link="Production/%(Filename)%(Extension)" Condition="'$(MathOnly)' != 'true'" />
     <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
     <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using APIShared.Economy;
 using Iced.Intel;
 using SHCDESE.Interop;
+using static Iced.Intel.AssemblerRegisters;
 
 // The engine monitor is the only external boundary this source-linked store needs.
 // Production row validation/canonicalization/checksum generator execute unchanged.
@@ -102,5 +103,83 @@ internal static partial class Program
             if (scenario == 7) Check(effective.IsEmpty, "A profession change retires a provenance-only zero-fraction row.");
         }
         WorkerProductionStateStore.Clear();
+        TestWeaponStateChecksum();
+    }
+
+    private static unsafe void TestWeaponStateChecksum()
+    {
+        const int manager = 0x8574320, units = 0x67E8400, buildings = 0x64CCBB0;
+        const int unitHook = 0x22149, buildingHook = 0x22236;
+        const uint gid = 123;
+        const eChimps workerKind = eChimps.CHIMP_TYPE_BLACKSMITH;
+        IntPtr scratch = Marshal.AllocHGlobal(112);
+        try
+        {
+            new Span<byte>((void*)scratch, 112).Clear();
+            IntPtr weaponRows = scratch, buildingRows = scratch + 40, expectedKinds = scratch + 72, demand = scratch + 76;
+            Marshal.WriteInt16(weaponRows, 20, 1);
+            Marshal.WriteInt32(weaponRows, 22, (int)gid);
+            Marshal.WriteByte(weaponRows, 32, 5);
+            Marshal.WriteInt16(expectedKinds, 2, (short)workerKind);
+            Marshal.WriteInt16(buildingRows, 16, 1);
+            Marshal.WriteInt32(buildingRows, 18, (int)gid);
+            Marshal.WriteByte(buildingRows, 24, 5);
+            Marshal.WriteInt32(image + manager + 0x36FA50, 2);
+            Marshal.WriteInt32(image + units + UnitStride + 0x6F0, (int)gid);
+            Marshal.WriteInt16(image + units + UnitStride + 0x6E6, (short)workerKind);
+            Marshal.WriteInt32(image + buildings + 0x32C + 0x134, (int)gid);
+
+            var unitOriginal = WorkerProductionBonusNativeDefinition.Decode(Read(unitHook, 16), Address(unitHook));
+            var buildingOriginal = WorkerProductionBonusNativeDefinition.Decode(Read(buildingHook, 16), Address(buildingHook));
+            using var unit = new MachineHarness(a => {
+                a.mov(__dword_ptr[rsp + 0xA0], 100);
+                WorkerProductionStateAssembly.GenerateChecksum(a, unitOriginal, Address(unitHook + 16),
+                    (ulong)WorkerProductionStateStore.RowsAddress, (ulong)WorkerProductionStateStore.ControlAddress,
+                    Address(units), (ulong)weaponRows, (ulong)demand, (ulong)expectedKinds);
+            }, new Dictionary<int, int> { [0x22176] = 1 });
+            using var building = new MachineHarness(a =>
+                WorkerProductionStateAssembly.GenerateBuildingChecksum(a, buildingOriginal, Address(buildingHook + 16),
+                    (ulong)buildingRows, (ulong)demand, Address(buildings)), new Dictionary<int, int> { [0x2225D] = 1 });
+
+            // Native category and entity stores must consume identical folded values. A
+            // stale GID and a profession change on the same slot both leave native CRCs intact.
+            for (int scenario = 0; scenario < 5; scenario++)
+            {
+                Marshal.WriteByte(demand, (byte)(scenario == 0 ? 0 : 1));
+                Marshal.WriteInt32(weaponRows, 22, scenario == 2 ? (int)gid + 1 : (int)gid);
+                Marshal.WriteInt16(image + units + UnitStride + 0x6E6,
+                    (short)(scenario == 3 ? eChimps.CHIMP_TYPE_PEASANT : workerKind));
+                Marshal.WriteInt32(buildingRows, 18, scenario == 2 ? (int)gid + 1 : (int)gid);
+                Marshal.WriteByte(buildingRows, 24, (byte)(scenario == 4 ? 7 : 5));
+
+                unit.ResetInput(); unit.Set(12, 1); unit.Set(3, Address(manager)); unit.Set(7, 17); unit.Set(1, 5);
+                unit.Run();
+                uint unitExpected = scenario == 1 || scenario == 4 ?
+                    FoldWeaponBytes(22, new ReadOnlySpan<byte>((void*)(weaponRows + 20), 20)) : 22;
+                Check(unit.Get(7) == unitExpected && unit.Get(2) == unchecked(100U + unitExpected) &&
+                    unchecked((uint)Marshal.ReadInt32(image + manager + 0x14F0CC + (2 * 10000 + 1) * 4)) == unitExpected,
+                    "Unit weapon CRC validates demand, GID and current role: " + scenario);
+                unit.CheckPreserved(0, 1, 2, 7, 12);
+
+                building.ResetInput(); building.Set(3, Address(manager)); building.Set(5, 1);
+                building.Set(6, Address(buildings + 0x32C + 0x6C)); building.Set(0, 5);
+                building.Set(2, 17); building.Set(12, 100);
+                building.Run();
+                uint buildingExpected = scenario == 0 || scenario == 2 ? 22 :
+                    FoldWeaponBytes(22, new ReadOnlySpan<byte>((void*)(buildingRows + 16), 16));
+                Check(building.Get(2) == buildingExpected && building.Get(12) == unchecked(100U + buildingExpected) &&
+                    unchecked((uint)Marshal.ReadInt32(image + manager + 0x1A6F0C + (2 * 4000 + 1) * 4)) == buildingExpected,
+                    "Building weapon CRC folds the desired option and rejects a recycled slot: " + scenario);
+                building.CheckPreserved(0, 1, 2, 5, 6, 12);
+            }
+        }
+        finally { Marshal.FreeHGlobal(scratch); }
+    }
+
+    private static uint FoldWeaponBytes(uint native, ReadOnlySpan<byte> bytes)
+    {
+        uint mixed = native ^ 2166136261U;
+        foreach (byte value in bytes) mixed = unchecked((mixed ^ value) * 16777619U);
+        return mixed;
     }
 }

@@ -185,6 +185,12 @@ spans. Ordered optional adjusters compose before OR-combined native safety. The
 shared service has no default gameplay policy; consumers own synchronized settings.
 See [AI market sell policies](docs/AI_MARKET_SELL.md).
 
+`Economy/WeaponProduction` owns the mission recipe catalogue, workshop selection
+and batch state. It uses shared worker-production admission and world restoration
+to keep workshop choices consistent across peers and saves. Consumer mods own
+recipe definitions, localized names and AI decisions. See
+[weapon workshop recipes](docs/WEAPON_PRODUCTION.md).
+
 Customized launch owners register typed snapshot providers in `CustomizedLaunchOrigins`.
 The registry combines evidence without naming or reflecting over consumer assemblies.
 Each consumer owns its launch state and save protocol; APIShared owns validation and

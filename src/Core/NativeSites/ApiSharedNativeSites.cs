@@ -226,6 +226,7 @@ namespace APIShared
             Group(WorkerProductionBonusNativeDefinition.SiteGroup, WorkerProductionBonusNativeRuntime.Spans()),
             Group(WorkerProductionOutputNativeDefinition.SiteGroup, WorkerProductionOutputNativeRuntime.Spans()),
             Group(WorkerProductionStateNativeRuntime.SiteGroup, WorkerProductionStateNativeRuntime.Spans()),
+            Group(WeaponProductionTransferNativeRuntime.SiteGroup, WeaponProductionTransferNativeRuntime.Spans()),
             Group(WorkerProductionCriticalSaveRuntime.SiteGroup, WorkerProductionCriticalSaveRuntime.Spans()),
             Group(HealthInitialization, HealthInitializationSpans()),
             Group(PlagueHeight, PlagueHeightSpans()),

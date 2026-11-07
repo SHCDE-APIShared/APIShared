@@ -1695,3 +1695,11 @@ Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the share
 ## Fixed worker production bonus
 
 For actual-output base quantities and fixed percentages, including reductions, use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register a process-held desired profile, inspect and present its typed status, and let shared mission preparation/admission activate the exact rules. Human/AI contributions use staged factors or fixed values. The legacy absolute-percentage facade remains supported. Consumer mods retain settings and localization; APIShared owns mode-profile evaluation, exact saved credits, zero-output completion, transport and rendering.
+
+## Weapon workshop options
+
+Register additional recipes with `WeaponProduction.TryRegister` during Unity
+startup. Use `WithIngredientAmount` to set the cost per charge in the workshop's
+native ingredient. The [weapon workshop guide](WEAPON_PRODUCTION.md) covers the
+registration example, ingredient limits, Shift selection, AI, and requirements
+for multiplayer and saved games.

@@ -1,5 +1,12 @@
 {
   "capturedAt": "2026-10-22",
+  "supplements": [
+    {
+      "capturedAt": "2026-11-07",
+      "fieldIds": ["nkf-000093", "nkf-000094"],
+      "source": "sem/FBCB9319/knowledge/WEAPON_WORKSHOP_FIELDS.md"
+    }
+  ],
   "nativeHash": "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2",
   "analysis": {
     "generation": "sem/FBCB9319/analysis/g1E2FBFF53E33",
@@ -3295,6 +3302,82 @@
       "extraMeanings": [],
       "id": "nkf-000092",
       "recordId": "nkr-000004"
+    },
+    {
+      "owner": "GameBuilding",
+      "offset": 654,
+      "raw": "Int16",
+      "count": 1,
+      "stride": 2,
+      "size": 812,
+      "name": "BuildingProductionCurrentGood",
+      "confidence": "Confirmed",
+      "description": "Latched goods ID consumed by the Fletcher, Poleturner and Blacksmith production and delivery paths. The value alone does not indicate an active batch.",
+      "aliases": [
+        "GameBuilding.r_NextProducedGoodId",
+        "r_NextProducedGoodId"
+      ],
+      "evidence": [
+        {
+          "kind": "NativeAudit",
+          "source": "baseline/sem/FBCB9319/knowledge/WEAPON_WORKSHOP_FIELDS.md",
+          "sha256": "D50AAD202DFF9170251AC127957C3D77873B728EA92B54404D00AF9600A43EEE",
+          "first": 6,
+          "last": 34,
+          "summary": "Audited record origin, field width and scoped Vanilla reader/writer contract."
+        },
+        {
+          "kind": "ExtenderSource",
+          "source": "extender/src/SHCDESE.BepInEx/Interop/GameBuilding.cs",
+          "sha256": "2EADBC2EE4D8A42914B526969430FA88C4E93875B983C6188C9C1C37CF00C3D4",
+          "first": 203,
+          "last": 203,
+          "summary": "Declaration and exact-storage alias. The Extender name reverses the audited meaning."
+        }
+      ],
+      "verified": true,
+      "related": [],
+      "extraMeanings": [],
+      "id": "nkf-000093",
+      "recordId": "nkr-000001"
+    },
+    {
+      "owner": "GameBuilding",
+      "offset": 656,
+      "raw": "Int16",
+      "count": 1,
+      "stride": 2,
+      "size": 812,
+      "name": "BuildingProductionNextGood",
+      "confidence": "Confirmed",
+      "description": "Requested goods ID written by the single-building and bulk weapon-production action. The Fletcher, Poleturner and Blacksmith latch it for production at their native transition points.",
+      "aliases": [
+        "GameBuilding.r_ProducedGoodId",
+        "r_ProducedGoodId"
+      ],
+      "evidence": [
+        {
+          "kind": "NativeAudit",
+          "source": "baseline/sem/FBCB9319/knowledge/WEAPON_WORKSHOP_FIELDS.md",
+          "sha256": "D50AAD202DFF9170251AC127957C3D77873B728EA92B54404D00AF9600A43EEE",
+          "first": 6,
+          "last": 34,
+          "summary": "Audited record origin, field width and scoped Vanilla reader/writer contract."
+        },
+        {
+          "kind": "ExtenderSource",
+          "source": "extender/src/SHCDESE.BepInEx/Interop/GameBuilding.cs",
+          "sha256": "2EADBC2EE4D8A42914B526969430FA88C4E93875B983C6188C9C1C37CF00C3D4",
+          "first": 204,
+          "last": 204,
+          "summary": "Declaration and exact-storage alias. The Extender name reverses the audited meaning."
+        }
+      ],
+      "verified": true,
+      "related": [],
+      "extraMeanings": [],
+      "id": "nkf-000094",
+      "recordId": "nkr-000001"
     }
   ],
   "documents": [
@@ -3625,6 +3708,10 @@
     {
       "source": "sem/FBCB9319/knowledge/VANILLA_PEACE_TIME.md",
       "sha256": "4A17F3D4D1F638710118B4E6BD0F3ED2A17866B41E519FB7B865F81345C06473"
+    },
+    {
+      "source": "sem/FBCB9319/knowledge/WEAPON_WORKSHOP_FIELDS.md",
+      "sha256": "D50AAD202DFF9170251AC127957C3D77873B728EA92B54404D00AF9600A43EEE"
     },
     {
       "source": "sem/FBCB9319/knowledge/WORKER_PAUSES.md",

@@ -24,6 +24,9 @@ namespace APIShared.Economy
         private static WorkerProductionLaunchBundle frozenBundle;
         private static WorkerProductionLaunchBundle observedBundleReference;
         private static WorkerProductionAgreementDescriptor frozenDescriptor;
+        private static WeaponProductionCatalog frozenWeaponCatalog;
+        private static byte[] selectedWeaponSave;
+        private static string selectedWeaponDigest = "", selectedWeaponError;
         private static WorkerProductionCompiledRules activeRules;
         private static WorkerProductionStateRequirement selectedRequirement=noSavedState;
         private static ulong[] selectedDenominators=Array.Empty<ulong>();
@@ -77,6 +80,9 @@ namespace APIShared.Economy
             var status=WorkerProductionModifiers.Status;
             bool needsData=!string.IsNullOrEmpty(context.FilePath) && File.Exists(context.FilePath) &&
                 WorkerProductionStateRuntime.InspectSelectedSaveRequirement(context.FilePath).RequiresExtended;
+            if (!string.IsNullOrEmpty(context.FilePath) && File.Exists(context.FilePath))
+                try { needsData |= WeaponProductionRuntime.InspectSave(context.FilePath) != null; }
+                catch { needsData = true; }
             if(!status.HasDesiredProfiles && !needsData)return null;
             status=WorkerProductionModifiers.Prepare(context.Mode);
             if(!status.CanStart || status.HasBaseContributions || status.ResolvedFixedBonusPercent!=50 || needsData)
@@ -114,6 +120,16 @@ namespace APIShared.Economy
             // not withdraw the descriptor of the world which has just consumed it.
             if(session!=0 && frozenDescriptor!=null && string.IsNullOrEmpty(path))return;
             selectedPath=string.IsNullOrEmpty(path)?null:path;restored=false;
+            selectedWeaponSave = null;
+            selectedWeaponDigest = "";
+            selectedWeaponError = null;
+            if (selectedPath != null)
+                try
+                {
+                    selectedWeaponSave = WeaponProductionRuntime.InspectSave(selectedPath);
+                    selectedWeaponDigest = WeaponProductionRuntime.SavedDigest(selectedWeaponSave);
+                }
+                catch (Exception error) { selectedWeaponError = error.Message; }
             var requirement=selectedPath==null?noSavedState:WorkerProductionStateRuntime.InspectSelectedSaveRequirement(selectedPath);
             ulong[] denominators=Array.Empty<ulong>();
             if(requirement.IsValid && selectedPath!=null)
@@ -131,11 +147,17 @@ namespace APIShared.Economy
         }
         private static WorkerProductionAgreementDescriptor Describe(WorkerProductionLaunchBundle bundle,WorkerProductionStateRequirement saved)
         {
-            bool extended=bundle.HasBaseContributions || saved.RequiresExtended;
-            return new WorkerProductionAgreementDescriptor(ServiceKey(),bundle.Digest,extended?"extended-row32/1":"native",
+            var weapons = frozenWeaponCatalog ?? WeaponProductionRuntime.PrepareCatalog();
+            bool extended=bundle.HasBaseContributions || saved.RequiresExtended || weapons.HasOptions;
+            bool valid = saved.IsValid && selectedWeaponError == null &&
+                WeaponProductionRuntime.MatchesSavedCatalog(selectedWeaponSave, weapons);
+            string rulesDigest = weapons.HasOptions ? WeaponProductionRuntime.CombineDigest(bundle.Digest, weapons.Digest) : bundle.Digest;
+            string saveDigest = selectedWeaponSave != null ? WeaponProductionRuntime.CombineDigest(saved.Digest, selectedWeaponDigest) : saved.Digest;
+            string wire = weapons.HasOptions ? "extended-row32+weapon-workshop/1" : extended ? "extended-row32/1" : "native";
+            return new WorkerProductionAgreementDescriptor(ServiceKey(),rulesDigest,wire,
                 extended && BaseAvailable?WorkerProductionStateRuntime.CapabilityKey:"",extended?1:0,
                 extended?Math.Max(1,saved.MinimumReaderSchema):0,
-                bundle.CanStart && (extended?BaseAvailable:BonusAvailable),bundle.HasActiveContributions || extended,saved.IsValid,saved.Digest);
+                bundle.CanStart && (extended?BaseAvailable:BonusAvailable),bundle.HasActiveContributions || extended,valid,saveDigest);
         }
         private static void ObserveStatus(WorkerProductionStatus status)
         {
@@ -205,11 +227,16 @@ namespace APIShared.Economy
                 !string.Equals(selectedPath,context.FilePath,StringComparison.OrdinalIgnoreCase))SelectSave(context.FilePath);
             else if(string.IsNullOrEmpty(context.FilePath) && !context.IsSave &&
                 context.StartKind!=MissionStartKind.EditorLoaded && selectedPath!=null)SelectSave(null);
-            frozenDescriptor=null;frozenBundle=WorkerProductionModifiers.PrepareLaunchBundle();
+            frozenDescriptor=null;
+            frozenWeaponCatalog = context.Mode.Kind == GameModeKind.Unknown || context.Mode.IsMapEditor || context.Mode.AllowsCustomGameMods
+                ? WeaponProductionRuntime.PrepareCatalog()
+                : WeaponProductionCatalog.Empty;
+            WeaponProductionRuntime.BeginWorld(frozenWeaponCatalog);
+            frozenBundle=WorkerProductionModifiers.PrepareLaunchBundle();
             frozenDescriptor=CaptureDescriptor();frozenSelectionPath=selectedPath;
             if(!frozenBundle.CanStart || frozenDescriptor.LocalFailure!=null)
                 throw new InvalidOperationException("Production rules/save requirements are invalid: "+frozenDescriptor.LocalFailure);
-            bool extended=frozenBundle.HasBaseContributions || selectedRequirement.RequiresExtended;
+            bool extended=frozenBundle.HasBaseContributions || selectedRequirement.RequiresExtended || frozenWeaponCatalog.HasOptions;
             if(extended && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
             Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
             if(WorkerProductionBonusNativeRuntime.IsAvailable)WorkerProductionBonusNativeRuntime.PublishPercent(50);
@@ -237,6 +264,7 @@ namespace APIShared.Economy
                 }
             }
             if(!WorkerProductionModifiers.ActivatePrepared(candidate,out reason))return false;
+            if (!WeaponProductionRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods, out reason)) return false;
             reason=null;
             if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 ||
                 WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
@@ -251,6 +279,8 @@ namespace APIShared.Economy
             if(WorkerProductionStateRuntime.LoadedRequiresExtended && !BaseAvailable){reason=BackendDiagnostic();return false;}
             if(selectedRequirement.Digest!=WorkerProductionStateRuntime.SavedRecordDigest)
             {reason="The production save record changed after launch preparation.";return false;}
+            if (!WeaponProductionRuntime.RestoreVerified(selectedWeaponSave))
+            { reason = "The weapon-workshop save record changed or was not restored."; return false; }
             restored=true;
             // Membership includes the saved denominators; no credit is rebased or rounded.
             var mode=MissionLifecycleService.ActiveContext?.Mode ?? default;
@@ -317,14 +347,18 @@ namespace APIShared.Economy
                 bool nextPrepared=selectedPath!=null && !restored &&
                     !string.Equals(selectedPath,frozenSelectionPath,StringComparison.OrdinalIgnoreCase);
                 WorkerProductionWorldSafety.Retire();
+                WeaponProductionRuntime.EndWorld();
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.EndWorld(session);
                 else WorkerProductionStateStore.Clear();
                 session=0;restored=false;
                 Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
                 if(WorkerProductionBonusNativeRuntime.IsAvailable)WorkerProductionBonusNativeRuntime.PublishPercent(50);
-                frozenBundle=null;frozenDescriptor=null;frozenSelectionPath=null;
+                frozenBundle=null;frozenDescriptor=null;frozenSelectionPath=null;frozenWeaponCatalog=null;
                 if(!nextPrepared)
-                {selectedPath=null;selectedRequirement=noSavedState;selectedDenominators=Array.Empty<ulong>();}
+                {
+                    selectedPath=null;selectedRequirement=noSavedState;selectedDenominators=Array.Empty<ulong>();
+                    selectedWeaponSave=null;selectedWeaponDigest="";selectedWeaponError=null;
+                }
                 WorkerProductionModifiers.ClearRuntimeFault();
                 WorkerProductionModifiers.Prepare(default);
                 if(!nextPrepared)WorkerProductionAgreement.RequestRefresh();
