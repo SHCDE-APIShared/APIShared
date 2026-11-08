@@ -5,17 +5,12 @@ using BepInEx.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Reflection;
-using System.Security.Cryptography;
 
 namespace APIShared.Internal
 {
     internal static class DebugLogHelper
     {
-        public const string CurrentNativeSha256 =
-            "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2";
-
         private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(1);
         private static DateTime debugEnabledCacheExpiresAtUtc;
         private static bool debugEnabledCache;
@@ -100,27 +95,6 @@ namespace APIShared.Internal
             return debugEnabledCache;
         }
 
-        public static bool IsDiskDebugEnabled()
-        {
-            if (!DiagnosticsEnabled) return false;
-            try
-            {
-                foreach (ILogListener listener in Logger.Listeners)
-                {
-                    if (listener is DiskLogListener diskLogListener &&
-                        HasDebugFlag(diskLogListener.DisplayedLogLevel))
-                    {
-                        return true;
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            return false;
-        }
-
         public static void LogDebug(ManualLogSource log, params object[] parts)
         {
             if (log == null || !IsDebugEnabled())
@@ -152,115 +126,6 @@ namespace APIShared.Internal
         public static void LogError(ManualLogSource log, string message)
         {
             RuntimeHealth.Failure(log, RuntimeHealth.CallerFeature(), true, message);
-        }
-
-        public static bool ReportNativeLibraryVersion(
-            ManualLogSource log,
-            string componentName,
-            bool requireCurrentVersion = false,
-            bool logSuccess = true)
-        {
-            string label = string.IsNullOrWhiteSpace(componentName)
-                ? "Mod"
-                : componentName;
-
-            try
-            {
-                string path = Path.Combine(
-                    BepInEx.Paths.GameRootPath,
-                    "Stronghold Crusader Definitive Edition_Data",
-                    "Plugins",
-                    "x86_64",
-                    "CrusaderDE.dll");
-                if (!File.Exists(path))
-                {
-                    LogError(log, $"{label} cannot verify CrusaderDE.dll because the installed file was not found: path={path}.");
-                    return false;
-                }
-
-                string actualHash;
-                using (FileStream stream = File.OpenRead(path))
-                using (SHA256 sha256 = SHA256.Create())
-                {
-                    actualHash = BitConverter.ToString(sha256.ComputeHash(stream))
-                        .Replace("-", string.Empty);
-                }
-
-                long fileSize = new FileInfo(path).Length;
-                if (string.Equals(actualHash, CurrentNativeSha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (logSuccess)
-                    {
-                        LogDebug(
-                            log,
-                            $"{label} verified the installed CrusaderDE.dll: sha256={actualHash}, size={fileSize}, path={path}.");
-                    }
-                    return true;
-                }
-
-                string message =
-                    $"{label} detected a changed CrusaderDE.dll: expectedSha256={CurrentNativeSha256}, " +
-                    $"actualSha256={actualHash}, size={fileSize}, path={path}.";
-                if (requireCurrentVersion)
-                {
-                    LogError(log, message + " Version-sensitive native code remains inactive.");
-                }
-                else
-                {
-                    LogWarning(
-                        log,
-                        message +
-                        " Signature-validated code may continue; any failed validation is logged and the affected feature remains inactive.");
-                }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                if (requireCurrentVersion)
-                {
-                    LogError(log, $"{label} could not verify the installed CrusaderDE.dll; version-sensitive native code must remain inactive: {ex}");
-                }
-                else
-                {
-                    LogWarning(
-                        log,
-                        $"{label} could not verify the installed CrusaderDE.dll hash. " +
-                        $"Signature-validated code may continue; any failed validation is logged and the affected feature remains inactive. Reason: {ex}");
-                }
-                return false;
-            }
-        }
-
-        public static bool IsCurrentNativeLibraryVersion()
-        {
-            try
-            {
-                string path = Path.Combine(
-                    BepInEx.Paths.GameRootPath,
-                    "Stronghold Crusader Definitive Edition_Data",
-                    "Plugins",
-                    "x86_64",
-                    "CrusaderDE.dll");
-                if (!File.Exists(path))
-                    return false;
-
-                using (FileStream stream = File.OpenRead(path))
-                using (SHA256 sha256 = SHA256.Create())
-                {
-                    string actualHash = BitConverter.ToString(sha256.ComputeHash(stream))
-                        .Replace("-", string.Empty);
-                    return string.Equals(
-                        actualHash,
-                        CurrentNativeSha256,
-                        StringComparison.OrdinalIgnoreCase);
-                }
-            }
-            catch
-            {
-                // Callers use false to keep only fixed-layout native code inactive.
-                return false;
-            }
         }
 
         private static string WithTimestamp(string message)

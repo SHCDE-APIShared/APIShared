@@ -129,11 +129,6 @@ namespace APIShared
             .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "set_SkipOriginalFunction", typeof(void), typeof(bool))
             .Method(typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs>), "get_Observable", typeof(global::R3.Observable<global::SHCDESE.EventAPI.Buildings.BuildingRepairEventArgs>));
 
-        internal static bool TryCreate(string hash, long moduleBase, ManualLogSource log,
-            RepairTooltipViewModel tooltipViewModel,
-            out BuildingRepairService service, out NativeCapabilityDiagnostic diagnostic) =>
-            TryCreate(hash, moduleBase, log, tooltipViewModel, null, out service, out diagnostic);
-
         // ownership receives the validated, called entry (null: not registered).
         internal static bool TryCreate(string hash, long moduleBase, ManualLogSource log,
             RepairTooltipViewModel tooltipViewModel, NativeOwnershipRegistry ownership,

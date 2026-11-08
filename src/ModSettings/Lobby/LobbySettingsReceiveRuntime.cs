@@ -54,7 +54,6 @@ namespace APIShared.ModSettings
                     throw new InvalidOperationException(diagnostic?.Reason ?? "Lobby-state receiver observation unavailable.");
                 // Record a mission end when it happens, so the first lobby packet afterwards is not
                 // mistaken for stale work of the ended mission. Process-lifetime subscription.
-                MissionEvents.SetOwner(APISharedPlugin.PluginGuid);
                 if (missionEnded == null) missionEnded = MissionEvents.Ended.Subscribe(_ => RefreshContext());
                 candidate = new Hook(target, (Receive)OnReceive,
                     new HookConfig { ManualApply = true, ID = "APIShared.ModSettings.Receive" });

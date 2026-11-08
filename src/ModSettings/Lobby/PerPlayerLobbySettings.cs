@@ -623,7 +623,6 @@ namespace APIShared.ModSettings
                 return;
 
             if (!PlayerIdentityHelper.TryCaptureHumanRoster(
-                preferInGameRoster: true,
                 out Dictionary<int, ulong> finalPlayers,
                 out string rosterError))
             {
@@ -635,9 +634,7 @@ namespace APIShared.ModSettings
             }
 
             PlayerIdentityResolution localIdentity =
-                PlayerIdentityHelper.CaptureLocalPlayerId(
-                    realMultiplayer: true,
-                    preferInGameRoster: true);
+                PlayerIdentityHelper.CaptureLocalPlayerId(realMultiplayer: true);
             ReportIdentityDiagnostic(localIdentity);
             if (!localIdentity.IsResolved)
             {

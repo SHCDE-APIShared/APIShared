@@ -64,7 +64,6 @@ namespace APIShared.Presentation
             if (buttonInput == null) buttonInput = InputR3EventHooks.OnKeyDown.Observable.Subscribe(OnButtonInput);
             if (buttonMissionEnd == null)
             {
-                Internal.MissionEvents.SetOwner(APISharedPlugin.PluginGuid);
                 buttonMissionEnd = Internal.MissionEvents.Ended.Subscribe(_ =>
                     Internal.UnityMainThreadDispatch.TryRunInlineOrEnqueue(ResetButtons));
             }

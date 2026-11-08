@@ -145,7 +145,6 @@ namespace APIShared
             leaveLobbyOriginal = leaveLobbyHook.GenerateTrampoline<LeaveLobbyDelegate>();
             leaveLobbyHook.Apply();
 
-            APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
             mapStartSubscription = APIShared.Internal.MissionEvents.Initialization
                 .Where(args => args.Phase == MissionInitializationPhase.BeforeLoad)
                 .Subscribe(_ => OnMapStarting());

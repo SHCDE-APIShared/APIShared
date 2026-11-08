@@ -191,16 +191,12 @@ namespace APIShared.ModSettings
     {
         private static readonly HashSet<object> AttachedViews = new HashSet<object>();
 
-        internal static int AttachedViewCount => AttachedViews.Count;
-
         public static bool Attach(
             object view,
             ManualLogSource log,
             string modName,
             bool enableDiagnostics = false) =>
             view != null && AttachedViews.Add(view);
-
-        internal static void ResetForTests() => AttachedViews.Clear();
     }
 #endif
 

@@ -125,7 +125,6 @@ namespace APIShared
             createTroopHook = PrepareHook(RequireMethod(typeof(MainViewModel), "ButtonCreateTroop", new[] { typeof(object) }), (CreateTroopDelegate)CreateTroopHook, "APIShared.UnitHud.ButtonCreateTroop", installed);
             createTroopOriginal = createTroopHook.GenerateTrampoline<CreateTroopDelegate>();
             createTroopHook.Apply();
-            APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
             mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => {
                 ResetRecruitment();
                 ResetActionButtonPresentation();

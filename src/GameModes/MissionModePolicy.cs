@@ -98,8 +98,6 @@ namespace APIShared.GameModes
         internal static Func<SavedModeEvidence> ReadSavedModeEvidence;
         private const int NoGameValue = -1;
         private const int NoCoopTrail = 0;
-        private const uint NonCampaignMapId = uint.MaxValue;
-
         /// <summary>Reads the central current/pending mission snapshot. The legacy save argument does not override authoritative evidence.</summary>
         public static GameModeSnapshot Capture(bool multiplayerSave = false) =>
             APIShared.MissionLifecycleService.Snapshot;
@@ -665,44 +663,6 @@ namespace APIShared.GameModes
                 kind == source.Kind ? source.CustomizedMissionId : CustomizedMissionId,
                 kind == source.Kind ? source.CustomizedOriginKind : CustomizedOriginKind, conflict);
         }
-
-
-#if API_SHARED_PRESET_TESTS
-        internal GameModeSnapshot WithModeEvidenceForTests(
-            GameModeKind kind,
-            GameModeLaunchVariant launchVariant,
-            int eventTrailType,
-            bool hasConflictingCustomizedOrigin = false) =>
-            new GameModeSnapshot(
-                IsRealMultiplayer,
-                IsSingleplayerSkirmishMode,
-                IsSingleplayerSkirmish,
-                IsSingleplayerTrail,
-                IsMapEditor,
-                MultiplayerSave,
-                DirectorAvailable,
-                DirectorMultiplayer,
-                DirectorSkirmish,
-                LowLevelNetworked,
-                PlatformMultiplayer,
-                LobbyMembers,
-                RealLobbyMembers,
-                SkirmishLobbyMembers,
-                GameMembers,
-                RealNetworkGameMembers,
-                GameType,
-                SkirmishGameType,
-                SkirmishTrailType,
-                CoopTrailId,
-                kind,
-                launchVariant,
-                CampaignMapId,
-                eventTrailType,
-                CustomizedTrailId,
-                CustomizedMissionId,
-                CustomizedOriginKind,
-                hasConflictingCustomizedOrigin);
-#endif
 
         /// <summary>Formats captured evidence for diagnostics without recapturing live state.</summary>
         public string ToDiagnosticString()

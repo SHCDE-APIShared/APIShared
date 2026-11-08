@@ -58,7 +58,6 @@ namespace APIShared
             lock (Sync)
             {
                 if (initialized) return;
-                APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
                 missionEndSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(OnMissionEnded);
                 try
                 {

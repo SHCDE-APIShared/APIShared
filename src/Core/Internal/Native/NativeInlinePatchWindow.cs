@@ -30,7 +30,6 @@ namespace APIShared
             if (subscription != null || !IsOpen) return;
             try
             {
-                Internal.MissionEvents.SetOwner(APISharedPlugin.PluginGuid);
                 subscription = Internal.MissionEvents.Initialization.Subscribe(_ => Close());
                 NativeApiLog.Info(log, "Native inline patch window open until the first mission initialization.");
             }

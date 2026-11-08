@@ -92,61 +92,9 @@ namespace APIShared.Internal
             return Failure("No valid local player ID is available.");
         }
 
-        internal static PlayerIdentityResolution ResolvePlayerIdForSteamId(
-            ulong steamId,
-            IReadOnlyDictionary<int, ulong> playersById)
-        {
-            if (steamId == 0)
-                return Failure("The requested Steam identity is invalid.");
-
-            var normalized = new Dictionary<int, ulong>();
-            foreach (KeyValuePair<int, ulong> player in
-                playersById ?? new Dictionary<int, ulong>())
-            {
-                if (!TryAddPlayer(normalized, player.Key, player.Value, out string error))
-                    return Failure(error);
-            }
-
-            int[] matches = normalized
-                .Where(player => player.Value == steamId)
-                .Select(player => player.Key)
-                .ToArray();
-            if (matches.Length != 1)
-            {
-                return Failure(
-                    matches.Length == 0
-                        ? $"Steam identity {steamId} is not part of the resolved human roster."
-                        : $"Steam identity {steamId} is assigned to multiple player slots.");
-            }
-            return Success(matches[0], string.Empty);
-        }
-
-        internal static PlayerIdentityResolution ResolveAuthenticatedPerPlayerTarget(
-            ulong senderSteamId,
-            int payloadPlayerId,
-            IReadOnlyDictionary<int, ulong> playersById)
-        {
-            PlayerIdentityResolution resolution = ResolvePlayerIdForSteamId(
-                senderSteamId,
-                playersById);
-            if (!resolution.IsResolved || resolution.PlayerId == payloadPlayerId)
-                return resolution;
-            return Success(
-                resolution.PlayerId,
-                $"The per-player payload claimed slot {payloadPlayerId}, but authenticated " +
-                $"Steam identity {senderSteamId} belongs to final slot {resolution.PlayerId}.");
-        }
-
 #if !API_SHARED_PRESET_TESTS
-        internal static PlayerIdentityResolution CaptureLocalPlayerId(
-            bool preferInGameRoster) =>
-            CaptureLocalPlayerId(
-                GameModeHelper.IsRealMultiplayer(),
-                preferInGameRoster);
-
-        internal static PlayerIdentityResolution CaptureLocalPlayerId(
-            bool realMultiplayer,
-            bool preferInGameRoster)
+        // The in-game human roster is preferred whenever it exists; the lobby is only a fallback.
+        internal static PlayerIdentityResolution CaptureLocalPlayerId(bool realMultiplayer)
         {
             Platform_Multiplayer platform = Platform_Multiplayer.Instance;
             ulong localSteamId = 0;
@@ -190,205 +138,31 @@ namespace APIShared.Internal
 
             return ResolveLocalPlayerId(
                 realMultiplayer,
-                preferInGameRoster && humanGameMembers.Length > 0,
+                humanGameMembers.Length > 0,
                 nativePlayerId,
                 gameMemberPlayerId,
                 lobbyPlayerId);
         }
 
-        internal static PlayerIdentityResolution CapturePlayerIdForSteamId(
-            ulong steamId,
-            bool preferInGameRoster)
-        {
-            if (!TryCaptureHumanRoster(
-                    preferInGameRoster,
-                    out Dictionary<int, ulong> playersById,
-                    out string error,
-                    out string diagnostic))
-                return Failure(error);
-
-            PlayerIdentityResolution resolution = ResolvePlayerIdForSteamId(
-                steamId,
-                playersById);
-            if (!resolution.IsResolved)
-                return resolution;
-
-            if (preferInGameRoster)
-            {
-                Platform_Multiplayer.MPLobby lobby = Platform_Multiplayer.Instance?.activeLobby;
-                int vanillaPlayerId = 0;
-                int networkLobbyPlayerId = 0;
-                try
-                {
-                    if (lobby != null)
-                        vanillaPlayerId = lobby.getThisPlayerFromSteamID(steamId);
-                }
-                catch
-                {
-                    // The lobby can disappear while the in-game roster remains authoritative.
-                }
-                try
-                {
-                    networkLobbyPlayerId = GameNetworkAPI.GetPlayerIdForSteamId(
-                        new CSteamID(steamId));
-                }
-                catch
-                {
-                    // Lobby order is diagnostic-only after the game roster exists.
-                }
-
-                if (IsValidPlayerId(vanillaPlayerId) &&
-                    vanillaPlayerId != resolution.PlayerId)
-                {
-                    return Failure(
-                        $"Final lobby mapping disagrees with the authoritative in-game player slot for " +
-                        $"Steam identity {steamId}: gameMember={resolution.PlayerId}, lobby={vanillaPlayerId}, " +
-                        $"networkLobby={networkLobbyPlayerId}.");
-                }
-                if (IsValidPlayerId(networkLobbyPlayerId) &&
-                    networkLobbyPlayerId != resolution.PlayerId)
-                {
-                    diagnostic =
-                        $"Lobby-order player ID differs from the final in-game slot for Steam identity " +
-                        $"{steamId}: networkLobby={networkLobbyPlayerId}, final={resolution.PlayerId}.";
-                }
-            }
-            return Success(resolution.PlayerId, diagnostic);
-        }
-
-        internal static string CaptureProvisionalPlayerIdDiagnostic(
-            ulong steamId,
-            int finalPlayerId,
-            bool inGame)
-        {
-            if (steamId == 0 || !IsValidPlayerId(finalPlayerId))
-                return string.Empty;
-
-            try
-            {
-                int provisionalPlayerId = GameNetworkAPI.GetPlayerIdForSteamId(
-                    new CSteamID(steamId));
-                if (!IsValidPlayerId(provisionalPlayerId) ||
-                    provisionalPlayerId == finalPlayerId)
-                {
-                    return string.Empty;
-                }
-
-                return inGame
-                    ? $"Lobby-order player ID differs from the final in-game slot for Steam identity " +
-                      $"{steamId}: networkLobby={provisionalPlayerId}, final={finalPlayerId}."
-                    : $"Script Extender lobby-order player ID differs from Vanilla's final lobby mapping " +
-                      $"for Steam identity {steamId}: networkLobby={provisionalPlayerId}, " +
-                      $"finalLobby={finalPlayerId}.";
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
+        // Captures the authoritative in-game human roster (kicked members and skirmish AI excluded).
         internal static bool TryCaptureHumanRoster(
-            bool preferInGameRoster,
             out Dictionary<int, ulong> playersById,
-            out string error) =>
-            TryCaptureHumanRoster(
-                preferInGameRoster,
-                requireAuthoritativeLobbyRoster: false,
-                out playersById,
-                out error,
-                out _);
-
-        internal static bool TryCaptureHumanRoster(
-            bool preferInGameRoster,
-            out Dictionary<int, ulong> playersById,
-            out string error,
-            out string diagnostic) =>
-            TryCaptureHumanRoster(
-                preferInGameRoster,
-                requireAuthoritativeLobbyRoster: false,
-                out playersById,
-                out error,
-                out diagnostic);
-
-        internal static bool TryCaptureHumanRoster(
-            bool preferInGameRoster,
-            bool requireAuthoritativeLobbyRoster,
-            out Dictionary<int, ulong> playersById,
-            out string error,
-            out string diagnostic)
+            out string error)
         {
             playersById = new Dictionary<int, ulong>();
-            diagnostic = string.Empty;
-            Platform_Multiplayer platform = Platform_Multiplayer.Instance;
-            Platform_Multiplayer.MPGameMember[] humanGameMembers = platform?.gameMembers?
+            Platform_Multiplayer.MPGameMember[] humanGameMembers = Platform_Multiplayer.Instance?.gameMembers?
                 .Where(member => member != null && !member.kicked && !member.skirmishAI)
                 .ToArray() ?? Array.Empty<Platform_Multiplayer.MPGameMember>();
-            if (preferInGameRoster)
+            if (humanGameMembers.Length == 0)
             {
-                if (humanGameMembers.Length == 0)
-                {
-                    error = "The active in-game human roster is unavailable.";
-                    return false;
-                }
-                foreach (Platform_Multiplayer.MPGameMember member in humanGameMembers)
-                {
-                    if (!TryAddPlayer(playersById, member.playerID, member.steamID, out error))
-                        return false;
-                }
-                error = string.Empty;
-                return true;
-            }
-
-            Platform_Multiplayer.MPLobby lobby = platform?.activeLobby;
-            if (lobby?.members == null)
-            {
-                error = "The active human lobby roster is unavailable.";
+                error = "The active in-game human roster is unavailable.";
                 return false;
             }
-
-            var diagnostics = new List<string>();
-            foreach (Platform_Multiplayer.MPLobbyMember member in lobby.members)
+            foreach (Platform_Multiplayer.MPGameMember member in humanGameMembers)
             {
-                if (member == null || member.dummyToBeKicked ||
-                    (member.SkirmishMember && !member.SkirmishHumanMember))
-                    continue;
-                ulong steamId = member.id.m_SteamID;
-                int vanillaPlayerId = lobby.getThisPlayerFromSteamID(steamId);
-                int networkLobbyPlayerId = GameNetworkAPI.GetPlayerIdForSteamId(member.id);
-                if (requireAuthoritativeLobbyRoster && !IsValidPlayerId(vanillaPlayerId))
-                {
-                    error =
-                        $"Vanilla has not assigned a final player slot to lobby member {steamId} yet.";
-                    return false;
-                }
-                int playerId = IsValidPlayerId(vanillaPlayerId)
-                    ? vanillaPlayerId
-                    : networkLobbyPlayerId;
-                if (IsValidPlayerId(vanillaPlayerId) &&
-                    IsValidPlayerId(networkLobbyPlayerId) &&
-                    vanillaPlayerId != networkLobbyPlayerId)
-                {
-                    diagnostics.Add(
-                        $"steamId={steamId}: networkLobby={networkLobbyPlayerId}, finalLobby={vanillaPlayerId}");
-                }
-                else if (!IsValidPlayerId(vanillaPlayerId) &&
-                         IsValidPlayerId(networkLobbyPlayerId))
-                {
-                    diagnostics.Add(
-                        $"steamId={steamId}: only provisional networkLobby={networkLobbyPlayerId} is available");
-                }
-                if (!TryAddPlayer(playersById, playerId, steamId, out error))
+                if (!TryAddPlayer(playersById, member.playerID, member.steamID, out error))
                     return false;
             }
-
-            if (playersById.Count == 0)
-            {
-                error = "The active lobby contains no resolved human players.";
-                return false;
-            }
-            diagnostic = diagnostics.Count == 0
-                ? string.Empty
-                : "Lobby player-ID source differences: " + string.Join("; ", diagnostics) + ".";
             error = string.Empty;
             return true;
         }

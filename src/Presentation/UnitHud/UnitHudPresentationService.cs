@@ -136,7 +136,6 @@ namespace APIShared
         private TextBlock unitDetailDescription;
         [ThreadStatic]
         private static bool updateSpritesActive;
-        [ThreadStatic]
         private bool sharedEventsPublished;
         private static int createTroopContextType;
 

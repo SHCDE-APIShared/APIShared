@@ -78,16 +78,6 @@ namespace APIShared.Internal
             return new NativeResolution(rva, method);
         }
 
-        public static int FindUniquePattern(
-            ReadOnlySpan<byte> memory,
-            string pattern,
-            string name,
-            NativePatternSearchScope searchScope = NativePatternSearchScope.ExecutableSections) =>
-            FindUniquePattern(memory, ParsePattern(pattern), name, searchScope);
-
-        public static bool MatchesPatternAt(ReadOnlySpan<byte> memory, int offset, string pattern) =>
-            MatchesPatternAt(memory, offset, ParsePattern(pattern));
-
         public static NativeCodeRange[] GetExecutableCodeRanges(ReadOnlySpan<byte> memory)
         {
             if (memory.Length < 0x40 || memory[0] != 0x4D || memory[1] != 0x5A)
