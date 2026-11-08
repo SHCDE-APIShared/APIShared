@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
-using System.Security.Cryptography;
 using APIShared.GameModes;
 using APIShared.Modifiers;
 using SHCDESE.Interop;
@@ -49,7 +48,7 @@ namespace APIShared.Economy
                 writer.Write(HasBaseContributions); writer.Write(CommonDenominator);
                 foreach(var type in WorkerTypes) writer.Write((int)type);
                 foreach(var entry in entries) { writer.Write(entry.Whole); writer.Write(entry.Numerator); writer.Write(entry.Denominator); }
-                writer.Flush(); using(var sha=SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(data.ToArray())).Replace("-",string.Empty);
+                writer.Flush(); return Sha256Hex.Of(data.ToArray());
             }
         }
     }

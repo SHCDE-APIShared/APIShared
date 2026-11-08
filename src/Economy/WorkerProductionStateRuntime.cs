@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Collections.Generic;
 using BepInEx.Logging;
 using APIShared.Savegames;
@@ -316,9 +315,8 @@ namespace APIShared.Economy
                     return new WorkerProductionStateRequirement(false, true, WireSchema, "", "Invalid production row " + id + ".");
                 hasData |= !row.IsEmpty;
             }
-            using (var hash = SHA256.Create())
-                return new WorkerProductionStateRequirement(true, hasData, WireSchema,
-                    BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", ""), "");
+            return new WorkerProductionStateRequirement(true, hasData, WireSchema,
+                Sha256Hex.Of(bytes), "");
         }
         internal static WorkerProductionStateRow ReadRow(byte[] bytes, int offset)
         { fixed (byte* pointer = &bytes[offset]) return *(WorkerProductionStateRow*)pointer; }

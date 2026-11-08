@@ -151,8 +151,8 @@ namespace APIShared
             string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
         private static string Hash(string path)
         {
-            using (var input = File.OpenRead(path)) using (var sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "");
+            using (var input = File.OpenRead(path))
+                return Sha256Hex.Of(input);
         }
         private static IReadOnlyList<SavegameRecordDigest> Capture(string path, out string hash)
         {
@@ -265,7 +265,7 @@ namespace APIShared
             internal static string Digest(byte[] bytes)
             {
                 if (bytes == null) return "missing";
-                using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "");
+                return Sha256Hex.Of(bytes);
             }
         }
 

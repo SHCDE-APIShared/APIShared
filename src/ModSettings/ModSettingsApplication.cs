@@ -410,8 +410,7 @@ namespace APIShared.ModSettings
 
         private static string Digest(string text)
         {
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "");
+            return Sha256Hex.Of(Encoding.UTF8.GetBytes(text));
         }
 
         private static void PublishJournal(byte[] bytes)

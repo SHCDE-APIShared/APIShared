@@ -530,8 +530,7 @@ namespace APIShared.ModSettings
                     writer.Write(bytes.Length); writer.Write(bytes);
                 }
                 writer.Flush();
-                using (var sha = System.Security.Cryptography.SHA256.Create())
-                    return BitConverter.ToString(sha.ComputeHash(buffer.ToArray())).Replace("-", "");
+                return Sha256Hex.Of(buffer.ToArray());
             }
         }
         /// <summary>Copies backend personal values into desired working values without applying them live.</summary>

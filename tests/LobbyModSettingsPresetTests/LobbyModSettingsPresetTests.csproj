@@ -64,6 +64,7 @@
     <Compile Include="..\..\src\ModSettings\Internal\AtomicFileReplacement.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\PersonalDataFile.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\PersonalDataIO.cs" />
+    <Compile Include="..\..\src\Core\Internal\Sha256Hex.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\LobbySettingsRestoreScope.cs" />
     <Compile Include="..\..\src\ModSettings\UI\ModSettingsSearch.cs" />
     <Compile Include="..\..\src\Core\Internal\Logging\DebugLogHelper.cs" />

@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Threading;
 using APIShared.NativeSites;
 using BepInEx.Logging;
@@ -226,12 +225,8 @@ namespace APIShared.Economy
             {
                 ulong image = Address(module);
                 var worker = WorkerProductionBonusNativeDefinition.Functions.Single(item => item.Rva == role.WorkerRva);
-                using (var sha = SHA256.Create())
-                {
-                    byte[] bytes = context.Memory.Slice(worker.Rva, worker.Length).ToArray();
-                    if (BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", string.Empty) != worker.Sha256)
-                        throw new InvalidOperationException("The audited worker control flow differs.");
-                }
+                if (Sha256Hex.Of(context.Memory.Slice(worker.Rva, worker.Length).ToArray()) != worker.Sha256)
+                    throw new InvalidOperationException("The audited worker control flow differs.");
 
                 var spans = new NativeSiteSpan[handles.Length];
                 for (int i = 0; i < handles.Length; i++)

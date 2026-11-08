@@ -4,7 +4,6 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace APIShared.Internal
@@ -173,8 +172,7 @@ namespace APIShared.Internal
                 using (FileStream stream = Open(path, false, false, true))
                 {
                     if (stream.Length > maximumBytes) return false;
-                    string hash;
-                    using (SHA256 sha = SHA256.Create()) hash = Hex(sha.ComputeHash(stream));
+                    string hash = Sha256Hex.Of(stream);
                     if (!string.Equals(hash, expectedHash, StringComparison.Ordinal)) return false;
                     if (IsWindows)
                     {
@@ -196,7 +194,7 @@ namespace APIShared.Internal
             catch (DirectoryNotFoundException) { return null; }
         }
 
-        internal static string Hash(byte[] bytes) { using (SHA256 sha = SHA256.Create()) return Hex(sha.ComputeHash(bytes)); }
+        internal static string Hash(byte[] bytes) => Sha256Hex.Of(bytes);
         private static string Parent(string path)
         {
             int separator = path.LastIndexOf(IsWindows ? '\\' : '/');
@@ -204,7 +202,6 @@ namespace APIShared.Internal
             if (IsWindows && separator == 2 && path[1] == ':') return path.Substring(0, 3);
             return separator == 0 ? path.Substring(0, 1) : path.Substring(0, separator);
         }
-        internal static string Hex(byte[] bytes) => BitConverter.ToString(bytes).Replace("-", string.Empty);
         internal static bool Equal(byte[] left, byte[] right)
         {
             if (left == null || right == null || left.Length != right.Length) return left == right;

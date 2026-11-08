@@ -227,8 +227,7 @@ namespace APIShared
             string path = Normalize(savePath);
             string fingerprint;
             using (var file = File.OpenRead(path))
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                fingerprint = BitConverter.ToString(sha.ComputeHash(file)).Replace("-", "");
+                fingerprint = Sha256Hex.Of(file);
             ModSettingsApplication.EnterContext("save:" + path + "|" + fingerprint);
             preparedApplicationContext = ModSettingsApplication.ContextId;
             var record = ReadRecordForLoad(path, out _);

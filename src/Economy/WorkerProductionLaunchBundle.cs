@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using APIShared.GameModes;
 using APIShared.Modifiers;
@@ -45,7 +44,7 @@ namespace APIShared.Economy
             {
                 writer.Write("APIShared.WorkerProduction.LaunchBundle/1"); writer.Write(Members.Count);
                 foreach(var member in Members) { writer.Write(member.Key); writer.Write(member.Value.Digest); }
-                writer.Flush(); using(var sha=SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(data.ToArray())).Replace("-",string.Empty);
+                writer.Flush(); return Sha256Hex.Of(data.ToArray());
             }
         }
     }

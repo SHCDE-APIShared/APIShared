@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using Iced.Intel;
 using RedBird.Core.Memory;
 using SHCDESE.Interop;
@@ -48,9 +47,8 @@ namespace APIShared.Buildings
 
         internal static void Validate(byte[] body)
         {
-            using (var hash = SHA256.Create())
-                if (body.Length != Length || BitConverter.ToString(hash.ComputeHash(body)).Replace("-", "") != BodyHash)
-                    throw new InvalidOperationException("The complete Vanilla enemy proximity predicate differs.");
+            if (body.Length != Length || Sha256Hex.Of(body) != BodyHash)
+                throw new InvalidOperationException("The complete Vanilla enemy proximity predicate differs.");
         }
 
         internal static byte[] Categories()

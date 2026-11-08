@@ -129,8 +129,7 @@ namespace APIShared.Workshop
                     try {
                         if (Stable(item) && manifest != null && File.Exists(manifest)) {
                             byte[] bytes = File.ReadAllBytes(manifest);
-                            using (var sha = System.Security.Cryptography.SHA256.Create())
-                                entry.ManifestHash = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+                            entry.ManifestHash = Sha256Hex.Of(bytes).ToLowerInvariant();
                             using (var reader = new StreamReader(new MemoryStream(bytes))) entry.Package = WorkshopPackageCodec.Read(reader.ReadToEnd());
                             entry.Title = entry.Package.PackageId;
                             entry.CanInstall = !IsExternallyManaged;

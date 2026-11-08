@@ -61,7 +61,7 @@ namespace APIShared.Economy
             using(var sha=SHA256.Create()) foreach(var function in WorkerProductionOutputNativeDefinition.Functions)
             {
                 byte[] digest=sha.ComputeHash(context.Memory.Slice(function.Rva,function.Length).ToArray());
-                if(BitConverter.ToString(digest).Replace("-","")!=function.Sha256)
+                if(Sha256Hex.Format(digest)!=function.Sha256)
                     throw new InvalidOperationException("Actual-output full-function audit differs at "+function.Rva.ToString("X"));
             }
             foreach(var definition in WorkerProductionOutputNativeDefinition.Sites)

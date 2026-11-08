@@ -2,7 +2,6 @@ using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using APIShared.Savegames;
 using SHCDESE.API.Components.Archive;
@@ -42,8 +41,7 @@ namespace APIShared.Economy
         internal static string SavedDigest(byte[] payload)
         {
             if (payload == null) return "";
-            using (var sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(payload)).Replace("-", "");
+            return Sha256Hex.Of(payload);
         }
 
         internal static string CombineDigest(string first, string second) =>

@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Reflection;
-using System.Security.Cryptography;
 using Mono.Cecil;
 
 namespace APIShared.Internal
@@ -42,9 +41,7 @@ namespace APIShared.Internal
             {
                 if (expectedHashes != null)
                 {
-                    string hash;
-                    using (var sha = SHA256.Create())
-                        hash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
+                    string hash = Sha256Hex.Of(stream);
                     if (!Array.Exists(expectedHashes,
                         expected => string.Equals(hash, expected, StringComparison.OrdinalIgnoreCase)))
                         throw new InvalidOperationException("Unsupported binary: " + Path.GetFileName(path));

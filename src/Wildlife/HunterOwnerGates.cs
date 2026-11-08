@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using BepInEx.Logging;
 using Iced.Intel;
 using RedBird.Abstractions.Hooks;
@@ -67,9 +66,8 @@ namespace APIShared.Wildlife
                         throw new InvalidOperationException("The Hunter native sites are unavailable: " + HunterNativeSites.Diagnostic);
                     ulong image = HunterNativeSites.Image;
                     new Span<byte>((void*)ownTypes, HunterNativeAssembly.TypeCount).Clear();
-                    using (var sha = SHA256.Create())
-                        if (BitConverter.ToString(sha.ComputeHash(context.Memory.Slice(ArrowGateRva, ArrowGateLength).ToArray())).Replace("-", "") != ArrowGateSha256)
-                            throw new InvalidOperationException("The arrow hit gate block differs from the audit.");
+                    if (Sha256Hex.Of(context.Memory.Slice(ArrowGateRva, ArrowGateLength).ToArray()) != ArrowGateSha256)
+                        throw new InvalidOperationException("The arrow hit gate block differs from the audit.");
                     HunterNativeSites.CheckSite(context, QueryRva, QueryBytes, QueryContinuation);
                     HunterNativeSites.CheckSite(context, AttackRva, AttackBytes, AttackContinuation);
                     HunterNativeSites.CheckSite(context, ArrowRva, ArrowBytes, ArrowContinuation);

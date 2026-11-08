@@ -3,7 +3,6 @@ using SHCDESE.API;
 using SHCDESE.API.LowLevel;
 using System;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace APIShared
 {
@@ -167,8 +166,7 @@ namespace APIShared
                 "x86_64",
                 "CrusaderDE.dll");
             using (FileStream stream = File.OpenRead(path))
-            using (SHA256 sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
+                return Sha256Hex.Of(stream);
         }
     }
 }

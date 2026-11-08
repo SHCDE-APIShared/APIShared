@@ -1,7 +1,6 @@
 using BepInEx.Logging;
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
 using RedBird.Core.Memory;
 
 namespace APIShared
@@ -650,8 +649,7 @@ namespace APIShared
 
         internal static string ComputeSha256(ReadOnlySpan<byte> bytes)
         {
-            using (SHA256 sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(bytes.ToArray())).Replace("-", string.Empty);
+            return Sha256Hex.Of(bytes.ToArray());
         }
 
         private NativeCapabilityDiagnostic Faulted(string capabilityId, string reason) =>

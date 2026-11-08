@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using APIShared.NativeSites;
@@ -385,8 +384,7 @@ namespace APIShared
             long start = moduleBase + span.Rva;
             for (int index = 0; index < bytes.Length; index++)
                 bytes[index] = readByte(start + index);
-            using (SHA256 sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", string.Empty);
+            return Sha256Hex.Of(bytes);
         }
 
         private NativeSiteRegistration[] FindGroup(string ownerGuid, string name)

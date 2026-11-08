@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using APIShared.Internal;
@@ -41,7 +40,7 @@ namespace APIShared.Economy
                 writer.Write(ServiceKey);writer.Write(RulesDigest);writer.Write(WireMode);writer.Write(SidecarKey);
                 writer.Write(ReadableSidecarSchema);writer.Write(RequiredSidecarSchema);writer.Write(CanExecute);
                 writer.Write(HasDemand);writer.Write(RequiredDataValid);writer.Write(SavedRecordDigest);writer.Flush();
-                using(var sha=SHA256.Create())return BitConverter.ToString(sha.ComputeHash(bytes.ToArray())).Replace("-","");
+                return Sha256Hex.Of(bytes.ToArray());
             }
         }
         internal bool Matches(WorkerProductionAgreementDescriptor other) => other!=null &&

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using SHCDESE.Interop;
 
 namespace APIShared.Economy
@@ -119,7 +118,6 @@ namespace APIShared.Economy
         {
             using (var data = new MemoryStream())
             using (var writer = new BinaryWriter(data))
-            using (var sha = SHA256.Create())
             {
                 bool hasIngredientAmounts = options.Any(option => option.IngredientAmount.HasValue);
                 writer.Write(hasIngredientAmounts ? "weapon-workshop-options/2" : "weapon-workshop-options/1");
@@ -136,7 +134,7 @@ namespace APIShared.Economy
                     if (hasIngredientAmounts) writer.Write(option.IngredientAmount ?? -1);
                 }
                 writer.Flush();
-                return BitConverter.ToString(sha.ComputeHash(data.GetBuffer(), 0, checked((int)data.Length))).Replace("-", "");
+                return Sha256Hex.Of(data.GetBuffer(), 0, checked((int)data.Length));
             }
         }
 

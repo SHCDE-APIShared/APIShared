@@ -6,7 +6,6 @@ using SHCDESE.API.Components.ModManager;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace APIShared.ScriptExtenderFixes
 {
@@ -91,8 +90,7 @@ namespace APIShared.ScriptExtenderFixes
             try
             {
                 if (!File.Exists(path)) return "missing";
-                using (SHA256 sha = SHA256.Create())
-                    return BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").Substring(0, 16);
+                return Sha256Hex.Of(File.ReadAllBytes(path)).Substring(0, 16);
             }
             catch (Exception exception)
             {

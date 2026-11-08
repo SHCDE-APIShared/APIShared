@@ -185,7 +185,7 @@ namespace APIShared.Economy
                     if(function.Rva<0 || function.Rva>context.Memory.Length-function.Length)
                         throw new InvalidOperationException("Worker production snapshot function is out of image.");
                     byte[] digest=sha.ComputeHash(context.Memory.Slice(function.Rva,function.Length).ToArray());
-                    string hex=BitConverter.ToString(digest).Replace("-",string.Empty);
+                    string hex=Sha256Hex.Format(digest);
                     if(!string.Equals(hex,function.Sha256,StringComparison.Ordinal))
                         throw new InvalidOperationException("Worker production complete control-flow snapshot differs at RVA 0x"+function.Rva.ToString("X")+".");
                 }

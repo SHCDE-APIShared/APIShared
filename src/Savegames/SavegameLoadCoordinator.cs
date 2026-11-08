@@ -11,7 +11,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using UnityEngine;
 
 namespace APIShared
@@ -86,8 +85,7 @@ namespace APIShared
         private static string HashLocalSave(string path)
         {
             using (var stream = File.OpenRead(path))
-            using (var sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
+                return Sha256Hex.Of(stream);
         }
         private static string Name(ulong steamId)
         {

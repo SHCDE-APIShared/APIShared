@@ -8,6 +8,7 @@
     <Compile Include="../../src/Lobby/LobbySelectedMapHeader.cs" Link="Production/LobbySelectedMapHeader.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadCoordinator.cs" Link="Production/SavegameLoadCoordinator.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs"/>
+    <Compile Include="../../src/Core/Internal/Sha256Hex.cs" Link="Production/Sha256Hex.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadPacket.cs" Link="Production/SavegameLoadPacket.cs"/>
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs"/>
   </ItemGroup>

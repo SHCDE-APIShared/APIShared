@@ -91,6 +91,7 @@
     <Compile Include="../../src/ModSettings/Presets/PresetAtomicFilePublisher.cs" Link="Production/PresetAtomicFilePublisher.cs" />
     <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.cs" Link="Production/NativeOwnershipRegistry.cs" />
+    <Compile Include="../../src/Core/Internal/Sha256Hex.cs" Link="Production/Sha256Hex.cs" />
     <Compile Include="../../src/Core/NativeSites/NativeSiteContracts.cs" Link="Production/NativeSiteContracts.cs" />
     <Compile Include="../ApiBaseline/ApiSignatures.cs" Link="ApiBaseline/ApiSignatures.cs" />
   </ItemGroup>

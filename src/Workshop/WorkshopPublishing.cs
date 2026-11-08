@@ -63,7 +63,7 @@ namespace APIShared.Workshop
         internal static string Fingerprint(string root)
         {
             string rows = string.Join("\n", WorkshopPaths.Enumerate(root).OrderBy(x => x, StringComparer.Ordinal).Select(f => f.Substring(root.Length + 1).Replace('\\', '/') + ":" + WorkshopInventory.Hash(f)));
-            using (var sha = System.Security.Cryptography.SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(rows))).Replace("-", "").ToLowerInvariant();
+            return Sha256Hex.Of(Encoding.UTF8.GetBytes(rows)).ToLowerInvariant();
         }
         internal static string HistoryPath(string state, string packageId)
         {

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using SHCDESE.Interop;
 
@@ -68,7 +67,6 @@ namespace APIShared.Wildlife
         {
             using (var data = new MemoryStream())
             using (var writer = new BinaryWriter(data, Encoding.UTF8))
-            using (var sha = SHA256.Create())
             {
                 // Version 2 adds base meat, own-player prey and corpse removal; catalogs without any of them
                 // keep the version-1 bytes and digest.
@@ -90,7 +88,7 @@ namespace APIShared.Wildlife
                     writer.Write(entry.IsVanilla);
                 }
                 writer.Flush();
-                return BitConverter.ToString(sha.ComputeHash(data.GetBuffer(), 0, checked((int)data.Length))).Replace("-", "");
+                return Sha256Hex.Of(data.GetBuffer(), 0, checked((int)data.Length));
             }
         }
 
