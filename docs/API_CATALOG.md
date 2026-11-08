@@ -919,3 +919,12 @@ amount, manufacturing duration and quantity of the workshop's native ingredient.
 APIShared reserves the original recipes within the four choices per workshop type.
 It supplies the building HUD, Shift selection, synchronized execution and saved
 production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+
+## Huntable prey
+
+`APIShared.Wildlife.HuntablePrey` registers additional unit types that Vanilla
+Hunters may hunt, including types outside `eChimps`, and reads the current
+catalog (`Current`, always with deer and goat). APIShared admits active types to
+Vanilla's Hunter query and releases the Hunter's reservation for them without a
+per-unit hook. Each mission freezes the catalog; multiplayer peers must agree on
+its digest. See [the huntable-prey contract](HUNTING.md).

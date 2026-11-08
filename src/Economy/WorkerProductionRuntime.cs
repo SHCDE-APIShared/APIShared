@@ -25,6 +25,8 @@ namespace APIShared.Economy
         private static WorkerProductionLaunchBundle observedBundleReference;
         private static WorkerProductionAgreementDescriptor frozenDescriptor;
         private static WeaponProductionCatalog frozenWeaponCatalog;
+        // Huntable prey shares this mission owner and its peer agreement; it has no save record.
+        private static Wildlife.HuntablePreyCatalog frozenHuntingCatalog;
         private static byte[] selectedWeaponSave;
         private static string selectedWeaponDigest = "", selectedWeaponError;
         private static WorkerProductionCompiledRules activeRules;
@@ -152,6 +154,9 @@ namespace APIShared.Economy
             bool valid = saved.IsValid && selectedWeaponError == null &&
                 WeaponProductionRuntime.MatchesSavedCatalog(selectedWeaponSave, weapons);
             string rulesDigest = weapons.HasOptions ? WeaponProductionRuntime.CombineDigest(bundle.Digest, weapons.Digest) : bundle.Digest;
+            // Without registrations the descriptor stays byte-identical to builds without huntable prey.
+            var hunting = frozenHuntingCatalog ?? Wildlife.HuntablePreyRuntime.PrepareCatalog();
+            if (hunting.HasRegistrations) rulesDigest = WeaponProductionRuntime.CombineDigest(rulesDigest, "huntable-prey:" + hunting.Digest);
             string saveDigest = selectedWeaponSave != null ? WeaponProductionRuntime.CombineDigest(saved.Digest, selectedWeaponDigest) : saved.Digest;
             string wire = weapons.HasOptions ? "extended-row32+weapon-workshop/1" : extended ? "extended-row32/1" : "native";
             return new WorkerProductionAgreementDescriptor(ServiceKey(),rulesDigest,wire,
@@ -232,6 +237,10 @@ namespace APIShared.Economy
                 ? WeaponProductionRuntime.PrepareCatalog()
                 : WeaponProductionCatalog.Empty;
             WeaponProductionRuntime.BeginWorld(frozenWeaponCatalog);
+            frozenHuntingCatalog = context.Mode.Kind == GameModeKind.Unknown || context.Mode.IsMapEditor || context.Mode.AllowsCustomGameMods
+                ? Wildlife.HuntablePreyRuntime.PrepareCatalog()
+                : Wildlife.HuntablePreyCatalogBuilder.VanillaOnly;
+            Wildlife.HuntablePreyRuntime.BeginWorld(frozenHuntingCatalog);
             frozenBundle=WorkerProductionModifiers.PrepareLaunchBundle();
             frozenDescriptor=CaptureDescriptor();frozenSelectionPath=selectedPath;
             if(!frozenBundle.CanStart || frozenDescriptor.LocalFailure!=null)
@@ -265,6 +274,7 @@ namespace APIShared.Economy
             }
             if(!WorkerProductionModifiers.ActivatePrepared(candidate,out reason))return false;
             if (!WeaponProductionRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods, out reason)) return false;
+            Wildlife.HuntablePreyRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods);
             reason=null;
             if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 ||
                 WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
@@ -348,12 +358,13 @@ namespace APIShared.Economy
                     !string.Equals(selectedPath,frozenSelectionPath,StringComparison.OrdinalIgnoreCase);
                 WorkerProductionWorldSafety.Retire();
                 WeaponProductionRuntime.EndWorld();
+                Wildlife.HuntablePreyRuntime.EndWorld();
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.EndWorld(session);
                 else WorkerProductionStateStore.Clear();
                 session=0;restored=false;
                 Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
                 if(WorkerProductionBonusNativeRuntime.IsAvailable)WorkerProductionBonusNativeRuntime.PublishPercent(50);
-                frozenBundle=null;frozenDescriptor=null;frozenSelectionPath=null;frozenWeaponCatalog=null;
+                frozenBundle=null;frozenDescriptor=null;frozenSelectionPath=null;frozenWeaponCatalog=null;frozenHuntingCatalog=null;
                 if(!nextPrepared)
                 {
                     selectedPath=null;selectedRequirement=noSavedState;selectedDenominators=Array.Empty<ulong>();

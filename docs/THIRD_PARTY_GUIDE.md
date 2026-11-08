@@ -1761,3 +1761,12 @@ startup. Use `WithIngredientAmount` to set the cost per charge in the workshop's
 native ingredient. The [weapon workshop guide](WEAPON_PRODUCTION.md) covers the
 registration example, ingredient limits, Shift selection, AI, and requirements
 for multiplayer and saved games.
+
+## Huntable prey
+
+Register further unit types for Vanilla Hunters with `HuntablePrey.TryRegister`
+during Unity startup on every peer, and withdraw or restore them logically with
+`TrySetEnabled` before or after a mission, driven by synchronized settings.
+`HuntablePrey.Current` lists the types Hunters may hunt. The
+[huntable-prey guide](HUNTING.md) covers priorities, unsupported types, mission
+freezing, multiplayer agreement and what stays Vanilla behavior.

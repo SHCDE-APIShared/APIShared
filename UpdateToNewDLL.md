@@ -21,6 +21,7 @@
 - [Shared visible-map entry and pause-menu actions](#shared-visible-map-entry-and-pause-menu-actions)
 - [Managed Script Extender and game targets of Lord presentation and move diagnostics](#managed-script-extender-and-game-targets-of-lord-presentation-and-move-diagnostics)
 - [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
+- [Huntable prey reservation word](#huntable-prey-reservation-word)
 
 ## Shared health initialization
 
@@ -1392,3 +1393,35 @@ Generate and force JIT compilation of every transformed body in Unity Mono befor
 publishing any hook: desktop generation alone did not detect the nonempty-return
 stack. Desktop fixtures substitute only the native-save/UI boundaries for the
 executable regression, because actual Unity ECalls cannot JIT on desktop CLR.
+
+## Huntable prey reservation word
+
+Owner: `Wildlife.HuntablePreyNativeContract` and `Wildlife.HuntablePreyRuntime`; public
+contract: [huntable prey](docs/HUNTING.md). Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`. No hook, patch or
+executable target: the service writes one data field and reads the Extender's
+`OnUnitHunterQueryTarget` event.
+
+- Field: signed 16-bit Hunter lease at public `GameUnit +0x448`, native displacement
+  `0xAA4` from `manager + id*0x490`. The public pointer starts `0x65C` into that address,
+  the same relation as AI state `0x918`/public `0x2BC` and target global `0x9F8`/public `0x39C`
+  (checked against the compiled Extender layout in `HuntablePreyTests`).
+- Anchors compared byte for byte in the unmodified load image at initialization:
+  `0x12FE63` `66 47 89 B4 28 A4 0A 00 00` (Hunter state 0 writes lease 2),
+  `0x156203` `0F B7 84 33 A4 0A 00 00` and `0x156213` `66 89 84 33 A4 0A 00 00` (deer/goat
+  decrement), `0x18AFFD` `66 83 BB AC 01 00 00 00` (query requires 0; loop base `mgr+0xD88`),
+  `0x184E76` `3B 13 0F 8C` (the dispatcher `0x182B00`'s per-type update loop, table call at
+  `0x18410C`, runs while the ID is below the manager's first DWORD, the Extender's
+  `r_NextUnitId`; the release visits only that ID range). The Extender's unit manager must be
+  module + `0x67E8400` with `GameUnitArray` at `0x65C`.
+  Other mods hook `0x12FE63`; the comparison never reads live code.
+- Further audited writers (renewal every Hunter update, lease 2 in r14): `0x130044`,
+  `0x130259`, `0x130338`, `0x13064F`; further reader: corpse search `0x18B640` at `0x18B6ED`.
+  The same word stores the war-dog kennel slot (`0xB47E0`, read at `0x1671BB`) and an Engineer
+  flag (`0x14AED0`); both types are rejected as prey. Full access list:
+  `_inspect/CrusaderDE-Native-Baseline/sem/FBCB9319/knowledge/HUNTER_PREY_RULES.md` in the
+  maintainer workspace.
+- Fallback: none. Any other hash, a different `GameUnit` size or any anchor mismatch leaves
+  the service unavailable; registrations then fail with the reason and only deer and goat stay
+  huntable. Before adding a hash, repeat the complete access audit of the word, including all
+  unit types that reuse it, and check that Vanilla still renews the lease on every Hunter update.

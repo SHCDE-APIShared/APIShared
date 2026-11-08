@@ -3156,6 +3156,41 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Wildlife.HuntablePrey | public static class APIShared.Wildlife.HuntablePrey
+APIShared.Wildlife.HuntablePrey | public static APIShared.Wildlife.HuntablePreyCatalog Current { get; }
+APIShared.Wildlife.HuntablePrey | public static bool IsAvailable { get; }
+APIShared.Wildlife.HuntablePrey | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HuntablePreyDefinition definition, out APIShared.Wildlife.HuntablePreyRegistration registration, out string reason, int priority = 0)
+APIShared.Wildlife.HuntablePreyCatalog | public sealed class APIShared.Wildlife.HuntablePreyCatalog
+APIShared.Wildlife.HuntablePreyCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Wildlife.HuntablePreyEntry> Entries { get; }
+APIShared.Wildlife.HuntablePreyCatalog | public bool HasRegistrations { get; }
+APIShared.Wildlife.HuntablePreyCatalog | public bool IsHuntable(int unitType)
+APIShared.Wildlife.HuntablePreyCatalog | public bool TryGet(int unitType, out APIShared.Wildlife.HuntablePreyEntry entry)
+APIShared.Wildlife.HuntablePreyCatalog | public string Digest { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public sealed class APIShared.Wildlife.HuntablePreyDefinition
+APIShared.Wildlife.HuntablePreyDefinition | public .ctor(int unitType, int handlingCost = 0)
+APIShared.Wildlife.HuntablePreyDefinition | public int HandlingCost { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public int UnitType { get; }
+APIShared.Wildlife.HuntablePreyEntry | public sealed class APIShared.Wildlife.HuntablePreyEntry
+APIShared.Wildlife.HuntablePreyEntry | public bool IsVanilla { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int HandlingCost { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int UnitType { get; }
+APIShared.Wildlife.HuntablePreyEntry | public string OwnerGuid { get; }
+APIShared.Wildlife.HuntablePreyEntry | public string RegistrationId { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public sealed class APIShared.Wildlife.HuntablePreyRegistration
+APIShared.Wildlife.HuntablePreyRegistration | public APIShared.Wildlife.HuntablePreyDefinition Definition { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public APIShared.Wildlife.HuntablePreyRegistrationStatus Status { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public bool IsEnabled { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public bool TrySetEnabled(bool value, out string reason)
+APIShared.Wildlife.HuntablePreyRegistration | public int Priority { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public string Diagnostic { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public string OwnerGuid { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public string RegistrationId { get; }
+APIShared.Wildlife.HuntablePreyRegistrationStatus | public enum APIShared.Wildlife.HuntablePreyRegistrationStatus : int
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Admitted = 1
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Disabled = 4
+APIShared.Wildlife.HuntablePreyRegistrationStatus | ExcludedByPriority = 2
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Pending = 0
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Unsupported = 3
 APIShared.Workshop.WorkshopAction | public enum APIShared.Workshop.WorkshopAction : int
 APIShared.Workshop.WorkshopAction | Downgrade = 3
 APIShared.Workshop.WorkshopAction | Install = 0
