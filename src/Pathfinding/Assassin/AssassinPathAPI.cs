@@ -171,9 +171,11 @@ namespace APIShared
         /// <summary>Publishes the weighted builder's existing reconstruction relaxation as logical data only.</summary>
         /// <remarks>While this or <see cref="SetDirectGatehouseClimbing"/> is enabled, Assassin reconstruction also
         /// accepts an ordinary step by the start-side tile's connection bit, as the distance field and the physical
-        /// step already do; a one-way connection no longer fails the route and triggers the full-map repair.</remarks>
+        /// step already do; a one-way connection no longer fails the route and triggers the full-map repair.
+        /// A null or empty owner is rejected with <see cref="ArgumentException"/>.</remarks>
         public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled)
         {
+            if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));
             lock (Sync)
             {
                 if (!string.Equals(weightedOwner, ownerGuid, StringComparison.Ordinal))
@@ -242,12 +244,13 @@ namespace APIShared
         /// <summary>
         /// Stages an exact low-nibble-first route for the current owned single-unit builder.
         /// The synchronous validator is called again before publication; no route survives its frame.
+        /// Returns false for a null or empty owner.
         /// </summary>
         public static bool TryStageWeightedRoute(string ownerGuid, IntPtr context,
             int startX, int startY, int targetX, int targetY, int playerId,
             byte[] packedDirections, int directionCount, Func<bool> validate)
         {
-            if (!string.Equals(weightedOwner, ownerGuid, StringComparison.Ordinal)) return false;
+            if (string.IsNullOrEmpty(ownerGuid) || !string.Equals(weightedOwner, ownerGuid, StringComparison.Ordinal)) return false;
             return AssassinRouteHandoff.Stage(context, startX, startY, targetX, targetY,
                 playerId, packedDirections, directionCount, validate);
         }
