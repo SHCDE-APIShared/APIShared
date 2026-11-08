@@ -41,8 +41,5 @@ namespace APIShared
         }
 
         internal static void Close() => Volatile.Write(ref closed, 1);
-
-        // Test-only reset of the once-per-process state.
-        internal static void ResetForTest() => Volatile.Write(ref closed, 0);
     }
 }

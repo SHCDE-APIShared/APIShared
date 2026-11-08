@@ -104,7 +104,6 @@ namespace APIShared.Economy
         internal static event Action Changed;
         internal static WorkerProductionAgreementResult Current => Volatile.Read(ref current);
         internal static string ApprovedDescriptorDigest => Volatile.Read(ref approvedDescriptorDigest);
-        internal static string PreparedSavePath => preparedPath;
         internal static string PreparedDataPath => preparedPath;
 
         internal static void Initialize(ManualLogSource logger,Func<WorkerProductionAgreementDescriptor> captureDescriptor,
@@ -148,8 +147,6 @@ namespace APIShared.Economy
             waiting=result.Waiting;diagnostic=result.Ready?"":UiText.Get("WorkerProductionAgreement."+result.Code);
             return result.Ready;
         }
-        internal static bool TryAdmitCurrent(out string diagnostic)
-        {Refresh();diagnostic=Current.Diagnostic;return Current.Ready && ApprovedDescriptorDigest.Length!=0;}
         private static string Guard(LobbyLaunchGuardContext context)
         {
             if(context.Command!="HostLoadGame")

@@ -260,7 +260,6 @@ namespace APIShared.Economy
         internal static WorkerProductionCompiledRules CurrentPrepared => Registry.CurrentPrepared;
         internal static WorkerProductionLaunchBundle GetLaunchBundle() => Registry.GetLaunchBundle();
         internal static WorkerProductionLaunchBundle PrepareLaunchBundle() => Registry.GetLaunchBundle();
-        internal static string LaunchBundleDigest => Registry.GetLaunchBundle().Digest;
         internal static bool IsCandidateInBundle(GameModeSnapshot actualMode,WorkerProductionCompiledRules candidate) =>
             Registry.GetLaunchBundle().Contains(actualMode,candidate);
         internal static bool IsCandidateInBundle(WorkerProductionLaunchBundle admitted,GameModeSnapshot actualMode,

@@ -20,8 +20,6 @@ namespace APIShared.Wildlife
             new Span<byte>(native, capacity).Clear();
         }
 
-        internal int RuleCount => marks.Count;
-
         internal int AddRule()
         {
             marks.Add(new byte[capacity]);

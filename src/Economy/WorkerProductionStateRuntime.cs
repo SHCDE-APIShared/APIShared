@@ -46,17 +46,12 @@ namespace APIShared.Economy
         internal static bool StateReady => initialized && connected && WorkerProductionStateNativeRuntime.IsAvailable &&
             WorkerProductionCriticalSaveRuntime.IsAvailable && WorkerProductionSaveUiRuntime.IsAvailable &&
             Units.AiMilitary.Native.AiMilitaryNativeObservers.IsReady && WorkerProductionWorldSafety.IsAvailable;
-        internal static bool PreparedRequiresExtended => preparedRequirement.RequiresExtended;
         internal static bool LoadedRequiresExtended => preparedRequirement.RequiresExtended;
         internal static bool IsAvailable => StateReady;
         internal static string Diagnostic => StateReady ? "" : "Production persistence, wire, save transaction or restore owner is unavailable.";
-        internal static int RequiredSchema => preparedRequirement.MinimumReaderSchema;
         internal static string SavedRecordDigest => preparedRequirement.Digest;
-        internal static bool WorldHasData => IsExtended;
         internal static event Action ConfigurationChanged
         { add { RequirementChanged += value; } remove { RequirementChanged -= value; } }
-        internal static string PreparedDiagnostic => preparedRequirement.Diagnostic;
-        internal static string PreparedRecordDigest => preparedRequirement.Digest;
         internal static bool IsExtended => WorkerProductionStateStore.Ready &&
             WorkerProductionStateStore.WorldMode == WorkerProductionWorldMode.Extended;
 

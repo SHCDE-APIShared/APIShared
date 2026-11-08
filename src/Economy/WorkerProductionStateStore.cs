@@ -39,8 +39,6 @@ namespace APIShared.Economy
         // These allocations are process-lived, including a failed or partial publication.
         internal static readonly IntPtr RowsAddress = Allocate(RowCapacity * RowSize);
         internal static readonly IntPtr ControlAddress = Allocate(8);
-        internal static IntPtr WorldModeAddress => ControlAddress;
-        internal static IntPtr ReadyAddress => ControlAddress + 4;
         internal static WorkerProductionWorldMode WorldMode => (WorkerProductionWorldMode)Volatile.Read(ref *(int*)ControlAddress);
         internal static bool Ready => Volatile.Read(ref *(int*)(ControlAddress + 4)) != 0;
 
