@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using APIShared.Events;
 
 namespace APIShared.Pathfinding
 {
@@ -39,6 +40,7 @@ namespace APIShared.Pathfinding
 
         private static readonly object Sync = new object();
         private static RouteTileRuleSet[] sets = Array.Empty<RouteTileRuleSet>();
+        private static readonly Func<RouteTileRuleSet, RegistrationKey> RuleSetKey = set => new RegistrationKey(set.OwnerGuid, set.RegistrationId);
         private static readonly int[] journal = new int[JournalCapacity];
         private static long sequence;
 
@@ -59,17 +61,9 @@ namespace APIShared.Pathfinding
             if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(registrationId)) { reason = "Owner and registration ID required"; return false; }
             lock (Sync)
             {
-                foreach (RouteTileRuleSet set in sets)
-                    if (set.OwnerGuid == ownerGuid && set.RegistrationId == registrationId) { reason = "Registration already exists"; return false; }
-                var next = new RouteTileRuleSet[sets.Length + 1];
-                Array.Copy(sets, next, sets.Length);
-                next[sets.Length] = rules = new RouteTileRuleSet(ownerGuid, registrationId);
-                Array.Sort(next, (a, b) =>
-                {
-                    int c = StringComparer.Ordinal.Compare(a.OwnerGuid, b.OwnerGuid);
-                    return c != 0 ? c : StringComparer.Ordinal.Compare(a.RegistrationId, b.RegistrationId);
-                });
-                sets = next;
+                if (OrderedRegistrations.Contains(sets, RuleSetKey, ownerGuid, registrationId)) { reason = "Registration already exists"; return false; }
+                rules = new RouteTileRuleSet(ownerGuid, registrationId);
+                sets = OrderedRegistrations.WithAdded(sets, rules, RuleSetKey);
             }
             reason = null;
             return true;

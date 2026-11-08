@@ -1,3 +1,4 @@
+using APIShared.Events;
 using BepInEx.Logging;
 using SHCDESE.API;
 using SHCDESE.Interop;
@@ -415,11 +416,8 @@ namespace APIShared
             internal Action<PlayerDefeatNotification> OnDefeated { get; }
             internal Action<PlayerDefeatSnapshot> OnChanged { get; }
 
-            internal static int Compare(Registration left, Registration right)
-            {
-                int owner = string.CompareOrdinal(left.Owner, right.Owner);
-                return owner != 0 ? owner : string.CompareOrdinal(left.Id, right.Id);
-            }
+            internal static int Compare(Registration left, Registration right) =>
+                RegistrationKey.Compare(new RegistrationKey(left.Owner, left.Id), new RegistrationKey(right.Owner, right.Id));
         }
 
         private readonly struct Publication

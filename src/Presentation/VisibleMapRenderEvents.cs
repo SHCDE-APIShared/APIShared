@@ -1,10 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using BepInEx.Logging;
 using RedBird.Abstractions.Hooks;
 using RedBird.Backends.NativeX64;
+using APIShared.Events;
 using APIShared.NativeSites;
 using SHCDESE.API.LowLevel;
 
@@ -61,6 +61,8 @@ namespace APIShared.Presentation
         internal static readonly byte[] Entry = { 0x48,0x89,0x5C,0x24,0x10,0x48,0x89,0x6C,0x24,0x18 };
         private static readonly object gate = new object();
         private static VisibleMapRenderRegistration[] registrations = Array.Empty<VisibleMapRenderRegistration>();
+        private static readonly Func<VisibleMapRenderRegistration, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         private static readonly IntPtr demand = AllocateDemand();
         private static IntPtr module;
         private static string imageHash;
@@ -88,13 +90,10 @@ namespace APIShared.Presentation
                 {
                     if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(id) || (before == null && finallyCallback == null))
                         throw new ArgumentException("Owner, registration ID and a callback are required.");
-                    foreach (var existing in registrations)
-                        if (existing.Owner == ownerGuid && existing.Id == id) throw new ArgumentException("Duplicate render registration.");
+                    if (OrderedRegistrations.Contains(registrations, RegistrationKeyOf, ownerGuid, id)) throw new ArgumentException("Duplicate render registration.");
                     EnsureInstalled();
                     registration = new VisibleMapRenderRegistration(ownerGuid, id, order, before, finallyCallback);
-                    var next = new List<VisibleMapRenderRegistration>(registrations) { registration };
-                    next.Sort((a,b) => { int n = a.Order.CompareTo(b.Order); if (n == 0) n = StringComparer.Ordinal.Compare(a.Owner,b.Owner); return n != 0 ? n : StringComparer.Ordinal.Compare(a.Id,b.Id); });
-                    Volatile.Write(ref registrations, next.ToArray());
+                    Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(registrations, registration, RegistrationKeyOf));
                     return true;
                 }
                 catch (Exception error) { reason = error.Message; return false; }

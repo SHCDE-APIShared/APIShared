@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using APIShared.Events;
 using APIShared.Modifiers;
 using BepInEx.Logging;
 using SHCDESE.API;
@@ -122,12 +123,8 @@ namespace APIShared.Economy
             Refresh();
         }
 
-        private static int Compare(MarketPriceModifierHandle a, MarketPriceModifierHandle b)
-        {
-            int result = a.Order.CompareTo(b.Order);
-            if (result == 0) result = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-            return result != 0 ? result : StringComparer.Ordinal.Compare(a.Id, b.Id);
-        }
+        private static int Compare(MarketPriceModifierHandle a, MarketPriceModifierHandle b) =>
+            RegistrationKey.Compare(new RegistrationKey(a.Owner, a.Id, a.Order), new RegistrationKey(b.Owner, b.Id, b.Order));
 
         private static void PublishEnabled()
         {

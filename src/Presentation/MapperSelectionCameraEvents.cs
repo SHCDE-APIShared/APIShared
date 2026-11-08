@@ -1,8 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using BepInEx.Logging;
+using APIShared.Events;
 using MonoMod.RuntimeDetour;
 using SHCDESE.API.LowLevel;
 
@@ -143,6 +143,7 @@ namespace APIShared.Presentation
             internal Action<MapperSelectionCameraPreEventArgs> Pre;
             internal Action<MapperSelectionCameraPostEventArgs> Post;
             public override string ToString() => Owner + "/" + Id;
+            internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
         private readonly object engine, registryGate = new object();
         private readonly Func<bool> isMain;
@@ -166,12 +167,10 @@ namespace APIShared.Presentation
             { reason = "Owner, ID and a mapper camera callback are required."; return false; }
             lock (registryGate)
             {
-                foreach (var entry in entries) if (entry.Owner == owner && entry.Id == id)
+                if (OrderedRegistrations.Contains(entries, Entry.Key, owner, id))
                 { reason = "Duplicate mapper camera registration."; return false; }
-                var next = new List<Entry>(entries) { new Entry { Owner = owner, Id = id, Order = order, Pre = pre, Post = post } };
-                next.Sort((a, b) => { int n = a.Order.CompareTo(b.Order); if (n == 0) n = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return n != 0 ? n : StringComparer.Ordinal.Compare(a.Id, b.Id); });
-                Volatile.Write(ref entries, next.ToArray());
+                Volatile.Write(ref entries, OrderedRegistrations.WithAdded(
+                    entries, new Entry { Owner = owner, Id = id, Order = order, Pre = pre, Post = post }, Entry.Key));
                 return true;
             }
         }

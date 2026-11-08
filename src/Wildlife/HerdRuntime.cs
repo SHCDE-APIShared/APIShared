@@ -187,15 +187,6 @@ namespace APIShared.Wildlife
             return true;
         }
 
-        private sealed class Owned<T>
-        {
-            internal readonly string Owner, Id;
-            internal readonly int Order;
-            internal readonly T Callback;
-            internal int FailureLogged;
-            internal Owned(string owner, string id, int order, T callback) { Owner = owner; Id = id; Order = order; Callback = callback; }
-        }
-
         private static bool ValidateRegistration(string owner, string id, object callback, out string reason)
         {
             if (!UnityMainThreadDispatch.IsMainThread)
@@ -206,35 +197,6 @@ namespace APIShared.Wildlife
             { reason = "A valid consumer GUID, registration ID and callback are required."; return false; }
             reason = "";
             return true;
-        }
-
-        private static bool IsDuplicate<T>(Owned<T>[] list, string owner, string id)
-        {
-            foreach (var old in list)
-                if (StringComparer.Ordinal.Equals(old.Owner, owner) && StringComparer.Ordinal.Equals(old.Id, id)) return true;
-            return false;
-        }
-
-        // Ordered, immutable snapshot (order, then ordinal owner and ID); callers hold Gate.
-        private static Owned<T>[] Insert<T>(Owned<T>[] list, Owned<T> item)
-        {
-            var next = new Owned<T>[list.Length + 1];
-            int index = 0;
-            bool placed = false;
-            foreach (var old in list)
-            {
-                if (!placed && Compare(item, old) < 0) { next[index++] = item; placed = true; }
-                next[index++] = old;
-            }
-            if (!placed) next[index] = item;
-            return next;
-        }
-
-        private static int Compare<T>(Owned<T> left, Owned<T> right)
-        {
-            int result = left.Order.CompareTo(right.Order);
-            if (result == 0) result = StringComparer.Ordinal.Compare(left.Owner, right.Owner);
-            return result != 0 ? result : StringComparer.Ordinal.Compare(left.Id, right.Id);
         }
 
         private static void ReportFailure<T>(Owned<T> item, string kind, Exception error)

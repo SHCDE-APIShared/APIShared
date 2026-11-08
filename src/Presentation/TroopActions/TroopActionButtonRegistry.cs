@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using APIShared.Events;
 
 namespace APIShared.Presentation
 {
@@ -27,11 +28,7 @@ namespace APIShared.Presentation
                     { reason = "This owner already registered that button ID."; return false; }
                 var entry = new Entry(this, owner, definition);
                 entries.Add(entry);
-                entries.Sort((a, b) => {
-                    int result = a.Definition.Priority.CompareTo(b.Definition.Priority);
-                    if (result == 0) result = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return result != 0 ? result : StringComparer.Ordinal.Compare(a.Definition.ButtonId, b.Definition.ButtonId);
-                });
+                entries.Sort((a, b) => RegistrationKey.Compare(Entry.Key(a), Entry.Key(b)));
                 layoutRevision++;
                 snapshot = null; registration = entry;
             }
@@ -75,6 +72,9 @@ namespace APIShared.Presentation
             internal int Version;
             internal Entry(TroopActionButtonRegistry registry, string owner, TroopActionButtonDefinition definition)
             { this.registry = registry; Owner = owner; Definition = definition; Tooltip = definition.Tooltip; }
+            // Priority is the registration order and the button ID is the registration ID.
+            internal static readonly Func<Entry, RegistrationKey> Key =
+                entry => new RegistrationKey(entry.Owner, entry.Definition.ButtonId, entry.Definition.Priority);
             public void SetVisible(bool value)
             {
                 lock (registry.gate) { if (Visible == value) return; Visible = value; registry.layoutRevision++; registry.snapshot = null; }

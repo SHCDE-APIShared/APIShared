@@ -14,6 +14,7 @@
     <Compile Include="../../src/Economy/WorkerProductionCompiler.cs" Link="Production/WorkerProductionCompiler.cs" />
     <Compile Include="../../src/Economy/WorkerProductionLaunchBundle.cs" Link="Production/WorkerProductionLaunchBundle.cs" />
     <Compile Include="../../src/Economy/WorkerProductionModifierRegistry.cs" Link="Production/WorkerProductionModifierRegistry.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
     <Compile Include="../../src/Modifiers/ValueModifiers.cs" Link="Production/ValueModifiers.cs" />
     <Compile Include="../../src/GameModes/GameplayModModePolicy.cs" Link="Production/GameplayModModePolicy.cs" />
     <Compile Include="../../src/Economy/WorkerProductionBonusNativeDefinition.cs" Link="Production/WorkerProductionBonusNativeDefinition.cs" />

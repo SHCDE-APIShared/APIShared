@@ -66,6 +66,7 @@
     <Compile Include="../../src/Networking/PacketReceivePolicy.cs" Link="Production/PacketReceivePolicy.cs" />
 
     <Compile Include="../../src/Core/Events/InterceptionEvent.cs" Link="Production/InterceptionEvent.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
     <Compile Include="../../src/Units/Recruitment/RecruitmentRequestPolicy.cs" Link="Production/RecruitmentRequestPolicy.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonLayout.cs" Link="Production/HudExtrasButtonLayout.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonContracts.cs" Link="Production/HudExtrasButtonContracts.cs" />

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Events;
 using APIShared.Modifiers;
 
 namespace APIShared.Economy
@@ -108,6 +109,7 @@ namespace APIShared.Economy
     {
         private static readonly object sync=new object();
         private static readonly List<PopularityOverrideRegistration> entries=new List<PopularityOverrideRegistration>();
+        private static readonly Func<PopularityOverrideRegistration,RegistrationKey> RegistrationKeyOf=entry=>new RegistrationKey(entry.Owner,entry.Id,entry.Order);
         internal static int SourceCount => Enum.GetValues(typeof(PopularitySource)).Length;
         /// <summary>Creates an inactive registration; duplicate owner/local IDs are rejected. No unregister is needed.</summary>
         public static bool TryRegister(string ownerGuid,string registrationId,out PopularityOverrideRegistration registration,
@@ -119,7 +121,7 @@ namespace APIShared.Economy
             lock(sync) {
                 foreach(var item in entries) if(item.Owner==ownerGuid&&item.Id==registrationId) { diagnostic="Duplicate owner/registration ID."; return false; }
                 registration=new PopularityOverrideRegistration(ownerGuid,registrationId,order); entries.Add(registration);
-                entries.Sort((a,b)=>{int c=a.Order.CompareTo(b.Order);if(c==0)c=StringComparer.Ordinal.Compare(a.Owner,b.Owner);return c!=0?c:StringComparer.Ordinal.Compare(a.Id,b.Id);});
+                entries.Sort((a,b)=>RegistrationKey.Compare(RegistrationKeyOf(a),RegistrationKeyOf(b)));
             }
             diagnostic=null; return true;
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using APIShared.Economy;
+using APIShared.Events;
 using APIShared.Internal;
 using APIShared.Simulation;
 using BepInEx.Logging;
@@ -31,6 +32,8 @@ namespace APIShared.Wildlife
 
         private static readonly object Gate = new object();
         private static HuntablePreyRegistration[] registrations = Array.Empty<HuntablePreyRegistration>();
+        private static readonly Func<HuntablePreyRegistration, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.OwnerGuid, entry.RegistrationId);
         private static HuntablePreyRegistration[] preparedRegistrations;
         private static int version, preparedVersion = -1;
         private static HuntablePreyCatalog prepared = HuntablePreyCatalogBuilder.VanillaOnly;
@@ -98,9 +101,9 @@ namespace APIShared.Wildlife
 
             lock (Gate)
             {
-                foreach (var old in registrations)
-                    if (StringComparer.Ordinal.Equals(old.OwnerGuid, owner) && StringComparer.Ordinal.Equals(old.RegistrationId, id))
-                    { reason = "This owner already registered that huntable-prey ID."; return false; }
+                // Insertion order is kept; only the duplicate check is shared.
+                if (OrderedRegistrations.Contains(registrations, RegistrationKeyOf, owner, id))
+                { reason = "This owner already registered that huntable-prey ID."; return false; }
                 registration = new HuntablePreyRegistration(owner, id, definition, priority, unsupported);
                 var next = new HuntablePreyRegistration[registrations.Length + 1];
                 Array.Copy(registrations, next, registrations.Length);

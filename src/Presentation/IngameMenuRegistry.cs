@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using APIShared.Events;
 
 namespace APIShared.Presentation
 {
@@ -18,6 +19,7 @@ namespace APIShared.Presentation
             internal Func<IngameMenuActionState> Provider;
             internal Action Execute;
             internal IngameMenuActionState State;
+            internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
         internal sealed class Layout
         {
@@ -93,12 +95,7 @@ namespace APIShared.Presentation
         { vanilla[(int)row].State = state; vanilla[(int)row].Known = true; }
         internal Entry Vanilla(IngameMenuRow row) => vanilla[(int)row];
         internal static bool Visible(Entry entry) => entry?.State?.Visible == true;
-        private static int Compare(Entry a, Entry b)
-        {
-            int n = a.Order.CompareTo(b.Order);
-            if (n == 0) n = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-            return n != 0 ? n : StringComparer.Ordinal.Compare(a.Id, b.Id);
-        }
+        private static int Compare(Entry a, Entry b) => RegistrationKey.Compare(Entry.Key(a), Entry.Key(b));
         internal Layout Resolve()
         {
             var result = new Layout();

@@ -1,3 +1,4 @@
+using APIShared.Events;
 using BepInEx.Logging;
 using MonoMod.RuntimeDetour;
 using R3;
@@ -499,13 +500,7 @@ namespace APIShared
                 }
                 first = registrations.Count == 0 && current == null;
                 registrations.Add(new Registration(owner, id, observer));
-                registrations.Sort((left, right) =>
-                {
-                    int result = string.CompareOrdinal(left.Owner, right.Owner);
-                    return result != 0
-                        ? result
-                        : string.CompareOrdinal(left.Id, right.Id);
-                });
+                registrations.Sort((left, right) => RegistrationKey.Compare(Registration.Key(left), Registration.Key(right)));
                 replay = current;
                 hasObservers = true;
                 // The existing fallback is a 15-render-frame contract, independent of FPS/time.
@@ -604,6 +599,7 @@ namespace APIShared
             internal string Owner { get; }
             internal string Id { get; }
             internal Action<LobbyStateSnapshot> Observer { get; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id);
         }
 
         private sealed class Binding : ILobbyStateCapability

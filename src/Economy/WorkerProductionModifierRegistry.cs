@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
+using APIShared.Events;
 using APIShared.GameModes;
 using APIShared.Modifiers;
 
@@ -12,6 +13,7 @@ namespace APIShared.Economy
         private sealed class Observer
         {
             internal string Owner,Id; internal int Order; internal Action<WorkerProductionStatus> Callback;
+            internal static readonly Func<Observer,RegistrationKey> Key=entry=>new RegistrationKey(entry.Owner,entry.Id,entry.Order);
         }
         private readonly object sync=new object();
         private object legacyPublication=new object();
@@ -82,11 +84,8 @@ namespace APIShared.Economy
             }
             return Array.AsReadOnly(values);
         }
-        private static int Compare(WorkerProductionModifierRegistration a,WorkerProductionModifierRegistration b)
-        {
-            int result=a.Order.CompareTo(b.Order); if(result==0) result=StringComparer.Ordinal.Compare(a.OwnerGuid,b.OwnerGuid);
-            return result!=0 ? result : StringComparer.Ordinal.Compare(a.RegistrationId,b.RegistrationId);
-        }
+        private static int Compare(WorkerProductionModifierRegistration a,WorkerProductionModifierRegistration b) =>
+            RegistrationKey.Compare(new RegistrationKey(a.OwnerGuid,a.RegistrationId,a.Order),new RegistrationKey(b.OwnerGuid,b.RegistrationId,b.Order));
         internal bool TryRegisterObserver(string owner,string id,Action<WorkerProductionStatus> observer,out string reason,
             int order=0,bool replayCurrent=true)
         {
@@ -97,8 +96,7 @@ namespace APIShared.Economy
                 foreach(var item in observers) if(item.Owner==owner && item.Id==id)
                 { reason="Duplicate worker-production observer identity."; return false; }
                 observers.Add(new Observer { Owner=owner,Id=id,Order=order,Callback=observer });
-                observers.Sort((a,b)=> { int c=a.Order.CompareTo(b.Order); if(c==0)c=StringComparer.Ordinal.Compare(a.Owner,b.Owner);
-                    return c!=0 ? c : StringComparer.Ordinal.Compare(a.Id,b.Id); });
+                observers.Sort((a,b)=>RegistrationKey.Compare(Observer.Key(a),Observer.Key(b)));
             }
             if(replayCurrent) Invoke(observer,Status);
             reason=string.Empty; return true;

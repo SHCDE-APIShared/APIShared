@@ -5,6 +5,7 @@
     <Compile Include="../../src/Economy/PopularityModifiers.cs" Link="Production/PopularityModifiers.cs" />
     <Compile Include="../../src/Economy/FearPopularity.cs" Link="Production/FearPopularity.cs" />
     <Compile Include="../../src/Economy/PopularityOverrides.cs" Link="Production/PopularityOverrides.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/PopularityReport.cs" Link="Production/PopularityReport.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/WorldPopularityPolicy.cs" Link="Production/WorldPopularityPolicy.cs" />
     <Compile Include="../../src/ScriptExtenderFixes/Popularity/PopularityPresentation.cs" Link="Production/PopularityPresentation.cs" />

@@ -1,4 +1,5 @@
 using System;
+using APIShared.Events;
 using Noesis;
 
 namespace APIShared.Presentation
@@ -14,19 +15,10 @@ namespace APIShared.Presentation
             entry = null;
             if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || factory == null)
             { reason = "A nonempty owner GUID, section ID and factory are required."; return false; }
-            foreach (var existing in entries)
-                if (existing.Owner == owner && existing.Id == id)
-                { reason = "Duplicate ally-goods section: " + owner + "/" + id; return false; }
+            if (OrderedRegistrations.Contains(entries, AllyGoodsSectionEntry.Key, owner, id))
+            { reason = "Duplicate ally-goods section: " + owner + "/" + id; return false; }
             entry = new AllyGoodsSectionEntry(owner, id, order, factory);
-            var next = new AllyGoodsSectionEntry[entries.Length + 1];
-            Array.Copy(entries, next, entries.Length); next[next.Length - 1] = entry;
-            Array.Sort(next, Compare); entries = next; reason = ""; return true;
-        }
-        private static int Compare(AllyGoodsSectionEntry a, AllyGoodsSectionEntry b)
-        {
-            int order = a.Order.CompareTo(b.Order);
-            if (order == 0) order = string.CompareOrdinal(a.Owner, b.Owner);
-            return order == 0 ? string.CompareOrdinal(a.Id, b.Id) : order;
+            entries = OrderedRegistrations.WithAdded(entries, entry, AllyGoodsSectionEntry.Key); reason = ""; return true;
         }
     }
     internal sealed class AllyGoodsSectionEntry
@@ -38,6 +30,7 @@ namespace APIShared.Presentation
         internal int Revision;
         internal AllyGoodsSectionEntry(string owner, string id, int order, Func<AllyGoodsSectionContext, FrameworkElement> factory)
         { Owner = owner; Id = id; Order = order; Factory = factory; }
+        internal static readonly Func<AllyGoodsSectionEntry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
     }
     internal static class AllyGoodsContextPolicy
     {

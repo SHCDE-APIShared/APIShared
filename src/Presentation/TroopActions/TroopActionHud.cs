@@ -67,20 +67,12 @@ namespace APIShared.Presentation
             { reason = "Owner, ID and refresher are required."; return false; }
             lock (sync)
             {
-                foreach (Registration entry in registrations)
-                    if (entry.Owner == ownerGuid && entry.Id == registrationId)
-                    { reason = "This owner already registered that ID."; return false; }
+                if (OrderedRegistrations.Contains(registrations, Registration.Key, ownerGuid, registrationId))
+                { reason = "This owner already registered that ID."; return false; }
                 if (setupHook == null && !TryInstall(out reason))
                     return false;
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(ownerGuid, registrationId, refreshVisibility);
-                Array.Sort(next, (a, b) =>
-                {
-                    int comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
-                Volatile.Write(ref registrations, next);
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(ownerGuid, registrationId, refreshVisibility), Registration.Key));
             }
             reason = string.Empty;
             // A direct editor launch can build the HUD before BepInEx installs this hook.
@@ -203,6 +195,7 @@ namespace APIShared.Presentation
             internal readonly Action<HUD_Troops> Refresh;
             internal Registration(string owner, string id, Action<HUD_Troops> refresh)
             { Owner = owner; Id = id; Refresh = refresh; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id);
         }
     }
 }

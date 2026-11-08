@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Units.AiMilitary
 {
@@ -41,12 +42,9 @@ namespace APIShared.Units.AiMilitary
             { reason = "Owner, registration ID and a callback are required."; return false; }
             lock (sync)
             {
-                foreach (var entry in entries)
-                    if (entry.Owner == ownerGuid && entry.Id == id) { reason = "Duplicate global task registration."; return false; }
-                var next = new Entry[entries.Length + 1]; Array.Copy(entries, next, entries.Length);
-                next[next.Length - 1] = new Entry(ownerGuid, id, before, after);
-                Array.Sort(next, (a, b) => { int owner = string.CompareOrdinal(a.Owner, b.Owner); return owner != 0 ? owner : string.CompareOrdinal(a.Id, b.Id); });
-                Volatile.Write(ref entries, next); Native.AiMilitaryNativeObservers.EnableObservation();
+                if (OrderedRegistrations.Contains(entries, Entry.Key, ownerGuid, id)) { reason = "Duplicate global task registration."; return false; }
+                Volatile.Write(ref entries, OrderedRegistrations.WithAdded(entries, new Entry(ownerGuid, id, before, after), Entry.Key));
+                Native.AiMilitaryNativeObservers.EnableObservation();
             }
             reason = string.Empty; return true;
         }
@@ -68,6 +66,7 @@ namespace APIShared.Units.AiMilitary
             { Owner = owner; Id = id; Before = before; After = after; }
             internal readonly string Owner, Id;
             internal readonly Action<AiGlobalTaskObservation> Before, After;
+            internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id);
         }
     }
 }

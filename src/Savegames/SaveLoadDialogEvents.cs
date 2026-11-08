@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -29,6 +28,8 @@ namespace APIShared.Savegames
         private static readonly ManagedInterceptionHook<ExecuteDialog> ExecuteHook = new ManagedInterceptionHook<ExecuteDialog>();
         private static readonly object Sync = new object();
         private static SaveLoadDialogRequest.Entry[] registrations = Array.Empty<SaveLoadDialogRequest.Entry>();
+        private static readonly Func<SaveLoadDialogRequest.Entry, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         private static Session current;
         private static long generation;
         private static ManualLogSource log;
@@ -62,10 +63,10 @@ namespace APIShared.Savegames
                 throw new ArgumentException("Owner GUID, registration ID and callbacks are required.");
             lock (Sync)
             {
-                if (registrations.Any(e => e.Owner == ownerGuid && e.Id == registrationId))
+                if (OrderedRegistrations.Contains(registrations, RegistrationKeyOf, ownerGuid, registrationId))
                     throw new InvalidOperationException("Duplicate load/save requester registration.");
-                registrations = registrations.Concat(new[] { new SaveLoadDialogRequest.Entry(callbacks) { Owner = ownerGuid, Id = registrationId, Order = order } })
-                    .OrderBy(e => e.Order).ThenBy(e => e.Owner, StringComparer.Ordinal).ThenBy(e => e.Id, StringComparer.Ordinal).ToArray();
+                registrations = OrderedRegistrations.WithAdded(registrations,
+                    new SaveLoadDialogRequest.Entry(callbacks) { Owner = ownerGuid, Id = registrationId, Order = order }, RegistrationKeyOf);
             }
         }
 

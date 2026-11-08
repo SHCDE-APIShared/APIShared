@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using APIShared.Events;
 using APIShared.Internal;
 using CrusaderDE;
 using Noesis;
@@ -68,12 +69,10 @@ namespace APIShared.Presentation
             if (string.IsNullOrWhiteSpace(ownerGuid) || string.IsNullOrWhiteSpace(registrationId) || changed == null)
             { reason = "A nonempty owner GUID, observer ID and callback are required."; return false; }
             if (!EnsureInitialized(out reason)) return false;
-            foreach (var item in observers)
-                if (item.Owner == ownerGuid && item.Id == registrationId)
-                { reason = "Duplicate ally-goods observer: " + ownerGuid + "/" + registrationId; return false; }
+            if (OrderedRegistrations.Contains(observers, Observer.Key, ownerGuid, registrationId))
+            { reason = "Duplicate ally-goods observer: " + ownerGuid + "/" + registrationId; return false; }
             var observer = new Observer(ownerGuid, registrationId, order, changed);
-            var next = new Observer[observers.Length + 1]; Array.Copy(observers, next, observers.Length);
-            next[next.Length - 1] = observer; Array.Sort(next, Observer.Compare); observers = next;
+            observers = OrderedRegistrations.WithAdded(observers, observer, Observer.Key);
             try { Invoke(observer, Capture()); }
             catch (Exception error) { Report("observer-replay", error); }
             reason = ""; return true;
@@ -281,11 +280,7 @@ namespace APIShared.Presentation
             internal readonly Action<AllyGoodsPanelContext> Callback;
             internal Observer(string owner, string id, int order, Action<AllyGoodsPanelContext> callback)
             { Owner = owner; Id = id; Order = order; Callback = callback; }
-            internal static int Compare(Observer a, Observer b)
-            {
-                int order = a.Order.CompareTo(b.Order); if (order == 0) order = string.CompareOrdinal(a.Owner, b.Owner);
-                return order == 0 ? string.CompareOrdinal(a.Id, b.Id) : order;
-            }
+            internal static readonly Func<Observer, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
         // These private fields are read-only views of the real Assembly-CSharp contract. The publicized assembly is not used.
         internal sealed class SelectionReader

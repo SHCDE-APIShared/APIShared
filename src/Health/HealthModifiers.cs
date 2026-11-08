@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Events;
 using APIShared.Modifiers;
 
 namespace APIShared.Health
@@ -37,6 +38,8 @@ namespace APIShared.Health
         private static readonly object Sync = new object();
         private static HealthModifierHandle[] policies = Array.Empty<HealthModifierHandle>();
         private static LegacyProvider[] legacy = Array.Empty<LegacyProvider>();
+        private static readonly Func<HealthModifierHandle, RegistrationKey> HandleKey =
+            handle => new RegistrationKey(handle.Owner, handle.Id, handle.Order);
         /// <summary>Whether native initialization, lifecycle, persistence and the observer are available.</summary>
         public static bool IsAvailable => HealthRuntime.IsAvailable;
         /// <summary>Failure reason, or an empty string when available.</summary>
@@ -53,13 +56,10 @@ namespace APIShared.Health
             if (!IsAvailable) { reason = UnavailableReason; return false; }
             lock (Sync)
             {
-                foreach (var item in policies)
-                    if (item.Owner == ownerGuid && item.Id == registrationId)
-                    { reason = "Duplicate health policy identity."; return false; }
+                if (OrderedRegistrations.Contains(policies, HandleKey, ownerGuid, registrationId))
+                { reason = "Duplicate health policy identity."; return false; }
                 handle = new HealthModifierHandle(ownerGuid, registrationId, order, provider);
-                var next = new HealthModifierHandle[policies.Length + 1];
-                Array.Copy(policies, next, policies.Length); next[next.Length - 1] = handle;
-                Array.Sort(next, Compare); Volatile.Write(ref policies, next);
+                Volatile.Write(ref policies, OrderedRegistrations.WithAdded(policies, handle, HandleKey));
             }
             reason = string.Empty; return true;
         }
@@ -76,13 +76,10 @@ namespace APIShared.Health
             { reason = "A nonempty owner, local ID and migration reader are required."; return false; }
             lock (Sync)
             {
-                foreach (var item in legacy)
-                    if (item.Owner == ownerGuid && item.Id == registrationId)
-                    { reason = "Duplicate health migration identity."; return false; }
-                var next = new LegacyProvider[legacy.Length + 1]; Array.Copy(legacy, next, legacy.Length);
-                next[next.Length - 1] = new LegacyProvider(ownerGuid, registrationId, order, provider);
-                Array.Sort(next, (a,b) => CompareIdentity(a.Order,a.Owner,a.Id,b.Order,b.Owner,b.Id));
-                Volatile.Write(ref legacy, next);
+                if (OrderedRegistrations.Contains(legacy, LegacyProvider.Key, ownerGuid, registrationId))
+                { reason = "Duplicate health migration identity."; return false; }
+                Volatile.Write(ref legacy, OrderedRegistrations.WithAdded(
+                    legacy, new LegacyProvider(ownerGuid, registrationId, order, provider), LegacyProvider.Key));
             }
             reason = string.Empty; return true;
         }
@@ -114,10 +111,6 @@ namespace APIShared.Health
             return (uint)ValueModifierCalculator.Calculate(context.OriginalMaximumHealth, values, 1, limit);
         }
         internal static LegacyProvider[] LegacyProviders => Volatile.Read(ref legacy);
-        private static int Compare(HealthModifierHandle a, HealthModifierHandle b) =>
-            CompareIdentity(a.Order,a.Owner,a.Id,b.Order,b.Owner,b.Id);
-        private static int CompareIdentity(int ao,string ag,string ai,int bo,string bg,string bi)
-        { int value = ao.CompareTo(bo); if (value == 0) value = string.CompareOrdinal(ag,bg); return value == 0 ? string.CompareOrdinal(ai,bi) : value; }
         internal sealed class LegacyProvider
         {
             internal readonly string Owner, Id;
@@ -125,6 +118,7 @@ namespace APIShared.Health
             internal readonly Func<HealthLegacyBasis[]> Read;
             internal LegacyProvider(string owner,string id,int order,Func<HealthLegacyBasis[]> read)
             { Owner=owner; Id=id; Order=order; Read=read; }
+            internal static readonly Func<LegacyProvider, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Pathfinding
 {
@@ -76,17 +77,10 @@ namespace APIShared.Pathfinding
             { reason = "Owner GUID, registration ID and at least one callback are required."; return false; }
             lock (sync)
             {
-                foreach (Registration existing in registrations)
-                    if (existing.Owner == owner && existing.Id == id)
-                    { reason = "This owner already registered that ID."; return false; }
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(owner, id, pre, post);
-                Array.Sort(next, (a, b) => {
-                    int comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
-                Volatile.Write(ref registrations, next);
+                if (OrderedRegistrations.Contains(registrations, Registration.Key, owner, id))
+                { reason = "This owner already registered that ID."; return false; }
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(owner, id, pre, post), Registration.Key));
             }
             reason = string.Empty; return true;
         }
@@ -163,6 +157,7 @@ namespace APIShared.Pathfinding
             internal readonly Action<RouteSearchPostEventArgs> Post;
             internal Registration(string owner, string id, Action<RouteSearchPreEventArgs> pre, Action<RouteSearchPostEventArgs> post)
             { Owner = owner; Id = id; Pre = pre; Post = post; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id);
         }
     }
 }

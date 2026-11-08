@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using SHCDESE.Interop;
+using APIShared.Events;
 using APIShared.Modifiers;
 
 namespace APIShared.Economy
@@ -132,6 +133,8 @@ namespace APIShared.Economy
         private readonly object gate = new object();
         private readonly List<AiMarketSellRegistration> all = new List<AiMarketSellRegistration>();
         private AiMarketSellRegistration[] snapshot = Array.Empty<AiMarketSellRegistration>();
+        private static readonly Func<AiMarketSellRegistration, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.OwnerGuid, entry.RegistrationId, entry.Order);
         private readonly Action install;
         private readonly Action<int> publish;
         [ThreadStatic] private static int depth;
@@ -161,8 +164,7 @@ namespace APIShared.Economy
                 if (registration.Active == enabled) return;
                 registration.Active = enabled;
                 var active = all.FindAll(item => item.Active);
-                active.Sort((x, y) => { int c = x.Order.CompareTo(y.Order); if (c != 0) return c;
-                    c = StringComparer.Ordinal.Compare(x.OwnerGuid, y.OwnerGuid); return c != 0 ? c : StringComparer.Ordinal.Compare(x.RegistrationId, y.RegistrationId); });
+                active.Sort((x, y) => RegistrationKey.Compare(RegistrationKeyOf(x), RegistrationKeyOf(y)));
                 int demand = 0;
                 foreach (var item in active)
                 { demand |= (int)item.Safety; if (item.ReserveAdjuster != null) demand |= 4; if (item.QuantityAdjuster != null) demand |= 8; }

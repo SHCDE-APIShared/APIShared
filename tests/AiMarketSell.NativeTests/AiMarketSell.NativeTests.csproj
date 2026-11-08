@@ -14,5 +14,6 @@
     <Reference Include="Microsoft.Extensions.Logging.Abstractions"><HintPath>$(ExtenderDir)/Microsoft.Extensions.Logging.Abstractions.dll</HintPath></Reference>
     <Compile Include="../../src/Economy/AiMarketSellAssembly.cs" Link="Production/AiMarketSellAssembly.cs" />
     <Compile Include="../../src/Economy/AiMarketSellPolicies.cs" Link="Production/AiMarketSellPolicies.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
   </ItemGroup>
 </Project>

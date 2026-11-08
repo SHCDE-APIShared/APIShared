@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using APIShared.Events;
 using RedBird.Abstractions.Hooks;
 using RedBird.Abstractions.Hooks.Transaction;
 using RedBird.Backends.NativeX64;
@@ -44,9 +45,10 @@ namespace APIShared.Wildlife
             if (!ValidateRegistration(owner, id, handler, out reason)) return false;
             lock (Gate)
             {
-                if (IsDuplicate(routeHandlers, owner, id)) { reason = "This owner already registered that ID."; return false; }
+                if (OrderedRegistrations.Contains(routeHandlers, Owned<HerdRouteHandler>.Key, owner, id)) { reason = "This owner already registered that ID."; return false; }
                 if (!TryEnsureRouteHook(out reason)) return false;
-                Volatile.Write(ref routeHandlers, Insert(routeHandlers, new Owned<HerdRouteHandler>(owner, id, order, handler)));
+                Volatile.Write(ref routeHandlers, OrderedRegistrations.WithAdded(
+                    routeHandlers, new Owned<HerdRouteHandler>(owner, id, order, handler), Owned<HerdRouteHandler>.Key));
             }
             NativeApiLog.Info(log, "Herd route handler registered: owner=" + owner + ", id=" + id + ", order=" + order + ".");
             return true;

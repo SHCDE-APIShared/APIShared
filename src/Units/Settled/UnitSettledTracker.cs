@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Events;
 using SHCDESE.Interop;
 
 namespace APIShared.Units
@@ -68,24 +69,16 @@ namespace APIShared.Units
             { reason = "Owner GUID, registration ID and a callback are required."; return false; }
             lock (registrationSync)
             {
-                foreach (Registration existing in registrations)
-                    if (existing.Owner == owner && existing.Id == id)
-                    { reason = "This owner already registered that ID."; return false; }
+                if (OrderedRegistrations.Contains(registrations, Registration.Key, owner, id))
+                { reason = "This owner already registered that ID."; return false; }
                 if (!activated)
                 {
                     // Demand starts here: no Script Extender subscription exists before this point.
                     try { activate?.Invoke(); activated = true; }
                     catch (Exception ex) { reason = "Script Extender unit events are unavailable: " + ex.Message; return false; }
                 }
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(owner, id, order, callback);
-                Array.Sort(next, (a, b) => {
-                    int comparison = a.Order.CompareTo(b.Order);
-                    if (comparison == 0) comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
-                Volatile.Write(ref registrations, next);
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(owner, id, order, callback), Registration.Key));
             }
             reason = string.Empty; return true;
         }
@@ -231,6 +224,7 @@ namespace APIShared.Units
             internal long Failures;
             internal Registration(string owner, string id, int order, Action<UnitSettledNotification> callback)
             { Owner = owner; Id = id; Order = order; Callback = callback; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
     }
 }

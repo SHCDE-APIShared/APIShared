@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Savegames
 {
@@ -89,15 +90,7 @@ namespace APIShared.Savegames
                 catch (Exception ex) { reason = "Script Extender registration failed: " + ex.Message; return false; }
                 if (!accepted)
                 { reason = "Script Extender rejected the identifier (already registered by another handler, or invalid)."; return false; }
-                var next = new Slot[slots.Length + 1];
-                Array.Copy(slots, next, slots.Length);
-                next[next.Length - 1] = slot;
-                Array.Sort(next, (a, b) =>
-                {
-                    int comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Identifier, b.Identifier);
-                });
-                slots = next;
+                slots = OrderedRegistrations.WithAdded(slots, slot, Slot.Key);
             }
             handle = slot.Handle;
             reason = string.Empty;
@@ -456,6 +449,8 @@ namespace APIShared.Savegames
             internal readonly VersionedSaveLegacyReader Legacy;
             internal readonly bool SimulationRelevant;
             internal readonly VersionedSaveDataHandle Handle;
+            // The save data identifier is the registration ID.
+            internal static readonly Func<Slot, RegistrationKey> Key = slot => new RegistrationKey(slot.Owner, slot.Identifier);
 
             // Guarded by the registry lock.
             internal byte[] Pending;

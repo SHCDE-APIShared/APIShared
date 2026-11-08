@@ -1,3 +1,4 @@
+using APIShared.Events;
 using BepInEx.Logging;
 using RedBird.Abstractions.Hooks;
 using RedBird.Abstractions.Hooks.Transaction;
@@ -205,11 +206,8 @@ namespace APIShared
                     return false;
                 }
 
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(ownerGuid, registrationId, observer);
-                Array.Sort(next, Registration.Compare);
-                Volatile.Write(ref registrations, next);
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(ownerGuid, registrationId, observer), Registration.Key));
             }
             diagnostic = Available("The AIV build-step observer was registered for the process lifetime.");
             return true;
@@ -342,11 +340,7 @@ namespace APIShared
             internal string OwnerGuid { get; }
             internal string RegistrationId { get; }
             internal IAivBuildStepObserver Observer { get; }
-            internal static int Compare(Registration left, Registration right)
-            {
-                int owner = string.CompareOrdinal(left.OwnerGuid, right.OwnerGuid);
-                return owner != 0 ? owner : string.CompareOrdinal(left.RegistrationId, right.RegistrationId);
-            }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.OwnerGuid, entry.RegistrationId);
         }
 
         private sealed class ActiveInvocation

@@ -68,23 +68,15 @@ namespace APIShared.Events
             { reason = "Owner GUID, registration ID and at least one callback are required."; return false; }
             lock (sync)
             {
-                foreach (Registration entry in registrations)
-                    if (entry.Owner == owner && entry.Id == id)
-                    { reason = "This owner already registered that ID."; return false; }
+                if (OrderedRegistrations.Contains(registrations, Registration.Key, owner, id))
+                { reason = "This owner already registered that ID."; return false; }
                 if (!installed)
                 {
                     try { install?.Invoke(); installed = true; }
                     catch (Exception ex) { reason = "Interception unavailable: " + ex.Message; return false; }
                 }
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(owner, id, pre, post, order, accepted, isActive);
-                Array.Sort(next, (a, b) => {
-                    int comparison = a.Order.CompareTo(b.Order);
-                    if (comparison == 0) comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
-                Volatile.Write(ref registrations, next);
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(owner, id, pre, post, order, accepted, isActive), Registration.Key));
             }
             reason = string.Empty; return true;
         }
@@ -228,6 +220,7 @@ namespace APIShared.Events
             internal readonly Func<bool> IsActive;
             internal Registration(string owner, string id, Action<TPre> pre, Action<TPost> post, int order, Action<TPre, object> accepted, Func<bool> isActive)
             { Owner = owner; Id = id; Pre = pre; Post = post; Order = order; Accepted = accepted; IsActive = isActive; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
     }
 

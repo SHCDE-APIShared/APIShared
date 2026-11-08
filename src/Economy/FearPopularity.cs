@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Events;
 using APIShared.Modifiers;
 
 namespace APIShared.Economy
@@ -16,6 +17,8 @@ namespace APIShared.Economy
     {
         private static readonly object sync = new object();
         private static readonly List<FearPopularityRegistration> registrations = new List<FearPopularityRegistration>();
+        private static readonly Func<FearPopularityRegistration, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         private static Selection selected;
         internal sealed class Selection
         {
@@ -41,11 +44,7 @@ namespace APIShared.Economy
                     { diagnostic = "Duplicate owner/registration ID."; return false; }
                 registration = new FearPopularityRegistration(ownerGuid, registrationId, order);
                 registrations.Add(registration);
-                registrations.Sort((a,b) => {
-                    int result = a.Order.CompareTo(b.Order);
-                    if (result == 0) result = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return result != 0 ? result : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
+                registrations.Sort((a,b) => RegistrationKey.Compare(RegistrationKeyOf(a), RegistrationKeyOf(b)));
             }
             diagnostic = null; return true;
         }

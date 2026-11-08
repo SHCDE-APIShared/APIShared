@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using APIShared.Events;
 using Noesis;
 using SHCDESE.Interop;
 
@@ -15,19 +16,10 @@ namespace APIShared.Presentation
             entry = null;
             if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || factory == null)
             { reason = "A nonempty owner GUID, adornment ID and factory are required."; return false; }
-            foreach (var existing in entries)
-                if (existing.Owner == owner && existing.Id == id)
-                { reason = "Duplicate ally-goods adornment: " + owner + "/" + id; return false; }
+            if (OrderedRegistrations.Contains(entries, AllyGoodsAdornmentEntry.Key, owner, id))
+            { reason = "Duplicate ally-goods adornment: " + owner + "/" + id; return false; }
             entry = new AllyGoodsAdornmentEntry(owner, id, order, factory);
-            var next = new AllyGoodsAdornmentEntry[entries.Length + 1];
-            Array.Copy(entries, next, entries.Length); next[next.Length - 1] = entry;
-            Array.Sort(next, (a, b) =>
-            {
-                int result = a.Order.CompareTo(b.Order);
-                if (result == 0) result = string.CompareOrdinal(a.Owner, b.Owner);
-                return result == 0 ? string.CompareOrdinal(a.Id, b.Id) : result;
-            });
-            entries = next; reason = ""; return true;
+            entries = OrderedRegistrations.WithAdded(entries, entry, AllyGoodsAdornmentEntry.Key); reason = ""; return true;
         }
     }
 
@@ -40,6 +32,7 @@ namespace APIShared.Presentation
         internal AllyGoodsAdornmentEntry(string owner, string id, int order,
             Func<AllyGoodsSectionContext, eGoods, FrameworkElement> factory)
         { Owner = owner; Id = id; Order = order; Factory = factory; }
+        internal static readonly Func<AllyGoodsAdornmentEntry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
     }
 
     // Production cache policy is testable without constructing native Noesis objects.

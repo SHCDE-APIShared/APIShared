@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading;
+using APIShared.Events;
 using APIShared.Internal;
 using APIShared.Savegames;
 using SHCDESE.EventAPI;
@@ -15,15 +16,6 @@ namespace APIShared.Wildlife
         internal const int MaximumBaseMeat = 1000;
         private const string SaveIdentifier = "APIShared.Wildlife.HunterPrey";
         private const string ButcheredEntry = "butchered";
-
-        private sealed class Owned<T>
-        {
-            internal readonly string Owner, Id;
-            internal readonly int Order;
-            internal readonly T Callback;
-            internal int FailureLogged;
-            internal Owned(string owner, string id, int order, T callback) { Owner = owner; Id = id; Order = order; Callback = callback; }
-        }
 
         private static Owned<HunterTargetPolicy>[] policies = Array.Empty<Owned<HunterTargetPolicy>>();
         private static Owned<Action<HunterMeatYield>>[] meatHandlers = Array.Empty<Owned<Action<HunterMeatYield>>>();
@@ -68,28 +60,11 @@ namespace APIShared.Wildlife
         // Ordered, immutable snapshot; callers hold Gate.
         private static bool TryAdd<T>(ref Owned<T>[] list, Owned<T> item, out string reason)
         {
-            foreach (var old in list)
-                if (StringComparer.Ordinal.Equals(old.Owner, item.Owner) && StringComparer.Ordinal.Equals(old.Id, item.Id))
-                { reason = "This owner already registered that ID."; return false; }
-            var next = new Owned<T>[list.Length + 1];
-            int index = 0;
-            bool placed = false;
-            foreach (var old in list)
-            {
-                if (!placed && Compare(item, old) < 0) { next[index++] = item; placed = true; }
-                next[index++] = old;
-            }
-            if (!placed) next[index] = item;
-            Volatile.Write(ref list, next);
+            if (OrderedRegistrations.Contains(list, Owned<T>.Key, item.Owner, item.Id))
+            { reason = "This owner already registered that ID."; return false; }
+            Volatile.Write(ref list, OrderedRegistrations.WithAdded(list, item, Owned<T>.Key));
             reason = "";
             return true;
-        }
-
-        private static int Compare<T>(Owned<T> left, Owned<T> right)
-        {
-            int result = left.Order.CompareTo(right.Order);
-            if (result == 0) result = StringComparer.Ordinal.Compare(left.Owner, right.Owner);
-            return result != 0 ? result : StringComparer.Ordinal.Compare(left.Id, right.Id);
         }
 
         // Runs inside Vanilla's query on the simulation thread (also for the local speech query).
