@@ -1139,6 +1139,19 @@ APIShared.LocalSelectionSnapshot | public sealed class APIShared.LocalSelectionS
 APIShared.LocalSelectionSnapshot | public SHCDESE.Interop.SelectedUnitInfo Item[int index] { get; }
 APIShared.LocalSelectionSnapshot | public int Count { get; }
 APIShared.LocalSelectionSnapshot | public int PlayerId { get; }
+APIShared.LordSkin | public enum APIShared.LordSkin : int
+APIShared.LordSkin | Arabic = 2
+APIShared.LordSkin | ArabicFemale = 7
+APIShared.LordSkin | Bedouin = 3
+APIShared.LordSkin | BedouinFemale = 8
+APIShared.LordSkin | Bessy = 6
+APIShared.LordSkin | Crusader = 1
+APIShared.LordSkin | CrusaderFemale = 5
+APIShared.LordSkin | Scribe = 4
+APIShared.LordSkin | Unknown = 0
+APIShared.LordSkins | public static class APIShared.LordSkins
+APIShared.LordSkins | public static bool TryGetForPlayer(int playerId, out APIShared.LordSkin skin)
+APIShared.LordSkins | public static bool TryGetFromMaterial(SHCDESE.Interop.GM material, out APIShared.LordSkin skin)
 APIShared.Maps.MultiplayerMapLookup | public static class APIShared.Maps.MultiplayerMapLookup
 APIShared.Maps.MultiplayerMapLookup | public static bool IsAvailable { get; }
 APIShared.Maps.MultiplayerMapLookup | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Maps.MultiplayerMapLookupResult> observer, out string diagnostic)
@@ -2559,6 +2572,12 @@ APIShared.Presentation.PresentationPreEventArgs | public System.Action<object> R
 APIShared.Presentation.PresentationPreEventArgs | public object Instance { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object OriginalParameter { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object Parameter { get; set; }
+APIShared.Presentation.SideHudVisibility | public static class APIShared.Presentation.SideHudVisibility
+APIShared.Presentation.SideHudVisibility | public static bool TryGetState(CrusaderDE.MainViewModel view, out APIShared.Presentation.SideHudVisibilityState state)
+APIShared.Presentation.SideHudVisibilityState | public enum APIShared.Presentation.SideHudVisibilityState : int
+APIShared.Presentation.SideHudVisibilityState | Hidden = 0
+APIShared.Presentation.SideHudVisibilityState | HiddenByHudMode = 2
+APIShared.Presentation.SideHudVisibilityState | Visible = 1
 APIShared.Presentation.TooltipAnchor | public static class APIShared.Presentation.TooltipAnchor
 APIShared.Presentation.TooltipAnchor | public static readonly Noesis.DependencyProperty AnchorProperty
 APIShared.Presentation.TooltipAnchor | public static string GetAnchor(Noesis.DependencyObject value)

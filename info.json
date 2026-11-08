@@ -3,13 +3,25 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.35.0",
+  "Version": "0.37.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.37.0",
+      "Changes": [
+        "Add SideHudVisibility.TryGetState so mod overlays can distinguish Hide HUD from other reasons the Vanilla side HUD is hidden."
+      ]
+    },
+    {
+      "Version": "0.36.0",
+      "Changes": [
+        "Expose the current skin of a player's living Lord and classification of captured Lord materials."
+      ]
+    },
     {
       "Version": "0.35.0",
       "Changes": [

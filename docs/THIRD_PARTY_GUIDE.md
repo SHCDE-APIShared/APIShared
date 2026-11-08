@@ -836,6 +836,21 @@ use Vanilla rollover text; side buttons use the mod-options popup by default.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
 
+### Side-HUD overlays
+
+With APIShared 0.37.0 or later, call `APIShared.Presentation.SideHudVisibility.TryGetState` with the current
+`MainViewModel` on the Unity thread. An overlay can opt into staying visible for
+`HiddenByHudMode`. This state requires an active in-game view, the Vanilla HUD
+mode switched off, and the independent side-HUD flag still enabled. Briefing,
+the game menu and mission-over screens report `Hidden`. If the query returns
+`false`, use your overlay's ordinary visibility rules without the exception.
+
+Read once when attaching the overlay, then refresh on `PropertyChanged` for
+`Show_InGame`, `Show_InGameUI`, `Show_HUD_Extras`, `Show_HUD_Briefing`,
+`Show_HUD_IngameMenu` and `Show_HUD_MissionOver`. Reattach the subscription when
+the view changes. Overlay activation, popup conflicts and session cleanup belong
+to the consumer. Registered side-HUD buttons keep their existing visibility rules.
+
 ### Vanilla action-field registration
 
 `TroopActionButtonDefinition` supplies the command, localized rollover text and a
@@ -888,6 +903,23 @@ colours. The Arabic troop variants follow the leased player only for human multi
 otherwise they keep Vanilla's value for the local player. Map sprites, labels, selection and
 control rights are unaffected. The [lease contract](../src/Presentation/UnitHud/UnitHudSpriteColours.cs)
 describes ordering, replay and failure behavior.
+
+## Identifying a Lord skin
+
+Use the one-based player ID in the active mission or editor on the Unity main thread.
+Skin and UI colour are separate lookups:
+
+```csharp
+if (LordSkins.TryGetForPlayer(playerId, out LordSkin skin))
+{
+    PlayerColours.TryGetUiColour(playerId, out int colour);
+    // Select your own portrait using skin and the UI colour. Colour 0 means unavailable.
+}
+```
+
+The skin lookup verifies the registered unit's identity and returns `Unknown` when
+the Lord is absent, dead or has an unrecognized material. Callers that already have
+the material of a Lord can use `LordSkins.TryGetFromMaterial` directly.
 
 ## Sharing action and HUD hooks
 

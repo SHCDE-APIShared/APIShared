@@ -267,6 +267,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Enemy-unit proximity | [Contracts](../src/Buildings/EnemyProximity/EnemyProximityContracts.cs), [registration](../src/Buildings/EnemyProximity/EnemyProximityPolicies.cs) | [Runtime](../src/Buildings/EnemyProximity/EnemyProximityRuntime.cs) | — |
 | Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs), [sprite colours](../src/Presentation/UnitHud/UnitHudSpriteColours.cs), [player colours](../src/Players/PlayerColours.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
+| Side-HUD visibility | [SideHudVisibility.TryGetState](../src/Presentation/HudExtras/SideHudVisibility.cs) | Validated, read-only query on the Unity thread | [Overlay integration](THIRD_PARTY_GUIDE.md#side-hud-overlays) |
 | Briefing gold | [Contracts](../src/Presentation/BriefingGold/BriefingGoldContracts.cs) | [Capability](../src/Presentation/BriefingGold/BriefingGoldPresentationCapability.cs) | — |
 | Repair | [Contracts](../src/Buildings/Repair/BuildingRepairContracts.cs) | [Capability](../src/Buildings/Repair/BuildingRepairCapability.cs) | — |
 | Gatehouse coordination | [Timing](../src/Buildings/Gatehouse/GatehouseTimingCapability.cs), [origin](../src/Buildings/Gatehouse/GatehouseDistanceOriginCapability.cs), [drawbridge helper](../src/Buildings/Gatehouse/GatehouseDrawbridgeCoupling.cs) | [Permanent state](../src/Buildings/Gatehouse/GatehousePermanentRuntimeState.cs), [automation](../src/Buildings/Gatehouse/GatehouseAutomationNativeState.cs) | — |
@@ -443,6 +444,14 @@ recruitment icons, troop portraits and control groups in another player's colour
 for a spectated or input-controlled player; `Release(ownerGuid)` ends it. Contracts: [lease](../src/Presentation/UnitHud/UnitHudSpriteColours.cs),
 [colour lookup](../src/Players/PlayerColours.cs); usage and limits in the
 [guide](THIRD_PARTY_GUIDE.md#unit-hud-sprites-in-another-players-colour).
+
+## Lord skins
+
+Requires APIShared 0.36.0 or later. `LordSkins.TryGetForPlayer` reads the appearance
+of the player's living, registered Lord on the Unity main thread.
+`LordSkins.TryGetFromMaterial` classifies a captured unit material on any thread.
+See the [contract](../src/Players/LordSkins.cs) and the
+[integration guide](THIRD_PARTY_GUIDE.md#identifying-a-lord-skin).
 
 ## Player views and control
 
