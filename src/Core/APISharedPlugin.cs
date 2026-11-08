@@ -77,6 +77,7 @@ namespace APIShared
                 new NativeInitializationStep("repair tooltip binding", () => GameXAMLManagerAPI.Instance.RegisterBinding(
                     "APISharedRepairExtrasHost", runtime.RepairTooltip), runtime.FaultBuildingRepair),
                 new NativeInitializationStep("building tooltip bindings", Presentation.BuildingTooltipPresentation.Bind),
+                new NativeInitializationStep("APIShared Mod Options", () => Workshop.WorkshopOptionsViewModel.Register(this)),
                 new NativeInitializationStep("Extender archive contexts", () => ScriptExtenderFixes.SaveContextRuntime.InitializeManaged(RuntimeLogger)),
                 new NativeInitializationStep("Extender move failure context", () => ScriptExtenderFixes.MoveCommandFailureRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(RuntimeLogger)),

@@ -61,11 +61,15 @@ public sealed class WorkshopUpdaterActivityTests
         } finally { if (Directory.Exists(game)) Directory.Delete(game, true); }
     }
 
-    [TestMethod] public void LiveWindowsOwnerRequiresReadyPinsAndAnUnfinishedJournal()
+    [TestMethod]
+    [DataRow("_APIShared/Workshop/Transactions")]
+    [DataRow("_APIShared/T")]
+    public void LiveWindowsOwnerRequiresReadyPinsAndAnUnfinishedJournal(string transactionRoot)
     {
         if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Requires actual Windows PowerShell and Windows file sharing.");
         string game = Path.Combine(Path.GetTempPath(), "APIShared-live-status-" + Guid.NewGuid().ToString("N"));
-        string state = Path.Combine(game, "_APIShared/Workshop"), directory = Path.Combine(state, "Transactions", Id);
+        string state = Path.Combine(game, "_APIShared/Workshop"), directory = Path.Combine(game, transactionRoot, Id);
+        Directory.CreateDirectory(state);
         Directory.CreateDirectory(directory);
         string operations = Path.Combine(directory, "operations.tsv"); File.WriteAllText(operations, "synthetic operation pin");
         string hash = WorkshopInventory.Hash(operations);
@@ -92,6 +96,12 @@ try{
             Assert.IsFalse(owner.HasExited);
             var result = WorkshopUpdaterActivity.ReadWindows(game);
             Assert.IsTrue(result.Active); Assert.AreEqual(Id, result.Transaction);
+            string otherRoot = transactionRoot == "_APIShared/T" ? "_APIShared/Workshop/Transactions" : "_APIShared/T";
+            string duplicate = Path.Combine(game, otherRoot, Id);
+            Directory.CreateDirectory(duplicate);
+            result = WorkshopUpdaterActivity.ReadWindows(game);
+            Assert.IsTrue(result.Busy); Assert.IsFalse(result.Active);
+            Directory.Delete(duplicate);
             File.WriteAllText(Path.Combine(directory, "journal.log"), "applying\r\ncommitted\r\n");
             Assert.IsFalse(WorkshopUpdaterActivity.ReadWindows(game).Active);
             File.WriteAllText(Path.Combine(directory, "journal.log"), "applying\r\n");

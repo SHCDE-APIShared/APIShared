@@ -24,7 +24,7 @@ function Maintenance-Completed([string]$Directory) {
 }
 function Maintenance-Scan {
     $nodes = @{}
-    foreach ($directory in [IO.Directory]::EnumerateDirectories($transactionRoot)) {
+    foreach ($directory in @(Get-TransactionDirectories)) {
         $id = [IO.Path]::GetFileName($directory)
         $node = [pscustomobject]@{Id=$id;Directory=$directory;Valid=$false;Terminal=$false;Resolved=$false;Request=$false;Items=@();Refs=@();Files=@();Keep=$false;Time=[DateTime]::MinValue;Reason='unknown transaction'}
         $nodes[$id]=$node
@@ -124,12 +124,13 @@ function Maintenance-Digest([string]$Text) {
 function Maintenance-SavePlan($Actions) {
     $lines=[Collections.Generic.List[string]]::new()
     foreach($action in $Actions) {
-        $lines.Add("D`t"+$action.Id+"`t"+$action.Mode)
+        $rootKind = if ([IO.Path]::GetDirectoryName($action.Directory) -eq $transactionRoots.legacy) { 'legacy' } else { 'short' }
+        $lines.Add("D`t"+$action.Id+"`t"+$action.Mode+"`t"+$rootKind)
         if($action.Mode -ceq 'all'){foreach($reference in $action.Refs){$lines.Add("R`t"+$action.Id+"`t"+$reference[0])}}
-        foreach($file in $action.Files) { $lines.Add("F`t"+$action.Id+"`t"+$file+"`t"+(Hash (Inside (Inside $transactionRoot $action.Id) $file))) }
+        foreach($file in $action.Files) { $lines.Add("F`t"+$action.Id+"`t"+$file+"`t"+(Hash (Inside $action.Directory $file))) }
     }
     $payload=($lines -join "`n")+"`n"
-    $text="APISHARED-WORKSHOP-CLEANUP-1`n"+(Maintenance-Digest $payload)+"`n"+$payload
+    $text="APISHARED-WORKSHOP-CLEANUP-2`n"+(Maintenance-Digest $payload)+"`n"+$payload
     $temporary=Inside $state 'cleanup.pending.tmp'; $pending=Inside $state 'cleanup.pending.tsv'
     $stream=[IO.File]::Open($temporary,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try { $bytes=[Text.Encoding]::UTF8.GetBytes($text); $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
@@ -139,22 +140,28 @@ function Maintenance-Resume {
     $pending=Inside $state 'cleanup.pending.tsv'
     if(-not [IO.File]::Exists($pending)){return}
     $text=[IO.File]::ReadAllText($pending); $parts=$text.Split(@("`n"),3,[StringSplitOptions]::None)
-    if($parts.Length -ne 3 -or $parts[0] -cne 'APISHARED-WORKSHOP-CLEANUP-1' -or $parts[1] -cne (Maintenance-Digest $parts[2])){throw 'Invalid pending cleanup checksum.'}
+    if($parts.Length -ne 3 -or $parts[0] -cnotin @('APISHARED-WORKSHOP-CLEANUP-1','APISHARED-WORKSHOP-CLEANUP-2') -or $parts[1] -cne (Maintenance-Digest $parts[2])){throw 'Invalid pending cleanup checksum.'}
+    $legacyPlan=$parts[0] -ceq 'APISHARED-WORKSHOP-CLEANUP-1'
     $actions=[Collections.Generic.List[object]]::new(); $ids=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $current=$null
     foreach($line in $parts[2].Split([char]10)) {
         if(-not $line){continue}; $r=$line.Split([char]9)
-        if($r[0] -ceq 'D' -and $r.Length -eq 3 -and $r[1] -cmatch '^[a-f0-9]{32}$' -and $r[2] -cin @('all','new') -and $ids.Add($r[1])) {
-            $current=[pscustomobject]@{Id=$r[1];Mode=$r[2];Files=@{};Refs=@()}; $actions.Add($current)
+        if($r[0] -ceq 'D' -and $r[1] -cmatch '^[a-f0-9]{32}$' -and $r[2] -cin @('all','new') -and
+            (($legacyPlan -and $r.Length -eq 3) -or (-not $legacyPlan -and $r.Length -eq 4 -and $r[3] -cin @('legacy','short'))) -and $ids.Add($r[1])) {
+            $rootKind=if($legacyPlan){'legacy'}else{$r[3]}
+            $current=[pscustomobject]@{Id=$r[1];Mode=$r[2];RootKind=$rootKind;Files=@{};Refs=@()}; $actions.Add($current)
         } elseif($r[0] -ceq 'R' -and $r.Length -eq 3 -and $current -and $r[1] -ceq $current.Id -and $current.Mode -ceq 'all' -and $r[2] -cmatch '^[a-f0-9]{32}$' -and $r[2] -cnotin $current.Refs){$current.Refs+=,$r[2]
         } elseif($r[0] -ceq 'F' -and $r.Length -eq 4 -and $current -and $r[1] -ceq $current.Id -and (Maintenance-Allowed $r[2]) -and $r[3] -cmatch '^[a-f0-9]{64}$' -and -not $current.Files.ContainsKey($r[2]) -and ($current.Mode -ceq 'all' -or $r[2].StartsWith('New/',[StringComparison]::Ordinal))) { $current.Files[$r[2]]=$r[3] }
         else {throw 'Invalid pending cleanup action.'}
     }
     $remaining=$false
     foreach($action in $actions) {
-        $directory=Inside $transactionRoot $action.Id
-        if(-not [IO.Directory]::Exists($directory)){continue}
+        $directory=$null
         try {
+            $directory=Find-TransactionInRoot $action.RootKind $action.Id
+            if(-not $directory){continue}
+            $otherRoot=if($action.RootKind -ceq 'legacy'){'short'}else{'legacy'}
+            if(Find-TransactionInRoot $otherRoot $action.Id){throw 'Cleanup transaction location is ambiguous.'}
             $files=@(Maintenance-Files $directory)
             # Full deletion requires an exact remaining subset of the approved
             # immutable inventory. Unknown/newly changed content cancels deletion.
@@ -164,11 +171,11 @@ function Maintenance-Resume {
                 if(-not $action.Files.ContainsKey($file) -or (Hash (Inside $directory $file)) -cne $action.Files[$file]){throw "Cleanup inventory changed: $directory/$file"}
             }
             if($action.Mode -ceq 'all') {
-                foreach($predecessor in $action.Refs){if([IO.Directory]::Exists((Inside $transactionRoot $predecessor))){throw 'Cleanup proof still has an approved predecessor.'}}
+                foreach($predecessor in $action.Refs){if(Resolve-Transaction $predecessor){throw 'Cleanup proof still has an approved predecessor.'}}
                 # A proof is never removed while even a partially deleted source
                 # directory remains. The plan lists sources before their proof.
                 $reference=Inside $directory 'supersedes.tsv'
-                if([IO.File]::Exists($reference)) { foreach($line in [IO.File]::ReadAllLines($reference)){ $r=Read-Reference $line; if([IO.Directory]::Exists((Inside $transactionRoot $r[0]))){throw 'Cleanup proof still has a predecessor.'} } }
+                if([IO.File]::Exists($reference)) { foreach($line in [IO.File]::ReadAllLines($reference)){ $r=Read-Reference $line; if(Resolve-Transaction $r[0]){throw 'Cleanup proof still has a predecessor.'} } }
             }
             # Remove the approved terminal/superseded journal before operations
             # metadata: a crash must never leave an 'applying' journal whose
@@ -186,7 +193,11 @@ function Maintenance-Resume {
                 if(-not @([IO.Directory]::EnumerateFileSystemEntries($child)).Count){[IO.Directory]::Delete($child,$false)}
             }
             if($action.Mode -ceq 'all') { if(@([IO.Directory]::EnumerateFileSystemEntries($directory)).Count){throw 'Cleanup directory is not empty.'}; [IO.Directory]::Delete($directory,$false); $script:maintenanceRemoved++ }
-        } catch { $remaining=$true; $script:maintenanceDeferred++; Write-Output ('Workshop maintenance deferred: '+$directory+'; '+$_.Exception.Message) }
+        } catch {
+            $remaining=$true; $script:maintenanceDeferred++
+            $location=if($directory){$directory}else{$action.RootKind+'/'+$action.Id}
+            Write-Output ('Workshop maintenance deferred: '+$location+'; '+$_.Exception.Message)
+        }
     }
     if(-not $remaining){[IO.File]::Delete($pending)}
 }
@@ -194,7 +205,11 @@ function Invoke-WorkshopMaintenance {
     $script:maintenanceBytes=[long]0; $script:maintenanceRemoved=0; $script:maintenanceDeferred=0
     try {
         $pending=Inside $state 'cleanup.pending.tsv'
-        if([IO.File]::Exists($pending)){Maintenance-Resume}
+        if([IO.File]::Exists($pending)){
+            # Resolve collisions before resuming any previously approved deletions.
+            $null=@(Get-TransactionDirectories)
+            Maintenance-Resume
+        }
         if(-not [IO.File]::Exists($pending)) {
             $nodes=Maintenance-Scan; $actions=[Collections.Generic.List[object]]::new(); $visiting=@{}; $visited=@{}
             function Visit-MaintenanceNode($Node) {
@@ -206,7 +221,7 @@ function Invoke-WorkshopMaintenance {
                 if(-not $Node.Valid -or -not $Node.Resolved){$script:maintenanceDeferred++; if($Node.Reason){Write-Output ('Workshop maintenance retained: '+$Node.Directory+'; '+$Node.Reason)}; return}
                 $mode=if($Node.Keep){'new'}else{'all'}
                 $files=@($Node.Files | Where-Object {$mode -ceq 'all' -or $_.StartsWith('New/',[StringComparison]::Ordinal)})
-                if($files.Count -or $mode -ceq 'all'){$actions.Add([pscustomobject]@{Id=$Node.Id;Mode=$mode;Files=$files;Refs=$Node.Refs})}
+                if($files.Count -or $mode -ceq 'all'){$actions.Add([pscustomobject]@{Id=$Node.Id;Directory=$Node.Directory;Mode=$mode;Files=$files;Refs=$Node.Refs})}
             }
             foreach($node in @($nodes.Values | Sort-Object Id)){Visit-MaintenanceNode $node}
             if($actions.Count){Maintenance-SavePlan $actions; Maintenance-Resume}

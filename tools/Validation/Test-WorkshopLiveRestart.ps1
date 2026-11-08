@@ -16,13 +16,15 @@ foreach($file in @('APIShared.dll','Workshop/workshop-updater.ps1','Workshop/wor
 $id=[guid]::NewGuid().ToString('N')
 $evidence=Join-Path $root ('.local/live-restart-tests/'+$id);$scripts=Join-Path $evidence 'scripts'
 $state=Join-Path $GameRoot '_APIShared/Workshop';$transactions=Join-Path $state 'Transactions';$transaction=Join-Path $transactions $id
+$shortTransactions=Join-Path $GameRoot '_APIShared/T'
 $probeDirectory=Join-Path $GameRoot 'BepInEx/plugins/APISharedCoordinationProbe'
 $probe=Join-Path $probeDirectory 'probe.txt';$testReceipt=Join-Path $state 'Receipts/18446744073709551614.json'
-foreach($path in @($GameRoot,$state,$transactions,$transaction,$probeDirectory,$testReceipt)){Assert-ApiWorkshopUnlinkedPath $path}
+foreach($path in @($GameRoot,$state,$transactions,$shortTransactions,$transaction,$probeDirectory,$testReceipt)){Assert-ApiWorkshopUnlinkedPath $path}
 if(Test-Path -LiteralPath $probeDirectory){throw 'Probe directory already exists; preserve it and inspect the previous test first.'}
 if(Test-Path -LiteralPath $testReceipt){throw 'The reserved test receipt is already present; refusing to touch it.'}
-if(Test-Path -LiteralPath $transactions){
-    foreach($directory in Get-ChildItem -LiteralPath $transactions -Directory){
+foreach($transactionRoot in @($transactions,$shortTransactions)){
+    if(-not (Test-Path -LiteralPath $transactionRoot)){continue}
+    foreach($directory in Get-ChildItem -LiteralPath $transactionRoot -Directory){
         $journal=Join-Path $directory.FullName 'journal.log'
         if(Test-Path -LiteralPath $journal){$lines=[IO.File]::ReadAllLines($journal);if($lines -ccontains 'applying' -and $lines -cnotcontains 'committed' -and $lines -cnotcontains 'restored'){throw ('Resolve existing interrupted history before this live test: '+$directory.FullName)}}
     }

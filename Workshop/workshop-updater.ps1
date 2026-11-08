@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$GameRoot, [string]$Transaction, [string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam, [string]$SupersedesHash = '', [switch]$Maintain)
+param([Parameter(Mandatory=$true)][string]$GameRoot, [string]$Transaction, [string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam, [string]$SupersedesHash = '', [switch]$Maintain, [switch]$RequireRunningGame, [string]$SourceManifest, [string]$SourceManifestHash)
 $ErrorActionPreference = 'Stop'
 if ($env:SCDEModManagerLaunchId) { throw 'Externally managed installation; no changes are allowed.' }
 # Runs in a separate process. Receipts form the final phase and roll back first.
@@ -16,10 +16,65 @@ function Inside([string]$Root, [string]$Relative) {
     Assert-Unlinked $path
     return $path
 }
+function Test-TransactionDirectory([string]$Path) {
+    Assert-Unlinked $Path
+    try {
+        if (-not ([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::Directory)) { throw "Expected transaction directory: $Path" }
+        return $true
+    }
+    catch [IO.FileNotFoundException] { return $false }
+    catch [IO.DirectoryNotFoundException] { return $false }
+}
+function Find-TransactionInRoot([string]$RootKind, [string]$Id) {
+    $root = $transactionRoots[$RootKind]
+    if (-not (Test-TransactionDirectory $root)) { return }
+    if ($RootKind -ceq 'short') {
+        $candidate = Inside $root $Id
+        if (Test-TransactionDirectory $candidate) { return $candidate }
+        return
+    }
+    # Probing a nonexistent legacy path can exceed MAX_PATH even when the
+    # compact transaction fits. Validate only actual matching legacy entries.
+    foreach ($candidate in [IO.Directory]::EnumerateFileSystemEntries($root)) {
+        if ([string]::Equals([IO.Path]::GetFileName($candidate), $Id, [StringComparison]::OrdinalIgnoreCase)) {
+            if (Test-TransactionDirectory $candidate) { return $candidate }
+            return
+        }
+    }
+}
+function Resolve-Transaction([string]$Id) {
+    if ($Id -notmatch '^[a-f0-9]{32}$') { throw 'Invalid transaction ID.' }
+    $legacy = Find-TransactionInRoot 'legacy' $Id
+    $short = Find-TransactionInRoot 'short' $Id
+    if ($legacy -and $short) { throw "Duplicate transaction ID: $Id" }
+    if ($short) { return $short }
+    return $legacy
+}
+function Get-TransactionDirectories {
+    $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($root in $transactionRoots.Values) {
+        if (-not (Test-TransactionDirectory $root)) { continue }
+        foreach ($path in [IO.Directory]::EnumerateFileSystemEntries($root)) {
+            $id = [IO.Path]::GetFileName($path)
+            if ($id -match '^[a-f0-9]{32}$' -and -not $ids.Add($id)) { throw "Duplicate transaction ID: $id" }
+            if ([IO.File]::GetAttributes($path) -band [IO.FileAttributes]::Directory) { $path }
+        }
+    }
+}
 function Hash([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return 'missing' }
     $stream=[IO.File]::OpenRead($Path); $sha=[Security.Cryptography.SHA256]::Create()
     try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose(); $stream.Dispose() }
+}
+function Assert-ConfirmedSource {
+    if (-not $RequireRunningGame) { return }
+    if (-not $SourceManifest -or [IO.Path]::GetFullPath($SourceManifest) -cne $SourceManifest -or
+        [IO.Path]::GetFileName($SourceManifest) -cne 'apishared-workshop.json' -or $SourceManifestHash -cnotmatch '^[a-f0-9]{64}$') {
+        throw 'Invalid confirmed Workshop manifest reference.'
+    }
+    Assert-Unlinked $SourceManifest
+    if ((Hash $SourceManifest) -cne $SourceManifestHash) { throw 'Steam download changed; confirm a new Workshop installation preview.' }
+    if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence.' }
 }
 function Journal([string]$Text) {
     if ($Text.StartsWith('failure ',[StringComparison]::Ordinal)) { $Text = 'failure '+[DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss.fff')+'; step='+$script:step+'; '+$Text.Substring(8) }
@@ -90,12 +145,12 @@ function Read-Reference([string]$Line) {
     return ,$cells
 }
 function Assert-Reference([string[]]$Cells) {
-    $directory = Inside $transactionRoot $Cells[0]
-    if ((Hash (Inside $directory 'operations.tsv')) -ne $Cells[1] -or (Hash (Inside $directory 'journal.log')) -ne $Cells[2]) { throw "Recovery transaction changed: $directory" }
+    $directory = Resolve-Transaction $Cells[0]
+    if (-not $directory -or (Hash (Inside $directory 'operations.tsv')) -ne $Cells[1] -or (Hash (Inside $directory 'journal.log')) -ne $Cells[2]) { throw "Recovery transaction changed: $($Cells[0])" }
     return $directory
 }
 function Superseded([string]$Directory) {
-    foreach ($candidate in [IO.Directory]::EnumerateDirectories($transactionRoot)) {
+    foreach ($candidate in @(Get-TransactionDirectories)) {
         $file = Inside $candidate 'supersedes.tsv'
         if (@(Read-Journal $candidate) -notcontains 'committed' -or -not [IO.File]::Exists($file)) { continue }
         $pin = Inside $candidate 'supersedes.sha256'
@@ -177,14 +232,24 @@ try {
     $GameRoot = [IO.Path]::GetFullPath($GameRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
     Assert-Unlinked $GameRoot
     $state = Inside $GameRoot '_APIShared/Workshop'
-    $transactionRoot = Inside $state 'Transactions'
-    if($Maintain -and -not [IO.Directory]::Exists($transactionRoot)){Write-Output 'Workshop maintenance: removed=0; freedBytes=0; deferred=0'; exit 0}
+    $transactionRoots = [ordered]@{
+        legacy = Inside $state 'Transactions'
+        short = Inside $GameRoot '_APIShared/T'
+    }
+    if ($Maintain) {
+        if (-not (Test-TransactionDirectory $transactionRoots.legacy) -and -not (Test-TransactionDirectory $transactionRoots.short) -and -not [IO.File]::Exists((Inside $state 'cleanup.pending.tsv'))) {
+            Write-Output 'Workshop maintenance: removed=0; freedBytes=0; deferred=0'; exit 0
+        }
+    } else {
+        $Transaction = [IO.Path]::GetFullPath($Transaction)
+        $transactionId = [IO.Path]::GetFileName($Transaction)
+        if ((Resolve-Transaction $transactionId) -ne $Transaction) { throw 'Invalid transaction directory.' }
+    }
+    [void][IO.Directory]::CreateDirectory($state)
     $lock = [IO.File]::Open((Inside $state 'apply.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read)
     Publish-Activity 'waiting'
     if($Maintain){Invoke-WorkshopMaintenance; exit 0}
-    $Transaction = [IO.Path]::GetFullPath($Transaction)
-    if (-not $Transaction.StartsWith($transactionRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetDirectoryName($Transaction) -ne $transactionRoot -or [IO.Path]::GetFileName($Transaction) -notmatch '^[a-f0-9]{32}$') { throw 'Invalid transaction directory.' }
-    Assert-Unlinked $Transaction
+    if ((Resolve-Transaction $transactionId) -ne $Transaction) { throw 'Invalid transaction directory.' }
     $gameExecutable = Inside $GameRoot 'Stronghold Crusader Definitive Edition.exe'
     $journalPath = Inside $Transaction 'journal.log'
     $operationsPath = Inside $Transaction 'operations.tsv'
@@ -193,6 +258,7 @@ try {
     if ($lines.Length -ge 3 -and $lines[0] -ceq 'APISHARED-WORKSHOP-RECOVERY-1') {
         $script:activityMode='recover'
         $script:step = 'recovery preflight'
+        $null = @(Get-TransactionDirectories)
         if ($lines[1] -cnotin @('restart','stop')) { throw 'Invalid recovery request.' }
         $directories = @(); $restore = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         $references = @($lines | Select-Object -Skip 2 | ForEach-Object { Read-Reference $_ })
@@ -270,7 +336,7 @@ try {
             $superseding[$old] = $true
         }
     } elseif ($SupersedesHash) { throw 'Missing replacement references.' }
-    foreach ($other in [IO.Directory]::EnumerateDirectories($transactionRoot)) {
+    foreach ($other in @(Get-TransactionDirectories)) {
         if ($other -eq $Transaction) { continue }
         Assert-Unlinked $other
         $otherJournal = Inside $other 'journal.log'
@@ -284,6 +350,8 @@ try {
     }
     $started = @($prior | Where-Object { $_ -match '^begin\t[0-9]+$' } | ForEach-Object { $_.Split([char]9)[1] })
     if ($started.Count -and -not $Recover) { throw 'Interrupted transaction: run with -Recover to restore its backup.' }
+    if ($RequireRunningGame -and -not (Game-Running)) { throw 'Calling game is not visible to the process detector; no handoff.' }
+    Assert-ConfirmedSource
     [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
     Publish-Activity 'waiting'
     # Legacy manual -Recover is an explicit new recovery consent, not the old
@@ -292,6 +360,7 @@ try {
     Wait-GameExit
     if ([IO.File]::Exists($cancelPath)) { throw 'Handoff cancelled; no installation started.' }
     if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence.' }
+    Assert-ConfirmedSource
     if (-not $Recover) {
         Publish-Activity 'backup'
         $script:step = 'installation validation and backup'
@@ -303,6 +372,7 @@ try {
             if ((Hash $row.Target) -ne $row.Before -or [IO.Directory]::Exists($row.Target)) { throw "Target changed: $($row.Relative)" }
             if ($row.Before -ne 'missing') { [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($row.Backup)); [IO.File]::Copy($row.Target,$row.Backup,$true); if ((Hash $row.Backup) -ne $row.Before) { throw 'Backup verification failed.' } }
         }
+        Assert-ConfirmedSource
         Journal 'applying'
         Publish-Activity 'apply'
         $script:step = 'installation writes and receipt commit'

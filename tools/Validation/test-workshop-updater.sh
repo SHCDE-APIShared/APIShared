@@ -9,8 +9,14 @@ fixture=$(mktemp -d "${TMPDIR:-/tmp}/apishared-updater.XXXXXXXX")
 hash_file() { sha256sum -- "$1" | cut -d ' ' -f1; }
 fail() { printf 'FAIL: %s\nEvidence retained: %s\n' "$1" "$fixture" >&2; exit 1; }
 new_game() {
-    game="$fixture/$1/game"; transactions="$game/_APIShared/Workshop/Transactions"
-    mkdir -p -- "$transactions" "$game/BepInEx/plugins/Example" "$game/_APIShared/Workshop/Receipts"
+    game="$fixture/$1/game"
+    if [[ ${2:-legacy} == short ]]; then
+        transactions="$game/_APIShared/T"
+    else
+        transactions="$game/_APIShared/Workshop/Transactions"
+        mkdir -p -- "$game/_APIShared/Workshop/Receipts"
+    fi
+    mkdir -p -- "$transactions" "$game/BepInEx/plugins/Example"
 }
 run() { local code=0; bash "$updater" "$@" > "$fixture/last.log" 2>&1 || code=$?; printf '%s' "$code"; }
 
@@ -31,18 +37,34 @@ code=$(run "$game" "$request" "$(hash_file "$request/operations.tsv")" --restart
 grep -q 'no longer interrupted' "$request/journal.log" || fail 'refusal was not journaled'
 printf 'PASS: Linux recovery refuses a committed original without changing files.\n'
 
+# A new short-root request can roll back a legacy transaction after upgrading.
+new_game mixed-recovery
+dir="$transactions/$id"; request="$game/_APIShared/T/$request_id"
+mkdir -p -- "$dir/Backup" "$request"
+printf old > "$dir/Backup/0"
+printf new > "$game/BepInEx/plugins/Example/Example.dll"
+printf 'APISHARED-WORKSHOP-2\nwrite\tBepInEx/plugins/Example/Example.dll\t0\t%s\t%s\nreceipt-delete\t_APIShared/Workshop/Receipts/123.json\t1\tmissing\tmissing\n' \
+    "$(hash_file "$dir/Backup/0")" "$(hash_file "$game/BepInEx/plugins/Example/Example.dll")" > "$dir/operations.tsv"
+printf 'applying\nbegin\t0\ndone\t0\n' > "$dir/journal.log"
+printf 'APISHARED-WORKSHOP-RECOVERY-1\nstop\n%s\t%s\t%s\n' "$id" "$(hash_file "$dir/operations.tsv")" "$(hash_file "$dir/journal.log")" > "$request/operations.tsv"
+code=$(run "$game" "$request" "$(hash_file "$request/operations.tsv")" --fixture "")
+[[ $code == 0 ]] && grep -qx restored "$dir/journal.log" && grep -qx committed "$request/journal.log" || fail "mixed-root recovery exited $code"
+[[ $(cat -- "$game/BepInEx/plugins/Example/Example.dll") == old && $(cat -- "$request/RecoveryBackup/$id/0") == new ]] || fail 'mixed-root recovery lost original or interrupted bytes'
+printf 'PASS: Linux short-root recovery restores a legacy transaction.\n'
+
 # 2. A game start during application aborts before the next row; the control run
 #    without a game commits, so the abort comes from the restart check itself.
 stage() {
-    new_game "$1"
+    new_game "$@"
     printf -v id '%032x' 3; dir="$transactions/$id"; mkdir -p -- "$dir/New"
     head -c 67108864 /dev/zero > "$dir/New/0"; printf small > "$dir/New/1"; printf receipt > "$dir/New/2"
     printf 'APISHARED-WORKSHOP-2\nwrite\tBepInEx/plugins/Example/Large.dll\t0\tmissing\t%s\nwrite\tBepInEx/plugins/Example/Small.dll\t1\tmissing\t%s\nreceipt-write\t_APIShared/Workshop/Receipts/123.json\t2\tmissing\t%s\n' \
         "$(hash_file "$dir/New/0")" "$(hash_file "$dir/New/1")" "$(hash_file "$dir/New/2")" > "$dir/operations.tsv"
 }
-stage control
+stage control short
 code=$(run "$game" "$dir" "$(hash_file "$dir/operations.tsv")" --fixture "")
 [[ $code == 0 ]] && grep -qx committed "$dir/journal.log" || fail "control installation exited $code"
+[[ -f $game/_APIShared/Workshop/Receipts/123.json && ! -e $game/_APIShared/Workshop/Transactions ]] || fail 'short-only installation changed the legacy transaction path'
 
 # 3. An automatic handoff refuses before readiness when the game is not visible, also
 #    while a Steam wrapper names the game as a later argument: such wrappers wait for

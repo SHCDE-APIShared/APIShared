@@ -142,7 +142,7 @@ namespace APISharedTests
                     Assert.AreEqual(hostHasRecord ? GameModeLaunchVariant.RestoredCustomizedSave : GameModeLaunchVariant.Standard, variant);
                     Assert.AreEqual(hostHasRecord && hostSide, locked);
                 }
-                if (abort) coordinator.GetMethod("Abort", flags).Invoke(null, new object[] { "fixture cancelled", false, false });
+                if (abort) coordinator.GetMethod("Abort", flags).Invoke(null, new object[] { "fixture cancelled", false, false, "fixture" });
                 else SavegameLoadCoordinator.FinishLoad();
                 Assert.IsFalse(SavegameLoadCoordinator.IsLoadingMultiplayerSave);
                 // A subsequent ordinary load retains the original file binding.

@@ -134,6 +134,7 @@ try {
     . (Join-Path $PSScriptRoot 'PublisherPackage.ps1')
     Sync-ApiPublisherPackage $root
     Sync-ApiWorkshopAssets -Root $root
+    Copy-ApiModOptionsView -Root $root
     Remove-ApiLegacyWorkshopView $package
     foreach ($required in @('APIShared.dll','APIShared.xml','APIShared.Content.dll','APIShared.Content.xml','info.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $required))) { throw ($required + ' is missing from the prepared package.') }
@@ -171,6 +172,7 @@ try {
     }
     [void][IO.Directory]::CreateDirectory($destination)
     Assert-ApiWorkshopUnlinkedPath (Join-Path $destination 'Override/Workshop/Workshop.xaml')
+    Assert-ApiWorkshopUnlinkedPath (Join-Path $destination 'Override/APISharedUI/Settings.xaml')
     Remove-ApiLegacyWorkshopView $destination
     foreach ($item in Get-ChildItem -LiteralPath $package -Force) {
         Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force

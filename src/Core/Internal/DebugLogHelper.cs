@@ -77,6 +77,17 @@ namespace APIShared.Internal
             }
         }
 
+        // Explicit launch rejections are individual events, even when their text is identical.
+        // Unwrap only service loggers created here; foreign logger behavior stays with its owner.
+        internal static ManualLogSource UnwrapServiceLog(ManualLogSource source)
+        {
+            if (source == null) return null;
+            lock (serviceLogs)
+                foreach (var entry in serviceLogs)
+                    if (ReferenceEquals(entry.Value, source)) return entry.Key;
+            return source;
+        }
+
         public static bool IsDebugEnabled()
         {
             if (!DiagnosticsEnabled) return false;

@@ -63,28 +63,33 @@ namespace APIShared.Workshop
                 if (await RecoverAsync()) { result = "recovery offered"; return; }
                 step = "catalog";
                 var catalog = await WorkshopRuntime.GetCatalogAsync();
+                WorkshopDiagnostics.ReportStartupCatalog(WorkshopRuntime.WriteDiagnostic, catalog, out blocked, out failures);
                 var plans = new List<WorkshopInstallPlan>();
                 foreach (var item in catalog) {
-                    var diagnostic = WorkshopDiagnostics.Catalog(WorkshopRuntime.WriteDiagnostic, item);
-                    if (diagnostic == WorkshopDiagnosticLevel.Error) failures++;
-                    else if (diagnostic == WorkshopDiagnosticLevel.Warning) blocked = true;
-                    WorkshopAction? action = null;
-                    if (!item.IsSubscribed && item.InstalledVersion != null) action = WorkshopAction.Remove;
-                    else if (item.Package != null && item.CanInstall) {
-                        if (item.InstalledVersion == null) action = WorkshopAction.Install;
-                        else if (WorkshopPackageCodec.Version(item.Package.Version) > WorkshopPackageCodec.Version(item.InstalledVersion)) action = WorkshopAction.Update;
+                    if (item.DiagnosticError != null || item.IsSubscribed && (item.Package == null || !item.CanInstall)) continue;
+                    string context = WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "local installation");
+                    try {
+                        var status = WorkshopLocalStatus.Missing;
+                        bool offers = WorkshopRuntime.OffersEnabled(item.WorkshopId);
+                        if (item.IsSubscribed) {
+                            var evidence = await WorkshopRuntime.InspectLocalAsync(item);
+                            status = evidence.Status;
+                            context = WorkshopDiagnostics.InstallationContext(item, evidence.Bootstrap, "local installation");
+                            WorkshopRuntime.Log(context + "; localState=" + status + "; startupOffers=" + offers +
+                                (evidence.Difference == null ? "" : "; difference=" + evidence.Difference) +
+                                (status == WorkshopLocalStatus.Verified ? "" : "; local selection kept; choose installation in APIShared Mod Options"));
+                            WorkshopDiagnostics.ReportOwnership(WorkshopRuntime.WriteDiagnostic, context, evidence.Conflicts);
+                        }
+                        var action = WorkshopLocalState.StartupAction(item, status, offers);
+                        if (action != null) {
+                            var plan = await WorkshopRuntime.PrepareStartupAsync(item.WorkshopId, action.Value);
+                            plans.Add(plan);
+                        }
                     }
-                    if (action == null) {
-                        if (item.Package != null && item.CanInstall && item.DiagnosticError == null)
-                            WorkshopRuntime.Log(WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package.Version, "version comparison") + "; no newer release; no automatic reinstall or downgrade.");
-                        continue;
-                    }
-                    try { plans.Add(await WorkshopRuntime.PrepareStartupAsync(item.WorkshopId, action.Value)); }
                     catch (Exception ex) {
                         blocked = true;
                         if (WorkshopDiagnostics.Level(ex) == WorkshopDiagnosticLevel.Error) failures++;
-                        WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic,
-                            WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "prepare " + action), ex);
+                        WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, context, ex);
                     }
                 }
                 step = "batch validation";
@@ -169,14 +174,14 @@ namespace APIShared.Workshop
         {
             string game = BepInEx.Paths.GameRootPath;
             var entries = await Task.Run(() => WorkshopRecovery.Inspect(game));
-            string root = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions");
+            string[] directories = WorkshopInstallation.TransactionDirectories(game);
             bool german = APIShared.Localization.GameLocale.Current() == "de-DE";
             // Unfinished transactions are logged in full; of the retained finished history
             // only the newest outcome, so the log does not repeat it on every start.
-            if (Directory.Exists(root)) {
+            if (directories.Length != 0) {
                 foreach (var interrupted in entries)
                     WorkshopRuntime.Log("Workshop unfinished transaction=" + interrupted.Directory + "; " + WorkshopRecovery.Describe(interrupted, false));
-                string latest = Directory.EnumerateDirectories(root).Where(WorkshopRecovery.Finished).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault();
+                string latest = directories.Where(WorkshopRecovery.Finished).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault();
                 if (latest != null)
                     WorkshopRuntime.Log("Workshop latest transaction=" + latest + "; outcome=" + WorkshopRecovery.Journal(latest).Last(x => x == "committed" || x == "restored"));
             }
@@ -186,7 +191,7 @@ namespace APIShared.Workshop
             // Show a failed external recovery/replacement attempt too: its
             // failure belongs to the request journal, not the original journal.
             bool attemptFailed = false;
-            foreach (string directory in Directory.EnumerateDirectories(root).OrderByDescending(Directory.GetLastWriteTimeUtc)) {
+            foreach (string directory in directories.OrderByDescending(Directory.GetLastWriteTimeUtc)) {
                 if (WorkshopRecovery.Finished(directory)) continue;
                 string references = WorkshopPaths.Inside(directory, "supersedes.tsv");
                 if (!File.Exists(references)) references = WorkshopPaths.Inside(directory, "operations.tsv");

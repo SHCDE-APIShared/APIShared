@@ -471,9 +471,13 @@ owner-bound dialog gates and preparation; see the [dialog integration](MOD_SETTI
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](MOD_SETTINGS.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.
-The readiness packets are versioned (protocol 2); the host also compares every player's
-stored copy of declared simulation-relevant save records, see
-[multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
+Save readiness uses protocol 2. The host also compares every player's stored copy
+of declared simulation-relevant save records. See [multiplayer record comparison](SAVE_DATA.md#multiplayer-record-comparison).
+New-map starts use a separate readiness channel with protocol 4. The comparison
+uses the actual AI count and includes Trail details only for active Coop Trails.
+The host proposal carries per-category digests, and authenticated peers can report
+a mismatch while waiting for synchronization. An observation never authorizes a
+start. All players need a build that supports the same map readiness protocol.
 
 `APIShared.ModSettings.ToolTipPresentation` exposes common tooltip sizes for external XAML without source links. Resolution-sensitive properties must be read on the Unity thread. `SharedToolTipSizing.Enabled` explicitly applies these values whenever an owned popup opens; see [sizing ownership](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation).
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -8,6 +9,8 @@ using APIShared.Internal;
 using APIShared.Localization;
 using BepInEx.Logging;
 using CrusaderDE;
+using SHCDESE.API;
+using Steamworks;
 
 namespace APIShared.Lobby
 {
@@ -114,6 +117,8 @@ namespace APIShared.Lobby
         private static readonly LobbyLaunchAnnouncementState LocalOnly = new LobbyLaunchAnnouncementState();
         private static readonly LobbyLaunchReceivedLines Received = new LobbyLaunchReceivedLines();
         private static readonly object TimerGate = new object();
+        private static readonly Lazy<ManualLogSource> EarlyAttemptLog =
+            new Lazy<ManualLogSource>(() => Logger.CreateLogSource("APIShared.LobbyLaunch"));
         private static ManualLogSource log;
         private static Timer dueTimer;
         private static int refreshQueued;
@@ -147,7 +152,8 @@ namespace APIShared.Lobby
         public static void ReportAttempt(string ownerGuid, LobbyLaunchOperation operation, LobbyLaunchStatusItem item)
         {
             if (item == null || item.Text.Length == 0) return;
-            Report(true, "LOBBY_LAUNCH_BLOCKED owner=" + ownerGuid + ", operation=" + operation + ": " + item.Text, item.Detail);
+            WriteAttemptError(log, "LOBBY_LAUNCH_BLOCKED owner=" + ownerGuid + ", operation=" + operation + ": " + item.Text,
+                item.Detail);
             if (!IsAvailable) return;
             // Lobby and chat state belong to the Unity thread; other callers are marshalled without blocking.
             if (!UnityMainThreadDispatch.IsMainThread)
@@ -156,6 +162,64 @@ namespace APIShared.Lobby
                 return;
             }
             AnnounceAttempt(operation, item);
+        }
+
+        // Coordinators own timing, attempt identity and repeat suppression. UI delivery
+        // is scoped to the same lobby, including after a queued main-thread handoff.
+        internal static void ReportPreparationWaiting(ManualLogSource fallback, string text, string detail, ulong lobbyId,
+            bool broadcast, bool showLocal)
+        {
+            NativeApiLog.Info(log ?? fallback, PreparationLogLine("LOBBY_LAUNCH_LOADING", lobbyId, text) +
+                (string.IsNullOrEmpty(detail) ? string.Empty : "; " + detail));
+            AnnouncePreparation(text, lobbyId, broadcast, showLocal, LobbyLaunchAnnouncementKind.Loading);
+        }
+
+        internal static void ReportPreparationBlocked(ManualLogSource fallback, string text, string detail, ulong lobbyId,
+            bool broadcast, bool showLocal)
+        {
+            WriteAttemptError(log ?? fallback, PreparationLogLine("LOBBY_LAUNCH_BLOCKED", lobbyId, text), detail);
+            AnnouncePreparation(text, lobbyId, broadcast, showLocal, LobbyLaunchAnnouncementKind.Blocked);
+        }
+
+        private static string PreparationLogLine(string kind, ulong lobbyId, string text) =>
+            kind + " operation=Start, lobby=" + lobbyId + ": " + text;
+
+        private static void AnnouncePreparation(string text, ulong lobbyId, bool broadcast, bool showLocal,
+            LobbyLaunchAnnouncementKind kind)
+        {
+            if (!IsAvailable || lobbyId == 0 || (!broadcast && !showLocal)) return;
+            if (UnityMainThreadDispatch.IsMainThread) AnnouncePreparationCore(text, lobbyId, broadcast, kind);
+            else UnityMainThreadDispatch.TryEnqueue(() => AnnouncePreparationCore(text, lobbyId, broadcast, kind));
+        }
+
+        private static void AnnouncePreparationCore(string text, ulong expectedLobby, bool broadcast, LobbyLaunchAnnouncementKind kind)
+        {
+            try
+            {
+                if (!TryGetLobby(out ulong lobbyId, out bool isHost, out var view) || lobbyId != expectedLobby) return;
+                var item = new LobbyLaunchStatusItem(text);
+                if (item.Text.Length == 0) return;
+                string reason = kind == LobbyLaunchAnnouncementKind.Blocked
+                    ? item.Text + " " + UiText.Get("LobbyLaunch.TryAgain") : item.Text;
+                var lines = LobbyLaunchChat.Format(Prefix(kind) + " (" +
+                    OperationText(LobbyLaunchOperation.Start) + ")", new[] { reason });
+                DateTime now = DateTime.UtcNow;
+                if (broadcast && isHost) SendExplicit(lobbyId, lines, now);
+                else ShowLocal(view, lines, now, deduplicate: false);
+            }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_ATTEMPT_FAILED: " + error, null); }
+        }
+
+        internal static void WriteAttemptError(ManualLogSource target, string text, string detail)
+        {
+            // An explicit rejection is one event per attempt. RuntimeHealth throttles repeating background faults.
+            try
+            {
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                string line = string.IsNullOrEmpty(detail) ? text : text + "; " + detail;
+                (DebugLogHelper.UnwrapServiceLog(target) ?? EarlyAttemptLog.Value).LogError("[" + timestamp + "] " + line.Replace('\r', ' ').Replace('\n', ' '));
+            }
+            catch { /* Reporting must not interrupt the rejection. */ }
         }
 
         private static void AnnounceAttempt(LobbyLaunchOperation operation, LobbyLaunchStatusItem item)
@@ -168,8 +232,8 @@ namespace APIShared.Lobby
                     Broadcast.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
                     LocalOnly.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
                     // A rejected click is always answered, even if another player has just sent the same line.
-                    Send(LobbyLaunchChat.Format(Prefix(LobbyLaunchAnnouncementKind.Blocked) + " (" + OperationText(operation) + ")",
-                        new[] { item.Text }), now, deduplicate: false);
+                    SendExplicit(lobbyId, LobbyLaunchChat.Format(Prefix(LobbyLaunchAnnouncementKind.Blocked) + " (" + OperationText(operation) + ")",
+                        new[] { item.Text }), now);
                 }
             }
             catch (Exception error) { Report(false, "LOBBY_LAUNCH_ATTEMPT_FAILED: " + error, null); }
@@ -268,13 +332,13 @@ namespace APIShared.Lobby
             }
         }
 
-        private static void ShowLocal(FRONT_Multiplayer view, IEnumerable<string> lines, DateTime now)
+        private static void ShowLocal(FRONT_Multiplayer view, IEnumerable<string> lines, DateTime now, bool deduplicate = true)
         {
             try
             {
                 foreach (string line in lines)
                 {
-                    if (Received.Contains(line, now)) continue;
+                    if (deduplicate && Received.Contains(line, now)) continue;
                     if (LobbyChatPresentation.TryShowLocal(view, line)) RevealCoopChat();
                     else Report(false, "LOBBY_LAUNCH_LOCAL_UNAVAILABLE: " + line, null);
                 }
@@ -314,7 +378,37 @@ namespace APIShared.Lobby
             }
         }
 
-        private static void Send(IEnumerable<string> messages, DateTime now, bool deduplicate = true)
+        private static void SendExplicit(ulong lobbyId, IEnumerable<string> messages, DateTime now) =>
+            LobbyLaunchChat.SendOrShowLocal(messages, message => TrySendExplicit(lobbyId, message, now),
+                message =>
+                {
+                    if (TryGetLobby(out ulong current, out _, out var view) && current == lobbyId)
+                        ShowLocal(view, new[] { message }, now, deduplicate: false);
+                });
+
+        private static bool TrySendExplicit(ulong lobbyId, string message, DateTime now)
+        {
+            if (!TryGetLobby(out ulong current, out _, out _) || current != lobbyId) return false;
+            // Keep Extender's outbound notification. The Vanilla wrapper discards Steam's
+            // result, so explicit system hints call the same Steam method directly.
+            try { GameNetworkAPI.Instance.HandleSendLobbyChatMessage(message); }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_SEND_OBSERVER_FAILED: " + error, null); }
+            if (!TryGetLobby(out current, out _, out _) || current != lobbyId) return false;
+            try
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(message);
+                if (SteamMatchmaking.SendLobbyChatMsg(new CSteamID(lobbyId), bytes, bytes.Length))
+                {
+                    Received.ExpectEcho(message, now);
+                    return true;
+                }
+                Report(false, "LOBBY_LAUNCH_SEND_FAILED: Steam rejected the lobby system message.", null);
+            }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_SEND_FAILED: " + error, null); }
+            return false;
+        }
+
+        private static bool Send(IEnumerable<string> messages, DateTime now, bool deduplicate = true)
         {
             try
             {
@@ -325,12 +419,14 @@ namespace APIShared.Lobby
                     Received.ExpectEcho(message, now);
                     Platform_Multiplayer.Instance.SendLobbyChatMessage(message);
                 }
+                return true;
             }
             catch (Exception error)
             {
                 // A later refresh announces the current state again instead of assuming delivery.
                 Broadcast.Reset();
                 Report(false, "LOBBY_LAUNCH_SEND_FAILED: " + error, null);
+                return false;
             }
         }
 
@@ -519,6 +615,14 @@ namespace APIShared.Lobby
 
     internal static class LobbyLaunchChat
     {
+        internal static void SendOrShowLocal(IEnumerable<string> messages, Func<string, bool> send, Action<string> showLocal)
+        {
+            // Only the failed parts fall back locally, avoiding duplicates when Steam
+            // accepted an earlier part of the same system announcement.
+            foreach (string message in messages)
+                if (!send(message)) showLocal(message);
+        }
+
         internal const int MaximumMessageLength = 280;
 
         // Numbered parts keep every text; a part never ends inside a surrogate pair.

@@ -23,6 +23,12 @@ try {
     [void][IO.Directory]::CreateDirectory((Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override'))
     $overrideNeighbor = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override/other.txt'
     [IO.File]::WriteAllText($overrideNeighbor, 'keep unrelated override')
+    $viewSource = Join-Path $assetRoot 'Override/APISharedUI/Settings.xaml'
+    $viewOutput = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override/APISharedUI/Settings.xaml'
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($viewSource))
+    [IO.File]::WriteAllText($viewSource, '<ScrollViewer/>')
+    Copy-ApiModOptionsView -Root $assetRoot
+    if ((Get-WorkshopFileHash $viewOutput) -cne (Get-WorkshopFileHash $viewSource)) { throw 'Indexed Mod Options view missing or changed.' }
     if ([IO.File]::Exists((Join-Path $assetOutput 'Workshop.xaml'))) { throw 'Obsolete unindexed view survived generated packaging.' }
     if (Test-Path -LiteralPath (Join-Path $assetOutput 'obsolete')) { throw 'Stale asset directory survived packaging.' }
     if (Test-Path -LiteralPath (Join-Path $assetOutput 'old.txt')) { throw 'Stale asset file survived packaging.' }

@@ -31,10 +31,25 @@ namespace APIShared.Workshop
         internal static bool UserVisible(Exception exception) => Level(exception) == WorkshopDiagnosticLevel.Error;
         internal static void Failure(Action<WorkshopDiagnosticLevel, string> write, string context, Exception exception)
         {
-            if (exception.Data[ConflictKey] is IReadOnlyList<WorkshopOwnershipConflict> conflicts) {
-                foreach (var conflict in conflicts) write(WorkshopDiagnosticLevel.Warning, context + "; " + conflict);
+            if (OwnershipConflicts(exception) is IReadOnlyList<WorkshopOwnershipConflict> conflicts) {
+                ReportOwnership(write, context, conflicts);
             } else write(Level(exception), context + "; " + (Level(exception) == WorkshopDiagnosticLevel.Error ? exception.ToString() : exception.Message));
         }
+        internal static IReadOnlyList<WorkshopOwnershipConflict> OwnershipConflicts(Exception exception) =>
+            exception.Data[ConflictKey] as IReadOnlyList<WorkshopOwnershipConflict>;
+
+        internal static void ReportOwnership(Action<WorkshopDiagnosticLevel, string> write, string context, IReadOnlyList<WorkshopOwnershipConflict> conflicts)
+        {
+            if (conflicts.Count == 0) return;
+            write(WorkshopDiagnosticLevel.Warning, context +
+                "; package mods are registered outside the package roots. Possible cause: standalone or manual test installation while subscribed.");
+            foreach (var conflict in conflicts) write(WorkshopDiagnosticLevel.Warning, context + "; " + conflict);
+        }
+
+        internal static string InstallationContext(WorkshopCatalogItem item, string bootstrap, string phase) =>
+            Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, phase) +
+            "; steamSource=" + (item.ContentRoot ?? "unavailable") + "; receiptVersion=" + (item.InstalledVersion ?? "none") +
+            "; bootstrapReceiptVersion=" + bootstrap;
         internal static WorkshopOwnershipConflict Conflict(string game, IReadOnlyList<string> roots, string guid, string path, bool asset)
         {
             path = Path.GetFullPath(path);
@@ -52,6 +67,28 @@ namespace APIShared.Workshop
         }
         internal static string Context(ulong id, string package, string installed, string available, string step) =>
             "Workshop step=" + step + "; item=" + id + "; package=" + (package ?? "unknown") + "; installed=" + (installed ?? "none") + "; available=" + (available ?? "unknown");
+
+        internal static void ReportStartupCatalog(Action<WorkshopDiagnosticLevel, string> write,
+            IReadOnlyList<WorkshopCatalogItem> catalog, out bool blocked, out int failures)
+        {
+            blocked = false;
+            failures = 0;
+            int unidentifiedSubscriptions = 0;
+            foreach (var item in catalog) {
+                if (item.IsSubscribed && item.Package == null && item.InstalledVersion == null &&
+                    item.Receipt == null && item.DiagnosticError == null) {
+                    unidentifiedSubscriptions++;
+                    continue;
+                }
+                var diagnostic = Catalog(write, item);
+                if (diagnostic == WorkshopDiagnosticLevel.Error) failures++;
+                else if (diagnostic == WorkshopDiagnosticLevel.Warning) blocked = true;
+            }
+            if (unidentifiedSubscriptions > 0)
+                write(WorkshopDiagnosticLevel.Info, "Workshop step=catalog; skipped " + unidentifiedSubscriptions +
+                    " subscription(s) without a recognized mod package or installation record.");
+        }
+
         internal static WorkshopDiagnosticLevel? Catalog(Action<WorkshopDiagnosticLevel, string> write, WorkshopCatalogItem item)
         {
             string context = Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "catalog");

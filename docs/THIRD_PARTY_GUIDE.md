@@ -338,7 +338,7 @@ receive a forwarding logger so their direct Debug calls cannot bypass the gate.
 Successful native-site summaries are not constructed without opt-in; refused
 registrations still produce warnings. Warnings, errors, capability failure results
 and recovery evidence remain available.
-Workshop `Transactions/*/diagnostics.txt` contains installation warnings and is
+Workshop `_APIShared/T/*/diagnostics.txt` contains installation warnings and is
 retained without opt-in, alongside the transaction protocol. The independent
 dependency bootstrap emits only warnings/errors and creates no tracing files.
 

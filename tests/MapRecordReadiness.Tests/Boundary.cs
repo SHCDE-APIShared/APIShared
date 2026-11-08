@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
+using System.Text;
 using APIShared;
 using APIShared.Savegames;
 
@@ -10,15 +12,17 @@ internal static class Boundary
 {
     internal static Delegate MapHook, SaveHook;
     internal static int MapStarts, SaveStarts, Captures, Popups;
-    internal static bool MainThread = true, Prepare = true, SendOk = true;
+    internal static bool MainThread = true, Prepare = true, SendOk = true, SaveVeto;
     internal static ulong Local = 2001, Host = 2001;
     internal static string Settings = "host-settings", Path;
     internal static FileHeader LookupHeader;
-    internal static Action DuringCapture;
+    internal static Action DuringCapture, DuringPrepare;
     internal static IReadOnlyList<SavegameRecordDigest> Records = Array.Empty<SavegameRecordDigest>();
     internal static readonly Dictionary<Type, Action<object, ulong>> Receivers = new Dictionary<Type, Action<object, ulong>>();
     internal static readonly List<object> Sent = new List<object>();
     internal static readonly List<string> Logs = new List<string>();
+    internal static readonly List<string> Broadcast = new List<string>(), LocalChat = new List<string>(),
+        WaitingBroadcast = new List<string>(), WaitingLocal = new List<string>();
     internal static readonly Queue<Action> Presented = new Queue<Action>();
     internal static void MapOriginal(Platform_Multiplayer self) { MapStarts++; }
     internal static void SaveOriginal(Platform_Multiplayer self, string name) { SaveStarts++; }
@@ -48,6 +52,7 @@ public sealed class Platform_Multiplayer
         public string mapFileName = "readiness.map", crc = "17", settings = "native-settings", maxPlayers = "8", AIPlayers = "0", gameTypeCoop = "0", Aiv = "aiv";
         public readonly List<MPLobbyMember> members = new List<MPLobbyMember>();
         public string AIVDataChecksum() => Aiv;
+        public int CountAIPlayers() => members.Count(member => member.id.m_SteamID < 1000);
         public int getThisPlayerFromSteamID(ulong id) => members.FindIndex(member => member.id.m_SteamID == id) + 1;
     }
     public sealed class MPLobbyMember { public Steamworks.CSteamID id; public bool SkirmishMember, dummyToBeKicked; }
@@ -115,7 +120,14 @@ namespace APIShared.Networking
         { Boundary.Receivers.Add(typeof(T), (packet, sender) => receive(new NetworkMessage<T> { Packet = (T)packet, SenderSteamId = sender })); return new MessageChannel<T>(); }
     }
 }
-namespace APIShared.Localization { internal static class UiText { internal static string Get(string key) => key; } }
+namespace APIShared.Localization
+{
+    internal static class UiText
+    {
+        internal static string Get(string key, params object[] arguments) =>
+            arguments.Length == 0 ? key : key + " " + string.Join(", ", arguments);
+    }
+}
 namespace APIShared.Economy
 {
     // External production agreement only; the real save coordinator below remains under test.
@@ -133,11 +145,28 @@ namespace APIShared.Economy
 }
 namespace APIShared.Lobby
 {
-    internal readonly struct LobbyLaunchGuardDecision { internal bool Blocked=>false; internal string Reason=>""; }
+    internal readonly struct LobbyLaunchGuardDecision { internal bool Blocked => Boundary.SaveVeto; internal string Reason => "fixture save veto"; }
+    internal static class LobbyLaunchStatus
+    {
+        internal static void ReportPreparationWaiting(BepInEx.Logging.ManualLogSource fallback, string text, string detail,
+            ulong lobbyId, bool broadcast, bool showLocal)
+        {
+            Boundary.Logs.Add(detail + ": " + text);
+            if (broadcast) Boundary.WaitingBroadcast.Add(text);
+            if (showLocal) Boundary.WaitingLocal.Add(text);
+        }
+        internal static void ReportPreparationBlocked(BepInEx.Logging.ManualLogSource fallback, string text, string detail,
+            ulong lobbyId, bool broadcast, bool showLocal)
+        {
+            Boundary.Logs.Add(detail + ": " + text);
+            if (broadcast) Boundary.Broadcast.Add(text);
+            if (showLocal) Boundary.LocalChat.Add(text);
+        }
+    }
     internal static class LobbyLaunchGuards
     {internal static LobbyLaunchGuardDecision EvaluatePreparedMultiplayerLoad(int humans)=>default;}
 }
-namespace APIShared.ModSettings { internal static class ModSettingsApplication { internal static bool PrepareLaunch() => Boundary.Prepare; } }
+namespace APIShared.ModSettings { internal static class ModSettingsApplication { internal static bool PrepareLaunch() { Boundary.DuringPrepare?.Invoke(); return Boundary.Prepare; } } }
 namespace APIShared.Savegames
 {
     internal static class VersionedSaveDataRuntime
@@ -153,11 +182,15 @@ namespace APIShared
     internal sealed class Client { internal readonly Networking.NetworkClient Network = new Networking.NetworkClient(); }
     internal static class APISharedPlugin { internal const string PluginGuid = "APIShared-Test"; }
     internal static class NativeApiLog
-    { internal static void Debug(object log, string text) { Boundary.Logs.Add(text); } internal static void Error(object log, string text) { Boundary.Logs.Add(text); } }
+    { internal static void Info(object log, string text) { Boundary.Logs.Add(text); } internal static void Debug(object log, string text) { Boundary.Logs.Add(text); } internal static void Error(object log, string text) { Boundary.Logs.Add(text); } internal static void Warning(object log, string text) { Boundary.Logs.Add(text); } }
     internal sealed class SavegameModSettingsRecord { internal readonly Dictionary<string, int> Mods = new Dictionary<string, int>(); }
     internal static class SavegameModSettings
     {
-        internal static string CaptureHostFingerprint() => Boundary.Settings;
+        internal static string CaptureHostFingerprint() => SavegameLoadAgreement.Fingerprint(CaptureHostSettingsForReadiness());
+        internal static Dictionary<string, Dictionary<string, byte[]>> CaptureHostSettingsForReadiness() =>
+            new Dictionary<string, Dictionary<string, byte[]>> {
+                ["fixture.mod"] = new Dictionary<string, byte[]> { ["HostSetting"] = Encoding.UTF8.GetBytes(Boundary.Settings) }
+            };
         internal static SavegameModSettingsRecord PrepareHostSave(string path) => null;
         internal static void PublishPreparedHostValues() { }
         internal static void CancelLoadChoice() { }

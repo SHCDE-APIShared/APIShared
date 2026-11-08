@@ -1,9 +1,9 @@
+using APIShared.Lobby;
+using APIShared.Localization;
 using APIShared.Networking;
 using APIShared.Savegames;
 using BepInEx.Logging;
 using CrusaderDE;
-using MessagePack;
-using MessagePack.Formatters;
 using MonoMod.RuntimeDetour;
 using Steamworks;
 using System;
@@ -15,23 +15,6 @@ using System.Security.Cryptography;
 
 namespace APIShared
 {
-    // A distinct Extender packet identity is necessary: one packet type can have only
-    // one message channel. Its wire body is exactly the existing readiness protocol.
-    [MessagePackFormatter(typeof(MapRecordReadinessPacketFormatter))]
-    internal sealed class MapRecordReadinessPacket
-    {
-        internal SavegameLoadPacket Value;
-    }
-    internal sealed class MapRecordReadinessPacketFormatter : IMessagePackFormatter<MapRecordReadinessPacket>
-    {
-        private readonly SavegameLoadPacketFormatter formatter = new SavegameLoadPacketFormatter();
-        public MapRecordReadinessPacketFormatter() { }
-        public void Serialize(ref MessagePackWriter writer, MapRecordReadinessPacket value, MessagePackSerializerOptions options)
-            => formatter.Serialize(ref writer, value?.Value, options);
-        public MapRecordReadinessPacket Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
-        { var value = formatter.Deserialize(ref reader, options); return value == null ? null : new MapRecordReadinessPacket { Value = value }; }
-    }
-
     // HostStartGame only publishes GO! in the audited managed assembly. This single
     // permanent gate delays that publication, not native post-load success. All mutable
     // transaction work runs on Unity: RegisterMessage supplies copied FIFO delivery.
@@ -54,9 +37,26 @@ namespace APIShared
         private static DateTime deadline;
         private static long fingerprintCheckedAt;
         private static bool fingerprintMatched;
+        private static LobbySnapshot preparedSnapshot, lastSnapshot;
+        private static string attemptId;
+        private static ulong attemptLobby;
+        private static bool attemptHost;
+        private static string configurationWaiting, announcedWaiting;
+        private static DateTime waitNoticeAt, nextObservationRetry;
+        private static byte[] lastSentObservation;
+        private static LobbySnapshot lastSentSnapshot;
+        private static string lastLoggedModFingerprint;
+        private static bool waitingReasonDirty;
+        private static bool observationSendFailed;
+        private static readonly Dictionary<ulong, byte[]> PeerObservations = new Dictionary<ulong, byte[]>();
+        private static readonly string[] Categories = { "Map", "Vanilla", "Ai", "Coop", "Slots", "Mods" };
+        private const int DigestLength = 32;
+        private const byte DiffObservation = 0, ConfigurationObservation = 1, ProductionObservation = 2;
         private static readonly HashSet<string> retired = new HashSet<string>(StringComparer.Ordinal);
         private static readonly Queue<string> retiredOrder = new Queue<string>();
         private static NativeAdmissionTicket admission;
+        private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
+        private static string rejectedNativePath;
         private sealed class NativeAdmissionTicket
         {
             internal readonly string Path, Hash;
@@ -93,12 +93,17 @@ namespace APIShared
         {
             if (lobby?.members == null || lobby.members.Any(member => member == null || member.dummyToBeKicked))
                 throw new InvalidOperationException("Lobby roster is unavailable or changing.");
-            var humans = lobby.members.Where(member => !member.SkirmishMember && member.id.m_SteamID > 1000)
-                .Select(member => member.id.m_SteamID).OrderBy(id => id).ToArray();
+            var humans = ObservedHumans(lobby);
             if (humans.Length == 0 || humans.Length != humans.Distinct().Count())
                 throw new InvalidOperationException("Invalid human lobby roster.");
             return humans;
         }
+        private static bool IsHuman(Platform_Multiplayer.MPLobbyMember member) =>
+            member != null && !member.dummyToBeKicked && !member.SkirmishMember && member.id.m_SteamID > 1000;
+
+        private static ulong[] ObservedHumans(Platform_Multiplayer.MPLobby lobby) =>
+            lobby.members?.Where(IsHuman).Select(member => member.id.m_SteamID).OrderBy(id => id).ToArray() ?? Array.Empty<ulong>();
+
         private static string Roster(Platform_Multiplayer.MPLobby lobby) => string.Join(",", Humans(lobby));
         private static int Checksum(Platform_Multiplayer.MPLobby lobby)
         {
@@ -111,7 +116,7 @@ namespace APIShared
             var header = MapFileManager.Instance.GetHeaderFromFileNameMP(lobby.mapFileName, Checksum(lobby));
             if (header == null || !SameMap(header.fileName, lobby.mapFileName) ||
                 unchecked((int)header.crc) != Checksum(lobby) || string.IsNullOrEmpty(header.filePath))
-                throw new InvalidDataException("Local map does not match the current lobby selection.");
+                throw new InvalidDataException(UiText.Get("LobbyLaunch.MapFileUnavailable", lobby.mapFileName));
             return header;
         }
         // Local Play/solo Coop load the receiver's selected header directly; their
@@ -143,7 +148,7 @@ namespace APIShared
             return true;
         }
         private static bool SameMap(string a, string b) => !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) &&
-            string.Equals(Path.GetFileNameWithoutExtension(a), Path.GetFileNameWithoutExtension(b), StringComparison.OrdinalIgnoreCase);
+            string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
         private static string Hash(string path)
         {
             using (var input = File.OpenRead(path)) using (var sha = SHA256.Create())
@@ -158,20 +163,139 @@ namespace APIShared
                 throw new InvalidDataException("Local map has unreadable or invalid declared simulation records.");
             return records;
         }
-        private static string Fingerprint(Platform_Multiplayer.MPLobby lobby)
+        private sealed class LobbySnapshot
         {
-            using (var memory = new MemoryStream()) using (var writer = new BinaryWriter(memory))
+            internal readonly ulong Lobby;
+            internal readonly string Map, Settings, Aiv, MaxPlayers, GameType, ModFingerprint, Fingerprint;
+            internal readonly int? Crc;
+            internal readonly int AiPlayers, TrailId, Mission;
+            internal readonly byte[] Digests;
+            internal readonly bool Trail, OrderSwapped;
+            internal readonly KeyValuePair<ulong, int>[] Slots;
+            internal readonly Dictionary<string, Dictionary<string, byte[]>> Mods;
+
+            internal LobbySnapshot(Platform_Multiplayer.MPLobby lobby)
             {
-                writer.Write(lobby.id.m_SteamID); writer.Write(lobby.mapFileName ?? ""); writer.Write(Checksum(lobby));
-                writer.Write(lobby.settings ?? ""); writer.Write(lobby.AIVDataChecksum() ?? "");
-                writer.Write(lobby.maxPlayers ?? ""); writer.Write(lobby.AIPlayers ?? ""); writer.Write(lobby.gameTypeCoop ?? "");
-                writer.Write(lobby.coopTrailGame); writer.Write(lobby.coopTrailID); writer.Write(lobby.coopSelectedMission); writer.Write(lobby.coopOrderSwapped);
-                var humans = Humans(lobby); writer.Write(humans.Length);
-                foreach (ulong human in humans) { writer.Write(human); writer.Write(lobby.getThisPlayerFromSteamID(human)); }
-                writer.Write(SavegameModSettings.CaptureHostFingerprint()); writer.Flush();
-                using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(memory.ToArray())).Replace("-", "");
+                Lobby = lobby.id.m_SteamID;
+                Map = lobby.mapFileName ?? "";
+                Crc = int.TryParse(lobby.crc, NumberStyles.Integer, CultureInfo.InvariantCulture, out int crc) ? (int?)crc : null;
+                Settings = lobby.settings ?? "";
+                Aiv = lobby.AIVDataChecksum() ?? "";
+                MaxPlayers = lobby.maxPlayers ?? "";
+                // Vanilla publishes CountAIPlayers() to Steam but never maintains the host's AIPlayers field.
+                AiPlayers = lobby.members != null && lobby.members.All(member => member != null) ? lobby.CountAIPlayers() : -1;
+                GameType = lobby.gameTypeCoop ?? "";
+                Trail = lobby.coopTrailGame;
+                // Vanilla leaves inactive trail fields at different defaults on the host and joining client.
+                TrailId = Trail ? lobby.coopTrailID : 0;
+                Mission = Trail ? lobby.coopSelectedMission : 0;
+                OrderSwapped = Trail && lobby.coopOrderSwapped;
+                Slots = ObservedHumans(lobby).Select(id => new KeyValuePair<ulong, int>(id, lobby.getThisPlayerFromSteamID(id))).ToArray();
+                Mods = SavegameModSettings.CaptureHostSettingsForReadiness();
+                ModFingerprint = SavegameLoadAgreement.Fingerprint(Mods);
+                Digests = new byte[Categories.Length * DigestLength];
+                using (var memory = new MemoryStream())
+                using (var writer = new BinaryWriter(memory))
+                using (var sha = SHA256.Create())
+                {
+                    // Vanilla already publishes FileHeader.fileName without the file extension.
+                    writer.Write(Map.ToUpperInvariant());
+                    writer.Write(Crc.HasValue);
+                    if (Crc.HasValue) writer.Write(Crc.Value);
+                    WriteDigest(0, memory, sha);
+                    writer.Write(Settings); writer.Write(MaxPlayers); writer.Write(GameType);
+                    WriteDigest(1, memory, sha);
+                    writer.Write(AiPlayers); writer.Write(Aiv);
+                    WriteDigest(2, memory, sha);
+                    writer.Write(Trail); writer.Write(TrailId); writer.Write(Mission); writer.Write(OrderSwapped);
+                    WriteDigest(3, memory, sha);
+                    writer.Write(Slots.Length);
+                    foreach (var slot in Slots) { writer.Write(slot.Key); writer.Write(slot.Value); }
+                    WriteDigest(4, memory, sha);
+                    writer.Write(ModFingerprint);
+                    WriteDigest(5, memory, sha);
+                }
+                Fingerprint = Digest(Digests);
+            }
+
+            private void WriteDigest(int category, MemoryStream memory, SHA256 sha)
+            {
+                byte[] digest = sha.ComputeHash(memory.GetBuffer(), 0, (int)memory.Length);
+                Buffer.BlockCopy(digest, 0, Digests, category * DigestLength, DigestLength);
+                memory.SetLength(0);
+            }
+
+            internal IEnumerable<string> PropertyDigests()
+            {
+                foreach (var mod in Mods.OrderBy(x => x.Key, StringComparer.Ordinal))
+                {
+                    yield return "mod=" + mod.Key + " properties=" + mod.Value.Count;
+                    foreach (var property in mod.Value.OrderBy(x => x.Key, StringComparer.Ordinal))
+                        yield return "mod=" + mod.Key + " property=" + property.Key + " sha256=" + Digest(property.Value);
+                }
+            }
+
+            internal string Summary() => $"map={Map}, crc={Crc}, vanillaSettings={Digest(System.Text.Encoding.UTF8.GetBytes(Settings))}, " +
+                $"ai={AiPlayers}, aiv={Aiv}, maxPlayers={MaxPlayers}, gameType={GameType}, trail={Trail}/{TrailId}/{Mission}/{OrderSwapped}, " +
+                $"slots={string.Join(",", Slots.Select(slot => slot.Key + ":" + slot.Value))}, modSettings={ModFingerprint}, fingerprint={Fingerprint}";
+
+            internal List<string> DescribeChanges(LobbySnapshot current, List<string> detail = null)
+            {
+                var categories = Differences(Digests, current.Digests).ToList();
+                if (ModFingerprint == current.ModFingerprint) return categories;
+                if (detail == null) return categories;
+                foreach (string mod in Mods.Keys.Union(current.Mods.Keys, StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal))
+                {
+                    Mods.TryGetValue(mod, out var before);
+                    current.Mods.TryGetValue(mod, out var after);
+                    if (before == null || after == null) detail.Add("mod " + mod + (before == null ? " added" : " removed"));
+                    foreach (string property in (before?.Keys.AsEnumerable() ?? Enumerable.Empty<string>())
+                        .Union(after?.Keys.AsEnumerable() ?? Enumerable.Empty<string>(), StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal))
+                    {
+                        byte[] oldValue = null, newValue = null;
+                        before?.TryGetValue(property, out oldValue);
+                        after?.TryGetValue(property, out newValue);
+                        if (oldValue != null && newValue != null && oldValue.SequenceEqual(newValue)) continue;
+                        detail.Add(mod + "." + property + ": " + Digest(oldValue) + " -> " + Digest(newValue));
+                    }
+                }
+                return categories;
+            }
+
+            internal static string Digest(byte[] bytes)
+            {
+                if (bytes == null) return "missing";
+                using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "");
             }
         }
+
+        private static string[] Differences(byte[] expected, byte[] observed, int offset = 0)
+        {
+            var result = new List<string>();
+            for (int category = 0; category < Categories.Length; category++)
+            {
+                int start = category * DigestLength;
+                for (int i = start; i < start + DigestLength; i++)
+                {
+                    if (expected[i] == observed[i + offset]) continue;
+                    result.Add(Categories[category]);
+                    break;
+                }
+            }
+            return result.ToArray();
+        }
+
+        private static string CategoryLabels(IEnumerable<string> categories) =>
+            string.Join(", ", categories.Select(category => UiText.Get("LobbyLaunch.MapCategory." + category)));
+
+        private static string FingerprintMismatch()
+        {
+            if (preparedSnapshot == null || lastSnapshot == null) return UiText.Get("LobbyLaunch.MapFingerprintMismatch");
+            var changes = preparedSnapshot.DescribeChanges(lastSnapshot);
+            return changes.Count == 0 ? UiText.Get("LobbyLaunch.MapFingerprintMismatch") :
+                UiText.Get("LobbyLaunch.MapChanged", CategoryLabels(changes));
+        }
+
         private static string Name(ulong id)
         {
             try { string value = SteamFriends.GetFriendPersonaName(new CSteamID(id)); if (!string.IsNullOrWhiteSpace(value)) return value; } catch { }
@@ -180,36 +304,63 @@ namespace APIShared
         private static void Request(Platform_Multiplayer self)
         {
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
-            { NativeApiLog.Error(log, "Map start publication requires Unity's main thread."); return; }
+            {
+                LobbyLaunchStatus.ReportPreparationBlocked(log, "Map start publication requires Unity's main thread.",
+                    "MAP_RECORD_LOAD_BLOCKED role=unknown phase=request attempt=" + Guid.NewGuid().ToString("N"), 0, false, false);
+                return;
+            }
             if (self.activeLobby?.isHost != true) { original(self); return; }
             if (!SavegameLoadCoordinator.CancelSelection())
-            { ShowBlocked("A confirmed multiplayer save is already starting."); return; }
+            { ShowRejectedRequest(self.activeLobby, "A confirmed multiplayer save is already starting."); return; }
             if (pending != null)
             {
-                if (released || loading) return;
-                try { if (Fingerprint(self.activeLobby) == pending.Fingerprint) return; } catch { }
-                Abort("Map selection or lobby settings changed.", true, false);
+                if (released || loading)
+                { ShowRejectedRequest(self.activeLobby, "A confirmed multiplayer map is already starting."); return; }
+                try
+                {
+                    CheckContext();
+                    if (FingerprintMatches(true)) return;
+                    Abort(FingerprintMismatch(), true, phase: "replacement request");
+                }
+                catch (Exception error) { Abort(error.Message, true, phase: "replacement request"); }
             }
             try
             {
                 owner = self;
-                var lobby = self.activeLobby; var humans = Humans(lobby); ulong local = SteamUser.GetSteamID().m_SteamID;
+                var lobby = self.activeLobby;
+                BeginAttempt(lobby, Guid.NewGuid().ToString("N"));
+                var humans = Humans(lobby); ulong local = SteamUser.GetSteamID().m_SteamID;
                 hostId = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
                 if (hostId != local || !humans.Contains(local)) throw new InvalidOperationException("The local host is not the current lobby owner and member.");
                 localPath = Path.GetFullPath(Header(lobby).filePath);
+                if (!File.Exists(localPath))
+                    throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", lobby.mapFileName));
                 localRecords = Capture(localPath, out localHash);
                 Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
-                string fingerprint = Fingerprint(lobby);
-                pending = new SavegameLoadPacket { Operation = 0, Lobby = lobby.id.m_SteamID, Token = Guid.NewGuid().ToString("N"),
-                    SaveName = lobby.mapFileName, Checksum = Checksum(lobby), Fingerprint = fingerprint, Roster = Roster(lobby), Records = localRecords };
+                preparedSnapshot = lastSnapshot = new LobbySnapshot(lobby);
+                string fingerprint = preparedSnapshot.Fingerprint;
+                pending = new SavegameLoadPacket { Version = MapRecordReadinessPacket.CurrentVersion,
+                    Operation = 0, Lobby = attemptLobby, Token = attemptId,
+                    SaveName = lobby.mapFileName, Checksum = Checksum(lobby), Fingerprint = fingerprint, Roster = Roster(lobby),
+                    Records = localRecords, Metadata = preparedSnapshot.Digests };
                 agreement = new SavegameLoadAgreement(pending.Token, fingerprint, humans.Where(id => id != local), localRecords);
                 acknowledged = released = loading = false; fingerprintCheckedAt = 0;
                 deadline = DateTime.UtcNow.AddSeconds(PreparationSeconds);
                 if (!agreement.Ready) Send(pending);
                 Tick();
             }
-            catch (Exception error) { Abort(error.Message); }
+            catch (Exception error) { Abort(error.Message, true, phase: "request"); }
             finally { Schedule(); }
+        }
+        private static void BeginAttempt(Platform_Multiplayer.MPLobby lobby, string token)
+        {
+            rejectedNativeLobby = null;
+            rejectedNativePath = null;
+            attemptId = token;
+            attemptLobby = lobby.id.m_SteamID;
+            attemptHost = lobby.isHost;
+            waitNoticeAt = DateTime.UtcNow.AddSeconds(1.5);
+            waitingReasonDirty = true;
         }
         private static void Send(SavegameLoadPacket packet)
         {
@@ -217,6 +368,7 @@ namespace APIShared
             if (!result.Submitted) throw new InvalidOperationException("Map readiness send failed: " + result.Reason);
         }
         private static SavegameLoadPacket Reply(int operation, string reason = null) => new SavegameLoadPacket {
+            Version = MapRecordReadinessPacket.CurrentVersion,
             Operation = operation, Lobby = pending.Lobby, Token = pending.Token, SaveName = pending.SaveName,
             Checksum = pending.Checksum, Fingerprint = pending.Fingerprint, Roster = pending.Roster,
             Records = operation == 1 ? localRecords : Array.Empty<SavegameRecordDigest>(),
@@ -224,125 +376,366 @@ namespace APIShared
         };
         private static void Receive(NetworkMessage<MapRecordReadinessPacket> message)
         {
-            try { ReceiveCore(message); } catch (Exception error) { Abort(error.Message); }
+            try { ReceiveCore(message); } catch (Exception error) { Abort(error.Message, true, phase: "readiness message"); }
         }
         private static void ReceiveCore(NetworkMessage<MapRecordReadinessPacket> message)
         {
             var packet = message.Packet?.Value; var mp = Platform_Multiplayer.Instance; var lobby = mp?.activeLobby;
-            if (packet == null || lobby == null || !Humans(lobby).Contains(message.SenderSteamId)) return;
+            if (packet == null || lobby == null) return;
             ulong host = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
-            if (packet.Version != SavegameLoadPacket.CurrentVersion)
-            { if (lobby.isHost || message.SenderSteamId == host) Abort(Name(message.SenderSteamId) + " uses a different map readiness protocol. Every player needs the same APIShared version."); return; }
-            if (packet.Lobby != lobby.id.m_SteamID || packet.Roster != Roster(lobby) || packet.Operation < 0 || packet.Operation > 3 ||
-                packet.Token?.Length != 32 || !Guid.TryParseExact(packet.Token, "N", out _) || retired.Contains(packet.Token) ||
-                packet.SaveName?.Length > 1024 || !SameMap(packet.SaveName, lobby.mapFileName) || packet.Checksum != Checksum(lobby) ||
-                packet.Time != 0 || packet.Metadata != null || packet.Fingerprint?.Length != 64) return;
+            if (host == 0 || (lobby.isHost
+                ? lobby.members?.Any(member => IsHuman(member) && member.id.m_SteamID == message.SenderSteamId) != true
+                : message.SenderSteamId != host)) return;
+            if (packet.Version != MapRecordReadinessPacket.CurrentVersion)
+            {
+                // A stale legacy response or a version-only notice has no authority to cancel a current attempt.
+                if (lobby.isHost)
+                {
+                    if (!attemptHost || host != hostId || message.SenderSteamId == host ||
+                        packet.Operation != 3 || packet.Metadata != null || !IsCurrentEnvelope(packet, lobby) ||
+                        !agreement.Unconfirmed.Contains(message.SenderSteamId)) return;
+                }
+                else if (pending != null) return;
+                if (packet.Token != null && retired.Contains(packet.Token)) return;
+                string reason = Name(message.SenderSteamId) + " uses map readiness protocol " + packet.Version +
+                    ", but this APIShared uses " + MapRecordReadinessPacket.CurrentVersion + ". Install the same APIShared build on every computer.";
+                if (!lobby.isHost && (packet.Version == MapRecordReadinessPacket.PreviousVersion ||
+                    packet.Version == MapRecordReadinessPacket.LegacyMapVersion) && packet.Operation == 0 &&
+                    HasProposalIdentity(packet, lobby) && packet.Metadata == null)
+                {
+                    // An older host can understand a rejection on its own transaction.
+                    Retire(packet.Token);
+                    packet.Operation = 3;
+                    packet.Reason = reason;
+                    packet.Records = Array.Empty<SavegameRecordDigest>();
+                    try { ForwardCancel(packet, host); }
+                    catch (Exception error) { NativeApiLog.Error(log, "Map preparation cancellation send failed: " + error.Message); }
+                    ShowBlocked(reason, "MAP_RECORD_LOAD_BLOCKED role=client phase=protocol negotiation attempt=" + packet.Token,
+                        lobby.id.m_SteamID, false, true);
+                    return;
+                }
+                if (pending == null) BeginAttempt(lobby, Guid.NewGuid().ToString("N"));
+                Abort(reason, pending != null, phase: "protocol negotiation", localChat: !lobby.isHost);
+                return;
+            }
+            if (packet.Operation == 3 && packet.Metadata == null && host == hostId && IsCurrentEnvelope(packet, lobby))
+            {
+                if (lobby.isHost && message.SenderSteamId != host)
+                    Abort(UiText.Get("LobbyLaunch.MapPeerCancelled", Name(message.SenderSteamId), packet.Reason), true, phase: "peer rejection");
+                else if (!lobby.isHost && message.SenderSteamId == host)
+                    Abort("Host cancelled map preparation: " + packet.Reason, false, phase: "host cancellation");
+                return;
+            }
             if (lobby.isHost)
             {
-                if (pending == null || packet.Token != pending.Token || packet.Fingerprint != pending.Fingerprint) return;
-                if (packet.Operation == 1 && !agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint,
-                    packet.Records, Name(message.SenderSteamId), out string mismatch) && mismatch != null) { Abort(mismatch); return; }
-                if (packet.Operation == 3) { Abort("A participant cancelled map preparation: " + packet.Reason); return; }
-                Tick(); return;
+                if (!attemptHost || host != hostId || message.SenderSteamId == host || !IsCurrentEnvelope(packet, lobby) ||
+                    !agreement.Unconfirmed.Contains(message.SenderSteamId)) return;
+                if (packet.Operation == MapRecordReadinessPacket.ObservationOperation)
+                {
+                    if (AcceptObservation(message.SenderSteamId, packet)) Tick();
+                    return;
+                }
+                if (packet.Operation != 1 || packet.Metadata != null) return;
+                if (agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint,
+                    packet.Records, Name(message.SenderSteamId), out string mismatch))
+                {
+                    PeerObservations.Remove(message.SenderSteamId);
+                    waitingReasonDirty = true;
+                }
+                else if (mismatch != null) { Abort(mismatch); return; }
+                Tick();
+                return;
             }
+
             if (message.SenderSteamId != host) return;
             if (packet.Operation == 0)
             {
+                if (!HasProposalIdentity(packet, lobby) || packet.Metadata?.Length != Categories.Length * DigestLength ||
+                    LobbySnapshot.Digest(packet.Metadata) != packet.Fingerprint) return;
                 if (pending?.Token == packet.Token) { Tick(); return; }
+                if (released || loading) return;
                 if (pending != null) Abort("Host replaced map preparation.", false, false);
+                owner = mp; hostId = host; pending = packet;
+                BeginAttempt(lobby, packet.Token);
                 if (!SavegameRecordComparison.IsValid(packet.Records)) throw new InvalidDataException("Invalid host map record list.");
-                owner = mp; hostId = host; pending = packet; agreement = null;
-                acknowledged = released = loading = false; fingerprintCheckedAt = 0;
-                localPath = Path.GetFullPath(Header(lobby).filePath); localRecords = Capture(localPath, out localHash);
-                Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
-                string mismatch = SavegameRecordComparison.Describe(packet.Records, localRecords, Name(SteamUser.GetSteamID().m_SteamID));
-                if (mismatch != null) throw new InvalidDataException(mismatch);
-                deadline = DateTime.UtcNow.AddSeconds(PreparationSeconds); Tick();
+                deadline = DateTime.UtcNow.AddSeconds(PreparationSeconds);
+                Tick();
             }
-            else if (pending?.Token == packet.Token && packet.Fingerprint == pending.Fingerprint)
+            else if (packet.Operation == 2 && packet.Metadata == null && host == hostId &&
+                acknowledged && IsCurrentEnvelope(packet, lobby) && !released)
             {
-                if (packet.Operation == 3) Abort("Host cancelled map preparation: " + packet.Reason, false);
-                else if (packet.Operation == 2)
-                { if (!released) deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds); released = true; }
+                deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
+                released = true;
             }
         }
+
+        // Control messages stay bound to the authenticated proposal even while live metadata is still arriving.
+        private static bool IsCurrentEnvelope(SavegameLoadPacket packet, Platform_Multiplayer.MPLobby lobby) =>
+            pending != null && packet.Lobby == lobby.id.m_SteamID && packet.Lobby == pending.Lobby &&
+            packet.Token == pending.Token && packet.Fingerprint == pending.Fingerprint && packet.Roster == pending.Roster &&
+            packet.SaveName == pending.SaveName && packet.Checksum == pending.Checksum && packet.Time == 0;
+
+        private static bool HasProposalIdentity(SavegameLoadPacket packet, Platform_Multiplayer.MPLobby lobby) =>
+            packet.Lobby == lobby.id.m_SteamID && !string.IsNullOrEmpty(packet.Roster) && packet.Roster.Length <= 256 &&
+            packet.Token?.Length == 32 && Guid.TryParseExact(packet.Token, "N", out _) && !retired.Contains(packet.Token) &&
+            !string.IsNullOrWhiteSpace(packet.SaveName) && packet.SaveName.Length <= 1024 &&
+            packet.Time == 0 && packet.Fingerprint?.Length == 64;
+
+        private static bool AcceptObservation(ulong peer, SavegameLoadPacket packet)
+        {
+            byte[] observed = packet.Metadata;
+            if (observed?.Length != pending.Metadata.Length + 1 || observed[0] > ProductionObservation || packet.Records == null || packet.Records.Count != 0) return false;
+            var changed = Differences(pending.Metadata, observed, 1);
+            if ((observed[0] == DiffObservation) != (changed.Length != 0)) return false;
+            if (PeerObservations.TryGetValue(peer, out byte[] previous) && previous.SequenceEqual(observed)) return false;
+            PeerObservations[peer] = observed;
+            waitingReasonDirty = true;
+            LogObservation(peer, "peer status", changed, observed, preparedSnapshot);
+            return true;
+        }
+
+        private static void SendObservation(byte state)
+        {
+            bool retryDue = observationSendFailed && DateTime.UtcNow >= nextObservationRetry;
+            if (ReferenceEquals(lastSentSnapshot, lastSnapshot) && lastSentObservation != null &&
+                lastSentObservation[0] == state && !retryDue) return;
+            lastSentSnapshot = lastSnapshot;
+            var observed = new byte[lastSnapshot.Digests.Length + 1];
+            observed[0] = state;
+            Buffer.BlockCopy(lastSnapshot.Digests, 0, observed, 1, lastSnapshot.Digests.Length);
+            bool changed = lastSentObservation == null || !lastSentObservation.SequenceEqual(observed);
+            if (!changed && !retryDue) return;
+            if (changed)
+                LogObservation(SteamUser.GetSteamID().m_SteamID, "local comparison", Differences(pending.Metadata, observed, 1), observed, lastSnapshot);
+            lastSentObservation = observed;
+            waitingReasonDirty = true;
+            nextObservationRetry = DateTime.UtcNow.AddSeconds(2);
+            var packet = Reply(MapRecordReadinessPacket.ObservationOperation);
+            packet.Metadata = observed;
+            try
+            {
+                var result = channel.SendToSteamPeer(new MapRecordReadinessPacket { Value = packet }, hostId);
+                observationSendFailed = !result.Submitted;
+                if (observationSendFailed) NativeApiLog.Warning(log, "Map readiness status send failed: " + result.Reason);
+            }
+            catch (Exception error)
+            {
+                observationSendFailed = true;
+                NativeApiLog.Warning(log, "Map readiness status send failed: " + error.Message);
+            }
+        }
+
+        private static void LogObservation(ulong peer, string phase, string[] changed, byte[] observed, LobbySnapshot local)
+        {
+            string prefix = $"MAP_RECORD_STATUS role={(attemptHost ? "host" : "client")} attempt={attemptId} phase={phase} peer={peer}";
+            NativeApiLog.Info(log, prefix + " state=" + observed[0] + " changed=" + string.Join(",", changed) +
+                " expected=" + BitConverter.ToString(pending.Metadata).Replace("-", "") +
+                " observed=" + BitConverter.ToString(observed, 1).Replace("-", ""));
+            if (changed.Contains("Mods") && lastLoggedModFingerprint != local.ModFingerprint)
+            {
+                lastLoggedModFingerprint = local.ModFingerprint;
+                foreach (string property in local.PropertyDigests()) NativeApiLog.Info(log, prefix + " " + property);
+            }
+        }
+
         private static bool FingerprintMatches(bool decisive)
         {
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             if (decisive || fingerprintCheckedAt == 0 || now - fingerprintCheckedAt >= System.Diagnostics.Stopwatch.Frequency / 2)
-            { fingerprintMatched = Fingerprint(owner.activeLobby) == pending.Fingerprint; fingerprintCheckedAt = now; }
+            {
+                lastSnapshot = new LobbySnapshot(owner.activeLobby);
+                fingerprintMatched = lastSnapshot.Fingerprint == pending.Fingerprint;
+                if (fingerprintMatched && preparedSnapshot == null) preparedSnapshot = lastSnapshot;
+                fingerprintCheckedAt = now;
+            }
             return fingerprintMatched;
         }
         private static void CheckContext()
         {
-            var lobby = owner?.activeLobby;
-            if (lobby == null || lobby.id.m_SteamID != pending.Lobby || Roster(lobby) != pending.Roster ||
-                SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID != hostId)
-                throw new InvalidOperationException("Lobby owner or human roster changed during map preparation.");
-            var header = Header(lobby);
-            if (!SameMap(pending.SaveName, lobby.mapFileName) || pending.Checksum != Checksum(lobby) ||
-                !string.Equals(Path.GetFullPath(header.filePath), localPath, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Local map selection changed.");
+            var lobby = CheckLobby();
+            if (Roster(lobby) != pending.Roster)
+                throw new InvalidOperationException("Human roster changed during map preparation.");
+            if (!SameMap(pending.SaveName, lobby.mapFileName) || pending.Checksum != Checksum(lobby))
+                throw new InvalidDataException("Map selection or CRC changed during preparation.");
+            if (!string.Equals(Path.GetFullPath(Header(lobby).filePath), localPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Local map file selection changed.");
         }
+        private static Platform_Multiplayer.MPLobby CheckLobby()
+        {
+            var lobby = owner?.activeLobby;
+            if (lobby == null || lobby.id.m_SteamID != pending.Lobby ||
+                SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID != hostId || lobby.isHost != attemptHost)
+                throw new InvalidOperationException("Lobby owner changed or the lobby closed during map preparation.");
+            return lobby;
+        }
+
+        private static void PrepareClientMap(Platform_Multiplayer.MPLobby lobby)
+        {
+            // Compare lobby metadata first; only the matching selection can resolve and capture its local file.
+            if (localPath != null) return;
+            localPath = Path.GetFullPath(Header(lobby).filePath);
+            if (!File.Exists(localPath))
+                throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", pending.SaveName));
+            localRecords = Capture(localPath, out localHash);
+            Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
+            string mismatch = SavegameRecordComparison.Describe(pending.Records, localRecords, Name(SteamUser.GetSteamID().m_SteamID));
+            if (mismatch != null) throw new InvalidDataException(mismatch);
+        }
+
         private static void CheckFile()
         { if (Hash(localPath) != localHash) throw new InvalidDataException("Local map changed after its simulation records were confirmed."); }
         private static void Tick()
         {
             if (pending == null || loading) return;
+            string phase = "waiting for readiness";
             try
             {
-                CheckContext();
+                var lobby = CheckLobby();
                 if (DateTime.UtcNow > deadline) throw new TimeoutException(TimeoutReason());
-                if (owner.activeLobby.isHost)
+                if (attemptHost)
                 {
-                    if (!FingerprintMatches(false)) throw new InvalidOperationException("Prepared map selection or host settings changed.");
-                    if (released || !agreement.Ready || !ModSettings.ModSettingsApplication.PrepareLaunch()) return;
-                    if (!FingerprintMatches(true)) throw new InvalidOperationException("Prepared map settings changed before GO.");
+                    CheckContext();
+                    if (!FingerprintMatches(false)) throw new InvalidOperationException(FingerprintMismatch());
+                    if (released || !agreement.Ready || !PrepareConfiguration()) return;
+                    phase = "before GO";
+                    CheckContext();
+                    if (!FingerprintMatches(true)) throw new InvalidOperationException(FingerprintMismatch());
                     CheckFile();
                     if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out bool productionWaiting, out string productionReason))
-                    { if (productionWaiting) return; throw new InvalidOperationException(productionReason); }
+                    {
+                        if (!productionWaiting) throw new InvalidOperationException(productionReason);
+                        SetConfigurationWaiting(productionReason);
+                        return;
+                    }
                     released = true; deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
                     if (Humans(owner.activeLobby).Length > 1) Send(Reply(2));
                     NativeApiLog.Debug(log, "MAP_RECORDS_CONFIRMED: all human peers ready; publishing Vanilla GO once.");
                     original(owner);
                 }
                 else if (acknowledged)
-                { if (!FingerprintMatches(false)) throw new InvalidOperationException("Confirmed client map settings changed."); }
-                else if (FingerprintMatches(false) && ModSettings.ModSettingsApplication.PrepareLaunch() && FingerprintMatches(true))
                 {
+                    CheckContext();
+                    if (!FingerprintMatches(false)) throw new InvalidOperationException(FingerprintMismatch());
+                }
+                else
+                {
+                    if (!FingerprintMatches(false))
+                    {
+                        SetConfigurationWaiting(null);
+                        SendObservation(DiffObservation);
+                        return;
+                    }
+                    // A roster with pending kicks is still settling even when its visible slot digest matches.
+                    if (lobby.members == null || lobby.members.Any(member => member == null || member.dummyToBeKicked)) return;
+                    PrepareClientMap(lobby);
+                    if (!PrepareConfiguration()) { SendObservation(ConfigurationObservation); return; }
+                    phase = "before acknowledgement";
+                    CheckLobby();
+                    if (!FingerprintMatches(true))
+                    {
+                        SetConfigurationWaiting(null);
+                        SendObservation(DiffObservation);
+                        return;
+                    }
+                    if (lobby.members == null || lobby.members.Any(member => member == null || member.dummyToBeKicked)) return;
+                    CheckContext();
                     CheckFile();
                     if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out bool productionWaiting, out string productionReason))
-                    { if (productionWaiting) return; throw new InvalidOperationException(productionReason); }
+                    {
+                        if (!productionWaiting) throw new InvalidOperationException(productionReason);
+                        SetConfigurationWaiting(productionReason);
+                        SendObservation(ProductionObservation);
+                        return;
+                    }
                     var sent = channel.SendToSteamPeer(new MapRecordReadinessPacket { Value = Reply(1) }, hostId);
-                    if (!sent.Submitted) throw new InvalidOperationException(sent.Reason);
+                    if (!sent.Submitted) throw new InvalidOperationException("Map acknowledgement failed: " + sent.Reason);
                     acknowledged = true;
                 }
             }
-            catch (Exception error) { Abort(error.Message); }
-            finally { Schedule(); }
+            catch (Exception error) { Abort(error.Message, true, phase: error is TimeoutException ? "timeout" : phase); }
+            finally
+            {
+                Schedule();
+                AnnounceWaiting();
+            }
+        }
+
+        private static void AnnounceWaiting()
+        {
+            if (pending == null || released || loading || DateTime.UtcNow < waitNoticeAt ||
+                (!attemptHost && !observationSendFailed) || !waitingReasonDirty) return;
+            waitingReasonDirty = false;
+            string reason = WaitingReason();
+            if (reason == announcedWaiting) return;
+            announcedWaiting = reason;
+            LobbyLaunchStatus.ReportPreparationWaiting(log, reason,
+                $"MAP_RECORD_WAITING role={(attemptHost ? "host" : "client")} attempt={attemptId}", attemptLobby, attemptHost, !attemptHost);
+        }
+
+        private static string WaitingReason()
+        {
+            if (configurationWaiting != null) return configurationWaiting;
+            if (!attemptHost)
+            {
+                if (!fingerprintMatched && lastSnapshot != null)
+                    return UiText.Get("LobbyLaunch.MapLocalMismatch", CategoryLabels(Differences(pending.Metadata, lastSnapshot.Digests)));
+                return UiText.Get("LobbyLaunch.MapAwaitingHost");
+            }
+
+            var peers = agreement.Unconfirmed.ToArray();
+            if (peers.Length == 0) return UiText.Get("LobbyLaunch.MapConfigurationWaiting");
+            return string.Join(" ", peers.Select(peer =>
+            {
+                if (!PeerObservations.TryGetValue(peer, out byte[] observed))
+                    return UiText.Get("LobbyLaunch.MapAwaitingPeer", Name(peer));
+                if (observed[0] == DiffObservation)
+                    return UiText.Get("LobbyLaunch.MapPeerMismatch", Name(peer), CategoryLabels(Differences(pending.Metadata, observed, 1)));
+                string phase = observed[0] == ConfigurationObservation ? "MapConfigurationWaiting" : "MapProductionWaiting";
+                return UiText.Get("LobbyLaunch.MapPeerPreparation", Name(peer), UiText.Get("LobbyLaunch." + phase));
+            }));
+        }
+
+        private static bool PrepareConfiguration()
+        {
+            bool ready = ModSettings.ModSettingsApplication.PrepareLaunch();
+            if (!ready) SetConfigurationWaiting(UiText.Get("LobbyLaunch.MapConfigurationWaiting"));
+            return ready;
+        }
+
+        private static void SetConfigurationWaiting(string reason)
+        {
+            if (configurationWaiting == reason) return;
+            configurationWaiting = reason;
+            waitingReasonDirty = true;
         }
         private static void Schedule() => frameWork?.SetContinuous(pending != null && !loading);
         internal static bool ValidateStart(string path, bool multiplayer)
         {
             if (!multiplayer) return true;
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
-            { NativeApiLog.Error(log, "Map readiness validation requires Unity's main thread."); return false; }
+            { Abort("Map readiness validation requires Unity's main thread."); return false; }
+            var lobby = Platform_Multiplayer.Instance?.activeLobby;
+            if (pending == null && lobby != null && ReferenceEquals(lobby, rejectedNativeLobby) &&
+                string.Equals(path, rejectedNativePath, StringComparison.OrdinalIgnoreCase)) return false;
             try
             {
-                if (!initialized || pending == null || (owner.activeLobby.isHost ? !released : !acknowledged))
+                if (!initialized || pending == null || (attemptHost ? !released : !acknowledged))
                     throw new InvalidOperationException("Multiplayer map has no confirmed record preparation.");
                 CheckContext();
                 if (!string.Equals(Path.GetFullPath(path), localPath, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Native map load differs from the confirmed local file.");
                 CheckFile();
-                if (!FingerprintMatches(true) || !ModSettings.ModSettingsApplication.PrepareLaunch())
-                    throw new InvalidOperationException("Multiplayer map settings changed before native load.");
+                if (!FingerprintMatches(true)) throw new InvalidOperationException(FingerprintMismatch());
+                if (!PrepareConfiguration()) throw new InvalidOperationException(configurationWaiting);
+                CheckContext();
+                if (!FingerprintMatches(true)) throw new InvalidOperationException(FingerprintMismatch());
                 if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out _, out string productionReason))
                     throw new InvalidOperationException(productionReason);
+                CheckFile();
                 System.Threading.Volatile.Write(ref admission, new NativeAdmissionTicket(localPath, localHash));
                 loading = true; Schedule(); return true;
             }
-            catch (Exception error) { Abort(error.Message); return false; }
+            catch (Exception error) { Abort(error.Message, true, phase: "before native start"); return false; }
         }
         // Native load may run on another thread. This path reads only an immutable
         // main-thread ticket and this peer's file; no Steam, lobby, settings or UI.
@@ -365,60 +758,152 @@ namespace APIShared
             Abort("Map selection cancelled.", true, false); return true;
         }
         private static string TimeoutReason() => released ? "Confirmed multiplayer map did not start within 30 seconds." :
-            "Map record preparation timed out. Waiting for: " + (agreement == null ? "the lobby host" : string.Join(", ", agreement.Unconfirmed.Select(Name))) +
-            ". Every player needs the same APIShared/mod versions and the selected map.";
+            UiText.Get("LobbyLaunch.MapTimedOut", WaitingReason());
+
         private static void Retire(string token)
         { if (token == null || !retired.Add(token)) return; retiredOrder.Enqueue(token); if (retiredOrder.Count > 64) retired.Remove(retiredOrder.Dequeue()); }
+
         internal static void Abort(string reason)
         {
-            if (Internal.UnityMainThreadDispatch.IsMainThread) { Abort(reason, true, true); return; }
+            if (Internal.UnityMainThreadDispatch.IsMainThread) { Abort(reason, true, phase: "native admission"); return; }
             // Revoke native admission immediately, then retire only this exact
             // transaction on Unity; delayed failure reporting must not cancel a new map.
             var transaction = System.Threading.Volatile.Read(ref pending);
             var ticket = System.Threading.Volatile.Read(ref admission);
             System.Threading.Interlocked.CompareExchange(ref admission, null, ticket);
             if (!Internal.UnityMainThreadDispatch.TryEnqueue(() => {
-                if (ReferenceEquals(pending, transaction)) Abort(reason, true, true);
-            })) NativeApiLog.Error(log, "MAP_RECORD_ABORT_DEFERRED_UNAVAILABLE: " + reason);
+                if (ReferenceEquals(pending, transaction)) Abort(reason, true, phase: "native admission");
+                else ReportUnscoped(reason, transaction?.Token);
+            })) ReportUnscoped(reason, transaction?.Token);
         }
-        private static void Abort(string reason, bool notify, bool showError = true)
+
+        private static void ReportUnscoped(string reason, string token) => LobbyLaunchStatus.ReportPreparationBlocked(log, reason,
+            "MAP_RECORD_LOAD_BLOCKED role=unknown phase=native admission attempt=" + (token ?? Guid.NewGuid().ToString("N")),
+            0, false, false);
+
+        private static bool ForwardCancel(SavegameLoadPacket packet, ulong host)
         {
+            var result = channel.SendToSteamPeer(new MapRecordReadinessPacket { Value = packet }, host);
+            if (!result.Submitted) NativeApiLog.Error(log, "Map preparation cancellation send failed: " + result.Reason);
+            return result.Submitted;
+        }
+
+        private static void Abort(string reason, bool notify, bool showError = true, string phase = "preparation", bool localChat = false)
+        {
+            if (attemptId == null && showError)
+            {
+                var lobby = Platform_Multiplayer.Instance?.activeLobby;
+                if (lobby != null) BeginAttempt(lobby, Guid.NewGuid().ToString("N"));
+            }
+            if (pending == null && notify && !attemptHost && attemptLobby != 0) localChat = true;
             if (pending != null)
             {
-                if (notify) try
+                var currentLobby = Platform_Multiplayer.Instance?.activeLobby;
+                if (notify && currentLobby?.id.m_SteamID == attemptLobby) try
                 {
-                    if (owner?.activeLobby?.isHost == true) Send(Reply(3, reason));
-                    else channel.SendToSteamPeer(new MapRecordReadinessPacket { Value = Reply(3, reason) }, hostId);
+                    if (attemptHost && currentLobby.isHost && SteamMatchmaking.GetLobbyOwner(currentLobby.id).m_SteamID == hostId)
+                        Send(Reply(3, reason));
+                    else if (!attemptHost && !currentLobby.isHost && SteamMatchmaking.GetLobbyOwner(currentLobby.id).m_SteamID == hostId)
+                        localChat = !ForwardCancel(Reply(3, reason), hostId);
+                    else localChat = true;
                 }
-                catch (Exception error) { NativeApiLog.Error(log, "Map preparation cancellation send failed: " + error.Message); }
+                catch (Exception error)
+                {
+                    localChat = !attemptHost;
+                    NativeApiLog.Error(log, "Map preparation cancellation send failed: " + error.Message);
+                }
                 Retire(pending.Token);
             }
-            Clear();
+            string detail = null;
+            if (showError)
+            {
+                try { detail = BlockDetail(phase); }
+                catch (Exception error) { detail = BlockContext(phase) + "; comparison diagnostics failed: " + error.Message; }
+            }
+            ulong lobbyId = attemptLobby;
+            bool broadcast = attemptHost;
+            var rejectedLobby = owner?.activeLobby;
+            if (showError && (released || acknowledged) && localPath != null && rejectedLobby?.id.m_SteamID == lobbyId)
+            {
+                // Vanilla may still call StartGame for the GO already published for this attempt.
+                rejectedNativeLobby = rejectedLobby;
+                rejectedNativePath = localPath;
+            }
+            try { Clear(); }
+            catch (Exception error) { NativeApiLog.Error(log, "Map preparation cleanup failed: " + error); }
             if (!showError) { NativeApiLog.Debug(log, "MAP_RECORD_PREPARATION_CANCELLED: " + reason); return; }
-            ShowBlocked(reason);
+            ShowBlocked(reason, detail, lobbyId, broadcast, localChat);
         }
-        private static void ShowBlocked(string reason)
+
+        private static string BlockContext(string phase) =>
+            "MAP_RECORD_LOAD_BLOCKED role=" + (attemptId == null ? "unknown" : attemptHost ? "host" : "client") +
+            " phase=" + phase + " attempt=" + (attemptId ?? Guid.NewGuid().ToString("N"));
+
+        private static string BlockDetail(string phase)
         {
-            NativeApiLog.Error(log, "MAP_RECORD_LOAD_BLOCKED: " + reason);
-            Action show = () => {
-                try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(Localization.UiText.Get("Savegames.LoadTitle"), () => { }, reason); }
-                catch (Exception error) { NativeApiLog.Error(log, "Map preparation failure popup unavailable: " + error.Message); }
-            };
-            if (Internal.UnityMainThreadDispatch.IsMainThread) show(); else Internal.UnityMainThreadDispatch.TryEnqueue(show);
+            var detail = new List<string> { BlockContext(phase) };
+            if (pending != null)
+                detail.Add("expectedFingerprint=" + pending.Fingerprint + ", expectedMap=" + pending.SaveName + ", expectedCrc=" + pending.Checksum);
+            if (owner?.activeLobby is Platform_Multiplayer.MPLobby lobby)
+            {
+                detail.Add("currentMap=" + lobby.mapFileName + ", currentCrc=" + lobby.crc);
+                if (pending != null)
+                    detail.Add("expectedRoster=" + pending.Roster + ", observedRoster=" + string.Join(",", ObservedHumans(lobby)));
+            }
+            if (preparedSnapshot != null) detail.Add("prepared: " + preparedSnapshot.Summary());
+            if (lastSnapshot != null)
+            {
+                detail.Add("last observed: " + lastSnapshot.Summary());
+                if (preparedSnapshot != null)
+                {
+                    var categories = preparedSnapshot.DescribeChanges(lastSnapshot, detail);
+                    if (categories.Count != 0) detail.Insert(1, "changed=" + string.Join(", ", categories));
+                }
+            }
+            if (agreement != null) detail.Add("unconfirmed=" + string.Join(", ", agreement.Unconfirmed.Select(Name)));
+            if (lastSnapshot != null && pending != null && !fingerprintMatched)
+                detail.Add("host/local differences=" + string.Join(",", Differences(pending.Metadata, lastSnapshot.Digests)));
+            foreach (var report in PeerObservations.OrderBy(item => item.Key))
+                detail.Add("peer=" + report.Key + " state=" + report.Value[0] +
+                    " changed=" + string.Join(",", Differences(pending.Metadata, report.Value, 1)));
+            if (configurationWaiting != null) detail.Add("configuration=" + configurationWaiting);
+            return string.Join("; ", detail);
         }
+
+        private static void ShowRejectedRequest(Platform_Multiplayer.MPLobby lobby, string reason) => ShowBlocked(reason,
+            "MAP_RECORD_LOAD_BLOCKED role=host phase=request attempt=" + Guid.NewGuid().ToString("N"), lobby.id.m_SteamID, true, false);
+
+        private static void ShowBlocked(string reason, string detail, ulong lobbyId, bool broadcast, bool localChat)
+        {
+            LobbyLaunchStatus.ReportPreparationBlocked(log, reason, detail, lobbyId, broadcast, localChat);
+            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(UiText.Get("Savegames.LoadTitle"), () => { }, reason); }
+            catch (Exception error) { NativeApiLog.Error(log, "Map preparation failure popup unavailable: " + error.Message); }
+        }
+
         private static void Clear()
         {
             System.Threading.Volatile.Write(ref admission, null);
-            if (localPath != null && string.Equals(Economy.WorkerProductionAgreement.PreparedDataPath, localPath, StringComparison.OrdinalIgnoreCase))
-                Economy.WorkerProductionAgreement.SetPreparedDataPath(null);
+            string preparedPath = localPath;
             pending = null; agreement = null; owner = null; localRecords = null; localPath = localHash = null;
-            acknowledged = released = loading = false; fingerprintCheckedAt = 0;
+            acknowledged = released = loading = fingerprintMatched = false; fingerprintCheckedAt = 0;
+            preparedSnapshot = lastSnapshot = null;
+            attemptId = configurationWaiting = announcedWaiting = null; attemptLobby = 0; attemptHost = false;
+            lastSentObservation = null; lastSentSnapshot = null; lastLoggedModFingerprint = null;
+            observationSendFailed = waitingReasonDirty = false; PeerObservations.Clear();
             frameWork?.CancelPending(); frameWork?.SetContinuous(false);
+            if (preparedPath != null && string.Equals(Economy.WorkerProductionAgreement.PreparedDataPath, preparedPath, StringComparison.OrdinalIgnoreCase))
+                Economy.WorkerProductionAgreement.SetPreparedDataPath(null);
         }
         internal static void FinishLoad()
         {
             if (Internal.UnityMainThreadDispatch.IsMainThread)
-            { if (pending != null) Retire(pending.Token); Clear(); return; }
+            {
+                if (pending != null) Retire(pending.Token);
+                rejectedNativeLobby = null;
+                rejectedNativePath = null;
+                Clear();
+                return;
+            }
             var transaction = System.Threading.Volatile.Read(ref pending);
             var ticket = System.Threading.Volatile.Read(ref admission);
             System.Threading.Interlocked.CompareExchange(ref admission, null, ticket);
