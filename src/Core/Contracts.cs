@@ -165,8 +165,9 @@ namespace APIShared
         /// registrations run synchronously on the registering thread. Early callbacks run on the initialization publisher thread. Callback exceptions are logged and isolated in both cases; no thread dispatch is performed.
         /// </summary>
         /// <remarks>Callbacks run exactly once, also after failures, once the Script Extender has loaded
-        /// CrusaderDE.dll. Every native initialization step is isolated: a step that throws is logged, the
-        /// remaining steps still run, and a capability backed by that step reports
+        /// CrusaderDE.dll and every APIShared initialization step of that load has run, so every service is
+        /// initialized when a callback registers with it. Every native initialization step is isolated: a step
+        /// that throws is logged, the remaining steps still run, and a capability backed by that step reports
         /// <see cref="NativeCapabilityState.Faulted"/> with the step's reason (services without a capability
         /// diagnostic report the failure only in the BepInEx log). If native publication itself
         /// throws, <see cref="IApiShared.State"/> becomes <see cref="NativeApiState.Unavailable"/> and the

@@ -15,6 +15,9 @@ namespace APIShared
 
         private readonly object sync = new object();
         private readonly List<Action<IApiShared>> readyCallbacks = new List<Action<IApiShared>>();
+        // True while RunNativeInitialization executes its steps: WhenReady callbacks wait for the
+        // last step, so every service initialized after publication accepts their registrations.
+        private bool deferReadyCallbacks;
         private NativeApiState state;
         private string binaryHash = string.Empty;
         private GatehouseDistanceOriginService gatehouseDistanceOrigin;
@@ -61,7 +64,7 @@ namespace APIShared
                 throw new ArgumentNullException(nameof(callback));
             lock (sync)
             {
-                if (state == NativeApiState.Pending)
+                if (state == NativeApiState.Pending || deferReadyCallbacks)
                 {
                     readyCallbacks.Add(callback);
                     return;
@@ -250,8 +253,7 @@ namespace APIShared
             lock (sync)
             {
                 state = terminalState;
-                callbacks = readyCallbacks.ToArray();
-                readyCallbacks.Clear();
+                callbacks = TakeReadyCallbacks();
             }
             NativeApiLog.Debug(log, $"APIShared initialized: state={terminalState}, build={binaryHash}, lobbyState={lobbyStateDiagnostic.State}, playerDefeat={playerDefeatDiagnostic.State}, briefingGold={briefingGoldDiagnostic.State}, gatehouseDistanceOrigin={gatehouseDistanceOriginDiagnostic.State}, gatehouseTiming={gatehouseDiagnostic.State}, unitHudPresentation={unitHudDiagnostic.State}, aivBuildStep={aivBuildStepDiagnostic.State}.");
             foreach (Action<IApiShared> callback in callbacks)
@@ -267,21 +269,46 @@ namespace APIShared
         // Nothing is rethrown to the Script Extender's LibraryLoaded publisher or to Awake.
         internal void RunNativeInitialization(ManualLogSource logger, params NativeInitializationStep[] steps)
         {
+            lock (sync) deferReadyCallbacks = true;
             string lastFailure = null;
-            foreach (NativeInitializationStep step in steps)
+            try
             {
-                try { step.Run(); }
-                catch (Exception ex)
+                foreach (NativeInitializationStep step in steps)
                 {
-                    lastFailure = $"Initialization step '{step.Name}' failed: {ex.GetType().Name}: {ex.Message}";
-                    try { Internal.RuntimeHealth.Failure(logger, "initialization:" + step.Name, true, $"{lastFailure}; independent steps continue. {ex}"); }
-                    catch { }
-                    try { step.Failed?.Invoke(lastFailure); }
-                    catch { }
+                    try { step.Run(); }
+                    catch (Exception ex)
+                    {
+                        lastFailure = $"Initialization step '{step.Name}' failed: {ex.GetType().Name}: {ex.Message}";
+                        try { Internal.RuntimeHealth.Failure(logger, "initialization:" + step.Name, true, $"{lastFailure}; independent steps continue. {ex}"); }
+                        catch { }
+                        try { step.Failed?.Invoke(lastFailure); }
+                        catch { }
+                    }
                 }
+                if (State == NativeApiState.Pending)
+                    PublishInitializationFailure(lastFailure ?? "Native initialization did not publish a terminal state.", logger);
             }
-            if (State == NativeApiState.Pending)
-                PublishInitializationFailure(lastFailure ?? "Native initialization did not publish a terminal state.", logger);
+            finally
+            {
+                Action<IApiShared>[] callbacks;
+                lock (sync)
+                {
+                    deferReadyCallbacks = false;
+                    callbacks = TakeReadyCallbacks();
+                }
+                foreach (Action<IApiShared> callback in callbacks)
+                    InvokeReadyCallback(callback);
+            }
+        }
+
+        // Caller holds sync. Returns nothing while the state is Pending or delivery is deferred.
+        private Action<IApiShared>[] TakeReadyCallbacks()
+        {
+            if (state == NativeApiState.Pending || deferReadyCallbacks || readyCallbacks.Count == 0)
+                return Array.Empty<Action<IApiShared>>();
+            Action<IApiShared>[] callbacks = readyCallbacks.ToArray();
+            readyCallbacks.Clear();
+            return callbacks;
         }
 
         // A failed repair-tooltip binding leaves the on-demand repair capability Faulted with that reason
@@ -315,8 +342,7 @@ namespace APIShared
                 unitHudDiagnostic = Faulted(NativeCapabilityIds.UnitHudPresentation, reason);
                 aivBuildStepDiagnostic = Faulted(NativeCapabilityIds.AivBuildStep, reason);
                 state = NativeApiState.Unavailable;
-                callbacks = readyCallbacks.ToArray();
-                readyCallbacks.Clear();
+                callbacks = TakeReadyCallbacks();
             }
             try { NativeApiLog.Error(log, $"APIShared initialization failed globally: build={binaryHash}, error={reason}"); }
             catch { }
@@ -483,8 +509,13 @@ namespace APIShared
             out NativeCapabilityDiagnostic diagnostic)
         {
             capability = null;
-            if (!ValidateOwner(ownerGuid, NativeCapabilityIds.CoopAiStartImport, out diagnostic))
+            // A managed service created in Awake: like the mission lifecycle it needs no native publication.
+            if (string.IsNullOrWhiteSpace(ownerGuid))
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.CoopAiStartImport,
+                    NativeCapabilityState.ValidationFailed, binaryHash, "A non-empty BepInEx owner GUID is required.");
                 return false;
+            }
             lock (sync)
             {
                 diagnostic = coopAiStartImportDiagnostic;

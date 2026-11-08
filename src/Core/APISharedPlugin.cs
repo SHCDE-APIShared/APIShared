@@ -121,7 +121,6 @@ namespace APIShared
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
                     context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),
-                // Prepare shared queries before WhenReady can publish consumer registrations.
                 new NativeInitializationStep("enemy building proximity", () => Buildings.EnemyProximityPolicies.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native peace-time state", () => Simulation.PeaceTimeState.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("military AI assignment", () =>

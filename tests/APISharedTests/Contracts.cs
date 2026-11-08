@@ -222,7 +222,7 @@ namespace APISharedTests
         {
             byte[] image = CreatePeImage(0x4000, true);
             var runtime = new ApiSharedRuntime();
-            int early = 0, later = 0, failedCallbacks = 0;
+            int early = 0, later = 0, failedCallbacks = 0, earlySeenByServiceAfterPublication = -1;
             runtime.WhenReady(_ => early++);
             runtime.RunNativeInitialization(null,
                 new NativeInitializationStep("repair tooltip binding",
@@ -232,10 +232,14 @@ namespace APISharedTests
                     _ => { failedCallbacks++; throw new InvalidOperationException("failure handler"); }),
                 new NativeInitializationStep("later step", () => later++),
                 new NativeInitializationStep("native API publication",
-                    () => runtime.Initialize(ModuleBase, image, "UNKNOWN", new FakeMemory(), null, null, false)));
+                    () => runtime.Initialize(ModuleBase, image, "UNKNOWN", new FakeMemory(), null, null, false)),
+                new NativeInitializationStep("service initialized after publication",
+                    () => earlySeenByServiceAfterPublication = early));
             Assert(later == 1 && failedCallbacks == 1, "a failed step skipped a later independent step");
             Assert(runtime.State == NativeApiState.Ready && early == 1,
                 "a failed step before publication left WhenReady pending");
+            Assert(earlySeenByServiceAfterPublication == 0,
+                "WhenReady ran before a later initialization step; consumers could not register with that service");
             Assert(!runtime.TryGetBuildingRepair("owner", out _, out NativeCapabilityDiagnostic repair) &&
                 repair.State == NativeCapabilityState.Faulted && repair.Reason.Contains("repair tooltip binding") &&
                 repair.Reason.Contains("binding failed"), "the failed step's capability did not report Faulted with its reason");
