@@ -10,10 +10,10 @@
     <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
     <Compile Include="../../src/Statistics/LordStatisticColumns.cs" Link="Production/LordStatisticColumns.cs" />
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
     <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
     <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
@@ -83,14 +83,17 @@
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
-    <Compile Include="../../src/Units/UnitAccess.cs" Link="Production/UnitAccess.cs" />
+    <Compile Include="../../src/Units/Selection/UnitAccess.cs" Link="Production/UnitAccess.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledContracts.cs" Link="Production/UnitSettledContracts.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledTracker.cs" Link="Production/UnitSettledTracker.cs" />
     <Compile Include="../../src/ModSettings/Internal/DependencyFreeJson.cs" Link="Production/DependencyFreeJson.cs" />
     <Compile Include="../../src/ModSettings/Internal/AtomicFileReplacement.cs" Link="Production/AtomicFileReplacement.cs" />
     <Compile Include="../../src/ModSettings/Presets/PresetAtomicFilePublisher.cs" Link="Production/PresetAtomicFilePublisher.cs" />
-    <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
+    <Compile Include="../../src/Core/Internal/Native/CompiledBytePattern.cs" Link="Production/CompiledBytePattern.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.cs" Link="Production/NativeOwnershipRegistry.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.Reservations.cs" Link="Production/NativeOwnershipRegistry.Reservations.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.Sites.cs" Link="Production/NativeOwnershipRegistry.Sites.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.Report.cs" Link="Production/NativeOwnershipRegistry.Report.cs" />
     <Compile Include="../../src/Core/Internal/Sha256Hex.cs" Link="Production/Sha256Hex.cs" />
     <Compile Include="../../src/Core/NativeSites/NativeSiteContracts.cs" Link="Production/NativeSiteContracts.cs" />
     <Compile Include="../ApiBaseline/ApiSignatures.cs" Link="ApiBaseline/ApiSignatures.cs" />

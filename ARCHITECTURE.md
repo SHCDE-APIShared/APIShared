@@ -114,13 +114,19 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
-  NativeKnowledge/              stable field catalog, evidence and hash-bound raw readers
     Events/                     shared interception registry and managed hook infrastructure
+    Internal/Logging/           shared log formatting, failure throttling and runtime health
     Internal/Native/            pattern resolution, memory, native reservations
+    NativeSites/                public native-site registry and APIShared's own site groups
+  NativeKnowledge/              stable field catalog, evidence and hash-bound raw readers
+  Compatibility/                binary-validated corrections for optional mods (Fixes wheat sale)
   ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
   ScriptExtenderReplacements/    explicit public replacements and their migration documentation
+  Automation/                   opt-in in-process test automation
   Audio/                        shared playback events, context capture and binary contracts
-  Economy/                      native market query contracts and validated owner
+  Economy/                      market, ally-transfer, popularity and worker-production native owners
+    WeaponProduction/           weapon workshop recipes, selection, batches and HUD
+  Wildlife/                     herd runtime and huntable-prey registrations
   Missions/                     mission contracts, state and event relay
   Networking/                   owner-bound Chore, authenticated Chore and control-plane channels
   Simulation/                   native map ticks, mission clock and Peace Time reader
@@ -134,6 +140,12 @@ src/
     EnemyProximity/             enemy-unit proximity policies, registry and read-only native query
   Presentation/
     Events/                     named HUD Pre/Post publishers
+    UiWork/                     owner-bound deferred Unity work and coalesced refreshes
+    AllyGoods/                  ally goods-panel selection, extensions and adornments
+    IngameMenu/                 in-game menu rows, actions and tooltips
+    MapperCamera/               mapper camera bridge and selection-camera events
+    VisibleMap/                 visible map render bounds and events
+    TroopActions/               troop-action HUD owner, buttons, layout and paging
     BuildingTooltip/            compatible building-text adapter and selection
     Tooltips/                   general tooltip contributions and shared rendering
     UnitHud/                    HUD contracts and implementation parts
@@ -146,6 +158,8 @@ src/
     UI/                         search and tooltip presentation
     Internal/                   JSON parser and atomic file replacement
   Units/
+    Selection/                  unit access, local and marked unit selection
+    AiMilitary/                 AI military placement, orders, quota and engineering provenance
     Commands/                   managed GameAction Pre/Accepted/Post contracts
     Recruitment/                request arithmetic and shared material-display IL policy
     Settled/                    unit-settled contracts, settle tracker and SE subscription owner
