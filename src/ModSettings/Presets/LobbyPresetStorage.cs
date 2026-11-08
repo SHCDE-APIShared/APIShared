@@ -51,7 +51,8 @@ namespace APIShared.ModSettings
         internal int TestWriteCount { get; private set; }
 #endif
 
-        internal void Write(Dictionary<string, byte[]> payload)
+        /// <summary>Atomically replaces the file; failures are logged and counted. Returns whether the payload was published.</summary>
+        internal bool Write(Dictionary<string, byte[]> payload)
         {
             string directory = Path.GetDirectoryName(filePath);
             string temporaryPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
@@ -93,6 +94,7 @@ namespace APIShared.ModSettings
 #if API_SHARED_PRESET_TESTS
                     TestWriteCount++;
 #endif
+                    return true;
                 }
             }
             catch (Exception exception)
@@ -118,6 +120,7 @@ namespace APIShared.ModSettings
                         $"[{modName}] Could not remove temporary preset file [{temporaryPath}]: {exception.Message}");
                 }
             }
+            return false;
         }
 
         private void ValidateWritePath()

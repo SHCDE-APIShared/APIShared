@@ -40,6 +40,11 @@ namespace APIShared.ModSettings
         private readonly PerPlayerLobbySettingsContract contract;
         private readonly HostLobbySettingsPublisher hostPublisher;
         private readonly bool routineLoggingEnabled;
+        // Built once from the immutable contract for per-notification lookups; the first
+        // setting with a name wins, as in an ordered search.
+        private readonly Dictionary<string, PerPlayerLobbySettingContract> settingsByProperty =
+            new Dictionary<string, PerPlayerLobbySettingContract>(StringComparer.Ordinal);
+        private readonly HashSet<string> dataPropertyNames = new HashSet<string>(StringComparer.Ordinal);
         private readonly Dictionary<int, ulong> playersById = new Dictionary<int, ulong>();
         private ulong lobbyId;
         private bool hasLobby;
@@ -72,6 +77,12 @@ namespace APIShared.ModSettings
             this.modName = modName;
             this.ownerGuid = ownerGuid;
             this.contract = contract;
+            foreach (PerPlayerLobbySettingContract setting in contract.Settings)
+            {
+                if (!settingsByProperty.ContainsKey(setting.Property.Name))
+                    settingsByProperty.Add(setting.Property.Name, setting);
+                dataPropertyNames.Add(setting.DataProperty.Name);
+            }
             routineLoggingEnabled = logRoutineActivity;
             hostPublisher = new HostLobbySettingsPublisher(owner.GetType(), () => CaptureBroadcastLobby(),
                 () => HasHostAuthority(), id => TransportReady(id), owner.System_TriggerUpdate);
@@ -180,7 +191,7 @@ namespace APIShared.ModSettings
         internal bool DeferBroadcast(string propertyName)
         {
             if (hostPublisher.TryDefer(propertyName, out bool defer)) return defer;
-            if (!contract.Settings.Any(setting => setting.Property.Name == propertyName)) return false;
+            if (propertyName == null || !settingsByProperty.ContainsKey(propertyName)) return false;
             if (active && hasLobby && !rosterHasUnresolvedPlayers &&
                 PlayerSlots.IsValidPlayerId(resolvedLocalPlayerId) && playersById.ContainsKey(resolvedLocalPlayerId) &&
                 TransportReady(resolvedLocalPlayerId)) return false;
@@ -515,7 +526,7 @@ namespace APIShared.ModSettings
         {
             if (string.IsNullOrEmpty(args?.PropertyName))
                 return;
-            if (contract.Settings.Any(item => item.DataProperty.Name == args.PropertyName))
+            if (dataPropertyNames.Contains(args.PropertyName))
             {
                 if (isResettingSlots || isMirroringLocalSetting)
                     return;
@@ -524,9 +535,7 @@ namespace APIShared.ModSettings
                 return;
             }
 
-            PerPlayerLobbySettingContract localSetting = contract.Settings.FirstOrDefault(
-                item => item.Property.Name == args.PropertyName);
-            if (localSetting != null && hasLobby &&
+            if (settingsByProperty.TryGetValue(args.PropertyName, out PerPlayerLobbySettingContract localSetting) && hasLobby &&
                 PlayerSlots.IsValidPlayerId(resolvedLocalPlayerId) &&
                 playersById.ContainsKey(resolvedLocalPlayerId))
             {

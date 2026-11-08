@@ -233,6 +233,7 @@ namespace LobbyModSettingsPresetTests
         }
         [TestCleanup] public void RemoveStorage()
         {
+            PersonalSettingsWriteQueue.ResetForTests();
             PersonalSettingsPaths.TestDocumentsDirectory = null;
             if (Directory.Exists(testRoot)) Directory.Delete(testRoot, true);
         }

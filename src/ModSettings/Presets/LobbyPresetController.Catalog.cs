@@ -217,6 +217,8 @@ namespace APIShared.ModSettings
             IEnumerable<PresetSaveSelection> selections,
             bool overwrite)
         {
+            // An explicit save also stores the working settings that are still pending.
+            FlushPersonalStorage();
             PresetSaveSelection[] selectedSettings = (selections ?? Enumerable.Empty<PresetSaveSelection>()).ToArray();
             if (selectedSettings.Length == 0)
                 throw new InvalidDataException("At least one setting must be selected for saving.");

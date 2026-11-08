@@ -339,6 +339,11 @@ belong to the participant, and the existing applying guard prevents reentrant pa
 `LobbyPresetStorage` owns binary file I/O, atomic replacement and corrupt-data
 backups. `PresetAtomicFilePublisher` owns bounded publication retries and destination
 replacement independently of lobby convergence; its tests run without the game.
+`PersonalSettingsWriteQueue` bundles the file writes of single edits; the working state
+changes at once. `PersonalSettingsWriteRuntime` flushes pending writes on the Unity thread
+after a quiet period (shared UI frame work, demand only while a write is pending), at
+mission lifecycle notifications and at `Application.quitting`; launch preparation, mission
+entry and explicit preset saves flush their own controller.
 The controller composes the existing envelope and determines which values
 may be saved; storage receives the completed payload. Tests can exercise this protocol
 through a plain settings host without constructing a Noesis page or subclassing the ViewModel.

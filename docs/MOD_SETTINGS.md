@@ -55,7 +55,12 @@ Requires APIShared 0.21.0 or later.
 
 `[PresetLocal]` and `[SyncPerPlayer]` are always personal. Mission entry, source
 reset, materialization, save loading, restart and exit never restore older values
-for them. Accepted edits are saved immediately in the existing personal store;
+for them. Accepted edits update the working settings immediately. The personal
+`settings.msgpack` is written once edits pause for about half a second, and in any
+case before mission settings are entered, at launch or restart preparation, at an
+explicit preset save, at each mission start and end and at game exit; a failed write
+is retried at the next of these points. Only a crash within that pause can lose the
+last edit. A personal persistence backend still receives each edit immediately;
 per-player synchronization still uses its existing authority and convergence rules.
 A read-only mission locks only mission-dependent Host settings. Preset loading and
 source reset retain their existing read-only mission gates.

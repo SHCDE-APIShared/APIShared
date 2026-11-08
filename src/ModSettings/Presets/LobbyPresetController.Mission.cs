@@ -70,6 +70,8 @@ namespace APIShared.ModSettings
 
         public void EnterMissionPreset(Dictionary<string, byte[]> snapshot, string label, bool editable)
         {
+            // Mission preparation: personal edits reach the file before mission values become live.
+            FlushPersonalStorage();
             suspendedPublishedPreset = activePublishedPreset;
             suspendedBasedOnStableId = basedOnStableId;
             suspendedBasedOnName = basedOnName;
@@ -189,10 +191,13 @@ namespace APIShared.ModSettings
 
             if (owner.IsLocalHost || IsClientProperty(property))
             {
-                PersistPersonalProperties(new[] { property });
+                // The working state changes now; only its file mirror is bundled.
+                if (PersistPersonalProperties(new[] { property }, writeLocalStorage: false))
+                    DeferPersonalStorageWrite();
             }
         }
 
+        // Launch and restart preparation: the file must hold every personal value afterwards.
         public void PersistCurrentPersonalValues()
         {
             if (!active || applying || preset1 == null) return;
@@ -200,6 +205,7 @@ namespace APIShared.ModSettings
             var properties = persistedProperties.Where(property => property.MissionIndependent && (!IsHostProperty(property) || host)).ToArray();
             ValidatePersonalCommit(properties, host);
             PersistPersonalProperties(properties, hostAuthority: host);
+            FlushPersonalStorage();
         }
 
         private bool PersistPersonalProperties(IEnumerable<PresetPropertyAccessor> properties, bool writeLocalStorage = true, bool? hostAuthority = null, Dictionary<string, object> rollbackValues = null)

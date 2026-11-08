@@ -231,8 +231,64 @@ namespace APIShared.ModSettings
                 NotifyRevertMethod.Invoke(this, new object[] { propertyName });
         }
 
+        // Access refresh rule. The refresh reads only game state (network role, real multiplayer,
+        // front-end menu), the pending personal host restore and mode availability; no setting value
+        // of this model is an input. Every notification still refreshes, because the refresh also
+        // detects role and menu changes, except a derived output that this model raises itself
+        // (access gates, mode and status notices). Those follow a refresh or an explicit context
+        // change, and the raising scope refreshes once after its last output. A refresh requested
+        // while one runs is dropped: it would re-read the same state the running one owns.
+        private bool refreshingSettingsAccess;
+        private bool settingsAccessObserved;
+        private int derivedAccessOutputScope;
+        private string raisingDerivedAccessOutput;
+        private int completedSettingsAccessRefreshes;
+#if API_SHARED_PRESET_TESTS
+        // The harness cannot read the Extender's network singleton; null keeps the production read.
+        internal Func<bool> System_TestObservedLocalHost;
+#endif
+
+        private void OnOwnPropertyChangedForAccess(object sender, PropertyChangedEventArgs args)
+        {
+            // Notifications nested in an observer of a derived output still refresh.
+            if (raisingDerivedAccessOutput == null ||
+                !string.Equals(args?.PropertyName, raisingDerivedAccessOutput, StringComparison.Ordinal))
+                System_RefreshSettingsAccess();
+        }
+
+        private void RaiseDerivedAccessOutput(string propertyName)
+        {
+            string previous = raisingDerivedAccessOutput;
+            raisingDerivedAccessOutput = propertyName;
+            try { base.OnPropertyChanged(propertyName); }
+            finally { raisingDerivedAccessOutput = previous; }
+        }
+
+        // Ends a derived-output scope. Outside a running refresh one refresh follows, taking the
+        // place of the refreshes the individual notifications started before.
+        private void RefreshAfterDerivedAccessOutputs()
+        {
+            if (derivedAccessOutputScope == 0 && settingsAccessObserved)
+                System_RefreshSettingsAccess();
+        }
+
         /// <summary>Refreshes authority/context-dependent UI gates from the current settings context.</summary>
         public void System_RefreshSettingsAccess()
+        {
+            if (refreshingSettingsAccess)
+                return;
+            refreshingSettingsAccess = true;
+            try
+            {
+                RefreshSettingsAccessCore();
+            }
+            finally
+            {
+                refreshingSettingsAccess = false;
+            }
+        }
+
+        private void RefreshSettingsAccessCore()
         {
             bool currentIsRealMultiplayer;
             bool currentIsHost;
@@ -242,7 +298,11 @@ namespace APIShared.ModSettings
                 currentIsRealMultiplayer = GameModeHelper.IsRealMultiplayer();
                 // Authority and game-mode presentation are independent. The Extender
                 // correctly reports local Skirmish and Trail lobbies as local host.
+#if API_SHARED_PRESET_TESTS
+                currentIsHost = System_TestObservedLocalHost != null ? System_TestObservedLocalHost() : GameNetworkAPI.IsLocalHost();
+#else
                 currentIsHost = GameNetworkAPI.IsLocalHost();
+#endif
                 currentMenuContext = CaptureSettingsMenuContext();
             }
             catch
@@ -257,6 +317,7 @@ namespace APIShared.ModSettings
             {
                 presetController?.RestorePersonalHostIfPending();
                 RefreshModeAvailability();
+                completedSettingsAccessRefreshes++;
                 return;
             }
 
@@ -265,6 +326,7 @@ namespace APIShared.ModSettings
             settingsMenuContext = currentMenuContext;
             presetController?.RestorePersonalHostIfPending();
             RaiseAccessProperties();
+            completedSettingsAccessRefreshes++;
         }
 
         private static SettingsMenuContext CaptureSettingsMenuContext()
@@ -334,41 +396,49 @@ namespace APIShared.ModSettings
 
         private void RaiseAccessProperties()
         {
+            derivedAccessOutputScope++;
+            try { RaiseAccessPropertiesCore(); }
+            finally { derivedAccessOutputScope--; }
+            RefreshAfterDerivedAccessOutputs();
+        }
+
+        private void RaiseAccessPropertiesCore()
+        {
             RefreshModeAvailability();
-            base.OnPropertyChanged(nameof(IsLocalSettingsHost));
-            base.OnPropertyChanged(nameof(IsRealMultiplayerContext));
-            base.OnPropertyChanged(nameof(HasHostSettings));
-            base.OnPropertyChanged(nameof(HasClientSettings));
-            base.OnPropertyChanged(nameof(HasHostSettingsActivation));
-            base.OnPropertyChanged(nameof(HasClientSettingsActivation));
-            base.OnPropertyChanged(nameof(HostSettingsEnabled));
-            base.OnPropertyChanged(nameof(ClientSettingsEnabled));
-            base.OnPropertyChanged(nameof(HostSettingsOpacity));
-            base.OnPropertyChanged(nameof(ClientSettingsOpacity));
-            base.OnPropertyChanged(nameof(MissionPresetEditable));
-            base.OnPropertyChanged(nameof(IsMissionPresetSelected));
-            base.OnPropertyChanged(nameof(CanEditHostSettings));
-            base.OnPropertyChanged(nameof(CanEditClientSettings));
-            base.OnPropertyChanged(nameof(CanEditMissionIndependentHostSettings));
-            base.OnPropertyChanged(nameof(CanToggleHostSettings));
-            base.OnPropertyChanged(nameof(CanToggleClientSettings));
-            base.OnPropertyChanged(nameof(CanChangePreset));
-            base.OnPropertyChanged(nameof(CanResetSettings));
-            base.OnPropertyChanged(nameof(PresetVisibility));
-            base.OnPropertyChanged(nameof(ClientSettingsActivationVisibility));
-            base.OnPropertyChanged(nameof(HostReadOnlyNoticeVisibility));
-            base.OnPropertyChanged(nameof(ActionsScopeNoticeVisibility));
-            base.OnPropertyChanged(nameof(ActionsScopeNoticeText));
-            base.OnPropertyChanged(nameof(AreSettingsEditable));
-            base.OnPropertyChanged(nameof(IsMissionPresetActive));
-            base.OnPropertyChanged(nameof(System_DirectLaunchNoticeVisibility));
-            base.OnPropertyChanged(nameof(System_DirectLaunchNoticeText));
-            base.OnPropertyChanged(nameof(System_TrailSourceNoticeVisibility));
-            base.OnPropertyChanged(nameof(System_TrailSourceNoticeText));
+            RaiseDerivedAccessOutput(nameof(IsLocalSettingsHost));
+            RaiseDerivedAccessOutput(nameof(IsRealMultiplayerContext));
+            RaiseDerivedAccessOutput(nameof(HasHostSettings));
+            RaiseDerivedAccessOutput(nameof(HasClientSettings));
+            RaiseDerivedAccessOutput(nameof(HasHostSettingsActivation));
+            RaiseDerivedAccessOutput(nameof(HasClientSettingsActivation));
+            RaiseDerivedAccessOutput(nameof(HostSettingsEnabled));
+            RaiseDerivedAccessOutput(nameof(ClientSettingsEnabled));
+            RaiseDerivedAccessOutput(nameof(HostSettingsOpacity));
+            RaiseDerivedAccessOutput(nameof(ClientSettingsOpacity));
+            RaiseDerivedAccessOutput(nameof(MissionPresetEditable));
+            RaiseDerivedAccessOutput(nameof(IsMissionPresetSelected));
+            RaiseDerivedAccessOutput(nameof(CanEditHostSettings));
+            RaiseDerivedAccessOutput(nameof(CanEditClientSettings));
+            RaiseDerivedAccessOutput(nameof(CanEditMissionIndependentHostSettings));
+            RaiseDerivedAccessOutput(nameof(CanToggleHostSettings));
+            RaiseDerivedAccessOutput(nameof(CanToggleClientSettings));
+            RaiseDerivedAccessOutput(nameof(CanChangePreset));
+            RaiseDerivedAccessOutput(nameof(CanResetSettings));
+            RaiseDerivedAccessOutput(nameof(PresetVisibility));
+            RaiseDerivedAccessOutput(nameof(ClientSettingsActivationVisibility));
+            RaiseDerivedAccessOutput(nameof(HostReadOnlyNoticeVisibility));
+            RaiseDerivedAccessOutput(nameof(ActionsScopeNoticeVisibility));
+            RaiseDerivedAccessOutput(nameof(ActionsScopeNoticeText));
+            RaiseDerivedAccessOutput(nameof(AreSettingsEditable));
+            RaiseDerivedAccessOutput(nameof(IsMissionPresetActive));
+            RaiseDerivedAccessOutput(nameof(System_DirectLaunchNoticeVisibility));
+            RaiseDerivedAccessOutput(nameof(System_DirectLaunchNoticeText));
+            RaiseDerivedAccessOutput(nameof(System_TrailSourceNoticeVisibility));
+            RaiseDerivedAccessOutput(nameof(System_TrailSourceNoticeText));
 #if !API_SHARED_PRESET_TESTS
-            base.OnPropertyChanged(nameof(System_PresetStatusText));
-            base.OnPropertyChanged(nameof(System_PresetStatusVisibility));
-            base.OnPropertyChanged(nameof(System_CanLoadSettingsSource));
+            RaiseDerivedAccessOutput(nameof(System_PresetStatusText));
+            RaiseDerivedAccessOutput(nameof(System_PresetStatusVisibility));
+            RaiseDerivedAccessOutput(nameof(System_CanLoadSettingsSource));
 #endif
         }
     }

@@ -69,6 +69,7 @@
     <Compile Include="..\..\src\ModSettings\Presets\ILobbyPresetHost.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.PresetIntegration.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetStorage.cs" />
+    <Compile Include="..\..\src\ModSettings\Presets\PersonalSettingsWriteQueue.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PersonalSettingsPaths.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.PresetDialogs.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\PresetLobbyModSettingsViewModel.SettingsSearch.cs" />

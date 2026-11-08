@@ -261,7 +261,8 @@ namespace APIShared.ModSettings
 #if !API_SHARED_PRESET_TESTS
             RebuildSettingsSources();
 #endif
-            PropertyChanged += (_, __) => System_RefreshSettingsAccess();
+            PropertyChanged += OnOwnPropertyChangedForAccess;
+            settingsAccessObserved = true;
             System_RefreshSettingsAccess();
         }
 
@@ -402,19 +403,22 @@ namespace APIShared.ModSettings
         /// <summary>Notifies the Extender and coordinates persistence/publication for changed participant properties. Invoke after a real value change; snapshot guards prevent partial reentrant saves.</summary>
         protected new void OnPropertyChanged(string name)
         {
+            int refreshesBefore = completedSettingsAccessRefreshes;
             try
             {
+                // The access subscription refreshes for this notification, before persistence
+                // reads the current role. The derived notifications below change no refresh input.
                 base.OnPropertyChanged(name);
 
                 if (presetController?.IsHostSettingsActivationProperty(name) == true)
                 {
-                    base.OnPropertyChanged(nameof(HostSettingsEnabled));
-                    base.OnPropertyChanged(nameof(HostSettingsOpacity));
+                    RaiseDerivedAccessOutput(nameof(HostSettingsEnabled));
+                    RaiseDerivedAccessOutput(nameof(HostSettingsOpacity));
                 }
                 if (presetController?.IsClientSettingsActivationProperty(name) == true)
                 {
-                    base.OnPropertyChanged(nameof(ClientSettingsEnabled));
-                    base.OnPropertyChanged(nameof(ClientSettingsOpacity));
+                    RaiseDerivedAccessOutput(nameof(ClientSettingsEnabled));
+                    RaiseDerivedAccessOutput(nameof(ClientSettingsOpacity));
                 }
             }
             finally
@@ -423,11 +427,14 @@ namespace APIShared.ModSettings
 #if !API_SHARED_PRESET_TESTS
                 if (presetController?.IsPersistentSetting(name) == true)
                 {
-                    base.OnPropertyChanged(nameof(System_PresetStatusText));
-                    base.OnPropertyChanged(nameof(System_PresetStatusVisibility));
+                    RaiseDerivedAccessOutput(nameof(System_PresetStatusText));
+                    RaiseDerivedAccessOutput(nameof(System_PresetStatusVisibility));
                 }
 #endif
-                System_RefreshSettingsAccess();
+                // Persistence changes no refresh input, so a refresh completed for this
+                // notification already reflects the final state.
+                if (completedSettingsAccessRefreshes == refreshesBefore)
+                    System_RefreshSettingsAccess();
             }
         }
 

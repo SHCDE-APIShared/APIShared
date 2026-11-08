@@ -48,6 +48,7 @@ namespace APIShared
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
             ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
+            ModSettings.PersonalSettingsWriteRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordScriptDiagnosticsRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordMediaRegistrationRuntime.Initialize(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
