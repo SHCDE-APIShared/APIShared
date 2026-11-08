@@ -3156,6 +3156,56 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Wildlife.HerdFlightRule | public sealed class APIShared.Wildlife.HerdFlightRule
+APIShared.Wildlife.HerdFlightRule | public bool TrySetCalm(int herdId, bool calm)
+APIShared.Wildlife.HerdFlightRule | public string OwnerGuid { get; }
+APIShared.Wildlife.HerdFlightRule | public string RegistrationId { get; }
+APIShared.Wildlife.HerdFlightRule | public void ClearAll()
+APIShared.Wildlife.HerdFlightRules | public static class APIShared.Wildlife.HerdFlightRules
+APIShared.Wildlife.HerdFlightRules | public static bool TryGetSectorThreats(int tileX, int tileY, out APIShared.Wildlife.HerdSectorThreats threats)
+APIShared.Wildlife.HerdFlightRules | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Wildlife.HerdFlightRule rule, out string reason)
+APIShared.Wildlife.HerdInfo | public struct APIShared.Wildlife.HerdInfo
+APIShared.Wildlife.HerdInfo | public APIShared.Wildlife.HerdKind Kind { get; }
+APIShared.Wildlife.HerdInfo | public bool IsFleeing { get; }
+APIShared.Wildlife.HerdInfo | public int AnimalCount { get; }
+APIShared.Wildlife.HerdInfo | public int HerdId { get; }
+APIShared.Wildlife.HerdInfo | public int LeaderUnitId { get; }
+APIShared.Wildlife.HerdInfo | public int OwnerPlayerId { get; }
+APIShared.Wildlife.HerdInfo | public uint GlobalId { get; }
+APIShared.Wildlife.HerdKind | public enum APIShared.Wildlife.HerdKind : short
+APIShared.Wildlife.HerdKind | Camel = 16
+APIShared.Wildlife.HerdKind | Crocodile = 42
+APIShared.Wildlife.HerdKind | Deer = 13
+APIShared.Wildlife.HerdKind | Goat = 40
+APIShared.Wildlife.HerdKind | Hyena = 41
+APIShared.Wildlife.HerdKind | Lion = 14
+APIShared.Wildlife.HerdKind | Rabbit = 15
+APIShared.Wildlife.HerdRoute | public sealed class APIShared.Wildlife.HerdRoute
+APIShared.Wildlife.HerdRoute | public APIShared.Wildlife.HerdInfo Herd { get; }
+APIShared.Wildlife.HerdRoute | public APIShared.Wildlife.HerdWaypoint GetWaypoint(int index)
+APIShared.Wildlife.HerdRoute | public const int MaximumWaypoints = 10
+APIShared.Wildlife.HerdRoute | public int LeaderTileX { get; }
+APIShared.Wildlife.HerdRoute | public int LeaderTileY { get; }
+APIShared.Wildlife.HerdRoute | public int WaypointCount { get; }
+APIShared.Wildlife.HerdRoute | public void ReplaceWithSingleWaypoint(int tileX, int tileY)
+APIShared.Wildlife.HerdRoute | public void Truncate(int count)
+APIShared.Wildlife.HerdRouteEvents | public static class APIShared.Wildlife.HerdRouteEvents
+APIShared.Wildlife.HerdRouteEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HerdRouteHandler handler, out string reason, int order = 0)
+APIShared.Wildlife.HerdRouteHandler | public delegate void APIShared.Wildlife.HerdRouteHandler(APIShared.Wildlife.HerdRoute route)
+APIShared.Wildlife.HerdSectorThreats | public struct APIShared.Wildlife.HerdSectorThreats
+APIShared.Wildlife.HerdSectorThreats | public int Predators { get; }
+APIShared.Wildlife.HerdSectorThreats | public int Units { get; }
+APIShared.Wildlife.HerdWaypoint | public struct APIShared.Wildlife.HerdWaypoint
+APIShared.Wildlife.HerdWaypoint | public .ctor(int tileX, int tileY)
+APIShared.Wildlife.HerdWaypoint | public int TileX { get; }
+APIShared.Wildlife.HerdWaypoint | public int TileY { get; }
+APIShared.Wildlife.Herds | public static class APIShared.Wildlife.Herds
+APIShared.Wildlife.Herds | public const int MaximumHerdId = 4499
+APIShared.Wildlife.Herds | public static bool IsAvailable { get; }
+APIShared.Wildlife.Herds | public static bool TryCopyMemberUnitIds(int herdId, System.Collections.Generic.List<int> unitIds)
+APIShared.Wildlife.Herds | public static bool TryGet(int herdId, out APIShared.Wildlife.HerdInfo herd)
+APIShared.Wildlife.Herds | public static bool TrySpawn(APIShared.Wildlife.HerdKind kind, int tileX, int tileY, int maxAnimals, out int herdId, out string reason)
+APIShared.Wildlife.Herds | public static string UnavailableReason { get; }
 APIShared.Wildlife.HuntablePrey | public static class APIShared.Wildlife.HuntablePrey
 APIShared.Wildlife.HuntablePrey | public static APIShared.Wildlife.HuntablePreyCatalog Current { get; }
 APIShared.Wildlife.HuntablePrey | public static bool IsAvailable { get; }

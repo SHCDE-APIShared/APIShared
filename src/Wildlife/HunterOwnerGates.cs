@@ -48,13 +48,16 @@ namespace APIShared.Wildlife
 
         internal static bool IsAvailable => Publication.IsReady;
 
-        // Unity thread, from a registration. Idempotent; a failed attempt is not retried (fail closed).
+        // Unity thread, from a registration before the first mission (NativeInlinePatchWindow). Idempotent;
+        // a failed attempt is not retried (fail closed).
         internal static bool TryEnsureInstalled(ManualLogSource log, out string reason)
         {
             lock (Gate)
             {
                 if (IsAvailable) { reason = ""; return true; }
                 if (attempted) { reason = diagnostic; return false; }
+                // Inline stubs patch without suspending threads; a running simulation could execute the spans.
+                if (!NativeInlinePatchWindow.IsOpen) { reason = NativeInlinePatchWindow.ClosedReason; return false; }
                 attempted = true;
                 bool claimed = false;
                 try

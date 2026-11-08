@@ -922,7 +922,7 @@ production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).
 
 ## Huntable prey
 
-`APIShared.Wildlife.HuntablePrey` registers additional unit types that Vanilla
+Requires APIShared 0.38.0 or later. `APIShared.Wildlife.HuntablePrey` registers additional unit types that Vanilla
 Hunters may hunt, including types outside `eChimps`, and reads the current
 catalog (`Current`, always with deer and goat). APIShared admits active types to
 Vanilla's Hunter query and releases the Hunter's reservation for them without a
@@ -932,3 +932,11 @@ correct Hunter id; `HuntablePreyDefinition.WithBaseMeat` and `HunterMeatYieldEve
 set the base meat per butchered animal, kept in saves. A type can also admit animals
 of the Hunter's own player and remove its corpse when butchering starts. See
 [the huntable-prey contract](HUNTING.md).
+
+## Herds
+
+Requires APIShared 0.38.0 or later. `APIShared.Wildlife.Herds` reads Vanilla's animal herds
+(`TryGet`, `TryCopyMemberUnitIds`) and spawns new ones the way Vanilla does (`TrySpawn`, in a
+simulation tick). `HerdRouteEvents` lets mods shorten or redirect a herd's route right after
+Vanilla built it; `HerdFlightRules` keeps chosen deer and goat herds from fleeing from their
+sector's threat counters, which `TryGetSectorThreats` reads. See [the herd contract](HERDS.md).

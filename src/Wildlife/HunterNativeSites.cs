@@ -160,28 +160,12 @@ namespace APIShared.Wildlife
         internal static ulong Image => image;
         internal static CrusaderLibraryLoadContext LoadContext => loadContext;
 
-        internal static void CheckSite(CrusaderLibraryLoadContext context, int rva, byte[] bytes, byte[] continuation)
-        {
-            ReadOnlySpan<byte> memory = context.Memory;
-            if (rva + bytes.Length + continuation.Length > memory.Length ||
-                !memory.Slice(rva, bytes.Length).SequenceEqual(new ReadOnlySpan<byte>(bytes)) ||
-                !memory.Slice(rva + bytes.Length, continuation.Length).SequenceEqual(new ReadOnlySpan<byte>(continuation)))
-                throw new InvalidOperationException("Hunter native site snapshot differs at 0x" + rva.ToString("X") + ".");
-            var live = new ReadOnlySpan<byte>((void*)(image + (uint)rva), bytes.Length);
-            if (!live.SequenceEqual(new ReadOnlySpan<byte>(bytes)))
-                throw new InvalidOperationException("Hunter native site is already patched at 0x" + rva.ToString("X") + ".");
-            var next = new ReadOnlySpan<byte>((void*)(image + (uint)(rva + bytes.Length)), Math.Max(continuation.Length, 6));
-            bool foreignHook = next[0] == 0xE9 || next[0] == 0xFF && next[1] == 0x25;
-            if (!foreignHook && !next.Slice(0, continuation.Length).SequenceEqual(new ReadOnlySpan<byte>(continuation)))
-                throw new InvalidOperationException("Hunter native site continuation changed at 0x" + (rva + bytes.Length).ToString("X") + ".");
-        }
+        private const string Label = "Hunter native site";
 
-        internal static void ProbeLength(int rva, int length)
-        {
-            using (var probe = new X64InlineHook(image + (uint)rva, length))
-                if (probe.DisplacedByteCount != length)
-                    throw new InvalidOperationException("Hunter native site span differs at 0x" + rva.ToString("X") + ": " + probe.DisplacedByteCount + ".");
-        }
+        internal static void CheckSite(CrusaderLibraryLoadContext context, int rva, byte[] bytes, byte[] continuation) =>
+            WildlifeInlineSite.CheckSite(context, image, rva, bytes, continuation, Label);
+
+        internal static void ProbeLength(int rva, int length) => WildlifeInlineSite.ProbeLength(image, rva, length, Label);
 
         private static void Verify(bool installed)
         {
@@ -189,39 +173,9 @@ namespace APIShared.Wildlife
             Verify(CorpseHandle, CorpseArrivalRva, CorpseArrivalLength, CorpseArrivalBytes, GenerateCorpseArrival, installed);
         }
 
-        internal delegate void Generator(Assembler a, ReadOnlySpan<Instruction> original);
+        internal static void Verify(HookHandle<X64InlineHook> handle, int rva, int length, byte[] bytes, WildlifeInlineSite.Generator generate,
+            bool installed) => WildlifeInlineSite.Verify(handle, image, rva, length, bytes, generate, installed, Label);
 
-        internal static void Verify(HookHandle<X64InlineHook> handle, int rva, int length, byte[] bytes, Generator generate, bool installed)
-        {
-            var hook = handle.Hook;
-            if (!handle.Success || hook == null || hook.IsInstalled != installed || hook.TargetAddress != image + (uint)rva ||
-                hook.DisplacedByteCount != length || hook.StubAddress == IntPtr.Zero)
-                throw new InvalidOperationException("Hunter native site backend contract differs at 0x" + rva.ToString("X") + ".");
-            byte[] expected = ExpectedStub(rva, length, bytes, generate, unchecked((ulong)hook.StubAddress.ToInt64()));
-            var actual = new byte[expected.Length];
-            Marshal.Copy(hook.StubAddress, actual, 0, actual.Length);
-            if (!actual.AsSpan().SequenceEqual(expected))
-                throw new InvalidOperationException("Hunter native site stub differs at 0x" + rva.ToString("X") + ".");
-            if (!installed) return;
-            IntPtr target = (IntPtr)hook.TargetAddress;
-            if (Marshal.ReadByte(target) != 0xFF || Marshal.ReadByte(target, 1) != 0x25 || Marshal.ReadInt32(target, 2) != 0 ||
-                Marshal.ReadIntPtr(target, 6) != hook.StubAddress)
-                throw new InvalidOperationException("Hunter native site jump differs at 0x" + rva.ToString("X") + ".");
-            for (int i = 14; i < length; i++)
-                if (Marshal.ReadByte(target, i) != 0x90)
-                    throw new InvalidOperationException("Hunter native site padding differs at 0x" + rva.ToString("X") + ".");
-        }
-
-        // X64InlineHook appends its continuation jump after the custom generator.
-        internal static byte[] ExpectedStub(int rva, int length, byte[] bytes, Generator generate, ulong stub)
-        {
-            var a = new Assembler(64);
-            var original = Economy.WorkerProductionBonusNativeDefinition.Decode(bytes, image + (uint)rva);
-            generate(a, original);
-            a.AddUnrestrictedJmp(image + (uint)(rva + length));
-            return Economy.WorkerProductionBonusNativeAssembly.Assemble(a, stub);
-        }
-
-        internal static byte[] Hex(string text) => Economy.WorkerProductionBonusNativeDefinition.Hex(text.Replace(" ", ""));
+        internal static byte[] Hex(string text) => WildlifeInlineSite.Hex(text);
     }
 }

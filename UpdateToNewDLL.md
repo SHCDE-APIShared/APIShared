@@ -1471,7 +1471,8 @@ Owner: `Wildlife.HunterOwnerGates` (generators in `Wildlife.HunterNativeAssembly
 `tests/WorkerProductionBonus.NativeTests/HunterOwnerGateTests.cs`). Reference native SHA-256
 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; site group
 `Wildlife.HunterOwnerGates`. Three RedBird `X64InlineHook`s, purely native, installed together on the
-first huntable-prey registration with own-player prey and never unpatched. They read one 65,536-byte
+first huntable-prey registration with own-player prey (only before the first mission,
+`NativeInlinePatchWindow`) and never unpatched. They read one 65,536-byte
 per-type table (set at mission activation, cleared at its end). Any other hash, snapshot or live byte
 difference (for example an older ImprovedHunters that patched the same spans), a changed continuation,
 a backend span other than 14 bytes, a stub that differs from the expected bytes, or an arrow gate block
@@ -1497,3 +1498,45 @@ whose SHA-256 differs from `C3BCA2C9…AE225F` refuses the install; the registra
   adding a hash.
 - Before adding a hash: repeat the register-liveness audit of all three spans, the team-table and
   projectile-record layout, and check that no other plugin patches the spans.
+
+## Herds
+
+Owner: `Wildlife.HerdRuntime` (layout in `Wildlife.HerdNativeContract`, flight generator in
+`Wildlife.HerdNativeAssembly`, executed by `tests/WorkerProductionBonus.NativeTests/HerdFlightGateTests.cs`;
+layout, calm marks and route edits in `tests/APISharedTests/HerdTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback, an unknown image
+leaves herds unavailable. Static audit of 2026-11-08.
+
+- Records: tribe manager `0x7CC6720` (the `lea rcx` at `0xCE272` passes it to the herd maintenance
+  `0x1261F0` and the dispatcher `0x117520`), 4500 records of `0x688` bytes, id 0 reserved. The Extender's
+  `GameTribe` starts `0x2A` after a raw record; `TryValidateLayout` checks its named fields against raw
+  owner `+0x2C`, global id `+0x34`, state `+0x40` (2 in use), leader `+0x5A`, count `+0x5C`, member bits
+  `+0x60` (`0x271` words by unit id), waypoints `+0x5B4`, route index `+0x5DC`, route count `+0x5DE`.
+  Unnamed: kind `+0x42` (dispatcher `0x1175D9`, written by the spawn at `0x11E202`) and flight `+0x5F4`
+  (deer update `0x124F75`; set to 1 on a threat, counted up and reset; rabbits use it alike at `0x125E60`).
+- Kinds by the dispatcher's two jump tables: deer `0xD` -> `0x124E80`, lion `0xE` -> `0x1259D0`, rabbit
+  `0xF` -> `0x125D00`, camel `0x10` -> `0x124890`, goat `0x28` -> `0x125290`, hyena `0x29` -> `0x1256A0`,
+  crocodile `0x2A` -> `0x124B90`. Other kinds are troop groups.
+- Spawn `0x11E150(manager, art, x, y, height)`, entry `44 89 4C 24 20 44 89 44 24 18 89 54 24 10 53 55 56
+  57 41 54 41 55 41 57 48 83 EC 50`: claims a record (`0x119C00`), refuses x or y above `0x31F`, an unused
+  tile and tile mask `0x4A5014B1`, then creates the animals (`0x17FEF0`, `0x11D370`) and returns the herd id
+  or 0. Arts: deer `0xDC` (9-12), lion `0xDD` (3-4), rabbit `0xDE` (14-21), camel `0xDF` (2-5), goat `0xE2`
+  (4-5), hyena `0xE3` (6-9), crocodile `0xE5` (1); `0xE0`, `0xE1`, `0xE4` are no herds. Animals above the
+  wanted number get alive state 3; `0x1261F0`, every tick before the dispatcher, removes members whose state
+  is not 1, 2 or 4 (`0x123EA0`) for every record in use.
+- Routes `0x127E60(grid, herd, reach, mode)`, Indirect detour of 10 bytes (`mov [rsp+0x20],rbx; mov
+  [rsp+0x18],r8d`), continuation `55 56 57 41 54 41 55 41 56 41 57 48 83 EC 70`; no branch in the function
+  targets `[0x127E60,0x127E74)`. Callers: `0x124890`, `0x124E80`, `0x125290`, `0x1256A0`, `0x1259D0`,
+  `0x125D00` (rabbits also `0x129010`). It zeroes index and count (`0x1283D6`, `0x1283E1`) before its only
+  early exit (`0x128931`) and appends waypoints (`0x128A20`). Callers either test `count > 0` or walk to
+  `route[index]` without it (`0x1249F2`, `0x124FBE`, `0x125829`, `0x125B6D`), so an emptied route
+  gets the leader's tile as its first waypoint.
+- Flight gates `0x124F20` (deer) and `0x125330` (goats), 18 bytes `8B 7C 08 28 03 7C 08 48 44 8B 7C 08 40 44
+  8B 64 08 44`, continuation `66 44 89 AB F8 05 00 00`; both functions are byte-identical but for the type
+  constants. No branch targets the spans. RBP = herd id (`movsxd rbp, edx`), EDI = threat sum, read once at
+  `0x124F71` and written again before any other read; RAX and RCX are written again on both paths behind the
+  span; flags dead. Sector grid `0x3395E10` (`lea rcx` at `0x124EFA`), 80 by 80 sectors of 10 tiles, stride
+  `0xA0`, `+0x28` predators, `+0x48` units and fleeing deer and goats (`0x126810`).
+- Before adding a hash: repeat the dispatcher, spawn-art and route-reader audit, the register liveness of
+  both flight spans, the raw field map against the Extender's `GameTribe`, and check that the Fixes mod
+  (it hooks `DeerUpdate` `0x156130`, not these functions) and other plugins leave the spans alone.

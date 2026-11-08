@@ -1,6 +1,6 @@
 # Huntable prey
 
-Vanilla Hunters only hunt deer and goats. `APIShared.Wildlife.HuntablePrey` lets
+Requires APIShared 0.38.0 or later. Vanilla Hunters only hunt deer and goats. `APIShared.Wildlife.HuntablePrey` lets
 mods read which unit types Hunters may currently hunt and add further types: all
 other Vanilla animals as well as new animals of your own. How a new animal enters
 the world is up to the registering mod.
@@ -41,9 +41,10 @@ Two more options on the definition:
 
 - `WithOwnPlayerPrey()`: Hunters may also hunt animals of this type that belong to their own
   player (the same owner, not an ally), as well as unowned ones. Vanilla refuses owned animals
-  at three native points; APIShared installs its gates there on the first such registration.
-  If another plugin already patches those points (for example an older ImprovedHunters), the
-  registration is `Unsupported` and says why.
+  at three native points; APIShared installs its gates there on the first such registration,
+  which must come during startup, before the first mission of the process. A later first
+  registration, or another plugin that already patches those points (for example an older
+  ImprovedHunters), makes it `Unsupported` with the reason.
 - `WithCorpseRemovedWhenButchered()`: the corpse disappears as soon as a Hunter starts
   butchering it, instead of fading out, so no other Hunter can pick it again.
 

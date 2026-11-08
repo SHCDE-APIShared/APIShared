@@ -1770,3 +1770,11 @@ during Unity startup on every peer, and withdraw or restore them logically with
 `HuntablePrey.Current` lists the types Hunters may hunt. The
 [huntable-prey guide](HUNTING.md) covers priorities, unsupported types, mission
 freezing, multiplayer agreement and what stays Vanilla behavior.
+
+## Herds
+
+Read and spawn Vanilla's animal herds with `Herds`, and register `HerdRouteEvents` handlers or
+`HerdFlightRules` during Unity startup on every peer to keep herds in an area or calm. Decide
+from simulation data and synchronized settings only; set calm marks and spawn herds inside a
+`SimulationTickEvents` callback. The [herd guide](HERDS.md) covers threads, the editor and the
+limits.

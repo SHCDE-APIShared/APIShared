@@ -241,6 +241,8 @@ namespace APIShared
             Group(BuildingRepair, BuildingRepairSpans()),
             Group(Wildlife.HunterNativeSites.SiteGroup, Wildlife.HunterNativeSites.Spans()),
             Group(Wildlife.HunterOwnerGates.SiteGroup, Wildlife.HunterOwnerGates.Spans()),
+            Group(Wildlife.HerdRuntime.RouteSiteGroup, Wildlife.HerdRuntime.RouteSpans()),
+            Group(Wildlife.HerdRuntime.FlightSiteGroup, Wildlife.HerdRuntime.FlightSpans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),

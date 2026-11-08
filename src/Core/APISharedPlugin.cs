@@ -20,7 +20,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.37.0";
+        public const string PluginVersion = "0.38.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -138,12 +138,15 @@ namespace APIShared
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),
+                // Closes on the first mission; inline stubs installed on a consumer's first registration need it.
+                new NativeInitializationStep("native inline patch window", () => NativeInlinePatchWindow.Initialize(RuntimeLogger)),
                 // Native records at the Hunter query entry and corpse arrival, then the Extender Hunter event id
                 // correction (subscribes before every consumer), then huntable prey, all before the production
                 // admission owner, which freezes and activates the huntable-prey catalog.
                 new NativeInitializationStep("hunter native sites", () => Wildlife.HunterNativeSites.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("hunter event ids", () => ScriptExtenderFixes.HunterEventIdentityRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("huntable prey", () => Wildlife.HuntablePreyRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("herds", () => Wildlife.HerdRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
