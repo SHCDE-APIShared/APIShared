@@ -427,7 +427,17 @@ namespace APIShared.ModSettings
             }
             finally
             {
-                if (ownsTemporaryFile && File.Exists(temporaryPath)) File.Delete(temporaryPath);
+                try
+                {
+                    if (ownsTemporaryFile && File.Exists(temporaryPath))
+                        File.Delete(temporaryPath);
+                }
+                catch (Exception exception)
+                {
+                    NativeApiLog.Warning(
+                        log,
+                        $"[{modName}] Could not remove temporary preset file [{temporaryPath}]: {exception.Message}");
+                }
             }
         }
 

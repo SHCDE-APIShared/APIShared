@@ -21,7 +21,6 @@ namespace APIShared
     internal static class MapRecordLoadCoordinator
     {
         private delegate void HostStart(Platform_Multiplayer self);
-        private const int PreparationSeconds = 60, StartWindowSeconds = 30;
         private static Hook hook;
         private static HostStart original;
         private static MessageChannel<MapRecordReadinessPacket> channel;
@@ -52,8 +51,7 @@ namespace APIShared
         private static readonly string[] Categories = { "Map", "Vanilla", "Ai", "Coop", "Slots", "Mods" };
         private const int DigestLength = 32;
         private const byte DiffObservation = 0, ConfigurationObservation = 1, ProductionObservation = 2;
-        private static readonly HashSet<string> retired = new HashSet<string>(StringComparer.Ordinal);
-        private static readonly Queue<string> retiredOrder = new Queue<string>();
+        private static readonly BoundedTokenSet retired = new BoundedTokenSet();
         private static NativeAdmissionTicket admission;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
@@ -70,7 +68,7 @@ namespace APIShared
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
                 throw new InvalidOperationException("Map readiness initialization requires Unity's main thread.");
             channel = ApiShared.ForMod(APISharedPlugin.PluginGuid).Network.RegisterMessage<MapRecordReadinessPacket>(
-                "MapRecordReadiness", Receive, new MessageChannelOptions<MapRecordReadinessPacket> { MaximumBodyBytes = 200000 });
+                "MapRecordReadiness", Receive, new MessageChannelOptions<MapRecordReadinessPacket> { MaximumBodyBytes = LobbyReadinessSupport.MaximumBodyBytes });
             if (!Presentation.UiWorkRuntime.TryRegister(APISharedPlugin.PluginGuid, "internal/21-map-record-readiness",
                 Tick, 0, out frameWork, out string reason)) throw new InvalidOperationException(reason);
             Hook candidate = null;
@@ -93,17 +91,11 @@ namespace APIShared
         {
             if (lobby?.members == null || lobby.members.Any(member => member == null || member.dummyToBeKicked))
                 throw new InvalidOperationException("Lobby roster is unavailable or changing.");
-            var humans = ObservedHumans(lobby);
+            var humans = LobbyReadinessSupport.ObservedHumans(lobby);
             if (humans.Length == 0 || humans.Length != humans.Distinct().Count())
                 throw new InvalidOperationException("Invalid human lobby roster.");
             return humans;
         }
-        private static bool IsHuman(Platform_Multiplayer.MPLobbyMember member) =>
-            member != null && !member.dummyToBeKicked && !member.SkirmishMember && member.id.m_SteamID > 1000;
-
-        private static ulong[] ObservedHumans(Platform_Multiplayer.MPLobby lobby) =>
-            lobby.members?.Where(IsHuman).Select(member => member.id.m_SteamID).OrderBy(id => id).ToArray() ?? Array.Empty<ulong>();
-
         private static string Roster(Platform_Multiplayer.MPLobby lobby) => string.Join(",", Humans(lobby));
         private static int Checksum(Platform_Multiplayer.MPLobby lobby)
         {
@@ -190,7 +182,7 @@ namespace APIShared
                 TrailId = Trail ? lobby.coopTrailID : 0;
                 Mission = Trail ? lobby.coopSelectedMission : 0;
                 OrderSwapped = Trail && lobby.coopOrderSwapped;
-                Slots = ObservedHumans(lobby).Select(id => new KeyValuePair<ulong, int>(id, lobby.getThisPlayerFromSteamID(id))).ToArray();
+                Slots = LobbyReadinessSupport.ObservedHumans(lobby).Select(id => new KeyValuePair<ulong, int>(id, lobby.getThisPlayerFromSteamID(id))).ToArray();
                 Mods = SavegameModSettings.CaptureHostSettingsForReadiness();
                 ModFingerprint = SavegameLoadAgreement.Fingerprint(Mods);
                 Digests = new byte[Categories.Length * DigestLength];
@@ -296,17 +288,12 @@ namespace APIShared
                 UiText.Get("LobbyLaunch.MapChanged", CategoryLabels(changes));
         }
 
-        private static string Name(ulong id)
-        {
-            try { string value = SteamFriends.GetFriendPersonaName(new CSteamID(id)); if (!string.IsNullOrWhiteSpace(value)) return value; } catch { }
-            return id.ToString(CultureInfo.InvariantCulture);
-        }
         private static void Request(Platform_Multiplayer self)
         {
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
             {
                 LobbyLaunchStatus.ReportPreparationBlocked(log, "Map start publication requires Unity's main thread.",
-                    "MAP_RECORD_LOAD_BLOCKED role=unknown phase=request attempt=" + Guid.NewGuid().ToString("N"), 0, false, false);
+                    "MAP_RECORD_LOAD_BLOCKED role=unknown phase=request attempt=" + LobbyReadinessSupport.NewAttemptId(), 0, false, false);
                 return;
             }
             if (self.activeLobby?.isHost != true) { original(self); return; }
@@ -328,7 +315,7 @@ namespace APIShared
             {
                 owner = self;
                 var lobby = self.activeLobby;
-                BeginAttempt(lobby, Guid.NewGuid().ToString("N"));
+                BeginAttempt(lobby, LobbyReadinessSupport.NewAttemptId());
                 var humans = Humans(lobby); ulong local = SteamUser.GetSteamID().m_SteamID;
                 hostId = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
                 if (hostId != local || !humans.Contains(local)) throw new InvalidOperationException("The local host is not the current lobby owner and member.");
@@ -345,7 +332,7 @@ namespace APIShared
                     Records = localRecords, Metadata = preparedSnapshot.Digests };
                 agreement = new SavegameLoadAgreement(pending.Token, fingerprint, humans.Where(id => id != local), localRecords);
                 acknowledged = released = loading = false; fingerprintCheckedAt = 0;
-                deadline = DateTime.UtcNow.AddSeconds(PreparationSeconds);
+                deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
                 if (!agreement.Ready) Send(pending);
                 Tick();
             }
@@ -359,7 +346,7 @@ namespace APIShared
             attemptId = token;
             attemptLobby = lobby.id.m_SteamID;
             attemptHost = lobby.isHost;
-            waitNoticeAt = DateTime.UtcNow.AddSeconds(1.5);
+            waitNoticeAt = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.WaitingNoticeDelaySeconds);
             waitingReasonDirty = true;
         }
         private static void Send(SavegameLoadPacket packet)
@@ -372,7 +359,7 @@ namespace APIShared
             Operation = operation, Lobby = pending.Lobby, Token = pending.Token, SaveName = pending.SaveName,
             Checksum = pending.Checksum, Fingerprint = pending.Fingerprint, Roster = pending.Roster,
             Records = operation == 1 ? localRecords : Array.Empty<SavegameRecordDigest>(),
-            Reason = reason == null || reason.Length <= SavegameLoadPacket.MaximumReasonLength ? reason : reason.Substring(0, SavegameLoadPacket.MaximumReasonLength)
+            Reason = LobbyReadinessSupport.TruncateReason(reason)
         };
         private static void Receive(NetworkMessage<MapRecordReadinessPacket> message)
         {
@@ -384,7 +371,7 @@ namespace APIShared
             if (packet == null || lobby == null) return;
             ulong host = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
             if (host == 0 || (lobby.isHost
-                ? lobby.members?.Any(member => IsHuman(member) && member.id.m_SteamID == message.SenderSteamId) != true
+                ? lobby.members?.Any(member => LobbyReadinessSupport.IsHuman(member) && member.id.m_SteamID == message.SenderSteamId) != true
                 : message.SenderSteamId != host)) return;
             if (packet.Version != MapRecordReadinessPacket.CurrentVersion)
             {
@@ -397,14 +384,14 @@ namespace APIShared
                 }
                 else if (pending != null) return;
                 if (packet.Token != null && retired.Contains(packet.Token)) return;
-                string reason = Name(message.SenderSteamId) + " uses map readiness protocol " + packet.Version +
+                string reason = LobbyReadinessSupport.PlayerName(message.SenderSteamId) + " uses map readiness protocol " + packet.Version +
                     ", but this APIShared uses " + MapRecordReadinessPacket.CurrentVersion + ". Install the same APIShared build on every computer.";
                 if (!lobby.isHost && (packet.Version == MapRecordReadinessPacket.PreviousVersion ||
                     packet.Version == MapRecordReadinessPacket.LegacyMapVersion) && packet.Operation == 0 &&
                     HasProposalIdentity(packet, lobby) && packet.Metadata == null)
                 {
                     // An older host can understand a rejection on its own transaction.
-                    Retire(packet.Token);
+                    retired.Add(packet.Token);
                     packet.Operation = 3;
                     packet.Reason = reason;
                     packet.Records = Array.Empty<SavegameRecordDigest>();
@@ -414,14 +401,14 @@ namespace APIShared
                         lobby.id.m_SteamID, false, true);
                     return;
                 }
-                if (pending == null) BeginAttempt(lobby, Guid.NewGuid().ToString("N"));
+                if (pending == null) BeginAttempt(lobby, LobbyReadinessSupport.NewAttemptId());
                 Abort(reason, pending != null, phase: "protocol negotiation", localChat: !lobby.isHost);
                 return;
             }
             if (packet.Operation == 3 && packet.Metadata == null && host == hostId && IsCurrentEnvelope(packet, lobby))
             {
                 if (lobby.isHost && message.SenderSteamId != host)
-                    Abort(UiText.Get("LobbyLaunch.MapPeerCancelled", Name(message.SenderSteamId), packet.Reason), true, phase: "peer rejection");
+                    Abort(UiText.Get("LobbyLaunch.MapPeerCancelled", LobbyReadinessSupport.PlayerName(message.SenderSteamId), packet.Reason), true, phase: "peer rejection");
                 else if (!lobby.isHost && message.SenderSteamId == host)
                     Abort("Host cancelled map preparation: " + packet.Reason, false, phase: "host cancellation");
                 return;
@@ -437,7 +424,7 @@ namespace APIShared
                 }
                 if (packet.Operation != 1 || packet.Metadata != null) return;
                 if (agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint,
-                    packet.Records, Name(message.SenderSteamId), out string mismatch))
+                    packet.Records, LobbyReadinessSupport.PlayerName(message.SenderSteamId), out string mismatch))
                 {
                     PeerObservations.Remove(message.SenderSteamId);
                     waitingReasonDirty = true;
@@ -458,13 +445,13 @@ namespace APIShared
                 owner = mp; hostId = host; pending = packet;
                 BeginAttempt(lobby, packet.Token);
                 if (!SavegameRecordComparison.IsValid(packet.Records)) throw new InvalidDataException("Invalid host map record list.");
-                deadline = DateTime.UtcNow.AddSeconds(PreparationSeconds);
+                deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
                 Tick();
             }
             else if (packet.Operation == 2 && packet.Metadata == null && host == hostId &&
                 acknowledged && IsCurrentEnvelope(packet, lobby) && !released)
             {
-                deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
+                deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
                 released = true;
             }
         }
@@ -541,7 +528,7 @@ namespace APIShared
         private static bool FingerprintMatches(bool decisive)
         {
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (decisive || fingerprintCheckedAt == 0 || now - fingerprintCheckedAt >= System.Diagnostics.Stopwatch.Frequency / 2)
+            if (decisive || fingerprintCheckedAt == 0 || LobbyReadinessSupport.FingerprintRecheckDue(fingerprintCheckedAt, now))
             {
                 lastSnapshot = new LobbySnapshot(owner.activeLobby);
                 fingerprintMatched = lastSnapshot.Fingerprint == pending.Fingerprint;
@@ -578,7 +565,7 @@ namespace APIShared
                 throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", pending.SaveName));
             localRecords = Capture(localPath, out localHash);
             Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
-            string mismatch = SavegameRecordComparison.Describe(pending.Records, localRecords, Name(SteamUser.GetSteamID().m_SteamID));
+            string mismatch = SavegameRecordComparison.Describe(pending.Records, localRecords, LobbyReadinessSupport.PlayerName(SteamUser.GetSteamID().m_SteamID));
             if (mismatch != null) throw new InvalidDataException(mismatch);
         }
 
@@ -607,7 +594,7 @@ namespace APIShared
                         SetConfigurationWaiting(productionReason);
                         return;
                     }
-                    released = true; deadline = DateTime.UtcNow.AddSeconds(StartWindowSeconds);
+                    released = true; deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
                     if (Humans(owner.activeLobby).Length > 1) Send(Reply(2));
                     NativeApiLog.Debug(log, "MAP_RECORDS_CONFIRMED: all human peers ready; publishing Vanilla GO once.");
                     original(owner);
@@ -687,11 +674,11 @@ namespace APIShared
             return string.Join(" ", peers.Select(peer =>
             {
                 if (!PeerObservations.TryGetValue(peer, out byte[] observed))
-                    return UiText.Get("LobbyLaunch.MapAwaitingPeer", Name(peer));
+                    return UiText.Get("LobbyLaunch.MapAwaitingPeer", LobbyReadinessSupport.PlayerName(peer));
                 if (observed[0] == DiffObservation)
-                    return UiText.Get("LobbyLaunch.MapPeerMismatch", Name(peer), CategoryLabels(Differences(pending.Metadata, observed, 1)));
+                    return UiText.Get("LobbyLaunch.MapPeerMismatch", LobbyReadinessSupport.PlayerName(peer), CategoryLabels(Differences(pending.Metadata, observed, 1)));
                 string phase = observed[0] == ConfigurationObservation ? "MapConfigurationWaiting" : "MapProductionWaiting";
-                return UiText.Get("LobbyLaunch.MapPeerPreparation", Name(peer), UiText.Get("LobbyLaunch." + phase));
+                return UiText.Get("LobbyLaunch.MapPeerPreparation", LobbyReadinessSupport.PlayerName(peer), UiText.Get("LobbyLaunch." + phase));
             }));
         }
 
@@ -760,9 +747,6 @@ namespace APIShared
         private static string TimeoutReason() => released ? "Confirmed multiplayer map did not start within 30 seconds." :
             UiText.Get("LobbyLaunch.MapTimedOut", WaitingReason());
 
-        private static void Retire(string token)
-        { if (token == null || !retired.Add(token)) return; retiredOrder.Enqueue(token); if (retiredOrder.Count > 64) retired.Remove(retiredOrder.Dequeue()); }
-
         internal static void Abort(string reason)
         {
             if (Internal.UnityMainThreadDispatch.IsMainThread) { Abort(reason, true, phase: "native admission"); return; }
@@ -778,7 +762,7 @@ namespace APIShared
         }
 
         private static void ReportUnscoped(string reason, string token) => LobbyLaunchStatus.ReportPreparationBlocked(log, reason,
-            "MAP_RECORD_LOAD_BLOCKED role=unknown phase=native admission attempt=" + (token ?? Guid.NewGuid().ToString("N")),
+            "MAP_RECORD_LOAD_BLOCKED role=unknown phase=native admission attempt=" + (token ?? LobbyReadinessSupport.NewAttemptId()),
             0, false, false);
 
         private static bool ForwardCancel(SavegameLoadPacket packet, ulong host)
@@ -793,7 +777,7 @@ namespace APIShared
             if (attemptId == null && showError)
             {
                 var lobby = Platform_Multiplayer.Instance?.activeLobby;
-                if (lobby != null) BeginAttempt(lobby, Guid.NewGuid().ToString("N"));
+                if (lobby != null) BeginAttempt(lobby, LobbyReadinessSupport.NewAttemptId());
             }
             if (pending == null && notify && !attemptHost && attemptLobby != 0) localChat = true;
             if (pending != null)
@@ -812,7 +796,7 @@ namespace APIShared
                     localChat = !attemptHost;
                     NativeApiLog.Error(log, "Map preparation cancellation send failed: " + error.Message);
                 }
-                Retire(pending.Token);
+                retired.Add(pending.Token);
             }
             string detail = null;
             if (showError)
@@ -837,7 +821,7 @@ namespace APIShared
 
         private static string BlockContext(string phase) =>
             "MAP_RECORD_LOAD_BLOCKED role=" + (attemptId == null ? "unknown" : attemptHost ? "host" : "client") +
-            " phase=" + phase + " attempt=" + (attemptId ?? Guid.NewGuid().ToString("N"));
+            " phase=" + phase + " attempt=" + (attemptId ?? LobbyReadinessSupport.NewAttemptId());
 
         private static string BlockDetail(string phase)
         {
@@ -848,7 +832,7 @@ namespace APIShared
             {
                 detail.Add("currentMap=" + lobby.mapFileName + ", currentCrc=" + lobby.crc);
                 if (pending != null)
-                    detail.Add("expectedRoster=" + pending.Roster + ", observedRoster=" + string.Join(",", ObservedHumans(lobby)));
+                    detail.Add("expectedRoster=" + pending.Roster + ", observedRoster=" + string.Join(",", LobbyReadinessSupport.ObservedHumans(lobby)));
             }
             if (preparedSnapshot != null) detail.Add("prepared: " + preparedSnapshot.Summary());
             if (lastSnapshot != null)
@@ -860,7 +844,7 @@ namespace APIShared
                     if (categories.Count != 0) detail.Insert(1, "changed=" + string.Join(", ", categories));
                 }
             }
-            if (agreement != null) detail.Add("unconfirmed=" + string.Join(", ", agreement.Unconfirmed.Select(Name)));
+            if (agreement != null) detail.Add("unconfirmed=" + string.Join(", ", agreement.Unconfirmed.Select(LobbyReadinessSupport.PlayerName)));
             if (lastSnapshot != null && pending != null && !fingerprintMatched)
                 detail.Add("host/local differences=" + string.Join(",", Differences(pending.Metadata, lastSnapshot.Digests)));
             foreach (var report in PeerObservations.OrderBy(item => item.Key))
@@ -871,7 +855,7 @@ namespace APIShared
         }
 
         private static void ShowRejectedRequest(Platform_Multiplayer.MPLobby lobby, string reason) => ShowBlocked(reason,
-            "MAP_RECORD_LOAD_BLOCKED role=host phase=request attempt=" + Guid.NewGuid().ToString("N"), lobby.id.m_SteamID, true, false);
+            "MAP_RECORD_LOAD_BLOCKED role=host phase=request attempt=" + LobbyReadinessSupport.NewAttemptId(), lobby.id.m_SteamID, true, false);
 
         private static void ShowBlocked(string reason, string detail, ulong lobbyId, bool broadcast, bool localChat)
         {
@@ -898,7 +882,7 @@ namespace APIShared
         {
             if (Internal.UnityMainThreadDispatch.IsMainThread)
             {
-                if (pending != null) Retire(pending.Token);
+                if (pending != null) retired.Add(pending.Token);
                 rejectedNativeLobby = null;
                 rejectedNativePath = null;
                 Clear();

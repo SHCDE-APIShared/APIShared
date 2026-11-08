@@ -531,7 +531,7 @@ namespace APIShared
         {
             result.Clear();
             seen.Clear();
-            int localPlayerId = GetSelectionPlayerId();
+            int localPlayerId = LocalSelectionAPI.CurrentSelectionPlayerId();
             if (!LocalSelectionAPI.TryCapture(localPlayerId, out LocalSelectionSnapshot selection))
                 return false;
             for (int i = 0; i < selection.Count; i++)
@@ -586,13 +586,9 @@ namespace APIShared
 
         private static bool TryGetTroopSelection(out LocalSelectionSnapshot selection)
         {
-            int localPlayerId = GetSelectionPlayerId();
+            int localPlayerId = LocalSelectionAPI.CurrentSelectionPlayerId();
             return LocalSelectionAPI.TryCapture(localPlayerId, out selection);
         }
-
-        private static int GetSelectionPlayerId() => APIShared.GameModes.GameModeHelper.IsMapEditor()
-            ? EditorDirector.instance?.ActivePlayerID ?? -1
-            : GamePlayerManagerAPI.Instance?.GetLocalPlayerId() ?? -1;
 
         private static bool TryCapture(int unitId, out UnitHudUnitSnapshot snapshot)
         {

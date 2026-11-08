@@ -15,8 +15,6 @@ namespace APIShared
 {
     internal sealed class LobbyStateService
     {
-        private const int FirstPlayerId = 1;
-        private const int LastPlayerId = 8;
         private const int FallbackFrames = 15;
 
         private delegate bool GetActiveLobbyMembersDelegate(
@@ -351,17 +349,17 @@ namespace APIShared
                 ulong steamId = member.id.m_SteamID;
                 int vanillaPlayerId = lobby.getThisPlayerFromSteamID(steamId);
                 int networkPlayerId = GameNetworkAPI.GetPlayerIdForSteamId(member.id);
-                if (!IsValidPlayerId(vanillaPlayerId))
+                if (!PlayerSlots.IsValidPlayerId(vanillaPlayerId))
                 {
                     unresolved = true;
                     continue;
                 }
-                if (IsValidPlayerId(networkPlayerId) && networkPlayerId != vanillaPlayerId)
+                if (PlayerSlots.IsValidPlayerId(networkPlayerId) && networkPlayerId != vanillaPlayerId)
                 {
                     diagnostics.Add(
                         $"steamId={steamId}: networkLobby={networkPlayerId}, finalLobby={vanillaPlayerId}");
                 }
-                if (!TryAddPlayer(players, vanillaPlayerId, steamId, out string playerError))
+                if (!PlayerSlots.TryAddPlayer(players, vanillaPlayerId, steamId, out string playerError))
                 {
                     unresolved = true;
                     diagnostics.Add(playerError);
@@ -403,37 +401,6 @@ namespace APIShared
                 string.Empty,
                 diagnostic);
         }
-
-        private static bool TryAddPlayer(
-            IDictionary<int, ulong> players,
-            int playerId,
-            ulong steamId,
-            out string error)
-        {
-            if (!IsValidPlayerId(playerId) || steamId == 0)
-            {
-                error = $"A human player has an invalid final identity: playerId={playerId}, steamId={steamId}.";
-                return false;
-            }
-            if (players.TryGetValue(playerId, out ulong existingSteamId) &&
-                existingSteamId != steamId)
-            {
-                error = $"Final player slot {playerId} is assigned to multiple Steam identities.";
-                return false;
-            }
-            if (players.Any(player =>
-                player.Key != playerId && player.Value == steamId))
-            {
-                error = $"Steam identity {steamId} is assigned to multiple final player slots.";
-                return false;
-            }
-            players[playerId] = steamId;
-            error = string.Empty;
-            return true;
-        }
-
-        private static bool IsValidPlayerId(int playerId) =>
-            playerId >= FirstPlayerId && playerId <= LastPlayerId;
 
         private void PublishIfChanged(LobbyStateSnapshot snapshot, bool lobbyReplaced = false)
         {
@@ -563,7 +530,7 @@ namespace APIShared
 
         internal static int ResolveTransportLocalPlayerId(int lobbyPlayerId, int transportPlayerId,
             IReadOnlyDictionary<int, ulong> players) =>
-            IsValidPlayerId(lobbyPlayerId) && lobbyPlayerId == transportPlayerId &&
+            PlayerSlots.IsValidPlayerId(lobbyPlayerId) && lobbyPlayerId == transportPlayerId &&
             players.ContainsKey(lobbyPlayerId) ? lobbyPlayerId : 0;
 
         internal static bool ShouldObserve(

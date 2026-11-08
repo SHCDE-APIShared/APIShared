@@ -127,7 +127,7 @@ namespace APIShared.Internal
                 Before("publish", path);
                 if (IsWindows)
                 {
-                    if (!MoveFileExW(Extended(temporary), Extended(path), 8u | (replace ? 1u : 0u))) throw Error("publish", path);
+                    if (!AtomicFileReplacement.TryMove(Extended(temporary), Extended(path), replace)) throw Error("publish", path);
                 }
                 else if (replace && File.Exists(path)) File.Replace(temporary, path, null);
                 else File.Move(temporary, path);
@@ -153,7 +153,7 @@ namespace APIShared.Internal
             Before("rename", destination);
             if (IsWindows)
             {
-                if (!MoveFileExW(Extended(source), Extended(destination), 8u | (replace ? 1u : 0u))) throw Error("rename", destination);
+                if (!AtomicFileReplacement.TryMove(Extended(source), Extended(destination), replace)) throw Error("rename", destination);
             }
             else if (replace && File.Exists(destination)) File.Replace(source, destination, null);
             else File.Move(source, destination);
@@ -232,7 +232,6 @@ namespace APIShared.Internal
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool CreateDirectoryW(string path, IntPtr security);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern uint GetFileAttributesW(string path);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern uint GetFullPathNameW(string path, uint size, StringBuilder buffer, IntPtr filePart);
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool MoveFileExW(string source, string destination, uint flags);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool DeleteFileW(string path);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int kind, ref int information, int size);
     }

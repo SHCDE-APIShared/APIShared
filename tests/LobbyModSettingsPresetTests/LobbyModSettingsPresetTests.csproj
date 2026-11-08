@@ -67,11 +67,13 @@
     <Compile Include="..\..\src\Core\Internal\Sha256Hex.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\LobbySettingsRestoreScope.cs" />
     <Compile Include="..\..\src\ModSettings\UI\ModSettingsSearch.cs" />
+    <Compile Include="..\..\src\ModSettings\UI\ReferenceEqualityComparer.cs" />
     <Compile Include="..\..\src\Core\Internal\Logging\DebugLogHelper.cs" />
     <Compile Include="..\..\src\Core\Internal\Logging\NativeApiLog.cs" />
     <Compile Include="..\..\src\Core\Internal\Logging\RuntimeHealth.cs" />
     <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs" />
     <Compile Include="..\..\src\GameModes\Internal\PlayerIdentityHelper.cs" />
+    <Compile Include="..\..\src\Players\PlayerSlots.cs" />
     <Compile Include="..\..\src\Missions\Internal\MissionEventRelay.cs" />
   </ItemGroup>
 </Project>

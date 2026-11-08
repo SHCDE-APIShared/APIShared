@@ -22,7 +22,7 @@ namespace APIShared.ModSettings
 
         internal static IDisposable Begin(object model)
         {
-            if (batches == null) batches = new System.Collections.Generic.Dictionary<object, Batch>(new IdentityComparer());
+            if (batches == null) batches = new System.Collections.Generic.Dictionary<object, Batch>(ReferenceEqualityComparer.Instance);
             if (!batches.TryGetValue(model, out Batch batch)) batches.Add(model, batch = new Batch());
             batch.Depth++;
             return new Lease(model, batch);
@@ -56,11 +56,6 @@ namespace APIShared.ModSettings
                 // Remove the scope before callbacks so a reentrant change starts a new operation.
                 if (current.Refreshes != null) foreach (Action refresh in current.Refreshes) refresh();
             }
-        }
-        private sealed class IdentityComparer : System.Collections.Generic.IEqualityComparer<object>
-        {
-            public new bool Equals(object left, object right) => ReferenceEquals(left, right);
-            public int GetHashCode(object value) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
         }
     }
 
@@ -208,6 +203,26 @@ namespace APIShared.ModSettings
             }
         }
 
+        // Automatic key of a setting without explicit metadata. A known tooltip binding path keeps
+        // the key independent of the localized tooltip text.
+        internal static string AutomaticKey(string bindingPath, string title, string toolTip)
+        {
+            string seed = bindingPath.Length > 0 ? bindingPath + ":" + title : title + ":" + toolTip;
+            return "auto:" + StableHash(seed).ToString("x8", CultureInfo.InvariantCulture);
+        }
+
+        // Entries with the same title and tooltip are one logical setting.
+        internal static string Identity(string title, string toolTip) => title + "\u001f" + toolTip;
+
+        // Adds and returns the first free key of key, key:2, key:3, ...
+        internal static string ReserveUniqueKey(System.Collections.Generic.ISet<string> keys, string key)
+        {
+            string uniqueKey = key;
+            int suffix = 2;
+            while (!keys.Add(uniqueKey))
+                uniqueKey = key + ":" + suffix++;
+            return uniqueKey;
+        }
     }
 
 }
@@ -576,7 +591,7 @@ namespace APIShared.ModSettings
                             sectionKey,
                             sectionTitle,
                             false));
-                        identities.Add(title + "\u001f" + toolTip);
+                        identities.Add(ModSettingsSearchText.Identity(title, toolTip));
                     }
                 }
                 else if (IsInteractive(element))
@@ -585,16 +600,11 @@ namespace APIShared.ModSettings
                     title = FindAutomaticTitle(element, structuralParents);
                     if (title.Length == 0 && toolTip.Length > 0)
                         title = FirstSentence(toolTip);
-                    string identity = title + "\u001f" + toolTip;
+                    string identity = ModSettingsSearchText.Identity(title, toolTip);
                     if (title.Length > 0 && toolTip.Length > 0 && identities.Add(identity))
                     {
                         key = BuildAutomaticKey(element, title, toolTip);
-                        int suffix = 2;
-                        string uniqueKey = key;
-                        while (!keys.Add(uniqueKey))
-                            uniqueKey = key + ":" + suffix++;
-
-                        entries.Add(new ModSettingsSearchEntry(uniqueKey, title, toolTip));
+                        entries.Add(new ModSettingsSearchEntry(ModSettingsSearchText.ReserveUniqueKey(keys, key), title, toolTip));
                     }
                 }
             }
@@ -641,12 +651,8 @@ namespace APIShared.ModSettings
         private static string BuildAutomaticKey(FrameworkElement element, string title, string toolTip)
         {
             Binding binding = BindingOperations.GetBinding(element, ToolTipService.ToolTipProperty);
-            string bindingPath = binding?.Path?.Path ?? string.Empty;
-            string seed = bindingPath.Length > 0 ? bindingPath + ":" + title : title + ":" + toolTip;
-            return "auto:" + StableHash(seed).ToString("x8", CultureInfo.InvariantCulture);
+            return ModSettingsSearchText.AutomaticKey(binding?.Path?.Path ?? string.Empty, title, toolTip);
         }
-
-        internal static uint StableHash(string value) => ModSettingsSearchText.StableHash(value);
 
         private static string FindAutomaticTitle(
             FrameworkElement element,

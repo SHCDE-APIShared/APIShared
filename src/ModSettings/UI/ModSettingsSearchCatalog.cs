@@ -382,14 +382,9 @@ namespace APIShared.ModSettings
 
                     string key = ResolveValue(keyAttribute?.Value, dataContext);
                     if (key.Length == 0)
-                    {
-                        string toolTipPath = ReadBindingPath(FindAttribute(element, "ToolTip")?.Value);
-                        string seed = toolTipPath.Length > 0
-                            ? toolTipPath + ":" + title
-                            : title + ":" + toolTip;
-                        key = "auto:" + ModSettingsSearchText.StableHash(seed).ToString("x8", CultureInfo.InvariantCulture);
-                    }
-                    string identity = title + "\u001f" + toolTip;
+                        key = ModSettingsSearchText.AutomaticKey(
+                            ReadBindingPath(FindAttribute(element, "ToolTip")?.Value), title, toolTip);
+                    string identity = ModSettingsSearchText.Identity(title, toolTip);
                     if (!identities.Add(identity))
                     {
                         // Automatically grouped slider/textbox or paired controls share one logical hit.
@@ -397,10 +392,7 @@ namespace APIShared.ModSettings
                             stateBindings[existingKey].AddRange(ReadStateBindings(element, dataContext));
                         continue;
                     }
-                    string uniqueKey = key;
-                    int suffix = 2;
-                    while (!keys.Add(uniqueKey))
-                        uniqueKey = key + ":" + suffix++;
+                    string uniqueKey = ModSettingsSearchText.ReserveUniqueKey(keys, key);
                     result.Add(new ModSettingsSearchEntry(
                         uniqueKey,
                         title,
@@ -830,13 +822,5 @@ namespace APIShared.ModSettings
             }
             return current;
         }
-    }
-
-    internal sealed class ReferenceEqualityComparer : IEqualityComparer<object>
-    {
-        public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
-        public new bool Equals(object x, object y) => ReferenceEquals(x, y);
-        public int GetHashCode(object value) =>
-            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
     }
 }

@@ -36,9 +36,6 @@ namespace APIShared.Internal
         // The GameNetworkAPI local-player getter reads the same managed rosters and logs a
         // warning whenever they are still transitional, so it must not be used as an
         // additional fallback from persistent lobby observers.
-        private const int FirstPlayerId = 1;
-        private const int LastPlayerId = 8;
-
         internal static PlayerIdentityResolution ResolveLocalPlayerId(
             bool realMultiplayer,
             bool hasInGameHumanRoster,
@@ -46,9 +43,9 @@ namespace APIShared.Internal
             int gameMemberPlayerId,
             int lobbyPlayerId)
         {
-            bool nativeValid = IsValidPlayerId(nativePlayerId);
-            bool gameMemberValid = IsValidPlayerId(gameMemberPlayerId);
-            bool lobbyValid = IsValidPlayerId(lobbyPlayerId);
+            bool nativeValid = PlayerSlots.IsValidPlayerId(nativePlayerId);
+            bool gameMemberValid = PlayerSlots.IsValidPlayerId(gameMemberPlayerId);
+            bool lobbyValid = PlayerSlots.IsValidPlayerId(lobbyPlayerId);
 
             if (realMultiplayer && hasInGameHumanRoster)
             {
@@ -60,7 +57,7 @@ namespace APIShared.Internal
                 }
 
                 int authoritative = nativeValid ? nativePlayerId : gameMemberPlayerId;
-                if (!IsValidPlayerId(authoritative))
+                if (!PlayerSlots.IsValidPlayerId(authoritative))
                 {
                     return Failure(
                         $"No authoritative local player ID is available in the active multiplayer roster: " +
@@ -160,7 +157,7 @@ namespace APIShared.Internal
             }
             foreach (Platform_Multiplayer.MPGameMember member in humanGameMembers)
             {
-                if (!TryAddPlayer(playersById, member.playerID, member.steamID, out error))
+                if (!PlayerSlots.TryAddPlayer(playersById, member.playerID, member.steamID, out error))
                     return false;
             }
             error = string.Empty;
@@ -168,40 +165,11 @@ namespace APIShared.Internal
         }
 #endif
 
-        private static bool TryAddPlayer(
-            IDictionary<int, ulong> playersById,
-            int playerId,
-            ulong steamId,
-            out string error)
-        {
-            if (!IsValidPlayerId(playerId) || steamId == 0)
-            {
-                error = $"A human player has an invalid final identity: playerId={playerId}, steamId={steamId}.";
-                return false;
-            }
-            if (playersById.TryGetValue(playerId, out ulong existingSteamId) && existingSteamId != steamId)
-            {
-                error = $"Final player slot {playerId} is assigned to multiple Steam identities.";
-                return false;
-            }
-            if (playersById.Any(player => player.Key != playerId && player.Value == steamId))
-            {
-                error = $"Steam identity {steamId} is assigned to multiple final player slots.";
-                return false;
-            }
-            playersById[playerId] = steamId;
-            error = string.Empty;
-            return true;
-        }
-
         private static PlayerIdentityResolution Success(int playerId, string diagnostic) =>
             new PlayerIdentityResolution(playerId, true, string.Empty, diagnostic);
 
         private static PlayerIdentityResolution Failure(string error) =>
             new PlayerIdentityResolution(0, false, error, string.Empty);
-
-        private static bool IsValidPlayerId(int playerId) =>
-            playerId >= FirstPlayerId && playerId <= LastPlayerId;
     }
 
 }

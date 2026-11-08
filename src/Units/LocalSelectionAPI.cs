@@ -44,17 +44,20 @@ namespace APIShared
         public static bool TryCapture(int expectedPlayerId, out LocalSelectionSnapshot snapshot)
         {
             snapshot = null;
-            if (expectedPlayerId < 1 || expectedPlayerId > 8)
+            if (!PlayerSlots.IsValidPlayerId(expectedPlayerId))
                 return false;
 
-            int actualPlayerId = APIShared.GameModes.GameModeHelper.IsMapEditor()
-                ? EditorDirector.instance?.ActivePlayerID ?? -1
-                : GamePlayerManagerAPI.Instance?.GetLocalPlayerId() ?? -1;
-            if (actualPlayerId != expectedPlayerId)
+            if (CurrentSelectionPlayerId() != expectedPlayerId)
                 return false;
 
             return TryCaptureState(expectedPlayerId, CurrentStateReader, out snapshot);
         }
+
+        // The player whose selection the HUD shows: the editor's active player, otherwise the
+        // local player; -1 while neither is available.
+        internal static int CurrentSelectionPlayerId() => APIShared.GameModes.GameModeHelper.IsMapEditor()
+            ? EditorDirector.instance?.ActivePlayerID ?? -1
+            : GamePlayerManagerAPI.Instance?.GetLocalPlayerId() ?? -1;
 
         private static bool TryCaptureState(int expectedPlayerId, Func<EngineInterface.PlayState> readState,
             out LocalSelectionSnapshot snapshot)

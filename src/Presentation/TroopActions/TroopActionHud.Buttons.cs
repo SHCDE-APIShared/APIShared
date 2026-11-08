@@ -192,7 +192,7 @@ namespace APIShared.Presentation
             var unitControls = main.HUDTroopPanel.FindName("UnitControls") as FrameworkElement;
             var back = main.HUDTroopPanel.FindName("UnitBack") as FrameworkElement;
             if (!InteractiveAncestors(controls) || !InteractiveAncestors(unitControls) || back?.Visibility == Visibility.Visible) return false;
-            int player = GameModes.GameModeHelper.IsMapEditor() ? EditorDirector.instance?.ActivePlayerID ?? -1 : GamePlayerManagerAPI.Instance?.GetLocalPlayerId() ?? -1;
+            int player = LocalSelectionAPI.CurrentSelectionPlayerId();
             if (!LocalSelectionAPI.TryCapture(player, out selection) || selection.Count == 0) return false;
             int colour = UnitHudPresentationService.ResolveActionColour(SpriteMapping.RemapMPLoadedColour(player), SpriteMapping.remapColours);
             if (colour < 1) return false;

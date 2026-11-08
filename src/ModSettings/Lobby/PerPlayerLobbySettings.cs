@@ -82,8 +82,6 @@ namespace APIShared.ModSettings
 
     internal sealed class PerPlayerLobbySettingsCoordinator
     {
-        private const int FirstPlayerId = 1;
-        private const int LastPlayerId = 8;
         private readonly PresetLobbyModSettingsViewModel owner;
         private readonly ManualLogSource log;
         private readonly string modName;
@@ -220,7 +218,7 @@ namespace APIShared.ModSettings
             if (contract.Settings.Count == 0) return;
             publishPending = true;
             if (hasLobby && !rosterHasUnresolvedPlayers &&
-                IsValidPlayerId(resolvedLocalPlayerId) &&
+                PlayerSlots.IsValidPlayerId(resolvedLocalPlayerId) &&
                 playersById.ContainsKey(resolvedLocalPlayerId) && TransportReady(resolvedLocalPlayerId))
             {
                 PublishLocalSettings(resolvedLocalPlayerId);
@@ -233,7 +231,7 @@ namespace APIShared.ModSettings
             if (hostPublisher.TryDefer(propertyName, out bool defer)) return defer;
             if (!contract.Settings.Any(setting => setting.Property.Name == propertyName)) return false;
             if (active && hasLobby && !rosterHasUnresolvedPlayers &&
-                IsValidPlayerId(resolvedLocalPlayerId) && playersById.ContainsKey(resolvedLocalPlayerId) &&
+                PlayerSlots.IsValidPlayerId(resolvedLocalPlayerId) && playersById.ContainsKey(resolvedLocalPlayerId) &&
                 TransportReady(resolvedLocalPlayerId)) return false;
             // Keep the scalar and its ordinary PropertyChanged/persistence path. Only the
             // outbound call waits; Observe republishes all scalars after roster convergence.
@@ -274,7 +272,7 @@ namespace APIShared.ModSettings
         internal bool ArePlayersReady(IEnumerable<int> playerIds, out string error)
         {
             int[] supplied = (playerIds ?? Enumerable.Empty<int>()).ToArray();
-            if (supplied.Any(id => !IsValidPlayerId(id)))
+            if (supplied.Any(id => !PlayerSlots.IsValidPlayerId(id)))
             {
                 error = "At least one supplied human player ID is invalid.";
                 return false;
@@ -303,7 +301,7 @@ namespace APIShared.ModSettings
                 error = $"The requested human players [{string.Join(",", expected)}] do not match the converged lobby roster [{string.Join(",", playersById.Keys.OrderBy(id => id))}].";
                 return false;
             }
-            if (hasLobby && (!IsValidPlayerId(resolvedLocalPlayerId) || !playersById.ContainsKey(resolvedLocalPlayerId)))
+            if (hasLobby && (!PlayerSlots.IsValidPlayerId(resolvedLocalPlayerId) || !playersById.ContainsKey(resolvedLocalPlayerId)))
             {
                 error = "The local human player ID is not part of the converged lobby roster.";
                 return false;
@@ -335,7 +333,7 @@ namespace APIShared.ModSettings
             var normalized = new Dictionary<int, ulong>();
             foreach (KeyValuePair<int, ulong> player in finalPlayers ?? new Dictionary<int, ulong>())
             {
-                if (!IsValidPlayerId(player.Key) || player.Value == 0 ||
+                if (!PlayerSlots.IsValidPlayerId(player.Key) || player.Value == 0 ||
                     normalized.ContainsKey(player.Key) || normalized.ContainsValue(player.Value))
                 {
                     error = "The final human roster contains an invalid or duplicate player identity.";
@@ -355,7 +353,7 @@ namespace APIShared.ModSettings
                 SetReadiness(false, error);
                 return false;
             }
-            if (!IsValidPlayerId(finalLocalPlayerId) || !normalized.ContainsKey(finalLocalPlayerId))
+            if (!PlayerSlots.IsValidPlayerId(finalLocalPlayerId) || !normalized.ContainsKey(finalLocalPlayerId))
             {
                 error = "The final local player ID is not part of the final human roster.";
                 SetReadiness(false, error);
@@ -374,7 +372,7 @@ namespace APIShared.ModSettings
                     var valuesBySteamId = new Dictionary<ulong, object>();
                     foreach (KeyValuePair<int, ulong> previousPlayer in playersById)
                         valuesBySteamId[previousPlayer.Value] = CloneValue(data.GetValue(previousPlayer.Key));
-                    for (int playerId = FirstPlayerId; playerId <= LastPlayerId; playerId++)
+                    for (int playerId = PlayerSlots.FirstPlayerId; playerId <= PlayerSlots.LastPlayerId; playerId++)
                         data.SetValue(CloneValue(setting.CreateResetValue()), playerId);
                     foreach (KeyValuePair<int, ulong> finalPlayer in normalized)
                         data.SetValue(CloneValue(valuesBySteamId[finalPlayer.Value]), finalPlayer.Key);
@@ -427,7 +425,7 @@ namespace APIShared.ModSettings
 
                 if (hasLobby || playersById.Count != 0)
                 {
-                    ResetSlots(Enumerable.Range(FirstPlayerId, LastPlayerId));
+                    ResetSlots(Enumerable.Range(PlayerSlots.FirstPlayerId, PlayerSlots.Count));
                     hasLobby = false;
                     lobbyId = 0;
                     playersById.Clear();
@@ -447,7 +445,7 @@ namespace APIShared.ModSettings
             var normalized = new Dictionary<int, ulong>();
             foreach (KeyValuePair<int, ulong> player in currentPlayers ?? new Dictionary<int, ulong>())
             {
-                if (IsValidPlayerId(player.Key) && player.Value != 0)
+                if (PlayerSlots.IsValidPlayerId(player.Key) && player.Value != 0)
                     normalized[player.Key] = player.Value;
             }
 
@@ -462,8 +460,8 @@ namespace APIShared.ModSettings
             if (membershipChanged)
             {
                 int[] slotsToReset = sessionChanged
-                    ? Enumerable.Range(FirstPlayerId, LastPlayerId).ToArray()
-                    : Enumerable.Range(FirstPlayerId, LastPlayerId)
+                    ? Enumerable.Range(PlayerSlots.FirstPlayerId, PlayerSlots.Count).ToArray()
+                    : Enumerable.Range(PlayerSlots.FirstPlayerId, PlayerSlots.Count)
                         .Where(id =>
                             playersById.TryGetValue(id, out ulong previousSteamId) &&
                             (!normalized.TryGetValue(id, out ulong currentSteamId) ||
@@ -482,7 +480,7 @@ namespace APIShared.ModSettings
                     $"unresolved={hasUnresolvedPlayers}, resetSlots=[{string.Join(",", slotsToReset)}].");
             }
 
-            bool localResolved = IsValidPlayerId(localPlayerId) && normalized.ContainsKey(localPlayerId);
+            bool localResolved = PlayerSlots.IsValidPlayerId(localPlayerId) && normalized.ContainsKey(localPlayerId);
             rosterHasUnresolvedPlayers = hasUnresolvedPlayers;
             resolvedLocalPlayerId = localPlayerId;
             if (membershipChanged || resolutionChanged)
@@ -528,7 +526,7 @@ namespace APIShared.ModSettings
         private void ResetSlots(IEnumerable<int> playerIds)
         {
             int[] slots = (playerIds ?? Enumerable.Empty<int>())
-                .Where(IsValidPlayerId)
+                .Where(PlayerSlots.IsValidPlayerId)
                 .Distinct()
                 .ToArray();
             if (slots.Length == 0)
@@ -578,7 +576,7 @@ namespace APIShared.ModSettings
             PerPlayerLobbySettingContract localSetting = contract.Settings.FirstOrDefault(
                 item => item.Property.Name == args.PropertyName);
             if (localSetting != null && hasLobby &&
-                IsValidPlayerId(resolvedLocalPlayerId) &&
+                PlayerSlots.IsValidPlayerId(resolvedLocalPlayerId) &&
                 playersById.ContainsKey(resolvedLocalPlayerId))
             {
                 // The transport does not echo a sender's packet back to itself. Keep
@@ -710,9 +708,6 @@ namespace APIShared.ModSettings
                 .OrderBy(player => player.Key)
                 .Select(player => $"{player.Key}:{player.Value}"));
 
-        private static bool IsValidPlayerId(int playerId) =>
-            playerId >= FirstPlayerId && playerId <= LastPlayerId;
-
         internal static object CloneValue(object value)
         {
             if (!(value is Array source))
@@ -784,7 +779,7 @@ namespace APIShared.ModSettings
                 if (!elementType.IsAssignableFrom(property.PropertyType))
                     throw new InvalidOperationException($"Companion [{owner.GetType().Name}.{dataProperty.Name}] has element type [{elementType}], expected [{property.PropertyType}].");
                 Array data = dataProperty.GetValue(owner) as Array;
-                if (data == null || data.Rank != 1 || data.Length < 9)
+                if (data == null || data.Rank != 1 || data.Length < PlayerSlots.LastPlayerId + 1)
                     throw new InvalidOperationException($"Companion [{owner.GetType().Name}.{dataProperty.Name}] must be a one-dimensional array containing slots 0 through 8.");
                 if (!ReferenceEquals(data, dataProperty.GetValue(owner)))
                     throw new InvalidOperationException($"Companion [{owner.GetType().Name}.{dataProperty.Name}] must return one stable array instance.");
