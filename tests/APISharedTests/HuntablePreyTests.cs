@@ -103,6 +103,34 @@ namespace APISharedTests
             Assert.AreEqual(20, entry.BaseMeat);
         }
 
+        // Own-player prey and corpse removal are gameplay options: copied by every With method, part of the
+        // digest, and published to the native per-type tables only for the types that use them.
+        [TestMethod]
+        public void OwnPlayerPreyAndCorpseRemovalAreCopiedDigestedAndTabled()
+        {
+            var chicken = new HuntablePreyDefinition((int)eChimps.CHIMP_TYPE_CHICKEN)
+                .WithBaseMeat(4).WithOwnPlayerPrey().WithCorpseRemovedWhenButchered();
+            Assert.IsTrue(chicken.AllowsOwnPlayerPrey && chicken.RemovesCorpseWhenButchered);
+            Assert.AreEqual(4, chicken.WithBaseMeat(4).BaseMeat);
+            Assert.IsTrue(chicken.WithBaseMeat(9).AllowsOwnPlayerPrey && chicken.WithBaseMeat(9).RemovesCorpseWhenButchered);
+
+            var plain = new HuntablePreyDefinition((int)eChimps.CHIMP_TYPE_CHICKEN);
+            string baseline = Compile(Register("owner", "id", plain)).Digest;
+            Assert.AreNotEqual(baseline, Compile(Register("owner", "id", plain.WithOwnPlayerPrey())).Digest);
+            Assert.AreNotEqual(baseline, Compile(Register("owner", "id", plain.WithCorpseRemovedWhenButchered())).Digest);
+            Assert.AreNotEqual(Compile(Register("owner", "id", plain.WithOwnPlayerPrey())).Digest,
+                Compile(Register("owner", "id", plain.WithCorpseRemovedWhenButchered())).Digest);
+
+            var catalog = Compile(Register("owner", "chicken", chicken), Register("owner", "camel", new HuntablePreyDefinition((int)eChimps.CHIMP_TYPE_CAMEL)));
+            byte[] own = HuntablePreyCatalogBuilder.BuildFlagTable(catalog, entry => entry.AllowsOwnPlayerPrey);
+            byte[] remove = HuntablePreyCatalogBuilder.BuildFlagTable(catalog, entry => entry.RemovesCorpseWhenButchered, HunterNativeAssembly.RemoveCorpseFlag);
+            Assert.AreEqual(1, own[(int)eChimps.CHIMP_TYPE_CHICKEN]);
+            Assert.AreEqual(0, own[(int)eChimps.CHIMP_TYPE_CAMEL]);
+            Assert.AreEqual(HunterNativeAssembly.RemoveCorpseFlag, remove[(int)eChimps.CHIMP_TYPE_CHICKEN]);
+            Assert.AreEqual(0, remove[(int)eChimps.CHIMP_TYPE_DEER]);
+            Assert.IsNull(HuntablePreyCatalogBuilder.BuildFlagTable(HuntablePreyCatalogBuilder.VanillaOnly, entry => entry.AllowsOwnPlayerPrey));
+        }
+
         // The native corpse record is keyed by Hunter id; out-of-range ids are ignored on both sides.
         [TestMethod]
         public void ButcheredRecordsRoundTripPerHunter()

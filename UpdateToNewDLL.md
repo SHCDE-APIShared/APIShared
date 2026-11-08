@@ -23,6 +23,7 @@
 - [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
 - [Huntable prey reservation word](#huntable-prey-reservation-word)
 - [Hunter native sites](#hunter-native-sites)
+- [Hunter owner gates](#hunter-owner-gates)
 
 ## Shared health initialization
 
@@ -1463,3 +1464,36 @@ policies, meat yields and the event-id correction are then refused or inactive. 
 - Before adding a hash: re-audit all six query callers and their arguments, the state-`0xB` arrival
   (registers, the global-id check before it, every path into state 2), the yield call `0x1309FE`, and
   the Extender's two hooks (stack shift and registers) for the installed Extender and RedBird.
+
+## Hunter owner gates
+
+Owner: `Wildlife.HunterOwnerGates` (generators in `Wildlife.HunterNativeAssembly`, executed by
+`tests/WorkerProductionBonus.NativeTests/HunterOwnerGateTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; site group
+`Wildlife.HunterOwnerGates`. Three RedBird `X64InlineHook`s, purely native, installed together on the
+first huntable-prey registration with own-player prey and never unpatched. They read one 65,536-byte
+per-type table (set at mission activation, cleared at its end). Any other hash, snapshot or live byte
+difference (for example an older ImprovedHunters that patched the same spans), a changed continuation,
+a backend span other than 14 bytes, a stub that differs from the expected bytes, or an arrow gate block
+whose SHA-256 differs from `C3BCA2C9…AE225F` refuses the install; the registration is then Unsupported.
+
+- Query `0x18AFD8` `66 83 BB F6 FD FF FF 00 0F 85 F7 00 00 00` (`cmp word[rbx-0x20A],0; jne 0x18B0DD`),
+  continuation `0F B7 83 EE FD FF FF` (the Script Extender's type hook starts there). RBX = candidate
+  field `+0x8F8` (type at -0x212, owner at -0x20A), R13 = manager + Hunter id * 0x490. Free: RAX, R8-R11,
+  RDI; flags dead. An owned candidate passes when its type is flagged and its owner equals `[r13+0x6EE]`.
+- Explicit attack `0x18EBDA` `41 39 84 89 3C DF 7E 03 0F 84 BF 00 00 00` (team table `0x37EDF3C` via R9 =
+  image; `je 0x18ECA7`), continuation `41 83 FC 06`. R12D = attacker type, RCX/R13 = target/attacker
+  owner, target type at `[r8+rbp+0x6E6]`. Free: RAX, R11; flags dead. Same team passes only for a Hunter
+  on a flagged type with equal owners.
+- Arrow `0x192AA7` `43 39 84 19 3C DF 7E 03 44 0F B7 5C 24 78`, continuation `75 49` (reads ZF). CX =
+  projectile type, R8W/R10W = projectile/victim owner, R12 = victim type, R13 = projectile offset, R11 =
+  image until the replayed `movzx`; source unit at `[r11+r13+0x2F7A736]`, projectile height at
+  `[r11+r13+0x2F7A6D0]` (both read by the gate block `0x192B00`, whose hash pins them). RDI is saved around
+  the table read. An allowed hit repeats the dead and height gates (miss `0x1929D0`) and continues at
+  `0x192B93`, behind the local "under attack" warning; every other case restores ZF = 1.
+- Corpse removal (in the corpse-arrival stub of [Hunter native sites](#hunter-native-sites)): a type flagged
+  in a second per-type table gets alive state 3 at `[rcx+r14+0x6E4]`; the unit pass `0x182B00` then calls
+  removal `0x1869C0`. Re-audit HunterUpdate state 2 (`0x13072E`-`0x130814` reads no corpse field) before
+  adding a hash.
+- Before adding a hash: repeat the register-liveness audit of all three spans, the team-table and
+  projectile-record layout, and check that no other plugin patches the spans.

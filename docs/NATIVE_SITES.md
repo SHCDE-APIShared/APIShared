@@ -184,6 +184,7 @@ spans are built from each service's native contract constants in
 | `Players.ControlInput` | Exclusive 0x868F6/10 (RunTick spectator-input CMOVNE/store); Observe 0x86900/4 (validated continuation); Exclusive 0x8D128/6 (dispatcher re-dispatch CMOVNE/XOR); Observe 0x8D12E/6 (validated native-view store) | First `TryRegisterSpectatorControl` (LibraryLoaded startup window, or outside a mission with thread suspension); audited hash only; both stubs stay dormant with actor zero. See [player views and control](PLAYER_CONTROL.md#spectator-input-control) |
 | `Presentation.VisibleMapRender` | Exclusive 0x41D60/10 (visible-map render entry; consumers register observers through `VisibleMapRenderEvents`) | First visible-map render registration |
 | `Wildlife.HunterSites` | Exclusive 0x18AF50/14 (Hunter target query entry), 0x1306AE/15 (HunterUpdate corpse arrival); both purely native records, see [huntable prey](HUNTING.md#implementation) | LibraryLoaded |
+| `Wildlife.HunterOwnerGates` | Exclusive 0x18AFD8/14 (query owner check), 0x18EBDA/14 (explicit attack team check), 0x192AA7/14 (arrow team check); Observe 0x192B00/0x93 (arrow hit gates the arrow stub repeats) | First huntable-prey registration with own-player prey |
 
 A conflict with another owner's earlier registration fails that APIShared service
 closed through its existing path (capability diagnostic `Conflict` or its install

@@ -35,6 +35,21 @@ camel.TrySetEnabled(settings.HuntCamel, out reason);
 - `Status` and `Diagnostic` report the result of the latest catalog preparation:
   `Pending`, `Admitted`, `ExcludedByPriority`, `Unsupported` or `Disabled`.
 
+## Own player's animals and corpses
+
+Two more options on the definition:
+
+- `WithOwnPlayerPrey()`: Hunters may also hunt animals of this type that belong to their own
+  player (the same owner, not an ally), as well as unowned ones. Vanilla refuses owned animals
+  at three native points; APIShared installs its gates there on the first such registration.
+  If another plugin already patches those points (for example an older ImprovedHunters), the
+  registration is `Unsupported` and says why.
+- `WithCorpseRemovedWhenButchered()`: the corpse disappears as soon as a Hunter starts
+  butchering it, instead of fading out, so no other Hunter can pick it again.
+
+How long a corpse lasts before it fades is part of each animal type's own update and stays
+with the mod that adds or changes that animal.
+
 ## Read the catalog
 
 `HuntablePrey.Current` returns the frozen catalog of the running mission, or outside a
@@ -136,6 +151,13 @@ as lions still fight back.
   uses the Extender's `OnCalculateBonusYield` and checks that the record still belongs to that
   Hunter and his current target. The same records correct two wrong unit ids of Script Extender
   Hunter events ([fixes](SCRIPT_EXTENDER_FIXES.md#hunter-event-unit-ids)).
+- **Owner gates.** Three purely native gates at the query owner check (`0x18AFD8`), the explicit
+  attack team check (`0x18EBDA`) and the arrow team check (`0x192AA7`) admit an animal of a flagged type
+  when its owner equals the Hunter's. The arrow then repeats Vanilla's hit checks and skips the
+  "under attack" warning, which a player's own Hunter must not trigger. They are installed on the first
+  registration that needs them; an empty table keeps Vanilla's behavior.
+- **Corpse removal.** The corpse-arrival stub marks a flagged corpse for deletion (alive state 3),
+  Vanilla's own end path; the unit pass then removes it. The butchering Hunter never reads it again.
 - **Native contract.** The field and the sites are bound to the audited native image. See
   [UpdateToNewDLL.md](../UpdateToNewDLL.md#huntable-prey-reservation-word) and
   [Hunter native sites](../UpdateToNewDLL.md#hunter-native-sites).

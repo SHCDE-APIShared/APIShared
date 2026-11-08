@@ -54,10 +54,11 @@ namespace APIShared.Wildlife
             var entries = new List<HuntablePreyEntry>(winners.Count + 2);
             foreach (int vanilla in new[] { Deer, Goat })
                 if (!winners.ContainsKey(vanilla))
-                    entries.Add(new HuntablePreyEntry(vanilla, 0, null, APISharedPlugin.PluginGuid, "", true));
+                    entries.Add(new HuntablePreyEntry(vanilla, 0, null, false, false, APISharedPlugin.PluginGuid, "", true));
             foreach (var winner in winners.Values)
                 entries.Add(new HuntablePreyEntry(winner.Definition.UnitType, winner.Definition.HandlingCost,
-                    winner.Definition.BaseMeat, winner.OwnerGuid, winner.RegistrationId, false));
+                    winner.Definition.BaseMeat, winner.Definition.AllowsOwnPlayerPrey, winner.Definition.RemovesCorpseWhenButchered,
+                    winner.OwnerGuid, winner.RegistrationId, false));
             var ordered = entries.OrderBy(entry => entry.UnitType).ToArray();
             return new HuntablePreyCatalog(ordered, DigestOf(ordered), winners.Count != 0);
         }
@@ -69,15 +70,21 @@ namespace APIShared.Wildlife
             using (var writer = new BinaryWriter(data, Encoding.UTF8))
             using (var sha = SHA256.Create())
             {
-                // Version 2 adds the base meat; catalogs without any keep the version-1 bytes and digest.
-                bool hasMeat = entries.Any(entry => entry.BaseMeat.HasValue);
-                writer.Write(hasMeat ? "huntable-prey/2" : "huntable-prey/1");
+                // Version 2 adds base meat, own-player prey and corpse removal; catalogs without any of them
+                // keep the version-1 bytes and digest.
+                bool extended = entries.Any(entry => entry.BaseMeat.HasValue || entry.AllowsOwnPlayerPrey || entry.RemovesCorpseWhenButchered);
+                writer.Write(extended ? "huntable-prey/2" : "huntable-prey/1");
                 writer.Write(entries.Length);
                 foreach (var entry in entries)
                 {
                     writer.Write(entry.UnitType);
                     writer.Write(entry.HandlingCost);
-                    if (hasMeat) writer.Write(entry.BaseMeat ?? -1);
+                    if (extended)
+                    {
+                        writer.Write(entry.BaseMeat ?? -1);
+                        writer.Write(entry.AllowsOwnPlayerPrey);
+                        writer.Write(entry.RemovesCorpseWhenButchered);
+                    }
                     writer.Write(entry.OwnerGuid);
                     writer.Write(entry.RegistrationId);
                     writer.Write(entry.IsVanilla);
@@ -97,6 +104,15 @@ namespace APIShared.Wildlife
                 if (entry.IsVanilla || HasVanillaReservationRelease(entry.UnitType)) continue;
                 (table ?? (table = new byte[ushort.MaxValue + 1]))[entry.UnitType] = 1;
             }
+            return table;
+        }
+
+        // Per-type flags for the native gates; null when no entry uses the option.
+        internal static byte[] BuildFlagTable(HuntablePreyCatalog catalog, Func<HuntablePreyEntry, bool> selected, byte value = 1)
+        {
+            byte[] table = null;
+            foreach (var entry in catalog.Entries)
+                if (selected(entry)) (table ?? (table = new byte[ushort.MaxValue + 1]))[entry.UnitType] = value;
             return table;
         }
     }

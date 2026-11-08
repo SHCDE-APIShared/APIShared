@@ -46,10 +46,13 @@ namespace APIShared.Wildlife
         private static readonly HookHandle<X64InlineHook> CorpseHandle = new HookHandle<X64InlineHook>();
         private static HookTransaction transaction;
         private static ulong image;
+        private static CrusaderLibraryLoadContext loadContext;
         // Never freed: published stubs write them until the process ends.
         private static readonly IntPtr querySlot = Marshal.AllocHGlobal(16);
         private static readonly IntPtr demand = Marshal.AllocHGlobal(8);
         private static readonly IntPtr table = Marshal.AllocHGlobal(UnitCapacity * EntrySize);
+        // Per unit type: RemoveCorpseFlag marks the corpse for deletion when a Hunter starts butchering it.
+        private static readonly IntPtr corpseFlags = Marshal.AllocHGlobal(HunterNativeAssembly.TypeCount);
         private static string diagnostic = "Hunter native sites have not initialized.";
 
         internal static bool IsAvailable => Publication.IsReady;
@@ -61,12 +64,14 @@ namespace APIShared.Wildlife
             new Span<byte>((void*)querySlot, 16).Clear();
             Marshal.WriteInt64(demand, 0);
             ClearTable();
+            SetCorpseFlags(null);
             bool claimed = false;
             try
             {
                 if (!string.Equals(hash, HuntablePreyNativeContract.AuditedHash, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Hunter native sites are audited only for native image " + HuntablePreyNativeContract.AuditedHash + ".");
                 image = unchecked((ulong)context.ModuleHandle.ToInt64());
+                loadContext = context;
                 CheckSite(context, QueryEntryRva, QueryEntryBytes, QueryEntryContinuation);
                 CheckSite(context, CorpseArrivalRva, CorpseArrivalBytes, CorpseArrivalContinuation);
                 ProbeLength(QueryEntryRva, QueryEntryLength);
@@ -119,6 +124,14 @@ namespace APIShared.Wildlife
 
         internal static void ClearTable() => new Span<byte>((void*)table, UnitCapacity * EntrySize).Clear();
 
+        // Null clears every type. Written outside running simulation updates (mission start and end).
+        internal static void SetCorpseFlags(byte[] flags)
+        {
+            var target = new Span<byte>((void*)corpseFlags, HunterNativeAssembly.TypeCount);
+            if (flags == null) target.Clear();
+            else new ReadOnlySpan<byte>(flags, 0, HunterNativeAssembly.TypeCount).CopyTo(target);
+        }
+
         internal static bool TryGetButchered(int hunterUnitId, out uint hunterGlobal, out uint corpseGlobal, out int corpseType)
         {
             hunterGlobal = corpseGlobal = 0; corpseType = 0;
@@ -141,9 +154,13 @@ namespace APIShared.Wildlife
             HunterNativeAssembly.EmitQueryEntry(a, original, unchecked((ulong)querySlot.ToInt64()));
 
         internal static void GenerateCorpseArrival(Assembler a, ReadOnlySpan<Instruction> original) =>
-            HunterNativeAssembly.EmitCorpseArrival(a, original, unchecked((ulong)demand.ToInt64()), unchecked((ulong)table.ToInt64()));
+            HunterNativeAssembly.EmitCorpseArrival(a, original, unchecked((ulong)demand.ToInt64()), unchecked((ulong)table.ToInt64()),
+                unchecked((ulong)corpseFlags.ToInt64()));
 
-        private static void CheckSite(CrusaderLibraryLoadContext context, int rva, byte[] bytes, byte[] continuation)
+        internal static ulong Image => image;
+        internal static CrusaderLibraryLoadContext LoadContext => loadContext;
+
+        internal static void CheckSite(CrusaderLibraryLoadContext context, int rva, byte[] bytes, byte[] continuation)
         {
             ReadOnlySpan<byte> memory = context.Memory;
             if (rva + bytes.Length + continuation.Length > memory.Length ||
@@ -159,7 +176,7 @@ namespace APIShared.Wildlife
                 throw new InvalidOperationException("Hunter native site continuation changed at 0x" + (rva + bytes.Length).ToString("X") + ".");
         }
 
-        private static void ProbeLength(int rva, int length)
+        internal static void ProbeLength(int rva, int length)
         {
             using (var probe = new X64InlineHook(image + (uint)rva, length))
                 if (probe.DisplacedByteCount != length)
@@ -174,7 +191,7 @@ namespace APIShared.Wildlife
 
         internal delegate void Generator(Assembler a, ReadOnlySpan<Instruction> original);
 
-        private static void Verify(HookHandle<X64InlineHook> handle, int rva, int length, byte[] bytes, Generator generate, bool installed)
+        internal static void Verify(HookHandle<X64InlineHook> handle, int rva, int length, byte[] bytes, Generator generate, bool installed)
         {
             var hook = handle.Hook;
             if (!handle.Success || hook == null || hook.IsInstalled != installed || hook.TargetAddress != image + (uint)rva ||
@@ -205,6 +222,6 @@ namespace APIShared.Wildlife
             return Economy.WorkerProductionBonusNativeAssembly.Assemble(a, stub);
         }
 
-        private static byte[] Hex(string text) => Economy.WorkerProductionBonusNativeDefinition.Hex(text.Replace(" ", ""));
+        internal static byte[] Hex(string text) => Economy.WorkerProductionBonusNativeDefinition.Hex(text.Replace(" ", ""));
     }
 }

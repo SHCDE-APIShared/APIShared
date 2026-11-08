@@ -21,12 +21,27 @@ namespace APIShared.Wildlife
         public HuntablePreyDefinition(int unitType, int handlingCost = 0)
         { UnitType = unitType; HandlingCost = handlingCost; }
 
-        private HuntablePreyDefinition(int unitType, int handlingCost, int? baseMeat)
-            : this(unitType, handlingCost) { BaseMeat = baseMeat; }
+        private HuntablePreyDefinition(int unitType, int handlingCost, int? baseMeat, bool ownPlayer, bool removeCorpse)
+            : this(unitType, handlingCost)
+        { BaseMeat = baseMeat; AllowsOwnPlayerPrey = ownPlayer; RemovesCorpseWhenButchered = removeCorpse; }
 
         /// <summary>Copies the definition with a base meat for the Hunter's yield of this animal, from 0
         /// through 1000 before Vanilla's bonus. Null keeps Vanilla's base of 6.</summary>
-        public HuntablePreyDefinition WithBaseMeat(int? baseMeat) => new HuntablePreyDefinition(UnitType, HandlingCost, baseMeat);
+        public HuntablePreyDefinition WithBaseMeat(int? baseMeat) =>
+            new HuntablePreyDefinition(UnitType, HandlingCost, baseMeat, AllowsOwnPlayerPrey, RemovesCorpseWhenButchered);
+
+        /// <summary>Copies the definition so that Hunters may also hunt animals of this type owned by their own
+        /// player (same owner, not merely allied), as well as unowned ones.</summary>
+        /// <remarks>Vanilla refuses owned animals at three native points; APIShared installs its gates for them on
+        /// the first such registration. If another plugin already patches those points (for example an older
+        /// ImprovedHunters), the registration is Unsupported.</remarks>
+        public HuntablePreyDefinition WithOwnPlayerPrey(bool allowed = true) =>
+            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, allowed, RemovesCorpseWhenButchered);
+
+        /// <summary>Copies the definition so that the corpse is removed as soon as a Hunter starts butchering it,
+        /// instead of fading out as Vanilla does. No other Hunter can pick that corpse any more.</summary>
+        public HuntablePreyDefinition WithCorpseRemovedWhenButchered(bool removed = true) =>
+            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, AllowsOwnPlayerPrey, removed);
 
         /// <summary>Raw native unit type.</summary>
         public int UnitType { get; }
@@ -34,6 +49,10 @@ namespace APIShared.Wildlife
         public int HandlingCost { get; }
         /// <summary>Base meat of the Hunter's yield, or null for Vanilla's base. See <see cref="HunterMeatYieldEvents"/>.</summary>
         public int? BaseMeat { get; }
+        /// <summary>Whether Hunters may also hunt animals of this type owned by their own player.</summary>
+        public bool AllowsOwnPlayerPrey { get; }
+        /// <summary>Whether the corpse is removed when a Hunter starts butchering it.</summary>
+        public bool RemovesCorpseWhenButchered { get; }
     }
 
     /// <summary>Result of the most recent catalog preparation for a registration.</summary>
@@ -100,11 +119,14 @@ namespace APIShared.Wildlife
     /// <summary>Immutable entry of a huntable-prey catalog.</summary>
     public sealed class HuntablePreyEntry
     {
-        internal HuntablePreyEntry(int unitType, int handlingCost, int? baseMeat, string ownerGuid, string registrationId, bool isVanilla)
+        internal HuntablePreyEntry(int unitType, int handlingCost, int? baseMeat, bool ownPlayer, bool removeCorpse,
+            string ownerGuid, string registrationId, bool isVanilla)
         {
             UnitType = unitType;
             HandlingCost = handlingCost;
             BaseMeat = baseMeat;
+            AllowsOwnPlayerPrey = ownPlayer;
+            RemovesCorpseWhenButchered = removeCorpse;
             OwnerGuid = ownerGuid;
             RegistrationId = registrationId;
             IsVanilla = isVanilla;
@@ -116,6 +138,10 @@ namespace APIShared.Wildlife
         public int HandlingCost { get; }
         /// <summary>Base meat of the Hunter's yield, or null for Vanilla's base of 6.</summary>
         public int? BaseMeat { get; }
+        /// <summary>Whether Hunters may also hunt animals of this type owned by their own player.</summary>
+        public bool AllowsOwnPlayerPrey { get; }
+        /// <summary>Whether the corpse is removed when a Hunter starts butchering it.</summary>
+        public bool RemovesCorpseWhenButchered { get; }
         /// <summary>Owner of the admitted registration; APIShared's GUID for a built-in entry.</summary>
         public string OwnerGuid { get; }
         /// <summary>Admitted registration ID; empty for a built-in entry.</summary>

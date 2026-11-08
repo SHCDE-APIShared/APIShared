@@ -53,6 +53,7 @@ internal static partial class Program
     private static unsafe void TestCorpseArrival()
     {
         IntPtr demand = Marshal.AllocHGlobal(8), table = Marshal.AllocHGlobal(HunterNativeAssembly.UnitCapacity * HunterNativeAssembly.EntrySize);
+        IntPtr flags = Marshal.AllocHGlobal(HunterNativeAssembly.TypeCount);
         try
         {
             const int hunter = 3, corpse = 5;
@@ -60,7 +61,8 @@ internal static partial class Program
             var original = WorkerProductionBonusNativeDefinition.Decode(Read(CorpseArrivalRva, CorpseArrivalLength), Address(CorpseArrivalRva));
             Action<Assembler> stub = a =>
             {
-                HunterNativeAssembly.EmitCorpseArrival(a, original, unchecked((ulong)demand.ToInt64()), unchecked((ulong)table.ToInt64()));
+                HunterNativeAssembly.EmitCorpseArrival(a, original, unchecked((ulong)demand.ToInt64()), unchecked((ulong)table.ToInt64()),
+                    unchecked((ulong)flags.ToInt64()));
                 a.AddUnrestrictedJmp(Address(CorpseArrivalRva + CorpseArrivalLength));
             };
             Action<Assembler> vanilla = a =>
@@ -72,13 +74,20 @@ internal static partial class Program
             foreach (int type in new[] { 0x2C, 0x2E })
             foreach (int hunterId in new[] { hunter, 0, HunterNativeAssembly.UnitCapacity })
             foreach (byte active in new byte[] { 0, 1 })
+            foreach (bool remove in new[] { false, true })
             {
+                new Span<byte>((void*)flags, HunterNativeAssembly.TypeCount).Clear();
+                if (remove) Marshal.WriteByte(flags, type, HunterNativeAssembly.RemoveCorpseFlag);
+                Word(HunterManagerRva + corpse * 0x490 + HunterNativeAssembly.NativeAliveOffset, 2);
                 Word(HunterManagerRva + corpse * 0x490 + HunterNativeAssembly.NativeTypeOffset, type);
                 Marshal.WriteByte(demand, active);
                 new Span<byte>((void*)table, HunterNativeAssembly.UnitCapacity * HunterNativeAssembly.EntrySize).Clear();
                 // Both fixtures exit at the same continuation, so they run one after the other.
                 var expected = RunCorpseArrival(vanilla, hunterId, hunter, corpse);
+                Word(HunterManagerRva + corpse * 0x490 + HunterNativeAssembly.NativeAliveOffset, 2);
                 var actual = RunCorpseArrival(stub, hunterId, hunter, corpse);
+                Check(Word(HunterManagerRva + corpse * 0x490 + HunterNativeAssembly.NativeAliveOffset) == (remove ? 3 : 2),
+                    "Corpse arrival marks the corpse for deletion exactly when its type is flagged.");
                 // Same registers (EAX = 1000 from the replayed mov) and the replayed comparison's flags.
                 Check(actual.Rax == 0x3E8 && expected.Rax == 0x3E8, "The replayed original instructions ran.");
                 Check((actual.Flags & 0x8D5) == (expected.Flags & 0x8D5), "Corpse arrival keeps the replayed comparison's flags.");
@@ -93,7 +102,7 @@ internal static partial class Program
                         "Corpse arrival writes no other entry.");
             }
         }
-        finally { Marshal.FreeHGlobal(demand); Marshal.FreeHGlobal(table); Word(HunterManagerRva + 5 * 0x490 + HunterNativeAssembly.NativeTypeOffset, 0); Put(HunterManagerRva + 3 * 0x490 + HunterNativeAssembly.NativeGlobalOffset, 0); }
+        finally { Marshal.FreeHGlobal(demand); Marshal.FreeHGlobal(table); Marshal.FreeHGlobal(flags); Word(HunterManagerRva + 5 * 0x490 + HunterNativeAssembly.NativeAliveOffset, 0); Word(HunterManagerRva + 5 * 0x490 + HunterNativeAssembly.NativeTypeOffset, 0); Put(HunterManagerRva + 3 * 0x490 + HunterNativeAssembly.NativeGlobalOffset, 0); }
     }
 
     // Every other register, the SIMD sentinels and the stack must come back unchanged.

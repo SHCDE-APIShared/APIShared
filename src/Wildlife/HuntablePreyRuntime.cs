@@ -89,16 +89,19 @@ namespace APIShared.Wildlife
             if (definition == null || definition.UnitType < 1 || definition.UnitType > ushort.MaxValue || definition.HandlingCost < 0 ||
                 definition.BaseMeat < 0 || definition.BaseMeat > MaximumBaseMeat)
             { reason = "The unit type must be from 1 through 65535, the handling cost non-negative and the base meat from 0 through " + MaximumBaseMeat + "."; return false; }
-            if (definition.BaseMeat.HasValue && !HunterNativeSites.IsAvailable)
-            { reason = "A base meat needs the Hunter native sites: " + HunterNativeSites.Diagnostic; return false; }
+            if ((definition.BaseMeat.HasValue || definition.RemovesCorpseWhenButchered) && !HunterNativeSites.IsAvailable)
+            { reason = "A base meat or corpse removal needs the Hunter native sites: " + HunterNativeSites.Diagnostic; return false; }
+            string unsupported = HuntablePreyCatalogBuilder.UnsupportedReason(definition.UnitType);
+            // Own-player prey needs the owner gates; they install on the first such registration.
+            if (unsupported.Length == 0 && definition.AllowsOwnPlayerPrey && !HunterOwnerGates.TryEnsureInstalled(log, out string gates))
+                unsupported = gates;
 
             lock (Gate)
             {
                 foreach (var old in registrations)
                     if (StringComparer.Ordinal.Equals(old.OwnerGuid, owner) && StringComparer.Ordinal.Equals(old.RegistrationId, id))
                     { reason = "This owner already registered that huntable-prey ID."; return false; }
-                registration = new HuntablePreyRegistration(owner, id, definition, priority,
-                    HuntablePreyCatalogBuilder.UnsupportedReason(definition.UnitType));
+                registration = new HuntablePreyRegistration(owner, id, definition, priority, unsupported);
                 var next = new HuntablePreyRegistration[registrations.Length + 1];
                 Array.Copy(registrations, next, registrations.Length);
                 next[next.Length - 1] = registration;
@@ -152,6 +155,9 @@ namespace APIShared.Wildlife
             bool changed = !ReferenceEquals(Volatile.Read(ref active), catalog) || Volatile.Read(ref worldActive) == 0;
             Volatile.Write(ref active, catalog);
             Volatile.Write(ref demand, HuntablePreyCatalogBuilder.BuildDemandTable(catalog));
+            HunterNativeSites.SetCorpseFlags(HuntablePreyCatalogBuilder.BuildFlagTable(catalog,
+                entry => entry.RemovesCorpseWhenButchered, HunterNativeAssembly.RemoveCorpseFlag));
+            HunterOwnerGates.SetTypes(HuntablePreyCatalogBuilder.BuildFlagTable(catalog, entry => entry.AllowsOwnPlayerPrey));
             Volatile.Write(ref worldActive, 1);
             UpdateMeatDemand();
             if (changed && catalog.HasRegistrations)
@@ -161,6 +167,8 @@ namespace APIShared.Wildlife
         internal static void EndWorld()
         {
             Volatile.Write(ref demand, null);
+            HunterNativeSites.SetCorpseFlags(null);
+            HunterOwnerGates.SetTypes(null);
             Volatile.Write(ref worldActive, 0);
             Volatile.Write(ref active, HuntablePreyCatalogBuilder.VanillaOnly);
             frozen = HuntablePreyCatalogBuilder.VanillaOnly;

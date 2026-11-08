@@ -929,5 +929,6 @@ Vanilla's Hunter query and releases the Hunter's reservation for them without a
 per-unit hook. Each mission freezes the catalog; multiplayer peers must agree on
 its digest. `HunterTargetPolicies` admits or refuses query candidates with the
 correct Hunter id; `HuntablePreyDefinition.WithBaseMeat` and `HunterMeatYieldEvents`
-set the base meat per butchered animal, kept in saves. See
+set the base meat per butchered animal, kept in saves. A type can also admit animals
+of the Hunter's own player and remove its corpse when butchering starts. See
 [the huntable-prey contract](HUNTING.md).

@@ -3169,11 +3169,17 @@ APIShared.Wildlife.HuntablePreyCatalog | public string Digest { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public sealed class APIShared.Wildlife.HuntablePreyDefinition
 APIShared.Wildlife.HuntablePreyDefinition | public .ctor(int unitType, int handlingCost = 0)
 APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithBaseMeat(int? baseMeat)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithCorpseRemovedWhenButchered(bool removed = true)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithOwnPlayerPrey(bool allowed = true)
+APIShared.Wildlife.HuntablePreyDefinition | public bool AllowsOwnPlayerPrey { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public bool RemovesCorpseWhenButchered { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int HandlingCost { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int UnitType { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int? BaseMeat { get; }
 APIShared.Wildlife.HuntablePreyEntry | public sealed class APIShared.Wildlife.HuntablePreyEntry
+APIShared.Wildlife.HuntablePreyEntry | public bool AllowsOwnPlayerPrey { get; }
 APIShared.Wildlife.HuntablePreyEntry | public bool IsVanilla { get; }
+APIShared.Wildlife.HuntablePreyEntry | public bool RemovesCorpseWhenButchered { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int HandlingCost { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int UnitType { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int? BaseMeat { get; }

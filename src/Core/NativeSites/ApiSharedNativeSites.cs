@@ -240,6 +240,7 @@ namespace APIShared
             Group(GateDescent, GateDescentSpans()),
             Group(BuildingRepair, BuildingRepairSpans()),
             Group(Wildlife.HunterNativeSites.SiteGroup, Wildlife.HunterNativeSites.Spans()),
+            Group(Wildlife.HunterOwnerGates.SiteGroup, Wildlife.HunterOwnerGates.Spans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
