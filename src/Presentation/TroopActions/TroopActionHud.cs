@@ -114,7 +114,11 @@ namespace APIShared.Presentation
             foreach (Action handler in handlers.GetInvocationList())
             {
                 try { handler(); }
-                catch (Exception) { Interlocked.Increment(ref failures); }
+                catch (Exception error)
+                {
+                    if (FailureThrottle.ShouldReport(ref failures))
+                        InterceptionDiagnostics.Report("troop action foreign panel handler", error);
+                }
             }
         }
 
@@ -174,8 +178,7 @@ namespace APIShared.Presentation
             try { registration.Refresh(panel); }
             catch (Exception ex)
             {
-                long count = Interlocked.Increment(ref failures);
-                if ((count & (count - 1)) == 0)
+                if (FailureThrottle.ShouldReport(ref failures))
                     InterceptionDiagnostics.Report(registration.Owner + "/" + registration.Id + " troop action refresh", ex);
             }
         }

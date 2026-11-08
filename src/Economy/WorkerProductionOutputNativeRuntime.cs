@@ -86,7 +86,7 @@ namespace APIShared.Economy
             var result=transaction.Commit();if(!result.IsCompleteSuccess)throw new InvalidOperationException("Actual-output preparation incomplete.");
             for(int i=0;i<handles.Length;i++) Verify(i,false);
             NativeHookPublication.Enable(transaction,result,publication,this,()=> { for(int i=0;i<handles.Length;i++)Verify(i,true); });
-            try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} Actual-output guards prepared and published; world readiness still requires persistence and agreement."); } catch { }
+            NativeApiLog.Info(log, "Actual-output guards prepared and published; world readiness still requires persistence and agreement.");
         }
         private void Generate(Iced.Intel.Assembler a,ReadOnlySpan<Instruction> original,ulong back,WorkerProductionOutputSite site) =>
             WorkerProductionOutputNativeAssembly.Generate(a,original,back,site,image,WorkerProductionBonusNativeRuntime.PercentAddress,

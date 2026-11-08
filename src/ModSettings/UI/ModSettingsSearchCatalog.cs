@@ -226,7 +226,7 @@ namespace APIShared.ModSettings
             new Dictionary<string, ModSettingsSearchState>(StringComparer.Ordinal);
         internal readonly Func<string, string, bool> Navigate;
 
-        internal void Report(string message) => DebugLogHelper.LogWarning(log, $"[{modName}] {message}");
+        internal void Report(string message) => NativeApiLog.Warning(log, $"[{modName}] {message}");
 
         public SearchSource(
             string path,

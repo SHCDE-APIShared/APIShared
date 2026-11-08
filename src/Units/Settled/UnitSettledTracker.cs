@@ -191,8 +191,7 @@ namespace APIShared.Units
         private void Fail(Registration registration, Exception error)
         {
             Interlocked.Increment(ref failures);
-            long count = Interlocked.Increment(ref registration.Failures);
-            if ((count & (count - 1)) != 0) return;
+            if (!FailureThrottle.ShouldReport(ref registration.Failures, out long count)) return;
             // Logging must never compromise another observer or the simulation tick.
             try { Volatile.Read(ref errorSink)?.Invoke(registration.Owner + "/" + registration.Id + " (failure " + count + ")", error); }
             catch { }

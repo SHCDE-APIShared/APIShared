@@ -95,12 +95,12 @@ namespace APIShared.Internal
             return debugEnabledCache;
         }
 
-        public static void LogDebug(ManualLogSource log, params object[] parts)
+        public static void LogDebug(ManualLogSource log, string message)
         {
             if (log == null || !IsDebugEnabled())
                 return;
 
-            try { log.LogDebug(WithTimestamp(string.Join(" ", parts))); } catch { }
+            try { log.LogDebug(WithTimestamp(message)); } catch { }
         }
 
         public static void LogDebug(ManualLogSource log, Func<string> messageFactory)

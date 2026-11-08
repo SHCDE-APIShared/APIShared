@@ -179,8 +179,7 @@ namespace APIShared.Presentation
         {
             if (entry == null ? hostFailureReported : entry.FailureReported) return;
             if (entry == null) hostFailureReported = true; else entry.FailureReported = true;
-            try { log.LogError("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] Ingame menu action failed: " +
-                (entry == null ? "layout" : entry.Owner + "/" + entry.Id) + ": " + error); } catch { }
+            NativeApiLog.Error(log, "Ingame menu action failed: " + (entry == null ? "layout" : entry.Owner + "/" + entry.Id) + ": " + error);
         }
     }
 }

@@ -196,7 +196,7 @@ namespace APIShared.ModSettings
             catch (Exception ex)
             {
                 Deactivate();
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Shared per-player lobby convergence activation failed: {ex}");
                 throw;
@@ -627,7 +627,7 @@ namespace APIShared.ModSettings
                 out string rosterError))
             {
                 SetReadiness(false, rosterError);
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Shared final player roster resolution failed; dependent gameplay must remain blocked: {rosterError}");
                 return;
@@ -639,7 +639,7 @@ namespace APIShared.ModSettings
             if (!localIdentity.IsResolved)
             {
                 SetReadiness(false, localIdentity.Error);
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Shared final local player resolution failed; dependent gameplay must remain blocked: {localIdentity.Error}");
                 return;
@@ -647,7 +647,7 @@ namespace APIShared.ModSettings
 
             if (!RemapForMapTransition(finalPlayers, localIdentity.PlayerId, out string remapError))
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Shared per-player map-transition remap failed; dependent gameplay must remain blocked: {remapError}");
             }
@@ -692,7 +692,7 @@ namespace APIShared.ModSettings
                 string.Equals(lastIdentityDiagnostic, diagnostic, StringComparison.Ordinal))
                 return;
             lastIdentityDiagnostic = diagnostic;
-            DebugLogHelper.LogError(
+            NativeApiLog.Error(
                 log,
                 $"[{modName}] Shared player identity source mismatch: {diagnostic}");
         }
@@ -702,7 +702,7 @@ namespace APIShared.ModSettings
         private void LogRoutine(string message)
         {
             if (routineLoggingEnabled)
-                DebugLogHelper.LogDebug(log, message);
+                NativeApiLog.Debug(log, message);
         }
 
         private static string FormatRoster(IReadOnlyDictionary<int, ulong> players) =>

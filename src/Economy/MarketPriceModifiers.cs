@@ -224,8 +224,7 @@ namespace APIShared.Economy
                     }
                     catch (Exception ex)
                     {
-                        long count = Interlocked.Increment(ref callbackFailures);
-                        if ((count & (count - 1)) == 0) Report("Market-price provider " + item.Owner + "/" + item.Id + " failed: " + ex.Message);
+                        if (FailureThrottle.ShouldReport(ref callbackFailures)) Report("Market-price provider " + item.Owner + "/" + item.Id + " failed: " + ex.Message);
                     }
                 }
             }
@@ -281,7 +280,6 @@ namespace APIShared.Economy
             GamePlayerManagerAPI.Instance.SetTradeBasePrice((eGoods)good,
                 new PackedGoodPrice(buying ? value : current.BuyPrice, buying ? current.SellPrice : value));
         }
-        private static void Report(string message)
-        { try { Log.LogWarning("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + message); } catch { } }
+        private static void Report(string message) => NativeApiLog.Warning(Log, message);
     }
 }

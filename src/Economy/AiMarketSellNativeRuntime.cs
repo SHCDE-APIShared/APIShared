@@ -133,7 +133,7 @@ namespace APIShared.Economy
                 ValidateStub(i, hook);
             }
             NativeHookPublication.Enable(transaction, result, Publication, this, ValidateInstalled);
-            try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} AI sell policy hooks confirmed: 3F1F3..3F202, 29723..29732; 15/15; player stride=583C, goods=4D0/508/50C; initially inactive, process lifetime."); } catch { }
+            NativeApiLog.Info(log, "AI sell policy hooks confirmed: 3F1F3..3F202, 29723..29732; 15/15; player stride=583C, goods=4D0/508/50C; initially inactive, process lifetime.");
         }
         private void Generate(Assembler a, ReadOnlySpan<Instruction> original, ulong back, int index) =>
             AiMarketSellAssembly.Generate(a, original, back, index, image, unchecked((ulong)state.ToInt64()),
@@ -156,7 +156,7 @@ namespace APIShared.Economy
         {
             if (!Live(rva, expected.Length).AsSpan().SequenceEqual(expected))
                 throw new InvalidOperationException($"AI sell site RVA=0x{rva:X} is occupied or changed.");
-            try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} AI sell hook resolved: reference-rva=0x{rva:X}, span=15."); } catch { }
+            NativeApiLog.Info(log, $"AI sell hook resolved: reference-rva=0x{rva:X}, span=15.");
         }
         private void ValidateLiveBoundary(int rva, byte[] original)
         {

@@ -98,7 +98,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Preset metadata is invalid: {exception}");
                     storage.BackupCorruptFile();
@@ -130,7 +130,7 @@ namespace APIShared.ModSettings
                 catch (Exception exception)
                 {
                     legacyMigrationPending = true;
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not publish legacy presets; the valid MessagePack data was retained for retry; " +
                         DescribeMigrationFailure(exception));
@@ -157,7 +157,7 @@ namespace APIShared.ModSettings
                     catch (Exception exception)
                     {
                         legacyMigrationPending = true;
-                        DebugLogHelper.LogError(
+                        NativeApiLog.Error(
                             log,
                             $"[{modName}] Could not publish the legacy lobby-settings preset; the original file was retained for retry; " +
                             DescribeMigrationFailure(exception));

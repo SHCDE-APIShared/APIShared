@@ -42,7 +42,7 @@ namespace APIShared.ModSettings
         private void ReportFinalRestoreAttempt(SnapshotApplicationResult result, int failedAttempts, string scope)
         {
             if (result.Failed.Count == 0) return;
-            DebugLogHelper.LogError(log,
+            NativeApiLog.Error(log,
                 $"[{modName}] Restored {scope} after {failedAttempts + 1} attempts without " +
                 $"[{string.Join(", ", result.Failed.Select(property => property.Name))}]; those settings keep their current values.");
         }
@@ -87,7 +87,7 @@ namespace APIShared.ModSettings
                 if (persistedPropertiesByName.TryGetValue(entry.Key, out var property) && IsMissionProperty(property))
                     missionPreset[entry.Key] = entry.Value == null ? null : (byte[])entry.Value.Clone();
             ApplySnapshot(missionPreset, MissionPresetIndex, writeLocalStorage: false, missionRestore: true);
-            DebugLogHelper.LogInfo(log,
+            NativeApiLog.Info(log,
                 $"SETTINGS_CONTEXT: mod={targetGuid}, action=enter, context={SanitizeLogValue(missionContextLabel)}, " +
                 $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, editable={editable}, " +
                 $"snapshotProperties={missionPreset.Count}, host={owner.IsLocalHost}; persistence=temporary.");
@@ -131,7 +131,7 @@ namespace APIShared.ModSettings
                 ? suspendedPublishedPreset
                 : null;
             suspendedPublishedPreset = null;
-            DebugLogHelper.LogInfo(log,
+            NativeApiLog.Info(log,
                 $"SETTINGS_CONTEXT: mod={targetGuid}, action=exit, context={SanitizeLogValue(missionContextLabel)}, " +
                 $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, restoreHost={restoreHost}, " +
                 $"leavingPreset={SanitizeLogValue(leavingPreset)}, leavingSourceLabel={SanitizeLogValue(leavingSourceLabel)}, " +

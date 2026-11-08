@@ -36,7 +36,7 @@ namespace APIShared
                 candidate.Apply();
                 localPlayerIdHook = candidate;
                 transitionLog = log;
-                changes.OnError = error => log.LogError("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] PLAYER_PERSPECTIVE_OBSERVER_FAILED: " + error);
+                changes.OnError = error => NativeApiLog.Error(log, "PLAYER_PERSPECTIVE_OBSERVER_FAILED: " + error);
             }
             catch (Exception error)
             {

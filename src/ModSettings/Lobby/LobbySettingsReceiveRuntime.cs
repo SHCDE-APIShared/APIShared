@@ -47,7 +47,7 @@ namespace APIShared.ModSettings
                     generation => { RefreshContext(); return generation == queue.Generation; },
                     (packet, sender) => original(GameXAMLManagerAPI.Instance, packet,
                         sender.HasValue ? new CSteamID(sender.Value) : (CSteamID?)null),
-                    error => DebugLogHelper.LogError(log, "Mod-settings receive failed: " + error));
+                    error => NativeApiLog.Error(log, "Mod-settings receive failed: " + error));
                 RefreshContext();
                 if (!ApiShared.Current.TryGetLobbyState(APISharedPlugin.PluginGuid, out var lobby, out var diagnostic) ||
                     !lobby.TryRegisterObserver("ModSettings.ReceiveContext", _ => RefreshContext(), out diagnostic))
@@ -64,7 +64,7 @@ namespace APIShared.ModSettings
             catch (Exception error)
             {
                 if (hook == null) candidate?.Dispose();
-                DebugLogHelper.LogError(log, "Mod-settings main-thread receiver unavailable: " + error);
+                NativeApiLog.Error(log, "Mod-settings main-thread receiver unavailable: " + error);
             }
         }
 
@@ -77,7 +77,7 @@ namespace APIShared.ModSettings
             }
             var currentLobby = Platform_Multiplayer.Instance?.activeLobby;
             if (Interlocked.Exchange(ref dispatchFailure, 0) != 0)
-                DebugLogHelper.LogError(log, "Mod-settings receive dropped: Unity main-thread dispatch unavailable.");
+                NativeApiLog.Error(log, "Mod-settings receive dropped: Unity main-thread dispatch unavailable.");
             ulong? currentLobbyId = currentLobby?.id.m_SteamID;
             long? currentMission = MissionLifecycleService.ActiveContext?.SessionId;
             bool lobbyChanged = !ReferenceEquals(lobbyIdentity, currentLobby) || lobbyId != currentLobbyId;

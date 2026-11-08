@@ -43,7 +43,7 @@ namespace APIShared.Internal
                     : "signature-fallback";
             }
 
-            DebugLogHelper.LogDebug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
+            NativeApiLog.Debug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
             return new NativeResolution(rva, method);
         }
 
@@ -74,7 +74,7 @@ namespace APIShared.Internal
                     : "signature-fallback";
             }
 
-            DebugLogHelper.LogDebug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
+            NativeApiLog.Debug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
             return new NativeResolution(rva, method);
         }
 

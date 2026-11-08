@@ -261,8 +261,7 @@ namespace APIShared.Presentation
         private static void Report(string key, Exception error)
         {
             if (!reported.Add(key)) return;
-            ApiSharedRuntime.ProcessInstance.Logger?.LogError("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") +
-                "] ALLY_GOODS_UI " + key + ": " + error);
+            NativeApiLog.Error(ApiSharedRuntime.ProcessInstance.Logger, "ALLY_GOODS_UI " + key + ": " + error);
         }
         /// <summary>Extender binding receiver. Consumers register sections instead of constructing this type.</summary>
         public sealed class HostBinding : INoesisElementBindingAware

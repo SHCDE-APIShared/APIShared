@@ -119,7 +119,7 @@ namespace APIShared.Lobby
             // A chat/log reporting failure must never reopen a rejected gameplay start.
             try { LobbyLaunchStatus.ReportAttempt(owner, operation, new LobbyLaunchStatusItem(reason,
                 LobbyLaunchStatusKind.Blocking, detail, LobbyLaunchStatusScope.Lobby)); }
-            catch (Exception error) { DebugLogHelper.LogError(Log, "Lobby launch rejected: " + reason + "; " + detail + "; reporting: " + error); }
+            catch (Exception error) { NativeApiLog.Error(Log, "Lobby launch rejected: " + reason + "; " + detail + "; reporting: " + error); }
         }
     }
 

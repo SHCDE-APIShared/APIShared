@@ -75,7 +75,7 @@ namespace APIShared.ModSettings
                 {
                     FailedWrites++;
                     LastWriteResult = "atomic-publish-failed";
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not atomically publish lobby-settings presets to [{filePath}] " +
                         $"after {result.Attempts} attempts; hresult=0x{result.Error.HResult:X8}: {result.Error}");
@@ -86,7 +86,7 @@ namespace APIShared.ModSettings
                     SuccessfulWrites++;
                     LastWriteResult = "published";
                     if (report)
-                        DebugLogHelper.LogInfo(log,
+                        NativeApiLog.Info(log,
                             $"SETTINGS_STORAGE: mod={modName}, result=published, path={filePath}, " +
                             $"bytes={bytes.Length}, attempts={result.Attempts}, successfulWrites={SuccessfulWrites}, " +
                             $"failedWrites={FailedWrites}; scope=personal. Subsequent successes are counted in the mission settings snapshot.");
@@ -99,7 +99,7 @@ namespace APIShared.ModSettings
             {
                 FailedWrites++;
                 LastWriteResult = "write-failed:" + exception.GetType().FullName;
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not save lobby-settings presets to [{filePath}]; " +
                     $"publishAttempts={publishAttempts}, hresult=0x{exception.HResult:X8}: {exception}");
@@ -113,7 +113,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogWarning(
+                    NativeApiLog.Warning(
                         log,
                         $"[{modName}] Could not remove temporary preset file [{temporaryPath}]: {exception.Message}");
                 }
@@ -141,7 +141,7 @@ namespace APIShared.ModSettings
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not read lobby-settings presets from [{readPath}]: {exception}");
                 return false;
@@ -162,13 +162,13 @@ namespace APIShared.ModSettings
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                 ValidateWritePath();
                 File.Copy(readPath, backupPath, false);
-                DebugLogHelper.LogWarning(
+                NativeApiLog.Warning(
                     log,
                     $"[{modName}] Preserved invalid preset data at [{backupPath}].");
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not preserve invalid preset data: {exception}");
             }

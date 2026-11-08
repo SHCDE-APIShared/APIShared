@@ -122,8 +122,8 @@ namespace APIShared.ModSettings
         private static void ReportJournalStorage(string message)
         {
             if (message.Contains("failed") || message.Contains("pending") || message.Contains("retained"))
-                DebugLogHelper.LogWarning(journalLog, "Restart preparation storage: " + message);
-            else DebugLogHelper.LogInfo(journalLog, "Restart preparation storage: " + message);
+                NativeApiLog.Warning(journalLog, "Restart preparation storage: " + message);
+            else NativeApiLog.Info(journalLog, "Restart preparation storage: " + message);
         }
 
         private static void EnsureJournalPath()

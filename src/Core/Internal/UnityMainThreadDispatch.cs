@@ -17,6 +17,7 @@ namespace APIShared.Internal
         private static SynchronizationContext unityContext;
         private static int unityThreadId;
         private static int dispatchScheduled;
+        private static long callbackFailures;
 
         public static bool IsInitialized =>
             Volatile.Read(ref unityContext) != null && Volatile.Read(ref unityThreadId) != 0;
@@ -117,10 +118,12 @@ namespace APIShared.Internal
                     {
                         action();
                     }
-                    catch
+                    catch (Exception error)
                     {
                         // A dispatched callback must not escape through Unity's
                         // SynchronizationContext and prevent later queued work.
+                        if (FailureThrottle.ShouldReport(ref callbackFailures))
+                            Events.InterceptionDiagnostics.Report("main-thread dispatch", error);
                     }
                 }
             }

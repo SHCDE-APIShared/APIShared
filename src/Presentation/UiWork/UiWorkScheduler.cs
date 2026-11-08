@@ -117,8 +117,7 @@ namespace APIShared.Presentation
                 try { entry.Callback(); }
                 catch (Exception error)
                 {
-                    long failures = ++entry.Failures;
-                    if ((failures & (failures - 1)) == 0)
+                    if (FailureThrottle.ShouldReport(ref entry.Failures))
                         try { report?.Invoke(entry.Owner + "/" + entry.Id, error); } catch { }
                 }
             }

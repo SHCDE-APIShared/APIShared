@@ -25,8 +25,7 @@ namespace APIShared.ScriptExtenderFixes
             // Root before publication; published hooks are never removed or retried.
             hook.Apply();
             if (!hook.IsApplied) throw new InvalidOperationException("World popularity popup IL publication incomplete.");
-            log.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") +
-                "] WORLD_POPULARITY_POPUP_READY: masks use the displayed popup snapshot.");
+            NativeApiLog.Info(log, "WORLD_POPULARITY_POPUP_READY: masks use the displayed popup snapshot.");
         }
     }
 }

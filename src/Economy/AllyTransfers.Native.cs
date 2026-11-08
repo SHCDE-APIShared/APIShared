@@ -138,9 +138,8 @@ namespace APIShared.Economy
         }
         internal static void ReportCallFailure(Exception error)
         {
-            int count = Interlocked.Increment(ref callFailures);
-            if ((count & (count - 1)) == 0)
-                try { NativeApiLog.Error(logger, "Ally-transfer call-chain failure; no retry or rollback: " + error); } catch { }
+            if (FailureThrottle.ShouldReport(ref callFailures))
+                NativeApiLog.Error(logger, "Ally-transfer call-chain failure; no retry or rollback: " + error);
         }
         private sealed class Backend : IAllyTransfersBackend
         {

@@ -191,11 +191,7 @@ namespace APIShared.ScriptExtenderFixes
                 candidates[index].Dispose();
             compilerCandidate?.Hook.Dispose();
         }
-        private static void Write(string message)
-        {
-            try { logger?.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] SE_IMGUI_SHUTDOWN_FIX: " + message); }
-            catch { /* Logging must not interrupt native message forwarding or quit. */ }
-        }
+        private static void Write(string message) => NativeApiLog.Info(logger, "SE_IMGUI_SHUTDOWN_FIX: " + message);
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
         private static extern IntPtr GetWindowLongPtrW(IntPtr hwnd, int index);
         [DllImport("user32.dll", EntryPoint = "CallWindowProcW")]

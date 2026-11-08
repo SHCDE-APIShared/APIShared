@@ -65,8 +65,7 @@ namespace APIShared.Recruitment
                     try { result |= entry.Predicate(unitType); }
                     catch (Exception ex)
                     {
-                        long count = Interlocked.Increment(ref failures);
-                        if ((count & (count - 1)) == 0)
+                        if (FailureThrottle.ShouldReport(ref failures))
                             InterceptionDiagnostics.Report(entry.Owner + "/" + entry.Id + " material UI", ex);
                     }
                 return result;

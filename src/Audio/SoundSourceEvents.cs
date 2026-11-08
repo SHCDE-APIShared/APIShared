@@ -100,8 +100,7 @@ namespace APIShared.Audio
                     {
                         args.Restore(before);
                         Interlocked.Increment(ref failures);
-                        long count = Interlocked.Increment(ref entry.Failures);
-                        if ((count & (count - 1)) == 0)
+                        if (FailureThrottle.ShouldReport(ref entry.Failures))
                             try { InterceptionDiagnostics.Report(entry.Owner + "/" + entry.Id + " SoundSource", ex); } catch { }
                     }
                 }

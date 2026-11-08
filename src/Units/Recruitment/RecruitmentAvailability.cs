@@ -225,8 +225,7 @@ namespace APIShared.Recruitment
 
         private static void ReportFailure(Registration registration, string phase, Exception error)
         {
-            long count = Interlocked.Increment(ref failures);
-            if ((count & (count - 1)) == 0)
+            if (FailureThrottle.ShouldReport(ref failures))
                 InterceptionDiagnostics.Report(registration.Owner + "/" + registration.Id + " recruitment availability " + phase, error);
         }
 

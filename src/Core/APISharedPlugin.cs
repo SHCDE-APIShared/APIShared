@@ -32,7 +32,7 @@ namespace APIShared
             Localization.GameLocale.Initialize();
             var localizationLog = RuntimeLogger;
             Localization.UiText.Configure(Localization.GameLocale.Current,
-                message => Internal.DebugLogHelper.LogWarning(localizationLog, "APIShared localization: " + message));
+                message => NativeApiLog.Warning(localizationLog, "APIShared localization: " + message));
             Compatibility.FixesWheatStartup.Initialize(RuntimeLogger);
             Workshop.WorkshopCleanupRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);

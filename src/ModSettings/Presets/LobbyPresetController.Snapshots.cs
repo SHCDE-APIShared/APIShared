@@ -222,7 +222,7 @@ namespace APIShared.ModSettings
                 }
             }, publish: true);
             if (writeLocalStorage || personalChanged) WriteCombinedPayload();
-            DebugLogHelper.LogInfo(log, $"SETTINGS_PRESET: mod={targetGuid}, action=load, " +
+            NativeApiLog.Info(log, $"SETTINGS_PRESET: mod={targetGuid}, action=load, " +
                 $"context={SanitizeLogValue(owner.IsMissionPresetSelected ? missionContextLabel : "Personal")}, " +
                 $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, preset={SanitizeLogValue(preset.StableId)}, " +
                 $"modified={(owner.IsMissionPresetSelected ? missionPresetDirty : presetDirty)}, " +
@@ -405,11 +405,11 @@ namespace APIShared.ModSettings
         private void ReportApplicationFailures(SnapshotApplicationResult result)
         {
             for (int index = 0; index < result.FellBack.Count; index++)
-                DebugLogHelper.LogWarning(log,
+                NativeApiLog.Warning(log,
                     $"[{modName}] Setting [{result.FellBack[index].Name}] rejected its stored value; the code default was applied: " +
                     Describe(result.FallbackReasons[index]));
             for (int index = 0; index < result.Failed.Count; index++)
-                DebugLogHelper.LogError(log,
+                NativeApiLog.Error(log,
                     $"[{modName}] Setting [{result.Failed[index].Name}] could not be applied, not even its code default; " +
                     "the other settings were applied: " + Describe(result.FailureReasons[index]));
         }
@@ -469,7 +469,7 @@ namespace APIShared.ModSettings
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogWarning(
+                NativeApiLog.Warning(
                     log,
                     $"[{modName}] Could not restore [{property.Name}] from the current settings snapshot: {exception.Message}");
                 return false;
@@ -507,7 +507,7 @@ namespace APIShared.ModSettings
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogWarning(
+                NativeApiLog.Warning(
                     log,
                     $"[{modName}] Could not capture [{property.Name}] for the current settings snapshot: {exception.Message}");
             }

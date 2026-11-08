@@ -95,7 +95,7 @@ namespace APIShared
                 installed = true;
                 Statistics.EngineReadbacks.Initialize(readbackGate);
                 Simulation.SimulationWorkPump.Initialize(readbackGate);
-                APIShared.Internal.DebugLogHelper.LogDebug(logger, "MARKED_SELECTION_READY: Harmony input postfix and post-tick hooks installed; Vanilla calls are passed through once.");
+                NativeApiLog.Debug(logger, "MARKED_SELECTION_READY: Harmony input postfix and post-tick hooks installed; Vanilla calls are passed through once.");
             }
             catch (Exception error)
             {

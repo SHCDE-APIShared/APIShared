@@ -145,8 +145,7 @@ namespace APIShared.Events
 
         private static void LogFailure(Registration registration, string phase, Exception error)
         {
-            long count = Interlocked.Increment(ref registration.Failures);
-            if ((count & (count - 1)) != 0) return;
+            if (!FailureThrottle.ShouldReport(ref registration.Failures)) return;
             // Logging must never compromise the original or another observer.
             try { InterceptionDiagnostics.Report(registration.Owner + "/" + registration.Id + " " + phase, error); } catch { }
         }

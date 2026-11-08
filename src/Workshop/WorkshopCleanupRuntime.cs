@@ -34,8 +34,7 @@ namespace APIShared.Workshop
                 hook = new ILHook(method, Modify);
                 logger.LogInfo("Workshop cleanup installed; process-lifetime staging callback, no plugin lifecycle scheduling.");
             }
-            catch (Exception ex) { logger.LogWarning("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " +
-                DescribeRejection(typeof(MapArchive).Assembly, stage, ex)); }
+            catch (Exception ex) { NativeApiLog.Warning(logger, DescribeRejection(typeof(MapArchive).Assembly, stage, ex)); }
         }
 
         internal static string DescribeRejection(Assembly assembly, string stage, Exception error)

@@ -41,7 +41,7 @@ namespace APIShared.Internal
         }
         private static void Report(string message, Exception exception)
         {
-            try { DebugLogHelper.LogError(log, message + exception); } catch { }
+            try { NativeApiLog.Error(log, message + exception); } catch { }
         }
         private static Observable<MissionLifecycleNotification> Observe(Func<MissionLifecycleNotification, bool> predicate, bool replay = false) =>
             new RelayObservable(predicate, replay);

@@ -220,6 +220,6 @@ namespace APIShared.Economy
             return bytes.AsSpan(0,decoded[0].Length).ToArray();
         }
         private static string Pattern(byte[] bytes) => BitConverter.ToString(bytes).Replace('-',' ');
-        private void Info(string text) { try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} {text}"); } catch { } }
+        private void Info(string text) => NativeApiLog.Info(log, text);
     }
 }

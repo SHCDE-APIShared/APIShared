@@ -49,7 +49,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(log, $"Published preset [{preset.SourcePath}] is incompatible with [{modName}]: {exception.Message}");
+                    NativeApiLog.Error(log, $"Published preset [{preset.SourcePath}] is incompatible with [{modName}]: {exception.Message}");
                 }
             }
             publishedPresets.Clear();
@@ -139,7 +139,7 @@ namespace APIShared.ModSettings
                 catch (Exception exception)
                 {
                     succeeded = false;
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not import staged personal preset [{source}]: {exception.Message}");
                 }
@@ -288,7 +288,7 @@ namespace APIShared.ModSettings
 
         public void LogPresetOperationFailure(string operation, string id, Exception exception)
         {
-            DebugLogHelper.LogError(
+            NativeApiLog.Error(
                 log,
                 $"[{modName}] Personal preset operation [{operation}] for [{id ?? string.Empty}] failed: {exception}");
         }
@@ -421,7 +421,7 @@ namespace APIShared.ModSettings
             catch (PresetSaveFileExistsException) { throw; } // Expected UI conflict retains its typed contract.
             catch (Exception error)
             {
-                try { DebugLogHelper.LogError(log, $"[{modName}] " + DescribePublicationFailure(stage, path, temporaryPath, error)); }
+                try { NativeApiLog.Error(log, $"[{modName}] " + DescribePublicationFailure(stage, path, temporaryPath, error)); }
                 catch { /* Preserve the original publication exception if a logger fails. */ }
                 throw;
             }

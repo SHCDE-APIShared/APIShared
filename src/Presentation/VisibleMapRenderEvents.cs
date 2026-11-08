@@ -136,7 +136,7 @@ namespace APIShared.Presentation
                 NativeIndirectEntry.Validate(hook, target, Entry);
                 bridge.Validate(hook);
                 ready = true;
-                try { log?.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] Shared visible-map render installed: RVA=0x41D60 span=10 resume=0x41D6A; native demand gate."); } catch { }
+                NativeApiLog.Info(log, "Shared visible-map render installed: RVA=0x41D60 span=10 resume=0x41D6A; native demand gate.");
             }
             catch (Exception error)
             {
@@ -178,7 +178,7 @@ namespace APIShared.Presentation
         private static void Report(VisibleMapRenderRegistration registration, Exception error)
         {
             if (Interlocked.Increment(ref registration.Failures) != 1) return;
-            try { log?.LogError("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] Render callback failed: " + registration.Owner + "/" + registration.Id + ": " + error); } catch { }
+            NativeApiLog.Error(log, "Render callback failed: " + registration.Owner + "/" + registration.Id + ": " + error);
         }
     }
 }

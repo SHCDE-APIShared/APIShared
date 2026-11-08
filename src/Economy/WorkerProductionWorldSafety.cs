@@ -160,7 +160,7 @@ namespace APIShared.Economy
             long expectedGeneration = Generation;
             long expectedSession = session;
             string message = reason;
-            try { log?.LogError($"{DateTime.Now:HH:mm:ss.fff} WORKER_PRODUCTION_WORLD_BLOCKED: {message}"); } catch { }
+            NativeApiLog.Error(log, "WORKER_PRODUCTION_WORLD_BLOCKED: " + message);
             // Dispatch must not depend on SimulationWorkPump: subsequent runs are blocked.
             if (!UnityMainThreadDispatch.TryEnqueue(() => Terminate(expectedGeneration, expectedSession, message)))
                 Interlocked.Exchange(ref notificationQueued, 0); // Remain blocked; a later observation retries delivery.
@@ -177,6 +177,6 @@ namespace APIShared.Economy
         }
 
         private static void Report(Exception error)
-        { try { log?.LogError($"{DateTime.Now:HH:mm:ss.fff} WORKER_PRODUCTION_TERMINATION: {error}"); } catch { } }
+            => NativeApiLog.Error(log, "WORKER_PRODUCTION_TERMINATION: " + error);
     }
 }

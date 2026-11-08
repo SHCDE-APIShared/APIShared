@@ -59,7 +59,7 @@ namespace APIShared.Compatibility
             }
             catch (Exception ex)
             {
-                SafeLog(log, LogLevel.Error, "REFUSED/UNCONFIRMED: " + ex.Message +
+                NativeApiLog.Error(log, "Fixes wheat REFUSED/UNCONFIRMED: " + ex.Message +
                     "; no confirmed protection. No retry or rollback; other APIShared services continue. " +
                     "If the Fixes wheat option is enabled, set [EnableWheatSaleCategoryFix] Enabled=false and restart before gameplay.");
             }
@@ -214,13 +214,6 @@ namespace APIShared.Compatibility
         {
             if (!valid) throw new InvalidOperationException(reason);
         }
-        private static string Stamp() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " ";
-        private static void Report(ManualLogSource log, string message) => SafeLog(log, LogLevel.Info, message);
-        private static void SafeLog(ManualLogSource log, LogLevel level, string message)
-        {
-            // A foreign logging listener must not abort the remaining APIShared initialization.
-            try { log.Log(level, Stamp() + "Fixes wheat " + message); }
-            catch { }
-        }
+        private static void Report(ManualLogSource log, string message) => NativeApiLog.Info(log, "Fixes wheat " + message);
     }
 }
