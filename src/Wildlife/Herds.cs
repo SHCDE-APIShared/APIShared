@@ -219,7 +219,9 @@ namespace APIShared.Wildlife
         /// <returns>False outside a simulation tick or for an invalid herd ID; nothing changes then.</returns>
         public bool TrySetCalm(int herdId, bool calm) => HerdRuntime.TrySetCalm(this, herdId, calm);
 
-        /// <summary>Removes every calm mark of this rule, on any thread.</summary>
+        /// <summary>Removes every calm mark of this rule.</summary>
+        /// <remarks>Call it outside a running mission or inside a <see cref="Simulation.SimulationTickEvents"/> callback,
+        /// so that all peers change the marks in the same tick.</remarks>
         public void ClearAll() => HerdRuntime.ClearCalm(this);
     }
 
@@ -233,7 +235,10 @@ namespace APIShared.Wildlife
     /// Rules are marks, not callbacks: a rule owner decides in its own simulation tick work and sets the
     /// marks, the native gate reads one byte per herd update without a managed call. APIShared clears all
     /// marks at every mission initialization and end, because herd IDs belong to one map; the marks are not
-    /// saved, so rule owners set them again after loading. Multiplayer peers must register the same rules
+    /// saved, so rule owners set them again after loading. A mark belongs to a herd ID, not to a herd: when a herd
+    /// dies out, a new herd can take over its record within the map and keeps the old mark until the rule owner
+    /// sets it again, so owners clear the marks of herds that are gone or set their marks anew each time they
+    /// decide. Multiplayer peers must register the same rules
     /// and decide from simulation data and synchronized settings only.
     /// The gate installs on the first registration, which must happen during startup before the first
     /// mission; it stays for the process lifetime.

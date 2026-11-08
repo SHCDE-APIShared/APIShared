@@ -83,9 +83,12 @@ stay Vanilla's.
 
 Marks are set, not asked for: the native gate reads one byte per herd update. Set them inside a
 `SimulationTickEvents` callback, so that all peers change them in the same tick.
-`ClearAll` removes a rule's marks. APIShared clears all marks at every mission initialization
+`ClearAll` removes a rule's marks; call it outside a running mission or inside a
+`SimulationTickEvents` callback. APIShared clears all marks at every mission initialization
 and end, because herd IDs belong to one map; marks are not saved, so set them again after
-loading.
+loading. A mark belongs to a herd ID, not to a herd: when a herd dies out, a new herd can take
+over its record within the map and keeps the old mark until you set it again. Clear the marks
+of herds that are gone, or set your marks anew each time you decide.
 
 ## Missions and multiplayer
 
