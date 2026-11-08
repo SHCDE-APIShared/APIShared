@@ -239,6 +239,7 @@ namespace APIShared
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
             Group(BuildingRepair, BuildingRepairSpans()),
+            Group(Wildlife.HunterNativeSites.SiteGroup, Wildlife.HunterNativeSites.Spans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),

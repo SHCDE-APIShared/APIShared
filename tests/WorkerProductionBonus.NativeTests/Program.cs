@@ -58,6 +58,7 @@ internal static partial class Program
                 TestStateChecksum();
                 TestHotProductionCore();
                 TestMillerOutput();
+                TestHunterSites();
                 TestWeaponProductionAdapters();
             }
             finally { VirtualFree(image, UIntPtr.Zero, 0x8000); }

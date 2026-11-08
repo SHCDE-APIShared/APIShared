@@ -183,6 +183,7 @@ spans are built from each service's native contract constants in
 | `Presentation.MapperSelectionCamera` | Exclusive 0x45F20/7; Observe 0x45F27/13 (camera continuation), 0x8BF96/5 (mapper caller) | LibraryLoaded startup window; audited hash only; a private demand cell and exact return-address filter suppress only mapper-selection centering. Other camera callers retain the complete original function. See [mapper camera](THIRD_PARTY_GUIDE.md#mapper-selection-camera). |
 | `Players.ControlInput` | Exclusive 0x868F6/10 (RunTick spectator-input CMOVNE/store); Observe 0x86900/4 (validated continuation); Exclusive 0x8D128/6 (dispatcher re-dispatch CMOVNE/XOR); Observe 0x8D12E/6 (validated native-view store) | First `TryRegisterSpectatorControl` (LibraryLoaded startup window, or outside a mission with thread suspension); audited hash only; both stubs stay dormant with actor zero. See [player views and control](PLAYER_CONTROL.md#spectator-input-control) |
 | `Presentation.VisibleMapRender` | Exclusive 0x41D60/10 (visible-map render entry; consumers register observers through `VisibleMapRenderEvents`) | First visible-map render registration |
+| `Wildlife.HunterSites` | Exclusive 0x18AF50/14 (Hunter target query entry), 0x1306AE/15 (HunterUpdate corpse arrival); both purely native records, see [huntable prey](HUNTING.md#implementation) | LibraryLoaded |
 
 A conflict with another owner's earlier registration fails that APIShared service
 closed through its existing path (capability diagnostic `Conflict` or its install

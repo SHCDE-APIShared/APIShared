@@ -3168,12 +3168,15 @@ APIShared.Wildlife.HuntablePreyCatalog | public bool TryGet(int unitType, out AP
 APIShared.Wildlife.HuntablePreyCatalog | public string Digest { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public sealed class APIShared.Wildlife.HuntablePreyDefinition
 APIShared.Wildlife.HuntablePreyDefinition | public .ctor(int unitType, int handlingCost = 0)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithBaseMeat(int? baseMeat)
 APIShared.Wildlife.HuntablePreyDefinition | public int HandlingCost { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int UnitType { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public int? BaseMeat { get; }
 APIShared.Wildlife.HuntablePreyEntry | public sealed class APIShared.Wildlife.HuntablePreyEntry
 APIShared.Wildlife.HuntablePreyEntry | public bool IsVanilla { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int HandlingCost { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int UnitType { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int? BaseMeat { get; }
 APIShared.Wildlife.HuntablePreyEntry | public string OwnerGuid { get; }
 APIShared.Wildlife.HuntablePreyEntry | public string RegistrationId { get; }
 APIShared.Wildlife.HuntablePreyRegistration | public sealed class APIShared.Wildlife.HuntablePreyRegistration
@@ -3191,6 +3194,26 @@ APIShared.Wildlife.HuntablePreyRegistrationStatus | Disabled = 4
 APIShared.Wildlife.HuntablePreyRegistrationStatus | ExcludedByPriority = 2
 APIShared.Wildlife.HuntablePreyRegistrationStatus | Pending = 0
 APIShared.Wildlife.HuntablePreyRegistrationStatus | Unsupported = 3
+APIShared.Wildlife.HunterMeatYield | public sealed class APIShared.Wildlife.HunterMeatYield
+APIShared.Wildlife.HunterMeatYield | public int BaseAmount { get; set; }
+APIShared.Wildlife.HunterMeatYield | public int HunterUnitId { get; }
+APIShared.Wildlife.HunterMeatYield | public int PreyType { get; }
+APIShared.Wildlife.HunterMeatYield | public int VanillaBaseAmount { get; }
+APIShared.Wildlife.HunterMeatYieldEvents | public static class APIShared.Wildlife.HunterMeatYieldEvents
+APIShared.Wildlife.HunterMeatYieldEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Wildlife.HunterMeatYield> handler, out string reason, int order = 0)
+APIShared.Wildlife.HunterTargetCandidate | public struct APIShared.Wildlife.HunterTargetCandidate
+APIShared.Wildlife.HunterTargetCandidate | public bool IsHuntable { get; }
+APIShared.Wildlife.HunterTargetCandidate | public bool IsSimulationQuery { get; }
+APIShared.Wildlife.HunterTargetCandidate | public int CandidateType { get; }
+APIShared.Wildlife.HunterTargetCandidate | public int CandidateUnitId { get; }
+APIShared.Wildlife.HunterTargetCandidate | public int HunterUnitId { get; }
+APIShared.Wildlife.HunterTargetDecision | public enum APIShared.Wildlife.HunterTargetDecision : int
+APIShared.Wildlife.HunterTargetDecision | Allow = 1
+APIShared.Wildlife.HunterTargetDecision | Default = 0
+APIShared.Wildlife.HunterTargetDecision | Refuse = 2
+APIShared.Wildlife.HunterTargetPolicies | public static class APIShared.Wildlife.HunterTargetPolicies
+APIShared.Wildlife.HunterTargetPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HunterTargetPolicy policy, out string reason, int order = 0)
+APIShared.Wildlife.HunterTargetPolicy | public delegate APIShared.Wildlife.HunterTargetDecision APIShared.Wildlife.HunterTargetPolicy(in APIShared.Wildlife.HunterTargetCandidate candidate)
 APIShared.Workshop.WorkshopAction | public enum APIShared.Workshop.WorkshopAction : int
 APIShared.Workshop.WorkshopAction | Downgrade = 3
 APIShared.Workshop.WorkshopAction | Install = 0

@@ -50,6 +50,45 @@ if (catalog.TryGet(unitType, out HuntablePreyEntry entry))
 the query themselves (for example through the Script Extender's
 `OnUnitHunterQueryTarget`) can still refuse individual candidates.
 
+## Target policies
+
+`HunterTargetPolicies.TryRegister` adds a rule that sees each candidate of Vanilla's
+Hunter target query, with the correct Hunter id, and may allow or refuse it.
+
+```csharp
+HunterTargetPolicies.TryRegister(pluginGuid, "own-chickens-only",
+    (in HunterTargetCandidate candidate) => candidate.CandidateType == chicken && TooFar(candidate)
+        ? HunterTargetDecision.Refuse : HunterTargetDecision.Default,
+    out string reason);
+```
+
+- Only candidates that are alive, no corpse and owned by no player reach policies; Vanilla
+  rejects the others before. Reservation, distance and sight tests follow the decision.
+- Any `Refuse` refuses. Otherwise any `Allow` admits a catalog type; `Allow` cannot admit a
+  type outside the catalog, because only catalog types get their reservation released.
+- Policies run on the simulation thread for every candidate of every query, so keep them
+  fast and deterministic. `IsSimulationQuery` is false for one local query Vanilla runs only
+  for the selected Hunter's idle speech; change simulation state only when it is true.
+
+## Meat per animal
+
+Vanilla gives a Hunter the same base of 6 meat for every animal, before its bonus. Give a
+type its own base with `HuntablePreyDefinition.WithBaseMeat(amount)`, or change it per yield:
+
+```csharp
+HunterMeatYieldEvents.TryRegister(pluginGuid, "meat", yield =>
+{
+    if (yield.PreyType == (int)eChimps.CHIMP_TYPE_DEER) yield.BaseAmount = settings.DeerMeat;
+}, out string reason);
+```
+
+- The base ranges from 0 through 1000; Vanilla's bonus is added to it afterwards.
+- Handlers run in order on the simulation thread when the Hunter takes the meat from his hut.
+  They must decide identically on every multiplayer peer.
+- APIShared remembers which animal each Hunter butchered and keeps that record in saves. A
+  yield whose animal is unknown, for example in a save written before this record existed,
+  keeps Vanilla's base and raises no event.
+
 ## Missions and multiplayer
 
 - Each mission freezes the catalog during initialization. Registrations and
@@ -60,12 +99,16 @@ the query themselves (for example through the Script Extender's
   peer agreement. Peers with different catalogs cannot start; register identically
   and drive `TrySetEnabled` from synchronized settings.
 - The catalog is not saved. A loaded game uses the registrations of the current session.
+- Policies and meat handlers are not part of the peer agreement. Register them identically
+  on every peer and keep their decisions deterministic.
+- A native resynchronization does not transfer the record of butchered animals. Affected
+  Hunters fall back to Vanilla's base for that one yield.
 
 ## Limits
 
 APIShared admits the type to Vanilla's Hunter target query and releases the Hunter's
 reservation. Everything else follows Vanilla for that type until a consumer changes it:
-how the animal reacts, whether one arrow kills it, its meat, and how long its corpse
+how the animal reacts, whether one arrow kills it, and how long its corpse
 stays. Vanilla's own corpse search only looks for deer and goat corpses. Predators such
 as lions still fight back.
 
@@ -85,5 +128,14 @@ as lions still fight back.
   at most 80 map ticks with all 9,999 slots in use).
   There is no per-unit hook and no allocation; without active registrations both paths
   return after one volatile read.
-- **Native contract.** The field is bound to the audited native image. See
-  [UpdateToNewDLL.md](../UpdateToNewDLL.md#huntable-prey-reservation-word).
+- **Hunter native sites.** Two purely native stubs, without a managed transition, record
+  the querying unit and its caller at the query's entry (`0x18AF50`), and the Hunter, corpse
+  and corpse type when a Hunter arrives at a corpse (`0x1306AE`), which every butchered animal
+  passes exactly once. The corpse record is written only while a base meat or a meat handler
+  is active. Target policies read the query record inside the Extender event; the meat yield
+  uses the Extender's `OnCalculateBonusYield` and checks that the record still belongs to that
+  Hunter and his current target. The same records correct two wrong unit ids of Script Extender
+  Hunter events ([fixes](SCRIPT_EXTENDER_FIXES.md#hunter-event-unit-ids)).
+- **Native contract.** The field and the sites are bound to the audited native image. See
+  [UpdateToNewDLL.md](../UpdateToNewDLL.md#huntable-prey-reservation-word) and
+  [Hunter native sites](../UpdateToNewDLL.md#hunter-native-sites).

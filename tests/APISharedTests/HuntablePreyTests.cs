@@ -82,6 +82,48 @@ namespace APISharedTests
             Assert.AreNotEqual(baseline, HuntablePreyCatalogBuilder.VanillaOnly.Digest);
         }
 
+        // Without any base meat the digest keeps its version-1 bytes, so catalogs of older consumers still
+        // agree; a base meat is gameplay data and must change the agreement.
+        [TestMethod]
+        public void BaseMeatIsCopiedAndPartOfTheDigestOnlyWhenUsed()
+        {
+            var plain = new HuntablePreyDefinition((int)eChimps.CHIMP_TYPE_CAMEL, 5);
+            var meat = plain.WithBaseMeat(20);
+            Assert.IsNull(plain.BaseMeat);
+            Assert.AreEqual(20, meat.BaseMeat);
+            Assert.AreEqual(plain.UnitType, meat.UnitType);
+            Assert.AreEqual(plain.HandlingCost, meat.HandlingCost);
+
+            string withoutMeat = Compile(Register("owner", "id", plain)).Digest;
+            string withMeat = Compile(Register("owner", "id", meat)).Digest;
+            Assert.AreEqual(Compile(Prey("owner", "id", eChimps.CHIMP_TYPE_CAMEL, handlingCost: 5)).Digest, withoutMeat);
+            Assert.AreNotEqual(withoutMeat, withMeat);
+            Assert.AreNotEqual(withMeat, Compile(Register("owner", "id", plain.WithBaseMeat(21))).Digest);
+            Assert.IsTrue(Compile(Register("owner", "id", meat)).TryGet((int)eChimps.CHIMP_TYPE_CAMEL, out var entry));
+            Assert.AreEqual(20, entry.BaseMeat);
+        }
+
+        // The native corpse record is keyed by Hunter id; out-of-range ids are ignored on both sides.
+        [TestMethod]
+        public void ButcheredRecordsRoundTripPerHunter()
+        {
+            HunterNativeSites.ClearTable();
+            try
+            {
+                HunterNativeSites.SetButchered(42, 1001, 2002, (int)eChimps.CHIMP_TYPE_GOAT);
+                HunterNativeSites.SetButchered(0, 1, 2, 3);
+                HunterNativeSites.SetButchered(HunterNativeSites.UnitCapacity, 1, 2, 3);
+                Assert.IsTrue(HunterNativeSites.TryGetButchered(42, out uint hunter, out uint corpse, out int type));
+                Assert.AreEqual(1001u, hunter);
+                Assert.AreEqual(2002u, corpse);
+                Assert.AreEqual((int)eChimps.CHIMP_TYPE_GOAT, type);
+                Assert.IsFalse(HunterNativeSites.TryGetButchered(41, out _, out _, out _));
+                Assert.IsFalse(HunterNativeSites.TryGetButchered(0, out _, out _, out _));
+                Assert.IsFalse(HunterNativeSites.TryGetButchered(HunterNativeSites.UnitCapacity, out _, out _, out _));
+            }
+            finally { HunterNativeSites.ClearTable(); }
+        }
+
         // Vanilla's Hunter writes lease 2 on each of its updates; the release decrements once per visit.
         // A held prey must stay reserved for any number of ticks; a released one must become free within
         // two passes over the unit array, which is what Vanilla's deer update achieves within two updates.
@@ -146,7 +188,9 @@ namespace APISharedTests
             HuntablePreyCatalogBuilder.Compile(registrations);
 
         private static HuntablePreyRegistration Prey(string owner, string id, eChimps type, int priority = 0, int handlingCost = 0) =>
-            new HuntablePreyRegistration(owner, id, new HuntablePreyDefinition((int)type, handlingCost), priority,
-                HuntablePreyCatalogBuilder.UnsupportedReason((int)type));
+            Register(owner, id, new HuntablePreyDefinition((int)type, handlingCost), priority);
+
+        private static HuntablePreyRegistration Register(string owner, string id, HuntablePreyDefinition definition, int priority = 0) =>
+            new HuntablePreyRegistration(owner, id, definition, priority, HuntablePreyCatalogBuilder.UnsupportedReason(definition.UnitType));
     }
 }

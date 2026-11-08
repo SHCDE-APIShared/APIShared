@@ -927,4 +927,7 @@ Hunters may hunt, including types outside `eChimps`, and reads the current
 catalog (`Current`, always with deer and goat). APIShared admits active types to
 Vanilla's Hunter query and releases the Hunter's reservation for them without a
 per-unit hook. Each mission freezes the catalog; multiplayer peers must agree on
-its digest. See [the huntable-prey contract](HUNTING.md).
+its digest. `HunterTargetPolicies` admits or refuses query candidates with the
+correct Hunter id; `HuntablePreyDefinition.WithBaseMeat` and `HunterMeatYieldEvents`
+set the base meat per butchered animal, kept in saves. See
+[the huntable-prey contract](HUNTING.md).

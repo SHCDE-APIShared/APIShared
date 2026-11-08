@@ -9,8 +9,8 @@ namespace APIShared.Wildlife
     /// The type is a raw native unit type (the value of <c>GameUnit.r_UnitChimp</c>), so types outside
     /// <c>eChimps</c> can be registered as well. How such units enter the world is the registering mod's
     /// business. APIShared admits the type to Vanilla's Hunter target query and releases the native Hunter
-    /// reservation for it. Shooting, meat, corpse handling and fleeing follow Vanilla for that type until a
-    /// consumer changes them.
+    /// reservation for it, and applies <see cref="BaseMeat"/> when set. Shooting, corpse handling and fleeing
+    /// follow Vanilla for that type until a consumer changes them.
     /// </remarks>
     public sealed class HuntablePreyDefinition
     {
@@ -21,10 +21,19 @@ namespace APIShared.Wildlife
         public HuntablePreyDefinition(int unitType, int handlingCost = 0)
         { UnitType = unitType; HandlingCost = handlingCost; }
 
+        private HuntablePreyDefinition(int unitType, int handlingCost, int? baseMeat)
+            : this(unitType, handlingCost) { BaseMeat = baseMeat; }
+
+        /// <summary>Copies the definition with a base meat for the Hunter's yield of this animal, from 0
+        /// through 1000 before Vanilla's bonus. Null keeps Vanilla's base of 6.</summary>
+        public HuntablePreyDefinition WithBaseMeat(int? baseMeat) => new HuntablePreyDefinition(UnitType, HandlingCost, baseMeat);
+
         /// <summary>Raw native unit type.</summary>
         public int UnitType { get; }
         /// <summary>Cost hint in map ticks for target-ranking consumers.</summary>
         public int HandlingCost { get; }
+        /// <summary>Base meat of the Hunter's yield, or null for Vanilla's base. See <see cref="HunterMeatYieldEvents"/>.</summary>
+        public int? BaseMeat { get; }
     }
 
     /// <summary>Result of the most recent catalog preparation for a registration.</summary>
@@ -91,10 +100,11 @@ namespace APIShared.Wildlife
     /// <summary>Immutable entry of a huntable-prey catalog.</summary>
     public sealed class HuntablePreyEntry
     {
-        internal HuntablePreyEntry(int unitType, int handlingCost, string ownerGuid, string registrationId, bool isVanilla)
+        internal HuntablePreyEntry(int unitType, int handlingCost, int? baseMeat, string ownerGuid, string registrationId, bool isVanilla)
         {
             UnitType = unitType;
             HandlingCost = handlingCost;
+            BaseMeat = baseMeat;
             OwnerGuid = ownerGuid;
             RegistrationId = registrationId;
             IsVanilla = isVanilla;
@@ -104,6 +114,8 @@ namespace APIShared.Wildlife
         public int UnitType { get; }
         /// <summary>Cost hint in map ticks; zero for the built-in deer and goat entries.</summary>
         public int HandlingCost { get; }
+        /// <summary>Base meat of the Hunter's yield, or null for Vanilla's base of 6.</summary>
+        public int? BaseMeat { get; }
         /// <summary>Owner of the admitted registration; APIShared's GUID for a built-in entry.</summary>
         public string OwnerGuid { get; }
         /// <summary>Admitted registration ID; empty for a built-in entry.</summary>

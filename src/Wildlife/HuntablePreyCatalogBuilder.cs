@@ -54,10 +54,10 @@ namespace APIShared.Wildlife
             var entries = new List<HuntablePreyEntry>(winners.Count + 2);
             foreach (int vanilla in new[] { Deer, Goat })
                 if (!winners.ContainsKey(vanilla))
-                    entries.Add(new HuntablePreyEntry(vanilla, 0, APISharedPlugin.PluginGuid, "", true));
+                    entries.Add(new HuntablePreyEntry(vanilla, 0, null, APISharedPlugin.PluginGuid, "", true));
             foreach (var winner in winners.Values)
                 entries.Add(new HuntablePreyEntry(winner.Definition.UnitType, winner.Definition.HandlingCost,
-                    winner.OwnerGuid, winner.RegistrationId, false));
+                    winner.Definition.BaseMeat, winner.OwnerGuid, winner.RegistrationId, false));
             var ordered = entries.OrderBy(entry => entry.UnitType).ToArray();
             return new HuntablePreyCatalog(ordered, DigestOf(ordered), winners.Count != 0);
         }
@@ -69,12 +69,15 @@ namespace APIShared.Wildlife
             using (var writer = new BinaryWriter(data, Encoding.UTF8))
             using (var sha = SHA256.Create())
             {
-                writer.Write("huntable-prey/1");
+                // Version 2 adds the base meat; catalogs without any keep the version-1 bytes and digest.
+                bool hasMeat = entries.Any(entry => entry.BaseMeat.HasValue);
+                writer.Write(hasMeat ? "huntable-prey/2" : "huntable-prey/1");
                 writer.Write(entries.Length);
                 foreach (var entry in entries)
                 {
                     writer.Write(entry.UnitType);
                     writer.Write(entry.HandlingCost);
+                    if (hasMeat) writer.Write(entry.BaseMeat ?? -1);
                     writer.Write(entry.OwnerGuid);
                     writer.Write(entry.RegistrationId);
                     writer.Write(entry.IsVanilla);

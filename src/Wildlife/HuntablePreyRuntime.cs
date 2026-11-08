@@ -13,11 +13,12 @@ using SHCDESE.Interop;
 
 namespace APIShared.Wildlife
 {
-    // Process-owned. Two rooted, permanently installed paths do the work, both dormant (one volatile
-    // read) while no registered type is active: the Extender's Hunter-query event and a simulation tick.
+    // Process-owned. Rooted, permanently installed paths do the work, each dormant (one volatile read)
+    // without demand: the Extender's Hunter-query event (catalog admission, target policies), a
+    // simulation tick (reservation release) and the Extender's yield event (meat, see the Rules part).
     // The mission owner (WorkerProductionRuntime) freezes, activates and ends the catalog together with
     // the weapon-workshop catalog, because both share its multiplayer peer agreement.
-    internal static unsafe class HuntablePreyRuntime
+    internal static unsafe partial class HuntablePreyRuntime
     {
         // Vanilla's Hunter lease word (manager form +0xAA4). The Hunter writes 2 on each of its own
         // updates while it holds the prey (0x12FE63, 0x130044, 0x130259, 0x130338, 0x13064F); the
@@ -39,7 +40,7 @@ namespace APIShared.Wildlife
         private static int worldActive, available, lastTick;
         private static bool hasLastTick;
         private static ManualLogSource log;
-        private static IDisposable querySubscription;
+        private static IDisposable querySubscription, yieldSubscription;
         private static string unavailable = "The huntable-prey service has not been initialized.";
 
         internal static bool IsAvailable => Volatile.Read(ref available) != 0;
@@ -58,8 +59,15 @@ namespace APIShared.Wildlife
                 if (!SimulationTickEvents.TryRegister(APISharedPlugin.PluginGuid, "wildlife/hunter-reservation", Release,
                         out string reason, int.MinValue))
                     throw new InvalidOperationException(reason);
+                // Meat yields and target policies need the Hunter native sites; the catalog does not.
+                if (HunterNativeSites.IsAvailable)
+                {
+                    yieldSubscription = UnitR3EventHooks.OnCalculateBonusYield.Observable.Subscribe(OnYield);
+                    RegisterSaveRecord();
+                }
                 Volatile.Write(ref available, 1);
-                NativeApiLog.Info(log, "Huntable prey ready: Hunter-query admission and reservation release stay dormant until a registered type is active.");
+                NativeApiLog.Info(log, "Huntable prey ready: Hunter-query admission and reservation release stay dormant until a registered type is active; " +
+                    "target policies and meat yields " + (HunterNativeSites.IsAvailable ? "available." : "unavailable: " + HunterNativeSites.Diagnostic));
             }
             catch (Exception error)
             {
@@ -78,8 +86,11 @@ namespace APIShared.Wildlife
             if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || owner.Length > 128 || id.Length > 128 ||
                 StringComparer.Ordinal.Equals(owner, APISharedPlugin.PluginGuid))
             { reason = "A valid consumer GUID and registration ID are required."; return false; }
-            if (definition == null || definition.UnitType < 1 || definition.UnitType > ushort.MaxValue || definition.HandlingCost < 0)
-            { reason = "The unit type must be from 1 through 65535 and the handling cost non-negative."; return false; }
+            if (definition == null || definition.UnitType < 1 || definition.UnitType > ushort.MaxValue || definition.HandlingCost < 0 ||
+                definition.BaseMeat < 0 || definition.BaseMeat > MaximumBaseMeat)
+            { reason = "The unit type must be from 1 through 65535, the handling cost non-negative and the base meat from 0 through " + MaximumBaseMeat + "."; return false; }
+            if (definition.BaseMeat.HasValue && !HunterNativeSites.IsAvailable)
+            { reason = "A base meat needs the Hunter native sites: " + HunterNativeSites.Diagnostic; return false; }
 
             lock (Gate)
             {
@@ -142,6 +153,7 @@ namespace APIShared.Wildlife
             Volatile.Write(ref active, catalog);
             Volatile.Write(ref demand, HuntablePreyCatalogBuilder.BuildDemandTable(catalog));
             Volatile.Write(ref worldActive, 1);
+            UpdateMeatDemand();
             if (changed && catalog.HasRegistrations)
                 NativeApiLog.Info(log, "Huntable prey active for this mission: " + Describe(catalog) + ", digest=" + catalog.Digest + ".");
         }
@@ -153,6 +165,7 @@ namespace APIShared.Wildlife
             Volatile.Write(ref active, HuntablePreyCatalogBuilder.VanillaOnly);
             frozen = HuntablePreyCatalogBuilder.VanillaOnly;
             hasLastTick = false;
+            UpdateMeatDemand();
         }
 
         private static string Describe(HuntablePreyCatalog catalog)
@@ -166,15 +179,21 @@ namespace APIShared.Wildlife
             return "types=[" + string.Join(", ", parts) + "]";
         }
 
-        // The Extender raises this Pre event for every candidate after Vanilla's own type test (deer/goat),
-        // directly before the reservation test at 0x18AFFD. APIShared subscribes before consumers, which
-        // may still refine the decision afterwards.
+        // The Extender's hook at 0x18AFE6 replaces Vanilla's type test (deer/goat, emulated as its default)
+        // and raises this Pre event for candidates that are alive, no corpse and unowned, directly before
+        // the reservation test at 0x18AFFD. It also runs for the local speech path 0x1941B4 (idle reason
+        // of the selected unit), so this handler must stay free of side effects. APIShared subscribes
+        // before consumers, which may still refine the decision afterwards.
         private static void OnHunterQuery(UnitHunterQueryTargetEventArgs args)
         {
             byte[] table = Volatile.Read(ref demand);
-            if (table == null || args.Phase != EventHookPhase.Pre) return;
-            if (UnitAccess.TryGetById(args.QueryUnitId, out GameUnit* unit, out _) && table[(ushort)unit->r_UnitChimp] != 0)
+            var rules = Volatile.Read(ref policies);
+            if (table == null && rules.Length == 0 || args.Phase != EventHookPhase.Pre) return;
+            if (!UnitAccess.TryGetById(args.QueryUnitId, out GameUnit* unit, out _)) return;
+            if (table != null && table[(ushort)unit->r_UnitChimp] != 0)
                 args.IsValidTarget = true;
+            if (rules.Length != 0)
+                ApplyPolicies(args, unit, Volatile.Read(ref worldActive) != 0 ? Volatile.Read(ref active) : HuntablePreyCatalogBuilder.VanillaOnly, rules);
         }
 
         // Vanilla's deer/goat update decrements a positive lease by one; registered types get the same

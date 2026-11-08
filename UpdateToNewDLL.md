@@ -22,6 +22,7 @@
 - [Managed Script Extender and game targets of Lord presentation and move diagnostics](#managed-script-extender-and-game-targets-of-lord-presentation-and-move-diagnostics)
 - [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
 - [Huntable prey reservation word](#huntable-prey-reservation-word)
+- [Hunter native sites](#hunter-native-sites)
 
 ## Shared health initialization
 
@@ -1425,3 +1426,40 @@ executable target: the service writes one data field and reads the Extender's
   the service unavailable; registrations then fail with the reason and only deer and goat stay
   huntable. Before adding a hash, repeat the complete access audit of the word, including all
   unit types that reuse it, and check that Vanilla still renews the lease on every Hunter update.
+
+## Hunter native sites
+
+Owner: `Wildlife.HunterNativeSites` (generators in `Wildlife.HunterNativeAssembly`, executed by
+`tests/WorkerProductionBonus.NativeTests/HunterSiteTests.cs`); users: `Wildlife.HuntablePreyRuntime`
+(target policies, meat yields) and `ScriptExtenderFixes.HunterEventIdentityRuntime`. Reference native
+SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; site group
+`Wildlife.HunterSites`. Two RedBird `X64InlineHook`s with custom generators, purely native, published
+together and never unpatched. Any other hash, a snapshot or live byte difference, a changed
+continuation (a foreign `jmp` at the continuation is accepted), a backend span other than the audited
+length or a generated stub that differs from the expected bytes leaves both unavailable; target
+policies, meat yields and the event-id correction are then refused or inactive. No pattern fallback.
+
+- Query entry `0x18AF50`, 14 bytes `48 89 5C 24 18 55 56 57 41 54 41 55 41 56`, continuation
+  `41 57 48 83 EC 40`. ABI `0x18AF50(rcx = unit manager, edx = querying unit id)`, six callers
+  (`0x12FDBC`, `0x12FF7E`, `0x130521`, `0x1305C7`, `0x1306DD`, `0x1941B4`). The stub stores EDX and
+  `[rsp]` (the caller's return address) in a private slot, using RAX and R10, which are free at a
+  function entry, then replays the bytes. A return address of `0x1941B9` marks the presentation-only
+  query of `0x1940C0` (idle speech of the selected unit). No inbound branch into the span; the
+  Script Extender's hook at `0x18AFE6` is located from the function start by its own scan at
+  Extender startup, before APIShared publishes.
+- Corpse arrival `0x1306AE` in HunterUpdate `0x12FC70` state `0xB`, 15 bytes
+  `66 42 83 BC 31 E6 06 00 00 2C B8 E8 03 00 00`, continuation `66 42 89 84 31 20 09 00 00`.
+  Registers: RBX = Hunter id (loaded from the current unit `0x9302C4` at `0x12FC8C`), RDI = Hunter id
+  * 0x490, R14 = unit manager (`0x130695`), RCX = corpse id * 0x490, EAX = corpse global, just compared
+  with the Hunter's target at `0x1306A4`. Behind a demand byte the stub writes Hunter global
+  (`[rdi+r14+0x6F0]`), corpse global and corpse type (`[rcx+r14+0x6E6]`) to a 10,000-entry table, saving
+  R10/R11; the flags are dead at entry because the replayed `cmp` sets them. Every butchered animal
+  passes it exactly once; no inbound branch into the span.
+- The meat-pickup correction reads the dispatcher's current unit `0x9302C4` (same constant as
+  `WorkerProductionBonusNativeDefinition.CurrentUnitRva`); the Extender's pickup hook at `0x12FD7C`
+  runs inside HunterUpdate, where that value is the Hunter. The query correction writes the backing
+  field `<HunterUnitId>k__BackingField` of `UnitHunterQueryTargetEventArgs`, validated on a probe
+  instance at startup.
+- Before adding a hash: re-audit all six query callers and their arguments, the state-`0xB` arrival
+  (registers, the global-id check before it, every path into state 2), the yield call `0x1309FE`, and
+  the Extender's two hooks (stack shift and registers) for the installed Extender and RedBird.
