@@ -18,7 +18,7 @@ namespace APIShared
     // HostStartGame only publishes GO! in the audited managed assembly. This single
     // permanent gate delays that publication, not native post-load success. All mutable
     // transaction work runs on Unity: RegisterMessage supplies copied FIFO delivery.
-    internal static class MapRecordLoadCoordinator
+    internal static partial class MapRecordLoadCoordinator
     {
         private delegate void HostStart(Platform_Multiplayer self);
         private static Hook hook;
@@ -154,127 +154,6 @@ namespace APIShared
             if (!SavegameRecordComparison.IsValid(records) || records.Any(record => record.State == SavegameRecordState.Unreadable))
                 throw new InvalidDataException("Local map has unreadable or invalid declared simulation records.");
             return records;
-        }
-        private sealed class LobbySnapshot
-        {
-            internal readonly ulong Lobby;
-            internal readonly string Map, Settings, Aiv, MaxPlayers, GameType, ModFingerprint, Fingerprint;
-            internal readonly int? Crc;
-            internal readonly int AiPlayers, TrailId, Mission;
-            internal readonly byte[] Digests;
-            internal readonly bool Trail, OrderSwapped;
-            internal readonly KeyValuePair<ulong, int>[] Slots;
-            internal readonly Dictionary<string, Dictionary<string, byte[]>> Mods;
-
-            internal LobbySnapshot(Platform_Multiplayer.MPLobby lobby)
-            {
-                Lobby = lobby.id.m_SteamID;
-                Map = lobby.mapFileName ?? "";
-                Crc = int.TryParse(lobby.crc, NumberStyles.Integer, CultureInfo.InvariantCulture, out int crc) ? (int?)crc : null;
-                Settings = lobby.settings ?? "";
-                Aiv = lobby.AIVDataChecksum() ?? "";
-                MaxPlayers = lobby.maxPlayers ?? "";
-                // Vanilla publishes CountAIPlayers() to Steam but never maintains the host's AIPlayers field.
-                AiPlayers = lobby.members != null && lobby.members.All(member => member != null) ? lobby.CountAIPlayers() : -1;
-                GameType = lobby.gameTypeCoop ?? "";
-                Trail = lobby.coopTrailGame;
-                // Vanilla leaves inactive trail fields at different defaults on the host and joining client.
-                TrailId = Trail ? lobby.coopTrailID : 0;
-                Mission = Trail ? lobby.coopSelectedMission : 0;
-                OrderSwapped = Trail && lobby.coopOrderSwapped;
-                Slots = LobbyReadinessSupport.ObservedHumans(lobby).Select(id => new KeyValuePair<ulong, int>(id, lobby.getThisPlayerFromSteamID(id))).ToArray();
-                Mods = SavegameModSettings.CaptureHostSettingsForReadiness();
-                ModFingerprint = SavegameLoadAgreement.Fingerprint(Mods);
-                Digests = new byte[Categories.Length * DigestLength];
-                using (var memory = new MemoryStream())
-                using (var writer = new BinaryWriter(memory))
-                using (var sha = SHA256.Create())
-                {
-                    // Vanilla already publishes FileHeader.fileName without the file extension.
-                    writer.Write(Map.ToUpperInvariant());
-                    writer.Write(Crc.HasValue);
-                    if (Crc.HasValue) writer.Write(Crc.Value);
-                    WriteDigest(0, memory, sha);
-                    writer.Write(Settings); writer.Write(MaxPlayers); writer.Write(GameType);
-                    WriteDigest(1, memory, sha);
-                    writer.Write(AiPlayers); writer.Write(Aiv);
-                    WriteDigest(2, memory, sha);
-                    writer.Write(Trail); writer.Write(TrailId); writer.Write(Mission); writer.Write(OrderSwapped);
-                    WriteDigest(3, memory, sha);
-                    writer.Write(Slots.Length);
-                    foreach (var slot in Slots) { writer.Write(slot.Key); writer.Write(slot.Value); }
-                    WriteDigest(4, memory, sha);
-                    writer.Write(ModFingerprint);
-                    WriteDigest(5, memory, sha);
-                }
-                Fingerprint = Digest(Digests);
-            }
-
-            private void WriteDigest(int category, MemoryStream memory, SHA256 sha)
-            {
-                byte[] digest = sha.ComputeHash(memory.GetBuffer(), 0, (int)memory.Length);
-                Buffer.BlockCopy(digest, 0, Digests, category * DigestLength, DigestLength);
-                memory.SetLength(0);
-            }
-
-            internal IEnumerable<string> PropertyDigests()
-            {
-                foreach (var mod in Mods.OrderBy(x => x.Key, StringComparer.Ordinal))
-                {
-                    yield return "mod=" + mod.Key + " properties=" + mod.Value.Count;
-                    foreach (var property in mod.Value.OrderBy(x => x.Key, StringComparer.Ordinal))
-                        yield return "mod=" + mod.Key + " property=" + property.Key + " sha256=" + Digest(property.Value);
-                }
-            }
-
-            internal string Summary() => $"map={Map}, crc={Crc}, vanillaSettings={Digest(System.Text.Encoding.UTF8.GetBytes(Settings))}, " +
-                $"ai={AiPlayers}, aiv={Aiv}, maxPlayers={MaxPlayers}, gameType={GameType}, trail={Trail}/{TrailId}/{Mission}/{OrderSwapped}, " +
-                $"slots={string.Join(",", Slots.Select(slot => slot.Key + ":" + slot.Value))}, modSettings={ModFingerprint}, fingerprint={Fingerprint}";
-
-            internal List<string> DescribeChanges(LobbySnapshot current, List<string> detail = null)
-            {
-                var categories = Differences(Digests, current.Digests).ToList();
-                if (ModFingerprint == current.ModFingerprint) return categories;
-                if (detail == null) return categories;
-                foreach (string mod in Mods.Keys.Union(current.Mods.Keys, StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal))
-                {
-                    Mods.TryGetValue(mod, out var before);
-                    current.Mods.TryGetValue(mod, out var after);
-                    if (before == null || after == null) detail.Add("mod " + mod + (before == null ? " added" : " removed"));
-                    foreach (string property in (before?.Keys.AsEnumerable() ?? Enumerable.Empty<string>())
-                        .Union(after?.Keys.AsEnumerable() ?? Enumerable.Empty<string>(), StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal))
-                    {
-                        byte[] oldValue = null, newValue = null;
-                        before?.TryGetValue(property, out oldValue);
-                        after?.TryGetValue(property, out newValue);
-                        if (oldValue != null && newValue != null && oldValue.SequenceEqual(newValue)) continue;
-                        detail.Add(mod + "." + property + ": " + Digest(oldValue) + " -> " + Digest(newValue));
-                    }
-                }
-                return categories;
-            }
-
-            internal static string Digest(byte[] bytes)
-            {
-                if (bytes == null) return "missing";
-                return Sha256Hex.Of(bytes);
-            }
-        }
-
-        private static string[] Differences(byte[] expected, byte[] observed, int offset = 0)
-        {
-            var result = new List<string>();
-            for (int category = 0; category < Categories.Length; category++)
-            {
-                int start = category * DigestLength;
-                for (int i = start; i < start + DigestLength; i++)
-                {
-                    if (expected[i] == observed[i + offset]) continue;
-                    result.Add(Categories[category]);
-                    break;
-                }
-            }
-            return result.ToArray();
         }
 
         private static string CategoryLabels(IEnumerable<string> categories) =>
@@ -467,63 +346,6 @@ namespace APIShared
             packet.Token?.Length == 32 && Guid.TryParseExact(packet.Token, "N", out _) && !retired.Contains(packet.Token) &&
             !string.IsNullOrWhiteSpace(packet.SaveName) && packet.SaveName.Length <= 1024 &&
             packet.Time == 0 && packet.Fingerprint?.Length == 64;
-
-        private static bool AcceptObservation(ulong peer, SavegameLoadPacket packet)
-        {
-            byte[] observed = packet.Metadata;
-            if (observed?.Length != pending.Metadata.Length + 1 || observed[0] > ProductionObservation || packet.Records == null || packet.Records.Count != 0) return false;
-            var changed = Differences(pending.Metadata, observed, 1);
-            if ((observed[0] == DiffObservation) != (changed.Length != 0)) return false;
-            if (PeerObservations.TryGetValue(peer, out byte[] previous) && previous.SequenceEqual(observed)) return false;
-            PeerObservations[peer] = observed;
-            waitingReasonDirty = true;
-            LogObservation(peer, "peer status", changed, observed, preparedSnapshot);
-            return true;
-        }
-
-        private static void SendObservation(byte state)
-        {
-            bool retryDue = observationSendFailed && DateTime.UtcNow >= nextObservationRetry;
-            if (ReferenceEquals(lastSentSnapshot, lastSnapshot) && lastSentObservation != null &&
-                lastSentObservation[0] == state && !retryDue) return;
-            lastSentSnapshot = lastSnapshot;
-            var observed = new byte[lastSnapshot.Digests.Length + 1];
-            observed[0] = state;
-            Buffer.BlockCopy(lastSnapshot.Digests, 0, observed, 1, lastSnapshot.Digests.Length);
-            bool changed = lastSentObservation == null || !lastSentObservation.SequenceEqual(observed);
-            if (!changed && !retryDue) return;
-            if (changed)
-                LogObservation(SteamUser.GetSteamID().m_SteamID, "local comparison", Differences(pending.Metadata, observed, 1), observed, lastSnapshot);
-            lastSentObservation = observed;
-            waitingReasonDirty = true;
-            nextObservationRetry = DateTime.UtcNow.AddSeconds(2);
-            var packet = Reply(MapRecordReadinessPacket.ObservationOperation);
-            packet.Metadata = observed;
-            try
-            {
-                var result = channel.SendToSteamPeer(new MapRecordReadinessPacket { Value = packet }, hostId);
-                observationSendFailed = !result.Submitted;
-                if (observationSendFailed) NativeApiLog.Warning(log, "Map readiness status send failed: " + result.Reason);
-            }
-            catch (Exception error)
-            {
-                observationSendFailed = true;
-                NativeApiLog.Warning(log, "Map readiness status send failed: " + error.Message);
-            }
-        }
-
-        private static void LogObservation(ulong peer, string phase, string[] changed, byte[] observed, LobbySnapshot local)
-        {
-            string prefix = $"MAP_RECORD_STATUS role={(attemptHost ? "host" : "client")} attempt={attemptId} phase={phase} peer={peer}";
-            NativeApiLog.Info(log, prefix + " state=" + observed[0] + " changed=" + string.Join(",", changed) +
-                " expected=" + BitConverter.ToString(pending.Metadata).Replace("-", "") +
-                " observed=" + BitConverter.ToString(observed, 1).Replace("-", ""));
-            if (changed.Contains("Mods") && lastLoggedModFingerprint != local.ModFingerprint)
-            {
-                lastLoggedModFingerprint = local.ModFingerprint;
-                foreach (string property in local.PropertyDigests()) NativeApiLog.Info(log, prefix + " " + property);
-            }
-        }
 
         private static bool FingerprintMatches(bool decisive)
         {
@@ -817,51 +639,6 @@ namespace APIShared
             catch (Exception error) { NativeApiLog.Error(log, "Map preparation cleanup failed: " + error); }
             if (!showError) { NativeApiLog.Debug(log, "MAP_RECORD_PREPARATION_CANCELLED: " + reason); return; }
             ShowBlocked(reason, detail, lobbyId, broadcast, localChat);
-        }
-
-        private static string BlockContext(string phase) =>
-            "MAP_RECORD_LOAD_BLOCKED role=" + (attemptId == null ? "unknown" : attemptHost ? "host" : "client") +
-            " phase=" + phase + " attempt=" + (attemptId ?? LobbyReadinessSupport.NewAttemptId());
-
-        private static string BlockDetail(string phase)
-        {
-            var detail = new List<string> { BlockContext(phase) };
-            if (pending != null)
-                detail.Add("expectedFingerprint=" + pending.Fingerprint + ", expectedMap=" + pending.SaveName + ", expectedCrc=" + pending.Checksum);
-            if (owner?.activeLobby is Platform_Multiplayer.MPLobby lobby)
-            {
-                detail.Add("currentMap=" + lobby.mapFileName + ", currentCrc=" + lobby.crc);
-                if (pending != null)
-                    detail.Add("expectedRoster=" + pending.Roster + ", observedRoster=" + string.Join(",", LobbyReadinessSupport.ObservedHumans(lobby)));
-            }
-            if (preparedSnapshot != null) detail.Add("prepared: " + preparedSnapshot.Summary());
-            if (lastSnapshot != null)
-            {
-                detail.Add("last observed: " + lastSnapshot.Summary());
-                if (preparedSnapshot != null)
-                {
-                    var categories = preparedSnapshot.DescribeChanges(lastSnapshot, detail);
-                    if (categories.Count != 0) detail.Insert(1, "changed=" + string.Join(", ", categories));
-                }
-            }
-            if (agreement != null) detail.Add("unconfirmed=" + string.Join(", ", agreement.Unconfirmed.Select(LobbyReadinessSupport.PlayerName)));
-            if (lastSnapshot != null && pending != null && !fingerprintMatched)
-                detail.Add("host/local differences=" + string.Join(",", Differences(pending.Metadata, lastSnapshot.Digests)));
-            foreach (var report in PeerObservations.OrderBy(item => item.Key))
-                detail.Add("peer=" + report.Key + " state=" + report.Value[0] +
-                    " changed=" + string.Join(",", Differences(pending.Metadata, report.Value, 1)));
-            if (configurationWaiting != null) detail.Add("configuration=" + configurationWaiting);
-            return string.Join("; ", detail);
-        }
-
-        private static void ShowRejectedRequest(Platform_Multiplayer.MPLobby lobby, string reason) => ShowBlocked(reason,
-            "MAP_RECORD_LOAD_BLOCKED role=host phase=request attempt=" + LobbyReadinessSupport.NewAttemptId(), lobby.id.m_SteamID, true, false);
-
-        private static void ShowBlocked(string reason, string detail, ulong lobbyId, bool broadcast, bool localChat)
-        {
-            LobbyLaunchStatus.ReportPreparationBlocked(log, reason, detail, lobbyId, broadcast, localChat);
-            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(UiText.Get("Savegames.LoadTitle"), () => { }, reason); }
-            catch (Exception error) { NativeApiLog.Error(log, "Map preparation failure popup unavailable: " + error.Message); }
         }
 
         private static void Clear()
