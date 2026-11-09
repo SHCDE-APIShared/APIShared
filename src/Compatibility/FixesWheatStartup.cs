@@ -113,12 +113,7 @@ namespace APIShared.Compatibility
         {
             IntPtr module = GetModuleHandle("CrusaderDE.dll");
             Require(module != IntPtr.Zero, "CrusaderDE not loaded during synchronous startup");
-            var path = new StringBuilder(32768);
-            uint count = GetModuleFileName(module, path, path.Capacity);
-            Require(count > 0 && count < path.Capacity, "Native module path unavailable");
             ulong image = (ulong)module.ToInt64();
-            // The unpatched code of the loaded module; live memory is compared against it below.
-            var disk = new FixesWheatAnalysis.PeImage(File.ReadAllBytes(path.ToString()));
             Type owner = fixesAssembly.GetType("Fixes.Detours.FixesAIDetours", true);
             var handle = ReadField<HookHandle<X64InlineHook>>(owner, "c_game_ai_sell_item_handler_hook");
             var flags = ReadField<NativeFlagArray>(owner, "wheatSaleCategoryFlagArray");
@@ -133,10 +128,18 @@ namespace APIShared.Compatibility
             ulong site = hook.TargetAddress;
             int displacedLength = hook.DisplacedByteCount;
             Require(hook.IsInstalled && handle.IsInstalled && handle.ResolvedAddress == site &&
-                site > image && site - image < disk.SizeOfImage && displacedLength >= 14 && displacedLength <= 64,
+                site > image && displacedLength >= 14 && displacedLength <= 64,
                 "Hook installation/target/displacement contract changed");
             Require(flags != null && flags.Length >= 9 && flags.Address != 0 && hook.StubAddress != IntPtr.Zero,
                 "Wheat flag array/stub contract changed");
+
+            // Only an installed candidate needs the unpatched disk image for the live checks below.
+            var path = new StringBuilder(32768);
+            uint count = GetModuleFileName(module, path, path.Capacity);
+            Require(count > 0 && count < path.Capacity, "Native module path unavailable");
+            var disk = new FixesWheatAnalysis.PeImage(File.ReadAllBytes(path.ToString()));
+            Require(site - image < disk.SizeOfImage, "Hook installation/target/displacement contract changed");
+
             ulong stub = (ulong)hook.StubAddress.ToInt64();
             ulong flagAddress = flags.Address;
             FixesWheatMemory.Read(flagAddress, flags.Length, false);

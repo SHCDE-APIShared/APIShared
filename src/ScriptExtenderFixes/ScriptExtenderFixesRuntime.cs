@@ -143,8 +143,36 @@ namespace APIShared.ScriptExtenderFixes
         {
             if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(loaded) ||
                 !File.Exists(expected) || !File.Exists(loaded)) return false;
-            byte[] left = File.ReadAllBytes(expected), right = File.ReadAllBytes(loaded);
-            return left.Length == right.Length && left.SequenceEqual(right);
+            using (var left = File.OpenRead(expected))
+            using (var right = File.OpenRead(loaded))
+            {
+                long remaining = left.Length;
+                if (remaining != right.Length) return false;
+                if (remaining == 0) return true;
+                int blockSize = (int)Math.Min(remaining, 64 * 1024);
+                var leftBytes = new byte[blockSize];
+                var rightBytes = new byte[blockSize];
+                while (remaining > 0)
+                {
+                    int count = (int)Math.Min(remaining, blockSize);
+                    ReadBlock(left, leftBytes, count);
+                    ReadBlock(right, rightBytes, count);
+                    if (!leftBytes.AsSpan(0, count).SequenceEqual(rightBytes.AsSpan(0, count))) return false;
+                    remaining -= count;
+                }
+                return true;
+            }
+        }
+
+        private static void ReadBlock(FileStream stream, byte[] buffer, int count)
+        {
+            int offset = 0;
+            while (offset < count)
+            {
+                int read = stream.Read(buffer, offset, count - offset);
+                if (read == 0) throw new EndOfStreamException("Native partner changed during comparison: " + stream.Name);
+                offset += read;
+            }
         }
 
         private static MethodInfo Method(Type type, string name, bool isStatic, Type result, params Type[] parameters)
