@@ -2756,6 +2756,23 @@ APIShared.SavegameModSettingsRecordFormatter | public sealed class APIShared.Sav
 APIShared.SavegameModSettingsRecordFormatter | public .ctor()
 APIShared.SavegameModSettingsRecordFormatter | public APIShared.SavegameModSettingsRecord Deserialize(ref MessagePack.MessagePackReader reader, MessagePack.MessagePackSerializerOptions options)
 APIShared.SavegameModSettingsRecordFormatter | public void Serialize(ref MessagePack.MessagePackWriter writer, APIShared.SavegameModSettingsRecord value, MessagePack.MessagePackSerializerOptions options)
+APIShared.Savegames.ManagedSaveCall | public sealed class APIShared.Savegames.ManagedSaveCall
+APIShared.Savegames.ManagedSaveCall | public bool LockMap { get; }
+APIShared.Savegames.ManagedSaveCall | public bool MapSave { get; }
+APIShared.Savegames.ManagedSaveCall | public bool TempLockOnly { get; }
+APIShared.Savegames.ManagedSaveCall | public int RealScreenCentreX { get; }
+APIShared.Savegames.ManagedSaveCall | public int RealScreenCentreY { get; }
+APIShared.Savegames.ManagedSaveCall | public int ScreenCentreX { get; }
+APIShared.Savegames.ManagedSaveCall | public int ScreenCentreY { get; }
+APIShared.Savegames.ManagedSaveCall | public string Path { get; }
+APIShared.Savegames.ManagedSaveCompletion | public sealed class APIShared.Savegames.ManagedSaveCompletion
+APIShared.Savegames.ManagedSaveCompletion | public APIShared.Savegames.ManagedSaveCall Call { get; }
+APIShared.Savegames.ManagedSaveCompletion | public System.Exception Exception { get; }
+APIShared.Savegames.ManagedSaveCompletion | public bool WasSkipped { get; }
+APIShared.Savegames.ManagedSaveCompletion | public bool? Result { get; }
+APIShared.Savegames.ManagedSaveCompletion | public string Path { get; }
+APIShared.Savegames.ManagedSaveEvents | public static class APIShared.Savegames.ManagedSaveEvents
+APIShared.Savegames.ManagedSaveEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Savegames.ManagedSaveCall, object> begin, System.Action<APIShared.Savegames.ManagedSaveCompletion, object> end, out string reason, int order = 0)
 APIShared.Savegames.SaveLoadDialogCallbacks | public sealed class APIShared.Savegames.SaveLoadDialogCallbacks
 APIShared.Savegames.SaveLoadDialogCallbacks | public .ctor()
 APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext, APIShared.Savegames.SaveLoadDialogOutcome> Closed { get; set; }
@@ -3175,6 +3192,26 @@ APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryDeclareMapAssi
 APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryGetState(APIShared.Units.AiMilitary.AiUnitRef unit, out APIShared.Units.AiMilitary.AiMilitaryAssignmentResult state)
 APIShared.Units.AiMilitary.IAiMilitarySpawnScope | public interface APIShared.Units.AiMilitary.IAiMilitarySpawnScope : System.IDisposable
 APIShared.Units.AiMilitary.IAiMilitarySpawnScope | public System.Collections.Generic.IReadOnlyList<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> Complete()
+APIShared.Units.AttackTargetCondition | public enum APIShared.Units.AttackTargetCondition : int
+APIShared.Units.AttackTargetCondition | Always = 0
+APIShared.Units.AttackTargetCondition | WhilePeaceTimeActive = 1
+APIShared.Units.AttackTargetRule | public struct APIShared.Units.AttackTargetRule
+APIShared.Units.AttackTargetRule | public .ctor(APIShared.Units.AttackTargetSelector attacker, APIShared.Units.AttackTargetSelector target, bool bidirectional = false, APIShared.Units.AttackTargetCondition condition = (APIShared.Units.AttackTargetCondition)0)
+APIShared.Units.AttackTargetRule | public APIShared.Units.AttackTargetCondition Condition { get; }
+APIShared.Units.AttackTargetRule | public APIShared.Units.AttackTargetSelector Attacker { get; }
+APIShared.Units.AttackTargetRule | public APIShared.Units.AttackTargetSelector Target { get; }
+APIShared.Units.AttackTargetRule | public bool Bidirectional { get; }
+APIShared.Units.AttackTargetRuleRegistration | public sealed class APIShared.Units.AttackTargetRuleRegistration
+APIShared.Units.AttackTargetRuleRegistration | public bool TryReplaceRules(APIShared.MissionContext mission, long revision, System.Collections.Generic.IReadOnlyList<APIShared.Units.AttackTargetRule> rules, out string reason)
+APIShared.Units.AttackTargetRuleRegistration | public bool TrySetConfiguredRules(System.Collections.Generic.IReadOnlyList<APIShared.Units.AttackTargetRule> rules, out string reason)
+APIShared.Units.AttackTargetRules | public static class APIShared.Units.AttackTargetRules
+APIShared.Units.AttackTargetRules | public static bool IsAvailable { get; }
+APIShared.Units.AttackTargetRules | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Units.AttackTargetRuleRegistration registration, out string reason)
+APIShared.Units.AttackTargetSelector | public struct APIShared.Units.AttackTargetSelector
+APIShared.Units.AttackTargetSelector | public .ctor(int? playerId = null, SHCDESE.Interop.eChimps? unitType = null, uint? globalId = null)
+APIShared.Units.AttackTargetSelector | public SHCDESE.Interop.eChimps? UnitType { get; }
+APIShared.Units.AttackTargetSelector | public int? PlayerId { get; }
+APIShared.Units.AttackTargetSelector | public uint? GlobalId { get; }
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4

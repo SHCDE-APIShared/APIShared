@@ -79,7 +79,7 @@ namespace APIShared.Networking
                 if (authorize != null && !authorize(message)) return;
                 if (!capture(expectedPacketId, out var current) || !native.Matches(current))
                 { report("Native Chore context changed during validation; delivery rejected.", null); return; }
-                using (Simulation.SimulationMutationScope.Enter()) execute(message);
+                using (Simulation.SimulationMutationScope.EnterAuthenticatedChore()) execute(message);
             }
             catch (Exception error) { report("Authenticated Chore validation or execution failed.", error); }
         }

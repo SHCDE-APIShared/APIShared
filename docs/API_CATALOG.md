@@ -50,6 +50,18 @@ missions, unfinished/repeated loads and unavailable sources.
 `TryGetElapsedTicks(earlierTick, currentTick, out elapsedTicks)` handles signed wrap
 within the same mission and the forward Int32 half-range.
 
+## Native attack target rules
+
+`APIShared.Units.AttackTargetRules` coordinates exclusions at the audited native
+unit-pair check. Owners publish immutable player, unit type or global ID selectors.
+See [attack target rule integration](THIRD_PARTY_GUIDE.md#attack-target-rules).
+
+## Managed save calls
+
+`APIShared.Savegames.ManagedSaveEvents` pairs passive begin and completion
+callbacks at `EngineInterface.SaveSaveGame`. Use it to observe the managed
+result, a veto or an exception. See the [save observer contract](THIRD_PARTY_GUIDE.md#managed-save-observation).
+
 ## Managed engine-run boundaries
 
 `APIShared.Simulation.EngineRunEvents.TryRegister` observes the begin and end of

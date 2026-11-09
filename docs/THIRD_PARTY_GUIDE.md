@@ -275,6 +275,46 @@ on logical reactivation; execute only later matching boundaries. This preserves
 save phase and avoids repeating the boundary already present in the loaded save.
 Feature permission, recipient selection and accounting remain the consumer's job.
 
+## Attack target rules
+
+Register one or more owner-local rule sets with `Units.AttackTargetRules.TryRegister`
+during startup (APIShared 0.43.0+). Check `IsAvailable` after native publication.
+Each endpoint can match a native controlling player (including neutral zero),
+unit type, a world-specific global ID, or their conjunction. Null matches any.
+Rules are directed unless bidirectional is selected. All owners contribute
+exclusions, so an earlier match cannot be overridden by another owner.
+
+Initial configuration uses `TrySetConfiguredRules` with identical agreed
+settings on all multiplayer peers. It supports a condition on the actual
+native Peace Time flag, including its exact expiration. For world-specific
+rules use `TryReplaceRules` with the current mission and an increasing revision.
+In real multiplayer, call it from an authenticated Chore receiver after
+authorizing the native issuer and requested mutation. The receiver applies
+the agreed state on all peers at the execution tick. UI, ordinary ticks and
+Steam deliveries cannot directly publish world-specific multiplayer rules.
+Republish agreed rules for the restored world after a load.
+
+The hook covers the audited melee contact, candidate and ranged revalidation
+paths reaching the native pair predicate. It does not cover all attack orders,
+damage sources or the Hunter bypass. A nonmatch preserves the original result.
+This API does not negotiate treaties or synchronize consumer settings itself.
+
+## Managed save observation
+
+Register with `Savegames.ManagedSaveEvents.TryRegister` during startup
+(APIShared 0.42.0+). Begin receives immutable call arguments and can return
+state for its own completion callback. Both callbacks run on the caller thread
+using the same ordered registration snapshot. A nested call has its own state.
+Callbacks must return promptly and avoid invoking saves or touching the UI.
+
+Each invocation publishes completion once, even if Harmony re-enters the
+finalizer. Completion reports the boolean seen at the finalizer, a skipped original,
+or an exception. A skipped or throwing invocation has no result. The path
+seen at completion can differ from the initial path when another patch
+rewrites it. These observations neither authorize mutations nor prove that the
+file reached disk. The observer also sees map exports through the managed
+entry point. Native synchronized saves that bypass it have their own contract.
+
 ## Managed engine-run boundaries
 
 After APIShared managed initialization, register a paired observer with
