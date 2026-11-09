@@ -9,6 +9,7 @@
 - [Declaring native hook sites](#declaring-native-hook-sites)
 - [APIShared interface language](#apishared-interface-language)
 - [Native simulation ticks](#native-simulation-ticks)
+- [Managed engine-run boundaries](#managed-engine-run-boundaries)
 - [Demand-driven engine readback](#demand-driven-engine-readback)
 - [Native field knowledge](#native-field-knowledge)
 - [Diagnostic opt-in and observer demand](#diagnostic-opt-in-and-observer-demand)
@@ -273,6 +274,29 @@ For a periodic rule, capture the current map tick at completed mission start and
 on logical reactivation; execute only later matching boundaries. This preserves
 save phase and avoids repeating the boundary already present in the loaded save.
 Feature permission, recipient selection and accounting remain the consumer's job.
+
+## Managed engine-run boundaries
+
+After APIShared managed initialization, register a paired observer with
+`Simulation.EngineRunEvents.TryRegister(ownerGuid, registrationId, begin, end, out reason, order: 0)`.
+Both callbacks are required. Use a stable mod GUID and an owner-local registration
+ID. If the shared boundary is unavailable, registration fails with a reason.
+Registrations last until process exit. Keep transient scope state in the consumer.
+
+Each call admitted to the existing managed engine-run wrapper takes one
+registration snapshot. Begin and end both run in ascending order, then by
+ordinal owner GUID and registration ID. They run synchronously on the engine
+caller's thread. A registration added during a callback participates in the next
+snapshot. A nested admitted engine call takes its own snapshot and completes its
+pair before returning to the enclosing call.
+
+End runs after a zero result, a failed begin callback, or an exception in the
+original. Callback failures are isolated. The original result or exception
+reaches the caller, and calls rejected by engine admission emit no callbacks.
+There is no replay, veto, replacement or dispatch. Keep callbacks short and
+avoid touching Unity/Noesis, blocking, or initiating another engine run. The
+pair identifies a managed engine call. Use native ticks to observe advancement
+and a feature-specific readback to establish gameplay effects.
 
 ## Demand-driven engine readback
 
@@ -941,9 +965,24 @@ Successful Pre vetoes remain sticky; notification order is ascending order follo
 by ordinal owner GUID and ID. Failed Pre changes are rolled back. State is private
 to each registration, and registrations added during a call start on the next call.
 
-Use GameAction Accepted for preparations that must happen only after every Pre has
-accepted the final inputs. GameAction Post runs on normal return or veto, but not
-when the original throws; a returned zero does not acknowledge recruitment failure.
+Use `GameActionEvents.TryRegisterWithFinalValidation` when a policy must verify
+that the final payload still matches the original request after other mods' Pre
+callbacks. The validator receives read-only original and final arguments and the
+registration's own Pre State. Return false to veto. A Pre veto skips validation,
+and the first validator rejection or exception skips Accepted and the original.
+Keep validators free of side effects. Use Accepted for preparations that require
+the final inputs to have passed all vetoes.
+
+Nested commands from callbacks normally retain Vanilla passthrough. A validator
+can declare specific command kinds that must be blocked during a notification.
+APIShared copies this list at registration and applies it for the duration of the
+active invocation. A blocked nested command returns zero with no notification.
+An optional thread-safe, side-effect-free activation predicate affects the next
+invocation and must avoid calling GameAction. A predicate exception is reported
+and leaves the validator active.
+
+GameAction Post runs on normal return or veto. An original exception propagates
+without Post. A returned zero does not acknowledge recruitment failure.
 Keep native creation reconciliation in your mod. RecruitmentRequestPolicy supplies
 ceiling/reservation arithmetic, including the distinction between an untouched Ctrl
 sentinel and an explicitly assigned amount. RecruitmentMaterialUi combines stock

@@ -288,7 +288,17 @@ APIShared.Commands.GameActionAcceptedEventArgs | public int Value2 { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public object State { get; }
 APIShared.Commands.GameActionEvents | public static class APIShared.Commands.GameActionEvents
 APIShared.Commands.GameActionEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Commands.GameActionPreEventArgs> pre, System.Action<APIShared.Commands.GameActionPostEventArgs> post, out string reason, int order = 0, System.Action<APIShared.Commands.GameActionAcceptedEventArgs> accepted = null)
+APIShared.Commands.GameActionEvents | public static bool TryRegisterWithFinalValidation(string ownerGuid, string registrationId, System.Action<APIShared.Commands.GameActionPreEventArgs> pre, System.Action<APIShared.Commands.GameActionPostEventArgs> post, System.Func<APIShared.Commands.GameActionFinalValidationEventArgs, bool> validate, out string reason, int order = 0, System.Action<APIShared.Commands.GameActionAcceptedEventArgs> accepted = null, System.Collections.Generic.IEnumerable<Enums.GameActionCommand> strictNestedKinds = null, System.Func<bool> isActive = null)
 APIShared.Commands.GameActionEvents | public static long CallbackFailures { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public sealed class APIShared.Commands.GameActionFinalValidationEventArgs
+APIShared.Commands.GameActionFinalValidationEventArgs | public Enums.GameActionCommand Command { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public int ActionState { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public int OriginalActionState { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public int OriginalStructureId { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public int OriginalValue2 { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public int StructureId { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public int Value2 { get; }
+APIShared.Commands.GameActionFinalValidationEventArgs | public object State { get; }
 APIShared.Commands.GameActionPostEventArgs | public sealed class APIShared.Commands.GameActionPostEventArgs
 APIShared.Commands.GameActionPostEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionPostEventArgs | public bool HasConcreteRecruitmentAmount { get; }
@@ -2408,6 +2418,24 @@ APIShared.Presentation.AllyGoodsSectionRegistration | public sealed class APISha
 APIShared.Presentation.AllyGoodsSectionRegistration | public void RequestContentRefresh()
 APIShared.Presentation.AllyGoodsSectionRegistration | public void SetEnabled(bool enabled)
 APIShared.Presentation.AllyGoodsSectionRegistration | public void SetVisible(bool visible)
+APIShared.Presentation.AllyPanelButtonEvents | public static class APIShared.Presentation.AllyPanelButtonEvents
+APIShared.Presentation.AllyPanelButtonEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Presentation.AllyPanelButtonPreEventArgs> pre, System.Action<APIShared.Presentation.AllyPanelButtonPostEventArgs> post, out string reason, int order = 0)
+APIShared.Presentation.AllyPanelButtonInvocation | public sealed class APIShared.Presentation.AllyPanelButtonInvocation
+APIShared.Presentation.AllyPanelButtonInvocation | public CrusaderDE.HUD_AlliesPanel Panel { get; }
+APIShared.Presentation.AllyPanelButtonInvocation | public string Button { get; }
+APIShared.Presentation.AllyPanelButtonInvocation | public void InvokeOriginal(string button)
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public sealed class APIShared.Presentation.AllyPanelButtonPostEventArgs
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public CrusaderDE.HUD_AlliesPanel Panel { get; }
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public System.Exception CompletionException { get; }
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public bool OriginalCompleted { get; }
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public bool WasClaimed { get; }
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public bool WasSkipped { get; }
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public object State { get; }
+APIShared.Presentation.AllyPanelButtonPostEventArgs | public string Button { get; }
+APIShared.Presentation.AllyPanelButtonPreEventArgs | public sealed class APIShared.Presentation.AllyPanelButtonPreEventArgs : APIShared.Events.InterceptionPreEventArgs
+APIShared.Presentation.AllyPanelButtonPreEventArgs | public CrusaderDE.HUD_AlliesPanel Panel { get; }
+APIShared.Presentation.AllyPanelButtonPreEventArgs | public bool TryClaim(System.Action<APIShared.Presentation.AllyPanelButtonInvocation> execute)
+APIShared.Presentation.AllyPanelButtonPreEventArgs | public string Button { get; }
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }
@@ -2840,6 +2868,8 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Simulation.EngineRunEvents | public static class APIShared.Simulation.EngineRunEvents
+APIShared.Simulation.EngineRunEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action begin, System.Action end, out string reason, int order = 0)
 APIShared.Simulation.PeaceTimeState | public static class APIShared.Simulation.PeaceTimeState
 APIShared.Simulation.PeaceTimeState | public static APIShared.NativeCapabilityDiagnostic Diagnostic { get; }
 APIShared.Simulation.PeaceTimeState | public static bool TryGetActive(out bool active)

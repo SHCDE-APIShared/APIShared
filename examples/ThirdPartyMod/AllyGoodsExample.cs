@@ -22,6 +22,11 @@ namespace ThirdPartyMod
                 update(context.Selection); return label;
             }, out _, out string reason)) log(reason);
             if (!AllyGoodsPanelExtensions.TrySubscribeContext(owner, "quantity-example-context", update, out reason)) log(reason);
+            if (!AllyPanelButtonEvents.TryRegister(owner, "observe-goods-confirmation", null, completed =>
+            {
+                if (completed.Button == "ConfirmGoods" && completed.OriginalCompleted)
+                    log("The original panel command completed. Check transfer events for delivery.");
+            }, out reason)) log(reason);
         }
     }
 }

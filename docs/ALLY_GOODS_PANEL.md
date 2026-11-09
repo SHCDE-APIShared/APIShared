@@ -101,3 +101,21 @@ zero amounts, factory error isolation, marker cache/refresh semantics, exact goo
 parsing and the actual private managed-member contract. They do
 not verify Noesis rendering. In-game checks must cover multiple contributors,
 viewport scaling, HUD recreation and coexistence with quantity/spectator mods.
+
+
+## Coordinating button actions
+
+Use `AllyPanelButtonEvents.TryRegister` for `HUD_AlliesPanel.ButtonClicked`.
+Register on Unity with an owner GUID and an owner-local ID. The process-owned
+broker orders callbacks by order, GUID and ID. In Pre, check the current panel
+context and call `TryClaim` only for a command your mod owns. Leave execution to
+the claimed handler. The first claim wins, and any Pre veto suppresses both
+the handler and Vanilla.
+
+The handler runs synchronously after Pre, on the button's caller thread. It can
+forward once to the original through `InvokeOriginal`. Forwarding may produce
+separate Vanilla nested clicks. Clicks issued from Pre or Post on this broker
+are suppressed. Claims and panel references are valid only during the callback.
+Original or handler exceptions are reported in Post and propagate without a
+retry. Post reports managed completion. Use actual transfer events to observe
+native delivery. See the compiled `AllyGoodsExample` for an observation.
