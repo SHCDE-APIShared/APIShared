@@ -69,5 +69,38 @@ namespace APIShared.ModSettings
 
             return perPlayerSettingsCoordinator.ArePlayersReady(playerIds, out error);
         }
+
+#if API_SHARED_PRESET_TESTS
+        internal void System_TestObservePerPlayerLobby(
+            ulong? lobbyId,
+            IReadOnlyDictionary<int, ulong> players,
+            bool hasUnresolvedPlayers,
+            int localPlayerId,
+            bool preserveForMapTransition = false)
+        {
+            perPlayerSettingsCoordinator?.Observe(
+                lobbyId,
+                players,
+                hasUnresolvedPlayers,
+                localPlayerId,
+                preserveForMapTransition);
+        }
+
+        internal bool System_TestRemapPerPlayerLobbyForMapTransition(
+            IReadOnlyDictionary<int, ulong> players,
+            int localPlayerId,
+            out string error)
+        {
+            if (perPlayerSettingsCoordinator == null)
+            {
+                error = "The per-player settings coordinator is unavailable.";
+                return false;
+            }
+            return perPlayerSettingsCoordinator.RemapForMapTransition(
+                players,
+                localPlayerId,
+                out error);
+        }
+#endif
     }
 }
