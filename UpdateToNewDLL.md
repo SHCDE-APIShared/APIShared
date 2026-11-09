@@ -11,6 +11,7 @@
 - [AI market sell policies](#ai-market-sell-policies)
 - [Fixes wheat-sale startup correction](#fixes-wheat-sale-startup-correction)
 - [Pathfinding table replacements](#pathfinding-table-replacements)
+- [Group-move exclusion mark](#group-move-exclusion-mark)
 - [Audio](#audio)
 - [Explicit gate-routing backend](#explicit-gate-routing-backend)
 - [Assassin reconstruction connection rule](#assassin-reconstruction-connection-rule)
@@ -584,6 +585,32 @@ Concrete native reference and resolution contracts belong here. General update
 policy is in [native compatibility](docs/NATIVE_COMPATIBILITY.md); consumer and
 implementation details are in the relevant feature guide.
 
+## Group-move exclusion mark
+
+Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2 (audit 2026-11-09).
+`Commands.GroupMoveExclusion` writes the 16-bit field at `GameUnit+0x428` (Script Extender
+`N000000D8`; raw slot address `0x1867E8E84 + id*0x490`). It installs no hook and resolves no RVA.
+
+- **Reader:** only the group move `0x11B520`. Each of its three member loops admits a member only
+  when this field is 0, next to AliveState 2, death marker `+0x29C` 0 and the other admission
+  tests. A skipped member keeps its order and AI state; the function still returns 1.
+- **Writers:** the complete Ghidra Xref export lists 20 references to the field, all in
+  `0x11B520` (read), `0x11DD10` and `0x1245B0` (AI order routines: 0, then 1 by their own criteria,
+  for every living member right before their order) and `0x126020` (0 for every member with
+  AliveState 2 and `+0x29C == 0`). The decompilation shows no pointer-relative access to it.
+  Callers of the writers are AI routines only; `0x3D840` and `0x3E070` call `0x126020` immediately
+  before their plain `0x11B520`. Tribe create/assign/unassign (`0x119C00`, `0x11D370`, `0x123EA0`),
+  the player move (`0x196100`) and the unit spawn path (`0x17FEF0`, `0x19A240`) do not write it.
+- **Helper:** writes 0 for one unit passing `UnitAccess.IsReallyAlive` (the predicate of `0x126020`).
+  `Initialize` requires the audited hash and checks `GameUnit` size `0x490`, `N000000D8` UInt16 at
+  `0x428`, `r_AliveState` (Int16 enum, `IsAlive` = 2) at `0x88` and `r_IsKilledByProjectile` UInt16
+  at `0x29C`; any difference leaves it unavailable without a write.
+
+On a native update, recheck the field's Xref set, the three member loops of `0x11B520`, the AI
+writers and Vanilla's clear-before-move callers, then the layout above. The field has no second
+semantic anchor, so the helper stays hash-bound. Usage and multiplayer rules are in the
+[integration guide](docs/THIRD_PARTY_GUIDE.md#ordering-units-taken-from-ai-groups).
+
 ## Audio
 
 The audio implementation lives under src/Audio; this is a native-update checklist,
@@ -987,7 +1014,9 @@ Extender or managed game update.
   Vanilla fills restart Lord names only when `coopTrailID == 0`.
 - `MoveCommandFailureRuntime`: IL edit of SE `GameTribeManagerAPI.IssueMoveHereCommand(int,int,int,bool,int,TribeMoveType)`;
   requires exactly two `LogHelper.Error(string,string,string)` branches and one native
-  dispatch. A mismatch logs `SE_MOVE_FAILURE_CONTEXT` and keeps the original wrapper.
+  dispatch, with the tribe-lookup branch before and the result branch after the dispatch;
+  only the latter is labelled as a native failure. A mismatch logs `SE_MOVE_FAILURE_CONTEXT`
+  and keeps the original wrapper.
 
 ## Enemy-unit proximity and Peace Time
 

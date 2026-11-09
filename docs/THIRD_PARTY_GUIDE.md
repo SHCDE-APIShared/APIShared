@@ -28,6 +28,7 @@
 - [Sharing action and HUD hooks](#sharing-action-and-hud-hooks)
 - [Sharing native market price queries](#sharing-native-market-price-queries)
 - [Staged values and health](#staged-values-and-health)
+- [Ordering units taken from AI groups](#ordering-units-taken-from-ai-groups)
 - [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
 - [AI military admission](AI_MILITARY.md)
 - [Assassin obstacle completion](#assassin-obstacle-completion)
@@ -1050,6 +1051,34 @@ trade. Returning zero does not cancel the surrounding transaction. Policies must
 cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
+
+## Ordering units taken from AI groups
+
+`GameTribeManagerAPI.IssueMoveHereCommand` and Vanilla's other group moves silently skip a member
+that still carries the AI's group-move exclusion mark. The AI sets it for its own next group
+order; regrouping keeps it. If your mod moves units out of an AI group (or orders a unit without a
+group) and then gives a group move, clear the mark of exactly those units right before the call with
+`APIShared.Commands.GroupMoveExclusion` (not in APIShared packages up to 0.38.0; check the package
+you require):
+
+```csharp
+using APIShared.Commands;
+
+// Simulation thread, in a context every multiplayer peer executes alike.
+GroupMoveExclusion.TryClear(unitId, out bool wasMarked);
+GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, TribeMoveType.DefaultInSync);
+```
+
+- The mark is simulation state. Call only in a native simulation tick callback or a tick-synchronous
+  Chore that runs on every peer, never from local input, UI or a network thread.
+- Clear only units you order yourself. When you repeat an order of the AI on the AI's own group,
+  keep the marks: they are the AI's current member selection.
+- `TryClear` returns false without a write when `IsAvailable` is false (another CrusaderDE.dll or
+  unit layout; see `UnavailabilityReason`), the ID does not resolve or the unit fails
+  `UnitAccess.IsReallyAlive`. A true result only means the mark is 0; the move can still skip the
+  unit for its own admission rules.
+
+The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
 
 ## Reacting to created and recruited units
 

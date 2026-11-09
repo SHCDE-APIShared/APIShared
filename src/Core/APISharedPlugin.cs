@@ -103,6 +103,7 @@ namespace APIShared
                 new NativeInitializationStep("synchronized save context", () => ScriptExtenderFixes.SynchronizedSaveRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
                     context.ModuleHandle, context.Memory.Length, hash, RuntimeLogger)),
+                new NativeInitializationStep("group-move exclusion mark", () => Commands.GroupMoveExclusion.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(
                     context.ModuleHandle, context.Memory, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin attack control", () => AssassinAttackControlAPI.Initialize(
