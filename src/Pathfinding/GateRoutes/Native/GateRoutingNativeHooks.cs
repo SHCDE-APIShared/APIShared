@@ -34,6 +34,8 @@ namespace APIShared.GateRouting.Native
         private readonly NativeHookPublicationState descentPublication = new NativeHookPublicationState();
         private readonly List<object> roots = new List<object>();
         private IntPtr threadSlots, tacticalThreadSlots;
+        // One attempt each. The failure reason is not lost: the first call throws the original
+        // exception to its caller; only later calls report "already attempted".
         private bool movementAttempted, comparisonsAttempted, descentAttempted;
         private BuildingConsumerDelegate rootedAlternateConsumer;
         private CandidateSearchDelegate rootedCandidateSearch;

@@ -10,6 +10,8 @@ namespace APIShared
     // Capability facades bind owner identity while services retain registrations and permanent hooks.
     internal sealed partial class ApiSharedRuntime : IApiShared
     {
+        // Checked, not a duplicate to merge: native features keep their own audited-hash constant
+        // because UpdateToNewDLL.md re-audits and re-binds each feature separately after a DLL update.
         internal const string SupportedHash = "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2";
 
         private readonly object sync = new object();

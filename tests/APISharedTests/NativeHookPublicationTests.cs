@@ -437,6 +437,9 @@ public sealed class NativeHookPublicationTests
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallMovementHooks", true),
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallComparisonHooks", false),
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallDescent", false),
+            // Not handle readers: they defer so the displaced length is checked before any write.
+            ("APIShared.GatehousePermanentRuntimeState", ".ctor", false),
+            ("APIShared.GatehouseAutomationNativeState", "TryPublish", false),
         };
         using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(NativeHookPublication).Assembly.Location))
         {
@@ -514,7 +517,9 @@ public sealed class NativeHookPublicationTests
             "APIShared.AivBuildStepService",
             "APIShared.AssassinAttackControlAPI",
             "APIShared.AssassinPathAPI",
-            "APIShared.GateRouting.Native.GateRoutingNativeHooks"
+            "APIShared.GateRouting.Native.GateRoutingNativeHooks",
+            "APIShared.GatehousePermanentRuntimeState",
+            "APIShared.GatehouseAutomationNativeState"
         };
         using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(NativeHookPublication).Assembly.Location))
         {

@@ -267,6 +267,8 @@ namespace APIShared
             capability = null;
             if (!ValidateOwner(ownerGuid, NativeCapabilityIds.BuildingRepair, out diagnostic))
                 return false;
+            // Creating the service under the lock is intended: it runs once, and concurrent first
+            // callers must see one service and one diagnostic.
             lock (sync)
             {
                 if (buildingRepair == null && buildingRepairDiagnostic.State == NativeCapabilityState.Pending)

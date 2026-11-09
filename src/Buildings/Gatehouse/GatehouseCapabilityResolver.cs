@@ -81,6 +81,7 @@ namespace APIShared
                     ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.GatehousePermanent,
                         ApiSharedNativeSites.GatehousePermanentSpans(installDistance, installTiming, target),
                         reason => new NativeResolutionException(NativeCapabilityState.Conflict, reason));
+                    var publication = new NativeHookPublicationState();
                     try
                     {
                         runtimeState = new GatehousePermanentRuntimeState(
@@ -88,11 +89,14 @@ namespace APIShared
                             unchecked((ulong)moduleBase),
                             installDistance,
                             installTiming,
+                            publication,
                             automation);
                     }
                     catch
                     {
-                        ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehousePermanent);
+                        // A started publication may have written spans; its claim stays.
+                        if (!publication.HasStarted)
+                            ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehousePermanent);
                         throw;
                     }
                 }

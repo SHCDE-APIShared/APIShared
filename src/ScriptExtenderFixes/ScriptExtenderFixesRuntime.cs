@@ -213,8 +213,17 @@ namespace APIShared.ScriptExtenderFixes
             if (exit) BeginShutdown("UU-ImGUI UnHookSafely(exit)");
             return Retain();
         }
+        // A failure after the first Apply leaves live hooks: the swap-chain Present callback may run on
+        // the render thread, so undoing them could race code inside an edited body. Applied hooks stay
+        // rooted instead; while active == 0 every guard returns the original SE behavior.
+        private static readonly List<object> RetainedCandidates = new List<object>();
         private static void RollbackUnpublished(List<ILHook> candidates, ImGuiShutdownCompiler compilerCandidate)
         {
+            if (compilerCandidate?.Hook.IsApplied == true || candidates.Any(candidate => candidate.IsApplied))
+            {
+                lock (RetainedCandidates) { RetainedCandidates.AddRange(candidates); RetainedCandidates.Add(compilerCandidate); }
+                return;
+            }
             for (int index = candidates.Count - 1; index >= 0; index--)
                 candidates[index].Dispose();
             compilerCandidate?.Hook.Dispose();

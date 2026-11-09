@@ -348,6 +348,7 @@ namespace APIShared.ModSettings
         }
 #endif
 
+        // No null check needed: SavePreparation and ReadJournal throw before null can arrive here.
         private static Dictionary<string, byte[]> Clone(Dictionary<string, byte[]> source) =>
             source.ToDictionary(x => x.Key, x => (byte[])x.Value.Clone(), StringComparer.Ordinal);
 

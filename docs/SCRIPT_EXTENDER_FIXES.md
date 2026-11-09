@@ -179,8 +179,10 @@ private probe hook proves that the installed MonoMod uses this routing for edite
 bodies and backups and that the generated thiscall `calli` keeps every argument and
 the result. Other method generation and process-wide MonoMod settings keep their
 existing behavior. Binaries without these contracts are skipped with a
-`SE_IMGUI_SHUTDOWN_FIX` log reason; other services remain available. Recheck the
-shutdown semantics after upstream updates.
+`SE_IMGUI_SHUTDOWN_FIX` log reason; other services remain available. If installation
+fails after a hook was already applied, the applied hooks stay in place but inactive
+(the original UU-ImGUI behavior), because the render thread may be running them.
+Recheck the shutdown semantics after upstream updates.
 
 ## Interpolation event reuse
 

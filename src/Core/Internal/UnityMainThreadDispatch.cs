@@ -84,6 +84,8 @@ namespace APIShared.Internal
                 return false;
             if (Interlocked.CompareExchange(ref dispatchScheduled, 1, 0) != 0)
                 return true;
+            // UnitySynchronizationContext.Post only enqueues and does not throw in practice; the
+            // catch below is a guard, not a known path that drops queued work.
             try
             {
                 context.Post(_ => Drain(), null);

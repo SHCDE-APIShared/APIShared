@@ -96,6 +96,8 @@ namespace APIShared.Wildlife
             { reason = "A base meat or corpse removal needs the Hunter native sites: " + HunterNativeSites.Diagnostic; return false; }
             string unsupported = HuntablePreyCatalogBuilder.UnsupportedReason(definition.UnitType);
             // Own-player prey needs the owner gates; they install on the first such registration.
+            // Installing before the duplicate check below is harmless: gates without a matching
+            // registration keep Vanilla behavior, as documented for their permanent lifetime.
             if (unsupported.Length == 0 && definition.AllowsOwnPlayerPrey && !HunterOwnerGates.TryEnsureInstalled(log, out string gates))
                 unsupported = gates;
 

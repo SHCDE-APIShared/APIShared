@@ -68,6 +68,8 @@ namespace APIShared.ModSettings
                     throw;
                 }
             }
+            // Never removed, intentionally fail-closed: an inactive coordinator stays registered only
+            // after a failed Activate, and the weak table drops the entry with its model.
             coordinators.Add(model, coordinator);
         }
 

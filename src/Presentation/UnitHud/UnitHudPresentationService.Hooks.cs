@@ -125,6 +125,9 @@ namespace APIShared
             createTroopHook = PrepareHook(RequireMethod(typeof(MainViewModel), "ButtonCreateTroop", new[] { typeof(object) }), (CreateTroopDelegate)CreateTroopHook, "APIShared.UnitHud.ButtonCreateTroop", installed);
             createTroopOriginal = createTroopHook.GenerateTrampoline<CreateTroopDelegate>();
             createTroopHook.Apply();
+            // Redrawing here needs no marshalling: End is only published on the Unity thread. Its sources
+            // are the managed start roots (menus, Update, input), scene/exit hooks and native unload
+            // 0x5BC70, whose callers are only those loaders (audited for hash FBCB9319, 2026-11-09).
             mapUnloadSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(_ => {
                 ResetRecruitment();
                 ResetActionButtonPresentation();

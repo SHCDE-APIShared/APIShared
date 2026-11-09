@@ -20,6 +20,8 @@ namespace APIShared
         // Lobby members at or below this ID are not Steam accounts.
         private const ulong MaximumNonHumanSteamId = 1000;
 
+        // Differs on purpose from LobbyStateService's filter (which keeps SkirmishHumanMember): in real
+        // Steam lobbies both select the same members; SkirmishHumanMember exists only in local skirmish.
         internal static bool IsHuman(Platform_Multiplayer.MPLobbyMember member) =>
             member != null && !member.dummyToBeKicked && !member.SkirmishMember && member.id.m_SteamID > MaximumNonHumanSteamId;
 

@@ -40,6 +40,7 @@ namespace APIShared
         private static readonly object Sync = new object();
         private static ManualLogSource log;
         private static SavegameModSettingsRecord loaded;
+        // chosenCurrent/chosenPath: every writer and every reader outside Sync runs on the Unity thread.
         private static Dictionary<string, Dictionary<string, byte[]>> chosenCurrent;
         private static bool useChosenCurrent;
         private static bool legacyChoice;
@@ -379,6 +380,8 @@ namespace APIShared
             try
             {
                 Dictionary<string, Dictionary<string, TrailCreatorRule>> rules;
+                // Checked, no deadlock: the only provider (ExtendedData) reads synchronously and takes
+                // no lock that waits on Sync; Monitor locks are reentrant.
                 lock (Sync)
                 {
                     rules = mission.IsSave || ActivePreset.Contains(mission.SessionId) ? activeCreatorRules : creatorRulesProvider?.Invoke();

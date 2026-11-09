@@ -53,9 +53,11 @@ namespace APIShared
             ulong moduleBase,
             bool installDistance,
             bool installTiming,
+            NativeHookPublicationState publication,
             GatehouseAutomationNativeState automation = null)
         {
             if (region == null) throw new ArgumentNullException(nameof(region));
+            if (publication == null) throw new ArgumentNullException(nameof(publication));
             if (moduleBase == 0) throw new ArgumentOutOfRangeException(nameof(moduleBase));
             if (!installDistance && !installTiming)
                 throw new ArgumentException("At least one gatehouse hook must be requested.");
@@ -68,6 +70,9 @@ namespace APIShared
                     SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
                     new HookTransactionOptions
                     {
+                        // Commit only prepares the stubs, so the displaced length is checked before a
+                        // patch is written and a mismatch never unpatches live code.
+                        InstallOnCommit = false,
                         FailureMode = TransactionFailureMode.RollbackAndThrow,
                         OwnsHooks = true
                     });
@@ -100,27 +105,33 @@ namespace APIShared
                         hookSize: DecisionDisplacedBytes);
                 }
                 CommitResult result = transaction.Commit();
-                bool distanceValid = !installDistance ||
-                    (distanceHook.Success && distanceHook.IsInstalled &&
-                     distanceHook.Hook.DisplacedByteCount == DistanceDisplacedBytes);
-                bool timingValid = !installTiming ||
-                    (decisionHook.Success && decisionHook.IsInstalled &&
-                     decisionHook.Hook.DisplacedByteCount == DecisionDisplacedBytes);
-                if (!result.IsCompleteSuccess || !distanceValid || !timingValid)
+                if (!result.IsCompleteSuccess ||
+                    !HasState(installDistance, distanceHook, DistanceDisplacedBytes, installed: false) ||
+                    !HasState(installTiming, decisionHook, DecisionDisplacedBytes, installed: false))
                 {
                     throw new InvalidOperationException(
                         $"Gatehouse permanent hooks failed validation: result={result}, " +
                         $"distance={distanceHook.Hook?.DisplacedByteCount}, decision={decisionHook.Hook?.DisplacedByteCount}.");
                 }
+                NativeHookPublication.Enable(transaction, result, publication, this, () =>
+                {
+                    if (!HasState(installDistance, distanceHook, DistanceDisplacedBytes, installed: true) ||
+                        !HasState(installTiming, decisionHook, DecisionDisplacedBytes, installed: true))
+                        throw new InvalidOperationException("Gatehouse permanent hooks are not installed after publication.");
+                });
                 lock (Committed) Committed.Add(this);
             }
             catch
             {
-                transaction?.Dispose();
-                FreeUnpublishedState();
+                // Once publication started, the stubs and the state they read stay rooted for the process.
+                publication.RollbackUnpublished(transaction, FreeUnpublishedState);
                 throw;
             }
         }
+
+        private static bool HasState(bool requested, HookHandle<X64InlineHook> handle, int length, bool installed) =>
+            !requested || handle.Success && handle.Hook != null && handle.Hook.IsInstalled == installed &&
+            handle.Hook.DisplacedByteCount == length;
 
         internal static GatehousePermanentRuntimeState CreateTestState(
             bool distanceInstalled = true,
