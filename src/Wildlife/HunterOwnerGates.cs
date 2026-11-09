@@ -41,7 +41,6 @@ namespace APIShared.Wildlife
         private static readonly HookHandle<X64InlineHook> ArrowHandle = new HookHandle<X64InlineHook>();
         // Never freed: published stubs read it until the process ends.
         private static readonly IntPtr ownTypes = Marshal.AllocHGlobal(HunterNativeAssembly.TypeCount);
-        private static HookTransaction transaction;
         private static string diagnostic = "";
         private static bool attempted;
 
@@ -58,7 +57,7 @@ namespace APIShared.Wildlife
                 // Inline stubs patch without suspending threads; a running simulation could execute the spans.
                 if (!NativeInlinePatchWindow.IsOpen) { reason = NativeInlinePatchWindow.ClosedReason; return false; }
                 attempted = true;
-                bool claimed = false;
+                var group = new NativeInlineStubGroup(SiteGroup, Publication);
                 try
                 {
                     var context = HunterNativeSites.LoadContext;
@@ -74,18 +73,14 @@ namespace APIShared.Wildlife
                     HunterNativeSites.ProbeLength(QueryRva, SpanLength);
                     HunterNativeSites.ProbeLength(AttackRva, SpanLength);
                     HunterNativeSites.ProbeLength(ArrowRva, SpanLength);
-                    ApiSharedNativeSites.Claim(ApiSharedRuntime.ProcessInstance.NativeOwnership, SiteGroup, Spans(),
-                        why => new InvalidOperationException(why));
-                    claimed = true;
-                    transaction = new HookTransaction(context.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                        new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
-                    transaction.AddInline(QueryHandle, HookTarget.FromAddress(image + QueryRva), (a, original, back) => GenerateQuery(a, original), hookSize: SpanLength);
-                    transaction.AddInline(AttackHandle, HookTarget.FromAddress(image + AttackRva), (a, original, back) => GenerateAttack(a, original), hookSize: SpanLength);
-                    transaction.AddInline(ArrowHandle, HookTarget.FromAddress(image + ArrowRva), (a, original, back) => GenerateArrow(a, original), hookSize: SpanLength);
-                    var result = transaction.Commit();
-                    if (!result.IsCompleteSuccess) throw new InvalidOperationException("Hunter owner gate preparation was incomplete.");
+                    group.Claim(Spans());
+                    group.Begin(context.Region);
+                    group.Add(QueryHandle, image + QueryRva, (a, original, back) => GenerateQuery(a, original), SpanLength);
+                    group.Add(AttackHandle, image + AttackRva, (a, original, back) => GenerateAttack(a, original), SpanLength);
+                    group.Add(ArrowHandle, image + ArrowRva, (a, original, back) => GenerateArrow(a, original), SpanLength);
+                    var result = group.Commit("Hunter owner gate preparation was incomplete.");
                     Verify(false);
-                    NativeHookPublication.Enable(transaction, result, Publication, typeof(HunterOwnerGates), () => Verify(true));
+                    group.Publish(result, typeof(HunterOwnerGates), () => Verify(true));
                     NativeApiLog.Info(log, "Hunter owner gates published: query=0x" + QueryRva.ToString("X") + ", attack=0x" + AttackRva.ToString("X") +
                         ", arrow=0x" + ArrowRva.ToString("X") + "; native per-type table, owner equality.");
                     reason = "";
@@ -94,10 +89,7 @@ namespace APIShared.Wildlife
                 catch (Exception error)
                 {
                     diagnostic = "Own-player prey is unavailable: " + error.Message;
-                    Publication.RollbackUnpublished(transaction, () =>
-                    {
-                        if (claimed) ApiSharedNativeSites.Release(ApiSharedRuntime.ProcessInstance.NativeOwnership, SiteGroup);
-                    });
+                    group.RollbackUnpublished(null);
                     NativeApiLog.Error(log, diagnostic);
                     reason = diagnostic;
                     return false;

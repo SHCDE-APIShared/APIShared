@@ -188,17 +188,11 @@ namespace APIShared.Economy
             }
         }
         private static void Move(Assembler a,Register register,ulong value) => a.AddInstruction(Instruction.Create(Code.Mov_r64_imm64,register,value));
-        internal static byte[] Assemble(Assembler assembler,ulong address)
-        { using(var stream=new MemoryStream()) { assembler.Assemble(new StreamCodeWriter(stream),address); return stream.ToArray(); } }
+        internal static byte[] Assemble(Assembler assembler,ulong address) => Internal.NativeInlineStub.Assemble(assembler,address);
         internal static byte[] ExpectedStub(WorkerProductionBonusNativeSite site,ulong image,ulong stub,ulong percent,ulong mode,ulong units,ulong currentUnit,ulong ready=0,
-            WorkerProductionHotAddresses hot=default)
-        {
-            var assembler=new Assembler(64);
-            Generate(assembler,WorkerProductionBonusNativeDefinition.Decode(site.OriginalBytes,image+(uint)site.Rva),image+(uint)site.Rva+(uint)site.Length,site,image,percent,mode,units,currentUnit,ready,hot);
-            // X64InlineHook appends its own continuation after the custom generator, even
-            // though our explicit per-branch exits make that final jump unreachable.
-            assembler.AddUnrestrictedJmp(image+(uint)site.Rva+(uint)site.Length);
-            return Assemble(assembler,stub);
-        }
+            WorkerProductionHotAddresses hot=default) =>
+            Internal.NativeInlineStub.ExpectedStub(image+(uint)site.Rva,site.OriginalBytes,site.Length,
+                (a,original,back)=>Generate(a,original,back,site,image,percent,mode,units,currentUnit,ready,hot),stub,
+                WorkerProductionBonusNativeDefinition.BoundaryError);
     }
 }

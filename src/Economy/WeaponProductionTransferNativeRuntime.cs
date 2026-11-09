@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using APIShared.Internal;
 using APIShared.NativeSites;
 using BepInEx.Logging;
 using Iced.Intel;
@@ -57,9 +58,8 @@ namespace APIShared.Economy
 
             Verify(context, ChoreRva, ChoreEntry);
             Verify(context, ChecksumRva, ChecksumEntry);
-            using (var probe = new X64InlineHook(unchecked((ulong)(context.ModuleHandle + ChecksumRva).ToInt64()), ChecksumEntry.Length))
-                if (probe.DisplacedByteCount != ChecksumEntry.Length)
-                    throw new InvalidOperationException("Weapon workshop building checksum displacement differs.");
+            if (NativeInlineStub.ProbeDisplacement(unchecked((ulong)(context.ModuleHandle + ChecksumRva).ToInt64()), ChecksumEntry.Length) != ChecksumEntry.Length)
+                throw new InvalidOperationException("Weapon workshop building checksum displacement differs.");
 
             module = context.ModuleHandle;
             ApiSharedNativeSites.Claim(ApiSharedRuntime.ProcessInstance.NativeOwnership, SiteGroup, Spans(), m => new InvalidOperationException(m));
@@ -86,9 +86,8 @@ namespace APIShared.Economy
                     NativeIndirectEntry.Validate(chore.Hook, module + ChoreRva, ChoreEntry, ChoreDisplacedBytes, true);
                     VerifyChecksumStub();
                     IntPtr target = module + ChecksumRva;
-                    if (!checksum.Hook.IsInstalled || Marshal.ReadByte(target) != 0xFF || Marshal.ReadByte(target, 1) != 0x25 ||
-                        Marshal.ReadInt32(target, 2) != 0 || Marshal.ReadIntPtr(target, 6) != checksum.Hook.StubAddress ||
-                        Marshal.ReadByte(target, 14) != 0x90 || Marshal.ReadByte(target, 15) != 0x90)
+                    if (!checksum.Hook.IsInstalled || !NativeInlineStub.JumpMatches(target, checksum.Hook.StubAddress) ||
+                        !NativeInlineStub.PaddingMatches(target, ChecksumEntry.Length))
                         throw new InvalidOperationException("Weapon workshop building checksum installed jump differs.");
                 });
                 NativeApiLog.Info(log, "WEAPON_PRODUCTION_TRANSFER_READY: native Chore57 tail16, Chore56 weapon tail20 and building/unit checksum folds.");
@@ -123,15 +122,10 @@ namespace APIShared.Economy
             var original = WorkerProductionBonusNativeDefinition.Decode(ChecksumEntry, Address(ChecksumRva));
             var assembler = new Assembler(64);
             GenerateChecksum(assembler, original, Address(ChecksumRva + ChecksumEntry.Length));
-            using (var bytes = new MemoryStream())
-            {
-                assembler.Assemble(new StreamCodeWriter(bytes), unchecked((ulong)checksum.Hook.StubAddress.ToInt64()));
-                byte[] expected = bytes.ToArray();
-                byte[] actual = new byte[expected.Length];
-                Marshal.Copy(checksum.Hook.StubAddress, actual, 0, actual.Length);
-                if (!actual.AsSpan().SequenceEqual(expected))
-                    throw new InvalidOperationException("Weapon workshop building checksum generated stub differs.");
-            }
+            // Compares the generator's bytes only, without the backend's trailing continuation jump.
+            byte[] expected = NativeInlineStub.Assemble(assembler, unchecked((ulong)checksum.Hook.StubAddress.ToInt64()));
+            if (!NativeInlineStub.StubMatches(checksum.Hook.StubAddress, expected))
+                throw new InvalidOperationException("Weapon workshop building checksum generated stub differs.");
         }
 
         private static void OnChore()

@@ -90,25 +90,8 @@ namespace APIShared.Economy
             new WorkerProductionBonusNativeFunction(0x18CE60, 1452, "AB579FCB68C511F944812717545E2C220340175D207DDA63A72671D1AEFC3EC8"),
         });
 
-        internal static byte[] Hex(string text)
-        {
-            if (text == null || (text.Length & 1) != 0) throw new ArgumentException("Invalid native hex.");
-            var bytes=new byte[text.Length/2];
-            for(int i=0;i<bytes.Length;i++) bytes[i]=Convert.ToByte(text.Substring(i*2,2),16);
-            return bytes;
-        }
-        internal static Instruction[] Decode(byte[] bytes, ulong address)
-        {
-            var decoder=Decoder.Create(64,new ByteArrayCodeReader(bytes)); decoder.IP=address;
-            var instructions=new List<Instruction>();
-            while(decoder.IP < address+(uint)bytes.Length)
-            {
-                decoder.Decode(out var instruction);
-                if(instruction.IsInvalid || instruction.Length<=0 || decoder.IP>address+(uint)bytes.Length)
-                    throw new InvalidOperationException("Worker production native boundary differs.");
-                instructions.Add(instruction);
-            }
-            return instructions.ToArray();
-        }
+        internal const string BoundaryError = "Worker production native boundary differs.";
+        internal static byte[] Hex(string text) => Internal.NativeInlineStub.Hex(text);
+        internal static Instruction[] Decode(byte[] bytes, ulong address) => Internal.NativeInlineStub.Decode(bytes, address, BoundaryError);
     }
 }

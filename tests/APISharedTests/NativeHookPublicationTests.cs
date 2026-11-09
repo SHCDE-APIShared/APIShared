@@ -433,7 +433,6 @@ public sealed class NativeHookPublicationTests
             ("APIShared.AssassinAttackControlAPI", "EnsureInstalled", true),
             ("APIShared.AssassinPathAPI", "EnsureInstalled", true),
             ("APIShared.Economy.MarketPriceNativeRuntime/Installation", "Install", true),
-            ("APIShared.Economy.AiMarketSellNativeRuntime", "Install", false),
             ("APIShared.AivBuildStepService", "TryCreate", false),
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallMovementHooks", true),
             ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallComparisonHooks", false),
@@ -467,12 +466,51 @@ public sealed class NativeHookPublicationTests
     }
 
     [TestMethod]
+    public void InlineStubGroupsPublishBeforeTheirPatchesAreWritten()
+    {
+        // NativeInlineStubGroup splits the deferred transaction into steps: Begin defers the patches,
+        // Commit only prepares them and Publish writes them through NativeHookPublication. Each owner
+        // must call Commit before Publish.
+        using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(NativeHookPublication).Assembly.Location))
+        {
+            var group = assembly.MainModule.GetType("APIShared.NativeInlineStubGroup");
+            Assert.IsNotNull(group);
+            var begin = group.Methods.Single(m => m.Name == "Begin").Body.Instructions;
+            Assert.IsTrue(begin.Any(i => Called(i, "HookTransactionOptions", "set_InstallOnCommit") &&
+                i.Previous.OpCode.Code == Mono.Cecil.Cil.Code.Ldc_I4_0), "Begin lets Commit write its patches.");
+            Assert.IsTrue(group.Methods.Single(m => m.Name == "Commit").Body.Instructions.Any(i => Called(i, "HookTransaction", "Commit")));
+            Assert.IsTrue(group.Methods.Single(m => m.Name == "Publish").Body.Instructions.Any(i => Called(i, "NativeHookPublication", "Enable")));
+
+            var owners = new (string Type, string Method)[]
+            {
+                ("APIShared.Economy.AiMarketSellNativeRuntime", "Install"),
+                ("APIShared.Economy.WorkerProductionBonusNativeRuntime", "Install"),
+                ("APIShared.Economy.WorkerProductionOutputNativeRuntime", "Install"),
+                ("APIShared.Economy.WeaponProductionNativeRuntime/Adapter", "Install"),
+                ("APIShared.Wildlife.HunterNativeSites", "Initialize"),
+                ("APIShared.Wildlife.HunterOwnerGates", "TryEnsureInstalled"),
+                ("APIShared.Wildlife.HerdRuntime", "TryEnsureFlightGates"),
+            };
+            foreach (var owner in owners)
+            {
+                var code = assembly.MainModule.GetType(owner.Type).Methods.Single(m => m.Name == owner.Method).Body.Instructions.ToList();
+                int commit = code.FindIndex(i => Called(i, "NativeInlineStubGroup", "Commit"));
+                int publish = code.FindIndex(i => Called(i, "NativeInlineStubGroup", "Publish"));
+                string name = owner.Type + "." + owner.Method;
+                Assert.IsTrue(commit >= 0 && publish > commit, name + " does not publish its prepared stubs after Commit.");
+                Assert.IsFalse(code.Any(i => Called(i, "HookTransaction", "Commit")), name + " bypasses its stub group.");
+            }
+        }
+    }
+
+    [TestMethod]
     public void PublicationCallersCannotDirectlyTearDownTransactions()
     {
         string[] owners =
         {
             "APIShared.Economy.MarketPriceNativeRuntime",
             "APIShared.Economy.AiMarketSellNativeRuntime",
+            "APIShared.NativeInlineStubGroup",
             "APIShared.AivBuildStepService",
             "APIShared.AssassinAttackControlAPI",
             "APIShared.AssassinPathAPI",

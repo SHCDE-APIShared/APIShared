@@ -10,6 +10,7 @@ using RedBird.Abstractions.Hooks.Transaction;
 using RedBird.X64.Hooks;
 using RedBird.X64.Hooks.Transaction;
 using SHCDESE.API.LowLevel;
+using APIShared.Internal;
 
 namespace APIShared.Economy
 {
@@ -29,8 +30,7 @@ namespace APIShared.Economy
         private readonly IntPtr coefficient;
         private readonly HookHandle<X64InlineHook>[] handles;
         private readonly NativeHookPublicationState publication=new NativeHookPublicationState();
-        private HookTransaction transaction;
-        private bool claimed;
+        private readonly NativeInlineStubGroup group;
 
         internal static bool IsAvailable
         {
@@ -55,9 +55,8 @@ namespace APIShared.Economy
                     try { candidate.Install(); }
                     catch
                     {
-                        candidate.publication.RollbackUnpublished(candidate.transaction,()=>
+                        candidate.group.RollbackUnpublished(()=>
                         {
-                            if(candidate.claimed) ApiSharedNativeSites.Release(ApiSharedRuntime.ProcessInstance.NativeOwnership,WorkerProductionBonusNativeDefinition.SiteGroup);
                             Marshal.FreeHGlobal(candidate.coefficient); Volatile.Write(ref owner,null);
                         });
                         throw;
@@ -87,6 +86,7 @@ namespace APIShared.Economy
             coefficient=Marshal.AllocHGlobal(WorkerProductionBonusNativeDefinition.StateSize);
             Marshal.WriteInt32(coefficient,50); Marshal.WriteInt32(coefficient,WorkerProductionBonusNativeDefinition.ReadyOffset,0);
             handles=new HookHandle<X64InlineHook>[WorkerProductionBonusNativeDefinition.Sites.Count];
+            group=new NativeInlineStubGroup(WorkerProductionBonusNativeDefinition.SiteGroup,publication);
         }
 
         private void Install()
@@ -103,10 +103,9 @@ namespace APIShared.Economy
                 VerifyLive(site.Rva,site.OriginalBytes);
                 CheckBoundary(site.Rva+site.Length,WorkerProductionBonusNativeDefinition.Hex(site.ContinuationHex));
                 if(site.FooterRva!=0) CheckBoundary(site.FooterRva,FirstInstruction(site.FooterRva,site.FooterHex));
-                using(var probe=new X64InlineHook(image+(uint)site.Rva,site.Length))
-                    if(probe.DisplacedByteCount!=site.Length)
-                        throw new InvalidOperationException("Worker production backend span differs: "+site.Name);
-                WorkerProductionBonusNativeAssembly.ExpectedStub(site,image,image+0x20000000,
+                if(NativeInlineStub.ProbeDisplacement(image+(uint)site.Rva,site.Length)!=site.Length)
+                    throw new InvalidOperationException("Worker production backend span differs: "+site.Name);
+                WorkerProductionBonusNativeAssembly.ExpectedStub(site,image,image+NativeInlineStub.PreflightStubOffset,
                     unchecked((ulong)coefficient.ToInt64()),image+WorkerProductionBonusNativeDefinition.ModeRva,
                     image+WorkerProductionBonusNativeDefinition.UnitManagerRva,image+WorkerProductionBonusNativeDefinition.CurrentUnitRva,
                     hot:WorkerProductionRuntime.HotAddresses(image));
@@ -114,28 +113,22 @@ namespace APIShared.Economy
                     "; rva=0x"+site.Rva.ToString("X")+"; span="+site.Length+"; continuation=0x"+(site.Rva+site.Length).ToString("X")+".");
             }
             VerifyCompleteSnapshotFunctions();
-            var spans=Spans();
-            ApiSharedNativeSites.Claim(ApiSharedRuntime.ProcessInstance.NativeOwnership,WorkerProductionBonusNativeDefinition.SiteGroup,
-                spans,reason=>new InvalidOperationException(reason)); claimed=true;
-            transaction=new HookTransaction(context.Region,SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                new HookTransactionOptions { InstallOnCommit=false,FailureMode=TransactionFailureMode.RollbackAndThrow,OwnsHooks=true });
+            group.Claim(Spans());
+            group.Begin(context.Region);
             for(int n=0;n<handles.Length;n++)
             {
                 var site=WorkerProductionBonusNativeDefinition.Sites[n]; handles[n]=new HookHandle<X64InlineHook>();
-                transaction.AddInline(handles[n],HookTarget.FromAddress(image+(uint)site.Rva),
-                    (a,original,back)=>Generate(a,original,back,site),hookSize:site.Length);
+                group.Add(handles[n],image+(uint)site.Rva,(a,original,back)=>Generate(a,original,back,site),site.Length);
             }
-            var result=transaction.Commit();
-            if(!result.IsCompleteSuccess) throw new InvalidOperationException("Worker production native preparation was incomplete.");
+            var result=group.Commit("Worker production native preparation was incomplete.");
             for(int n=0;n<handles.Length;n++)
             {
-                var site=WorkerProductionBonusNativeDefinition.Sites[n]; var hook=handles[n].Hook;
-                if(!handles[n].Success || hook.IsInstalled || hook.DisplacedByteCount!=site.Length ||
-                    hook.TargetAddress!=image+(uint)site.Rva || hook.StubAddress==IntPtr.Zero)
+                var site=WorkerProductionBonusNativeDefinition.Sites[n];
+                if(!NativeInlineStub.IsPrepared(handles[n],false,image+(uint)site.Rva,site.Length))
                     throw new InvalidOperationException("Worker production prepared backend contract differs: "+site.Name);
-                VerifyPreparedStub(site,hook);
+                VerifyPreparedStub(site,handles[n].Hook);
             }
-            NativeHookPublication.Enable(transaction,result,publication,this,ValidateInstalled);
+            group.Publish(result,this,ValidateInstalled);
             Info("Worker production native service ready: all spans verified; logical publication remains at coefficient 50 until a complete service registration; native stubs; process lifetime.");
         }
 
@@ -156,8 +149,7 @@ namespace APIShared.Economy
                 unchecked((ulong)coefficient.ToInt64()),image+WorkerProductionBonusNativeDefinition.ModeRva,
                 image+WorkerProductionBonusNativeDefinition.UnitManagerRva,image+WorkerProductionBonusNativeDefinition.CurrentUnitRva,
                 hot:WorkerProductionRuntime.HotAddresses(image));
-            byte[] actual=new byte[expected.Length]; Marshal.Copy(hook.StubAddress,actual,0,actual.Length);
-            if(!actual.AsSpan().SequenceEqual(expected)) throw new InvalidOperationException("Worker production generated stub differs: "+site.Name);
+            if(!NativeInlineStub.StubMatches(hook.StubAddress,expected)) throw new InvalidOperationException("Worker production generated stub differs: "+site.Name);
         }
         private void ValidateInstalled()
         {
@@ -165,10 +157,9 @@ namespace APIShared.Economy
             {
                 var site=WorkerProductionBonusNativeDefinition.Sites[n];var hook=handles[n].Hook;var address=(IntPtr)hook.TargetAddress;
                 if(!hook.IsInstalled || hook.DisplacedByteCount!=site.Length || hook.TargetAddress!=image+(uint)site.Rva ||
-                    Marshal.ReadByte(address)!=0xFF || Marshal.ReadByte(address,1)!=0x25 || Marshal.ReadInt32(address,2)!=0 ||
-                    Marshal.ReadIntPtr(address,6)!=hook.StubAddress)
+                    !NativeInlineStub.JumpMatches(address,hook.StubAddress))
                     throw new InvalidOperationException("Worker production installed jump differs: "+site.Name);
-                for(int k=14;k<site.Length;k++) if(Marshal.ReadByte(address,k)!=0x90)
+                if(!NativeInlineStub.PaddingMatches(address,site.Length))
                     throw new InvalidOperationException("Worker production installed padding differs: "+site.Name);
                 VerifyPreparedStub(site,hook);
             }
@@ -192,27 +183,23 @@ namespace APIShared.Economy
         }
         private void VerifySnapshot(int rva,byte[] expected)
         {
-            if(rva<0 || rva>context.Memory.Length-expected.Length || !context.Memory.Slice(rva,expected.Length).SequenceEqual(expected))
+            if(!NativeInlineStub.SnapshotMatches(context.Memory,rva,expected))
                 throw new InvalidOperationException("Worker production snapshot bytes differ at RVA 0x"+rva.ToString("X")+".");
         }
         private void VerifyLive(int rva,byte[] expected)
         {
-            var actual=Live(rva,expected.Length);
+            var actual=NativeInlineStub.ReadLive(context.ModuleHandle,rva,expected.Length);
             if(!actual.AsSpan().SequenceEqual(expected))
                 throw new InvalidOperationException("Worker production span is occupied or changed at RVA 0x"+rva.ToString("X")+".");
         }
         private void CheckBoundary(int rva,byte[] expected)
         {
             VerifySnapshot(rva,expected);
-            var actual=Live(rva,Math.Max(expected.Length,14));
-            if(actual.AsSpan(0,expected.Length).SequenceEqual(expected)) return;
             // A foreign hook may begin exactly at a proved continuation. Our span neither
             // replaces nor decodes it, and the native jump enters that hook unchanged.
-            if(actual[0]==0xE9 || (actual[0]==0xFF && actual[1]==0x25)) return;
+            if(NativeInlineStub.AcceptsLiveBoundary(NativeInlineStub.ReadLive(context.ModuleHandle,rva,Math.Max(expected.Length,14)),expected)) return;
             throw new InvalidOperationException("Worker production continuation changed inside an instruction at RVA 0x"+rva.ToString("X")+".");
         }
-        private byte[] Live(int rva,int length)
-        { var result=new byte[length]; Marshal.Copy(context.ModuleHandle+rva,result,0,length); return result; }
         private byte[] FirstInstruction(int rva,string hex)
         {
             byte[] bytes=WorkerProductionBonusNativeDefinition.Hex(hex); VerifySnapshot(rva,bytes);

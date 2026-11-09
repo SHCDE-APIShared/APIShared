@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using APIShared.Internal;
 using APIShared.NativeSites;
 using BepInEx.Logging;
 using RedBird.Abstractions.Hooks;
@@ -201,8 +202,8 @@ namespace APIShared.Economy
             private readonly NativeHookPublicationState publication = new NativeHookPublicationState();
             private readonly HookHandle<X64InlineHook>[] handles;
             private readonly Delegate[] callbacks;
+            private readonly NativeInlineStubGroup group;
             private IntPtr enabled;
-            private HookTransaction transaction;
 
             internal Adapter(WeaponProductionNativeRole role, WeaponProductionNativeSite[] sites, bool ingredient)
             {
@@ -211,6 +212,7 @@ namespace APIShared.Economy
                 claim = "Economy.WeaponProduction." + role.Building + (ingredient ? ".Ingredient" : string.Empty);
                 handles = new HookHandle<X64InlineHook>[sites.Length];
                 callbacks = new Delegate[handles.Length];
+                group = new NativeInlineStubGroup(claim, publication);
             }
 
             internal bool Ready => publication.IsReady;
@@ -233,43 +235,39 @@ namespace APIShared.Economy
                 {
                     WeaponProductionNativeSite site = sites[i];
                     ValidateOriginal(context, site);
-                    using (var probe = new X64InlineHook(image + (uint)site.Rva, site.Bytes.Length))
-                        if (probe.DisplacedByteCount != site.Bytes.Length)
-                            throw new InvalidOperationException($"Inline backend span differs at 0x{site.Rva:X}.");
+                    if (NativeInlineStub.ProbeDisplacement(image + (uint)site.Rva, site.Bytes.Length) != site.Bytes.Length)
+                        throw new InvalidOperationException($"Inline backend span differs at 0x{site.Rva:X}.");
                     spans[i] = new NativeSiteSpan(site.Rva, site.Bytes.Length, NativeSiteMode.Exclusive);
                 }
 
-                ApiSharedNativeSites.Claim(ApiSharedRuntime.ProcessInstance.NativeOwnership, claim, spans,
-                    reason => new InvalidOperationException(reason));
+                group.Claim(spans);
                 try
                 {
                     enabled = Marshal.AllocHGlobal(sizeof(int));
                     Marshal.WriteInt32(enabled, 0);
-                    transaction = new HookTransaction(context.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                        new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
+                    group.Begin(context.Region);
                     for (int i = 0; i < handles.Length; i++)
                     {
                         WeaponProductionNativeSite site = sites[i];
                         Delegate callback = callbacks[i] = Callback(site.Operation);
                         ulong callbackAddress = Address(Marshal.GetFunctionPointerForDelegate(callback));
-                        WeaponProductionNativeAssembly.ExpectedStub(site, image, image + 0x20000000,
+                        WeaponProductionNativeAssembly.ExpectedStub(site, image, image + NativeInlineStub.PreflightStubOffset,
                             Address(enabled), Address(buildingDemand), callbackAddress);
                         handles[i] = new HookHandle<X64InlineHook>();
-                        transaction.AddInline(handles[i], HookTarget.FromAddress(image + (uint)site.Rva),
+                        group.Add(handles[i], image + (uint)site.Rva,
                             (assembler, original, back) => WeaponProductionNativeAssembly.Generate(assembler, original, back,
-                                site, image, Address(enabled), Address(buildingDemand), callbackAddress), hookSize: site.Bytes.Length);
+                                site, image, Address(enabled), Address(buildingDemand), callbackAddress), site.Bytes.Length);
                     }
-                    var result = transaction.Commit();
-                    if (!result.IsCompleteSuccess) throw new InvalidOperationException("Weapon production preparation was incomplete.");
+                    var result = group.Commit("Weapon production preparation was incomplete.");
                     ValidatePrepared(false);
-                    NativeHookPublication.Enable(transaction, result, publication, this, () => ValidatePrepared(true));
+                    group.Publish(result, this, () => ValidatePrepared(true));
                     NativeApiLog.Info(logger, $"{claim} ready: {handles.Length} permanent reference RVA sites.");
                 }
                 catch
                 {
-                    publication.RollbackUnpublished(transaction, () =>
+                    // The claim above succeeded, so the group releases it before the state is freed.
+                    group.RollbackUnpublished(() =>
                     {
-                        ApiSharedNativeSites.Release(ApiSharedRuntime.ProcessInstance.NativeOwnership, claim);
                         if (enabled != IntPtr.Zero) Marshal.FreeHGlobal(enabled);
                         enabled = IntPtr.Zero;
                     });
@@ -286,8 +284,7 @@ namespace APIShared.Economy
                 if (!new ReadOnlySpan<byte>((void*)(module + site.Rva), site.Bytes.Length).SequenceEqual(site.Bytes))
                     throw new InvalidOperationException($"A foreign hook occupies weapon production at 0x{site.Rva:X}.");
                 var boundary = new ReadOnlySpan<byte>((void*)(module + next), Math.Max(2, site.Next.Length));
-                if (!boundary.Slice(0, site.Next.Length).SequenceEqual(site.Next) && boundary[0] != 0xE9 &&
-                    (boundary[0] != 0xFF || boundary[1] != 0x25))
+                if (!NativeInlineStub.AcceptsLiveBoundary(boundary, site.Next))
                     throw new InvalidOperationException($"The weapon production continuation at 0x{next:X} differs.");
             }
 
@@ -296,22 +293,20 @@ namespace APIShared.Economy
                 for (int i = 0; i < handles.Length; i++)
                 {
                     WeaponProductionNativeSite site = sites[i];
-                    var hook = handles[i].Hook;
-                    IntPtr entry = module + site.Rva;
-                    if (!handles[i].Success || hook.IsInstalled != installed || hook.TargetAddress != Address(entry) ||
-                        hook.StubAddress == IntPtr.Zero || hook.DisplacedByteCount != site.Bytes.Length)
-                        throw new InvalidOperationException($"Weapon production backend differs at 0x{site.Rva:X}.");
-                    byte[] expected = WeaponProductionNativeAssembly.ExpectedStub(site, Address(module), Address(hook.StubAddress),
-                        Address(enabled), Address(buildingDemand), Address(Marshal.GetFunctionPointerForDelegate(callbacks[i])));
-                    if (!new ReadOnlySpan<byte>((void*)hook.StubAddress, expected.Length).SequenceEqual(expected))
-                        throw new InvalidOperationException($"Weapon production generated stub differs at 0x{site.Rva:X}.");
-                    if (installed && (Marshal.ReadByte(entry) != 0xFF || Marshal.ReadByte(entry, 1) != 0x25 ||
-                        Marshal.ReadInt32(entry, 2) != 0 || Marshal.ReadIntPtr(entry, 6) != hook.StubAddress))
-                        throw new InvalidOperationException($"Weapon production installed jump differs at 0x{site.Rva:X}.");
-                    if (installed)
-                        for (int n = 14; n < site.Bytes.Length; n++)
-                            if (Marshal.ReadByte(entry, n) != 0x90)
-                                throw new InvalidOperationException($"Weapon production installed padding differs at 0x{site.Rva:X}.");
+                    Delegate callback = callbacks[i];
+                    NativeInlineStub.Verify(handles[i], Address(module + site.Rva), site.Bytes.Length, installed,
+                        stub => WeaponProductionNativeAssembly.ExpectedStub(site, Address(module), stub,
+                            Address(enabled), Address(buildingDemand), Address(Marshal.GetFunctionPointerForDelegate(callback))),
+                        check =>
+                        {
+                            switch (check)
+                            {
+                                case NativeInlineStub.Check.Backend: return $"Weapon production backend differs at 0x{site.Rva:X}.";
+                                case NativeInlineStub.Check.Stub: return $"Weapon production generated stub differs at 0x{site.Rva:X}.";
+                                case NativeInlineStub.Check.Jump: return $"Weapon production installed jump differs at 0x{site.Rva:X}.";
+                                default: return $"Weapon production installed padding differs at 0x{site.Rva:X}.";
+                            }
+                        });
                 }
             }
 

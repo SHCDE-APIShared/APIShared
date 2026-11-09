@@ -78,7 +78,10 @@ contract. Validate the real backend, complete displaced range, incoming branches
 continuation and ABI before publishing. Context register masks must preserve live
 registers; SIMD state and flags need separate verification. Do not assume a context
 wrapper preserves the original flags. Keep assembler labels valid and decode emitted
-stubs, not only their intended pseudo-code.
+stubs, not only their intended pseudo-code. APIShared's purely native inline stubs share
+these checks (length probe, expected stub, installed jump and padding) and their
+claim/prepare/publish/rollback steps through `Core/Internal/Native/NativeInlineStub` and
+`NativeInlineStubGroup`; each owner keeps its own check order and diagnostics.
 
 The gatehouse centered-distance replacement loads both unit coordinates before
 using `cdq`, because `cdq` overwrites EDX and would otherwise destroy the live record

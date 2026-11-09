@@ -13,6 +13,7 @@ using RedBird.X64.Hooks;
 using RedBird.X64.Hooks.Transaction;
 using SHCDESE.API.LowLevel;
 using SHCDESE.Interop;
+using APIShared.Internal;
 using APIShared.NativeSites;
 using static Iced.Intel.AssemblerRegisters;
 
@@ -56,8 +57,8 @@ namespace APIShared.Economy
             if (!WorkerProductionWorldSafety.IsAvailable)
                 throw new InvalidOperationException("Production transfer requires the validated world-safety boundary.");
             Verify(context, ChoreRva, ChoreEntry); Verify(context, ChecksumRva, ChecksumEntry);
-            using (var probe = new X64InlineHook(unchecked((ulong)(context.ModuleHandle + ChecksumRva).ToInt64()), ChecksumEntry.Length))
-                if (probe.DisplacedByteCount != ChecksumEntry.Length) throw new InvalidOperationException("Production checksum backend displacement differs.");
+            if (NativeInlineStub.ProbeDisplacement(unchecked((ulong)(context.ModuleHandle + ChecksumRva).ToInt64()), ChecksumEntry.Length) != ChecksumEntry.Length)
+                throw new InvalidOperationException("Production checksum backend displacement differs.");
             var method = typeof(EngineInterface).GetMethod("ReceiveChore", BindingFlags.Public | BindingFlags.Static,
                 null, new[] { typeof(int), typeof(byte[]), typeof(int) }, null);
             if (method == null || method.ReturnType != typeof(void)) throw new MissingMethodException("EngineInterface.ReceiveChore");
@@ -97,8 +98,7 @@ namespace APIShared.Economy
                         throw new InvalidOperationException("Production checksum publication differs.");
                     VerifyChecksumStub(checksum.Hook);
                     IntPtr address = module + ChecksumRva;
-                    if (Marshal.ReadByte(address) != 0xFF || Marshal.ReadByte(address, 1) != 0x25 || Marshal.ReadInt32(address, 2) != 0 ||
-                        Marshal.ReadIntPtr(address, 6) != checksum.Hook.StubAddress || Marshal.ReadByte(address, 14) != 0x90 || Marshal.ReadByte(address, 15) != 0x90)
+                    if (!NativeInlineStub.JumpMatches(address, checksum.Hook.StubAddress) || !NativeInlineStub.PaddingMatches(address, ChecksumEntry.Length))
                         throw new InvalidOperationException("Production checksum installed jump differs.");
                     candidateReceive.Apply();
                 });
@@ -131,12 +131,9 @@ namespace APIShared.Economy
                 unchecked((ulong)WeaponProductionRuntime.WorkerWireAddress.ToInt64()),
                 unchecked((ulong)WeaponProductionRuntime.TransferDemandAddress.ToInt64()),
                 unchecked((ulong)WeaponProductionRuntime.WorkerWireKindsAddress.ToInt64()));
-            using (var bytes = new MemoryStream())
-            {
-                assembler.Assemble(new StreamCodeWriter(bytes), unchecked((ulong)hook.StubAddress.ToInt64()));
-                byte[] expected = bytes.ToArray(), actual = new byte[expected.Length]; Marshal.Copy(hook.StubAddress, actual, 0, actual.Length);
-                if (!actual.AsSpan().SequenceEqual(expected)) throw new InvalidOperationException("Production checksum generated stub differs.");
-            }
+            // Compares the generator's bytes only, without the backend's trailing continuation jump.
+            byte[] expected = NativeInlineStub.Assemble(assembler, unchecked((ulong)hook.StubAddress.ToInt64()));
+            if (!NativeInlineStub.StubMatches(hook.StubAddress, expected)) throw new InvalidOperationException("Production checksum generated stub differs.");
         }
 
         private static void OnChore()

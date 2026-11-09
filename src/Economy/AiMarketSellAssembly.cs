@@ -114,36 +114,22 @@ namespace APIShared.Economy
         // Live at an audited boundary another owner's hook may already begin (jmp rel32 / jmp [rip+disp32]);
         // our code only jumps to that boundary and so enters it unchanged. Anything else is an overlap.
         internal static bool AcceptsLiveBoundary(ReadOnlySpan<byte> live, byte[] original) =>
-            live.SequenceEqual(original) || live.Length >= 1 && live[0] == 0xE9 ||
-            live.Length >= 2 && live[0] == 0xFF && live[1] == 0x25;
+            live.SequenceEqual(original) || Internal.NativeInlineStub.StartsWithForeignJump(live);
 
         // The backend contract at runtime instead of pinned backend files: the stub must be exactly this
         // generator followed by the backend's continuation jump, assembled at the stub address.
         internal static byte[] ExpectedStub(int index, ulong image, ulong stub, ulong state,
-            ulong reserveCallback, ulong quantityCallback)
-        {
-            ulong site = image + (uint)Sites[index], back = site + 15;
-            var assembler = new Assembler(64);
-            Generate(assembler, Decode(Hex(OriginalHex[index]), site), back, index, image, state,
-                reserveCallback, quantityCallback);
-            assembler.AddUnrestrictedJmp(back);
-            return Assemble(assembler, stub);
-        }
+            ulong reserveCallback, ulong quantityCallback) =>
+            Internal.NativeInlineStub.ExpectedStub(image + (uint)Sites[index], Hex(OriginalHex[index]), 15,
+                (a, original, back) => Generate(a, original, back, index, image, state, reserveCallback, quantityCallback),
+                stub, BoundaryError);
 
         private static bool MatchesAt(ReadOnlySpan<byte> memory, int rva, byte[] expected) =>
             rva >= 0 && rva <= memory.Length - expected.Length && memory.Slice(rva, expected.Length).SequenceEqual(expected);
 
-        internal static Instruction[] Decode(byte[] bytes, ulong address)
-        {
-            var decoder = Decoder.Create(64, new ByteArrayCodeReader(bytes)); decoder.IP = address;
-            var result = new System.Collections.Generic.List<Instruction>();
-            while (decoder.IP < address + (uint)bytes.Length)
-            { var instruction = decoder.Decode(); if (instruction.IsInvalid || instruction.NextIP > address + (uint)bytes.Length)
-                    throw new InvalidOperationException("Invalid hook boundary."); result.Add(instruction); }
-            return result.ToArray();
-        }
-        internal static byte[] Assemble(Assembler assembler, ulong address)
-        { using (var stream = new MemoryStream()) { assembler.Assemble(new StreamCodeWriter(stream), address); return stream.ToArray(); } }
+        private const string BoundaryError = "Invalid hook boundary.";
+        internal static Instruction[] Decode(byte[] bytes, ulong address) => Internal.NativeInlineStub.Decode(bytes, address, BoundaryError);
+        internal static byte[] Assemble(Assembler assembler, ulong address) => Internal.NativeInlineStub.Assemble(assembler, address);
         internal static byte[] Hex(string text)
         { var bytes = new byte[text.Length / 2]; for (int i = 0; i < bytes.Length; i++) bytes[i] = Convert.ToByte(text.Substring(i * 2, 2), 16); return bytes; }
     }

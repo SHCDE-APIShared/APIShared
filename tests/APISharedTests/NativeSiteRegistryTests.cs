@@ -99,6 +99,12 @@ namespace APISharedTests
                 ("APIShared.AivBuildStepService", "TryCreate", 8, m => m.Name == "Commit"),
                 ("APIShared.Economy.MarketPriceNativeRuntime", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.Economy.AiMarketSellNativeRuntime", "EnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WorkerProductionBonusNativeRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WorkerProductionOutputNativeRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WeaponProductionNativeRuntime/Adapter", "Install", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.HunterNativeSites", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.HunterOwnerGates", "TryEnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.HerdRuntime", "TryEnsureFlightGates", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinPathAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "RegisterGuard", 3, m => m.Name == "GetDelegateForFunctionPointer"),
@@ -121,17 +127,42 @@ namespace APISharedTests
                     Mono.Cecil.MethodDefinition method = type.Methods.Single(m => m.Name == installer.Method &&
                         (installer.Parameters < 0 || m.Parameters.Count == installer.Parameters));
                     List<Mono.Cecil.MethodReference> calls = CallsInOrder(method, new HashSet<Mono.Cecil.MethodDefinition>());
-                    int claim = calls.FindIndex(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Claim");
+                    int claim = calls.FindIndex(m => IsSiteCall(m, "Claim"));
                     int publish = calls.FindIndex(m => installer.Publishes(m));
                     MsAssert.IsTrue(claim >= 0, name + " claims its native sites");
                     MsAssert.IsTrue(publish >= 0, name + " still contains its publication call");
                     MsAssert.IsTrue(claim < publish, name + " claims before it installs or uses the site");
                     // The release may sit in a rollback helper of the same type (audio's RollbackUnpublished).
-                    MsAssert.IsTrue(calls.Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Release"),
+                    MsAssert.IsTrue(calls.Any(m => IsSiteCall(m, "Release") || m.DeclaringType.Name == "NativeInlineStubGroup" && m.Name == "RollbackUnpublished"),
                         name + " releases its claim when the installation is not published");
                 }
             }
         }
+
+        [TestMethod]
+        [TestCategory("NativeSites")]
+        public void VerifyInlineStubGroupClaimsAndReleasesItsSites()
+        {
+            // Installers above may claim and release through NativeInlineStubGroup; the group itself
+            // must forward to the site registry and keep the release inside its rollback path.
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
+            {
+                Mono.Cecil.TypeDefinition type = assembly.MainModule.GetType("APIShared.NativeInlineStubGroup");
+                MsAssert.IsNotNull(type);
+                List<Mono.Cecil.MethodReference> Calls(string name) =>
+                    CallsInOrder(type.Methods.Single(m => m.Name == name), new HashSet<Mono.Cecil.MethodDefinition>());
+                MsAssert.IsTrue(Calls("Claim").Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Claim"));
+                MsAssert.IsFalse(Calls("Begin").Concat(Calls("Add")).Concat(Calls("Commit")).Concat(Calls("Publish"))
+                    .Any(m => m.DeclaringType.Name == "ApiSharedNativeSites"), "only Claim and the rollback touch the registry");
+                List<Mono.Cecil.MethodReference> rollback = Calls("RollbackUnpublished");
+                MsAssert.IsTrue(rollback.Any(m => m.DeclaringType.Name == "NativeHookPublicationState" && m.Name == "RollbackUnpublished"));
+                MsAssert.IsTrue(rollback.Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Release"),
+                    "the claim is released only through the publication barrier's candidate cleanup");
+            }
+        }
+
+        private static bool IsSiteCall(Mono.Cecil.MethodReference method, string name) =>
+            method.Name == name && (method.DeclaringType.Name == "ApiSharedNativeSites" || method.DeclaringType.Name == "NativeInlineStubGroup");
 
         // Follow calls and callback bodies within the installer's lexical owner (including nested
         // installation objects/closures). Cleanup may be supplied to a publication barrier as an

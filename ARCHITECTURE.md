@@ -116,7 +116,7 @@ src/
   Core/                         entry point, initialization, capability ownership
     Events/                     shared interception registry and managed hook infrastructure
     Internal/Logging/           shared log formatting, failure throttling and runtime health
-    Internal/Native/            pattern resolution, memory, native reservations
+    Internal/Native/            pattern resolution, memory, native reservations, inline-stub checks and installation
     NativeSites/                public native-site registry and APIShared's own site groups
   NativeKnowledge/              stable field catalog, evidence and hash-bound raw readers
   Compatibility/                binary-validated corrections for optional mods (Fixes wheat sale)

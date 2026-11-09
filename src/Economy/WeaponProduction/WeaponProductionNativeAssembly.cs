@@ -8,17 +8,10 @@ namespace APIShared.Economy
     internal static partial class WeaponProductionNativeAssembly
     {
         internal static byte[] ExpectedStub(WeaponProductionNativeSite site, ulong image, ulong stub,
-            ulong enabled, ulong buildingDemand, ulong callback)
-        {
-            var assembler = new Assembler(64);
-            ulong entry = image + (uint)site.Rva;
-            ulong back = entry + (uint)site.Bytes.Length;
-            Generate(assembler, WorkerProductionBonusNativeDefinition.Decode(site.Bytes, entry), back,
-                site, image, enabled, buildingDemand, callback);
-            // RedBird appends its fallback continuation after the generator's explicit exit.
-            assembler.AddUnrestrictedJmp(back);
-            return WorkerProductionBonusNativeAssembly.Assemble(assembler, stub);
-        }
+            ulong enabled, ulong buildingDemand, ulong callback) =>
+            Internal.NativeInlineStub.ExpectedStub(image + (uint)site.Rva, site.Bytes, site.Bytes.Length,
+                (assembler, original, back) => Generate(assembler, original, back, site, image, enabled, buildingDemand, callback),
+                stub, WorkerProductionBonusNativeDefinition.BoundaryError);
 
         internal static void Generate(Assembler assembler, ReadOnlySpan<Instruction> original, ulong back,
             WeaponProductionNativeSite site, ulong image, ulong enabled, ulong buildingDemand, ulong callback)

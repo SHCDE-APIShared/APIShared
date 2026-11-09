@@ -33,7 +33,6 @@ namespace APIShared.Wildlife
         private static readonly IntPtr calmHerds = Marshal.AllocHGlobal(HerdNativeAssembly.HerdCapacity);
         private static readonly HerdCalmTable calm = new HerdCalmTable((byte*)calmHerds, HerdNativeAssembly.HerdCapacity);
         private static readonly List<HerdFlightRule> flightRules = new List<HerdFlightRule>();
-        private static HookTransaction flightTransaction;
         private static string flightFailure = "";
         private static bool flightAttempted;
 
@@ -71,26 +70,20 @@ namespace APIShared.Wildlife
             if (flightAttempted) { reason = flightFailure; return false; }
             if (!NativeInlinePatchWindow.IsOpen) { reason = NativeInlinePatchWindow.ClosedReason; return false; }
             flightAttempted = true;
-            var sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
-            bool claimed = false;
+            var group = new NativeInlineStubGroup(FlightSiteGroup, FlightPublication);
             try
             {
                 WildlifeInlineSite.CheckSite(loadContext, image, DeerFlightRva, FlightBytes, FlightContinuation, FlightLabel);
                 WildlifeInlineSite.CheckSite(loadContext, image, GoatFlightRva, FlightBytes, FlightContinuation, FlightLabel);
                 WildlifeInlineSite.ProbeLength(image, DeerFlightRva, FlightSpanLength, FlightLabel);
                 WildlifeInlineSite.ProbeLength(image, GoatFlightRva, FlightSpanLength, FlightLabel);
-                ApiSharedNativeSites.Claim(sites, FlightSiteGroup, FlightSpans(), why => new InvalidOperationException(why));
-                claimed = true;
-                flightTransaction = new HookTransaction(loadContext.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
-                flightTransaction.AddInline(DeerHandle, HookTarget.FromAddress(image + DeerFlightRva), (a, original, back) => GenerateFlight(a, original),
-                    hookSize: FlightSpanLength);
-                flightTransaction.AddInline(GoatHandle, HookTarget.FromAddress(image + GoatFlightRva), (a, original, back) => GenerateFlight(a, original),
-                    hookSize: FlightSpanLength);
-                var result = flightTransaction.Commit();
-                if (!result.IsCompleteSuccess) throw new InvalidOperationException("Herd flight gate preparation was incomplete.");
+                group.Claim(FlightSpans());
+                group.Begin(loadContext.Region);
+                group.Add(DeerHandle, image + DeerFlightRva, (a, original, back) => GenerateFlight(a, original), FlightSpanLength);
+                group.Add(GoatHandle, image + GoatFlightRva, (a, original, back) => GenerateFlight(a, original), FlightSpanLength);
+                var result = group.Commit("Herd flight gate preparation was incomplete.");
                 VerifyFlight(false);
-                NativeHookPublication.Enable(flightTransaction, result, FlightPublication, typeof(HerdRuntime), () => VerifyFlight(true));
+                group.Publish(result, typeof(HerdRuntime), () => VerifyFlight(true));
                 NativeApiLog.Info(log, "Herd flight gates published: deer=0x" + DeerFlightRva.ToString("X") + ", goats=0x" + GoatFlightRva.ToString("X") +
                     "; native per-herd calm table.");
                 reason = "";
@@ -99,10 +92,7 @@ namespace APIShared.Wildlife
             catch (Exception error)
             {
                 flightFailure = "Herd flight rules are unavailable: " + error.Message;
-                FlightPublication.RollbackUnpublished(flightTransaction, () =>
-                {
-                    if (claimed) ApiSharedNativeSites.Release(sites, FlightSiteGroup);
-                });
+                group.RollbackUnpublished(null);
                 NativeApiLog.Error(log, flightFailure);
                 reason = flightFailure;
                 return false;

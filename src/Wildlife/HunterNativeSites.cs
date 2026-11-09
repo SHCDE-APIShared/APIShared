@@ -44,7 +44,6 @@ namespace APIShared.Wildlife
         private static readonly NativeHookPublicationState Publication = new NativeHookPublicationState();
         private static readonly HookHandle<X64InlineHook> QueryHandle = new HookHandle<X64InlineHook>();
         private static readonly HookHandle<X64InlineHook> CorpseHandle = new HookHandle<X64InlineHook>();
-        private static HookTransaction transaction;
         private static ulong image;
         private static CrusaderLibraryLoadContext loadContext;
         // Never freed: published stubs write them until the process ends.
@@ -65,7 +64,7 @@ namespace APIShared.Wildlife
             Marshal.WriteInt64(demand, 0);
             ClearTable();
             SetCorpseFlags(null);
-            bool claimed = false;
+            var group = new NativeInlineStubGroup(SiteGroup, Publication);
             try
             {
                 if (!string.Equals(hash, HuntablePreyNativeContract.AuditedHash, StringComparison.OrdinalIgnoreCase))
@@ -76,19 +75,13 @@ namespace APIShared.Wildlife
                 CheckSite(context, CorpseArrivalRva, CorpseArrivalBytes, CorpseArrivalContinuation);
                 ProbeLength(QueryEntryRva, QueryEntryLength);
                 ProbeLength(CorpseArrivalRva, CorpseArrivalLength);
-                ApiSharedNativeSites.Claim(ApiSharedRuntime.ProcessInstance.NativeOwnership, SiteGroup, Spans(),
-                    why => new InvalidOperationException(why));
-                claimed = true;
-                transaction = new HookTransaction(context.Region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                    new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
-                transaction.AddInline(QueryHandle, HookTarget.FromAddress(image + QueryEntryRva),
-                    (a, original, back) => GenerateQueryEntry(a, original), hookSize: QueryEntryLength);
-                transaction.AddInline(CorpseHandle, HookTarget.FromAddress(image + CorpseArrivalRva),
-                    (a, original, back) => GenerateCorpseArrival(a, original), hookSize: CorpseArrivalLength);
-                var result = transaction.Commit();
-                if (!result.IsCompleteSuccess) throw new InvalidOperationException("Hunter native site preparation was incomplete.");
+                group.Claim(Spans());
+                group.Begin(context.Region);
+                group.Add(QueryHandle, image + QueryEntryRva, (a, original, back) => GenerateQueryEntry(a, original), QueryEntryLength);
+                group.Add(CorpseHandle, image + CorpseArrivalRva, (a, original, back) => GenerateCorpseArrival(a, original), CorpseArrivalLength);
+                var result = group.Commit("Hunter native site preparation was incomplete.");
                 Verify(false);
-                NativeHookPublication.Enable(transaction, result, Publication, typeof(HunterNativeSites), () => Verify(true));
+                group.Publish(result, typeof(HunterNativeSites), () => Verify(true));
                 diagnostic = "";
                 NativeApiLog.Info(log, "Hunter native sites published: queryEntry=0x" + QueryEntryRva.ToString("X") +
                     ", corpseArrival=0x" + CorpseArrivalRva.ToString("X") + "; native records only, no managed transition.");
@@ -96,10 +89,7 @@ namespace APIShared.Wildlife
             catch (Exception error)
             {
                 diagnostic = error.Message;
-                Publication.RollbackUnpublished(transaction, () =>
-                {
-                    if (claimed) ApiSharedNativeSites.Release(ApiSharedRuntime.ProcessInstance.NativeOwnership, SiteGroup);
-                });
+                group.RollbackUnpublished(null);
                 throw;
             }
         }
