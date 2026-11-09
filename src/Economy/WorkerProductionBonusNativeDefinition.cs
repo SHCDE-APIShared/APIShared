@@ -44,6 +44,8 @@ namespace APIShared.Economy
             CurrentUnitRva=0x9302C4, ModeRva=0x8574B90, UnitStride=0x490,
             CarriedOffset=0x9E0, BonusYieldOffset=0x95E, RenderRejectRva=0x18D33F;
         internal const int StateSize=8, ReadyOffset=4;
+        // CD850 reads this signed level in each player record before writing productivity.
+        internal const int FearLevelRva=0x379CF04, PlayerRecordStride=0x583C;
         internal const string SiteGroup = "Economy.WorkerProductionBonus";
         internal static IReadOnlyList<WorkerProductionBonusNativeSite> Sites { get; } = Array.AsReadOnly(new[]
         {

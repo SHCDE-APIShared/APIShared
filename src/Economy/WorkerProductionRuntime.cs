@@ -17,7 +17,8 @@ namespace APIShared.Economy
     internal static unsafe class WorkerProductionRuntime
     {
         private static readonly IntPtr configurationSlot=AllocateSlot();
-        private static readonly Dictionary<string,IntPtr> nativePlans=new Dictionary<string,IntPtr>(StringComparer.Ordinal);
+        private static readonly Dictionary<(string Digest,bool Extended),IntPtr> nativePlans=
+            new Dictionary<(string Digest,bool Extended),IntPtr>();
         private static readonly WorkerProductionStateRequirement noSavedState=new WorkerProductionStateRequirement(true,false,0,"","");
         private static ManualLogSource log;
         private static IMissionLifecycleCapability missions;
@@ -87,7 +88,9 @@ namespace APIShared.Economy
                 catch { needsData = true; }
             if(!status.HasDesiredProfiles && !needsData)return null;
             status=WorkerProductionModifiers.Prepare(context.Mode);
-            if(!status.CanStart || status.HasBaseContributions || status.ResolvedFixedBonusPercent!=50 || needsData)
+            if(!status.CanStart || status.HasBaseContributions || status.ResolvedRules?.HasFearChanges==true ||
+                (context.Mode.Kind==GameModeKind.Unknown && RequiresUnknownModeArithmetic(WorkerProductionModifiers.GetLaunchBundle())) ||
+                status.ResolvedFixedBonusPercent!=50 || needsData)
             {
                 WorkerProductionModifiers.NotifyRejectedLocalLaunch("Unavailable");
                 return "The requested production rules have no initialized mission/admission owner.";
@@ -150,7 +153,8 @@ namespace APIShared.Economy
         private static WorkerProductionAgreementDescriptor Describe(WorkerProductionLaunchBundle bundle,WorkerProductionStateRequirement saved)
         {
             var weapons = frozenWeaponCatalog ?? WeaponProductionRuntime.PrepareCatalog();
-            bool extended=bundle.HasBaseContributions || saved.RequiresExtended || weapons.HasOptions;
+            bool extended=bundle.RequiresExtendedWire || saved.RequiresExtended || weapons.HasOptions;
+            bool needsFull=extended || bundle.NeedsFullBackend;
             bool valid = saved.IsValid && selectedWeaponError == null &&
                 WeaponProductionRuntime.MatchesSavedCatalog(selectedWeaponSave, weapons);
             string rulesDigest = weapons.HasOptions ? WeaponProductionRuntime.CombineDigest(bundle.Digest, weapons.Digest) : bundle.Digest;
@@ -162,7 +166,7 @@ namespace APIShared.Economy
             return new WorkerProductionAgreementDescriptor(ServiceKey(),rulesDigest,wire,
                 extended && BaseAvailable?WorkerProductionStateRuntime.CapabilityKey:"",extended?1:0,
                 extended?Math.Max(1,saved.MinimumReaderSchema):0,
-                bundle.CanStart && (extended?BaseAvailable:BonusAvailable),bundle.HasActiveContributions || extended,valid,saveDigest);
+                bundle.CanStart && (needsFull?BaseAvailable:BonusAvailable),bundle.HasActiveContributions || extended,valid,saveDigest);
         }
         private static void ObserveStatus(WorkerProductionStatus status)
         {
@@ -245,8 +249,8 @@ namespace APIShared.Economy
             frozenDescriptor=CaptureDescriptor();frozenSelectionPath=selectedPath;
             if(!frozenBundle.CanStart || frozenDescriptor.LocalFailure!=null)
                 throw new InvalidOperationException("Production rules/save requirements are invalid: "+frozenDescriptor.LocalFailure);
-            bool extended=frozenBundle.HasBaseContributions || selectedRequirement.RequiresExtended || frozenWeaponCatalog.HasOptions;
-            if(extended && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
+            bool extended=frozenBundle.RequiresExtendedWire || selectedRequirement.RequiresExtended || frozenWeaponCatalog.HasOptions;
+            if((extended || frozenBundle.NeedsFullBackend) && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
             Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
             if(WorkerProductionBonusNativeRuntime.IsAvailable)WorkerProductionBonusNativeRuntime.PublishPercent(50);
             if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.BeginWorld(session,extended);
@@ -276,7 +280,7 @@ namespace APIShared.Economy
             if (!WeaponProductionRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods, out reason)) return false;
             Wildlife.HuntablePreyRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods);
             reason=null;
-            if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 ||
+            if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 || candidate.HasFearChanges ||
                 WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
             return true;
         }
@@ -318,7 +322,7 @@ namespace APIShared.Economy
         }
         private static bool RequiresUnknownModeArithmetic(WorkerProductionLaunchBundle bundle)
         {
-            if(bundle.HasBaseContributions)return true;
+            if(bundle.NeedsFullBackend)return true;
             foreach(var member in bundle.Members.Values)
                 if(member.FixedBonusPercent!=50 || member.HasBaseContributions)return true;
             return false;
@@ -379,35 +383,36 @@ namespace APIShared.Economy
         {
             if(session==0)
             {
-                // Desired base profiles in a lobby are not executable yet. A legacy
+                // Desired profiles in a lobby are not executable yet. A legacy
                 // percentage write must neither activate them nor demand a wire upgrade.
                 WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);return;
-            }
-            if(!rules.HasBaseContributions && WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Legacy)
-            {
-                WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);
-                Volatile.Write(ref activeRules,rules);
-                if(rules.FixedBonusPercent!=50)WorkerProductionWorldSafety.RequireGuard();
-                else if(WorkerProductionWorldSafety.IsAdmitted)WorkerProductionWorldSafety.ConfirmPrepared(false);
-                return;
             }
             var existing=Volatile.Read(ref activeRules);
             if(existing==null)
             {WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);WorkerProductionWorldSafety.RequireGuard();return;}
             // SetProfile is desired-only. A legacy bonus setter never makes pending typed
-            // base edits live; keep the currently admitted base arithmetic and its credits.
+            // base/fear edits live. Validate the new bonus against the admitted arithmetic.
+            foreach (int fear in existing.FearBonusByLevel)
+                if (fear+Math.Min(0,rules.FixedBonusPercent)<-100)
+                    throw new InvalidOperationException("The legacy bonus and the admitted fear rules can total less than -100 percent.");
             var entries=new WorkerProductionCompiledEntry[existing.Entries.Count];
-            int maximum=3276700/(150+Math.Max(rules.FixedBonusPercent,0));
+            int maximumFear=WorkerProductionCompiler.MaximumFearBonus(existing.FearBonusByLevel);
             for(int role=0;role<existing.WorkerTypes.Count*2;role++)
-            for(int input=0;input<WorkerProductionCompiler.InputCount;input++)
             {
-                int index=role*WorkerProductionCompiler.InputCount+input;var entry=existing.Entries[index];
-                uint ceiling=entry.Whole+(entry.Numerator==0?0U:1U);
-                int limit=existing.WorkerTypes[role/2]==eChimps.CHIMP_TYPE_MILLER?32767:maximum;
-                if(ceiling>limit)throw new InvalidOperationException("The legacy bonus exceeds the admitted active base arithmetic bounds.");
-                entries[index]=entry;
+                int limit=WorkerProductionCompiler.MaximumBase(rules.FixedBonusPercent,existing.WorkerTypes[role/2],maximumFear);
+                for(int input=0;input<WorkerProductionCompiler.InputCount;input++)
+                {
+                    int index=role*WorkerProductionCompiler.InputCount+input;var entry=existing.Entries[index];
+                    uint ceiling=entry.Whole+(entry.Numerator==0?0U:1U);
+                    if(ceiling>limit)throw new InvalidOperationException("The legacy bonus exceeds the admitted active base arithmetic bounds.");
+                    entries[index]=entry;
+                }
             }
-            PublishRules(new WorkerProductionCompiledRules(rules.FixedBonusPercent,existing.HasBaseContributions,existing.CommonDenominator,entries));
+            PublishRules(new WorkerProductionCompiledRules(rules.FixedBonusPercent,existing.HasBaseContributions,
+                existing.CommonDenominator,entries,existing.FearBonusByLevel));
+            if(rules.FixedBonusPercent!=50 || existing.HasFearChanges ||
+                WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended) WorkerProductionWorldSafety.RequireGuard();
+            else if(WorkerProductionWorldSafety.IsAdmitted)WorkerProductionWorldSafety.ConfirmPrepared(false);
         }
         private static void PublishRules(WorkerProductionCompiledRules rules)
         {
@@ -417,14 +422,15 @@ namespace APIShared.Economy
             {
                 if(WorkerProductionWorldSafety.IsFaulted)throw new InvalidOperationException("The production world is faulted.");
                 bool extended=WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended;
-                if((rules.HasBaseContributions || extended) && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
-                if(rules.HasBaseContributions && !extended)throw new InvalidOperationException("Base rules cannot upgrade a running native-wire world.");
+                if((rules.NeedsFullBackend || extended) && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
+                if(rules.RequiresExtendedWire && !extended)throw new InvalidOperationException("Production rules cannot upgrade a running native-wire world.");
                 IntPtr plan=IntPtr.Zero;
-                if(extended && !nativePlans.TryGetValue(rules.Digest,out plan))
+                var planKey=(rules.Digest,extended);
+                if((extended || rules.HasFearChanges) && !nativePlans.TryGetValue(planKey,out plan))
                 {
-                    int count=rules.Entries.Count;IntPtr table=Marshal.AllocHGlobal(checked(count*WorkerProductionHotAssembly.EntrySize));
+                    IntPtr table=extended ? Marshal.AllocHGlobal(checked(rules.Entries.Count*WorkerProductionHotAssembly.EntrySize)) : IntPtr.Zero;
                     ulong activeMask=0;
-                    for(int role=0;role<rules.WorkerTypes.Count*2;role++)
+                    for(int role=0;extended && role<rules.WorkerTypes.Count*2;role++)
                     for(int input=0;input<WorkerProductionHotAssembly.EntriesPerRole;input++)
                     {
                         int index=role*WorkerProductionHotAssembly.EntriesPerRole+input;var entry=rules.Entries[index];
@@ -435,10 +441,20 @@ namespace APIShared.Economy
                         Marshal.WriteInt64(table,entryOffset+16,unchecked((long)entry.Denominator));
                         if(entry.Whole!=(uint)input || entry.Numerator!=0)activeMask|=1UL<<role;
                     }
+                    IntPtr fearTable=IntPtr.Zero;
+                    if (rules.HasFearChanges)
+                    {
+                        fearTable=Marshal.AllocHGlobal(WorkerProductionCompiler.FearLevelCount*sizeof(int));
+                        for (int index=0;index<rules.FearBonusByLevel.Count;index++)
+                            Marshal.WriteInt32(fearTable,index*sizeof(int),rules.FearBonusByLevel[index]);
+                    }
                     plan=Marshal.AllocHGlobal(WorkerProductionHotAssembly.HeaderSize);
                     Marshal.WriteInt64(plan,WorkerProductionHotAssembly.CommonDenominatorOffset,unchecked((long)rules.CommonDenominator));
                     Marshal.WriteIntPtr(plan,WorkerProductionHotAssembly.TableOffset,table);
-                    Marshal.WriteInt64(plan,WorkerProductionHotAssembly.ActiveRoleMaskOffset,unchecked((long)activeMask));nativePlans.Add(rules.Digest,plan);
+                    Marshal.WriteInt64(plan,WorkerProductionHotAssembly.ActiveRoleMaskOffset,unchecked((long)activeMask));
+                    Marshal.WriteIntPtr(plan,WorkerProductionHotAssembly.FearTableOffset,fearTable);
+                    Marshal.WriteInt64(plan,WorkerProductionHotAssembly.FearHasNegativeOffset,rules.HasNegativeFearBonus ? 1L : 0L);
+                    nativePlans.Add(planKey,plan);
                 }
                 WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);
                 Volatile.Write(ref *(long*)configurationSlot,plan.ToInt64());Volatile.Write(ref activeRules,rules);

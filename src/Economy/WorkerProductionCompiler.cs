@@ -20,14 +20,29 @@ namespace APIShared.Economy
     internal sealed class WorkerProductionCompiledRules
     {
         private readonly WorkerProductionCompiledEntry[] entries;
-        internal WorkerProductionCompiledRules(int bonus, bool hasBase, ulong denominator, WorkerProductionCompiledEntry[] entries)
+        internal WorkerProductionCompiledRules(int bonus, bool hasBase, ulong denominator, WorkerProductionCompiledEntry[] entries,
+            IReadOnlyList<int> fearBonusByLevel = null)
         {
             FixedBonusPercent=bonus; HasBaseContributions=hasBase; CommonDenominator=denominator;
             this.entries=(WorkerProductionCompiledEntry[])entries.Clone();
+            var fear = new int[WorkerProductionCompiler.FearLevelCount];
+            for (int index=0; index<fear.Length; index++)
+            {
+                int vanilla=WorkerProductionCompiler.VanillaFearBonus(index-WorkerProductionCompiler.MaximumFearLevel);
+                fear[index]=fearBonusByLevel==null ? vanilla : fearBonusByLevel[index];
+                HasFearChanges |= fear[index]!=vanilla;
+                HasNegativeFearBonus |= fear[index]<0;
+            }
+            FearBonusByLevel=Array.AsReadOnly(fear);
             Entries=Array.AsReadOnly(this.entries); Digest=ComputeDigest();
         }
         internal int FixedBonusPercent { get; }
         internal bool HasBaseContributions { get; }
+        internal IReadOnlyList<int> FearBonusByLevel { get; }
+        internal bool HasFearChanges { get; }
+        internal bool HasNegativeFearBonus { get; }
+        internal bool NeedsFullBackend => HasBaseContributions || HasFearChanges;
+        internal bool RequiresExtendedWire => HasBaseContributions || HasNegativeFearBonus;
         internal ulong CommonDenominator { get; }
         internal string Digest { get; }
         internal IReadOnlyList<eChimps> WorkerTypes => WorkerProductionCompiler.WorkerTypes;
@@ -48,6 +63,12 @@ namespace APIShared.Economy
                 writer.Write(HasBaseContributions); writer.Write(CommonDenominator);
                 foreach(var type in WorkerTypes) writer.Write((int)type);
                 foreach(var entry in entries) { writer.Write(entry.Whole); writer.Write(entry.Numerator); writer.Write(entry.Denominator); }
+                // Preserve the existing agreement identity for the original arithmetic.
+                if (HasFearChanges)
+                {
+                    writer.Write("fear-production/1");
+                    foreach (int percent in FearBonusByLevel) writer.Write(percent);
+                }
                 writer.Flush(); return Sha256Hex.Of(data.ToArray());
             }
         }
@@ -74,6 +95,9 @@ namespace APIShared.Economy
     internal static class WorkerProductionCompiler
     {
         internal const int MaximumInput=100, InputCount=MaximumInput+1;
+        internal const int MaximumFearLevel=5, FearLevelCount=2*MaximumFearLevel+1;
+        internal static bool IsConfigurableFearLevel(int level) => level!=0 && level>=-MaximumFearLevel && level<=MaximumFearLevel;
+        internal static int VanillaFearBonus(int level) => Math.Max(0,-10*level);
         internal static readonly IReadOnlyList<eChimps> WorkerTypes=Array.AsReadOnly(new[] {
             eChimps.CHIMP_TYPE_WOODCUTTER,eChimps.CHIMP_TYPE_FLETCHER,eChimps.CHIMP_TYPE_HUNTER,
             eChimps.CHIMP_TYPE_QUARRY_GRUNT,eChimps.CHIMP_TYPE_PITCHMAN,eChimps.CHIMP_TYPE_FARMER_WHEAT,
@@ -84,8 +108,15 @@ namespace APIShared.Economy
         internal static int WorkerIndex(eChimps type)
         { for(int n=0;n<WorkerTypes.Count;n++) if(WorkerTypes[n]==type) return n; return -1; }
         internal static bool IsWorker(eChimps type) => WorkerIndex(type)>=0;
-        internal static int MaximumBase(int bonus, eChimps type) => type==eChimps.CHIMP_TYPE_MILLER
-            ? short.MaxValue : 3276700/(150+Math.Max(0,bonus));
+        internal static int MaximumBase(int bonus, eChimps type, int maximumFearBonus=50) => type==eChimps.CHIMP_TYPE_MILLER
+            ? short.MaxValue : 3276700/(100+maximumFearBonus+Math.Max(0,bonus));
+
+        internal static int MaximumFearBonus(IReadOnlyList<int> fear)
+        {
+            int maximum=50;
+            foreach (int percent in fear) maximum=Math.Max(maximum,percent);
+            return maximum;
+        }
 
         internal static WorkerProductionCompilation Compile(IReadOnlyList<WorkerProductionProfileContribution> ordered,
             GameModeSnapshot mode, IEnumerable<ulong> savedDenominators)
@@ -96,7 +127,16 @@ namespace APIShared.Economy
             foreach(var item in ordered)
             {
                 if(item.Profile==null) continue;
-                bool hasContribution=item.Profile.FixedBonusPercent.Kind!=ValueModifierKind.None;
+                // Validate keys in a stable order even when the owner is currently inactive.
+                var invalidFearLevels=new List<int>();
+                foreach (int level in item.Profile.FearBonusPercentByLevel.Keys)
+                    if (!IsConfigurableFearLevel(level)) invalidFearLevels.Add(level);
+                invalidFearLevels.Sort();
+                foreach (int level in invalidFearLevels)
+                    result.Issues.Add(new WorkerProductionIssue(WorkerProductionIssueCode.InvalidFearLevel,
+                        "A fear bonus can be configured only for stages -5..-1 and 1..5.",item.Owner,item.Id,
+                        actual:Text(level),limit:"-5..-1, 1..5",fearLevel:level));
+                bool hasContribution=item.Profile.FixedBonusPercent.Kind!=ValueModifierKind.None || item.Profile.HasFearContributions;
                 foreach(var values in item.Profile.BaseAmounts.Values)
                     hasContribution|=values.Human.Kind!=ValueModifierKind.None || values.AI.Kind!=ValueModifierKind.None;
                 // None is inert even before a mission's mode is known. Still validate role keys below.
@@ -115,6 +155,7 @@ namespace APIShared.Economy
                     if(!GameplayModModePolicy.IsAllowed(item.Profile.Activation.Value,mode,out _)) continue;
                 }
                 active.Add(item);
+                result.HasActiveContributions |= item.Profile.HasFearContributions;
                 if(item.Profile.FixedBonusPercent.Kind!=ValueModifierKind.None)
                 { bonuses.Add(item.Profile.FixedBonusPercent); result.HasActiveContributions=true; }
                 foreach(var pair in item.Profile.BaseAmounts)
@@ -125,16 +166,39 @@ namespace APIShared.Economy
                     { result.HasBaseContributions=true; result.HasActiveContributions=true; }
                 }
             }
-            var bonusPlan=ValueModifierPlan.Create(bonuses);
-            bonusPlan.GetExactRatio(50,out BigInteger bonusNumerator,out BigInteger bonusDenominator);
-            BigInteger rounded=BigInteger.DivRem(bonusNumerator,bonusDenominator,out BigInteger bonusRest);
-            if(BigInteger.Abs(bonusRest)*2>=bonusDenominator) rounded+=bonusNumerator.Sign;
+            BigInteger rounded=RoundBonus(50,bonuses);
             if(rounded < -100 || rounded > 1000)
                 result.Issues.Add(new WorkerProductionIssue(WorkerProductionIssueCode.FixedBonusOutOfRange,
                     "The composed fixed production bonus is outside -100..1000 after one midpoint-away rounding.",
                     actual:Text(rounded),limit:"-100..1000"));
             else result.Bonus=(int)rounded;
 
+            var fear=new int[FearLevelCount];
+            var fearContributions=new List<ValueModifierContribution>();
+            for (int level=-MaximumFearLevel; level<=MaximumFearLevel; level++)
+            {
+                if (level==0) continue;
+                fearContributions.Clear();
+                foreach (var owner in active)
+                    if (owner.Profile.FearBonusPercentByLevel.TryGetValue(level,out var contribution))
+                        fearContributions.Add(contribution);
+                int vanilla=VanillaFearBonus(level);
+                BigInteger resolved=fearContributions.Count==0 ? vanilla : RoundBonus(vanilla,fearContributions);
+                if (resolved < -100 || resolved > 1000)
+                {
+                    result.Issues.Add(new WorkerProductionIssue(WorkerProductionIssueCode.FearBonusOutOfRange,
+                        "The composed fear production bonus is outside -100..1000 after one midpoint-away rounding.",
+                        actual:Text(resolved),limit:"-100..1000",fearLevel:level));
+                    continue;
+                }
+                fear[level+MaximumFearLevel]=(int)resolved;
+                int minimum=(int)resolved+Math.Min(0,result.Bonus);
+                if (minimum < -100)
+                    result.Issues.Add(new WorkerProductionIssue(WorkerProductionIssueCode.CombinedBonusOutOfRange,
+                        "Fear and fixed production bonuses can combine to less than -100 percentage points.",
+                        actual:Text(minimum),limit:"-100",fearLevel:level));
+            }
+            int maximumFear=MaximumFearBonus(fear);
             var whole=new uint[WorkerTypes.Count*2*InputCount];
             var numerators=new BigInteger[whole.Length]; var denominators=new BigInteger[whole.Length];
             BigInteger common=BigInteger.One;
@@ -152,7 +216,7 @@ namespace APIShared.Economy
                 foreach(var owner in active) if(owner.Profile.BaseAmounts.TryGetValue(WorkerTypes[worker],out var values))
                     contributions.Add(category==0 ? values.Human : values.AI);
                 var plan=ValueModifierPlan.Create(contributions);
-                int maximum=MaximumBase(result.Bonus,WorkerTypes[worker]);
+                int maximum=MaximumBase(result.Bonus,WorkerTypes[worker],maximumFear);
                 bool negativeReported=false, largeReported=false;
                 for(int input=0;input<InputCount;input++)
                 {
@@ -191,8 +255,15 @@ namespace APIShared.Economy
             var entries=new WorkerProductionCompiledEntry[whole.Length];
             for(int n=0;n<entries.Length;n++)
                 entries[n]=new WorkerProductionCompiledEntry(whole[n],(ulong)(numerators[n]*(common/denominators[n])),(ulong)common);
-            result.Rules=new WorkerProductionCompiledRules(result.Bonus,result.HasBaseContributions,(ulong)common,entries);
+            result.Rules=new WorkerProductionCompiledRules(result.Bonus,result.HasBaseContributions,(ulong)common,entries,fear);
             return result;
+        }
+
+        private static BigInteger RoundBonus(int baseline,IReadOnlyList<ValueModifierContribution> contributions)
+        {
+            ValueModifierPlan.Create(contributions).GetExactRatio(baseline,out BigInteger numerator,out BigInteger denominator);
+            BigInteger rounded=BigInteger.DivRem(numerator,denominator,out BigInteger remainder);
+            return BigInteger.Abs(remainder)*2>=denominator ? rounded+numerator.Sign : rounded;
         }
 
         private static void IncludeDenominator(ref BigInteger common,BigInteger denominator,WorkerProductionCompilation result,ref bool reported)

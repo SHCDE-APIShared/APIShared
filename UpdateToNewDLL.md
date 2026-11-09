@@ -1215,6 +1215,16 @@ Owner: `APIShared.Economy.WorkerProductionBonusNativeRuntime`; reference native 
 
 The calculation block is RVA `0x18D976..0x18D987` inside the existing Extender-owned `0x18D940` yield helper. Seven field-worker gates follow successful arrival and precede storage checks; six workshop gates follow production/animation and precede initial storage lookup. Ox checks `0x132A09` and `0x132C17` protect reduced positive loads; reserve check `0x1320B0` protects the separate driver path. Render `0x18D2D6` rejects negative extra-yield display without altering stored carry.
 
+The fear channel uses that same calculation span. Native owner comes from the
+Extender-resolved UnitId's unit record, and selects the signed player fear level
+at `image + 0x379CF04 + owner * 0x583C`. Recheck the `0xCD850` reader and
+productivity writer and the independent fear-table reader in `0x180560` when
+qualifying a new native image. This data layout is hash-bound and has no fallback.
+The existing original-actor context limits the override to actual output. Check
+the two Baker calls separately and retain Miller's separate flour-output path.
+Negative fear uses the existing extended row contract for reduced Ox provenance
+on the original carrying unit, including when Pre redirects native bonus state.
+
 Layout accesses (unit manager, current unit, native mode, stride and worker/footer register contracts) remain hash-bound. A signature match alone does not admit a new layout. Known hashes use reference-byte validation; any allowed fallback must resolve a unique executable-section site and validate the full window, branches and continuation. Unknown layouts fail closed. Validate every site against the immutable load image and own live span, then prepare and validate every actual RedBird displacement before publication. Preserve adjacent ImprovedHunters hooks, particularly Tanner find at `0x13ED8B`; an original-image signature anchor is not a claim over its entire window.
 
 On a game update, re-audit all producer/caller and completion paths, both Ox departure thresholds, driver reserve, render consumer, signed carry, save section 3015, Chore56, checksum and slot clearing. Re-run native execution fixtures and live save/editor/host-client acceptance. Do not enable negative percentages after partial initialization.

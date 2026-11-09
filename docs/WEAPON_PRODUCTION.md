@@ -34,8 +34,9 @@ The template must be a built-in product of the target workshop. It supplies
 the default ingredient cost and work sequence. The output can be any of the
 eight existing weapon and armour goods. The example consumes four wood per
 charge and supplies a base output of two crossbows to the existing worker
-yield pipeline. Script Extender yield events, worker production modifiers,
-fear and the fixed bonus still apply. Fractional output credits stay with the worker.
+yield pipeline. Script Extender yield events and the shared base, fixed and
+[fear-level production rules](WORKER_PRODUCTION_BONUS.md#fear-levels) still apply.
+Fractional output credits stay with the worker.
 See the [compiled example](../examples/ThirdPartyMod/WeaponProductionExample.cs).
 
 `baseAmount` accepts 0–100. `workTicks` accepts 1–65535 active manufacturing

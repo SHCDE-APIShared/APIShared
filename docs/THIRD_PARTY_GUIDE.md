@@ -1779,9 +1779,11 @@ Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninter
 
 Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion.
 
-## Fixed worker production bonus
+<a id="fixed-worker-production-bonus"></a>
 
-For actual-output base quantities and fixed percentages, including reductions, use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register a process-held desired profile, inspect and present its typed status, and let shared mission preparation/admission activate the exact rules. Human/AI contributions use staged factors or fixed values. The legacy absolute-percentage facade remains supported. Consumer mods retain settings and localization; APIShared owns mode-profile evaluation, exact saved credits, zero-output completion, transport and rendering.
+## Worker production modifiers
+
+For actual-output base quantities, fixed percentages and [per-level fear contributions](WORKER_PRODUCTION_BONUS.md#fear-levels), use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register a process-held desired profile, inspect and present its typed status, and let shared mission admission activate the resolved rules. The channels use staged factors or fixed values. The legacy absolute-percentage facade remains supported. Consumer mods own settings and localization. APIShared owns mode-profile evaluation, exact saved credits, zero-output completion, transport and rendering.
 
 ## Weapon workshop options
 

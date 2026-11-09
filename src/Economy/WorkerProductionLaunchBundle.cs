@@ -17,7 +17,12 @@ namespace APIShared.Economy
             IList<WorkerProductionIssue> issues,bool hasBase,bool active,bool desired,bool available,string key,int preview)
         {
             var sorted=new SortedDictionary<string,WorkerProductionCompiledRules>(StringComparer.Ordinal);
-            foreach(var member in members) sorted.Add(member.Key,member.Value);
+            foreach(var member in members)
+            {
+                sorted.Add(member.Key,member.Value);
+                NeedsFullBackend |= member.Value.NeedsFullBackend;
+                RequiresExtendedWire |= member.Value.RequiresExtendedWire;
+            }
             Members=new ReadOnlyDictionary<string,WorkerProductionCompiledRules>(sorted);
             Issues=Array.AsReadOnly(new List<WorkerProductionIssue>(issues).ToArray());
             HasBaseContributions=hasBase; HasActiveContributions=active; HasDesiredProfiles=desired;
@@ -29,6 +34,8 @@ namespace APIShared.Economy
         internal bool CanStart => Issues.Count==0;
         internal bool IsAvailable { get; }
         internal bool HasBaseContributions { get; }
+        internal bool NeedsFullBackend { get; }
+        internal bool RequiresExtendedWire { get; }
         internal bool HasActiveContributions { get; }
         internal bool HasDesiredProfiles { get; }
         internal int ResolvedFixedBonusPercentPreview { get; }
@@ -58,7 +65,7 @@ namespace APIShared.Economy
             var issues=new List<WorkerProductionIssue>();
             if(extraIssue!=null) issues.Add(extraIssue);
             var bySelection=new Dictionary<string,WorkerProductionCompilation>(StringComparer.Ordinal);
-            bool hasBase=false,hasActive=false,desired=false; int preview=50;
+            bool hasBase=false,hasActive=false,desired=false,needsFull=false; int preview=50;
             foreach(var item in ordered) desired|=item.Profile!=null;
             foreach(GameModeKind kind in Enum.GetValues(typeof(GameModeKind)))
             foreach(GameModeLaunchVariant variant in Enum.GetValues(typeof(GameModeLaunchVariant)))
@@ -78,9 +85,13 @@ namespace APIShared.Economy
                 }
                 hasBase|=compilation.HasBaseContributions; hasActive|=compilation.HasActiveContributions;
                 if(kind==GameModeKind.CustomGame && variant==GameModeLaunchVariant.Standard && network==0) preview=compilation.Bonus;
-                if(compilation.Rules!=null) members.Add(WorkerProductionLaunchBundle.ModeKey(mode),compilation.Rules);
+                if(compilation.Rules!=null)
+                {
+                    members.Add(WorkerProductionLaunchBundle.ModeKey(mode),compilation.Rules);
+                    needsFull |= compilation.Rules.NeedsFullBackend;
+                }
             }
-            bool needsFull=hasBase || (saved!=null && saved.Count!=0);
+            needsFull |= hasBase || (saved!=null && saved.Count!=0);
             bool ready=needsFull ? available : fixedAvailable();
             if(!ready && (hasActive || needsFull)) issues.Add(new WorkerProductionIssue(WorkerProductionIssueCode.NativeUnavailable,
                 "Worker production protection is unavailable: "+diagnostic));
@@ -93,7 +104,7 @@ namespace APIShared.Economy
             {
                 var profile=owners[n].Profile;
                 if(profile==null) continue;
-                bool active=profile.FixedBonusPercent.Kind!=ValueModifierKind.None;
+                bool active=profile.FixedBonusPercent.Kind!=ValueModifierKind.None || profile.HasFearContributions;
                 foreach(var value in profile.BaseAmounts.Values)
                     active|=value.Human.Kind!=ValueModifierKind.None || value.AI.Kind!=ValueModifierKind.None;
                 if(!active || !profile.Activation.HasValue || GameplayModModePolicy.IsAllowed(profile.Activation.Value,mode,out _)) selected.Append(n).Append(',');

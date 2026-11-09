@@ -16,7 +16,7 @@ namespace APIShared.Economy
         internal WorkerProductionBonusFooterValue Value { get; }
     }
 
-    // Pure native generators: no callback, allocation, lookup, event or managed transition in
+    // Pure native generators: no callback, allocation, event or managed transition in
     // the running game. Flags and scratch registers are restored before replaying Vanilla.
     internal static class WorkerProductionBonusNativeAssembly
     {
@@ -54,6 +54,14 @@ namespace APIShared.Economy
             // never arrives empty here; an empty cargo must finish even if SE Pre redirected
             // bonus bookkeeping to another unit, or the old owner has been disabled.
             if(site.Kind==WorkerProductionBonusNativeKind.ZeroCompletion) a.jmp(active);
+            if(hot.IsDefined && (site.Kind==WorkerProductionBonusNativeKind.OxDeparture || site.Kind==WorkerProductionBonusNativeKind.Reserve))
+            {
+                var noSignedFear=a.CreateLabel();
+                a.mov(rax,hot.ConfigurationSlot); a.mov(rax,__qword_ptr[rax]);
+                a.test(rax,rax); a.je(noSignedFear);
+                a.cmp(__dword_ptr[rax+WorkerProductionHotAssembly.FearHasNegativeOffset],0); a.jne(active);
+                a.Label(ref noSignedFear);
+            }
             HistoryOrigin(a,site,unitManagerAddress,currentUnitAddress);
             if(hot.IsDefined) WorkerProductionHotAssembly.BranchHistory(a,hot,unitManagerAddress,active);
             a.cmp(__word_ptr[rcx+WorkerProductionBonusNativeDefinition.BonusYieldOffset],0); a.jl(active);

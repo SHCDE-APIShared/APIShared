@@ -37,8 +37,8 @@ Saved mission restrictions and fixed creator rules remain in force. See
 - [Release history](info.json).
 - [Documentation for mod authors](docs/THIRD_PARTY_GUIDE.md), [API catalog](docs/API_CATALOG.md)
   and [contributing](CONTRIBUTING.md).
-- [Shared worker-production rules](docs/WORKER_PRODUCTION_BONUS.md) for mod authors:
-  combine output multipliers and fixed production bonuses through one common service.
+- [Shared worker-production rules](docs/WORKER_PRODUCTION_BONUS.md) for mod authors
+  cover base output, fixed bonuses and how each fear level affects worker output.
 - [Weapon workshop recipes](docs/WEAPON_PRODUCTION.md) for mod authors.
 
 License: MIT.

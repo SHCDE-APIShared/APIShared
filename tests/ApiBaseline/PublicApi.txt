@@ -581,6 +581,7 @@ APIShared.Economy.WorkerProductionIssue | public APIShared.Economy.WorkerProduct
 APIShared.Economy.WorkerProductionIssue | public APIShared.Economy.WorkerProductionIssueSeverity Severity { get; }
 APIShared.Economy.WorkerProductionIssue | public SHCDESE.Interop.eChimps? WorkerType { get; }
 APIShared.Economy.WorkerProductionIssue | public bool? IsAIPlayer { get; }
+APIShared.Economy.WorkerProductionIssue | public int? FearLevel { get; }
 APIShared.Economy.WorkerProductionIssue | public int? InputAmount { get; }
 APIShared.Economy.WorkerProductionIssue | public string ActualValue { get; }
 APIShared.Economy.WorkerProductionIssue | public string Diagnostic { get; }
@@ -591,7 +592,10 @@ APIShared.Economy.WorkerProductionIssue | public string RegistrationId { get; }
 APIShared.Economy.WorkerProductionIssueCode | public enum APIShared.Economy.WorkerProductionIssueCode : int
 APIShared.Economy.WorkerProductionIssueCode | ActivationUnknown = 7
 APIShared.Economy.WorkerProductionIssueCode | BaseAmountOutOfRange = 3
+APIShared.Economy.WorkerProductionIssueCode | CombinedBonusOutOfRange = 12
+APIShared.Economy.WorkerProductionIssueCode | FearBonusOutOfRange = 11
 APIShared.Economy.WorkerProductionIssueCode | FixedBonusOutOfRange = 4
+APIShared.Economy.WorkerProductionIssueCode | InvalidFearLevel = 10
 APIShared.Economy.WorkerProductionIssueCode | NativeUnavailable = 0
 APIShared.Economy.WorkerProductionIssueCode | NegativeBaseAmount = 2
 APIShared.Economy.WorkerProductionIssueCode | PrecisionNotRepresentable = 5
@@ -613,9 +617,11 @@ APIShared.Economy.WorkerProductionModifiers | public static bool TryRegister(str
 APIShared.Economy.WorkerProductionModifiers | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Economy.WorkerProductionStatus> observer, out string diagnostic, int order = 0, bool replayCurrent = true)
 APIShared.Economy.WorkerProductionProfile | public sealed class APIShared.Economy.WorkerProductionProfile
 APIShared.Economy.WorkerProductionProfile | public .ctor(System.Collections.Generic.IDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> baseAmounts = null, APIShared.Modifiers.ValueModifierContribution fixedBonusPercent = default, APIShared.GameModes.GameplayModActivationProfile? activation = null)
+APIShared.Economy.WorkerProductionProfile | public .ctor(System.Collections.Generic.IDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> baseAmounts, APIShared.Modifiers.ValueModifierContribution fixedBonusPercent, APIShared.GameModes.GameplayModActivationProfile? activation, System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Modifiers.ValueModifierContribution> fearBonusPercentByLevel)
 APIShared.Economy.WorkerProductionProfile | public APIShared.GameModes.GameplayModActivationProfile? Activation { get; }
 APIShared.Economy.WorkerProductionProfile | public APIShared.Modifiers.ValueModifierContribution FixedBonusPercent { get; }
 APIShared.Economy.WorkerProductionProfile | public System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> BaseAmounts { get; }
+APIShared.Economy.WorkerProductionProfile | public System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Modifiers.ValueModifierContribution> FearBonusPercentByLevel { get; }
 APIShared.Economy.WorkerProductionRegistrationSnapshot | public sealed class APIShared.Economy.WorkerProductionRegistrationSnapshot
 APIShared.Economy.WorkerProductionRegistrationSnapshot | public APIShared.Economy.WorkerProductionProfile DesiredProfile { get; }
 APIShared.Economy.WorkerProductionRegistrationSnapshot | public int Order { get; }
@@ -633,6 +639,7 @@ APIShared.Economy.WorkerProductionStatus | public bool HasBaseContributions { ge
 APIShared.Economy.WorkerProductionStatus | public bool HasDesiredProfiles { get; }
 APIShared.Economy.WorkerProductionStatus | public bool IsAvailable { get; }
 APIShared.Economy.WorkerProductionStatus | public bool TryGetResolvedBaseAmount(SHCDESE.Interop.eChimps worker, bool isAIPlayer, int inputAmount, out APIShared.Economy.WorkerProductionResolvedBaseAmount amount)
+APIShared.Economy.WorkerProductionStatus | public bool TryGetResolvedFearBonusPercent(int fearLevel, out int percent)
 APIShared.Economy.WorkerProductionStatus | public int ResolvedFixedBonusPercent { get; }
 APIShared.Economy.WorkerProductionStatus | public long RejectedLocalLaunchSequence { get; }
 APIShared.Economy.WorkerProductionStatus | public long Revision { get; }

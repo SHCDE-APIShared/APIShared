@@ -143,7 +143,9 @@ namespace APIShared.Economy
                 bool ready=false; string key=string.Empty,unavailable=string.Empty;
                 try
                 {
-                    ready=(compilation.HasBaseContributions || hasSavedPrecision) ? available() : legacyAvailable();
+                    bool needsFull=compilation.HasBaseContributions || compilation.Rules?.NeedsFullBackend==true ||
+                        bundle?.NeedsFullBackend==true || hasSavedPrecision;
+                    ready=needsFull ? available() : legacyAvailable();
                     if(ready) key=serviceKey() ?? string.Empty; else unavailable=diagnostic();
                 }
                 catch(Exception error) { unavailable=error.Message; }
@@ -307,7 +309,7 @@ namespace APIShared.Economy
                         // No mode-dependent plan is activated in a lobby. Its exact finite bundle is
                         // already committed as desired state; the real load must select its member.
                         if(candidate==null && current.Kind==GameModeKind.Unknown && launchBundle?.CanStart==true) return;
-                        if(candidate==null || (!value.CanStart && (!onlyLegacyAvailabilityFailure || candidate.HasBaseContributions || hasSavedPrecision)))
+                        if(candidate==null || (!value.CanStart && (!onlyLegacyAvailabilityFailure || candidate.NeedsFullBackend || hasSavedPrecision)))
                             throw new InvalidOperationException(JoinIssues(value.Issues));
                     }
                     publisher(candidate);
@@ -344,7 +346,7 @@ namespace APIShared.Economy
             var value=new StringBuilder().Append(ready).Append('|').Append(desired).Append('|').Append(hasBase).Append('|').Append(bonus)
                 .Append('|').Append(digest).Append('|').Append(key);
             foreach(var issue in issues) value.Append('|').Append(issue.Code).Append(':').Append(issue.OwnerGuid).Append(':').Append(issue.RegistrationId)
-                .Append(':').Append(issue.WorkerType).Append(':').Append(issue.IsAIPlayer).Append(':').Append(issue.InputAmount)
+                .Append(':').Append(issue.WorkerType).Append(':').Append(issue.IsAIPlayer).Append(':').Append(issue.InputAmount).Append(':').Append(issue.FearLevel)
                 .Append(':').Append(issue.ActualValue).Append(':').Append(issue.Limit).Append(':').Append(issue.Diagnostic);
             return value.ToString();
         }

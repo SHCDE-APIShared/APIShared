@@ -145,6 +145,88 @@ internal static partial class Program
         Check(providerLocked && publisherLocked,"Legacy publication enters the injected real engine monitor before provider capture or publishing.");
         TestDetachedStatusSnapshots();
         TestSavedProviderRebinding();
+        TestFearProductionProfiles();
+    }
+
+    private static WorkerProductionProfile FearProfile(int level, ValueModifierContribution contribution,
+        ValueModifierContribution fixedBonus = default, GameplayModActivationProfile? activation = null) =>
+        new WorkerProductionProfile(null, fixedBonus, activation, new Dictionary<int, ValueModifierContribution> { [level] = contribution });
+
+    private static void TestFearProductionProfiles()
+    {
+        var vanilla = CompileProfiles().Rules;
+        Check(vanilla.FearBonusByLevel.SequenceEqual(new[] { 50, 40, 30, 20, 10, 0, 0, 0, 0, 0, 0 }),
+            "Every signed native fear stage has the correct Vanilla output-bonus baseline.");
+        var identity = CompileProfiles(FearProfile(-3, ValueModifierContribution.Factor(1)),
+            FearProfile(3, ValueModifierContribution.Factor(2))).Rules;
+        Check(identity.Digest == vanilla.Digest && !identity.HasFearChanges && !identity.RequiresExtendedWire,
+            "An unchanged resolved fear table preserves the native-wire Vanilla arithmetic digest.");
+        var doubled = CompileProfiles(FearProfile(-3, ValueModifierContribution.Factor(2))).Rules;
+        Check(doubled.FearBonusByLevel[2] == 60 && doubled.HasFearChanges && !doubled.RequiresExtendedWire && doubled.Digest != vanilla.Digest,
+            "A changed positive fear bonus affects launch agreement without requiring extended rows.");
+
+        foreach (int level in new[] { int.MinValue, -6, 0, 6, int.MaxValue })
+            Check(CompileProfiles(FearProfile(level, ValueModifierContribution.FixedValue(20))).Issues.Any(issue =>
+                issue.Code == WorkerProductionIssueCode.InvalidFearLevel && issue.FearLevel == level),
+                "The neutral stage and out-of-domain inputs report the exact unsupported level.");
+        foreach (decimal value in new[] { -100.5m, 1000.5m })
+            Check(CompileProfiles(FearProfile(2, ValueModifierContribution.FixedValue(value))).Issues.Any(issue =>
+                issue.Code == WorkerProductionIssueCode.FearBonusOutOfRange && issue.FearLevel == 2),
+                "One midpoint-away rounding precedes signed fear range validation.");
+        var limits = CompileProfiles(FearProfile(2, ValueModifierContribution.FixedValue(-99.5m), ValueModifierContribution.FixedValue(0)),
+            FearProfile(-2, ValueModifierContribution.FixedValue(1000.49m))).Rules;
+        Check(limits.FearBonusByLevel[7] == -100 && limits.FearBonusByLevel[3] == 1000 && limits.HasNegativeFearBonus && limits.RequiresExtendedWire,
+            "The inclusive signed limits are retained and negative output requires the extended row contract.");
+        Check(CompileProfiles(FearProfile(3, ValueModifierContribution.FixedValue(-50), ValueModifierContribution.FixedValue(-50))).Rules != null &&
+            CompileProfiles(FearProfile(3, ValueModifierContribution.FixedValue(-51), ValueModifierContribution.FixedValue(-50))).Issues.Any(issue =>
+                issue.Code == WorkerProductionIssueCode.CombinedBonusOutOfRange && issue.FearLevel == 3 && issue.ActualValue == "-101"),
+            "A combined penalty can reach zero yield but cannot make native cargo negative.");
+        var peak = FearProfile(-2, ValueModifierContribution.FixedValue(1000), ValueModifierContribution.FixedValue(1000));
+        Check(CompileProfiles(peak, BaseProfile(ValueModifierContribution.FixedValue(1560))).Rules != null &&
+            CompileProfiles(peak, BaseProfile(ValueModifierContribution.FixedValue(1560.01m))).Issues.Any(issue =>
+                issue.Code == WorkerProductionIssueCode.BaseAmountOutOfRange && issue.Limit == "1560"),
+            "The worst combined bonus limits even the next whole unit from a carried base fraction.");
+
+        bool fullReady = true;
+        var registry = new WorkerProductionModifierRegistry(() => fullReady, () => "full backend unavailable", _ => { }, legacyAvailable: () => true);
+        var custom = new GameModeSnapshot(GameModeKind.CustomGame, multiplayer: true);
+        registry.Prepare(custom);
+        registry.TryRegister("z.owner", "fixed", out var later, out _, order: 1);
+        registry.TryRegister("a.owner", "after", out var after, out _, order: -1);
+        registry.TryRegister("a.owner", "before", out var before, out _);
+        registry.TryRegister("b.owner", "fixed", out var earlier, out _);
+        var caller = new Dictionary<int, ValueModifierContribution> { [3] = ValueModifierContribution.FixedValue(-20) };
+        later.SetProfile(new WorkerProductionProfile(null, default, null, caller));
+        caller[3] = ValueModifierContribution.FixedValue(99);
+        after.SetProfile(FearProfile(3, ValueModifierContribution.Factor(1.25m, ValueModifierStage.AfterFixedValue)));
+        before.SetProfile(FearProfile(3, ValueModifierContribution.Factor(10)));
+        earlier.SetProfile(FearProfile(3, ValueModifierContribution.FixedValue(-10)));
+        var negativeStatus = registry.Status;
+        var negativeBundle = registry.GetLaunchBundle();
+        Check(negativeStatus.TryGetResolvedFearBonusPercent(3, out int resolved) && resolved == -25 &&
+            negativeStatus.TryGetResolvedFearBonusPercent(0, out int neutral) && neutral == 0 &&
+            !negativeStatus.TryGetResolvedFearBonusPercent(6, out _) && negativeBundle.Contains(custom, registry.CurrentPrepared),
+            "A detached signed fixed winner replaces ordinary factors, then receives the explicit after-factor.");
+        fullReady = false; registry.Prepare(custom);
+        Check(!registry.Status.CanStart && registry.Status.Issues.Any(issue => issue.Code == WorkerProductionIssueCode.NativeUnavailable),
+            "The legacy-only backend cannot admit an active signed fear table.");
+        fullReady = true; later.SetProfile(null);
+        Check(registry.Status.TryGetResolvedFearBonusPercent(3, out resolved) && resolved == -13 &&
+            negativeStatus.TryGetResolvedFearBonusPercent(3, out int previous) && previous == -25 &&
+            negativeBundle.Digest != registry.GetLaunchBundle().Digest && !negativeBundle.Contains(custom, registry.CurrentPrepared),
+            "Withdrawal reveals the earlier fixed value and invalidates the previous peer agreement without changing old snapshots.");
+
+        var policy = new GameplayModActivationProfile("a.owner", "fear", GameplayModAllowedContext.Campaign);
+        registry.Prepare(default);
+        earlier.SetProfile(FearProfile(3, ValueModifierContribution.FixedValue(20), activation: policy));
+        Check(!registry.Status.TryGetResolvedFearBonusPercent(3, out _),
+            "An unknown launch mode exposes its agreement bundle without claiming a resolved fear value.");
+        registry.Prepare(custom);
+        Check(registry.Status.TryGetResolvedFearBonusPercent(3, out resolved) && resolved == 0,
+            "A mode-inactive owner contributes no fear change.");
+        registry.Prepare(new GameModeSnapshot(GameModeKind.Campaign));
+        Check(registry.Status.TryGetResolvedFearBonusPercent(3, out resolved) && resolved == 25,
+            "A permitted mode can resolve an absolute boost for a fear stage whose Vanilla baseline is zero.");
     }
 
     private static void TestSavedProviderRebinding()

@@ -915,7 +915,7 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 
 ## Worker production bonus
 
-`APIShared.Economy.WorkerProductionModifiers` composes exact Human/AI actual-output bases and signed fixed percentages through detached desired profiles, typed visible validation status and prepared mission admission. Its process-held `WorkerProductionBonusOverrides` compatibility facade retains absolute percentage registration. Shared zero-output, Ox transport, display and persisted credit ownership stay in APIShared. `APIShared.Lobby.LobbyLaunchGuards` supplies shared Ready/Start and prepared multiplayer-save admission. See the [worker production contract](WORKER_PRODUCTION_BONUS.md).
+`APIShared.Economy.WorkerProductionModifiers` composes exact human/AI output bases, signed fixed percentages and signed production percentages per fear level. Desired profiles support factors and fixed values, and prepared status exposes the resolved fear contribution for each level. Its process-held `WorkerProductionBonusOverrides` compatibility facade retains absolute fixed-percentage registration. APIShared owns zero-output completion, Ox transport, display and persisted credits. `APIShared.Lobby.LobbyLaunchGuards` supplies shared Ready/Start and prepared multiplayer-save admission. See the [worker production contract](WORKER_PRODUCTION_BONUS.md).
 
 ## Weapon workshop options
 

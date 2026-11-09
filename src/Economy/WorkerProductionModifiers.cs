@@ -23,7 +23,7 @@ namespace APIShared.Economy
     /// <remarks>Supported roles are the 17 producer types in WorkerProductionModifiers.SupportedWorkers. Quarry Grunt
     /// means its Ox output. Both apple paths share one role. Baker means bread, not flour pickup; Miller means the
     /// actual Vanilla flour output of one, without its discarded wheat-pickup productivity calculation.
-    /// Contributions compose by order/ordinal owner/registration ID using ValueModifierStage. The bonus channel
+    /// Contributions compose by order/ordinal owner/registration ID using ValueModifierStage. The fixed bonus channel
     /// starts at 50, rounds once away from zero and must remain in -100..1000; it retains Vanilla's mode/flag rules.
     /// Base fractions accumulate exactly in production-owned saved state. Unsupported workers, negative or oversized
     /// results, and unrepresentable combined precision are reported as blocking issues; nothing is silently capped.
@@ -33,16 +33,42 @@ namespace APIShared.Economy
         /// <summary>Copies caller-owned inputs. Null baseAmounts means no base contribution; activation null permits every mode.</summary>
         public WorkerProductionProfile(IDictionary<eChimps, WorkerProductionValues> baseAmounts = null,
             ValueModifierContribution fixedBonusPercent = default, GameplayModActivationProfile? activation = null)
+            : this(baseAmounts, fixedBonusPercent, activation, null) { }
+
+        /// <summary>Copies the supplied base amounts and per-stage fear contributions into a detached profile.</summary>
+        /// <remarks>Fear uses the native signed stages -5..-1 and 1..5. Negative stages have a Vanilla bonus
+        /// of ten percentage points per step from neutral. Positive stages have a Vanilla bonus of zero.
+        /// Neutral stays at zero. Values use the same ordered factor/fixed-value stages as the fixed bonus.
+        /// A null map leaves the fear channel unchanged; invalid requests are reported during preparation.</remarks>
+        public WorkerProductionProfile(IDictionary<eChimps, WorkerProductionValues> baseAmounts,
+            ValueModifierContribution fixedBonusPercent, GameplayModActivationProfile? activation,
+            IReadOnlyDictionary<int, ValueModifierContribution> fearBonusPercentByLevel)
         {
             var copy = new Dictionary<eChimps, WorkerProductionValues>();
             if (baseAmounts != null) foreach (var pair in baseAmounts) copy.Add(pair.Key, pair.Value);
             BaseAmounts = new ReadOnlyDictionary<eChimps, WorkerProductionValues>(copy);
+            var fearCopy = new Dictionary<int, ValueModifierContribution>();
+            if (fearBonusPercentByLevel != null)
+                foreach (var pair in fearBonusPercentByLevel) fearCopy.Add(pair.Key, pair.Value);
+            FearBonusPercentByLevel = new ReadOnlyDictionary<int, ValueModifierContribution>(fearCopy);
             FixedBonusPercent = fixedBonusPercent; Activation = activation;
         }
         /// <summary>Detached role contributions, indexed by producer type rather than unit ID.</summary>
         public IReadOnlyDictionary<eChimps, WorkerProductionValues> BaseAmounts { get; }
         /// <summary>Factor or absolute percentage points of the original fixed 50-percent contribution.</summary>
         public ValueModifierContribution FixedBonusPercent { get; }
+        /// <summary>Detached desired factors or absolute fear bonus points, indexed by native fear stage.</summary>
+        public IReadOnlyDictionary<int, ValueModifierContribution> FearBonusPercentByLevel { get; }
+        internal bool HasFearContributions
+        {
+            get
+            {
+                foreach (var pair in FearBonusPercentByLevel)
+                    if (!WorkerProductionCompiler.IsConfigurableFearLevel(pair.Key) || pair.Value.Kind != ValueModifierKind.None)
+                        return true;
+                return false;
+            }
+        }
         /// <summary>Optional caller-defined mission permissions; this never restricts another owner.</summary>
         public GameplayModActivationProfile? Activation { get; }
     }
@@ -69,7 +95,13 @@ namespace APIShared.Economy
         /// <summary>The native publication boundary rejected a prepared rule set.</summary>
         PublicationFailed,
         /// <summary>The world has encountered an out-of-contract runtime value.</summary>
-        RuntimeFault
+        RuntimeFault,
+        /// <summary>A fear stage is outside the configurable nonneutral stages.</summary>
+        InvalidFearLevel,
+        /// <summary>A composed fear bonus rounds outside -100..1000 percentage points.</summary>
+        FearBonusOutOfRange,
+        /// <summary>A fear bonus and an applicable fixed bonus can total less than -100 percentage points.</summary>
+        CombinedBonusOutOfRange
     }
 
     /// <summary>Issue impact. Errors block admission; warnings are informational.</summary>
@@ -85,9 +117,11 @@ namespace APIShared.Economy
     public sealed class WorkerProductionIssue
     {
         internal WorkerProductionIssue(WorkerProductionIssueCode code, string diagnostic, string owner = null, string id = null,
-            eChimps? worker = null, bool? ai = null, int? input = null, string actual = null, string limit = null)
+            eChimps? worker = null, bool? ai = null, int? input = null, string actual = null, string limit = null,
+            int? fearLevel = null)
         { Code=code; Diagnostic=diagnostic ?? string.Empty; OwnerGuid=owner ?? string.Empty; RegistrationId=id ?? string.Empty;
-          WorkerType=worker; IsAIPlayer=ai; InputAmount=input; ActualValue=actual ?? string.Empty; Limit=limit ?? string.Empty; }
+          WorkerType=worker; IsAIPlayer=ai; InputAmount=input; ActualValue=actual ?? string.Empty; Limit=limit ?? string.Empty;
+          FearLevel=fearLevel; }
         /// <summary>Stable failure category.</summary>
         public WorkerProductionIssueCode Code { get; }
         /// <summary>All current validation failures are admission-blocking errors.</summary>
@@ -104,6 +138,8 @@ namespace APIShared.Economy
         public bool? IsAIPlayer { get; }
         /// <summary>Supported pre-transform input that demonstrates the failure.</summary>
         public int? InputAmount { get; }
+        /// <summary>The native signed fear stage associated with this issue, when applicable.</summary>
+        public int? FearLevel { get; }
         /// <summary>Exact invariant-format offending value, when applicable.</summary>
         public string ActualValue { get; }
         /// <summary>Invariant-format required bound, when applicable.</summary>
@@ -158,8 +194,8 @@ namespace APIShared.Economy
         internal WorkerProductionCompiledRules ResolvedRules { get; }
         /// <summary>Monotonic status revision; an admitted prepared object remains bound to this revision.</summary>
         public long Revision { get; }
-        /// <summary>Whether the backend required by this request is available: fixed-bonus protection for a fixed-only
-        /// request; the full base/persistence cohort for a base contribution or retained production state.</summary>
+        /// <summary>Whether the backend required by this request is available, including the complete production
+        /// cohort for base rules, effective fear rules or retained production state.</summary>
         public bool IsAvailable { get; }
         /// <summary>True when the prepared request has no blocking issue. Multiplayer agreement is separate.</summary>
         public bool CanStart => Issues.Count == 0;
@@ -179,6 +215,18 @@ namespace APIShared.Economy
         /// <summary>Detached registration snapshots in composition order, including disabled and mode-inactive owners.
         /// Later handle/profile changes never modify an earlier status or its desired profiles.</summary>
         public IReadOnlyList<WorkerProductionRegistrationSnapshot> Registrations { get; }
+        /// <summary>Reads the prepared fear bonus, in whole percentage points, for a native stage -5..5.
+        /// Returns false with zero for an invalid request, unresolved mode or unsupported stage. A successful
+        /// lookup includes Vanilla values for stages with no active contribution and zero for the neutral stage.
+        /// This describes the prepared rules, independently of a mission's already active rules.</summary>
+        public bool TryGetResolvedFearBonusPercent(int fearLevel, out int percent)
+        {
+            percent=0;
+            if (!CanStart || ResolvedRules==null || fearLevel < -WorkerProductionCompiler.MaximumFearLevel ||
+                fearLevel > WorkerProductionCompiler.MaximumFearLevel) return false;
+            percent=ResolvedRules.FearBonusByLevel[fearLevel+WorkerProductionCompiler.MaximumFearLevel];
+            return true;
+        }
         /// <summary>Reads the exact prepared base before productivity, fixed bonus and per-unit credits; no caller
         /// composition is required. Returns false for an invalid status, unresolved mode-dependent request,
         /// unsupported worker or input outside 0..100. Miller supports only its actual baseline input 1.
@@ -240,7 +288,7 @@ namespace APIShared.Economy
                 throw new InvalidOperationException("The complete production backend has not initialized.");
             }, legacyAvailable:()=>WorkerProductionBonusNativeRuntime.IsAvailable,
             legacyPublish:rules=> {
-                if(rules.HasBaseContributions) throw new InvalidOperationException("The complete production backend is required for base contributions.");
+                if(rules.NeedsFullBackend) throw new InvalidOperationException("The complete production backend is required for base or fear contributions.");
                 WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);
             });
         /// <summary>Audited output-role types, including Quarry Grunt rather than its transport Ox.</summary>

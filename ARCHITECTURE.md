@@ -199,6 +199,12 @@ spans. Ordered optional adjusters compose before OR-combined native safety. The
 shared service has no default gameplay policy; consumers own synchronized settings.
 See [AI market sell policies](docs/AI_MARKET_SELL.md).
 
+`Economy/WorkerProductionModifiers` prepares base amounts, fixed percentages and
+per-level fear contributions together for mission admission. The native production
+owner consumes the prepared rules, and the shared save and multiplayer owners
+coordinate the state required by those rules.
+See [worker production modifiers](docs/WORKER_PRODUCTION_BONUS.md).
+
 `Economy/WeaponProduction` owns the mission recipe catalogue, workshop selection
 and batch state. It uses shared worker-production admission and world restoration
 to keep workshop choices consistent across peers and saves. Consumer mods own

@@ -25,7 +25,8 @@ namespace APIShared.Economy
     {
         internal const int GlobalIdOffset = 0x6F0, KindOffset = 0x6E6, OwnerOffset = 0x6EE,
             AiStateOffset = 0x918, RowSize = 32, EntrySize = 24, EntriesPerRole = 101,
-            HeaderSize = 24, CommonDenominatorOffset = 0, TableOffset = 8, ActiveRoleMaskOffset = 16;
+            HeaderSize = 40, CommonDenominatorOffset = 0, TableOffset = 8, ActiveRoleMaskOffset = 16,
+            FearTableOffset = 24, FearHasNegativeOffset = 32;
         // PushAll's stack map; never infer these offsets from a caller's stack frame.
         private const int SavedR10 = 40, SavedR9 = 48, SavedRax = 112;
 
@@ -44,7 +45,7 @@ namespace APIShared.Economy
             a.cmp(__dword_ptr[rbx], 0); a.jne(faultState);
             a.cmp(r10d, 100); a.ja(faultInput); // unsigned rejects negative Pre values too
             a.cmp(eax, 150); a.jg(faultProductivity); // already floored by original 18D973
-            a.mov(r13, units); a.add(r13, r9);
+            a.mov(r14, units); a.add(r14, r9); a.mov(r13, r14);
             // Native remainder/productivity still belong to the actual modified UnitId.
             a.movsx(ecx, __word_ptr[r13 + 0x95C]); a.cmp(ecx, -99); a.jl(faultState);
             a.cmp(ecx, 99); a.jg(faultState);
@@ -55,9 +56,6 @@ namespace APIShared.Economy
                 a.imul(rcx,rcx,0x490);a.mov(r13,units);a.add(r13,rcx);
                 a.Label(ref useNativeActor);
             }
-            a.mov(rbx, addresses.StoreControl);
-            a.cmp(__dword_ptr[rbx + 4], 1); a.jne(noBase);
-            a.cmp(__dword_ptr[rbx], 1); a.jne(noBase);
             a.mov(rbx, addresses.ConfigurationSlot); a.mov(rbx, __qword_ptr[rbx]);
             a.test(rbx, rbx); a.je(noBase);
             a.movzx(ebp, __word_ptr[r13 + KindOffset]);
@@ -70,6 +68,11 @@ namespace APIShared.Economy
             var selected = a.CreateLabel();
             EmitWorkerIndex(a, selected, noBase);
             a.Label(ref selected);
+            ApplyFear(a, image, percent, mode, units, addresses, faultState);
+            a.mov(rax, addresses.StoreControl);
+            a.cmp(__dword_ptr[rax + 4], 1); a.jne(noBase);
+            a.cmp(__dword_ptr[rax], 1); a.jne(noBase);
+            a.cmp(__qword_ptr[rbx + TableOffset], 0); a.je(noBase);
             // EDI now holds the economic worker index; QuarryOx selects QuarryGrunt.
             a.movsx(ecx, __word_ptr[r13 + OwnerOffset]); a.cmp(ecx, 1); a.jl(noBase);
             a.cmp(ecx, 8); a.jg(noBase);
@@ -102,6 +105,59 @@ namespace APIShared.Economy
             EmitFault(a, addresses.Fault, faultInput, faultProductivity, faultState, image);
             a.Label(ref ordinary);
             FixedBonus(a, back, percent, mode);
+        }
+
+        private static void ApplyFear(Assembler a, ulong image, ulong percent, ulong mode, ulong units,
+            WorkerProductionHotAddresses addresses, Label faultState)
+        {
+            var done = a.CreateLabel();
+            a.mov(rsi, __qword_ptr[rbx + FearTableOffset]); a.test(rsi, rsi); a.je(done);
+            // As with the native bonus carry, the effective UnitId after Extender Pre selects the
+            // player. The original actor has already selected the actual-output path and owns cargo.
+            a.movsx(ecx, __word_ptr[r14 + OwnerOffset]); a.test(ecx, ecx); a.je(done);
+            a.cmp(ecx, 8); a.ja(faultState);
+            a.imul(rcx, rcx, WorkerProductionBonusNativeDefinition.PlayerRecordStride);
+            a.mov(rax, image + WorkerProductionBonusNativeDefinition.FearLevelRva);
+            a.mov(ecx, __dword_ptr[rax + rcx]);
+            a.mov(eax, -5); a.cmp(ecx, eax); a.cmovl(ecx, eax);
+            a.mov(eax, 5); a.cmp(ecx, eax); a.cmovg(ecx, eax);
+            a.imul(edx, ecx, -10); a.xor(r11d, r11d);
+            a.test(edx, edx); a.cmovl(edx, r11d);
+            a.add(ecx, 5); a.mov(eax, __dword_ptr[rsi + rcx * 4]);
+            // Other identity entries retain the native cached productivity across level changes.
+            // Neutral always uses zero fear bonus while a fear plan is active.
+            a.add(eax, 100); a.add(edx, 100);
+            var resolved = a.CreateLabel();
+            a.cmp(ecx, 5); a.je(resolved);
+            a.cmp(eax, edx); a.cmove(eax, __dword_ptr[rsp + SavedRax]);
+            a.Label(ref resolved); a.mov(__qword_ptr[rsp + SavedRax], rax);
+
+            // Native history follows the Pre-selected unit and another redirected yield can
+            // overwrite it. Keep provenance on the physical Ox until its cargo can be handled.
+            a.cmp(ebp, (int)eChimps.CHIMP_TYPE_QUARRY_OX); a.jne(done);
+            a.cmp(__dword_ptr[rbx + FearHasNegativeOffset], 0); a.je(done);
+            var checkTotal = a.CreateLabel();
+            a.test(r8d, r8d); a.je(checkTotal);
+            a.mov(rcx, mode); a.cmp(__dword_ptr[rcx], 0); a.je(checkTotal);
+            a.mov(rcx, percent); a.add(eax, __dword_ptr[rcx]);
+            a.Label(ref checkTotal); a.cmp(eax, 100); a.jge(done);
+            a.mov(rcx, addresses.StoreControl);
+            a.cmp(__dword_ptr[rcx + 4], 1); a.jne(faultState);
+            a.cmp(__dword_ptr[rcx], 1); a.jne(faultState);
+            a.mov(rax, r13); a.mov(rcx, units); a.sub(rax, rcx);
+            a.xor(edx, edx); a.mov(ecx, WorkerProductionBonusNativeDefinition.UnitStride); a.div(rcx);
+            a.cmp(eax, 1); a.jl(faultState); a.cmp(eax, 9999); a.jg(faultState);
+            a.shl(rax, 5); a.mov(r12, addresses.Rows); a.add(r12, rax);
+            a.mov(ecx, __dword_ptr[r13 + GlobalIdOffset]); a.test(ecx, ecx); a.je(faultState);
+            var sameUnit = a.CreateLabel();
+            a.cmp(__dword_ptr[r12], ecx); a.je(sameUnit);
+            a.mov(__dword_ptr[r12], ecx);
+            a.mov(__qword_ptr[r12 + 8], 0); a.mov(__qword_ptr[r12 + 16], 1);
+            a.mov(__qword_ptr[r12 + 24], 1);
+            a.Label(ref sameUnit);
+            a.mov(__word_ptr[r12 + 4], bp);
+            a.mov(__word_ptr[r12 + 6], (int)WorkerProductionBatchFlags.StoneBatch);
+            a.Label(ref done); a.nop();
         }
 
         internal static void FixedBonus(Assembler a, ulong back, ulong percent, ulong mode)

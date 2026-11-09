@@ -1,7 +1,8 @@
 # Worker production modifiers
 
-`APIShared.Economy.WorkerProductionModifiers` owns two shared channels: actual
-output base amounts and the fixed production percentage. It preserves ingredient
+`APIShared.Economy.WorkerProductionModifiers` owns three shared channels for
+actual output base amounts, the fixed production percentage and the production
+percentage contributed by each fear level. It preserves ingredient
 withdrawals and the existing Extender Pre/native/Post chain. Consumer mods own
 their settings and localized presentation; APIShared owns composition, exact
 precision validation, native protection and admission state.
@@ -58,12 +59,52 @@ merely because its digest still matches. Saved fractions are neither reset nor
 rounded by this invalidation.
 
 Owners are ordered by ascending priority, ordinal GUID and ordinal registration
-ID. Both channels use [staged numeric composition](VALUE_MODIFIERS.md): ordinary
+ID. Each channel uses [staged numeric composition](VALUE_MODIFIERS.md). Ordinary
 factors precede the winning fixed value and explicit `AfterFixedValue` factors
 follow it. The fixed-bonus baseline is 50 percentage points. That channel rounds
 once away from zero at midpoint and rejects values outside -100..1000. It retains
 Vanilla's mode and per-call bonus flag. Wheat, flour and bread remain ineligible
 for this fixed contribution.
+
+### Fear levels
+
+Per-level fear rules require APIShared 0.40.0 or later.
+Supply `fearBonusPercentByLevel` on the four-argument `WorkerProductionProfile`
+constructor. Each key is a native signed fear level from -5 to -1 or 1 to 5.
+Neutral level 0 always contributes 0 and is invalid as a profile key. Each level
+starts at `max(-10 * level, 0)` percentage points and composes independently.
+Omitted levels retain their Vanilla contribution. For example, a factor of 2 at
+level -3 changes +30 to +60. A factor alone at level +3 operates on 0, and a
+fixed value there can supply either a bonus or a reduction. Contributions affect
+actual output, including wheat and bread. The separate miller flour output and
+wheat or flour pickup follow their existing rules.
+
+```csharp
+// After successful registration, set a profile on the returned handle.
+handle.SetProfile(new WorkerProductionProfile(
+    baseAmounts: null,
+    fixedBonusPercent: ValueModifierContribution.None,
+    activation: null,
+    fearBonusPercentByLevel: new Dictionary<int, ValueModifierContribution> {
+        [-3] = ValueModifierContribution.Factor(2m),
+        [3] = ValueModifierContribution.FixedValue(-25m)
+    }));
+
+if (WorkerProductionModifiers.Status.TryGetResolvedFearBonusPercent(3, out int percent))
+{
+    // Present the prepared fear contribution in percentage points.
+}
+```
+
+Fear contributions round once at midpoint away from zero and must fit
+-100..1000. The fear contribution and the separately eligible fixed production
+bonus add together. Admission requires `fearBonus + min(fixedBonus, 0) >= -100`
+at every level, so every supported call can produce a nonnegative quantity.
+The lookup reads the immutable prepared result, including 0 for the neutral
+level. It returns false for an invalid status, an unresolved mode-dependent
+profile, or an input outside -5..5. It does not read the current fear of a player.
+
+### Exact base amounts and validation
 
 Base amounts are composed exactly. Fractional credits accumulate per unit in
 production-owned persistence, independently of the signed native bonus remainder.
@@ -75,19 +116,20 @@ Miller's actual-output site always selects baseline one; its other lookup slots
 are reserved identity entries rather than additional supported Miller inputs.
 
 The original native arithmetic additionally limits a transformed integer base to
-`floor(3276700 / (150 + max(fixedBonus, 0)))`, covering productivity through 150,
-bonus-ineligible calls and mode 0. Examples: 21844 at bonus <=0, 16383 at 50, and
-2849 at 1000. Fractional values must also fit when their credit produces the next
-integer. Miller's separate actual-output channel permits 0..32767. Negative,
-oversized or unrepresentable profiles are rejected visibly, never capped.
+`floor(3276700 / (100 + max(50, highestFearBonus) + max(fixedBonus, 0)))`, covering
+Vanilla productivity through 150, configured increases, bonus-ineligible calls
+and mode 0. With Vanilla fear, the limits include 21844 at a fixed bonus of 0 or
+less, 16383 at 50 and 2849 at 1000. Fractional values must also fit when their
+credit produces the next integer. Miller's separate actual-output channel permits
+0..32767. Validation rejects negative, oversized or unrepresentable base amounts.
 
 `Status` is an immutable preflight result with `CanStart`, request-scoped
 `IsAvailable`, `ResolvedFixedBonusPercent`, `Digest`, `ServiceKey`, and typed
-`Issues`. Fixed-only requests need fixed-bonus protection; base contributions or
-retained production state need the full base/persistence cohort. Each issue has
-`Code`, `LocalizationCode`, affected role/category/input, exact `ActualValue`,
-`Limit` and technical `Diagnostic`. Consumers must surface blocking issues to the
-player; a log message is not sufficient. Peer-readiness presentation is separate
+`Issues`. Fixed-only requests need fixed-bonus protection. Base contributions,
+effective fear changes and retained production state need the full native backend.
+Issues include `Code`, `LocalizationCode`, exact `ActualValue`, `Limit`, technical
+`Diagnostic` and, where applicable, the role/category/input or `FearLevel`.
+Consumers must surface blocking issues to the player. Peer-readiness presentation is separate
 in `PeerReadinessCode` and `PeerReadinessDiagnostic`.
 
 `Status.Registrations` includes immutable owner/registration/priority snapshots in
@@ -150,17 +192,17 @@ and preserves the previous contribution. A rejected publication rolls that
 registration back; it does not silently apply part of an invalid request.
 
 Legacy synchronized immediate percentage publication is retained when a concrete
-compatible calculation is available. It does not activate pending base edits or
-upgrade a running native-wire world. Before a real mission mode exists,
+compatible calculation is available. Pending base and fear edits stay staged,
+and the running world's wire mode stays frozen. Before a real mission mode exists,
 mode-dependent desired profiles remain staged until the loader selects the
-admitted bundle member. In an already extended world, a legacy percentage change
-retains the admitted base table and credits and revalidates its integer bounds.
+admitted bundle member. A legacy percentage change retains the admitted fear
+table, base table and credits, and revalidates their combined bounds.
 The fixed-only availability path may operate without the full base cohort only
 when no base contribution or retained extended state requires that cohort.
 
 For base one and neutral fear, 50 gives 1,2,1,2; 0 gives one each time; -50 gives
-1,0,1,0. Fear productivity above 100 remains additive: +50 from fear and -50 here
-produce the ordinary base quantity. Native mode and per-call bonus eligibility
+1,0,1,0. The fear contribution remains additive. For example, +50 from fear and
+-50 here produce the ordinary base quantity. Native mode and per-call bonus eligibility
 remain authoritative. Changing settings does not clear existing native remainder
 credits, so -100 can still release an earlier accumulated item. Ingredients remain
 consumed even if the completed output is zero.
@@ -238,8 +280,8 @@ parameters. Pre changes to the base quantity are inputs to the shared base table
 Post changes to the returned quantity remain Post changes, outside that table.
 Inputs outside the audited 0..100 domain require a new audit, not silent clamping.
 
-An Extender Pre subscriber can redirect `UnitId`. Native fear/productivity and the
-signed native bonus remainder keep the redirected target's semantics. Shared base
+An Extender Pre subscriber can redirect `UnitId`. Fear-level lookup and the
+signed native bonus remainder follow the redirected target. Shared base
 role, Human/AI selection, fractional credit and batch provenance belong to the
 original physical producing worker or Ox, which receives the returned cargo.
 A process-held, validated wrapper context preserves that original actor across
@@ -283,9 +325,12 @@ same exact precision compilation as desired rules. Nonempty restored state keeps
 extended support required even after all contributing profiles are removed.
 Native unit records and public Extender field layouts remain unchanged.
 
-A world with no base contribution or retained extended data uses the original
-Chore56 payload and checksum contract. An extended world appends one validated
-row to each transferred unit and includes canonical sidecar state in checksums.
+A world with a negative fear contribution uses the existing extended wire and
+save contract so a reduced load stays associated with the carrying Ox even when
+an Extender subscriber redirected the yield calculation. A world without base
+contributions, negative fear contributions or retained extended data can use the
+original Chore56 payload and checksum contract. An extended world appends one
+validated row to each transferred unit and includes canonical sidecar state in checksums.
 Incoming extended packets are fully checked under the engine monitor before the
 native record can be changed. Invalid tails and unsupported compressed transfers
 fault the world. The chosen native/extended wire mode is frozen for the mission
@@ -355,7 +400,12 @@ profile/preset locks, warnings, fault latching and coordinator ACK/GO/admission
 boundaries. These are executable boundary checks, not proof of live Unity
 rendering, every co-installed hook, Steam delivery or host/client gameplay.
 
-New/load/restart, complete worker cycles with unavailable/full/removed storage,
-animations/ingredient use, reduced stone reloads, actual ImprovedHunters, editor
-and real multiplayer remain separate game acceptance checks. Do not present
-those as completed solely because static or isolated execution tests pass.
+On 2026-11-09 a local single-player skirmish verified the installed yield hook.
+For a ten-unit base, fear levels 0, -3, 3 and 4 yielded 10, 16, 20 and 0 with
+the test profile. The same run verified miller delivery with free storage and
+a production save, reload and restart.
+
+The yield calls in that run were isolated probes. Complete worker cycles with
+unavailable, full or removed storage, animation and ingredient handling,
+reduced stone reloads, ImprovedHunters integration, editor coverage of the fear
+rules and real multiplayer require separate gameplay checks.
