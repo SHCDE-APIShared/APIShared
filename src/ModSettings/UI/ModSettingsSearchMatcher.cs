@@ -1,12 +1,13 @@
 using APIShared.ModSettings;
 using APIShared.Internal;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 #if !API_SHARED_PRESET_TESTS
 using Noesis;
-using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Xml.Linq;
@@ -76,16 +77,72 @@ namespace APIShared.ModSettings
         {
             if (filter.Length == 0)
                 return true;
-            string haystack = Fold(value);
-            string needle = Fold(filter);
-            if (haystack.Contains(needle))
+            string haystack = FoldEntryText(value);
+            FoldedFilter needle = FoldFilter(filter);
+            if (haystack.Contains(needle.Text))
                 return true;
-            return needle.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                .All(term => haystack.Contains(term));
+            foreach (string term in needle.Terms)
+                if (!haystack.Contains(term))
+                    return false;
+            return true;
         }
 
-        private static string JoinSearchText(params string[] values) =>
-            string.Join(" ", (values ?? Array.Empty<string>()).Where(value => !string.IsNullOrWhiteSpace(value)));
+        private static string JoinSearchText(string first, string second)
+        {
+            bool hasFirst = !string.IsNullOrWhiteSpace(first);
+            bool hasSecond = !string.IsNullOrWhiteSpace(second);
+            if (hasFirst && hasSecond)
+                return first + " " + second;
+            return hasFirst ? first : hasSecond ? second : string.Empty;
+        }
+
+        // One query matches every entry against the same filter, so the folded filter of the
+        // latest query is reused. Fold is pure; entry texts are cached until a size limit.
+        private sealed class FoldedFilter
+        {
+            internal FoldedFilter(string filter, string text)
+            {
+                Filter = filter;
+                Text = text;
+                Terms = text.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            }
+
+            internal readonly string Filter;
+            internal readonly string Text;
+            internal readonly string[] Terms;
+        }
+
+        private const int FoldedEntryCacheLimit = 4096;
+        private static readonly Dictionary<string, string> FoldedEntries = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static FoldedFilter lastFilter;
+
+        private static FoldedFilter FoldFilter(string filter)
+        {
+            FoldedFilter last = Volatile.Read(ref lastFilter);
+            if (last != null && string.Equals(last.Filter, filter, StringComparison.Ordinal))
+                return last;
+            last = new FoldedFilter(filter, Fold(filter));
+            Volatile.Write(ref lastFilter, last);
+            return last;
+        }
+
+        private static string FoldEntryText(string value)
+        {
+            string key = value ?? string.Empty, folded;
+            lock (FoldedEntries)
+            {
+                if (FoldedEntries.TryGetValue(key, out folded))
+                    return folded;
+            }
+            folded = Fold(key);
+            lock (FoldedEntries)
+            {
+                if (FoldedEntries.Count >= FoldedEntryCacheLimit)
+                    FoldedEntries.Clear();
+                FoldedEntries[key] = folded;
+            }
+            return folded;
+        }
 
         private static string Fold(string value)
         {

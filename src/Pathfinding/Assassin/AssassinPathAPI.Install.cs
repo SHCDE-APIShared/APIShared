@@ -53,7 +53,7 @@ namespace APIShared
                         },
                         hookSize: 14);
                 }
-                pending.AddDetour(pendingBuilder, HookTarget.FromAddress(nativeBase + 0xD9C40), (AssassinPathBuilder)Build);
+                pending.AddDetour(pendingBuilder, HookTarget.FromAddress(nativeBase + AssassinPathNativeDefinition.BuilderRva), (AssassinPathBuilder)Build);
                 CommitResult result = pending.Commit();
                 if (!result.IsCompleteSuccess || !pendingBuilder.Success)
                     throw new InvalidOperationException("Shared Assassin hook transaction failed.");

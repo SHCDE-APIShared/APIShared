@@ -63,7 +63,7 @@ namespace APIShared.Economy
                 throw new InvalidOperationException("Weapon production HUD member is missing: " + name);
 
             internal void Show(HUD_Main mainHud, Target value, IReadOnlyList<WeaponProductionOption> options, int allowed,
-                WeaponProductionSelection selection)
+                WeaponProductionOption selectedCurrent, WeaponProductionOption selectedNext)
             {
                 bool sameTarget = IsShowing && target.Matches(value);
                 if (!sameTarget)
@@ -79,11 +79,11 @@ namespace APIShared.Economy
                     bool enabled = (allowed & (1 << i)) != 0;
                     if (slots[i].Button.IsEnabled != enabled) slots[i].Button.IsEnabled = enabled;
                 }
-                if (!sameTarget || !ReferenceEquals(current, selection.Current) || !ReferenceEquals(next, selection.Next) ||
+                if (!sameTarget || !ReferenceEquals(current, selectedCurrent) || !ReferenceEquals(next, selectedNext) ||
                     target.LackingResources != value.LackingResources)
                 {
-                    current = selection.Current;
-                    next = selection.Next;
+                    current = selectedCurrent;
+                    next = selectedNext;
                     currentLabel.Text = CurrentLabel(value, current);
                     nextLabel.Text = WorkshopText(4) + " " + NameOf(next);
                     foreach (Slot slot in slots)

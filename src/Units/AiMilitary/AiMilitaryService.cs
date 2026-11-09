@@ -24,7 +24,10 @@ namespace APIShared.Units.AiMilitary
         internal static readonly AiMilitaryService Instance = new AiMilitaryService();
         private readonly Dictionary<int, Tracked> tracked = new Dictionary<int, Tracked>();
         private readonly List<Tracked> retired = new List<Tracked>();
-        private readonly uint[] additional = new uint[10001];
+        // Exclusive bound of tracked one-based unit IDs: the native unit array has 10000 records
+        // (SE GameUnitManager.GameUnitArray; its capacity constant is internal to the extender).
+        internal const int UnitIdLimit = 10000;
+        private readonly uint[] additional = new uint[UnitIdLimit + 1];
         private readonly Action process;
         private object engine;
         private ManualLogSource log;
@@ -100,14 +103,14 @@ namespace APIShared.Units.AiMilitary
             unit.GlobalId != 0 && Volatile.Read(ref additional[unit.UnitId]) == unit.GlobalId;
         internal void MarkAdditional(AiUnitRef unit, bool value)
         {
-            if (unit.UnitId <= 0 || unit.UnitId >= 10000 || unit.GlobalId == 0) return;
+            if (unit.UnitId <= 0 || unit.UnitId >= UnitIdLimit || unit.GlobalId == 0) return;
             if (!value && Volatile.Read(ref additional[unit.UnitId]) != unit.GlobalId) return;
             Volatile.Write(ref additional[unit.UnitId], value ? unit.GlobalId : 0);
             AiMilitaryQuotaRuntime.SetAdditional(unit, value);
         }
 
         private static bool TryUnit(AiUnitRef reference, out GameUnit* unit) =>
-            UnitAccess.TryGetById(reference.UnitId, out unit, out _) && reference.UnitId < 10000 &&
+            UnitAccess.TryGetById(reference.UnitId, out unit, out _) && reference.UnitId < UnitIdLimit &&
                 reference.GlobalId != 0 && unit->r_GlobalId == reference.GlobalId;
         private static void DeleteOwnUnit(AiUnitRef identity)
         {
@@ -150,11 +153,11 @@ namespace APIShared.Units.AiMilitary
                 Action<AiMilitaryAssignmentResult> completed, out IAiMilitarySpawnScope scope, out string reason) =>
                 service.Begin(owner, playerId, type, assignment, editor, apply, completed, out scope, out reason);
             public bool RequestAssignment(AiUnitRef unit, AiMilitaryAssignment assignment, Action<AiMilitaryAssignmentResult> completed, out string reason) =>
-                service.Request(owner, unit, assignment, completed, false, false, out reason);
+                service.Request(owner, unit, assignment, completed, fresh: false, declaration: false, out reason);
             public bool TryDeclareMapAssignment(AiUnitRef unit, AiMilitaryAssignment assignment, out string reason)
             {
                 if (!GameModes.GameModeHelper.IsMapEditor()) { reason = "Map declarations require the editor."; return false; }
-                return service.Request(owner, unit, assignment, null, false, true, out reason);
+                return service.Request(owner, unit, assignment, null, fresh: false, declaration: true, out reason);
             }
             public bool TryGetState(AiUnitRef unit, out AiMilitaryAssignmentResult state)
             {

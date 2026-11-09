@@ -10,7 +10,6 @@ namespace APIShared
 {
     internal sealed unsafe partial class PlayerDefeatService
     {
-        private const int LastPlayerId = 8;
         private readonly object sync = new object();
         private readonly ManualLogSource log;
         private readonly PlayerDefeatState state = new PlayerDefeatState();
@@ -187,8 +186,8 @@ namespace APIShared
             GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
             GameUnitManagerAPI units = GameUnitManagerAPI.Instance;
             if (players == null || units == null) return null;
-            var observations = new PlayerDefeatObservation[LastPlayerId];
-            for (int playerId = 1; playerId <= LastPlayerId; playerId++)
+            var observations = new PlayerDefeatObservation[PlayerSlots.Count];
+            for (int playerId = PlayerSlots.FirstPlayerId; playerId <= PlayerSlots.LastPlayerId; playerId++)
                 observations[playerId - 1] = Capture(players, units, playerId);
             return observations;
         }

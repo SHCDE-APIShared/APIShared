@@ -40,7 +40,7 @@ namespace APIShared.Units.AiMilitary
         {
             try
             {
-                if (unitId <= 0 || unitId >= 10000 || !UnitAccess.TryGetById(unitId, out GameUnit* unit, out _) || unit->r_GlobalId == 0) return;
+                if (unitId <= 0 || unitId >= UnitIdLimit || !UnitAccess.TryGetById(unitId, out GameUnit* unit, out _) || unit->r_GlobalId == 0) return;
                 var identity = new AiUnitRef(unitId, unit->r_GlobalId);
                 if (tracked.TryGetValue(identity.UnitId, out var old) && !old.Unit.Equals(identity))
                 {
@@ -67,11 +67,11 @@ namespace APIShared.Units.AiMilitary
             SpawnScope scope = capture;
             if (scope == null) return result;
             if (scope.Generation != generation) return result; // A nested new-world load owns a newer ambient receipt.
-            if (raw <= 0 || raw >= 10000 || !UnitAccess.TryGetById((int)raw, out GameUnit* unit, out _))
+            if (raw <= 0 || raw >= UnitIdLimit || !UnitAccess.TryGetById((int)raw, out GameUnit* unit, out _))
             {
                 // A foreign Pre may supply an existing primary unit without invoking Original.
                 // Non-primary helper calls remain outside the capture contract.
-                if (result > 0 && result < 10000 && UnitAccess.TryGetById((int)result, out GameUnit* supplied, out _) &&
+                if (result > 0 && result < UnitIdLimit && UnitAccess.TryGetById((int)result, out GameUnit* supplied, out _) &&
                     supplied->r_UnitChimp == scope.Type && supplied->r_ControllableForPlayerId == scope.Player) return 0;
                 return result;
             }
@@ -109,8 +109,8 @@ namespace APIShared.Units.AiMilitary
                 var results = new List<AiMilitaryAssignmentResult>(Created.Count);
                 foreach (var unit in Created)
                 {
-                    if (Generation == service.generation && service.Request(owner, unit, assignment, completed, true,
-                        editor && !apply, out string reason, out AiMilitaryAssignmentResult initial))
+                    if (Generation == service.generation && service.Request(owner, unit, assignment, completed, fresh: true,
+                        declaration: editor && !apply, out string reason, out AiMilitaryAssignmentResult initial))
                         results.Add(initial);
                     else
                     {

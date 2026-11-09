@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using SHCDESE.API;
 using SHCDESE.Interop;
 using APIShared.Events;
 using APIShared.Modifiers;
@@ -122,8 +123,11 @@ namespace APIShared.Economy
             Action<AiMarketSellQuantityContext> quantityAdjuster = null, int order = 0) =>
             Registry.TryRegister(ownerGuid, registrationId, safety, out registration, out error, reserveAdjuster, quantityAdjuster, order);
 
+        // The reserve hook passes R8 = player * PlayerDwordStride, the player's DWORD index
+        // into the resource table; any other value is not a player row.
+        private const int PlayerDwordStride = AiMarketSellAssembly.PlayerStride / sizeof(int);
         internal static int Reserve(int slot, int good, int stock, int original) =>
-            slot % 0x160F == 0 ? Registry.Reserve(slot / 0x160F, good, stock, original) : original;
+            slot % PlayerDwordStride == 0 ? Registry.Reserve(slot / PlayerDwordStride, good, stock, original) : original;
         internal static int Quantity(int player, int good, int stock, int original) => Registry.Quantity(player, good, stock, original);
     }
 
@@ -172,7 +176,7 @@ namespace APIShared.Economy
                 publish(demand);
             }
         }
-        private static bool Valid(int player, int good) => player >= 1 && player <= 8 &&
+        private static bool Valid(int player, int good) => player >= 1 && player <= GamePlayerManagerAPI.MAX_PLAYERS &&
             good > (int)eGoods.STORED_NULL && good < (int)eGoods.Count && good != (int)eGoods.STORED_GOLD;
         internal int Reserve(int player, int good, int stock, int original)
         {

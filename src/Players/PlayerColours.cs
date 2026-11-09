@@ -17,8 +17,6 @@ namespace APIShared
     /// </remarks>
     public static class PlayerColours
     {
-        private const int FirstPlayerId = 1;
-        private const int LastPlayerId = 8;
         private const int FirstColour = 1;
         private const int LastColour = 8;
 
@@ -37,7 +35,7 @@ namespace APIShared
         public static bool TryGetUiColour(int playerId, out int uiColour)
         {
             uiColour = 0;
-            if (playerId < FirstPlayerId || playerId > LastPlayerId || !UnityMainThreadDispatch.IsMainThread) return false;
+            if (!PlayerSlots.IsValidPlayerId(playerId) || !UnityMainThreadDispatch.IsMainThread) return false;
             try { return TryReadUiColour(playerId, out uiColour); }
             catch (Exception)
             {
@@ -77,7 +75,7 @@ namespace APIShared
         internal static bool TryGetHumanLordArabic(int playerId, out bool arabic)
         {
             arabic = false;
-            if (playerId < FirstPlayerId || playerId > LastPlayerId) return false;
+            if (!PlayerSlots.IsValidPlayerId(playerId)) return false;
             try { return TryReadHumanLordArabic(playerId, out arabic); }
             catch (Exception)
             {

@@ -69,8 +69,8 @@ namespace APIShared
         {
             if (!supported || module == IntPtr.Zero || (uint)fromTile >= TileCount ||
                 (uint)toTile >= TileCount || (uint)direction > 7) return AssassinTransitionKind.Unknown;
-            byte* connections = (byte*)module + 0x51890D0;
-            byte* masks = (byte*)module + 0x312620;
+            byte* connections = (byte*)module + AssassinPathNativeDefinition.ConnectionsRva;
+            byte* masks = (byte*)module + AssassinPathNativeDefinition.DirectionMasksRva;
             uint* surfaces = (uint*)((byte*)module + TileFlagsRva);
             ushort* buildings = (ushort*)((byte*)module + BuildingGridRva);
             // The special-surface predicate is deliberately not called by a read-only observer.

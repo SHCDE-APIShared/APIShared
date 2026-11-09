@@ -21,14 +21,22 @@ namespace APIShared.Economy
         internal static bool TryGetSelection(int id, uint gid, out WeaponProductionSelection selection)
         {
             selection = null;
+            if (!TryGetSelection(id, gid, out var current, out var next)) return false;
+            selection = new WeaponProductionSelection(current, next);
+            return true;
+        }
+
+        // Allocation-free form for the per-frame workshop HUD.
+        internal static bool TryGetSelection(int id, uint gid, out WeaponProductionOption current, out WeaponProductionOption next)
+        {
+            current = next = null;
             if (!HasHudDemand || engine == null) return false;
             lock (engine)
             {
                 if (!TryBuilding(id, gid, out var building) || active.For(building->r_BuildingType).Count == 0) return false;
                 var state = FindState(id, gid, building->r_BuildingType);
-                var current = HasCurrentBatch(state) ? state.Current.Option : ReadVanilla(building, currentOffset);
-                var next = state?.Next ?? ReadVanilla(building, nextOffset);
-                selection = new WeaponProductionSelection(current, next);
+                current = HasCurrentBatch(state) ? state.Current.Option : ReadVanilla(building, currentOffset);
+                next = state?.Next ?? ReadVanilla(building, nextOffset);
                 return true;
             }
         }

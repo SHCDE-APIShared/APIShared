@@ -259,7 +259,7 @@ namespace APIShared.Economy
                 bool buying = direction == MarketPriceDirection.Buy;
                 // The displacement comes from the complete hash-validated native helper.
                 // Avoid SE GetTradeBasePrice's verbose pointer-string allocation on every AI query.
-                int offset = BitConverter.ToInt32(buying ? MarketPriceNativeRuntime.BuyBytes : MarketPriceNativeRuntime.SellBytes, 6);
+                int offset = buying ? MarketPriceNativeRuntime.BuyPriceTableOffset : MarketPriceNativeRuntime.SellPriceTableOffset;
                 IntPtr cell = IntPtr.Add(manager, offset + good * 8);
                 int current = Marshal.ReadInt32(cell);
                 if (current != Table.AppliedPrice(good, buying)) { RefreshLocked(); current = Marshal.ReadInt32(cell); }

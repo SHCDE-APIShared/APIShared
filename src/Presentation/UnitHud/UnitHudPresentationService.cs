@@ -64,6 +64,7 @@ namespace APIShared
         private readonly Dictionary<int, RecruitmentRegistration[]> recruitmentViews =
             new Dictionary<int, RecruitmentRegistration[]>();
         private readonly HashSet<string> loggedCategoryConflicts = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<(int, uint, int, string, string)> seenCategoryConflicts = new HashSet<(int, uint, int, string, string)>();
         private readonly HashSet<string> loggedCallbackFailures = new HashSet<string>(StringComparer.Ordinal);
         private readonly ManualLogSource log;
         private readonly string binaryHash;

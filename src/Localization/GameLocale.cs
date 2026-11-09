@@ -10,6 +10,8 @@ namespace APIShared.Localization
     {
         private static string steamLanguage;
         private static bool manifestAttempted;
+        private static MethodInfo steamLanguageMethod;
+        private static bool steamLanguageMethodResolved;
         private static int mainThread;
         private static string published = "en-US";
         private static BepInEx.Configuration.ConfigEntry<string> configuredLanguage;
@@ -42,8 +44,18 @@ namespace APIShared.Localization
         {
             try
             {
-                var type = Type.GetType("Steamworks.SteamApps, com.rlabrecque.steamworks.net", false);
-                var method = type == null ? null : type.GetMethod("GetCurrentGameLanguage", BindingFlags.Static | BindingFlags.Public);
+                // A missing Steamworks type may still load later, so only a found type is cached.
+                // Its member lookup cannot change afterwards.
+                if (!steamLanguageMethodResolved)
+                {
+                    var type = Type.GetType("Steamworks.SteamApps, com.rlabrecque.steamworks.net", false);
+                    if (type != null)
+                    {
+                        steamLanguageMethod = type.GetMethod("GetCurrentGameLanguage", BindingFlags.Static | BindingFlags.Public);
+                        steamLanguageMethodResolved = true;
+                    }
+                }
+                var method = steamLanguageMethod;
                 string value = method == null ? null : method.Invoke(null, null) as string;
                 if (!string.IsNullOrWhiteSpace(value)) return value;
             }

@@ -91,7 +91,8 @@ namespace APIShared.Health
         internal static uint Evaluate(HealthModifierContext context, uint limit, out bool contributed)
         {
             contributed = false;
-            var values = new List<ValueModifierContribution>();
+            // Most objects have no contribution; Calculate treats null like an empty list.
+            List<ValueModifierContribution> values = null;
             foreach (var item in Volatile.Read(ref policies))
             {
                 if (!item.IsEnabled) continue;
@@ -100,7 +101,11 @@ namespace APIShared.Health
                     ValueModifierContribution value = item.Provider(context);
                     if (value.Kind == ValueModifierKind.FixedValue && value.Value <= 0)
                         throw new ArgumentOutOfRangeException("contribution", "An absolute live-object HP maximum must be positive.");
-                    if (value.Kind != ValueModifierKind.None) { values.Add(value); contributed = true; }
+                    if (value.Kind != ValueModifierKind.None)
+                    {
+                        (values ?? (values = new List<ValueModifierContribution>())).Add(value);
+                        contributed = true;
+                    }
                 }
                 catch (Exception error)
                 {

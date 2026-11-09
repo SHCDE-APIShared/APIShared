@@ -194,6 +194,12 @@ namespace APIShared
         private readonly Dictionary<CategoryRegistration, GroupEntry> groupCategoryEntries = new Dictionary<CategoryRegistration, GroupEntry>();
         private readonly Dictionary<int, GroupEntry> groupVanillaEntries = new Dictionary<int, GroupEntry>();
         private readonly List<GroupEntry> groupVisible = new List<GroupEntry>();
+        private readonly List<GroupEntry> groupEntryPool = new List<GroupEntry>();
+        private int groupEntriesUsed;
+        private readonly int[,] groupValueCounts = new int[GroupCount, GroupVisibleSlots];
+        private readonly string[,] groupValueTexts = new string[GroupCount, GroupVisibleSlots];
+        private readonly int[] groupExtraCounts = new int[GroupCount];
+        private readonly string[] groupExtraTexts = new string[GroupCount];
         private Func<HUD_ControlGroups, int, ImageSource> groupSprite;
         private bool groupSpriteResolved;
         private static readonly Comparison<GroupEntry> GroupOrder = (left, right) =>
@@ -201,7 +207,11 @@ namespace APIShared
             int compare = left.BaseType.CompareTo(right.BaseType);
             if (compare != 0) return compare;
             compare = (left.Category == null ? 0 : 1).CompareTo(right.Category == null ? 0 : 1);
-            return compare != 0 ? compare : string.CompareOrdinal(left.SortKey, right.SortKey);
+            if (compare != 0) return compare;
+            // Same signs as the former ordinal keys "0:" + SummaryType.ToString("D2") and
+            // "1:" + Key: Vanilla summary types are 0..33, and a shared prefix keeps ordinal order.
+            return left.Category == null ? left.SummaryType.CompareTo(right.SummaryType)
+                : string.CompareOrdinal(left.Category.Key, right.Category.Key);
         };
 
         private bool frameDemand;

@@ -80,7 +80,7 @@ namespace APIShared
                 var replayTarget = new[] { registration };
                 long? current = CurrentSession();
                 if (current.HasValue)
-                    for (int player = 1; player <= LastPlayerId; player++)
+                    for (int player = PlayerSlots.FirstPlayerId; player <= PlayerSlots.LastPlayerId; player++)
                         if (state.TryGetSnapshot(current.Value, player, out var snapshot))
                             pendingPublications.Enqueue(new Publication(snapshot, replayTarget));
             }

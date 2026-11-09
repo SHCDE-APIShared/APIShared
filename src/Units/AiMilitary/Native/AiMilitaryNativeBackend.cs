@@ -14,6 +14,10 @@ namespace APIShared.Units.AiMilitary.Native
     {
         internal const ushort UnmanagedRole = ushort.MaxValue;
         internal const int UnitStride = 0x490, TribeStride = 0x688, TribeCapacity = 4500;
+        // A tribe's serialization record starts at manager row +0x28, two bytes before the public
+        // GameTribe view at +0x2A; copying TribeStride bytes from the public view would overrun
+        // into the next record (baseline sem/FBCB9319/knowledge/AI_MILITARY_ADMISSION.md).
+        private const int TribeRecordOffset = 0x28;
         internal readonly IntPtr Module;
         internal IntPtr UnitManager => Module + 0x67E8400;
         internal IntPtr TribeManager => Module + 0x7CC6720;
@@ -309,7 +313,7 @@ namespace APIShared.Units.AiMilitary.Native
             if (oldId != 0)
             {
                 oldPrivate = new byte[TribeStride];
-                Marshal.Copy((IntPtr)Tribe(oldGroup) + 0x28, oldPrivate, 0, oldPrivate.Length);
+                Marshal.Copy((IntPtr)Tribe(oldGroup) + TribeRecordOffset, oldPrivate, 0, oldPrivate.Length);
             }
             bool previousAdmitting = admitting; long previousAdmissionGeneration = admittingGeneration;
             admitting = true; admittingGeneration = operationWorld;
@@ -356,7 +360,7 @@ namespace APIShared.Units.AiMilitary.Native
                     {
                         byte* old = Tribe(oldGroup);
                         if (*(uint*)(old + 0x34) == oldGroup.GlobalId && *(int*)(old + 0x2C) == oldGroup.Owner)
-                        { Marshal.Copy(oldPrivate, 0, (IntPtr)old + 0x28, oldPrivate.Length); restoredPrivate = true; }
+                        { Marshal.Copy(oldPrivate, 0, (IntPtr)old + TribeRecordOffset, oldPrivate.Length); restoredPrivate = true; }
                     }
                     snapshot.Restore(unit);
                     if (!restoredPrivate)
@@ -372,7 +376,7 @@ namespace APIShared.Units.AiMilitary.Native
             resources->r_AIConstructionPauseTriggerIndex == 1 && resources->r_AIConstructionPauseTriggers[1] > 0 ? 1 : 0);
 
         internal bool HasMember(AiNativeGroup group, int unitId) => IsCurrent(group) && RawHasMember(group, unitId);
-        private bool RawHasMember(AiNativeGroup group, int unitId) => unitId > 0 && unitId < 10000 &&
+        private bool RawHasMember(AiNativeGroup group, int unitId) => unitId > 0 && unitId < AiMilitaryService.UnitIdLimit &&
             ((*(ushort*)(Tribe(group) + 0x60 + (unitId >> 4) * 2) >> (unitId & 15)) & 1) != 0;
 
         internal bool TryUnit(int id, uint global, out GameUnit* unit, out string reason)

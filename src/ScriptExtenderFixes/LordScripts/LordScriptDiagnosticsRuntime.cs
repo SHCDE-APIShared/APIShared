@@ -16,7 +16,6 @@ namespace APIShared.ScriptExtenderFixes
     // only: nothing is blocked, sent or changed.
     internal static class LordScriptDiagnosticsRuntime
     {
-        private const int MaxPlayers = 8;
         private static IMissionLifecycleCapability lifecycle;
         private static ManualLogSource log;
         private static bool initialized;
@@ -64,7 +63,7 @@ namespace APIShared.ScriptExtenderFixes
                     packages[registered.Key.GUID] = registered.Key;
 
             var slots = new List<LordScriptSlot>();
-            for (int playerId = 1; playerId <= MaxPlayers; playerId++)
+            for (int playerId = PlayerSlots.FirstPlayerId; playerId <= PlayerSlots.LastPlayerId; playerId++)
             {
                 string name = ai.GetCustomAILordNameByPlayerId(playerId);
                 // Same lookup as Script Extender (culture-sensitive ToLower, matching LordDataDict keys).

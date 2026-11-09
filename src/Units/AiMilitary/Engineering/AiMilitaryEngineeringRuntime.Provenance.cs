@@ -175,7 +175,7 @@ namespace APIShared.Units.AiMilitary.Engineering
         private static bool TryUnit(AiUnitRef unit, out byte* raw)
         {
             raw = null;
-            if (module == IntPtr.Zero || unit.UnitId <= 0 || unit.UnitId >= 10000 || unit.GlobalId == 0) return false;
+            if (module == IntPtr.Zero || unit.UnitId <= 0 || unit.UnitId >= AiMilitaryService.UnitIdLimit || unit.GlobalId == 0) return false;
             raw = (byte*)(module + UnitManager + unit.UnitId * UnitStride);
             if (*(uint*)(raw + 0x6F0) == unit.GlobalId) return true;
             raw = null; return false;

@@ -387,11 +387,8 @@ namespace APIShared.Economy
             {
                 WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);
                 Volatile.Write(ref activeRules,rules);
-                if(session!=0)
-                {
-                    if(rules.FixedBonusPercent!=50)WorkerProductionWorldSafety.RequireGuard();
-                    else if(WorkerProductionWorldSafety.IsAdmitted)WorkerProductionWorldSafety.ConfirmPrepared(false);
-                }
+                if(rules.FixedBonusPercent!=50)WorkerProductionWorldSafety.RequireGuard();
+                else if(WorkerProductionWorldSafety.IsAdmitted)WorkerProductionWorldSafety.ConfirmPrepared(false);
                 return;
             }
             var existing=Volatile.Read(ref activeRules);
@@ -432,13 +429,16 @@ namespace APIShared.Economy
                     {
                         int index=role*WorkerProductionHotAssembly.EntriesPerRole+input;var entry=rules.Entries[index];
                         if(entry.Denominator!=rules.CommonDenominator)throw new InvalidOperationException("Production table denominator differs.");
-                        Marshal.WriteInt64(table,index*24,entry.Whole);Marshal.WriteInt64(table,index*24+8,unchecked((long)entry.Numerator));
-                        Marshal.WriteInt64(table,index*24+16,unchecked((long)entry.Denominator));
+                        // WorkerProductionHotAssembly reads whole, numerator and denominator at +0, +8, +16.
+                        int entryOffset=index*WorkerProductionHotAssembly.EntrySize;
+                        Marshal.WriteInt64(table,entryOffset,entry.Whole);Marshal.WriteInt64(table,entryOffset+8,unchecked((long)entry.Numerator));
+                        Marshal.WriteInt64(table,entryOffset+16,unchecked((long)entry.Denominator));
                         if(entry.Whole!=(uint)input || entry.Numerator!=0)activeMask|=1UL<<role;
                     }
                     plan=Marshal.AllocHGlobal(WorkerProductionHotAssembly.HeaderSize);
-                    Marshal.WriteInt64(plan,0,unchecked((long)rules.CommonDenominator));Marshal.WriteIntPtr(plan,8,table);
-                    Marshal.WriteInt64(plan,16,unchecked((long)activeMask));nativePlans.Add(rules.Digest,plan);
+                    Marshal.WriteInt64(plan,WorkerProductionHotAssembly.CommonDenominatorOffset,unchecked((long)rules.CommonDenominator));
+                    Marshal.WriteIntPtr(plan,WorkerProductionHotAssembly.TableOffset,table);
+                    Marshal.WriteInt64(plan,WorkerProductionHotAssembly.ActiveRoleMaskOffset,unchecked((long)activeMask));nativePlans.Add(rules.Digest,plan);
                 }
                 WorkerProductionBonusNativeRuntime.PublishPercent(rules.FixedBonusPercent);
                 Volatile.Write(ref *(long*)configurationSlot,plan.ToInt64());Volatile.Write(ref activeRules,rules);

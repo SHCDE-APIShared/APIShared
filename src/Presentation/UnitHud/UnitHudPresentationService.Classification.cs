@@ -29,11 +29,16 @@ namespace APIShared
                 if (!HasSurface(category, surface) || category.Definition.BaseUnitType != unit.VanillaType || !Claims(category, unit)) continue;
                 if (match != null)
                 {
-                    string conflict = unit.GameId + ":" + unit.GlobalId + ":" + surface + ":" + match.Key + ":" + category.Key;
                     lock (sync)
                     {
-                        if (loggedCategoryConflicts.Add(conflict))
-                            NativeApiLog.Error(log, $"Unit HUD category conflict for unit={unit.GameId}, global={unit.GlobalId}: {match.Key} and {category.Key}; Vanilla category retained.");
+                        // A seen key's string is already in loggedCategoryConflicts, so only a new
+                        // conflict builds it; deduplication stays keyed by the former string.
+                        if (seenCategoryConflicts.Add((unit.GameId, unit.GlobalId, (int)surface, match.Key, category.Key)))
+                        {
+                            string conflict = unit.GameId + ":" + unit.GlobalId + ":" + surface + ":" + match.Key + ":" + category.Key;
+                            if (loggedCategoryConflicts.Add(conflict))
+                                NativeApiLog.Error(log, $"Unit HUD category conflict for unit={unit.GameId}, global={unit.GlobalId}: {match.Key} and {category.Key}; Vanilla category retained.");
+                        }
                     }
                     return null;
                 }

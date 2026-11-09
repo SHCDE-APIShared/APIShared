@@ -77,10 +77,10 @@ namespace APIShared
             {
                 if (settings.Enabled)
                 {
-                    ValidateRange(settings.HumanReopenDelaySeconds, 0.0, 30.0, nameof(settings.HumanReopenDelaySeconds));
-                    ValidateRange(settings.AiReopenDelaySeconds, 0.0, 120.0, nameof(settings.AiReopenDelaySeconds));
-                    ValidateRange(settings.HumanCloseDistanceTiles, 5.0, 50.0, nameof(settings.HumanCloseDistanceTiles));
-                    ValidateRange(settings.AiCloseDistanceTiles, 5.0, 50.0, nameof(settings.AiCloseDistanceTiles));
+                    ValidateRange(settings.HumanReopenDelaySeconds, GatehouseTimingValues.MinimumHumanDelaySeconds, GatehouseTimingValues.MaximumHumanDelaySeconds, nameof(settings.HumanReopenDelaySeconds));
+                    ValidateRange(settings.AiReopenDelaySeconds, GatehouseTimingValues.MinimumAiDelaySeconds, GatehouseTimingValues.MaximumAiDelaySeconds, nameof(settings.AiReopenDelaySeconds));
+                    ValidateRange(settings.HumanCloseDistanceTiles, GatehouseTimingValues.MinimumDistanceTiles, GatehouseTimingValues.MaximumDistanceTiles, nameof(settings.HumanCloseDistanceTiles));
+                    ValidateRange(settings.AiCloseDistanceTiles, GatehouseTimingValues.MinimumDistanceTiles, GatehouseTimingValues.MaximumDistanceTiles, nameof(settings.AiCloseDistanceTiles));
                     humanDelay = ConvertNativeUInt16(settings.HumanReopenDelaySeconds, TicksPerSecond, nameof(settings.HumanReopenDelaySeconds));
                     aiDelay = ConvertNativeUInt16(settings.AiReopenDelaySeconds, TicksPerSecond, nameof(settings.AiReopenDelaySeconds));
                     humanDistance = ConvertNativeUInt16(settings.HumanCloseDistanceTiles, UnitsPerTile, nameof(settings.HumanCloseDistanceTiles));

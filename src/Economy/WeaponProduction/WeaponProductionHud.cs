@@ -82,14 +82,11 @@ namespace APIShared.Economy
 
             try
             {
-                if (!TryReadTarget(main, out Target target)) { view?.Hide(); return; }
-                var options = WeaponProduction.GetOptions(target.Type);
-                if (!TryGetAllowedSlots(options, out int allowed) ||
-                    !WeaponProduction.TryGetSelection(target.Id, target.GlobalId, out var selection))
+                if (!TryReadWorkshop(main, out Target target, out var options, out int allowed, out var current, out var next))
                 { view?.Hide(); return; }
 
                 if (view == null) view = new PanelView(hud);
-                view.Show(main.HUDmain, target, options, allowed, selection);
+                view.Show(main.HUDmain, target, options, allowed, current, next);
                 if (!observed)
                 {
                     observed = true;
@@ -111,28 +108,51 @@ namespace APIShared.Economy
             old?.Unbind();
         }
 
+        // Reads the workshop, its permitted slots and its selection under one engine lock;
+        // the Unity-side checks before it need no lock.
+        private static bool TryReadWorkshop(MainViewModel main, out Target target,
+            out IReadOnlyList<WeaponProductionOption> options, out int allowed,
+            out WeaponProductionOption current, out WeaponProductionOption next)
+        {
+            target = default; options = null; allowed = 0; current = next = null;
+            if (!TryReadTargetType(main, out EngineInterface.PlayState state, out eStructs type)) return false;
+            lock (engine)
+            {
+                if (!TryReadTarget(state, type, out target)) return false;
+                options = WeaponProduction.GetOptions(target.Type);
+                return TryGetAllowedSlots(options, out allowed) &&
+                    WeaponProductionRuntime.TryGetSelection(target.Id, target.GlobalId, out current, out next);
+            }
+        }
+
+        // Caller holds the engine lock.
         private static bool TryGetAllowedSlots(IReadOnlyList<WeaponProductionOption> options, out int allowed)
         {
             allowed = 0;
             if (options == null || options.Count == 0 || options.Count > 4) return false;
             bool extra = false;
-            lock (engine)
-                for (int i = 0; i < options.Count; ++i)
-                    if (WeaponProductionRuntime.IsOptionAllowed(options[i]))
-                    {
-                        allowed |= 1 << i;
-                        extra |= !options[i].IsVanilla;
-                    }
+            for (int i = 0; i < options.Count; ++i)
+                if (WeaponProductionRuntime.IsOptionAllowed(options[i]))
+                {
+                    allowed |= 1 << i;
+                    extra |= !options[i].IsVanilla;
+                }
             return extra;
         }
 
-        private static unsafe bool TryReadTarget(MainViewModel main, out Target target)
+        private static bool TryReadTarget(MainViewModel main, out Target target)
         {
             target = default;
+            if (!TryReadTargetType(main, out EngineInterface.PlayState state, out eStructs type)) return false;
+            lock (engine) return TryReadTarget(state, type, out target);
+        }
+
+        private static bool TryReadTargetType(MainViewModel main, out EngineInterface.PlayState state, out eStructs type)
+        {
+            state = null; type = default;
             if (main?.HUDmain == null || main.HUDBuildingPanel == null || !main.Show_HUD_Building) return false;
-            EngineInterface.PlayState state = GameData.Instance?.lastGameState;
+            state = GameData.Instance?.lastGameState;
             if (state == null || state.in_structure <= 0) return false;
-            eStructs type;
             switch ((Enums.InBuildingModes)state.app_sub_mode)
             {
                 case Enums.InBuildingModes.INSIDE_FLETCHERS_WORKSHOP: type = eStructs.STRUCT_FLETCHERS_WORKSHOP; break;
@@ -142,18 +162,21 @@ namespace APIShared.Economy
                 case Enums.InBuildingModes.INSIDE_TANNERS_WORKSHOP: type = eStructs.STRUCT_TANNERS_WORKSHOP; break;
                 default: return false;
             }
+            return true;
+        }
 
-            lock (engine)
-            {
-                int player = PlayerPerspectiveAPI.GetControlledPlayerId();
-                if (player <= 0 || PlayerPerspectiveAPI.GetViewedPlayerId() != player) return false;
-                var manager = GameBuildingManagerAPI.Instance;
-                if (manager == null || !manager.TryGetBuildingById(state.in_structure, out GameBuilding* building) || building == null ||
-                    building->r_AliveState != AliveState.IsAlive || building->r_BuildingType != type ||
-                    building->r_PlayerIdOwner != player || building->r_GlobalId == 0) return false;
-                target = new Target(state.in_structure, building->r_GlobalId, type, state.production_no_resources != 0);
-                return true;
-            }
+        // Caller holds the engine lock.
+        private static unsafe bool TryReadTarget(EngineInterface.PlayState state, eStructs type, out Target target)
+        {
+            target = default;
+            int player = PlayerPerspectiveAPI.GetControlledPlayerId();
+            if (player <= 0 || PlayerPerspectiveAPI.GetViewedPlayerId() != player) return false;
+            var manager = GameBuildingManagerAPI.Instance;
+            if (manager == null || !manager.TryGetBuildingById(state.in_structure, out GameBuilding* building) || building == null ||
+                building->r_AliveState != AliveState.IsAlive || building->r_BuildingType != type ||
+                building->r_PlayerIdOwner != player || building->r_GlobalId == 0) return false;
+            target = new Target(state.in_structure, building->r_GlobalId, type, state.production_no_resources != 0);
+            return true;
         }
 
         private readonly struct Target

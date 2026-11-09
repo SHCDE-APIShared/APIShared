@@ -65,6 +65,7 @@ namespace APIShared
             {
                 groupCategoryEntries.Clear();
                 groupVanillaEntries.Clear();
+                groupEntriesUsed = 0;
                 int total = 0;
                 int* start = groupRecords + group * GroupCapacity * GroupRecordWidth;
                 for (int index = 0; index < GroupCapacity; index++)
@@ -86,10 +87,10 @@ namespace APIShared
                     if (category != null)
                     {
                         if (!groupCategoryEntries.TryGetValue(category, out entry))
-                            groupCategoryEntries[category] = entry = new GroupEntry(category, summaryType, vanillaType);
+                            groupCategoryEntries[category] = entry = RentGroupEntry(category, summaryType, vanillaType);
                     }
                     else if (!groupVanillaEntries.TryGetValue(summaryType, out entry))
-                        groupVanillaEntries[summaryType] = entry = new GroupEntry(null, summaryType, vanillaType);
+                        groupVanillaEntries[summaryType] = entry = RentGroupEntry(null, summaryType, vanillaType);
                     entry.Count++;
                 }
                 groupVisible.Clear();
@@ -116,7 +117,7 @@ namespace APIShared
                             groupTints[group, slot].Visibility = Visibility.Visible;
                         }
                         else groupTints[group, slot].Visibility = Visibility.Hidden;
-                        values[group, slot].Text = entry.Count.ToString();
+                        values[group, slot].Text = CountText(ref groupValueCounts[group, slot], ref groupValueTexts[group, slot], entry.Count, string.Empty);
                         values[group, slot].Visibility = Visibility.Visible;
                         shown += entry.Count;
                     }
@@ -128,10 +129,31 @@ namespace APIShared
                     }
                 }
                 int remainder = Math.Max(0, total - shown);
-                extras[group].Text = remainder > 0 ? "+" + remainder : string.Empty;
+                extras[group].Text = remainder > 0 ? CountText(ref groupExtraCounts[group], ref groupExtraTexts[group], remainder, "+") : string.Empty;
                 extras[group].Visibility = remainder > 0 ? Visibility.Visible : Visibility.Hidden;
             }
         }
+
+        // RenderGroups resets the pool for each group; an entry lives only until the next group.
+        private GroupEntry RentGroupEntry(CategoryRegistration category, int summaryType, int baseType)
+        {
+            if (groupEntriesUsed == groupEntryPool.Count) groupEntryPool.Add(new GroupEntry());
+            GroupEntry entry = groupEntryPool[groupEntriesUsed++];
+            entry.Category = category; entry.SummaryType = summaryType; entry.BaseType = baseType; entry.Count = 0;
+            return entry;
+        }
+
+        // Vanilla rewrites every slot text each frame; an unchanged count reuses its previous string.
+        private static string CountText(ref int cachedCount, ref string cachedText, int count, string prefix)
+        {
+            if (cachedText == null || cachedCount != count)
+            {
+                cachedText = prefix + count.ToString();
+                cachedCount = count;
+            }
+            return cachedText;
+        }
+
         private void EnsureGroupTints(HUD_ControlGroups panel, Image[,] images)
         {
             if (ReferenceEquals(activeGroupPanel, panel) && groupTints != null) return;
@@ -238,11 +260,8 @@ namespace APIShared
 
         private sealed class GroupEntry
         {
-            internal GroupEntry(CategoryRegistration category, int summaryType, int baseType) { Category = category; SummaryType = summaryType; BaseType = baseType; }
-            internal CategoryRegistration Category { get; } internal int SummaryType { get; } internal int BaseType { get; } internal int Count { get; set; }
-            // Computed once per entry; the comparison runs several times per frame.
-            internal string SortKey => sortKey ?? (sortKey = Category != null ? "1:" + Category.Key : "0:" + SummaryType.ToString("D2"));
-            private string sortKey;
+            internal CategoryRegistration Category;
+            internal int SummaryType, BaseType, Count;
         }
     }
 }

@@ -186,9 +186,9 @@ namespace APIShared
                 {
                     CheckContext();
                     if (FingerprintMatches(true)) return;
-                    Abort(FingerprintMismatch(), true, phase: "replacement request");
+                    Abort(FingerprintMismatch(), notify: true, phase: "replacement request");
                 }
-                catch (Exception error) { Abort(error.Message, true, phase: "replacement request"); }
+                catch (Exception error) { Abort(error.Message, notify: true, phase: "replacement request"); }
             }
             try
             {
@@ -215,7 +215,7 @@ namespace APIShared
                 if (!agreement.Ready) Send(pending);
                 Tick();
             }
-            catch (Exception error) { Abort(error.Message, true, phase: "request"); }
+            catch (Exception error) { Abort(error.Message, notify: true, phase: "request"); }
             finally { Schedule(); }
         }
         private static void BeginAttempt(Platform_Multiplayer.MPLobby lobby, string token)
@@ -242,7 +242,7 @@ namespace APIShared
         };
         private static void Receive(NetworkMessage<MapRecordReadinessPacket> message)
         {
-            try { ReceiveCore(message); } catch (Exception error) { Abort(error.Message, true, phase: "readiness message"); }
+            try { ReceiveCore(message); } catch (Exception error) { Abort(error.Message, notify: true, phase: "readiness message"); }
         }
         private static void ReceiveCore(NetworkMessage<MapRecordReadinessPacket> message)
         {
@@ -281,15 +281,15 @@ namespace APIShared
                     return;
                 }
                 if (pending == null) BeginAttempt(lobby, LobbyReadinessSupport.NewAttemptId());
-                Abort(reason, pending != null, phase: "protocol negotiation", localChat: !lobby.isHost);
+                Abort(reason, notify: pending != null, phase: "protocol negotiation", localChat: !lobby.isHost);
                 return;
             }
             if (packet.Operation == 3 && packet.Metadata == null && host == hostId && IsCurrentEnvelope(packet, lobby))
             {
                 if (lobby.isHost && message.SenderSteamId != host)
-                    Abort(UiText.Get("LobbyLaunch.MapPeerCancelled", LobbyReadinessSupport.PlayerName(message.SenderSteamId), packet.Reason), true, phase: "peer rejection");
+                    Abort(UiText.Get("LobbyLaunch.MapPeerCancelled", LobbyReadinessSupport.PlayerName(message.SenderSteamId), packet.Reason), notify: true, phase: "peer rejection");
                 else if (!lobby.isHost && message.SenderSteamId == host)
-                    Abort("Host cancelled map preparation: " + packet.Reason, false, phase: "host cancellation");
+                    Abort("Host cancelled map preparation: " + packet.Reason, notify: false, phase: "host cancellation");
                 return;
             }
             if (lobby.isHost)
@@ -320,7 +320,7 @@ namespace APIShared
                     LobbySnapshot.Digest(packet.Metadata) != packet.Fingerprint) return;
                 if (pending?.Token == packet.Token) { Tick(); return; }
                 if (released || loading) return;
-                if (pending != null) Abort("Host replaced map preparation.", false, false);
+                if (pending != null) Abort("Host replaced map preparation.", notify: false, showError: false);
                 owner = mp; hostId = host; pending = packet;
                 BeginAttempt(lobby, packet.Token);
                 if (!SavegameRecordComparison.IsValid(packet.Records)) throw new InvalidDataException("Invalid host map record list.");
@@ -461,7 +461,7 @@ namespace APIShared
                     acknowledged = true;
                 }
             }
-            catch (Exception error) { Abort(error.Message, true, phase: error is TimeoutException ? "timeout" : phase); }
+            catch (Exception error) { Abort(error.Message, notify: true, phase: error is TimeoutException ? "timeout" : phase); }
             finally
             {
                 Schedule();
@@ -544,7 +544,7 @@ namespace APIShared
                 System.Threading.Volatile.Write(ref admission, new NativeAdmissionTicket(localPath, localHash));
                 loading = true; Schedule(); return true;
             }
-            catch (Exception error) { Abort(error.Message, true, phase: "before native start"); return false; }
+            catch (Exception error) { Abort(error.Message, notify: true, phase: "before native start"); return false; }
         }
         // Native load may run on another thread. This path reads only an immutable
         // main-thread ticket and this peer's file; no Steam, lobby, settings or UI.
@@ -564,21 +564,21 @@ namespace APIShared
         {
             if (pending == null) return true;
             if (released || loading) return false;
-            Abort("Map selection cancelled.", true, false); return true;
+            Abort("Map selection cancelled.", notify: true, showError: false); return true;
         }
         private static string TimeoutReason() => released ? "Confirmed multiplayer map did not start within 30 seconds." :
             UiText.Get("LobbyLaunch.MapTimedOut", WaitingReason());
 
         internal static void Abort(string reason)
         {
-            if (Internal.UnityMainThreadDispatch.IsMainThread) { Abort(reason, true, phase: "native admission"); return; }
+            if (Internal.UnityMainThreadDispatch.IsMainThread) { Abort(reason, notify: true, phase: "native admission"); return; }
             // Revoke native admission immediately, then retire only this exact
             // transaction on Unity; delayed failure reporting must not cancel a new map.
             var transaction = System.Threading.Volatile.Read(ref pending);
             var ticket = System.Threading.Volatile.Read(ref admission);
             System.Threading.Interlocked.CompareExchange(ref admission, null, ticket);
             if (!Internal.UnityMainThreadDispatch.TryEnqueue(() => {
-                if (ReferenceEquals(pending, transaction)) Abort(reason, true, phase: "native admission");
+                if (ReferenceEquals(pending, transaction)) Abort(reason, notify: true, phase: "native admission");
                 else ReportUnscoped(reason, transaction?.Token);
             })) ReportUnscoped(reason, transaction?.Token);
         }

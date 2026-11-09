@@ -28,9 +28,7 @@ namespace APIShared
 
     internal sealed class PlayerDefeatState
     {
-        private const int FirstPlayerId = 1;
-        private const int LastPlayerId = 8;
-        private readonly Slot[] slots = new Slot[LastPlayerId];
+        private readonly Slot[] slots = new Slot[PlayerSlots.Count];
         private long sessionId;
         private bool sessionActive;
 
@@ -56,7 +54,7 @@ namespace APIShared
         internal bool TryGetSnapshot(long expectedSession, int playerId, out PlayerDefeatSnapshot snapshot)
         {
             snapshot = null;
-            if (!sessionActive || expectedSession != sessionId || playerId < FirstPlayerId || playerId > LastPlayerId)
+            if (!sessionActive || expectedSession != sessionId || !PlayerSlots.IsValidPlayerId(playerId))
                 return false;
             snapshot = slots[playerId - 1]?.Snapshot;
             return snapshot != null;
@@ -72,9 +70,9 @@ namespace APIShared
             if (!sessionActive)
                 return;
 
-            for (int playerId = FirstPlayerId; playerId <= LastPlayerId; playerId++)
+            for (int playerId = PlayerSlots.FirstPlayerId; playerId <= PlayerSlots.LastPlayerId; playerId++)
             {
-                PlayerDefeatObservation observation = observations != null && observations.Length >= LastPlayerId
+                PlayerDefeatObservation observation = observations != null && observations.Length >= PlayerSlots.Count
                     ? observations[playerId - 1] : default;
                 Slot slot = slots[playerId - 1] ?? (slots[playerId - 1] = new Slot());
                 if (!observation.Readable)
@@ -146,7 +144,7 @@ namespace APIShared
         private void Invalidate(Action<PlayerDefeatSnapshot> changed)
         {
             if (!sessionActive) return;
-            for (int playerId = FirstPlayerId; playerId <= LastPlayerId; playerId++)
+            for (int playerId = PlayerSlots.FirstPlayerId; playerId <= PlayerSlots.LastPlayerId; playerId++)
             {
                 var slot = slots[playerId - 1];
                 if (slot?.Snapshot != null)

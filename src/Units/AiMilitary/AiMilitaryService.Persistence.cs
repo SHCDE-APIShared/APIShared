@@ -221,7 +221,7 @@ namespace APIShared.Units.AiMilitary
             using (var stream = new MemoryStream()) using (var writer = new BinaryWriter(stream))
             {
                 var units = new List<SaveUnit>();
-                for (int id = 1; id < 10000; id++)
+                for (int id = 1; id < UnitIdLimit; id++)
                 {
                     uint global = Volatile.Read(ref additional[id]);
                     if (global == 0 || !TryUnit(new AiUnitRef(id, global), out GameUnit* unit) ||
@@ -254,7 +254,7 @@ namespace APIShared.Units.AiMilitary
         private static SaveUnit ReadIdentity(BinaryReader reader)
         {
             int id = reader.ReadInt32(); uint global = reader.ReadUInt32(); var type = (eChimps)reader.ReadUInt16(); int player = reader.ReadByte();
-            if (id < 1 || id >= 10000 || global == 0 || player < 1 || player > GamePlayerManagerAPI.MAX_PLAYERS ||
+            if (id < 1 || id >= UnitIdLimit || global == 0 || player < 1 || player > GamePlayerManagerAPI.MAX_PLAYERS ||
                 !Enum.IsDefined(typeof(eChimps), type)) throw new InvalidDataException("Invalid saved military identity.");
             return new SaveUnit { Identity = new AiUnitRef(id, global), Type = type, Player = player };
         }
@@ -266,7 +266,7 @@ namespace APIShared.Units.AiMilitary
             using (var stream = new MemoryStream(bytes, false)) using (var reader = new BinaryReader(stream))
             {
                 if (reader.ReadInt32() != 1) throw new InvalidDataException("Unsupported army identity schema.");
-                int count = reader.ReadInt32(); if (count < 0 || count >= 10000) throw new InvalidDataException("Invalid army identity count.");
+                int count = reader.ReadInt32(); if (count < 0 || count >= UnitIdLimit) throw new InvalidDataException("Invalid army identity count.");
                 for (int i = 0; i < count; i++)
                 {
                     var unit = ReadIdentity(reader); if (!seen.Add(unit.Identity.GlobalId)) throw new InvalidDataException("Duplicate saved military identity.");

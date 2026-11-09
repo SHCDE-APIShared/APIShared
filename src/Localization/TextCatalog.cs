@@ -127,9 +127,30 @@ namespace APIShared.Localization
         {
             get { return new SortedSet<string>(SteamLanguages.Values, StringComparer.Ordinal); }
         }
+        // Normalize is a pure function of its input, and each localized text lookup normalizes its
+        // locale (usually the same few values), so results are cached per raw input.
+        private const int NormalizedCacheLimit = 64;
+        private static readonly Dictionary<string, string> Normalized = new Dictionary<string, string>(StringComparer.Ordinal);
+
         internal static string Normalize(string value)
         {
-            value = (value ?? "").Trim().Replace('_', '-');
+            string key = value ?? "", normalized;
+            lock (Normalized)
+            {
+                if (Normalized.TryGetValue(key, out normalized)) return normalized;
+            }
+            normalized = NormalizeUncached(key);
+            lock (Normalized)
+            {
+                if (Normalized.Count >= NormalizedCacheLimit) Normalized.Clear();
+                Normalized[key] = normalized;
+            }
+            return normalized;
+        }
+
+        private static string NormalizeUncached(string value)
+        {
+            value = value.Trim().Replace('_', '-');
             string mapped;
             if (SteamLanguages.TryGetValue(value, out mapped)) return mapped;
             if (value.Length == 4 && value.IndexOf('-') < 0) value = value.Insert(2, "-");

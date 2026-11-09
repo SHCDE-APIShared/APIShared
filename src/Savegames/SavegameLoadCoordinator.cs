@@ -92,7 +92,7 @@ namespace APIShared
                 if (pending.SaveName == name) return; // Repeated button callback, not another load.
                 if (released || loading)
                 { ShowBlocked("A confirmed multiplayer save is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true); return; }
-                Abort("Selected save changed.", true, false);
+                Abort("Selected save changed.", notify: true, showError: false);
             }
             owner = self;
             attempt = LobbyReadinessSupport.NewAttemptId();
@@ -198,7 +198,7 @@ namespace APIShared
                         LobbyReadinessSupport.PlayerName(message.SenderSteamId) + " cancelled save preparation: " + packet.Reason, phase: "peer-cancel");
                 }
                 else Abort(string.IsNullOrEmpty(packet.Reason) ? "Host cancelled the save preparation." :
-                    "Host cancelled the save preparation: " + packet.Reason, false, phase: "host-cancel");
+                    "Host cancelled the save preparation: " + packet.Reason, notify: false, phase: "host-cancel");
                 return;
             }
             if (packet.Lobby != lobby.id.m_SteamID ||
@@ -221,7 +221,7 @@ namespace APIShared
             if (packet.Operation == 0)
             {
                 if (pending?.Token == packet.Token) { Tick(); return; }
-                if (pending != null) Abort("Host replaced the save preparation.", false, false);
+                if (pending != null) Abort("Host replaced the save preparation.", notify: false, showError: false);
                 pending = packet; owner = mp; attempt = packet.Token; agreement = null;
                 waitNoticeAt = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.WaitingNoticeDelaySeconds);
                 acknowledged = false; released = false; loading = false; hostId = host; attemptHost = false;
@@ -417,7 +417,7 @@ namespace APIShared
             // values fingerprint. After publication, retain admission until the
             // load completes; dialog cleanup must not revoke a committed load.
             if (released || loading) return false;
-            Abort("Save selection cancelled.", true, false);
+            Abort("Save selection cancelled.", notify: true, showError: false);
             return true;
         }
         private static void Abort(string reason, bool notify = true, bool showError = true, string phase = "preparation")

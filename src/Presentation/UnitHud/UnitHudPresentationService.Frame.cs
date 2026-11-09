@@ -65,31 +65,41 @@ namespace APIShared
                 pendingPresentation = false;
             }
             RestorePresentation(main, restore, images);
-            TryApplyFrameArea("own-troop action buttons", () => ApplyActionButtons(main), FailClosedActionButtons);
-            TryApplyFrameArea("refresh", () =>
+            // Each area fails independently. Plain try blocks keep this per-frame method free of
+            // closures, which the compiler would allocate at method entry before the frame check.
+            try { ApplyActionButtons(main); }
+            catch (Exception ex) { ReportFrameAreaFailure("own-troop action buttons", ex, FrameAreaCleanup.ActionButtons); }
+            try { RefreshPresentation(main, refresh); }
+            catch (Exception ex) { ReportFrameAreaFailure("refresh", ex, FrameAreaCleanup.None); }
+            try { ApplyHover(main); }
+            catch (Exception ex) { ReportFrameAreaFailure("hover presentation", ex, FrameAreaCleanup.None); }
+            try { ApplyArmyReport(main); }
+            catch (Exception ex) { ReportFrameAreaFailure("army-report presentation", ex, FrameAreaCleanup.ArmyHosts); }
+            try { ApplyRecruitmentPresentation(main); }
+            catch (Exception ex) { ReportFrameAreaFailure("recruitment presentation", ex, FrameAreaCleanup.RecruitmentControls); }
+            try { ApplyUnitDetails(main); }
+            catch (Exception ex) { ReportFrameAreaFailure("unit-detail presentation", ex, FrameAreaCleanup.UnitDetailControls); }
+        }
+
+        private void RefreshPresentation(MainViewModel main, bool refresh)
+        {
+            bool troopSelectionChanged = main?.Show_HUD_Troops == true &&
+                HasCategories(UnitHudSurface.TroopSelection) &&
+                HasRenderedTroopSelectionChanged();
+            if ((refresh && HasCategories(UnitHudSurface.TroopSelection)) || troopSelectionChanged)
             {
-                bool troopSelectionChanged = main?.Show_HUD_Troops == true &&
-                    HasCategories(UnitHudSurface.TroopSelection) &&
-                    HasRenderedTroopSelectionChanged();
-                if ((refresh && HasCategories(UnitHudSurface.TroopSelection)) || troopSelectionChanged)
+                if (main?.Show_HUD_Troops == true) main.HUDTroopPanel?.SetupSelectedTroops();
+            }
+            if (refresh)
+            {
+                if (HasCategories(UnitHudSurface.ControlGroups) && main?.Show_HUD_ControlGroups == true) main.HUDControlGroups?.Update();
+                if (activeImages && main != null && hasSpriteContext && IsImageOverrideContextReady())
                 {
-                    if (main?.Show_HUD_Troops == true) main.HUDTroopPanel?.SetupSelectedTroops();
+                    // A refresh bypasses the public detour entry, preventing resolver-driven
+                    // refresh requests or later hook chains from recursively re-entering us.
+                    DrawSprites(main, clearRecorded: false, applyOverrides: true);
                 }
-                if (refresh)
-                {
-                    if (HasCategories(UnitHudSurface.ControlGroups) && main?.Show_HUD_ControlGroups == true) main.HUDControlGroups?.Update();
-                    if (activeImages && main != null && hasSpriteContext && IsImageOverrideContextReady())
-                    {
-                        // A refresh bypasses the public detour entry, preventing resolver-driven
-                        // refresh requests or later hook chains from recursively re-entering us.
-                        DrawSprites(main, clearRecorded: false, applyOverrides: true);
-                    }
-                }
-            });
-            TryApplyFrameArea("hover presentation", () => ApplyHover(main));
-            TryApplyFrameArea("army-report presentation", () => ApplyArmyReport(main), HideArmyHosts);
-            TryApplyFrameArea("recruitment presentation", () => ApplyRecruitmentPresentation(main), HideRecruitmentControls);
-            TryApplyFrameArea("unit-detail presentation", () => ApplyUnitDetails(main), HideUnitDetailControls);
+            }
         }
 
         private void ExpireRecruitment()
@@ -163,15 +173,22 @@ namespace APIShared
             hoverOriginal = hoverApplied = null;
         }
 
-        private void TryApplyFrameArea(string area, Action action, Action failureCleanup = null)
+        private enum FrameAreaCleanup { None, ActionButtons, ArmyHosts, RecruitmentControls, UnitDetailControls }
+
+        private void ReportFrameAreaFailure(string area, Exception ex, FrameAreaCleanup cleanup)
         {
-            try { action(); }
-            catch (Exception ex)
+            try
             {
-                try { failureCleanup?.Invoke(); }
-                catch (Exception cleanupEx) { LogCallbackFailure(area + " cleanup", cleanupEx); }
-                LogCallbackFailure(area, ex);
+                switch (cleanup)
+                {
+                    case FrameAreaCleanup.ActionButtons: FailClosedActionButtons(); break;
+                    case FrameAreaCleanup.ArmyHosts: HideArmyHosts(); break;
+                    case FrameAreaCleanup.RecruitmentControls: HideRecruitmentControls(); break;
+                    case FrameAreaCleanup.UnitDetailControls: HideUnitDetailControls(); break;
+                }
             }
+            catch (Exception cleanupEx) { LogCallbackFailure(area + " cleanup", cleanupEx); }
+            LogCallbackFailure(area, ex);
         }
 
         private void ApplyHover(MainViewModel main)

@@ -27,6 +27,7 @@ namespace APIShared.Presentation
         private static IngameUIScreens inputRoot;
         private static Canvas overlay;
         private static Grid navigation;
+        private static float navigationScaleX, navigationScaleY;
         private static Button nextPageButton, previousPageButton;
         private static TroopActionPagingSurface pagingSurface;
         private static TroopActionPagingDecision pagingDecision;
@@ -147,7 +148,7 @@ namespace APIShared.Presentation
                 int position = i - slice.Start + offset;
                 PlaceIn(visual.Host, overlay);
                 visual.Host.Margin = new Thickness(0);
-                visual.Host.LayoutTransform = new ScaleTransform(scaleX, scaleY);
+                ApplyScale(visual.Host, ref visual.ScaleX, ref visual.ScaleY, scaleX, scaleY);
                 PositionAtScreen(visual.Host, pageSlots[position].X, pageSlots[position].Y);
                 visual.Seen = true; visual.Page = currentPage;
                 visual.Host.Visibility = Visibility.Visible;
@@ -163,12 +164,22 @@ namespace APIShared.Presentation
             {
                 float width = pagingDecision.UsesFallbackAnchor ? 15 : 36;
                 navigation.Width = width;
-                navigation.LayoutTransform = new ScaleTransform(scaleX, scaleY);
+                ApplyScale(navigation, ref navigationScaleX, ref navigationScaleY, scaleX, scaleY);
                 PositionAtScreen(navigation, anchor.X, anchor.Y);
                 if (nextPageButton.IsMouseOver) ShowNavigationRollover(nextPageButton, true);
                 else if (previousPageButton.IsMouseOver) ShowNavigationRollover(previousPageButton, false);
             }
             else { buttonHover.Close(nextPageButton); buttonHover.Close(previousPageButton); }
+        }
+
+        // Only this HUD writes LayoutTransform on its hosts and navigation. Replacing an equal
+        // transform every frame would invalidate Noesis layout without changing the result.
+        // Scales are positive, so zero marks an element whose transform has not been set.
+        private static void ApplyScale(FrameworkElement element, ref float appliedX, ref float appliedY, float x, float y)
+        {
+            if (appliedX == x && appliedY == y) return;
+            element.LayoutTransform = new ScaleTransform(x, y);
+            appliedX = x; appliedY = y;
         }
 
         private static bool SamePosition(Rect left, Rect right) =>
@@ -221,7 +232,7 @@ namespace APIShared.Presentation
             pagingSurface?.Restore(); pagingSurface = null;
             if (overlay?.Parent is Panel parent) parent.Children.Remove(overlay);
             buttonVisuals.Clear(); eligibleButtons.Clear(); overlay = null; buttonPanel = null; buttonRoot = null; inputRoot = null;
-            navigation = null; nextPageButton = previousPageButton = null;
+            navigation = null; navigationScaleX = navigationScaleY = 0; nextPageButton = previousPageButton = null;
             buttonSelection = null; visualColour = visualPlayer = -1;
             pagingDecision = default;
             presentationRetry.Clear();

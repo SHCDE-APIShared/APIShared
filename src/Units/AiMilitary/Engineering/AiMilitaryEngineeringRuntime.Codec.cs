@@ -91,7 +91,7 @@ namespace APIShared.Units.AiMilitary.Engineering
         private static int CompareRef(AiUnitRef a, AiUnitRef b) => a.UnitId != b.UnitId ? a.UnitId.CompareTo(b.UnitId) : a.GlobalId.CompareTo(b.GlobalId);
         private static void WriteUnit(BinaryWriter writer, AiUnitRef unit) { writer.Write(unit.UnitId); writer.Write(unit.GlobalId); }
         private static AiUnitRef ReadUnit(BinaryReader reader)
-        { int id = reader.ReadInt32(); uint gid = reader.ReadUInt32(); if (id <= 0 || id >= 10000 || gid == 0) throw new InvalidDataException("Invalid provenance unit."); return new AiUnitRef(id, gid); }
+        { int id = reader.ReadInt32(); uint gid = reader.ReadUInt32(); if (id <= 0 || id >= AiMilitaryService.UnitIdLimit || gid == 0) throw new InvalidDataException("Invalid provenance unit."); return new AiUnitRef(id, gid); }
         private static int ReadCount(BinaryReader reader, int maximum)
         { int count = reader.ReadInt32(); if (count < 0 || count > maximum) throw new InvalidDataException("Invalid provenance count."); return count; }
     }

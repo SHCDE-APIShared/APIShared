@@ -226,7 +226,7 @@ namespace APIShared.Units.AiMilitary.Orders
             if (!AiRecruitMutationReceipts.IsCurrentWorld) return 0;
             long result = original(manager, owner, color, x, y, height, type);
             // Capture before mutable legacy Post callbacks can replace the result with an unrelated ID.
-            if (IsReady && result > 0 && result < 10000)
+            if (IsReady && result > 0 && result < AiMilitaryService.UnitIdLimit)
                 try { created?.Invoke((int)result); } catch (Exception error) { Report(error); }
             return result;
         }

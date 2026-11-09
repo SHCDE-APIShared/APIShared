@@ -23,6 +23,7 @@ namespace APIShared.Presentation
             HideVisual(visual);
             if (visual.Host?.Parent is Panel parent) parent.Children.Remove(visual.Host);
             visual.Version = state.Version; visual.Failed = true; visual.Host = null; visual.Button = null;
+            visual.ScaleX = visual.ScaleY = 0;
             if (!state.Visible) { visual.Version = -1; return visual; }
             try
             {
@@ -101,6 +102,7 @@ namespace APIShared.Presentation
             internal Button Button;
             internal Border DisabledHover;
             internal int Version = -1, Page = -1;
+            internal float ScaleX, ScaleY;
             internal bool Failed = true, Hovered, Seen;
             internal bool? ContextAvailable;
             internal ButtonVisual(TroopActionButtonRegistry.Entry entry) { Entry = entry; }

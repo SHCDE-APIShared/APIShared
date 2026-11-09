@@ -98,15 +98,15 @@ namespace APIShared.GameModes
         public bool LowLevelNetworked { get; }
         /// <summary>Multiplayer evidence captured from the platform layer.</summary>
         public bool PlatformMultiplayer { get; }
-        /// <summary>Number of entries reported in the active multiplayer lobby.</summary>
+        /// <summary>Number of entries reported in the active multiplayer lobby; -1 when no lobby member list is available.</summary>
         public int LobbyMembers { get; }
-        /// <summary>RealNumber of entries reported in the active multiplayer lobby.</summary>
+        /// <summary>Number of non-null active-lobby entries that are not skirmish members.</summary>
         public int RealLobbyMembers { get; }
-        /// <summary>SkirmishNumber of entries reported in the active multiplayer lobby.</summary>
+        /// <summary>Number of non-null active-lobby entries marked as skirmish members.</summary>
         public int SkirmishLobbyMembers { get; }
-        /// <summary>Number of reported in-game network member entries.</summary>
+        /// <summary>Number of reported in-game network member entries; -1 when no member list is available.</summary>
         public int GameMembers { get; }
-        /// <summary>RealNetworkNumber of reported in-game network member entries.</summary>
+        /// <summary>Number of non-null in-game network members that are not skirmish AI and have a Steam ID above 1000.</summary>
         public int RealNetworkGameMembers { get; }
         /// <summary>GameType in the centralized mission policy contract.</summary>
         public int GameType { get; }
@@ -141,11 +141,11 @@ namespace APIShared.GameModes
         public int CampaignMapId { get; }
         /// <summary>EventTrailType in the centralized mission policy contract.</summary>
         public int EventTrailType { get; }
-        /// <summary>CustomizedTrailId in the centralized mission policy contract.</summary>
+        /// <summary>Trail ID of a customized launch: <see cref="CustomizedLaunchOrigin.TrailId"/> when a provider supplied an origin, otherwise Vanilla's customized-trail ID.</summary>
         public int CustomizedTrailId { get; }
-        /// <summary>CustomizedMissionId in the centralized mission policy contract.</summary>
+        /// <summary>Mission ID of a customized launch: <see cref="CustomizedLaunchOrigin.MissionId"/> when a provider supplied an origin. Vanilla records no separate mission ID, so without a provider origin this repeats Vanilla's customized-trail ID.</summary>
         public int CustomizedMissionId { get; }
-        /// <summary>CustomizedOriginResolved category for this captured context.</summary>
+        /// <summary>Provider-supplied customized launch origin as the integer value of <see cref="CustomizedLaunchOriginKind"/>; -1 when the supplied origin was invalid.</summary>
         public int CustomizedOriginKind { get; }
         /// <summary>True when customization evidence conflicts; the optional permission evaluator denies this context.</summary>
         public bool HasConflictingCustomizedOrigin { get; }
