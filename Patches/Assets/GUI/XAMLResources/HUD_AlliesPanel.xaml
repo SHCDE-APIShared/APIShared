@@ -1,0 +1,8 @@
+<Patch xmlns:n="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <Operation Type="Add" XPath="//n:Grid[@x:Name='LayoutRoot']">
+    <Content>
+      <Grid x:Name="APISharedAllyGoodsExtensionsHost" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            Height="0" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Top" />
+    </Content>
+  </Operation>
+</Patch>

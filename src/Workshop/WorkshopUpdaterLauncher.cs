@@ -41,19 +41,23 @@ namespace APIShared.Workshop
                 throw new TimeoutException("Proton path initialization exceeded its time budget.");
             return await pending.ConfigureAwait(false);
         }
-        internal static async Task Launch(string transaction, string game)
+        internal static async Task Launch(string transaction, string game, WorkshopInstallPlan manualPlan = null)
         {
             string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
             string hash = WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "operations.tsv"));
             string repairHash = File.Exists(WorkshopPaths.Inside(transaction, "supersedes.tsv")) ? WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "supersedes.tsv")) : "";
             string ready = WorkshopPaths.Inside(transaction, "ready.flag");
+            string sourceManifest = manualPlan == null ? null : WorkshopPaths.Inside(manualPlan.Source, WorkshopPackage.ManifestFileName);
             if (WinePathInterop.Instance.IsWine)
             {
                 var context = await LinuxContext(game, TimeSpan.FromSeconds(2));
                 context.ValidateGameIdentity(TimeSpan.FromSeconds(2));
                 string script = WorkshopPaths.Inside(assets, "workshop-updater.sh");
                 if (!File.Exists(script)) throw new FileNotFoundException("Proton updater script is missing.", script);
-                string[] arguments = { context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--restart", repairHash };
+                string[] arguments = manualPlan == null
+                    ? new[] { context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--restart", repairHash }
+                    : new[] { context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--manual", repairHash,
+                        context.Paths.ToHostExisting(sourceManifest), manualPlan.ManifestHash };
                 if (File.Exists(ready)) throw new InvalidOperationException("This transaction already has an updater handoff.");
                 // No process handle exists under Wine (see HostRun): the exit record replaces HasExited.
                 using (var run = context.StartScript(context.Paths.ToHostExisting(script), arguments))
@@ -62,7 +66,9 @@ namespace APIShared.Workshop
             }
             string windowsScript = WorkshopPaths.Inside(assets, "workshop-updater.ps1");
             if (!File.Exists(windowsScript)) throw new FileNotFoundException("Windows updater script is missing.", windowsScript);
-            var start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(windowsScript) + " -GameRoot " + Quote(game) + " -Transaction " + Quote(transaction) + " -OperationsHash " + hash + " -RestartSteam" + (repairHash.Length == 0 ? "" : " -SupersedesHash " + repairHash));
+            string launchOptions = manualPlan == null ? " -RestartSteam" :
+                " -RequireRunningGame -SourceManifest " + Quote(sourceManifest) + " -SourceManifestHash " + manualPlan.ManifestHash;
+            var start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(windowsScript) + " -GameRoot " + Quote(game) + " -Transaction " + Quote(transaction) + " -OperationsHash " + hash + launchOptions + (repairHash.Length == 0 ? "" : " -SupersedesHash " + repairHash));
             start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
             if (File.Exists(ready)) throw new InvalidOperationException("This transaction already has an updater handoff.");
             using (var process = Process.Start(start))

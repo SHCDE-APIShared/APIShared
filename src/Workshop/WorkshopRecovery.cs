@@ -79,9 +79,9 @@ namespace APIShared.Workshop
 
         // Supersession is evidence in a committed replacement transaction, never
         // an early mutation of the failed transaction. Its original bytes remain.
-        internal static bool Superseded(string root, string directory)
+        private static bool Superseded(string[] directories, string directory)
         {
-            foreach (string candidate in System.IO.Directory.EnumerateDirectories(root)) {
+            foreach (string candidate in directories) {
                 string file = WorkshopPaths.Inside(candidate, "supersedes.tsv");
                 if (!Journal(candidate).Contains("committed") || !File.Exists(file)) continue;
                 string pin = WorkshopPaths.Inside(candidate, "supersedes.sha256");
@@ -103,13 +103,12 @@ namespace APIShared.Workshop
         }
         internal static IReadOnlyList<WorkshopInterruptedTransaction> Inspect(string game)
         {
-            string root = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions");
             var result = new List<WorkshopInterruptedTransaction>();
-            if (!System.IO.Directory.Exists(root)) return result;
-            foreach (string directory in System.IO.Directory.EnumerateDirectories(root)) {
+            string[] directories = WorkshopInstallation.TransactionDirectories(game);
+            foreach (string directory in directories) {
                 WorkshopPaths.CheckLinks(directory);
                 string[] journal = Journal(directory);
-                if (!journal.Contains("applying") || Finished(directory) || Superseded(root, directory)) continue;
+                if (!journal.Contains("applying") || Finished(directory) || Superseded(directories, directory)) continue;
                 var entry = new WorkshopInterruptedTransaction {
                     Directory = directory,
                     OperationsHash = WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(directory, "operations.tsv")),
@@ -194,8 +193,7 @@ namespace APIShared.Workshop
         {
             ValidateReferences(game, entries);
             if (entries.Count == 0 || entries.Any(x => !x.CanRollback)) throw new InvalidOperationException("Rollback is not available for every interrupted transaction.");
-            string directory = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions/" + Guid.NewGuid().ToString("N"));
-            System.IO.Directory.CreateDirectory(directory);
+            string directory = WorkshopInstallation.CreateTransaction(game, Guid.NewGuid().ToString("N"));
             File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), new[] { Protocol, restart ? "restart" : "stop" }.Concat(entries.Select(x => x.Reference)), new UTF8Encoding(false));
             return directory;
         }

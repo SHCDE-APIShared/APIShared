@@ -18,6 +18,7 @@ namespace APIShared
         internal const string GatehouseAutomation = "Gatehouse.Automation";
         internal const string AivBuildStep = "Diagnostics.AivBuildStep";
         internal const string MarketPrices = "Economy.MarketPrices";
+        internal const string HealthInitialization = "Health.TypeInitialization";
         internal const string PlagueHeight = "Projectiles.PlagueHeight";
         internal const string AiMarketSell = "Economy.AiMarketSell";
         internal const string AssassinPath = "Pathfinding.AssassinPath";
@@ -141,6 +142,12 @@ namespace APIShared
             Exclusive(0x29723, 15), Observe(0x29732, 5), Observe(0x2978B, 21)
         };
 
+        internal static NativeSiteSpan[] HealthInitializationSpans() => new[]
+        {
+            Exclusive(Health.HealthNativeObserver.Rva, 10),
+            Observe(Health.HealthNativeObserver.Rva + 10, Health.HealthNativeObserver.Entry.Length - 10)
+        };
+
         internal static NativeSiteSpan[] MarketPriceSpans() => new[]
         {
             Exclusive(MarketPriceNativeRuntime.BuyRva, MarketPriceNativeRuntime.DisplacedLength),
@@ -216,8 +223,15 @@ namespace APIShared
             Group(GatehouseAutomation, GatehouseAutomationSpans()),
             Group(AivBuildStep, AivBuildStepSpans()),
             Group(MarketPrices, MarketPriceSpans()),
+            Group(WorkerProductionBonusNativeDefinition.SiteGroup, WorkerProductionBonusNativeRuntime.Spans()),
+            Group(WorkerProductionOutputNativeDefinition.SiteGroup, WorkerProductionOutputNativeRuntime.Spans()),
+            Group(WorkerProductionStateNativeRuntime.SiteGroup, WorkerProductionStateNativeRuntime.Spans()),
+            Group(WeaponProductionTransferNativeRuntime.SiteGroup, WeaponProductionTransferNativeRuntime.Spans()),
+            Group(WorkerProductionCriticalSaveRuntime.SiteGroup, WorkerProductionCriticalSaveRuntime.Spans()),
+            Group(HealthInitialization, HealthInitializationSpans()),
             Group(PlagueHeight, PlagueHeightSpans()),
             Group(AiMarketSell, AiMarketSellSpans()),
+            Group(AllyTransfersNative.SiteName, AllyTransfersNative.Spans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),
@@ -225,12 +239,20 @@ namespace APIShared
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
             Group(BuildingRepair, BuildingRepairSpans()),
+            Group(Wildlife.HunterNativeSites.SiteGroup, Wildlife.HunterNativeSites.Spans()),
+            Group(Wildlife.HunterOwnerGates.SiteGroup, Wildlife.HunterOwnerGates.Spans()),
+            Group(Wildlife.HerdRuntime.RouteSiteGroup, Wildlife.HerdRuntime.RouteSpans()),
+            Group(Wildlife.HerdRuntime.FlightSiteGroup, Wildlife.HerdRuntime.FlightSpans()),
             Group(SynchronizedSave, SynchronizedSaveSpans()),
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
             Group(MapperCamera, MapperCameraSpans()),
             Group(PlayerControlInput, PlayerControlInputSpans()),
-            Group(VisibleMapRender, VisibleMapRenderSpans())
+            Group(VisibleMapRender, VisibleMapRenderSpans()),
+            Group("Units.AiMilitary.Calls", Units.AiMilitary.Native.AiMilitaryNativeBindings.CallOnlySpans()),
+            Group(Units.AiMilitary.Native.AiMilitaryNativeObservers.SiteName, Units.AiMilitary.Native.AiMilitaryNativeObservers.Spans()),
+            Group(Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.SiteName, Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.Spans()),
+            Group(Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.SiteName, Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.Spans())
         };
 
         // Claims a group for APIShared before installation. Throws the service's own failure type

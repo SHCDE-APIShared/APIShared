@@ -15,6 +15,7 @@ contracts follow from it.
 - [Popularity display](#popularity-display)
 - [UU-ImGUI shutdown](#uu-imgui-shutdown)
 - [Interpolation event reuse](#interpolation-event-reuse)
+- [Hunter event unit ids](#hunter-event-unit-ids)
 - [Configuration](#configuration)
 - [Testing](#testing)
 
@@ -178,8 +179,10 @@ private probe hook proves that the installed MonoMod uses this routing for edite
 bodies and backups and that the generated thiscall `calli` keeps every argument and
 the result. Other method generation and process-wide MonoMod settings keep their
 existing behavior. Binaries without these contracts are skipped with a
-`SE_IMGUI_SHUTDOWN_FIX` log reason; other services remain available. Recheck the
-shutdown semantics after upstream updates.
+`SE_IMGUI_SHUTDOWN_FIX` log reason; other services remain available. If installation
+fails after a hook was already applied, the applied hooks stay in place but inactive
+(the original UU-ImGUI behavior), because the render thread may be running them.
+Recheck the shutdown semantics after upstream updates.
 
 ## Interpolation event reuse
 
@@ -199,6 +202,24 @@ in that loop. No callback runs under an added lock. Nested hook calls and other 
 fresh arguments. A finally wrapper balances notification state even after an exception;
 there is no per-frame recovery callback. Unknown method contracts or existing patches of
 the audited dispatch methods decline the optimization and keep SE's original path.
+
+## Hunter event unit ids
+
+Two Script Extender Hunter events report the wrong unit (Extender 2.14.3 with RedBird 1.5.0):
+
+- `UnitR3EventHooks.OnUnitHunterQueryTarget` reports every Hunter as unit 2
+  (Extender issue 123). Its stack offset assumes a larger register save than RedBird performs,
+  so `HunterUnitId` reads a constant of the unit dispatcher.
+- `UnitR3EventHooks.OnHunterPickUpMeat` reads `UnitId` from a register the Hunter update sets
+  only after the hook, so the value is unrelated to the Hunter.
+
+APIShared subscribes to both events before every consumer and replaces the ids with the
+correct Hunter: the querying unit recorded natively at the query's entry, and the unit the
+dispatcher is updating during the pickup. Consumers subscribed after APIShared need no change.
+If the Extender reports the correct id itself, nothing changes. The correction is bound to the
+audited native image and needs the [Hunter native sites](HUNTING.md#implementation); without
+them the events keep the Extender's values and APIShared logs `SE_HUNTER_EVENT_IDS`. See the
+native contract in [UpdateToNewDLL](../UpdateToNewDLL.md#hunter-native-sites).
 
 ## Configuration
 

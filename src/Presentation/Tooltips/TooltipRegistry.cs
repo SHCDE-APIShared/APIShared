@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Presentation
 {
@@ -36,12 +37,9 @@ namespace APIShared.Presentation
             if (!Supports(targets, placement)) { reason = "Unsupported tooltip target/placement combination."; return false; }
             lock (gate)
             {
-                foreach (var entry in entries)
-                    if (entry.Owner == owner && entry.Id == id) { reason = "Duplicate tooltip contribution: " + owner + "/" + id; return false; }
-                var next = new Entry[entries.Length + 1]; Array.Copy(entries, next, entries.Length);
-                next[next.Length - 1] = new Entry(owner, id, targets, placement, provider, order);
-                Array.Sort(next, (a, b) => { int c = a.Order.CompareTo(b.Order); if (c == 0) c = string.CompareOrdinal(a.Owner, b.Owner); return c == 0 ? string.CompareOrdinal(a.Id, b.Id) : c; });
-                Volatile.Write(ref entries, next);
+                if (OrderedRegistrations.Contains(entries, Entry.Key, owner, id)) { reason = "Duplicate tooltip contribution: " + owner + "/" + id; return false; }
+                Volatile.Write(ref entries, OrderedRegistrations.WithAdded(
+                    entries, new Entry(owner, id, targets, placement, provider, order), Entry.Key));
             }
             reason = string.Empty; return true;
         }
@@ -127,6 +125,7 @@ namespace APIShared.Presentation
             internal bool Reported;
             internal Entry(string owner, string id, TooltipTarget targets, TooltipPlacement placement, Func<TooltipContext, IReadOnlyList<TooltipLine>> provider, int order)
             { Owner = owner; Id = id; Targets = targets; Placement = placement; Provider = provider; Order = order; }
+            internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
     }
 }

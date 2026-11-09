@@ -32,7 +32,7 @@ namespace APIShared.PlayerControl
         private static IntPtr moduleHandle;
         private static ManualLogSource log;
         private static string unavailable, failure;
-        private static bool prepared, publicationStarted;
+        private static bool prepared;
         private static volatile bool ready;
 
         internal static bool IsReady => ready;
@@ -138,7 +138,6 @@ namespace APIShared.PlayerControl
                 throw;
             }
             // From here both stubs stay rooted forever with actor zero (complete original paths).
-            publicationStarted = true;
             runTickHook.Enable();
             dispatcherHook.Enable();
             runTickBridge.Validate(runTickHook, runTick, RunTickWindow);

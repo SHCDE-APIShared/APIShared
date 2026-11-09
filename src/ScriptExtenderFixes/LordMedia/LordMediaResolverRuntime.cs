@@ -178,12 +178,9 @@ namespace APIShared.ScriptExtenderFixes
 
         private static void Write(bool warning, string message)
         {
-            try
-            {
-                string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] SE_LORD_MEDIA: " + message;
-                if (warning) logger?.LogWarning(line); else logger?.LogInfo(line);
-            }
-            catch { /* Diagnostics must never prevent the original native enqueue. */ }
+            // NativeApiLog never throws, so diagnostics cannot prevent the original native enqueue.
+            if (warning) NativeApiLog.Warning(logger, "SE_LORD_MEDIA: " + message);
+            else NativeApiLog.Info(logger, "SE_LORD_MEDIA: " + message);
         }
     }
 }

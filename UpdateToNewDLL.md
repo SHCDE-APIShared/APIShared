@@ -2,6 +2,7 @@
 
 **Contents**
 
+- [Shared health initialization](#shared-health-initialization)
 - [Authenticated Chore context and submission](#authenticated-chore-context-and-submission)
 - [Spectator input control boundaries](#spectator-input-control-boundaries)
 - [Player-view identity: common save writer and raw Chore submission](#player-view-identity-common-save-writer-and-raw-chore-submission)
@@ -10,6 +11,7 @@
 - [AI market sell policies](#ai-market-sell-policies)
 - [Fixes wheat-sale startup correction](#fixes-wheat-sale-startup-correction)
 - [Pathfinding table replacements](#pathfinding-table-replacements)
+- [Group-move exclusion mark](#group-move-exclusion-mark)
 - [Audio](#audio)
 - [Explicit gate-routing backend](#explicit-gate-routing-backend)
 - [Assassin reconstruction connection rule](#assassin-reconstruction-connection-rule)
@@ -20,6 +22,65 @@
 - [Shared visible-map entry and pause-menu actions](#shared-visible-map-entry-and-pause-menu-actions)
 - [Managed Script Extender and game targets of Lord presentation and move diagnostics](#managed-script-extender-and-game-targets-of-lord-presentation-and-move-diagnostics)
 - [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
+- [Huntable prey reservation word](#huntable-prey-reservation-word)
+- [Hunter native sites](#hunter-native-sites)
+- [Hunter owner gates](#hunter-owner-gates)
+
+## Shared health initialization
+
+Owner: `Health.HealthNativeObserver` and `Health.HealthRuntime`; public lifetime
+contract: [shared HP](docs/HEALTH.md). Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+
+The common unit type initializer at RVA `0x19A240` has ABI
+`void(void* unitManager, int gameId, int chimpType)` (RCX/EDX/R8D).
+Reference prologue, 26 bytes:
+`48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20`.
+The first two five-byte instructions store RBX/RBP in caller shadow space.
+Only the productive RedBird NativeX64 Indirect scheme is allowed: ten displaced
+bytes, continuation at +10. Validate full reference/live bytes, scheme, target,
+chain depth, FF25 pointer, NOP padding, relocated instructions, trampoline return
+and untouched continuation through `NativeIndirectEntry`. The private backend
+fixture exercises this contract; it does not modify game memory. Full feature
+audit found no incoming targets inside the displaced prefix, and local Extender
+and Fixes sources do not own this entry. The native-site registry reserves this
+prefix and observes the remaining prologue before publication.
+
+The original always runs exactly once. Its callback only queues a verified game/
+global/type identity, never applies HP. Lord creation at `0xC23C0` applies profile
+HP after this initializer returns; completed simulation ticks therefore process
+queued units. Recruitment/worker/disband paths can reuse both slot and GlobalId,
+including the same type, so every observed initialization starts a fresh generation.
+Save-loaded generations must be imported before issuing a new serial. Existing
+building-spawn Post events similarly queue buildings until outer integration.
+The startup-prepared transaction and callback remain rooted for process lifetime;
+published hooks are logically dormant when unsupported or without enabled demand.
+
+Required interop layouts are hash-bound and checked before publication:
+GameUnit stride `0x490`, current/max `0x3C4/0x3C8`, percentage `0x2D0`, blocks
+`0x34`; GameBuilding stride `0x32C`, signed current/unsigned max `0x10C/0x10E`.
+Siege tower unit type58 and proxy building69 use reciprocal ID/global pairs at
+unit `0x334/0x364` and building `0x110/0x114`. Proxy deployment at `0x15ECE0`
+may happen much later. Both native damage directions (`0x7EB00`, `0x15ECE0`)
+multiply unit maximum and building health in signed Int32; retain their arithmetic
+and jointly bound the pair, including future proxy creation. Unit HP-percentage
+readers use signed `current * 100`; building repair at `0xD5030` multiplies current
+HP by positive wood/stone costs. These establish the public limits and repair
+cost-dependent bound, rather than the storage types alone.
+
+Load normalizer `0x19C300` can replace healthy unit HP with type/owner defaults;
+new-map normalizer `0x197EF0` does likewise. Saved original bases, including Lord
+profiles and Vanilla Enemy HP, must survive these resets. Building spawn at
+`0xB47E0` uses type-table health at VA `0x1802E7510`, without Enemy HP. Existing
+full-health building normalizers `0xCA110/0xCA5F0` are distinct from repair.
+Do not infer bases by dividing current health or periodically enforce targets.
+
+On an updated DLL audit all callers/writers, outer completion boundaries, load
+normalizers, cache readers, both tower damage directions and repair arithmetic.
+Recheck actual installed Extender field widths/offsets and hook ownership. Unknown
+hashes or conflicting entries fail only this service closed. Real new-game,
+save-loading, spectator, editor exclusion and matching host/client acceptance
+remain necessary beyond the static and private-memory fixtures.
 
 ## Authenticated Chore context and submission
 
@@ -323,6 +384,18 @@ paired identity consumers and full record extent when adding support. No private
 managed member or executable-memory mutation is involved. Caller-supplied spans
 still require valid object identity, owning thread and immediate lifetime.
 
+The weapon-workshop pair uses two signed 16-bit words in the `0x32C` building
+record. Current goods `nkf-000093` sit at public `GameBuilding+0x28E` (native
+displacement `0x2EA`), and next goods `nkf-000094` at public `+0x290` (native
+displacement `0x2EC`). The native formula adds `buildingId * 0x32C` to the
+manager base before the displacement. The public view includes the additional
+`0x5C` header. `BuildingProductionFieldLayout` compares the exact hash, field
+encoding and compiled Extender layout during workshop initialization. Revalidate
+the single and bulk writers `0xD5870` and `0xC52B0`, the allocator `0xB47E0`, and
+the copy and delivery consumers in `0x12D230`, `0x13AAD0` and `0x13BDD0` before
+adding another binding. The catalog grants raw reads. A workshop writer also
+requires its own validated identity and simulation contract.
+
 ## AI market sell policies
 
 Owner: `Economy.AiMarketSell`, `AiMarketSellNativeRuntime` and
@@ -511,6 +584,32 @@ See [replacement contracts and migration](src/ScriptExtenderReplacements/DOCUMEN
 Concrete native reference and resolution contracts belong here. General update
 policy is in [native compatibility](docs/NATIVE_COMPATIBILITY.md); consumer and
 implementation details are in the relevant feature guide.
+
+## Group-move exclusion mark
+
+Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2 (audit 2026-11-09).
+`Commands.GroupMoveExclusion` writes the 16-bit field at `GameUnit+0x428` (Script Extender
+`N000000D8`; raw slot address `0x1867E8E84 + id*0x490`). It installs no hook and resolves no RVA.
+
+- **Reader:** only the group move `0x11B520`. Each of its three member loops admits a member only
+  when this field is 0, next to AliveState 2, death marker `+0x29C` 0 and the other admission
+  tests. A skipped member keeps its order and AI state; the function still returns 1.
+- **Writers:** the complete Ghidra Xref export lists 20 references to the field, all in
+  `0x11B520` (read), `0x11DD10` and `0x1245B0` (AI order routines: 0, then 1 by their own criteria,
+  for every living member right before their order) and `0x126020` (0 for every member with
+  AliveState 2 and `+0x29C == 0`). The decompilation shows no pointer-relative access to it.
+  Callers of the writers are AI routines only; `0x3D840` and `0x3E070` call `0x126020` immediately
+  before their plain `0x11B520`. Tribe create/assign/unassign (`0x119C00`, `0x11D370`, `0x123EA0`),
+  the player move (`0x196100`) and the unit spawn path (`0x17FEF0`, `0x19A240`) do not write it.
+- **Helper:** writes 0 for one unit passing `UnitAccess.IsReallyAlive` (the predicate of `0x126020`).
+  `Initialize` requires the audited hash and checks `GameUnit` size `0x490`, `N000000D8` UInt16 at
+  `0x428`, `r_AliveState` (Int16 enum, `IsAlive` = 2) at `0x88` and `r_IsKilledByProjectile` UInt16
+  at `0x29C`; any difference leaves it unavailable without a write.
+
+On a native update, recheck the field's Xref set, the three member loops of `0x11B520`, the AI
+writers and Vanilla's clear-before-move callers, then the layout above. The field has no second
+semantic anchor, so the helper stays hash-bound. Usage and multiplayer rules are in the
+[integration guide](docs/THIRD_PARTY_GUIDE.md#ordering-units-taken-from-ai-groups).
 
 ## Audio
 
@@ -915,7 +1014,9 @@ Extender or managed game update.
   Vanilla fills restart Lord names only when `coopTrailID == 0`.
 - `MoveCommandFailureRuntime`: IL edit of SE `GameTribeManagerAPI.IssueMoveHereCommand(int,int,int,bool,int,TribeMoveType)`;
   requires exactly two `LogHelper.Error(string,string,string)` branches and one native
-  dispatch. A mismatch logs `SE_MOVE_FAILURE_CONTEXT` and keeps the original wrapper.
+  dispatch, with the tribe-lookup branch before and the result branch after the dispatch;
+  only the latter is labelled as a native failure. A mismatch logs `SE_MOVE_FAILURE_CONTEXT`
+  and keeps the original wrapper.
 
 ## Enemy-unit proximity and Peace Time
 
@@ -960,6 +1061,24 @@ executing a private relocated copy. Only external display/remove calls at
 `0x1A2980`/`0x1A42B0` and the sound tail jump at `0x2940` become private RET
 stubs. Timer reads, comparisons and active-flag writes remain original. Review
 all three external edges and R11 liveness when updating this fixture.
+
+## Ally transfer adapter
+
+Reference native hash: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`Economy.AllyTransfers` uses `0xD7AD0` (585-byte gift primitive) and `0xC5AD0`
+(319-byte capacity query); complete byte digests and all relevant branches are in
+[the transfer contract](docs/ALLY_TRANSFERS.md). Native globals, record layouts,
+capacity semantics and notification quantities remain hash-bound: a prologue
+pattern cannot establish them on a new binary, so unknown hashes fail closed.
+
+The Script Extender already owns the gift entry. Do not install another detour or
+require live pristine bytes at `D7AD0`. Validate the full pristine native bodies,
+the Extender hook/delegate target and its loaded wrapper IL. The managed adapter
+replaces exactly the wrapper's one native Original delegate Invoke, retaining the
+surrounding mutable Pre, skip branch and Post. Recheck argument order, final getters,
+exception paths, recursive calls and opaque return preservation on Extender updates.
+The capacity query stays unpatched. Failure disables this optional service and
+leaves the existing Extender/native behavior active; no late native hook retry.
 
 ## Mapper selection camera broker
 
@@ -1023,3 +1142,440 @@ private State, original/callback exceptions, recursion, world replacement and do
 allocation behavior. The executable private-memory harness uses the real Indirect
 backend and matching/nonmatching callers, checking every GPR/XMM, flags and stack.
 Those fixtures do not establish live camera framing or host/client game acceptance.
+
+## AI military admission and quota accounting
+
+The supported image is SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Re-audit the full role/admission/order/fold/build/load flow, not only entry bytes.
+Public behavior and limits are documented in [AI military admission](docs/AI_MILITARY.md).
+
+- [Native call bindings](src/Units/AiMilitary/Native/AiMilitaryNativeBindings.cs)
+  contain all call-only entry contracts. Keep live SE/Fixes detours in the call
+  path. The direct allocator is `119D60`; the Extender public creation wrapper
+  instead covers `119C00`. These are distinct operations.
+- [Native world/order ownership](src/Units/AiMilitary/Native/AiMilitaryNativeObservers.cs)
+  owns Indirect entry detours at `87D0` (raw restore), `122B40` (strategic dispatch)
+  and `10DF60` (global task-list build). Preserve exact ABI, process roots and
+  inactive native gates. No competing consumer hook is allowed at these entries.
+- [Quota contracts](src/Units/AiMilitary/Quota/AiQuotaNativeContract.cs) identify
+  the instruction-complete spans for fold capture and recruitment comparisons.
+  The native real-count vector must remain unchanged. Contributions must come
+  from the same completed fold consumed by each comparison, including role-22
+  group/global-identity validation and no-demand folds.
+- [Engineering ownership](src/Units/AiMilitary/Engineering/AiMilitaryEngineeringRuntime.cs)
+  covers the six builder entries `A65A0/A8E40/A93C0/A9A30/AA030/AA630`.
+  Preserve historical ALL-contributor reduction, delayed product/crew identity
+  checks and exact Fixes replacement scope. The optional private Fixes method
+  is validated by signature, installed assembly identity and its delete/create IL.
+- [Effective-original broker](src/Units/AiMilitary/Orders/AiMilitaryOrderBroker.cs)
+  augments existing SE managed wrappers. Pre mutations precede native receipts;
+  Post cannot manufacture admission/allocation success. Verify every transformed
+  wrapper against the installed Extender, including reentrant world changes with
+  reused unit and group IDs/global IDs. Never restore old route/group snapshots
+  into a newer world.
+
+The mapper is a group spawn: `93750` dispatches to `118CA0`, resolves a group through
+`DE0C0`/`119C00`, calls `17FEF0` and then `11D370`, while the new unit still needs
+initialization. Invocation capture must prevent this early mapper group admission;
+quarantining only after the next native tick is too late. Map-load quarantine must
+similarly precede initial AI/fold execution, after the entire archive is decoded.
+
+Raw restore success is int 1. The audited zero-result failure branches are:
+`85496 -> 8549B -> 85B4D -> 85B74`,
+`94B15 -> 94B1A -> 96EBE -> 96F1F`, and
+`1006D7 -> 1006DC -> 102550 -> 10256A`.
+They reach their ordinary failure epilogues before AI initialization. Recheck all
+three complete caller paths before allowing the early participant to return zero
+for a failed protection transaction. Keep that failure sticky through retries and
+authoritative over mutable legacy Post results.
+
+Layout checks distinguish serialization origins from public record pointers:
+native unit serialization starts at public GameUnit minus four bytes; tribe
+serialization starts at raw row plus `28`, public GameTribe at plus `2A`.
+The AIC field named `r_AILordMinusOne` is actually one-based on this image.
+Role zero, unmanaged `65535`, unit roles and player storage slots have distinct
+meanings. Nonpositive cover/reserve/wall group counts retain their base slot.
+
+Role-22 `2ECD0` gates both recruitment and building on a physical population below
+20; `14AED0` retires above 20. Additional classification changes neither bound.
+Admission reserves the currently missing regular two-engineer pool without
+claiming unrestricted future construction capacity.
+
+Run `AiMilitary.NativeTests` with the canonical DLL, `AiRecruitOrders.Tests`,
+`AiMilitary.AttackTests`, `MapRecordReadiness.Tests`, and the affected framework,
+save-context, API compatibility and consumer tests. Verify real normal/DevDiag
+Spectator builds separately; temporary diagnosis must stay absent from normal
+assemblies. Fixtures establish native ABI/branch and managed behavior contracts,
+not actual editor/game/save or real host/client acceptance.
+
+## Worker production bonus
+
+Owner: `APIShared.Economy.WorkerProductionBonusNativeRuntime`; reference native SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`. The complete site list, original bytes, signature windows, continuations and work-completion entries are maintained in `src/Economy/WorkerProductionBonusNativeDefinition.cs`; instruction generation and footer register maps are in `WorkerProductionBonusNativeAssembly.cs`.
+
+The calculation block is RVA `0x18D976..0x18D987` inside the existing Extender-owned `0x18D940` yield helper. Seven field-worker gates follow successful arrival and precede storage checks; six workshop gates follow production/animation and precede initial storage lookup. Ox checks `0x132A09` and `0x132C17` protect reduced positive loads; reserve check `0x1320B0` protects the separate driver path. Render `0x18D2D6` rejects negative extra-yield display without altering stored carry.
+
+The fear channel uses that same calculation span. Native owner comes from the
+Extender-resolved UnitId's unit record, and selects the signed player fear level
+at `image + 0x379CF04 + owner * 0x583C`. Recheck the `0xCD850` reader and
+productivity writer and the independent fear-table reader in `0x180560` when
+qualifying a new native image. This data layout is hash-bound and has no fallback.
+The existing original-actor context limits the override to actual output. Check
+the two Baker calls separately and retain Miller's separate flour-output path.
+Negative fear uses the existing extended row contract for reduced Ox provenance
+on the original carrying unit, including when Pre redirects native bonus state.
+
+Layout accesses (unit manager, current unit, native mode, stride and worker/footer register contracts) remain hash-bound. A signature match alone does not admit a new layout. Known hashes use reference-byte validation; any allowed fallback must resolve a unique executable-section site and validate the full window, branches and continuation. Unknown layouts fail closed. Validate every site against the immutable load image and own live span, then prepare and validate every actual RedBird displacement before publication. Preserve adjacent ImprovedHunters hooks, particularly Tanner find at `0x13ED8B`; an original-image signature anchor is not a claim over its entire window.
+
+On a game update, re-audit all producer/caller and completion paths, both Ox departure thresholds, driver reserve, render consumer, signed carry, save section 3015, Chore56, checksum and slot clearing. Re-run native execution fixtures and live save/editor/host-client acceptance. Do not enable negative percentages after partial initialization.
+
+All non-calculation guards require the process-only readiness DWORD at coefficient+4. Publish it only after the final installed-hook validation; a partial installation retains coefficient50 and readiness0. At the audited completed-output phases, ready zero-cargo completion always runs the normal footer: an Extender Pre callback may redirect UnitId and leave no negative-extra marker on the physical producing unit. Positive cargo keeps the original route. Ox/reserve guards additionally recognize saved negative extra and coordinated sidecar batch provenance even with coefficient50 or native mode0. History uses the current producer for Ox, RBX's Ox for driver reserve and original RAX's record for rendering. Save metadata and raw unit bytes must be restored before simulation resumes; consumers must publish admission at the corresponding pre-simulation lifecycle checkpoint.
+
+### Production sidecar, unit resynchronization and critical saves
+
+The additional owners are `WorkerProductionStateNativeRuntime`,
+`WorkerProductionCriticalSaveRuntime` and `WorkerProductionSaveUiRuntime`.
+Their field layouts remain bound to the same full native hash above. Unknown
+hashes have no layout fallback and leave this dependent production service
+unavailable. On an update, repeat the complete pack/measure/unpack, checksum,
+save-caller and managed-continuation audit before accepting a new identity.
+
+The private, permanently allocated sidecar has 10000 rows of 32 bytes (slot0 is
+an empty sentinel, game IDs1..9999). It does not enlarge a native unit record or
+change any Extender field type. Offsets are GlobalID u32@0, current native kind
+u16@4, batch flags u16@6, fraction numerator u64@8, denominator u64@16,
+schema u32@24 and reserved u32@28. Nonempty rows use schema1, reserved0,
+reduced `0 <= numerator < denominator <= Int64.MaxValue`; a zero fraction with
+provenance is0/1, and no fraction/provenance is all-zero. Fraction identity is
+slot plus GlobalID: profession changes preserve credits, normalize the stored
+kind and discard old-role batch flags. Save/pack normalization uses a copy;
+saving one peer must not mutate simulation state. Marker flags describe the
+producing operation, not final cargo after native bonuses or Extender Post.
+
+`15710` is the sole Chore56 pack/unpack/measurement owner. Its NativeX64
+Indirect entry displaces two five-byte MOVs; the next five-byte MOV remains
+verified. Native payload2172 becomes2204 only in a world admitted to the
+extended protocol. Mode2 measures without moving payload; mode1 changes its
+own native mode before packing, so capture the original mode. Mode0's native
+skip gate remains authoritative. The original helper transfers ID4, the
+native record0x490 (origin at unit manager+658), and path1000, then the owner
+appends/restores exactly one validated row32. Native manager RVA8574320,
+mode85F8FEC, payload length85F8FF4, transfer unit86C132C, cursor+370BF8,
+unscheduled body+84CD8 and skip+9A0 remain hash-bound. Check the180000-byte
+body limit before the original helper copies anything; its own overflow
+logger runs after copying and cannot provide this protection.
+
+The managed `EngineInterface.ReceiveChore(int, byte[], int)` wrapper validates
+the whole incoming unit packet under the real engine monitor before its
+single native invocation. Extended plain56 packets require their exact2212
+bytes, unscheduled tick0, a valid slot/row/native identity, and a denominator
+dividing the admitted common precision. Compressed125/56 is rejected before
+native decompression; the audited native sender23800 never compresses56.
+Any invalid tail faults and quarantines the world without calling Original;
+it must never partially restore a native record before validating its sidecar.
+
+Checksum span22149..22159 is16 bytes: MOV EDX,[RSP+A0], ADD EDI,ECX,
+MOVSXD RCX,[RBX+36FA50]. The generator mixes the canonical effective row into
+EDI before the original category ADD at22159 and unit store2216F. Empty rows
+are a strict no-op. R12 is the one-based unit ID. Native identity accesses are
+origin+6F0 GlobalID and+6E6 kind; public GameUnit starts at origin+65C, whereas
+the transferred record starts at+658. Do not confuse record GlobalID+98 with
+wire-body GlobalID+9C (the latter includes ID4). Revalidate the entire caller
+loop, category/unit writes, no interior incoming edge, backend displacement,
+generated bytes, installed jump, register/flag/stack preservation and both
+legacy/extended branches. Native execution fixtures run this generator through
+the actual category and unit stores, including profession-change normalization.
+
+### Weapon workshop ingredient amounts
+
+For consumer registration and gameplay limits, see
+[weapon workshop recipes](docs/WEAPON_PRODUCTION.md).
+
+`WeaponProductionNativeDefinition` supplies a separate optional ingredient hook
+cohort for each workshop. Validate the original spans, their fallthroughs and
+all bypass targets. For the Fletcher and Poleturner, trace the per-trip stock
+search, post-drop local threshold, and latched debit. Preserve the native
+drop-off notification and reuse local surplus when the next charge can start
+without a stockpile trip. For iron, distinguish insufficient raw stock from an
+actual finished lot on the state-6 recovery path. Keep the original `0xB6100`
+call and check that it accepted the signed debit. For Tanner, trace the state-1
+threshold, state-9 three-hide grant, state-6 debit, and state-5 yield.
+
+The Tanner's multi-hide admission also checks the live original yield call at
+`0x13EBF7`. Revalidate the check against the current ImprovedHunters hook on a
+new image. The hook can choose a meat delivery using the remaining cowhide
+count, so its presence disables multi-hide recipes. Preserve the default
+adapter and the one-hide recipes if the extra ingredient cohort is unavailable.
+
+### Weapon workshop repair transport
+
+The existing ReceiveChore and Chore56 owners also handle weapon production. The
+optional `Economy.WeaponProductionTransfer` cohort owns the building packet and
+checksum spans. Enable the world demand byte only after both groups and the
+frozen peer plan are ready. The dispatch table at `0x2C7A30` maps opcodes 54, 55,
+56 and 57 to `0x15170`, `0x15200`, `0x15710` and `0x158B0`. The first two are
+repair start and completion. `0x251F0`'s repair loop sends the unit and building
+records and the `0x26D30` planning path measures them. `0x23800` emits the eight
+byte header and uncompressed body. The managed receive boundary rejects a
+compressed extended record, wrong frame length, nonzero scheduled tick or invalid
+sidecar before native record transfer. The validation uses the transferred native
+identity, since the local record can have a different identity before repair.
+
+- Chore57 at `0x158B0` transfers ID4 and the native building record `0x32C` from
+  `buildingManager + id * 0x32C + 0x5C`. Indirect/6 overwrites the five-byte stack
+  MOV and one-byte PUSH. The first original instruction after the span is
+  `48 83 EC 30`. Prolog signature `48895C2408574883EC3048630527375E08`.
+- In a weapon workshop world, Chore57 appends the building row16 (832-byte body,
+  840-byte frame). Chore56 keeps the existing row32 and appends the worker row20
+  (2224-byte body, 2232-byte frame). The building body has native GID at `4+D8`
+  and type at `4+D2`. The unit body has GID at `4+98` and type at `4+8E`. Modes
+  0/1 restore/pack and mode 2 only measures. Advance the cursor and commit the
+  validated row only after the original native transfer consumed its exact body.
+- Building CRC span `0x22236..0x22246` has bytes
+  `488DB62C03000003D048638350FA3600`. RBP is the one-based slot and EDX is the
+  per-building checksum before category add at `0x2224D` and slot store at
+  `0x22256`. Compare the row GID to manager+`id*0x32C+0x134`. The earlier
+  temporary zero at `0x22201` is relative to RSI at public record `+0x10`.
+  It clears public `+0x2FC`; the native CRC includes both production words.
+- Unit CRC uses the existing `0x22149` span with the new row fold after the
+  previous amount fold. Compare GID at manager+`id*0x490+0x6F0` and actual
+  profession at `+0x6E6` to the expected role. Stale rows do not contribute.
+  The generators fold each matching canonical row before both the per-slot
+  and category checksum stores and preserve flags and scratch registers.
+
+Revalidate dispatch/send/measurement/restore routes, frame sizes, loaded layouts,
+both patch backends, full incoming-control-flow inventory, emitted stub bytes and
+the same save/peer plan before supporting another image. Private execution tests
+exercise the actual checksum continuation stores. Live repair still requires a
+real host/client acceptance run with a forced building and worker mismatch.
+
+### Production state archives
+
+Versioned record `APIShared_WorkerProduction`, known entry `state`, uses the
+existing simulation-relevant save/map archive. Its payload is WPS1, schema1,
+capacity10000 and row size32 (four little-endian u32 fields), then the entire
+row table. Prepared decodes only private bytes. The existing AI-owned87D0
+restore detour invokes a narrow internal participant list after all raw
+sections restore and before the first simulation fold; no second87D0 hook
+exists. Validate the whole candidate and native identities before publishing
+rows. Admission/actual restore must compile the same saved denominators and
+rule digest. Missing/invalid required support cannot silently become legacy.
+The participant is connected only after the root mission observer is installed;
+an optional root initialization failure must not change unrelated Vanilla loads.
+87D0 is a file restore (7430 path, binary read open), not an in-memory snapshot.
+Its three direct callers are853F0,94350 and100530. Ordinary save/editor load853F0
+calls87D10 first, which sets scene3665ED8 to40. This scene is not a serialized
+section;71670's CDE60 fold requires7E50, which accepts only scenes12/14/16,
+so that route cannot dispatch182B00 before returning. Other map routes need
+precise mode admission before the direct fold: initflag366A0F8=-1 is not a
+pause (CDE60 normalizes it to0 and can dispatch workers). The engine-run gate
+alone does not cover this direct initializer.
+Legacy CRC/Chore56 remains exact when no base channel or sidecar is required;
+the chosen world protocol is never downgraded mid-mission.
+
+The common native file writer52B0 is reached by86F80 (managed normal/editor/
+quicksave),13030 (synchronized save), and816B0 (trail restart-info). Its ABI is
+`ulong(archive pointer, section-table pointer, map-save byte)`, success1/failure0.
+The existing `PlayerViewSaveScope` exclusively owns its Indirect/10 detour and
+caches the exact native WriterCall once. Inside the existing engine monitor and
+participant-identity protection, WriteOriginal routes through the production
+transaction before that cached native Original. The production owner installs
+no second writer detour or52B0 span; its write/close cohort requires the published
+save scope and remains dormant after partial publication. Preserve the outer
+identity restoration/result/error boundary, including failed and throwing writes.
+The native writer has no existing temporary-file transaction: production freezes
+a validated snapshot in that protected scope before Original, then redirects only
+the native destination slot to a short sibling temporary path. Native path
+object30D0F30, selector+FB0 (RVA30D1EE0), slot1 UTF-16 address31C74B6 and
+capacity1001 characters derive from7430/A850; all three callers select1.
+Save and restore the complete slot and selector in finally. The Extender's
+logical SaveContext keeps its original path, including synchronized null-path
+and trail restart-info source-map contracts. Do not alter map name/header or
+restart-info globals merely to redirect the physical write.
+
+The same publication cohort owns native binary write1DDB94 and close1DBB20,
+both Indirect/10 with two five-byte MOVs and18-byte entry contexts. Write ABI
+is `i32(i32 descriptor, pointer, u32 count)`; close is `i32(i32 descriptor)`.
+All46 static52B0 writes and the Extender ZIP append use1DDB94. The first write
+after its sole successful open is the four-byte native header; bind that file
+descriptor only while this thread is inside the critical52B0 Original. Other
+descriptors and all noncritical calls retain Original.1DDC2C/1DDD4C return the
+actual binary byte count or-1;1DBBB8/1DB978/1DBD14 return0 on close success,
+-1 on failure. Record incomplete/error writes and close failures persistently
+for this transaction, even if a later ZIP append succeeds. Require an observed
+successful close before replacement. Revalidate the whole52B0 writer call list,
+the SE resolved write target, entry boundaries and both trampoline contracts.
+
+After Original, require all native writes and close to have succeeded, this
+exact capture to have completed successfully and
+read the actual temporary archive back: its versioned record must contain the
+current immutable payload byte for byte. Only then commit with APIShared's
+existing atomic file replacement helper. Capture failure, skipped/stale data,
+append omission, native short/error write, close failure or replacement failure
+returns0 and preserves the old target. This verifies actual I/O results and the
+sidecar payload; it does not introduce a parser for every compressed section.
+
+The managed continuation transforms are bound to loaded IL rather than an
+Assembly-CSharp file hash: `EditorDirector.SaveSaveGameOrMap` skips dirty/name
+success writes on a newly failed critical transaction; the existing
+`SaveLoadDialogEvents` owner guards `HUD_LoadSaveRequester.RunOKAction` before
+remembered names and keeps the same request retryable. Both concrete workshop
+save call sites (upload preparation and post-upload local publication) stop
+before preview/upload or .data/success continuations. No managed save-and-quit
+chain exists in the audited assembly; editor exit confirmation is a separate
+scene change. These guards do not change ordinary Vanilla failure semantics.
+
+Validate the complete IL evaluation stack at every injected return and branch
+join. In the audited post-upload closure, a duplicated workshop pathname remains
+on the stack after the void save call; the critical-failure branch must discard
+it, while the success branch retains it for the subsequent `.data` publication.
+Normalize short branches before insertion and reject unaudited exception regions.
+Generate and force JIT compilation of every transformed body in Unity Mono before
+publishing any hook: desktop generation alone did not detect the nonempty-return
+stack. Desktop fixtures substitute only the native-save/UI boundaries for the
+executable regression, because actual Unity ECalls cannot JIT on desktop CLR.
+
+## Huntable prey reservation word
+
+Owner: `Wildlife.HuntablePreyNativeContract` and `Wildlife.HuntablePreyRuntime`; public
+contract: [huntable prey](docs/HUNTING.md). Reference native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`. No hook, patch or
+executable target: the service writes one data field and reads the Extender's
+`OnUnitHunterQueryTarget` event.
+
+- Field: signed 16-bit Hunter lease at public `GameUnit +0x448`, native displacement
+  `0xAA4` from `manager + id*0x490`. The public pointer starts `0x65C` into that address,
+  the same relation as AI state `0x918`/public `0x2BC` and target global `0x9F8`/public `0x39C`
+  (checked against the compiled Extender layout in `HuntablePreyTests`).
+- Anchors compared byte for byte in the unmodified load image at initialization:
+  `0x12FE63` `66 47 89 B4 28 A4 0A 00 00` (Hunter state 0 writes lease 2),
+  `0x156203` `0F B7 84 33 A4 0A 00 00` and `0x156213` `66 89 84 33 A4 0A 00 00` (deer/goat
+  decrement), `0x18AFFD` `66 83 BB AC 01 00 00 00` (query requires 0; loop base `mgr+0xD88`),
+  `0x184E76` `3B 13 0F 8C` (the dispatcher `0x182B00`'s per-type update loop, table call at
+  `0x18410C`, runs while the ID is below the manager's first DWORD, the Extender's
+  `r_NextUnitId`; the release visits only that ID range). The Extender's unit manager must be
+  module + `0x67E8400` with `GameUnitArray` at `0x65C`.
+  Other mods hook `0x12FE63`; the comparison never reads live code.
+- Further audited writers (renewal every Hunter update, lease 2 in r14): `0x130044`,
+  `0x130259`, `0x130338`, `0x13064F`; further reader: corpse search `0x18B640` at `0x18B6ED`.
+  The same word stores the war-dog kennel slot (`0xB47E0`, read at `0x1671BB`) and an Engineer
+  flag (`0x14AED0`); both types are rejected as prey. Full access list:
+  `_inspect/CrusaderDE-Native-Baseline/sem/FBCB9319/knowledge/HUNTER_PREY_RULES.md` in the
+  maintainer workspace.
+- Fallback: none. Any other hash, a different `GameUnit` size or any anchor mismatch leaves
+  the service unavailable; registrations then fail with the reason and only deer and goat stay
+  huntable. Before adding a hash, repeat the complete access audit of the word, including all
+  unit types that reuse it, and check that Vanilla still renews the lease on every Hunter update.
+
+## Hunter native sites
+
+Owner: `Wildlife.HunterNativeSites` (generators in `Wildlife.HunterNativeAssembly`, executed by
+`tests/WorkerProductionBonus.NativeTests/HunterSiteTests.cs`); users: `Wildlife.HuntablePreyRuntime`
+(target policies, meat yields) and `ScriptExtenderFixes.HunterEventIdentityRuntime`. Reference native
+SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; site group
+`Wildlife.HunterSites`. Two RedBird `X64InlineHook`s with custom generators, purely native, published
+together and never unpatched. Any other hash, a snapshot or live byte difference, a changed
+continuation (a foreign `jmp` at the continuation is accepted), a backend span other than the audited
+length or a generated stub that differs from the expected bytes leaves both unavailable; target
+policies, meat yields and the event-id correction are then refused or inactive. No pattern fallback.
+
+- Query entry `0x18AF50`, 14 bytes `48 89 5C 24 18 55 56 57 41 54 41 55 41 56`, continuation
+  `41 57 48 83 EC 40`. ABI `0x18AF50(rcx = unit manager, edx = querying unit id)`, six callers
+  (`0x12FDBC`, `0x12FF7E`, `0x130521`, `0x1305C7`, `0x1306DD`, `0x1941B4`). The stub stores EDX and
+  `[rsp]` (the caller's return address) in a private slot, using RAX and R10, which are free at a
+  function entry, then replays the bytes. A return address of `0x1941B9` marks the presentation-only
+  query of `0x1940C0` (idle speech of the selected unit). No inbound branch into the span; the
+  Script Extender's hook at `0x18AFE6` is located from the function start by its own scan at
+  Extender startup, before APIShared publishes.
+- Corpse arrival `0x1306AE` in HunterUpdate `0x12FC70` state `0xB`, 15 bytes
+  `66 42 83 BC 31 E6 06 00 00 2C B8 E8 03 00 00`, continuation `66 42 89 84 31 20 09 00 00`.
+  Registers: RBX = Hunter id (loaded from the current unit `0x9302C4` at `0x12FC8C`), RDI = Hunter id
+  * 0x490, R14 = unit manager (`0x130695`), RCX = corpse id * 0x490, EAX = corpse global, just compared
+  with the Hunter's target at `0x1306A4`. Behind a demand byte the stub writes Hunter global
+  (`[rdi+r14+0x6F0]`), corpse global and corpse type (`[rcx+r14+0x6E6]`) to a 10,000-entry table, saving
+  R10/R11; the flags are dead at entry because the replayed `cmp` sets them. Every butchered animal
+  passes it exactly once; no inbound branch into the span.
+- The meat-pickup correction reads the dispatcher's current unit `0x9302C4` (same constant as
+  `WorkerProductionBonusNativeDefinition.CurrentUnitRva`); the Extender's pickup hook at `0x12FD7C`
+  runs inside HunterUpdate, where that value is the Hunter. The query correction writes the backing
+  field `<HunterUnitId>k__BackingField` of `UnitHunterQueryTargetEventArgs`, validated on a probe
+  instance at startup.
+- Before adding a hash: re-audit all six query callers and their arguments, the state-`0xB` arrival
+  (registers, the global-id check before it, every path into state 2), the yield call `0x1309FE`, and
+  the Extender's two hooks (stack shift and registers) for the installed Extender and RedBird.
+
+## Hunter owner gates
+
+Owner: `Wildlife.HunterOwnerGates` (generators in `Wildlife.HunterNativeAssembly`, executed by
+`tests/WorkerProductionBonus.NativeTests/HunterOwnerGateTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; site group
+`Wildlife.HunterOwnerGates`. Three RedBird `X64InlineHook`s, purely native, installed together on the
+first huntable-prey registration with own-player prey (only before the first mission,
+`NativeInlinePatchWindow`) and never unpatched. They read one 65,536-byte
+per-type table (set at mission activation, cleared at its end). Any other hash, snapshot or live byte
+difference (for example an older ImprovedHunters that patched the same spans), a changed continuation,
+a backend span other than 14 bytes, a stub that differs from the expected bytes, or an arrow gate block
+whose SHA-256 differs from `C3BCA2C9…AE225F` refuses the install; the registration is then Unsupported.
+
+- Query `0x18AFD8` `66 83 BB F6 FD FF FF 00 0F 85 F7 00 00 00` (`cmp word[rbx-0x20A],0; jne 0x18B0DD`),
+  continuation `0F B7 83 EE FD FF FF` (the Script Extender's type hook starts there). RBX = candidate
+  field `+0x8F8` (type at -0x212, owner at -0x20A), R13 = manager + Hunter id * 0x490. Free: RAX, R8-R11,
+  RDI; flags dead. An owned candidate passes when its type is flagged and its owner equals `[r13+0x6EE]`.
+- Explicit attack `0x18EBDA` `41 39 84 89 3C DF 7E 03 0F 84 BF 00 00 00` (team table `0x37EDF3C` via R9 =
+  image; `je 0x18ECA7`), continuation `41 83 FC 06`. R12D = attacker type, RCX/R13 = target/attacker
+  owner, target type at `[r8+rbp+0x6E6]`. Free: RAX, R11; flags dead. Same team passes only for a Hunter
+  on a flagged type with equal owners.
+- Arrow `0x192AA7` `43 39 84 19 3C DF 7E 03 44 0F B7 5C 24 78`, continuation `75 49` (reads ZF). CX =
+  projectile type, R8W/R10W = projectile/victim owner, R12 = victim type, R13 = projectile offset, R11 =
+  image until the replayed `movzx`; source unit at `[r11+r13+0x2F7A736]`, projectile height at
+  `[r11+r13+0x2F7A6D0]` (both read by the gate block `0x192B00`, whose hash pins them). RDI is saved around
+  the table read. An allowed hit repeats the dead and height gates (miss `0x1929D0`) and continues at
+  `0x192B93`, behind the local "under attack" warning; every other case restores ZF = 1.
+- Corpse removal (in the corpse-arrival stub of [Hunter native sites](#hunter-native-sites)): a type flagged
+  in a second per-type table gets alive state 3 at `[rcx+r14+0x6E4]`; the unit pass `0x182B00` then calls
+  removal `0x1869C0`. Re-audit HunterUpdate state 2 (`0x13072E`-`0x130814` reads no corpse field) before
+  adding a hash.
+- Before adding a hash: repeat the register-liveness audit of all three spans, the team-table and
+  projectile-record layout, and check that no other plugin patches the spans.
+
+## Herds
+
+Owner: `Wildlife.HerdRuntime` (layout in `Wildlife.HerdNativeContract`, flight generator in
+`Wildlife.HerdNativeAssembly`, executed by `tests/WorkerProductionBonus.NativeTests/HerdFlightGateTests.cs`;
+layout, calm marks and route edits in `tests/APISharedTests/HerdTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback, an unknown image
+leaves herds unavailable. Static audit of 2026-11-08.
+
+- Records: tribe manager `0x7CC6720` (the `lea rcx` at `0xCE272` passes it to the herd maintenance
+  `0x1261F0` and the dispatcher `0x117520`), 4500 records of `0x688` bytes, id 0 reserved. The Extender's
+  `GameTribe` starts `0x2A` after a raw record; `TryValidateLayout` checks its named fields against raw
+  owner `+0x2C`, global id `+0x34`, state `+0x40` (2 in use), leader `+0x5A`, count `+0x5C`, member bits
+  `+0x60` (`0x271` words by unit id), waypoints `+0x5B4`, route index `+0x5DC`, route count `+0x5DE`.
+  Unnamed: kind `+0x42` (dispatcher `0x1175D9`, written by the spawn at `0x11E202`) and flight `+0x5F4`
+  (deer update `0x124F75`; set to 1 on a threat, counted up and reset; rabbits use it alike at `0x125E60`).
+- Kinds by the dispatcher's two jump tables: deer `0xD` -> `0x124E80`, lion `0xE` -> `0x1259D0`, rabbit
+  `0xF` -> `0x125D00`, camel `0x10` -> `0x124890`, goat `0x28` -> `0x125290`, hyena `0x29` -> `0x1256A0`,
+  crocodile `0x2A` -> `0x124B90`. Other kinds are troop groups.
+- Spawn `0x11E150(manager, art, x, y, height)`, entry `44 89 4C 24 20 44 89 44 24 18 89 54 24 10 53 55 56
+  57 41 54 41 55 41 57 48 83 EC 50`: claims a record (`0x119C00`), refuses x or y above `0x31F`, an unused
+  tile and tile mask `0x4A5014B1`, then creates the animals (`0x17FEF0`, `0x11D370`) and returns the herd id
+  or 0. Arts: deer `0xDC` (9-12), lion `0xDD` (3-4), rabbit `0xDE` (14-21), camel `0xDF` (2-5), goat `0xE2`
+  (4-5), hyena `0xE3` (6-9), crocodile `0xE5` (1); `0xE0`, `0xE1`, `0xE4` are no herds. Animals above the
+  wanted number get alive state 3; `0x1261F0`, every tick before the dispatcher, removes members whose state
+  is not 1, 2 or 4 (`0x123EA0`) for every record in use.
+- Routes `0x127E60(grid, herd, reach, mode)`, Indirect detour of 10 bytes (`mov [rsp+0x20],rbx; mov
+  [rsp+0x18],r8d`), continuation `55 56 57 41 54 41 55 41 56 41 57 48 83 EC 70`; no branch in the function
+  targets `[0x127E60,0x127E74)`. Callers: `0x124890`, `0x124E80`, `0x125290`, `0x1256A0`, `0x1259D0`,
+  `0x125D00` (rabbits also `0x129010`). It zeroes index and count (`0x1283D6`, `0x1283E1`) before its only
+  early exit (`0x128931`) and appends waypoints (`0x128A20`). Callers either test `count > 0` or walk to
+  `route[index]` without it (`0x1249F2`, `0x124FBE`, `0x125829`, `0x125B6D`), so an emptied route
+  gets the leader's tile as its first waypoint.
+- Flight gates `0x124F20` (deer) and `0x125330` (goats), 18 bytes `8B 7C 08 28 03 7C 08 48 44 8B 7C 08 40 44
+  8B 64 08 44`, continuation `66 44 89 AB F8 05 00 00`; both functions are byte-identical but for the type
+  constants. No branch targets the spans. RBP = herd id (`movsxd rbp, edx`), EDI = threat sum, read once at
+  `0x124F71` and written again before any other read; RAX and RCX are written again on both paths behind the
+  span; flags dead. Sector grid `0x3395E10` (`lea rcx` at `0x124EFA`), 80 by 80 sectors of 10 tiles, stride
+  `0xA0`, `+0x28` predators, `+0x48` units and fleeing deer and goats (`0x126810`).
+- Before adding a hash: repeat the dispatcher, spawn-art and route-reader audit, the register liveness of
+  both flight spans, the raw field map against the Extender's `GameTribe`, and check that the Fixes mod
+  (it hooks `DeerUpdate` `0x156130`, not these functions) and other plugins leave the spans alone.

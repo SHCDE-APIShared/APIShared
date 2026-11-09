@@ -17,12 +17,13 @@ function Quote([string]$Value) { if ($Value.Contains('"') -or $Value.EndsWith('\
 function New-Case([string]$Name) {
     $script:game = Join-Path $fixture ($Name+'/game')
     $script:state = Join-Path $game '_APIShared/Workshop/Transactions'
+    $script:shortTransactions = Join-Path $game '_APIShared/T'
     [void][IO.Directory]::CreateDirectory($state)
     $script:target = 'BepInEx/plugins/Example/Example.dll'
     $script:receipt = '_APIShared/Workshop/Receipts/123.json'
 }
-function New-Old([string]$Target = $script:target,[string]$Receipt = $script:receipt,[switch]$MissingBackup,[switch]$NoBegin) {
-    $dir = Join-Path $state ([guid]::NewGuid().ToString('N'))
+function New-Old([string]$Target = $script:target,[string]$Receipt = $script:receipt,[switch]$MissingBackup,[switch]$NoBegin,[switch]$Short) {
+    $dir = Join-Path $(if ($Short) { $shortTransactions } else { $state }) ([guid]::NewGuid().ToString('N'))
     Write-Text (Join-Path $dir 'Backup/0') 'original'
     $before = Hash (Join-Path $dir 'Backup/0')
     Write-Text (Join-Path $game $Target) 'partial new bytes'
@@ -35,13 +36,13 @@ function New-Old([string]$Target = $script:target,[string]$Receipt = $script:rec
     return $dir
 }
 function Reference([string]$Dir) { [IO.Path]::GetFileName($Dir)+"`t"+(Hash (Join-Path $Dir 'operations.tsv'))+"`t"+(Hash (Join-Path $Dir 'journal.log')) }
-function New-Request([string[]]$Old) {
-    $request = Join-Path $state ([guid]::NewGuid().ToString('N'))
+function New-Request([string[]]$Old,[switch]$Short) {
+    $request = Join-Path $(if ($Short) { $shortTransactions } else { $state }) ([guid]::NewGuid().ToString('N'))
     Write-Text (Join-Path $request 'operations.tsv') ("APISHARED-WORKSHOP-RECOVERY-1`r`nstop`r`n" + (($Old | ForEach-Object { Reference $_ }) -join "`r`n") + "`r`n")
     return $request
 }
-function New-Repair([string[]]$Old) {
-    $dir = Join-Path $state ([guid]::NewGuid().ToString('N'))
+function New-Repair([string[]]$Old,[switch]$Short) {
+    $dir = Join-Path $(if ($Short) { $shortTransactions } else { $state }) ([guid]::NewGuid().ToString('N'))
     Write-Text (Join-Path $dir 'New/0') 'complete latest package'
     Write-Text (Join-Path $dir 'New/1') 'latest receipt'
     $before = Hash (Join-Path $game $target); $receiptBefore = Hash (Join-Path $game $receipt)
@@ -145,8 +146,8 @@ foreach ($backend in $backends) {
     if ([IO.File]::ReadAllLines((Join-Path $old 'journal.log')) -notcontains 'restored') { throw 'Rollback did not finish.' }
     if (-not [IO.Directory]::Exists((Join-Path $request 'RecoveryBackup'))) { throw 'Interrupted bytes were not saved.' }
 
-    New-Case "$backend-independent"; $one=New-Old; $two=New-Old -Target 'BepInEx/plugins/Second/Second.dll' -Receipt '_APIShared/Workshop/Receipts/456.json'
-    Run (New-Request @($one,$two)); Assert-Text (Join-Path $game $target) 'original'; Assert-Text (Join-Path $game 'BepInEx/plugins/Second/Second.dll') 'original'
+    New-Case "$backend-independent"; $one=New-Old; $two=New-Old -Target 'BepInEx/plugins/Second/Second.dll' -Receipt '_APIShared/Workshop/Receipts/456.json' -Short
+    Run (New-Request @($one,$two) -Short); Assert-Text (Join-Path $game $target) 'original'; Assert-Text (Join-Path $game 'BepInEx/plugins/Second/Second.dll') 'original'
 
     New-Case "$backend-overlap"; $one=New-Old; $two=New-Old
     Run (New-Request @($one,$two)) -Expected 1; Assert-Text (Join-Path $game $target) 'partial new bytes'
@@ -175,7 +176,7 @@ foreach ($backend in $backends) {
     New-Case "$backend-repair"; $old=New-Old -MissingBackup
     Write-Text (Join-Path $game 'BepInEx/plugins/Example/config/user.json') 'user settings'
     Write-Text (Join-Path $game 'BepInEx/plugins/Example/unknown.txt') 'unknown'
-    $repair=New-Repair @($old); Run $repair -Replacement
+    $repair=New-Repair @($old) -Short; Run $repair -Replacement
     Assert-Text (Join-Path $game $target) 'complete latest package'; Assert-Text (Join-Path $game $receipt) 'latest receipt'
     Assert-Text (Join-Path $repair 'Backup/0') 'partial new bytes'
     Assert-Text (Join-Path $game 'BepInEx/plugins/Example/config/user.json') 'user settings'
@@ -183,6 +184,16 @@ foreach ($backend in $backends) {
     # A fresh normal update is no longer blocked by the superseded failure.
     $next=New-Repair @(); [IO.File]::Delete((Join-Path $next 'supersedes.tsv')); [IO.File]::Delete((Join-Path $next 'supersedes.sha256'))
     Run $next
+
+    New-Case "$backend-short-unfinished"; $old=New-Old -Short
+    $next=New-Repair @(); [IO.File]::Delete((Join-Path $next 'supersedes.tsv')); [IO.File]::Delete((Join-Path $next 'supersedes.sha256'))
+    Run $next -Expected 1; Assert-Text (Join-Path $game $target) 'partial new bytes'
+
+    New-Case "$backend-duplicate-id"; $old=New-Old
+    $duplicate=[guid]::NewGuid().ToString('N')
+    [void][IO.Directory]::CreateDirectory((Join-Path $state $duplicate))
+    [void][IO.Directory]::CreateDirectory((Join-Path $shortTransactions $duplicate))
+    Run (New-Request @($old) -Short) -Expected 1; Assert-Text (Join-Path $game $target) 'partial new bytes'
 
     New-Case "$backend-unconfirmed-repair"; $old=New-Old -MissingBackup; $repair=New-Repair @($old)
     Run $repair -Expected 1 -Replacement -WrongHash; Assert-Text (Join-Path $game $target) 'partial new bytes'

@@ -59,7 +59,7 @@ namespace APIShared.Compatibility
             }
             catch (Exception ex)
             {
-                SafeLog(log, LogLevel.Error, "REFUSED/UNCONFIRMED: " + ex.Message +
+                NativeApiLog.Error(log, "Fixes wheat REFUSED/UNCONFIRMED: " + ex.Message +
                     "; no confirmed protection. No retry or rollback; other APIShared services continue. " +
                     "If the Fixes wheat option is enabled, set [EnableWheatSaleCategoryFix] Enabled=false and restart before gameplay.");
             }
@@ -113,12 +113,7 @@ namespace APIShared.Compatibility
         {
             IntPtr module = GetModuleHandle("CrusaderDE.dll");
             Require(module != IntPtr.Zero, "CrusaderDE not loaded during synchronous startup");
-            var path = new StringBuilder(32768);
-            uint count = GetModuleFileName(module, path, path.Capacity);
-            Require(count > 0 && count < path.Capacity, "Native module path unavailable");
             ulong image = (ulong)module.ToInt64();
-            // The unpatched code of the loaded module; live memory is compared against it below.
-            var disk = new FixesWheatAnalysis.PeImage(File.ReadAllBytes(path.ToString()));
             Type owner = fixesAssembly.GetType("Fixes.Detours.FixesAIDetours", true);
             var handle = ReadField<HookHandle<X64InlineHook>>(owner, "c_game_ai_sell_item_handler_hook");
             var flags = ReadField<NativeFlagArray>(owner, "wheatSaleCategoryFlagArray");
@@ -133,10 +128,18 @@ namespace APIShared.Compatibility
             ulong site = hook.TargetAddress;
             int displacedLength = hook.DisplacedByteCount;
             Require(hook.IsInstalled && handle.IsInstalled && handle.ResolvedAddress == site &&
-                site > image && site - image < disk.SizeOfImage && displacedLength >= 14 && displacedLength <= 64,
+                site > image && displacedLength >= 14 && displacedLength <= 64,
                 "Hook installation/target/displacement contract changed");
             Require(flags != null && flags.Length >= 9 && flags.Address != 0 && hook.StubAddress != IntPtr.Zero,
                 "Wheat flag array/stub contract changed");
+
+            // Only an installed candidate needs the unpatched disk image for the live checks below.
+            var path = new StringBuilder(32768);
+            uint count = GetModuleFileName(module, path, path.Capacity);
+            Require(count > 0 && count < path.Capacity, "Native module path unavailable");
+            var disk = new FixesWheatAnalysis.PeImage(File.ReadAllBytes(path.ToString()));
+            Require(site - image < disk.SizeOfImage, "Hook installation/target/displacement contract changed");
+
             ulong stub = (ulong)hook.StubAddress.ToInt64();
             ulong flagAddress = flags.Address;
             FixesWheatMemory.Read(flagAddress, flags.Length, false);
@@ -214,13 +217,6 @@ namespace APIShared.Compatibility
         {
             if (!valid) throw new InvalidOperationException(reason);
         }
-        private static string Stamp() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " ";
-        private static void Report(ManualLogSource log, string message) => SafeLog(log, LogLevel.Info, message);
-        private static void SafeLog(ManualLogSource log, LogLevel level, string message)
-        {
-            // A foreign logging listener must not abort the remaining APIShared initialization.
-            try { log.Log(level, Stamp() + "Fixes wheat " + message); }
-            catch { }
-        }
+        private static void Report(ManualLogSource log, string message) => NativeApiLog.Info(log, "Fixes wheat " + message);
     }
 }

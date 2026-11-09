@@ -135,7 +135,7 @@ namespace APIShared.ModSettings
             // IModSettingsPersonalPersistenceBackend store personal values only in the preset storage.
             if (owner.SettingsApplicationBackend != null && persistedProperties.Any(p => p.MissionIndependent) &&
                 !(owner.SettingsApplicationBackend is IModSettingsPersonalPersistenceBackend))
-                DebugLogHelper.LogWarning(log, $"[{modName}] Backend has personal settings but no IModSettingsPersonalPersistenceBackend; " +
+                NativeApiLog.Warning(log, $"[{modName}] Backend has personal settings but no IModSettingsPersonalPersistenceBackend; " +
                     "personal values are persisted in the preset storage only.");
             hostSettingsActivationProperty = FindSettingsActivationProperty(hostProperties, "EnableMod");
             clientSettingsActivationProperty = FindSettingsActivationProperty(clientProperties, "EnableClientFeatures", "EnableMod");
@@ -442,7 +442,7 @@ namespace APIShared.ModSettings
         private void LogRoutine(string message)
         {
             if (routineLoggingEnabled)
-                DebugLogHelper.LogDebug(log, message);
+                NativeApiLog.Debug(log, message);
         }
 
         private static Dictionary<string, byte[]> Clone(

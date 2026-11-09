@@ -30,6 +30,10 @@ wins, otherwise the largest penalty).
 - Keep rule updates incremental; engines follow change journals and versions instead of re-reading
   everything.
 
+## Is an engine active?
+
+`RouteEngineInfo.IsActive`, `OwnerGuid` and `Features` tell a rule mod whether an engine currently applies which rule contracts, for example for an option text or a log line. Rules stay valid without an engine. An engine reports with `TryReport` before a mission loads and withdraws with `Clear`; a second owner is refused while another reports.
+
 ## Rules for route engines
 
 - Read rules cheaply when none exist (`RouteTileRules.HasRules`, `HasReplanRules`) and follow

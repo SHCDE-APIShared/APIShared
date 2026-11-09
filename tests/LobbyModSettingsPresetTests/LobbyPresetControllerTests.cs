@@ -31,6 +31,7 @@ namespace LobbyModSettingsPresetTests
         public void Cleanup()
         {
             SetOrigin(previousOrigin);
+            PersonalSettingsWriteQueue.ResetForTests();
             PersonalSettingsPaths.TestDocumentsDirectory = null;
             string prefix = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "APIShared-PresetController-");
             Assert.IsTrue(Path.GetFullPath(directory).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));

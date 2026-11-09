@@ -13,13 +13,8 @@ namespace APIShared.Internal
 
         internal static void Replace(string sourcePath, string destinationPath)
         {
-            if (MoveFileExW(
-                    sourcePath,
-                    destinationPath,
-                    MoveFileReplaceExisting | MoveFileWriteThrough))
-            {
+            if (TryMove(sourcePath, destinationPath, true))
                 return;
-            }
 
             int error = Marshal.GetLastWin32Error();
             throw new IOException(
@@ -27,6 +22,11 @@ namespace APIShared.Internal
                 $"source=[{sourcePath}], destination=[{destinationPath}].",
                 new Win32Exception(error));
         }
+
+        // The one MoveFileExW declaration. Returns false with the Win32 error left for
+        // Marshal.GetLastWin32Error; the move is write-through.
+        internal static bool TryMove(string sourcePath, string destinationPath, bool replaceExisting) =>
+            MoveFileExW(sourcePath, destinationPath, MoveFileWriteThrough | (replaceExisting ? MoveFileReplaceExisting : 0));
 
         [DllImport(
             "kernel32.dll",

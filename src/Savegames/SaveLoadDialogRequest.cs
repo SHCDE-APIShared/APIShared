@@ -44,7 +44,8 @@ namespace APIShared.Savegames
                 catch (Exception error) { p.OpenFailed = true; Report(error); }
             }
         }
-        internal bool Confirm(string fileName, FileHeader header, Func<bool> prepare, Action original, Action rollback)
+        internal bool Confirm(string fileName, FileHeader header, Func<bool> prepare, Action original, Action rollback,
+            Func<bool> completedSuccessfully = null)
         {
             if (busy || closed) return false;
             busy = true;
@@ -75,6 +76,13 @@ namespace APIShared.Savegames
                 closed = true;
                 try { original(); }
                 catch { originalFailed = true; pendingOutcome = SaveLoadDialogOutcome.Failed; throw; }
+                // Native failure is an ordinary return. Critical shared save transactions
+                // report it explicitly, preserving this same request for a retry.
+                if (completedSuccessfully != null && !completedSuccessfully())
+                {
+                    if (!pendingOutcome.HasValue) closed = false;
+                    return false;
+                }
                 completed = true;
                 pendingOutcome = SaveLoadDialogOutcome.Confirmed;
                 return true;

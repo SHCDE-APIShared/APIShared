@@ -9,6 +9,7 @@ using RedBird.Core.Memory;
 using RedBird.X64.Hooks;
 using RedBird.X64.Hooks.Transaction;
 using SHCDESE.Interop;
+using APIShared.Internal;
 
 namespace APIShared.Economy
 {
@@ -31,10 +32,9 @@ namespace APIShared.Economy
         private static bool initializing;
         private readonly IntPtr state;
         private readonly ulong image;
-        private HookTransaction transaction;
-        private bool claimed;
         private readonly HookHandle<X64InlineHook>[] handles = new HookHandle<X64InlineHook>[2];
         internal readonly NativeHookPublicationState Publication = new NativeHookPublicationState();
+        private readonly NativeInlineStubGroup group;
         internal static void Initialize(IntPtr moduleHandle, ScanRegion scanRegion, ReadOnlySpan<byte> memory, string binaryHash, ManualLogSource logger)
         {
             if (module != IntPtr.Zero && (module != moduleHandle || hash != binaryHash))
@@ -79,16 +79,18 @@ namespace APIShared.Economy
             try { candidate.Install(); }
             catch
             {
-                candidate.Publication.RollbackUnpublished(candidate.transaction, () =>
+                candidate.group.RollbackUnpublished(() =>
                 {
-                    if (candidate.claimed) ApiSharedNativeSites.Release(ApiSharedRuntime.ProcessInstance.NativeOwnership, ApiSharedNativeSites.AiMarketSell);
                     Marshal.FreeHGlobal(candidate.state); instance = null;
                 });
                 throw;
             }
         }
         private AiMarketSellNativeRuntime()
-        { image = unchecked((ulong)module.ToInt64()); state = Marshal.AllocHGlobal(4); Marshal.WriteInt32(state, 0); }
+        {
+            image = unchecked((ulong)module.ToInt64()); state = Marshal.AllocHGlobal(4); Marshal.WriteInt32(state, 0);
+            group = new NativeInlineStubGroup(ApiSharedNativeSites.AiMarketSell, Publication);
+        }
         private void Install()
         {
             if (!pristineValidated) throw new InvalidOperationException("AI sell load-image contract was not validated.");
@@ -103,37 +105,30 @@ namespace APIShared.Economy
             for (int i = 0; i < handles.Length; i++)
             {
                 ValidateOwnSpan(AiMarketSellAssembly.Sites[i], AiMarketSellAssembly.Hex(AiMarketSellAssembly.OriginalHex[i]));
-                using (var probe = new X64InlineHook(image + (uint)AiMarketSellAssembly.Sites[i], 15))
-                    if (probe.DisplacedByteCount != 15) throw new InvalidOperationException("AI sell backend displacement differs.");
+                if (NativeInlineStub.ProbeDisplacement(image + (uint)AiMarketSellAssembly.Sites[i], 15) != 15)
+                    throw new InvalidOperationException("AI sell backend displacement differs.");
+                // Preflight of the generator alone, without the backend's continuation jump.
                 var assembler = new Assembler(64);
                 Generate(assembler, AiMarketSellAssembly.Decode(AiMarketSellAssembly.Hex(AiMarketSellAssembly.OriginalHex[i]),
                     image + (uint)AiMarketSellAssembly.Sites[i]), image + (uint)AiMarketSellAssembly.Sites[i] + 15, i);
-                AiMarketSellAssembly.Assemble(assembler, image + 0x20000000);
+                AiMarketSellAssembly.Assemble(assembler, image + NativeInlineStub.PreflightStubOffset);
             }
-            var sites = ApiSharedRuntime.ProcessInstance.NativeOwnership;
-            ApiSharedNativeSites.Claim(sites, ApiSharedNativeSites.AiMarketSell, ApiSharedNativeSites.AiMarketSellSpans(),
-                reason => new InvalidOperationException(reason));
-            claimed = true;
-            transaction = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
+            group.Claim(ApiSharedNativeSites.AiMarketSellSpans());
+            group.Begin(region);
             for (int i = 0; i < handles.Length; i++)
             {
                 int index = i; handles[i] = new HookHandle<X64InlineHook>();
-                transaction.AddInline(handles[i], HookTarget.FromAddress(image + (uint)AiMarketSellAssembly.Sites[i]),
-                    (a, original, back) => Generate(a, original, back, index), hookSize: 15);
+                group.Add(handles[i], image + (uint)AiMarketSellAssembly.Sites[i], (a, original, back) => Generate(a, original, back, index), 15);
             }
-            var result = transaction.Commit();
-            if (!result.IsCompleteSuccess) throw new InvalidOperationException("Incomplete AI sell preparation.");
+            var result = group.Commit("Incomplete AI sell preparation.");
             for (int i = 0; i < handles.Length; i++)
             {
-                var hook = handles[i].Hook;
-                if (!handles[i].Success || hook.IsInstalled || hook.DisplacedByteCount != 15 ||
-                    hook.TargetAddress != image + (uint)AiMarketSellAssembly.Sites[i] || hook.StubAddress == IntPtr.Zero)
+                if (!NativeInlineStub.IsPrepared(handles[i], false, image + (uint)AiMarketSellAssembly.Sites[i], 15))
                     throw new InvalidOperationException("Prepared AI sell contract differs.");
-                ValidateStub(i, hook);
+                ValidateStub(i, handles[i].Hook);
             }
-            NativeHookPublication.Enable(transaction, result, Publication, this, ValidateInstalled);
-            try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} AI sell policy hooks confirmed: 3F1F3..3F202, 29723..29732; 15/15; player stride=583C, goods=4D0/508/50C; initially inactive, process lifetime."); } catch { }
+            group.Publish(result, this, ValidateInstalled);
+            NativeApiLog.Info(log, "AI sell policy hooks confirmed: 3F1F3..3F202, 29723..29732; 15/15; player stride=583C, goods=4D0/508/50C; initially inactive, process lifetime.");
         }
         private void Generate(Assembler a, ReadOnlySpan<Instruction> original, ulong back, int index) =>
             AiMarketSellAssembly.Generate(a, original, back, index, image, unchecked((ulong)state.ToInt64()),
@@ -145,9 +140,8 @@ namespace APIShared.Economy
             {
                 var hook = handles[i].Hook;
                 if (!hook.IsInstalled || hook.DisplacedByteCount != 15 || hook.TargetAddress != image + (uint)AiMarketSellAssembly.Sites[i] ||
-                    Marshal.ReadByte((IntPtr)hook.TargetAddress) != 0xFF || Marshal.ReadByte((IntPtr)hook.TargetAddress, 1) != 0x25 ||
-                    Marshal.ReadInt32((IntPtr)hook.TargetAddress, 2) != 0 ||
-                    Marshal.ReadIntPtr((IntPtr)hook.TargetAddress, 6) != hook.StubAddress || Marshal.ReadByte((IntPtr)hook.TargetAddress, 14) != 0x90)
+                    !NativeInlineStub.JumpMatches((IntPtr)hook.TargetAddress, hook.StubAddress) ||
+                    !NativeInlineStub.PaddingMatches((IntPtr)hook.TargetAddress, 15))
                     throw new InvalidOperationException("Installed AI sell jump/span contract differs.");
             }
         }
@@ -156,7 +150,7 @@ namespace APIShared.Economy
         {
             if (!Live(rva, expected.Length).AsSpan().SequenceEqual(expected))
                 throw new InvalidOperationException($"AI sell site RVA=0x{rva:X} is occupied or changed.");
-            try { log?.LogInfo($"{DateTime.Now:HH:mm:ss.fff} AI sell hook resolved: reference-rva=0x{rva:X}, span=15."); } catch { }
+            NativeApiLog.Info(log, $"AI sell hook resolved: reference-rva=0x{rva:X}, span=15.");
         }
         private void ValidateLiveBoundary(int rva, byte[] original)
         {
@@ -169,16 +163,9 @@ namespace APIShared.Economy
                 unchecked((ulong)state.ToInt64()),
                 unchecked((ulong)Marshal.GetFunctionPointerForDelegate(ReserveCallback).ToInt64()),
                 unchecked((ulong)Marshal.GetFunctionPointerForDelegate(QuantityCallback).ToInt64()));
-            var actual = new byte[expected.Length];
-            Marshal.Copy(hook.StubAddress, actual, 0, actual.Length);
-            if (!actual.AsSpan().SequenceEqual(expected))
+            if (!NativeInlineStub.StubMatches(hook.StubAddress, expected))
                 throw new InvalidOperationException("AI sell backend stub differs from the generated contract at site " + index + ".");
         }
-        private static byte[] Live(int rva, int length)
-        {
-            var bytes = new byte[length];
-            Marshal.Copy(module + rva, bytes, 0, length);
-            return bytes;
-        }
+        private static byte[] Live(int rva, int length) => NativeInlineStub.ReadLive(module, rva, length);
     }
 }

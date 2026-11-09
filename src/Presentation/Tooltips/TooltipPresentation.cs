@@ -162,7 +162,7 @@ namespace APIShared.Presentation
                 foreach (var target in targets)
                     if (content[target].Length != 0 && !TooltipAnchor.HasTarget(target) && missingAnchors.Add(target))
                         Report("missing anchor/" + target, new MissingMemberException("No compatible loaded tooltip anchor for " + target));
-                if (!confirmed) { confirmed = true; log?.LogDebug($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] TOOLTIP_RUNTIME_CONFIRMED Unity presentation after startup cleanup."); }
+                if (!confirmed) { confirmed = true; NativeApiLog.Debug(log, "TOOLTIP_RUNTIME_CONFIRMED Unity presentation after startup cleanup."); }
             }
             catch (Exception error) { content.Clear(); TooltipAnchor.ClearAll(); Report("presentation", error); }
             finally { collecting = false; }
@@ -198,7 +198,7 @@ namespace APIShared.Presentation
         private static readonly HashSet<string> reported = new HashSet<string>(StringComparer.Ordinal);
         internal static void Report(string owner, Exception error)
         {
-            if (reported.Add(owner)) log?.LogError($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Tooltip contribution {owner}: {error}");
+            if (reported.Add(owner)) NativeApiLog.Error(log, $"Tooltip contribution {owner}: {error}");
         }
     }
 }

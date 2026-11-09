@@ -114,14 +114,16 @@ namespace APIShared
             }
         }
 
-        internal static string CaptureHostFingerprint()
+        internal static string CaptureHostFingerprint() => SavegameLoadAgreement.Fingerprint(CaptureHostSettingsForReadiness());
+
+        internal static Dictionary<string, Dictionary<string, byte[]>> CaptureHostSettingsForReadiness()
         {
             var participants = FindParticipants();
             var values = CaptureCompatibleHostSettings(participants);
             if (values.Count != participants.Count || participants.Any(p =>
                 !values.TryGetValue(p.Key, out var properties) || properties.Count != p.Value.Properties.Length))
                 throw new InvalidDataException("Incomplete host settings snapshot.");
-            return SavegameLoadAgreement.Fingerprint(values);
+            return values;
         }
 
         internal static void AcceptPreparedClient(string path, SavegameModSettingsRecord record)

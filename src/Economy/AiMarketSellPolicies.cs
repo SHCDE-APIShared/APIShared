@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using SHCDESE.API;
 using SHCDESE.Interop;
+using APIShared.Events;
+using APIShared.Modifiers;
 
 namespace APIShared.Economy
 {
@@ -20,11 +23,11 @@ namespace APIShared.Economy
     /// <summary>Pre-decision data, after Vanilla's emergency, demand and reserve rules. No sale has occurred.</summary>
     public sealed class AiMarketSellReserveContext
     {
-        private int reserve;
+        private StagedInt32Value reserve;
         private bool open = true;
         private readonly int thread = Thread.CurrentThread.ManagedThreadId;
         internal AiMarketSellReserveContext(int player, int good, int stock, int original)
-        { PlayerId = player; Good = good; Stock = stock; OriginalReserve = reserve = original; }
+        { PlayerId = player; Good = good; Stock = stock; OriginalReserve = original; reserve = new StagedInt32Value(original); }
         /// <summary>Validated one-based native player ID (1..8).</summary>
         public int PlayerId { get; }
         /// <summary>Native eGoods index, excluding null and gold.</summary>
@@ -34,7 +37,13 @@ namespace APIShared.Economy
         /// <summary>Unmodified effective Vanilla reserve.</summary>
         public int OriginalReserve { get; }
         /// <summary>Proposed reserve. Writable only synchronously inside the current dispatch; final safety follows.</summary>
-        public int Reserve { get => reserve; set { CheckOpen(); reserve = value; } }
+        public int Reserve { get => reserve.Current; set { CheckOpen(); reserve.Current = value; } }
+        /// <summary>Contributes a staged factor or fixed reserve. The resolved value is computed after all callbacks;
+        /// legacy Reserve writes remain ordered fixed contributions. Native safety runs afterward.</summary>
+        public void Contribute(ValueModifierContribution contribution) { CheckOpen(); reserve.Contribute(contribution); }
+        internal StagedInt32Value.Checkpoint Capture() => reserve.Capture();
+        internal void Restore(StagedInt32Value.Checkpoint checkpoint) => reserve.Restore(checkpoint);
+        internal int Resolve() => reserve.Resolve();
         private void CheckOpen()
         { if (!open || thread != Thread.CurrentThread.ManagedThreadId) throw new InvalidOperationException("Sell context is no longer writable on this thread."); }
         internal void Close() => open = false;
@@ -43,11 +52,11 @@ namespace APIShared.Economy
     /// <summary>Preparation before pricing and booking, reached only after Vanilla's negative-request rejection.</summary>
     public sealed class AiMarketSellQuantityContext
     {
-        private int amount;
+        private StagedInt32Value amount;
         private bool open = true;
         private readonly int thread = Thread.CurrentThread.ManagedThreadId;
         internal AiMarketSellQuantityContext(int player, int good, int stock, int original)
-        { PlayerId = player; Good = good; Stock = stock; OriginalAmount = amount = original; }
+        { PlayerId = player; Good = good; Stock = stock; OriginalAmount = original; amount = new StagedInt32Value(original); }
         /// <summary>Validated one-based native player ID (1..8).</summary>
         public int PlayerId { get; }
         /// <summary>Native eGoods index, excluding null and gold.</summary>
@@ -57,7 +66,13 @@ namespace APIShared.Economy
         /// <summary>Original nonnegative requested quantity. This is not a completed sale notification.</summary>
         public int OriginalAmount { get; }
         /// <summary>Proposed amount. Nonpositive results cancel all sale effects. Final owner constraints follow.</summary>
-        public int Amount { get => amount; set { CheckOpen(); amount = value; } }
+        public int Amount { get => amount.Current; set { CheckOpen(); amount.Current = value; } }
+        /// <summary>Contributes a staged factor or fixed quantity. Resolution follows all callbacks and precedes
+        /// native stock safety. Legacy Amount reads/writes keep their ordered proposed-value behavior.</summary>
+        public void Contribute(ValueModifierContribution contribution) { CheckOpen(); amount.Contribute(contribution); }
+        internal StagedInt32Value.Checkpoint Capture() => amount.Capture();
+        internal void Restore(StagedInt32Value.Checkpoint checkpoint) => amount.Restore(checkpoint);
+        internal int Resolve() => amount.Resolve();
         private void CheckOpen()
         { if (!open || thread != Thread.CurrentThread.ManagedThreadId) throw new InvalidOperationException("Sell context is no longer writable on this thread."); }
         internal void Close() => open = false;
@@ -108,8 +123,11 @@ namespace APIShared.Economy
             Action<AiMarketSellQuantityContext> quantityAdjuster = null, int order = 0) =>
             Registry.TryRegister(ownerGuid, registrationId, safety, out registration, out error, reserveAdjuster, quantityAdjuster, order);
 
+        // The reserve hook passes R8 = player * PlayerDwordStride, the player's DWORD index
+        // into the resource table; any other value is not a player row.
+        private const int PlayerDwordStride = AiMarketSellAssembly.PlayerStride / sizeof(int);
         internal static int Reserve(int slot, int good, int stock, int original) =>
-            slot % 0x160F == 0 ? Registry.Reserve(slot / 0x160F, good, stock, original) : original;
+            slot % PlayerDwordStride == 0 ? Registry.Reserve(slot / PlayerDwordStride, good, stock, original) : original;
         internal static int Quantity(int player, int good, int stock, int original) => Registry.Quantity(player, good, stock, original);
     }
 
@@ -119,6 +137,8 @@ namespace APIShared.Economy
         private readonly object gate = new object();
         private readonly List<AiMarketSellRegistration> all = new List<AiMarketSellRegistration>();
         private AiMarketSellRegistration[] snapshot = Array.Empty<AiMarketSellRegistration>();
+        private static readonly Func<AiMarketSellRegistration, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.OwnerGuid, entry.RegistrationId, entry.Order);
         private readonly Action install;
         private readonly Action<int> publish;
         [ThreadStatic] private static int depth;
@@ -148,8 +168,7 @@ namespace APIShared.Economy
                 if (registration.Active == enabled) return;
                 registration.Active = enabled;
                 var active = all.FindAll(item => item.Active);
-                active.Sort((x, y) => { int c = x.Order.CompareTo(y.Order); if (c != 0) return c;
-                    c = StringComparer.Ordinal.Compare(x.OwnerGuid, y.OwnerGuid); return c != 0 ? c : StringComparer.Ordinal.Compare(x.RegistrationId, y.RegistrationId); });
+                active.Sort((x, y) => RegistrationKey.Compare(RegistrationKeyOf(x), RegistrationKeyOf(y)));
                 int demand = 0;
                 foreach (var item in active)
                 { demand |= (int)item.Safety; if (item.ReserveAdjuster != null) demand |= 4; if (item.QuantityAdjuster != null) demand |= 8; }
@@ -157,7 +176,7 @@ namespace APIShared.Economy
                 publish(demand);
             }
         }
-        private static bool Valid(int player, int good) => player >= 1 && player <= 8 &&
+        private static bool Valid(int player, int good) => player >= 1 && player <= GamePlayerManagerAPI.MAX_PLAYERS &&
             good > (int)eGoods.STORED_NULL && good < (int)eGoods.Count && good != (int)eGoods.STORED_GOLD;
         internal int Reserve(int player, int good, int stock, int original)
         {
@@ -168,9 +187,9 @@ namespace APIShared.Economy
             try
             {
                 foreach (var item in current)
-                { if (item.ReserveAdjuster == null) continue; int previous = context.Reserve;
-                    try { item.ReserveAdjuster(context); } catch { context.Reserve = previous; item.Error(); } }
-                return context.Reserve;
+                { if (item.ReserveAdjuster == null) continue; var previous = context.Capture();
+                    try { item.ReserveAdjuster(context); } catch { context.Restore(previous); item.Error(); } }
+                return context.Resolve();
             }
             finally { context.Close(); depth--; }
         }
@@ -183,9 +202,9 @@ namespace APIShared.Economy
             try
             {
                 foreach (var item in current)
-                { if (item.QuantityAdjuster == null) continue; int previous = context.Amount;
-                    try { item.QuantityAdjuster(context); } catch { context.Amount = previous; item.Error(); } }
-                return context.Amount;
+                { if (item.QuantityAdjuster == null) continue; var previous = context.Capture();
+                    try { item.QuantityAdjuster(context); } catch { context.Restore(previous); item.Error(); } }
+                return context.Resolve();
             }
             finally { context.Close(); depth--; }
         }

@@ -21,14 +21,14 @@ namespace APIShared.ModSettings
                 if (!ApiShared.Current.TryGetMissionLifecycle(APISharedPlugin.PluginGuid, out lifecycle, out var diagnostic))
                     throw new InvalidOperationException(diagnostic?.Reason ?? "Mission lifecycle unavailable.");
                 writer = new ModSettingsStartLog(() => ModSettingsApplication.Endpoints,
-                    message => DebugLogHelper.LogInfo(log, message),
-                    (key, error) => DebugLogHelper.LogWarning(log, "MODSETTINGS_READ_FAILED " + key + ": " + error));
+                    message => NativeApiLog.Info(log, message),
+                    (key, error) => NativeApiLog.Warning(log, "MODSETTINGS_READ_FAILED " + key + ": " + error));
                 if (!lifecycle.TryRegisterObserver("ModSettings.StartLog", OnStart, null, null, out diagnostic))
                     throw new InvalidOperationException(diagnostic?.Reason ?? "Mission observer registration failed.");
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogWarning(log, "MODSETTINGS_UNAVAILABLE: " + exception);
+                NativeApiLog.Warning(log, "MODSETTINGS_UNAVAILABLE: " + exception);
             }
         }
 
@@ -39,8 +39,8 @@ namespace APIShared.ModSettings
                 // A queued notification cannot read a later map's settings under an old session ID.
                 if (lifecycle.Current?.SessionId != notification.Context.SessionId) return;
                 try { writer.Handle(notification); }
-                catch (Exception exception) { DebugLogHelper.LogWarning(log, "MODSETTINGS_FAILED: " + exception); }
-            })) DebugLogHelper.LogWarning(log, "MODSETTINGS_UNAVAILABLE: Unity main-thread dispatch unavailable.");
+                catch (Exception exception) { NativeApiLog.Warning(log, "MODSETTINGS_FAILED: " + exception); }
+            })) NativeApiLog.Warning(log, "MODSETTINGS_UNAVAILABLE: Unity main-thread dispatch unavailable.");
         }
     }
 }

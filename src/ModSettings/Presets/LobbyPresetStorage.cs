@@ -51,7 +51,8 @@ namespace APIShared.ModSettings
         internal int TestWriteCount { get; private set; }
 #endif
 
-        internal void Write(Dictionary<string, byte[]> payload)
+        /// <summary>Atomically replaces the file; failures are logged and counted. Returns whether the payload was published.</summary>
+        internal bool Write(Dictionary<string, byte[]> payload)
         {
             string directory = Path.GetDirectoryName(filePath);
             string temporaryPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
@@ -75,7 +76,7 @@ namespace APIShared.ModSettings
                 {
                     FailedWrites++;
                     LastWriteResult = "atomic-publish-failed";
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not atomically publish lobby-settings presets to [{filePath}] " +
                         $"after {result.Attempts} attempts; hresult=0x{result.Error.HResult:X8}: {result.Error}");
@@ -86,20 +87,21 @@ namespace APIShared.ModSettings
                     SuccessfulWrites++;
                     LastWriteResult = "published";
                     if (report)
-                        DebugLogHelper.LogInfo(log,
+                        NativeApiLog.Info(log,
                             $"SETTINGS_STORAGE: mod={modName}, result=published, path={filePath}, " +
                             $"bytes={bytes.Length}, attempts={result.Attempts}, successfulWrites={SuccessfulWrites}, " +
                             $"failedWrites={FailedWrites}; scope=personal. Subsequent successes are counted in the mission settings snapshot.");
 #if API_SHARED_PRESET_TESTS
                     TestWriteCount++;
 #endif
+                    return true;
                 }
             }
             catch (Exception exception)
             {
                 FailedWrites++;
                 LastWriteResult = "write-failed:" + exception.GetType().FullName;
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not save lobby-settings presets to [{filePath}]; " +
                     $"publishAttempts={publishAttempts}, hresult=0x{exception.HResult:X8}: {exception}");
@@ -113,11 +115,12 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogWarning(
+                    NativeApiLog.Warning(
                         log,
                         $"[{modName}] Could not remove temporary preset file [{temporaryPath}]: {exception.Message}");
                 }
             }
+            return false;
         }
 
         private void ValidateWritePath()
@@ -141,7 +144,7 @@ namespace APIShared.ModSettings
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not read lobby-settings presets from [{readPath}]: {exception}");
                 return false;
@@ -162,13 +165,13 @@ namespace APIShared.ModSettings
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                 ValidateWritePath();
                 File.Copy(readPath, backupPath, false);
-                DebugLogHelper.LogWarning(
+                NativeApiLog.Warning(
                     log,
                     $"[{modName}] Preserved invalid preset data at [{backupPath}].");
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not preserve invalid preset data: {exception}");
             }

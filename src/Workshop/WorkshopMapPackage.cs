@@ -64,8 +64,7 @@ namespace APIShared.Workshop
                     if (relative == (tool ? "publisher-files.json" : WorkshopInventory.FileName)) continue;
                     if (!(tool ? publisher : inventory).Files.TryGetValue(relative, out string expected)) throw new InvalidDataException("File missing from APIShared inventory: " + relative);
                     using (var input = map.Archive.GetInputStream(entry))
-                    using (var sha = System.Security.Cryptography.SHA256.Create())
-                        if (BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "").ToLowerInvariant() != expected) throw new InvalidDataException("APIShared map hash mismatch.");
+                        if (Sha256Hex.Of(input).ToLowerInvariant() != expected) throw new InvalidDataException("APIShared map hash mismatch.");
                 }
                 if (inventory.Files.Keys.Any(path => !seen.Contains(root + path))) throw new InvalidDataException("Incomplete APIShared map.");
                 if (publisher.Files.Keys.Any(path => !seen.Contains(tools + path))) throw new InvalidDataException("Incomplete publisher in APIShared map.");
@@ -78,8 +77,7 @@ namespace APIShared.Workshop
             if (entry == null || expected == null || expected.Length != 64 || expected.Any(c => !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f')))
                 throw new InvalidDataException("Invalid pair hash or entry.");
             using (var input = map.Archive.GetInputStream(entry))
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                if (BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "").ToLowerInvariant() != expected)
+                if (Sha256Hex.Of(input).ToLowerInvariant() != expected)
                     throw new InvalidDataException("Dependency bootstrap hash mismatch.");
         }
     }

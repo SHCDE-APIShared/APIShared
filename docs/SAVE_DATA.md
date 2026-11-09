@@ -47,6 +47,18 @@ Use `NoRecord` and `OutOfScope` to reset state from an earlier mission: the Exte
 calls the `onUnload` callback of `ModSaveDataAPI` in 2.14.1 (see
 [implementation](#script-extender-behaviour-it-relies-on)).
 
+**Optional early preparation.** Set `registration.Prepared` only when the consumer
+must decode its record before native initialization. It runs after the complete
+Pre-phase archive read, including `NoRecord`/`OutOfScope`, on that load's caller.
+Migrations run once at this earlier point for opted-in registrations. `Loaded`
+still runs exactly once in Post with the same result and independent entry arrays;
+registrations without `Prepared` retain their previous migration and callback timing.
+Early preparation does not mean the saved native world is available: decode private
+candidates there and use an appropriate lifecycle boundary for native application.
+An exception is isolated and preserves the original record bytes. Consumers which
+require protection before simulation must independently refuse native initialization
+when preparation or application fails; throwing this callback alone is no load veto.
+
 **Scope.** `SaveGames` (default) reads and writes gameplay saves only. `SaveGamesAndMaps`
 also writes map editor saves and reads every map load, for data that belongs to the map,
 such as a theme chosen in the editor.

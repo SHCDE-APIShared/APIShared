@@ -143,8 +143,36 @@ namespace APIShared.ScriptExtenderFixes
         {
             if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(loaded) ||
                 !File.Exists(expected) || !File.Exists(loaded)) return false;
-            byte[] left = File.ReadAllBytes(expected), right = File.ReadAllBytes(loaded);
-            return left.Length == right.Length && left.SequenceEqual(right);
+            using (var left = File.OpenRead(expected))
+            using (var right = File.OpenRead(loaded))
+            {
+                long remaining = left.Length;
+                if (remaining != right.Length) return false;
+                if (remaining == 0) return true;
+                int blockSize = (int)Math.Min(remaining, 64 * 1024);
+                var leftBytes = new byte[blockSize];
+                var rightBytes = new byte[blockSize];
+                while (remaining > 0)
+                {
+                    int count = (int)Math.Min(remaining, blockSize);
+                    ReadBlock(left, leftBytes, count);
+                    ReadBlock(right, rightBytes, count);
+                    if (!leftBytes.AsSpan(0, count).SequenceEqual(rightBytes.AsSpan(0, count))) return false;
+                    remaining -= count;
+                }
+                return true;
+            }
+        }
+
+        private static void ReadBlock(FileStream stream, byte[] buffer, int count)
+        {
+            int offset = 0;
+            while (offset < count)
+            {
+                int read = stream.Read(buffer, offset, count - offset);
+                if (read == 0) throw new EndOfStreamException("Native partner changed during comparison: " + stream.Name);
+                offset += read;
+            }
         }
 
         private static MethodInfo Method(Type type, string name, bool isStatic, Type result, params Type[] parameters)
@@ -185,17 +213,22 @@ namespace APIShared.ScriptExtenderFixes
             if (exit) BeginShutdown("UU-ImGUI UnHookSafely(exit)");
             return Retain();
         }
+        // A failure after the first Apply leaves live hooks: the swap-chain Present callback may run on
+        // the render thread, so undoing them could race code inside an edited body. Applied hooks stay
+        // rooted instead; while active == 0 every guard returns the original SE behavior.
+        private static readonly List<object> RetainedCandidates = new List<object>();
         private static void RollbackUnpublished(List<ILHook> candidates, ImGuiShutdownCompiler compilerCandidate)
         {
+            if (compilerCandidate?.Hook.IsApplied == true || candidates.Any(candidate => candidate.IsApplied))
+            {
+                lock (RetainedCandidates) { RetainedCandidates.AddRange(candidates); RetainedCandidates.Add(compilerCandidate); }
+                return;
+            }
             for (int index = candidates.Count - 1; index >= 0; index--)
                 candidates[index].Dispose();
             compilerCandidate?.Hook.Dispose();
         }
-        private static void Write(string message)
-        {
-            try { logger?.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] SE_IMGUI_SHUTDOWN_FIX: " + message); }
-            catch { /* Logging must not interrupt native message forwarding or quit. */ }
-        }
+        private static void Write(string message) => NativeApiLog.Info(logger, "SE_IMGUI_SHUTDOWN_FIX: " + message);
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
         private static extern IntPtr GetWindowLongPtrW(IntPtr hwnd, int index);
         [DllImport("user32.dll", EntryPoint = "CallWindowProcW")]

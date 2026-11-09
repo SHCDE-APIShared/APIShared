@@ -71,6 +71,34 @@ public sealed class WorkshopPackageTests
         File.Delete(WorkshopPaths.Inside(Game, Root + "/Example.dll")); Write(Source, "Payload/" + Root + "/Example.dll", "different");
         Assert.ThrowsExactly<InvalidDataException>(() => WorkshopTransaction.Stage(plan));
     }
+    [TestMethod]
+    public void AQueuedPlanCannotStageAReplacedSteamDownloadAtTheSamePath()
+    {
+        InstallReceipt(Package("1.0.0"));
+        Package("1.1.0");
+        var plan = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Update);
+        WorkshopTransaction.ValidateManifest(plan);
+
+        Package("1.2.0");
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopTransaction.Stage(plan));
+        Assert.AreEqual(WorkshopDiagnosticLevel.Warning, WorkshopDiagnostics.Level(error));
+        Assert.IsNull(WorkshopInstallation.FindTransaction(Game, plan.OperationId));
+        Assert.AreEqual("1.0.0", WorkshopInstallation.ReadReceipt(Game, 123).Version);
+        Assert.AreEqual("payload 1.0.0", File.ReadAllText(WorkshopPaths.Inside(Game, Root + "/Example.dll")));
+    }
+
+    [TestMethod]
+    public void ADownloadReplacedAfterStagingCannotPassTheHandoffCheck()
+    {
+        Package("1.1.0");
+        var plan = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Install);
+        string transaction = WorkshopTransaction.Stage(plan);
+
+        Package("1.2.0");
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopTransaction.ValidateManifest(plan));
+        Assert.IsFalse(File.Exists(Path.Combine(transaction, "ready.flag")));
+        Assert.IsNull(WorkshopInstallation.ReadReceipt(Game, 123));
+    }
     [TestMethod] public void RetainedDependenciesUseReceiptsAndDeferUnknownEvidenceSafely()
     {
         var package = Package();
@@ -232,7 +260,9 @@ public sealed class WorkshopPackageTests
     {
         if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Windows updater fixture requires Windows."); return; }
         var package = Package(); string first = WorkshopTransaction.Stage(WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Install));
+        Assert.AreEqual(Path.Combine(Game, "_APIShared", "T"), Path.GetDirectoryName(first));
         Assert.AreEqual(0, RunUpdater(first)); Assert.AreEqual(package.Version, WorkshopInstallation.ReadReceipt(Game, 123).Version);
+        Assert.IsFalse(Directory.Exists(Path.Combine(Game, "_APIShared", "Workshop", "Transactions")));
         Assert.IsTrue(File.ReadAllText(Path.Combine(first, "journal.log")).Contains("committed"));
         Package("1.1.0"); Write(Game, Root + "/Example.dll", "local customization"); string second = WorkshopTransaction.Stage(WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Update));
         Assert.AreEqual(0, RunUpdater(second)); Assert.IsTrue(Directory.EnumerateFiles(Path.Combine(second, "Backup")).Any(f => File.ReadAllText(f) == "local customization"));
@@ -260,6 +290,10 @@ public sealed class WorkshopPackageTests
         InstallReceipt(Package("1.0.23")); Package("1.0.27");
         var update = WorkshopInstallation.Prepare("owner", Game, 123, Source, WorkshopAction.Update);
         string interrupted = WorkshopTransaction.Stage(update);
+        string legacy = Path.Combine(Game, "_APIShared", "Workshop", "Transactions", Path.GetFileName(interrupted));
+        Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+        Directory.Move(interrupted, legacy);
+        interrupted = legacy;
         Write(Game, update.Files[0].Path, "interrupted partial copy");
         Write(interrupted, "journal.log", "applying\r\nbegin\t0\r\n");
         var entries = WorkshopRecovery.Inspect(Game);

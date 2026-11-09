@@ -55,6 +55,9 @@ try {
     Assert-WorkshopMethod $extender 'SHCDESE.API.LowLevel.CrusaderLibrary' 'add_LibraryLoaded' 'System.Void' @('SHCDESE.API.LowLevel.CrusaderLibrary/OnLibraryLoadedDelegate') $true $false
     Assert-WorkshopMethod $extender 'SHCDESE.API.GameXAMLManagerAPI' 'RegisterLobbyModSettings' 'System.Void' @('BepInEx.BaseUnityPlugin','System.String','System.Object','System.String') $true $false
     Assert-WorkshopMethod $extender 'SHCDESE.API.GameXAMLManagerAPI' 'RegisterLobbyModSettings' 'System.Void' @('BepInEx.BaseUnityPlugin','System.String','System.Object','System.String','System.Boolean') $true $false
+    Assert-WorkshopMethod $extender 'SHCDESE.API.GameXAMLManagerAPI' 'get_RegisteredModSettings' 'System.Collections.ObjectModel.ObservableCollection`1<SHCDESE.API.Components.ModManager.LobbyModSettingsEntry>' @() $true $false
+    Assert-WorkshopMethod $extender 'SHCDESE.API.Components.ModManager.LobbyModSettingsEntry' 'get_View' 'Noesis.FrameworkElement' @() $true $false
+    Assert-WorkshopMethod $extender 'SHCDESE.API.GameNetworkAPI' 'IsNetworkedEnvironment' 'System.Boolean' @() $true $true
     Assert-WorkshopMethod $extender 'SHCDESE.API.GameAssetManagerAPI' 'get_Instance' 'SHCDESE.API.GameAssetManagerAPI' @() $true $true
     Assert-WorkshopMethod $extender 'SHCDESE.API.GameAssetManagerAPI' 'GetModifiedFilePath' 'System.Boolean' @('System.String','System.String&') $true $false
     Assert-WorkshopMethod $zip 'ICSharpCode.SharpZipLib.Zip.ZipEntry' 'get_IsDirectory' 'System.Boolean' @() $true $false

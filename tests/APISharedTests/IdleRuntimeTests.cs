@@ -119,6 +119,7 @@ namespace APISharedTests
                     ("APIShared.PlayerDefeatService", "OnTick"),
                     ("APIShared.LobbyStateService", "OnBeforeRender"),
                     ("APIShared.UnitHudPresentationService", "OnBeforeRender"),
+                    ("APIShared.UnitHudPresentationService", "OnActiveBeforeRender"),
                     ("APIShared.UnitHudPresentationService", "HandleVanillaClick"),
                     ("APIShared.MarkedUnitSelectionAPI", "OnTroopSelection"),
                     ("APIShared.Commands.GameActionEvents", "Dispatch"),

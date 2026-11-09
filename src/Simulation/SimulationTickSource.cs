@@ -60,6 +60,17 @@ namespace APIShared.Simulation
             return Volatile.Read(ref ready) != 0 && scopedReader.TryRead(expected, out mapTick);
         }
 
+        // The raw restore owner can dispatch native producers before publishing
+        // the public clock token. Callers must already hold the engine monitor
+        // and have an admitted, identity-checked native world.
+        internal static bool TryReadAdmittedNativeTick(out int mapTick)
+        {
+            mapTick = 0;
+            if (Volatile.Read(ref ready) == 0 || !AddressAvailable()) return false;
+            mapTick = time.GetElapsedMapTicks();
+            return AddressAvailable();
+        }
+
         private static MissionContext CurrentMission()
         {
             var current = missions.Current;

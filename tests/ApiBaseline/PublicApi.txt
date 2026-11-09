@@ -190,6 +190,35 @@ APIShared.Audio.SoundTarget | public override string ToString()
 APIShared.Audio.SoundTargetKind | public enum APIShared.Audio.SoundTargetKind : int
 APIShared.Audio.SoundTargetKind | CustomClip = 1
 APIShared.Audio.SoundTargetKind | VanillaEffect = 0
+APIShared.Automation.AutomationClient | public sealed class APIShared.Automation.AutomationClient
+APIShared.Automation.AutomationClient | public APIShared.Automation.AutomationRun Start(System.Guid runId, System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationStep> steps, BepInEx.Logging.ManualLogSource logger, System.Action<APIShared.Automation.AutomationResult> completed = null, bool quitWhenDone = false)
+APIShared.Automation.AutomationResult | public sealed class APIShared.Automation.AutomationResult
+APIShared.Automation.AutomationResult | public APIShared.Automation.AutomationStatus Status { get; }
+APIShared.Automation.AutomationResult | public System.Guid RunId { get; }
+APIShared.Automation.AutomationResult | public string Detail { get; }
+APIShared.Automation.AutomationResult | public string Step { get; }
+APIShared.Automation.AutomationRun | public sealed class APIShared.Automation.AutomationRun
+APIShared.Automation.AutomationRun | public APIShared.Automation.AutomationWait WaitForPlayState(APIShared.MissionContext mission)
+APIShared.Automation.AutomationRun | public APIShared.Automation.AutomationWait WaitForTicks(APIShared.MissionContext mission, int count)
+APIShared.Automation.AutomationRun | public APIShared.MissionContext CurrentMission { get; }
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> ClickNoesis(string elementName)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> LoadSave(string path)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> SetPause(APIShared.MissionContext mission, bool paused)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> StartSkirmish(string map, System.Collections.Generic.IEnumerable<SHCDESE.Interop.AILords> opponents, int? peaceTimeMinutes = null)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> ZoomStep(APIShared.MissionContext mission, bool zoomIn, System.Action<float> actualScale)
+APIShared.Automation.AutomationRun | public T InSimulation<T>(APIShared.MissionContext mission, System.Func<T> action)
+APIShared.Automation.AutomationRun | public bool TrySpawnBuilding(APIShared.MissionContext mission, int playerId, int tileX, int tileY, SHCDESE.Interop.eMappers mapper, int spriteVariation, out int buildingId, out uint globalId)
+APIShared.Automation.AutomationRun | public void Cancel()
+APIShared.Automation.AutomationStatus | public enum APIShared.Automation.AutomationStatus : int
+APIShared.Automation.AutomationStatus | Cancelled = 2
+APIShared.Automation.AutomationStatus | Failed = 1
+APIShared.Automation.AutomationStatus | Passed = 0
+APIShared.Automation.AutomationStep | public sealed class APIShared.Automation.AutomationStep
+APIShared.Automation.AutomationStep | public .ctor(string name, System.TimeSpan timeout, System.Func<APIShared.Automation.AutomationRun, System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait>> execute, bool missionBound = false)
+APIShared.Automation.AutomationWait | public sealed class APIShared.Automation.AutomationWait
+APIShared.Automation.AutomationWait | public static APIShared.Automation.AutomationWait Delay(System.TimeSpan duration)
+APIShared.Automation.AutomationWait | public static APIShared.Automation.AutomationWait NextFrame { get; }
+APIShared.Automation.AutomationWait | public static APIShared.Automation.AutomationWait Until(string description, System.Func<bool> condition)
 APIShared.BriefingGoldAdjuster | public delegate int APIShared.BriefingGoldAdjuster(APIShared.BriefingGoldContext context)
 APIShared.BriefingGoldAdjustmentStage | public enum APIShared.BriefingGoldAdjustmentStage : int
 APIShared.BriefingGoldAdjustmentStage | ModAdjustment = 100
@@ -278,6 +307,10 @@ APIShared.Commands.GameActionPreEventArgs | public int ActionState { get; set; }
 APIShared.Commands.GameActionPreEventArgs | public int OriginalStructureId { get; }
 APIShared.Commands.GameActionPreEventArgs | public int StructureId { get; set; }
 APIShared.Commands.GameActionPreEventArgs | public int Value2 { get; set; }
+APIShared.Commands.GroupMoveExclusion | public static class APIShared.Commands.GroupMoveExclusion
+APIShared.Commands.GroupMoveExclusion | public static bool IsAvailable { get; }
+APIShared.Commands.GroupMoveExclusion | public static bool TryClear(int unitId, out bool wasMarked)
+APIShared.Commands.GroupMoveExclusion | public static string UnavailabilityReason { get; }
 APIShared.CoopAiCastleSource | public enum APIShared.CoopAiCastleSource : int
 APIShared.CoopAiCastleSource | Community = 1
 APIShared.CoopAiCastleSource | Explicit = 3
@@ -317,6 +350,7 @@ APIShared.Economy.AiMarketSellQuantityContext | public int Good { get; }
 APIShared.Economy.AiMarketSellQuantityContext | public int OriginalAmount { get; }
 APIShared.Economy.AiMarketSellQuantityContext | public int PlayerId { get; }
 APIShared.Economy.AiMarketSellQuantityContext | public int Stock { get; }
+APIShared.Economy.AiMarketSellQuantityContext | public void Contribute(APIShared.Modifiers.ValueModifierContribution contribution)
 APIShared.Economy.AiMarketSellRegistration | public sealed class APIShared.Economy.AiMarketSellRegistration
 APIShared.Economy.AiMarketSellRegistration | public bool IsEnabled { get; }
 APIShared.Economy.AiMarketSellRegistration | public int CallbackErrorCount { get; }
@@ -329,15 +363,69 @@ APIShared.Economy.AiMarketSellReserveContext | public int OriginalReserve { get;
 APIShared.Economy.AiMarketSellReserveContext | public int PlayerId { get; }
 APIShared.Economy.AiMarketSellReserveContext | public int Reserve { get; set; }
 APIShared.Economy.AiMarketSellReserveContext | public int Stock { get; }
+APIShared.Economy.AiMarketSellReserveContext | public void Contribute(APIShared.Modifiers.ValueModifierContribution contribution)
 APIShared.Economy.AiMarketSellSafety | public enum APIShared.Economy.AiMarketSellSafety : int
 APIShared.Economy.AiMarketSellSafety | LimitQuantityToStock = 2
 APIShared.Economy.AiMarketSellSafety | NonNegativeReserve = 1
 APIShared.Economy.AiMarketSellSafety | None = 0
+APIShared.Economy.AllyTransferCapacity | public sealed class APIShared.Economy.AllyTransferCapacity
+APIShared.Economy.AllyTransferCapacity | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferCapacity | public bool HasStorage { get; }
+APIShared.Economy.AllyTransferCapacity | public int AmountStored { get; }
+APIShared.Economy.AllyTransferCapacity | public int FreeAmount { get; }
+APIShared.Economy.AllyTransferCapacity | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferEvents | public static class APIShared.Economy.AllyTransferEvents
+APIShared.Economy.AllyTransferEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Economy.AllyTransferPreEventArgs> pre, System.Action<APIShared.Economy.AllyTransferPostEventArgs> post, out string reason, int order = 0)
+APIShared.Economy.AllyTransferEvents | public static long CallbackFailures { get; }
+APIShared.Economy.AllyTransferPostEventArgs | public sealed class APIShared.Economy.AllyTransferPostEventArgs
+APIShared.Economy.AllyTransferPostEventArgs | public APIShared.Economy.AllyTransferResult Result { get; }
+APIShared.Economy.AllyTransferPostEventArgs | public int GoodId { get; }
+APIShared.Economy.AllyTransferPostEventArgs | public object State { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public sealed class APIShared.Economy.AllyTransferPreEventArgs : APIShared.Events.InterceptionPreEventArgs
+APIShared.Economy.AllyTransferPreEventArgs | public int Amount { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public int GoodId { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferPreEventArgs | public int SenderPlayerId { get; }
+APIShared.Economy.AllyTransferRequest | public sealed class APIShared.Economy.AllyTransferRequest
+APIShared.Economy.AllyTransferRequest | public .ctor(int senderId, int recipientId, SHCDESE.Interop.eGoods good, int maximumAmount, int minimumSenderRemaining = 0, int maximumRecipientAmount = 2147483647)
+APIShared.Economy.AllyTransferRequest | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferRequest | public int MaximumAmount { get; }
+APIShared.Economy.AllyTransferRequest | public int MaximumRecipientAmount { get; }
+APIShared.Economy.AllyTransferRequest | public int MinimumSenderRemaining { get; }
+APIShared.Economy.AllyTransferRequest | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferRequest | public int SenderPlayerId { get; }
+APIShared.Economy.AllyTransferResult | public sealed class APIShared.Economy.AllyTransferResult
+APIShared.Economy.AllyTransferResult | public APIShared.Economy.AllyTransferStatus Status { get; }
+APIShared.Economy.AllyTransferResult | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferResult | public bool HasNestedTransfer { get; }
+APIShared.Economy.AllyTransferResult | public bool OriginalWasCalled { get; }
+APIShared.Economy.AllyTransferResult | public bool WasVetoed { get; }
+APIShared.Economy.AllyTransferResult | public int RecipientPlayerId { get; }
+APIShared.Economy.AllyTransferResult | public int RequestedAmount { get; }
+APIShared.Economy.AllyTransferResult | public int SenderPlayerId { get; }
+APIShared.Economy.AllyTransferResult | public int? TransferredAmount { get; }
+APIShared.Economy.AllyTransferResult | public long? RecipientCredit { get; }
+APIShared.Economy.AllyTransferResult | public long? SenderDebit { get; }
+APIShared.Economy.AllyTransferStatus | public enum APIShared.Economy.AllyTransferStatus : int
+APIShared.Economy.AllyTransferStatus | Completed = 2
+APIShared.Economy.AllyTransferStatus | Faulted = 4
+APIShared.Economy.AllyTransferStatus | Rejected = 0
+APIShared.Economy.AllyTransferStatus | Uncertain = 3
+APIShared.Economy.AllyTransferStatus | Vetoed = 1
+APIShared.Economy.AllyTransfers | public static class APIShared.Economy.AllyTransfers
+APIShared.Economy.AllyTransfers | public const int MaximumTransferAmount = 32767
+APIShared.Economy.AllyTransfers | public static System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eGoods> SupportedGoods { get; }
+APIShared.Economy.AllyTransfers | public static bool IsAvailable { get; }
+APIShared.Economy.AllyTransfers | public static bool IsSupportedGood(SHCDESE.Interop.eGoods good)
+APIShared.Economy.AllyTransfers | public static bool TryExecute(APIShared.Economy.AllyTransferRequest request, out APIShared.Economy.AllyTransferResult result, out string reason)
+APIShared.Economy.AllyTransfers | public static bool TryGetCapacity(int recipientId, SHCDESE.Interop.eGoods good, out APIShared.Economy.AllyTransferCapacity capacity, out string reason)
 APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPopularity
 APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
 APIShared.Economy.FearPopularityRegistration | public sealed class APIShared.Economy.FearPopularityRegistration
+APIShared.Economy.FearPopularityRegistration | public void SetFactor(decimal? factor, APIShared.Modifiers.ValueModifierStage stage = (APIShared.Modifiers.ValueModifierStage)0)
 APIShared.Economy.FearPopularityRegistration | public void SetLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, int> contributions)
+APIShared.Economy.FearPopularityRegistration | public void SetLevelModifiers(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityModifierValues> contributions)
 APIShared.Economy.FearPopularityRegistration | public void SetMultiplier(decimal? multiplier)
 APIShared.Economy.FearPopularityRegistration | public void SetTargetedLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityOverrideValues> contributions)
 APIShared.Economy.MarketPriceDirection | public enum APIShared.Economy.MarketPriceDirection : int
@@ -347,6 +435,18 @@ APIShared.Economy.MarketPriceEvents | public static class APIShared.Economy.Mark
 APIShared.Economy.MarketPriceEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Economy.MarketPricePreEventArgs> pre, System.Action<APIShared.Economy.MarketPricePostEventArgs> post, out string reason, int order = 0)
 APIShared.Economy.MarketPriceEvents | public static int CalculateTradeTotal(int basePrice, int amount)
 APIShared.Economy.MarketPriceEvents | public static long CallbackFailures { get; }
+APIShared.Economy.MarketPriceModifierContext | public struct APIShared.Economy.MarketPriceModifierContext
+APIShared.Economy.MarketPriceModifierContext | public .ctor(SHCDESE.Interop.eGoods good, APIShared.Economy.MarketPriceDirection direction, bool isAIPlayer, int originalBasePrice)
+APIShared.Economy.MarketPriceModifierContext | public APIShared.Economy.MarketPriceDirection Direction { get; }
+APIShared.Economy.MarketPriceModifierContext | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.MarketPriceModifierContext | public bool IsAIPlayer { get; }
+APIShared.Economy.MarketPriceModifierContext | public int OriginalBasePrice { get; }
+APIShared.Economy.MarketPriceModifierHandle | public sealed class APIShared.Economy.MarketPriceModifierHandle
+APIShared.Economy.MarketPriceModifierHandle | public void SetEnabled(bool enabled)
+APIShared.Economy.MarketPriceModifiers | public static class APIShared.Economy.MarketPriceModifiers
+APIShared.Economy.MarketPriceModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Economy.MarketPriceModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Economy.MarketPriceModifierHandle handle, out string reason, int order = 0)
+APIShared.Economy.MarketPriceModifiers | public static long CallbackFailures { get; }
+APIShared.Economy.MarketPriceModifiers | public static void Refresh()
 APIShared.Economy.MarketPricePostEventArgs | public sealed class APIShared.Economy.MarketPricePostEventArgs
 APIShared.Economy.MarketPricePostEventArgs | public APIShared.Economy.MarketPriceDirection Direction { get; }
 APIShared.Economy.MarketPricePostEventArgs | public bool HasNativeManager { get; }
@@ -363,8 +463,13 @@ APIShared.Economy.MarketPricePreEventArgs | public int Amount { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int Good { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int PlayerId { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int ReplacementTotal { get; set; }
+APIShared.Economy.PopularityModifierValues | public struct APIShared.Economy.PopularityModifierValues
+APIShared.Economy.PopularityModifierValues | public .ctor(APIShared.Modifiers.ValueModifierContribution human, APIShared.Modifiers.ValueModifierContribution ai)
+APIShared.Economy.PopularityModifierValues | public APIShared.Modifiers.ValueModifierContribution AI { get; }
+APIShared.Economy.PopularityModifierValues | public APIShared.Modifiers.ValueModifierContribution Human { get; }
 APIShared.Economy.PopularityOverrideRegistration | public sealed class APIShared.Economy.PopularityOverrideRegistration
 APIShared.Economy.PopularityOverrideRegistration | public void SetContributions(System.Collections.Generic.IReadOnlyDictionary<APIShared.Economy.PopularitySource, APIShared.Economy.PopularityOverrideValues> contributions)
+APIShared.Economy.PopularityOverrideRegistration | public void SetModifiers(System.Collections.Generic.IReadOnlyDictionary<APIShared.Economy.PopularitySource, APIShared.Economy.PopularityModifierValues> contributions)
 APIShared.Economy.PopularityOverrideValues | public struct APIShared.Economy.PopularityOverrideValues
 APIShared.Economy.PopularityOverrideValues | public .ctor(int? humanPoints, int? aiPoints)
 APIShared.Economy.PopularityOverrideValues | public int? AIPoints { get; }
@@ -412,6 +517,141 @@ APIShared.Economy.PopularitySource | TaxPopModifierSmallDonation = 17
 APIShared.Economy.PopularitySource | TaxPopModifierUnaffordableDonation = 27
 APIShared.Economy.PopularitySource | TaxPopModifierUnknownMode = 28
 APIShared.Economy.PopularitySource | TaxPopModifierUsurious = 23
+APIShared.Economy.WeaponProduction | public static class APIShared.Economy.WeaponProduction
+APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
+APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)
+APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buildingId, uint globalId, out APIShared.Economy.WeaponProductionSelection selection)
+APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
+APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
+APIShared.Economy.WeaponProductionOption | public sealed class APIShared.Economy.WeaponProductionOption
+APIShared.Economy.WeaponProductionOption | public APIShared.Economy.WeaponProductionOptionId Id { get; }
+APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods OutputGood { get; }
+APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods TemplateGood { get; }
+APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Economy.WeaponProductionOption | public bool IsVanilla { get; }
+APIShared.Economy.WeaponProductionOption | public int? BaseAmount { get; }
+APIShared.Economy.WeaponProductionOption | public int? IngredientAmount { get; }
+APIShared.Economy.WeaponProductionOption | public int? WorkTicks { get; }
+APIShared.Economy.WeaponProductionOption | public string DisplayName { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public sealed class APIShared.Economy.WeaponProductionOptionDefinition
+APIShared.Economy.WeaponProductionOptionDefinition | public .ctor(SHCDESE.Interop.eStructs buildingType, SHCDESE.Interop.eGoods templateGood, SHCDESE.Interop.eGoods outputGood, string displayName, int? baseAmount = null, int? workTicks = null, int priority = 0)
+APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.WeaponProductionOptionDefinition WithIngredientAmount(int? ingredientAmount)
+APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods OutputGood { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods TemplateGood { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int Priority { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int? BaseAmount { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int? IngredientAmount { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public int? WorkTicks { get; }
+APIShared.Economy.WeaponProductionOptionDefinition | public string DisplayName { get; }
+APIShared.Economy.WeaponProductionOptionId | public struct APIShared.Economy.WeaponProductionOptionId : System.IEquatable<APIShared.Economy.WeaponProductionOptionId>
+APIShared.Economy.WeaponProductionOptionId | public .ctor(string ownerGuid, string optionId)
+APIShared.Economy.WeaponProductionOptionId | public bool Equals(APIShared.Economy.WeaponProductionOptionId other)
+APIShared.Economy.WeaponProductionOptionId | public override bool Equals(object obj)
+APIShared.Economy.WeaponProductionOptionId | public override int GetHashCode()
+APIShared.Economy.WeaponProductionOptionId | public override string ToString()
+APIShared.Economy.WeaponProductionOptionId | public string OptionId { get; }
+APIShared.Economy.WeaponProductionOptionId | public string OwnerGuid { get; }
+APIShared.Economy.WeaponProductionRegistration | public sealed class APIShared.Economy.WeaponProductionRegistration
+APIShared.Economy.WeaponProductionRegistration | public APIShared.Economy.WeaponProductionOption Option { get; }
+APIShared.Economy.WeaponProductionRegistration | public APIShared.Economy.WeaponProductionRegistrationStatus Status { get; }
+APIShared.Economy.WeaponProductionRegistration | public string Diagnostic { get; }
+APIShared.Economy.WeaponProductionRegistrationStatus | public enum APIShared.Economy.WeaponProductionRegistrationStatus : int
+APIShared.Economy.WeaponProductionRegistrationStatus | AdapterUnavailable = 3
+APIShared.Economy.WeaponProductionRegistrationStatus | Admitted = 1
+APIShared.Economy.WeaponProductionRegistrationStatus | ExcludedByPriority = 2
+APIShared.Economy.WeaponProductionRegistrationStatus | Pending = 0
+APIShared.Economy.WeaponProductionSelection | public sealed class APIShared.Economy.WeaponProductionSelection
+APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Current { get; }
+APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Next { get; }
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public sealed class APIShared.Economy.WorkerProductionBonusOverrideRegistration
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionBonusOverrideRegistration | public void SetPercent(int? percent)
+APIShared.Economy.WorkerProductionBonusOverrides | public static class APIShared.Economy.WorkerProductionBonusOverrides
+APIShared.Economy.WorkerProductionBonusOverrides | public const int MaximumPercent = 1000
+APIShared.Economy.WorkerProductionBonusOverrides | public const int MinimumPercent = -100
+APIShared.Economy.WorkerProductionBonusOverrides | public const int VanillaPercent = 50
+APIShared.Economy.WorkerProductionBonusOverrides | public static bool IsAvailable { get; }
+APIShared.Economy.WorkerProductionBonusOverrides | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.WorkerProductionBonusOverrideRegistration registration, out string diagnostic, int order = 0)
+APIShared.Economy.WorkerProductionBonusOverrides | public static string CompatibilityKey { get; }
+APIShared.Economy.WorkerProductionBonusOverrides | public static string Diagnostic { get; }
+APIShared.Economy.WorkerProductionIssue | public sealed class APIShared.Economy.WorkerProductionIssue
+APIShared.Economy.WorkerProductionIssue | public APIShared.Economy.WorkerProductionIssueCode Code { get; }
+APIShared.Economy.WorkerProductionIssue | public APIShared.Economy.WorkerProductionIssueSeverity Severity { get; }
+APIShared.Economy.WorkerProductionIssue | public SHCDESE.Interop.eChimps? WorkerType { get; }
+APIShared.Economy.WorkerProductionIssue | public bool? IsAIPlayer { get; }
+APIShared.Economy.WorkerProductionIssue | public int? FearLevel { get; }
+APIShared.Economy.WorkerProductionIssue | public int? InputAmount { get; }
+APIShared.Economy.WorkerProductionIssue | public string ActualValue { get; }
+APIShared.Economy.WorkerProductionIssue | public string Diagnostic { get; }
+APIShared.Economy.WorkerProductionIssue | public string Limit { get; }
+APIShared.Economy.WorkerProductionIssue | public string LocalizationCode { get; }
+APIShared.Economy.WorkerProductionIssue | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionIssue | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionIssueCode | public enum APIShared.Economy.WorkerProductionIssueCode : int
+APIShared.Economy.WorkerProductionIssueCode | ActivationUnknown = 7
+APIShared.Economy.WorkerProductionIssueCode | BaseAmountOutOfRange = 3
+APIShared.Economy.WorkerProductionIssueCode | CombinedBonusOutOfRange = 12
+APIShared.Economy.WorkerProductionIssueCode | FearBonusOutOfRange = 11
+APIShared.Economy.WorkerProductionIssueCode | FixedBonusOutOfRange = 4
+APIShared.Economy.WorkerProductionIssueCode | InvalidFearLevel = 10
+APIShared.Economy.WorkerProductionIssueCode | NativeUnavailable = 0
+APIShared.Economy.WorkerProductionIssueCode | NegativeBaseAmount = 2
+APIShared.Economy.WorkerProductionIssueCode | PrecisionNotRepresentable = 5
+APIShared.Economy.WorkerProductionIssueCode | PublicationFailed = 8
+APIShared.Economy.WorkerProductionIssueCode | RuntimeFault = 9
+APIShared.Economy.WorkerProductionIssueCode | SavedDenominatorInvalid = 6
+APIShared.Economy.WorkerProductionIssueCode | UnsupportedWorker = 1
+APIShared.Economy.WorkerProductionIssueSeverity | public enum APIShared.Economy.WorkerProductionIssueSeverity : int
+APIShared.Economy.WorkerProductionIssueSeverity | Error = 1
+APIShared.Economy.WorkerProductionIssueSeverity | Warning = 0
+APIShared.Economy.WorkerProductionModifierRegistration | public sealed class APIShared.Economy.WorkerProductionModifierRegistration
+APIShared.Economy.WorkerProductionModifierRegistration | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionModifierRegistration | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionModifierRegistration | public void SetProfile(APIShared.Economy.WorkerProductionProfile profile)
+APIShared.Economy.WorkerProductionModifiers | public static class APIShared.Economy.WorkerProductionModifiers
+APIShared.Economy.WorkerProductionModifiers | public static APIShared.Economy.WorkerProductionStatus Status { get; }
+APIShared.Economy.WorkerProductionModifiers | public static System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eChimps> SupportedWorkers { get; }
+APIShared.Economy.WorkerProductionModifiers | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.WorkerProductionModifierRegistration registration, out string diagnostic, int order = 0)
+APIShared.Economy.WorkerProductionModifiers | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Economy.WorkerProductionStatus> observer, out string diagnostic, int order = 0, bool replayCurrent = true)
+APIShared.Economy.WorkerProductionProfile | public sealed class APIShared.Economy.WorkerProductionProfile
+APIShared.Economy.WorkerProductionProfile | public .ctor(System.Collections.Generic.IDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> baseAmounts = null, APIShared.Modifiers.ValueModifierContribution fixedBonusPercent = default, APIShared.GameModes.GameplayModActivationProfile? activation = null)
+APIShared.Economy.WorkerProductionProfile | public .ctor(System.Collections.Generic.IDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> baseAmounts, APIShared.Modifiers.ValueModifierContribution fixedBonusPercent, APIShared.GameModes.GameplayModActivationProfile? activation, System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Modifiers.ValueModifierContribution> fearBonusPercentByLevel)
+APIShared.Economy.WorkerProductionProfile | public APIShared.GameModes.GameplayModActivationProfile? Activation { get; }
+APIShared.Economy.WorkerProductionProfile | public APIShared.Modifiers.ValueModifierContribution FixedBonusPercent { get; }
+APIShared.Economy.WorkerProductionProfile | public System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eChimps, APIShared.Economy.WorkerProductionValues> BaseAmounts { get; }
+APIShared.Economy.WorkerProductionProfile | public System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Modifiers.ValueModifierContribution> FearBonusPercentByLevel { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public sealed class APIShared.Economy.WorkerProductionRegistrationSnapshot
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public APIShared.Economy.WorkerProductionProfile DesiredProfile { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public int Order { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public string OwnerGuid { get; }
+APIShared.Economy.WorkerProductionRegistrationSnapshot | public string RegistrationId { get; }
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public struct APIShared.Economy.WorkerProductionResolvedBaseAmount
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public uint Whole { get; }
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public ulong FractionDenominator { get; }
+APIShared.Economy.WorkerProductionResolvedBaseAmount | public ulong FractionNumerator { get; }
+APIShared.Economy.WorkerProductionStatus | public sealed class APIShared.Economy.WorkerProductionStatus
+APIShared.Economy.WorkerProductionStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WorkerProductionIssue> Issues { get; }
+APIShared.Economy.WorkerProductionStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WorkerProductionRegistrationSnapshot> Registrations { get; }
+APIShared.Economy.WorkerProductionStatus | public bool CanStart { get; }
+APIShared.Economy.WorkerProductionStatus | public bool HasBaseContributions { get; }
+APIShared.Economy.WorkerProductionStatus | public bool HasDesiredProfiles { get; }
+APIShared.Economy.WorkerProductionStatus | public bool IsAvailable { get; }
+APIShared.Economy.WorkerProductionStatus | public bool TryGetResolvedBaseAmount(SHCDESE.Interop.eChimps worker, bool isAIPlayer, int inputAmount, out APIShared.Economy.WorkerProductionResolvedBaseAmount amount)
+APIShared.Economy.WorkerProductionStatus | public bool TryGetResolvedFearBonusPercent(int fearLevel, out int percent)
+APIShared.Economy.WorkerProductionStatus | public int ResolvedFixedBonusPercent { get; }
+APIShared.Economy.WorkerProductionStatus | public long RejectedLocalLaunchSequence { get; }
+APIShared.Economy.WorkerProductionStatus | public long Revision { get; }
+APIShared.Economy.WorkerProductionStatus | public string Digest { get; }
+APIShared.Economy.WorkerProductionStatus | public string PeerReadinessCode { get; }
+APIShared.Economy.WorkerProductionStatus | public string PeerReadinessDiagnostic { get; }
+APIShared.Economy.WorkerProductionStatus | public string RejectedLocalLaunchCode { get; }
+APIShared.Economy.WorkerProductionStatus | public string ServiceKey { get; }
+APIShared.Economy.WorkerProductionValues | public struct APIShared.Economy.WorkerProductionValues
+APIShared.Economy.WorkerProductionValues | public .ctor(APIShared.Modifiers.ValueModifierContribution human, APIShared.Modifiers.ValueModifierContribution ai)
+APIShared.Economy.WorkerProductionValues | public APIShared.Modifiers.ValueModifierContribution AI { get; }
+APIShared.Economy.WorkerProductionValues | public APIShared.Modifiers.ValueModifierContribution Human { get; }
 APIShared.ElevatedMoatAiCapability | public static class APIShared.ElevatedMoatAiCapability
 APIShared.ElevatedMoatAiCapability | public static APIShared.ElevatedMoatAiState Current { get; }
 APIShared.ElevatedMoatAiCapability | public static event System.Action<APIShared.ElevatedMoatAiState> Changed
@@ -687,6 +927,38 @@ APIShared.GatehouseTimingValues | public const double VanillaAiDelaySeconds = 30
 APIShared.GatehouseTimingValues | public const double VanillaAiDistanceTiles = 25d
 APIShared.GatehouseTimingValues | public const double VanillaHumanDelaySeconds = 2.5d
 APIShared.GatehouseTimingValues | public const double VanillaHumanDistanceTiles = 17.5d
+APIShared.Health.HealthInitializationReason | public enum APIShared.Health.HealthInitializationReason : int
+APIShared.Health.HealthInitializationReason | Created = 1
+APIShared.Health.HealthInitializationReason | MissionStart = 0
+APIShared.Health.HealthInitializationReason | SaveLoaded = 3
+APIShared.Health.HealthInitializationReason | TypeInitialized = 2
+APIShared.Health.HealthLegacyBasis | public struct APIShared.Health.HealthLegacyBasis
+APIShared.Health.HealthLegacyBasis | public .ctor(int unitId, uint globalId, uint maximum)
+APIShared.Health.HealthLegacyBasis | public int UnitId { get; }
+APIShared.Health.HealthLegacyBasis | public uint GlobalId { get; }
+APIShared.Health.HealthLegacyBasis | public uint Maximum { get; }
+APIShared.Health.HealthModifierContext | public struct APIShared.Health.HealthModifierContext
+APIShared.Health.HealthModifierContext | public .ctor(APIShared.Health.HealthObjectKind kind, int objectId, uint globalId, int playerId, bool isAIPlayer, SHCDESE.Interop.eChimps unitType, SHCDESE.Interop.eStructs buildingType, uint originalMaximumHealth, APIShared.Health.HealthInitializationReason reason)
+APIShared.Health.HealthModifierContext | public APIShared.Health.HealthInitializationReason Reason { get; }
+APIShared.Health.HealthModifierContext | public APIShared.Health.HealthObjectKind Kind { get; }
+APIShared.Health.HealthModifierContext | public SHCDESE.Interop.eChimps UnitType { get; }
+APIShared.Health.HealthModifierContext | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Health.HealthModifierContext | public bool IsAIPlayer { get; }
+APIShared.Health.HealthModifierContext | public int ObjectId { get; }
+APIShared.Health.HealthModifierContext | public int PlayerId { get; }
+APIShared.Health.HealthModifierContext | public uint GlobalId { get; }
+APIShared.Health.HealthModifierContext | public uint OriginalMaximumHealth { get; }
+APIShared.Health.HealthModifierHandle | public sealed class APIShared.Health.HealthModifierHandle
+APIShared.Health.HealthModifierHandle | public bool IsEnabled { get; }
+APIShared.Health.HealthModifierHandle | public void SetEnabled(bool value)
+APIShared.Health.HealthModifiers | public static class APIShared.Health.HealthModifiers
+APIShared.Health.HealthModifiers | public static bool IsAvailable { get; }
+APIShared.Health.HealthModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Health.HealthModifierHandle handle, out string reason, int order = 0)
+APIShared.Health.HealthModifiers | public static bool TryRegisterLegacyBasisProvider(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthLegacyBasis[]> provider, out string reason, int order = 0)
+APIShared.Health.HealthModifiers | public static string UnavailableReason { get; }
+APIShared.Health.HealthObjectKind | public enum APIShared.Health.HealthObjectKind : int
+APIShared.Health.HealthObjectKind | Building = 1
+APIShared.Health.HealthObjectKind | Unit = 0
 APIShared.HudExtrasButtonContext | public sealed class APIShared.HudExtrasButtonContext
 APIShared.HudExtrasButtonContext | public Noesis.FrameworkElement Hud { get; }
 APIShared.HudExtrasButtonDefinition | public sealed class APIShared.HudExtrasButtonDefinition
@@ -775,6 +1047,9 @@ APIShared.ILobbyStateCapability | public bool TryRegisterObserver(string registr
 APIShared.IMissionLifecycleCapability | public interface APIShared.IMissionLifecycleCapability
 APIShared.IMissionLifecycleCapability | public APIShared.MissionContext Current { get; }
 APIShared.IMissionLifecycleCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.MissionLifecycleNotification> onStart, System.Action<APIShared.MissionLifecycleNotification> onEnd, System.Action<APIShared.MissionLifecycleNotification> onInitialization, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.IMissionPlayStateReadinessCapability | public interface APIShared.IMissionPlayStateReadinessCapability
+APIShared.IMissionPlayStateReadinessCapability | public APIShared.MissionContext Current { get; }
+APIShared.IMissionPlayStateReadinessCapability | public bool TryRegisterObserver(string registrationId, System.Action<APIShared.MissionPlayStateReadyNotification> onReady, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlagueHeightCapability | public interface APIShared.IPlagueHeightCapability
 APIShared.IPlagueHeightCapability | public bool TrySetPolicy(bool active, APIShared.PlagueSurfaceCategory categories, int maximumHeightDifference, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IPlayerDefeatCapability | public interface APIShared.IPlayerDefeatCapability
@@ -819,6 +1094,14 @@ APIShared.Lobby.LobbyChatMessage | public string Name { get; }
 APIShared.Lobby.LobbyChatPresentation | public static class APIShared.Lobby.LobbyChatPresentation
 APIShared.Lobby.LobbyChatPresentation | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyChatPresentation | public static bool TryRegisterSystemMessageRule(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyChatMessage, bool> rule, out string diagnostic)
+APIShared.Lobby.LobbyLaunchGuardContext | public sealed class APIShared.Lobby.LobbyLaunchGuardContext
+APIShared.Lobby.LobbyLaunchGuardContext | public APIShared.Lobby.LobbyLaunchOperation Operation { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public CrusaderDE.FRONT_Multiplayer Lobby { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public bool RequiresPeerAgreement { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public string Command { get; }
+APIShared.Lobby.LobbyLaunchGuards | public static class APIShared.Lobby.LobbyLaunchGuards
+APIShared.Lobby.LobbyLaunchGuards | public static bool IsAvailable { get; }
+APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, string> guard, out string diagnostic, int order = 0)
 APIShared.Lobby.LobbyLaunchOperation | public enum APIShared.Lobby.LobbyLaunchOperation : int
 APIShared.Lobby.LobbyLaunchOperation | Ready = 0
 APIShared.Lobby.LobbyLaunchOperation | Start = 1
@@ -867,6 +1150,19 @@ APIShared.LocalSelectionSnapshot | public sealed class APIShared.LocalSelectionS
 APIShared.LocalSelectionSnapshot | public SHCDESE.Interop.SelectedUnitInfo Item[int index] { get; }
 APIShared.LocalSelectionSnapshot | public int Count { get; }
 APIShared.LocalSelectionSnapshot | public int PlayerId { get; }
+APIShared.LordSkin | public enum APIShared.LordSkin : int
+APIShared.LordSkin | Arabic = 2
+APIShared.LordSkin | ArabicFemale = 7
+APIShared.LordSkin | Bedouin = 3
+APIShared.LordSkin | BedouinFemale = 8
+APIShared.LordSkin | Bessy = 6
+APIShared.LordSkin | Crusader = 1
+APIShared.LordSkin | CrusaderFemale = 5
+APIShared.LordSkin | Scribe = 4
+APIShared.LordSkin | Unknown = 0
+APIShared.LordSkins | public static class APIShared.LordSkins
+APIShared.LordSkins | public static bool TryGetForPlayer(int playerId, out APIShared.LordSkin skin)
+APIShared.LordSkins | public static bool TryGetFromMaterial(SHCDESE.Interop.GM material, out APIShared.LordSkin skin)
 APIShared.Maps.MultiplayerMapLookup | public static class APIShared.Maps.MultiplayerMapLookup
 APIShared.Maps.MultiplayerMapLookup | public static bool IsAvailable { get; }
 APIShared.Maps.MultiplayerMapLookup | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Maps.MultiplayerMapLookupResult> observer, out string diagnostic)
@@ -944,6 +1240,9 @@ APIShared.MissionMapType | FreeBuild = 1
 APIShared.MissionMapType | Invasion = 4
 APIShared.MissionMapType | Siege = 3
 APIShared.MissionMapType | Unknown = 0
+APIShared.MissionPlayStateReadyNotification | public sealed class APIShared.MissionPlayStateReadyNotification
+APIShared.MissionPlayStateReadyNotification | public APIShared.MissionContext Context { get; }
+APIShared.MissionPlayStateReadyNotification | public bool IsReplay { get; }
 APIShared.MissionRestart | public static class APIShared.MissionRestart
 APIShared.MissionRestart | public static bool IsInProgress { get; }
 APIShared.MissionRestart | public static void Run(string ownerGuid, System.Action restart)
@@ -953,10 +1252,12 @@ APIShared.MissionStartKind | EditorLoaded = 3
 APIShared.MissionStartKind | LoadedSave = 1
 APIShared.MissionStartKind | NewGame = 0
 APIShared.ModApiClient | public sealed class APIShared.ModApiClient
+APIShared.ModApiClient | public APIShared.Automation.AutomationClient Automation { get; }
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
+APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBriefingGoldPresentation(out APIShared.IBriefingGoldPresentationCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetBuildingRepair(out APIShared.IBuildingRepairCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -966,6 +1267,7 @@ APIShared.ModApiClient | public bool TryGetGatehouseTiming(out APIShared.IGateho
 APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudExtrasButtonsCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetMissionPlayStateReadiness(out APIShared.IMissionPlayStateReadinessCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeightPolicy(out APIShared.PlagueHeightPolicy policy, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -1556,6 +1858,22 @@ APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSiz
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float FontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float MaximumWidth { get; }
+APIShared.Modifiers.ValueModifierCalculator | public static class APIShared.Modifiers.ValueModifierCalculator
+APIShared.Modifiers.ValueModifierCalculator | public static decimal Calculate(decimal baseline, System.Collections.Generic.IEnumerable<APIShared.Modifiers.ValueModifierContribution> orderedContributions, decimal minimumValue, decimal maximumValue)
+APIShared.Modifiers.ValueModifierContribution | public struct APIShared.Modifiers.ValueModifierContribution
+APIShared.Modifiers.ValueModifierContribution | public APIShared.Modifiers.ValueModifierKind Kind { get; }
+APIShared.Modifiers.ValueModifierContribution | public APIShared.Modifiers.ValueModifierStage Stage { get; }
+APIShared.Modifiers.ValueModifierContribution | public decimal Value { get; }
+APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution Factor(decimal factor, APIShared.Modifiers.ValueModifierStage stage = (APIShared.Modifiers.ValueModifierStage)0)
+APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution FixedValue(decimal value)
+APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution None { get; }
+APIShared.Modifiers.ValueModifierKind | public enum APIShared.Modifiers.ValueModifierKind : int
+APIShared.Modifiers.ValueModifierKind | Factor = 1
+APIShared.Modifiers.ValueModifierKind | FixedValue = 2
+APIShared.Modifiers.ValueModifierKind | None = 0
+APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
+APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
+APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
 APIShared.NativeApiState | public enum APIShared.NativeApiState : int
 APIShared.NativeApiState | Pending = 0
 APIShared.NativeApiState | Ready = 1
@@ -1579,6 +1897,7 @@ APIShared.NativeCapabilityIds | public const string GatehouseTiming = "gatehouse
 APIShared.NativeCapabilityIds | public const string HudExtrasButtons = "hud-extras-buttons"
 APIShared.NativeCapabilityIds | public const string LobbyState = "lobby-state"
 APIShared.NativeCapabilityIds | public const string MissionLifecycle = "mission-lifecycle"
+APIShared.NativeCapabilityIds | public const string MissionPlayStateReadiness = "mission-playstate-readiness"
 APIShared.NativeCapabilityIds | public const string PeaceTimeState = "peace-time-state"
 APIShared.NativeCapabilityIds | public const string PlagueHeight = "plague-height"
 APIShared.NativeCapabilityIds | public const string PlayerDefeat = "player-defeat"
@@ -1723,6 +2042,8 @@ APIShared.NativeKnowledge.NativeFieldIds | public const string F000089 = "nkf-00
 APIShared.NativeKnowledge.NativeFieldIds | public const string F000090 = "nkf-000090"
 APIShared.NativeKnowledge.NativeFieldIds | public const string F000091 = "nkf-000091"
 APIShared.NativeKnowledge.NativeFieldIds | public const string F000092 = "nkf-000092"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000093 = "nkf-000093"
+APIShared.NativeKnowledge.NativeFieldIds | public const string F000094 = "nkf-000094"
 APIShared.NativeKnowledge.NativeFieldKey<T> | public struct APIShared.NativeKnowledge.NativeFieldKey<T> where T : struct
 APIShared.NativeKnowledge.NativeFieldKey<T> | public string Id { get; }
 APIShared.NativeKnowledge.NativeFieldMeaning | public sealed class APIShared.NativeKnowledge.NativeFieldMeaning
@@ -1921,6 +2242,17 @@ APIShared.ObserverCommandRequest | public int ObserverPlayerId { get; }
 APIShared.ObserverCommandRequest | public int StructureId { get; }
 APIShared.ObserverCommandRequest | public int Value2 { get; }
 APIShared.ObserverCommandRequest | public int ViewedPlayerId { get; }
+APIShared.Pathfinding.RouteEngineFeatures | public enum APIShared.Pathfinding.RouteEngineFeatures : int
+APIShared.Pathfinding.RouteEngineFeatures | None = 0
+APIShared.Pathfinding.RouteEngineFeatures | ReplanPolicies = 2
+APIShared.Pathfinding.RouteEngineFeatures | RouteCosts = 4
+APIShared.Pathfinding.RouteEngineFeatures | TileRules = 1
+APIShared.Pathfinding.RouteEngineInfo | public static class APIShared.Pathfinding.RouteEngineInfo
+APIShared.Pathfinding.RouteEngineInfo | public static APIShared.Pathfinding.RouteEngineFeatures Features { get; }
+APIShared.Pathfinding.RouteEngineInfo | public static bool IsActive { get; }
+APIShared.Pathfinding.RouteEngineInfo | public static bool TryReport(string ownerGuid, APIShared.Pathfinding.RouteEngineFeatures features, out string reason)
+APIShared.Pathfinding.RouteEngineInfo | public static string OwnerGuid { get; }
+APIShared.Pathfinding.RouteEngineInfo | public static void Clear(string ownerGuid)
 APIShared.Pathfinding.RouteReplanPolicy | public sealed class APIShared.Pathfinding.RouteReplanPolicy
 APIShared.Pathfinding.RouteReplanPolicy | public .ctor(int triggerDistance, int maximumDetourPercent, int minimumDetourTiles, int maximumWaitTicks)
 APIShared.Pathfinding.RouteReplanPolicy | public bool AllowsDetour(int remaining, int replanned)
@@ -2049,6 +2381,33 @@ APIShared.PlayerPerspectiveChangeReason | public enum APIShared.PlayerPerspectiv
 APIShared.PlayerPerspectiveChangeReason | Cleared = 1
 APIShared.PlayerPerspectiveChangeReason | Selected = 0
 APIShared.PlayerPerspectiveChangeReason | Uncertain = 2
+APIShared.Presentation.AllyGoodsAdornmentRegistration | public sealed class APIShared.Presentation.AllyGoodsAdornmentRegistration
+APIShared.Presentation.AllyGoodsAdornmentRegistration | public void RequestRefresh()
+APIShared.Presentation.AllyGoodsPanelContext | public sealed class APIShared.Presentation.AllyGoodsPanelContext
+APIShared.Presentation.AllyGoodsPanelContext | public SHCDESE.Interop.eGoods? Good { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool HasSelection { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool IsOpen { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool IsRequestMode { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public bool IsSendMode { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int LocalPlayerId { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int RecipientPlayerId { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int ViewedPlayerId { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public int? Amount { get; }
+APIShared.Presentation.AllyGoodsPanelContext | public long PanelGeneration { get; }
+APIShared.Presentation.AllyGoodsPanelExtensions | public static class APIShared.Presentation.AllyGoodsPanelExtensions
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryGetContext(out APIShared.Presentation.AllyGoodsPanelContext context)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterGoodsAdornment(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, SHCDESE.Interop.eGoods, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsAdornmentRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TrySubscribeContext(string ownerGuid, string registrationId, System.Action<APIShared.Presentation.AllyGoodsPanelContext> changed, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public sealed class APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding : SHCDESE.NoesisUtil.INoesisElementBindingAware
+APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public .ctor()
+APIShared.Presentation.AllyGoodsSectionContext | public sealed class APIShared.Presentation.AllyGoodsSectionContext
+APIShared.Presentation.AllyGoodsSectionContext | public APIShared.Presentation.AllyGoodsPanelContext Selection { get; }
+APIShared.Presentation.AllyGoodsSectionContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.AllyGoodsSectionRegistration | public sealed class APIShared.Presentation.AllyGoodsSectionRegistration
+APIShared.Presentation.AllyGoodsSectionRegistration | public void RequestContentRefresh()
+APIShared.Presentation.AllyGoodsSectionRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.AllyGoodsSectionRegistration | public void SetVisible(bool visible)
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }
@@ -2071,6 +2430,11 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.ITroopActionButtonRegistration | public interface APIShared.Presentation.ITroopActionButtonRegistration
+APIShared.Presentation.ITroopActionButtonRegistration | public void RequestButtonRefresh()
+APIShared.Presentation.ITroopActionButtonRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.ITroopActionButtonRegistration | public void SetTooltip(string tooltip)
+APIShared.Presentation.ITroopActionButtonRegistration | public void SetVisible(bool visible)
 APIShared.Presentation.IUiFrameWorkRegistration | public interface APIShared.Presentation.IUiFrameWorkRegistration
 APIShared.Presentation.IUiFrameWorkRegistration | public void CancelPending()
 APIShared.Presentation.IUiFrameWorkRegistration | public void Request()
@@ -2219,6 +2583,12 @@ APIShared.Presentation.PresentationPreEventArgs | public System.Action<object> R
 APIShared.Presentation.PresentationPreEventArgs | public object Instance { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object OriginalParameter { get; }
 APIShared.Presentation.PresentationPreEventArgs | public object Parameter { get; set; }
+APIShared.Presentation.SideHudVisibility | public static class APIShared.Presentation.SideHudVisibility
+APIShared.Presentation.SideHudVisibility | public static bool TryGetState(CrusaderDE.MainViewModel view, out APIShared.Presentation.SideHudVisibilityState state)
+APIShared.Presentation.SideHudVisibilityState | public enum APIShared.Presentation.SideHudVisibilityState : int
+APIShared.Presentation.SideHudVisibilityState | Hidden = 0
+APIShared.Presentation.SideHudVisibilityState | HiddenByHudMode = 2
+APIShared.Presentation.SideHudVisibilityState | Visible = 1
 APIShared.Presentation.TooltipAnchor | public static class APIShared.Presentation.TooltipAnchor
 APIShared.Presentation.TooltipAnchor | public static readonly Noesis.DependencyProperty AnchorProperty
 APIShared.Presentation.TooltipAnchor | public static string GetAnchor(Noesis.DependencyObject value)
@@ -2260,11 +2630,23 @@ APIShared.Presentation.TooltipText | public sealed class APIShared.Presentation.
 APIShared.Presentation.TooltipText | public .ctor(string text, uint? foregroundArgb = null)
 APIShared.Presentation.TooltipText | public string Text { get; }
 APIShared.Presentation.TooltipText | public uint? ForegroundArgb { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public sealed class APIShared.Presentation.TroopActionButtonDefinition
+APIShared.Presentation.TroopActionButtonDefinition | public .ctor(string buttonId, System.Windows.Input.ICommand command, string tooltip, System.Func<APIShared.UnitHudActionButtonContext, Noesis.Button> buttonFactory, int priority = 0, System.Action<bool> contextChanged = null, System.Action<bool> hoverChanged = null)
+APIShared.Presentation.TroopActionButtonDefinition | public System.Action<bool> ContextChanged { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public System.Action<bool> HoverChanged { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public System.Func<APIShared.UnitHudActionButtonContext, Noesis.Button> ButtonFactory { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public System.Windows.Input.ICommand Command { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public int Priority { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public string ButtonId { get; }
+APIShared.Presentation.TroopActionButtonDefinition | public string Tooltip { get; }
 APIShared.Presentation.TroopActionHud | public static class APIShared.Presentation.TroopActionHud
 APIShared.Presentation.TroopActionHud | public const int CurrentLayoutVersion = 1
 APIShared.Presentation.TroopActionHud | public const string HostNamePrefix = "SerpTroopAction_"
 APIShared.Presentation.TroopActionHud | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<CrusaderDE.HUD_Troops> refreshVisibility, out string reason)
+APIShared.Presentation.TroopActionHud | public static bool TryRegisterButton(string ownerGuid, APIShared.Presentation.TroopActionButtonDefinition definition, out APIShared.Presentation.ITroopActionButtonRegistration registration, out string reason)
+APIShared.Presentation.TroopActionHud | public static event System.Action ForeignPanelActivating
 APIShared.Presentation.TroopActionHud | public static long CallbackFailures { get; }
+APIShared.Presentation.TroopActionHud | public static void NotifyForeignPanelActivating()
 APIShared.Presentation.TroopActionHud | public static void Reflow(CrusaderDE.HUD_Troops troopPanel)
 APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
 APIShared.Presentation.UiWorkClient | public sealed class APIShared.Presentation.UiWorkClient
@@ -2387,6 +2769,7 @@ APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.V
 APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.VersionedSaveLegacyReader LegacyReader { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.VersionedSaveScope Scope { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Loaded { get; }
+APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Prepared { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Collections.Generic.IReadOnlyList<string> KnownEntries { get; }
 APIShared.Savegames.VersionedSaveDataRegistration | public bool SimulationRelevant { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public int CurrentVersion { get; }
@@ -2651,6 +3034,117 @@ APIShared.UnitLookupFailure | ManagerUnavailable = 2
 APIShared.UnitLookupFailure | None = 0
 APIShared.UnitLookupFailure | OutOfRange = 3
 APIShared.UnitLookupFailure | Unavailable = 4
+APIShared.Units.AiMilitary.AiGlobalTaskEvents | public static class APIShared.Units.AiMilitary.AiGlobalTaskEvents
+APIShared.Units.AiMilitary.AiGlobalTaskEvents | public static bool IsAvailable { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Units.AiMilitary.AiGlobalTaskObservation> before, System.Action<APIShared.Units.AiMilitary.AiGlobalTaskObservation> after, out string reason)
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public sealed class APIShared.Units.AiMilitary.AiGlobalTaskObservation
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public System.IntPtr NativeManager { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public bool OriginalCompleted { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public int OwnerPlayerId { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public int TargetPlayerId { get; }
+APIShared.Units.AiMilitary.AiGlobalTaskObservation | public long InvocationId { get; }
+APIShared.Units.AiMilitary.AiGroupRef | public struct APIShared.Units.AiMilitary.AiGroupRef
+APIShared.Units.AiMilitary.AiGroupRef | public .ctor(int tribeId, uint globalId, int playerId)
+APIShared.Units.AiMilitary.AiGroupRef | public int PlayerId { get; }
+APIShared.Units.AiMilitary.AiGroupRef | public int TribeId { get; }
+APIShared.Units.AiMilitary.AiGroupRef | public uint GlobalId { get; }
+APIShared.Units.AiMilitary.AiMilitaryArea | public enum APIShared.Units.AiMilitary.AiMilitaryArea : int
+APIShared.Units.AiMilitary.AiMilitaryArea | Defense = 1
+APIShared.Units.AiMilitary.AiMilitaryArea | Harassment = 2
+APIShared.Units.AiMilitary.AiMilitaryArea | None = 0
+APIShared.Units.AiMilitary.AiMilitaryArea | Siege = 3
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public struct APIShared.Units.AiMilitary.AiMilitaryAssignment
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public .ctor(APIShared.Units.AiMilitary.AiMilitaryRole role, APIShared.Units.AiMilitary.AiRecruitmentMode recruitmentMode)
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public APIShared.Units.AiMilitary.AiMilitaryRole Role { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignment | public APIShared.Units.AiMilitary.AiRecruitmentMode RecruitmentMode { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public sealed class APIShared.Units.AiMilitary.AiMilitaryAssignmentResult
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiGroupRef Group { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiMilitaryAssignment Assignment { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus Status { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiMilitaryReason Reason { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public APIShared.Units.AiMilitary.AiUnitRef Unit { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentResult | public string Detail { get; }
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | public enum APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus : int
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Applied = 2
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Declared = 1
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Queued = 0
+APIShared.Units.AiMilitary.AiMilitaryAssignmentStatus | Rejected = 3
+APIShared.Units.AiMilitary.AiMilitaryOption | public sealed class APIShared.Units.AiMilitary.AiMilitaryOption
+APIShared.Units.AiMilitary.AiMilitaryOption | public APIShared.Units.AiMilitary.AiMilitaryArea Area { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public APIShared.Units.AiMilitary.AiMilitaryReason Reason { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public APIShared.Units.AiMilitary.AiMilitaryRole Role { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public bool IsAvailable { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public bool IsDeferred { get; }
+APIShared.Units.AiMilitary.AiMilitaryOption | public string Detail { get; }
+APIShared.Units.AiMilitary.AiMilitaryReason | public enum APIShared.Units.AiMilitary.AiMilitaryReason : int
+APIShared.Units.AiMilitary.AiMilitaryReason | AicMismatch = 4
+APIShared.Units.AiMilitary.AiMilitaryReason | AssignmentFailed = 17
+APIShared.Units.AiMilitary.AiMilitaryReason | CurrentOrderUnknown = 11
+APIShared.Units.AiMilitary.AiMilitaryReason | ExistingAssignment = 16
+APIShared.Units.AiMilitary.AiMilitaryReason | IncompleteCrew = 6
+APIShared.Units.AiMilitary.AiMilitaryReason | InitializationFailed = 14
+APIShared.Units.AiMilitary.AiMilitaryReason | InvalidGroupCount = 5
+APIShared.Units.AiMilitary.AiMilitaryReason | MutationNotAllowed = 13
+APIShared.Units.AiMilitary.AiMilitaryReason | NativeVeto = 12
+APIShared.Units.AiMilitary.AiMilitaryReason | NoAiContext = 3
+APIShared.Units.AiMilitary.AiMilitaryReason | NoAvailableGroup = 8
+APIShared.Units.AiMilitary.AiMilitaryReason | NoAvailableNativeJob = 9
+APIShared.Units.AiMilitary.AiMilitaryReason | NoReachablePath = 10
+APIShared.Units.AiMilitary.AiMilitaryReason | None = 0
+APIShared.Units.AiMilitary.AiMilitaryReason | StaleIdentity = 7
+APIShared.Units.AiMilitary.AiMilitaryReason | Unavailable = 1
+APIShared.Units.AiMilitary.AiMilitaryReason | UnsupportedRoleType = 2
+APIShared.Units.AiMilitary.AiMilitaryReason | WorldEnded = 15
+APIShared.Units.AiMilitary.AiMilitaryRole | public enum APIShared.Units.AiMilitary.AiMilitaryRole : int
+APIShared.Units.AiMilitary.AiMilitaryRole | CastleDefense = 1
+APIShared.Units.AiMilitary.AiMilitaryRole | DefensePatrol = 2
+APIShared.Units.AiMilitary.AiMilitaryRole | EconomyProtection = 4
+APIShared.Units.AiMilitary.AiMilitaryRole | Harassment = 6
+APIShared.Units.AiMilitary.AiMilitaryRole | HarassmentEngineers = 7
+APIShared.Units.AiMilitary.AiMilitaryRole | HomeMoat = 3
+APIShared.Units.AiMilitary.AiMilitaryRole | Intervention = 5
+APIShared.Units.AiMilitary.AiMilitaryRole | None = 0
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeAssassins = 10
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeCover = 15
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeDiversion = 11
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeEngineers = 8
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeLadders = 12
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeMoat = 9
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeReserve = 17
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeShock = 16
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeStorm = 14
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeTunnelers = 13
+APIShared.Units.AiMilitary.AiMilitaryRole | SiegeWall = 18
+APIShared.Units.AiMilitary.AiRecruitmentMode | public enum APIShared.Units.AiMilitary.AiRecruitmentMode : int
+APIShared.Units.AiMilitary.AiRecruitmentMode | Additional = 1
+APIShared.Units.AiMilitary.AiRecruitmentMode | Regular = 0
+APIShared.Units.AiMilitary.AiStrategicOrderEvents | public static class APIShared.Units.AiMilitary.AiStrategicOrderEvents
+APIShared.Units.AiMilitary.AiStrategicOrderEvents | public static bool IsAvailable { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Units.AiMilitary.AiStrategicOrderObservation> before, System.Action<APIShared.Units.AiMilitary.AiStrategicOrderObservation> after, out string reason)
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public sealed class APIShared.Units.AiMilitary.AiStrategicOrderObservation
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public System.IntPtr NativeManager { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public bool OriginalCompleted { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public int ActionCode { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public int TribeId { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public long InvocationId { get; }
+APIShared.Units.AiMilitary.AiStrategicOrderObservation | public long NativeResult { get; }
+APIShared.Units.AiMilitary.AiUnitRef | public struct APIShared.Units.AiMilitary.AiUnitRef : System.IEquatable<APIShared.Units.AiMilitary.AiUnitRef>
+APIShared.Units.AiMilitary.AiUnitRef | public .ctor(int unitId, uint globalId)
+APIShared.Units.AiMilitary.AiUnitRef | public bool Equals(APIShared.Units.AiMilitary.AiUnitRef other)
+APIShared.Units.AiMilitary.AiUnitRef | public int UnitId { get; }
+APIShared.Units.AiMilitary.AiUnitRef | public override bool Equals(object value)
+APIShared.Units.AiMilitary.AiUnitRef | public override int GetHashCode()
+APIShared.Units.AiMilitary.AiUnitRef | public override string ToString()
+APIShared.Units.AiMilitary.AiUnitRef | public uint GlobalId { get; }
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public interface APIShared.Units.AiMilitary.IAiMilitaryCapability
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public System.Collections.Generic.IReadOnlyList<APIShared.Units.AiMilitary.AiMilitaryOption> GetOptions(int playerId, SHCDESE.Interop.eChimps unitType, bool mapEditor)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool IsExcludedFromRecruitmentQuota(APIShared.Units.AiMilitary.AiUnitRef unit)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool RequestAssignment(APIShared.Units.AiMilitary.AiUnitRef unit, APIShared.Units.AiMilitary.AiMilitaryAssignment assignment, System.Action<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> completed, out string reason)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryBeginSpawnScope(int playerId, SHCDESE.Interop.eChimps primaryType, APIShared.Units.AiMilitary.AiMilitaryAssignment assignment, bool mapEditor, bool applyInEditor, System.Action<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> completed, out APIShared.Units.AiMilitary.IAiMilitarySpawnScope scope, out string reason)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryDeclareMapAssignment(APIShared.Units.AiMilitary.AiUnitRef unit, APIShared.Units.AiMilitary.AiMilitaryAssignment assignment, out string reason)
+APIShared.Units.AiMilitary.IAiMilitaryCapability | public bool TryGetState(APIShared.Units.AiMilitary.AiUnitRef unit, out APIShared.Units.AiMilitary.AiMilitaryAssignmentResult state)
+APIShared.Units.AiMilitary.IAiMilitarySpawnScope | public interface APIShared.Units.AiMilitary.IAiMilitarySpawnScope : System.IDisposable
+APIShared.Units.AiMilitary.IAiMilitarySpawnScope | public System.Collections.Generic.IReadOnlyList<APIShared.Units.AiMilitary.AiMilitaryAssignmentResult> Complete()
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4
@@ -2673,6 +3167,120 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Wildlife.HerdFlightRule | public sealed class APIShared.Wildlife.HerdFlightRule
+APIShared.Wildlife.HerdFlightRule | public bool TrySetCalm(int herdId, bool calm)
+APIShared.Wildlife.HerdFlightRule | public string OwnerGuid { get; }
+APIShared.Wildlife.HerdFlightRule | public string RegistrationId { get; }
+APIShared.Wildlife.HerdFlightRule | public void ClearAll()
+APIShared.Wildlife.HerdFlightRules | public static class APIShared.Wildlife.HerdFlightRules
+APIShared.Wildlife.HerdFlightRules | public static bool TryGetSectorThreats(int tileX, int tileY, out APIShared.Wildlife.HerdSectorThreats threats)
+APIShared.Wildlife.HerdFlightRules | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Wildlife.HerdFlightRule rule, out string reason)
+APIShared.Wildlife.HerdInfo | public struct APIShared.Wildlife.HerdInfo
+APIShared.Wildlife.HerdInfo | public APIShared.Wildlife.HerdKind Kind { get; }
+APIShared.Wildlife.HerdInfo | public bool IsFleeing { get; }
+APIShared.Wildlife.HerdInfo | public int AnimalCount { get; }
+APIShared.Wildlife.HerdInfo | public int HerdId { get; }
+APIShared.Wildlife.HerdInfo | public int LeaderUnitId { get; }
+APIShared.Wildlife.HerdInfo | public int OwnerPlayerId { get; }
+APIShared.Wildlife.HerdInfo | public uint GlobalId { get; }
+APIShared.Wildlife.HerdKind | public enum APIShared.Wildlife.HerdKind : short
+APIShared.Wildlife.HerdKind | Camel = 16
+APIShared.Wildlife.HerdKind | Crocodile = 42
+APIShared.Wildlife.HerdKind | Deer = 13
+APIShared.Wildlife.HerdKind | Goat = 40
+APIShared.Wildlife.HerdKind | Hyena = 41
+APIShared.Wildlife.HerdKind | Lion = 14
+APIShared.Wildlife.HerdKind | Rabbit = 15
+APIShared.Wildlife.HerdRoute | public sealed class APIShared.Wildlife.HerdRoute
+APIShared.Wildlife.HerdRoute | public APIShared.Wildlife.HerdInfo Herd { get; }
+APIShared.Wildlife.HerdRoute | public APIShared.Wildlife.HerdWaypoint GetWaypoint(int index)
+APIShared.Wildlife.HerdRoute | public const int MaximumWaypoints = 10
+APIShared.Wildlife.HerdRoute | public int LeaderTileX { get; }
+APIShared.Wildlife.HerdRoute | public int LeaderTileY { get; }
+APIShared.Wildlife.HerdRoute | public int WaypointCount { get; }
+APIShared.Wildlife.HerdRoute | public void ReplaceWithSingleWaypoint(int tileX, int tileY)
+APIShared.Wildlife.HerdRoute | public void Truncate(int count)
+APIShared.Wildlife.HerdRouteEvents | public static class APIShared.Wildlife.HerdRouteEvents
+APIShared.Wildlife.HerdRouteEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HerdRouteHandler handler, out string reason, int order = 0)
+APIShared.Wildlife.HerdRouteHandler | public delegate void APIShared.Wildlife.HerdRouteHandler(APIShared.Wildlife.HerdRoute route)
+APIShared.Wildlife.HerdSectorThreats | public struct APIShared.Wildlife.HerdSectorThreats
+APIShared.Wildlife.HerdSectorThreats | public int Predators { get; }
+APIShared.Wildlife.HerdSectorThreats | public int Units { get; }
+APIShared.Wildlife.HerdWaypoint | public struct APIShared.Wildlife.HerdWaypoint
+APIShared.Wildlife.HerdWaypoint | public .ctor(int tileX, int tileY)
+APIShared.Wildlife.HerdWaypoint | public int TileX { get; }
+APIShared.Wildlife.HerdWaypoint | public int TileY { get; }
+APIShared.Wildlife.Herds | public static class APIShared.Wildlife.Herds
+APIShared.Wildlife.Herds | public const int MaximumHerdId = 4499
+APIShared.Wildlife.Herds | public static bool IsAvailable { get; }
+APIShared.Wildlife.Herds | public static bool TryCopyMemberUnitIds(int herdId, System.Collections.Generic.List<int> unitIds)
+APIShared.Wildlife.Herds | public static bool TryGet(int herdId, out APIShared.Wildlife.HerdInfo herd)
+APIShared.Wildlife.Herds | public static bool TrySpawn(APIShared.Wildlife.HerdKind kind, int tileX, int tileY, int maxAnimals, out int herdId, out string reason)
+APIShared.Wildlife.Herds | public static string UnavailableReason { get; }
+APIShared.Wildlife.HuntablePrey | public static class APIShared.Wildlife.HuntablePrey
+APIShared.Wildlife.HuntablePrey | public static APIShared.Wildlife.HuntablePreyCatalog Current { get; }
+APIShared.Wildlife.HuntablePrey | public static bool IsAvailable { get; }
+APIShared.Wildlife.HuntablePrey | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HuntablePreyDefinition definition, out APIShared.Wildlife.HuntablePreyRegistration registration, out string reason, int priority = 0)
+APIShared.Wildlife.HuntablePreyCatalog | public sealed class APIShared.Wildlife.HuntablePreyCatalog
+APIShared.Wildlife.HuntablePreyCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Wildlife.HuntablePreyEntry> Entries { get; }
+APIShared.Wildlife.HuntablePreyCatalog | public bool HasRegistrations { get; }
+APIShared.Wildlife.HuntablePreyCatalog | public bool IsHuntable(int unitType)
+APIShared.Wildlife.HuntablePreyCatalog | public bool TryGet(int unitType, out APIShared.Wildlife.HuntablePreyEntry entry)
+APIShared.Wildlife.HuntablePreyCatalog | public string Digest { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public sealed class APIShared.Wildlife.HuntablePreyDefinition
+APIShared.Wildlife.HuntablePreyDefinition | public .ctor(int unitType, int handlingCost = 0)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithBaseMeat(int? baseMeat)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithCorpseRemovedWhenButchered(bool removed = true)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithOwnPlayerPrey(bool allowed = true)
+APIShared.Wildlife.HuntablePreyDefinition | public bool AllowsOwnPlayerPrey { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public bool RemovesCorpseWhenButchered { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public int HandlingCost { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public int UnitType { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public int? BaseMeat { get; }
+APIShared.Wildlife.HuntablePreyEntry | public sealed class APIShared.Wildlife.HuntablePreyEntry
+APIShared.Wildlife.HuntablePreyEntry | public bool AllowsOwnPlayerPrey { get; }
+APIShared.Wildlife.HuntablePreyEntry | public bool IsVanilla { get; }
+APIShared.Wildlife.HuntablePreyEntry | public bool RemovesCorpseWhenButchered { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int HandlingCost { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int UnitType { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int? BaseMeat { get; }
+APIShared.Wildlife.HuntablePreyEntry | public string OwnerGuid { get; }
+APIShared.Wildlife.HuntablePreyEntry | public string RegistrationId { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public sealed class APIShared.Wildlife.HuntablePreyRegistration
+APIShared.Wildlife.HuntablePreyRegistration | public APIShared.Wildlife.HuntablePreyDefinition Definition { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public APIShared.Wildlife.HuntablePreyRegistrationStatus Status { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public bool IsEnabled { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public bool TrySetEnabled(bool value, out string reason)
+APIShared.Wildlife.HuntablePreyRegistration | public int Priority { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public string Diagnostic { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public string OwnerGuid { get; }
+APIShared.Wildlife.HuntablePreyRegistration | public string RegistrationId { get; }
+APIShared.Wildlife.HuntablePreyRegistrationStatus | public enum APIShared.Wildlife.HuntablePreyRegistrationStatus : int
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Admitted = 1
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Disabled = 4
+APIShared.Wildlife.HuntablePreyRegistrationStatus | ExcludedByPriority = 2
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Pending = 0
+APIShared.Wildlife.HuntablePreyRegistrationStatus | Unsupported = 3
+APIShared.Wildlife.HunterMeatYield | public sealed class APIShared.Wildlife.HunterMeatYield
+APIShared.Wildlife.HunterMeatYield | public int BaseAmount { get; set; }
+APIShared.Wildlife.HunterMeatYield | public int HunterUnitId { get; }
+APIShared.Wildlife.HunterMeatYield | public int PreyType { get; }
+APIShared.Wildlife.HunterMeatYield | public int VanillaBaseAmount { get; }
+APIShared.Wildlife.HunterMeatYieldEvents | public static class APIShared.Wildlife.HunterMeatYieldEvents
+APIShared.Wildlife.HunterMeatYieldEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Wildlife.HunterMeatYield> handler, out string reason, int order = 0)
+APIShared.Wildlife.HunterTargetCandidate | public struct APIShared.Wildlife.HunterTargetCandidate
+APIShared.Wildlife.HunterTargetCandidate | public bool IsHuntable { get; }
+APIShared.Wildlife.HunterTargetCandidate | public bool IsSimulationQuery { get; }
+APIShared.Wildlife.HunterTargetCandidate | public int CandidateType { get; }
+APIShared.Wildlife.HunterTargetCandidate | public int CandidateUnitId { get; }
+APIShared.Wildlife.HunterTargetCandidate | public int HunterUnitId { get; }
+APIShared.Wildlife.HunterTargetDecision | public enum APIShared.Wildlife.HunterTargetDecision : int
+APIShared.Wildlife.HunterTargetDecision | Allow = 1
+APIShared.Wildlife.HunterTargetDecision | Default = 0
+APIShared.Wildlife.HunterTargetDecision | Refuse = 2
+APIShared.Wildlife.HunterTargetPolicies | public static class APIShared.Wildlife.HunterTargetPolicies
+APIShared.Wildlife.HunterTargetPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HunterTargetPolicy policy, out string reason, int order = 0)
+APIShared.Wildlife.HunterTargetPolicy | public delegate APIShared.Wildlife.HunterTargetDecision APIShared.Wildlife.HunterTargetPolicy(in APIShared.Wildlife.HunterTargetCandidate candidate)
 APIShared.Workshop.WorkshopAction | public enum APIShared.Workshop.WorkshopAction : int
 APIShared.Workshop.WorkshopAction | Downgrade = 3
 APIShared.Workshop.WorkshopAction | Install = 0

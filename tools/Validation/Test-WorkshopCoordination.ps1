@@ -1,7 +1,7 @@
 param([string]$ApiAssembly='')
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$cases=@('backup','first-write','receipt','restore','timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','killed','completed')
+$cases=@('manual-exit','manual-new-download','backup','first-write','receipt','restore','timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','killed','completed')
 # The fixture game is a .NET Framework executable, and its runtime exits with -1 at startup when the
 # executable path plus ".config" reaches MAX_PATH (260). With a 32-character run ID, a checkout path
 # of about 115 characters already killed the longer cases' games right after start, which then looked
@@ -90,11 +90,20 @@ foreach($case in $cases){
     $ordinal=if($case -eq 'receipt'){1}else{0}
     Copy-Item -LiteralPath (Join-Path $root 'Workshop/workshop-updater.ps1'),(Join-Path $root 'Workshop/workshop-maintenance.ps1') -Destination $scripts
     $injection=$hook.Replace('__CASE__',$case).Replace('__PHASE__',$phase).Replace('__ORDINAL__',$ordinal.ToString())
-    if($case -eq 'completed'){$injection=$injection.Replace("-eq 'apply'","-eq 'never'")}
+    if($case -in @('completed','manual-exit','manual-new-download')){$injection=$injection.Replace("-eq 'apply'","-eq 'never'")}
     [IO.File]::AppendAllText((Join-Path $scripts 'workshop-maintenance.ps1'),("`r`n"+$injection+"`r`n"),$utf8)
     [void][IO.Directory]::CreateDirectory($game);$exe=Join-Path $game 'Stronghold Crusader Definitive Edition.exe';Copy-Item -LiteralPath $stub -Destination $exe
     $info=[Diagnostics.ProcessStartInfo]::new('powershell.exe',('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File '+(Quote (Join-Path $scripts 'workshop-updater.ps1'))+' -GameRoot '+(Quote $game)+' -Transaction '+(Quote $transaction)+' -OperationsHash '+(Hash (Join-Path $transaction 'operations.tsv'))))
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    if($case -in @('manual-exit','manual-new-download')){
+        $sourceManifest=[IO.Path]::GetFullPath((Join-Path $game 'steam-download/apishared-workshop.json'))
+        Text $sourceManifest '{"Version":"1.0.0"}'
+        $fixtureGame=[Diagnostics.ProcessStartInfo]::new($exe,(Quote (Join-Path $game 'fixture-game-exit.flag')))
+        $fixtureGame.UseShellExecute=$false;$fixtureGame.CreateNoWindow=$true;$fixtureGame.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+        $owned=[Diagnostics.Process]::Start($fixtureGame)
+        try{Text (Join-Path $game 'game.1.pid') $owned.Id.ToString()}finally{$owned.Dispose()}
+        $info.Arguments+=' -RequireRunningGame -SourceManifest '+(Quote $sourceManifest)+' -SourceManifestHash '+(Hash $sourceManifest)
+    }
     $updater=[Diagnostics.Process]::Start($info);$output=$updater.StandardOutput.ReadToEndAsync();$errors=$updater.StandardError.ReadToEndAsync()
     $firstIdentityLease=$null
     try{
@@ -124,6 +133,7 @@ foreach($case in $cases){
         if($case -eq 'changed-backup'){Text (Join-Path $old 'Backup/0') 'changed backup'}
         if($case -eq 'changed-operations'){[IO.File]::AppendAllText((Join-Path $old 'operations.tsv'),"`r`n")}
         if($case -eq 'staging'){[void][IO.Directory]::CreateDirectory((Join-Path $game '_SE/.staging'))}
+        if($case -eq 'manual-new-download'){Text $sourceManifest '{"Version":"1.1.0"}'}
         if($case -eq 'killed'){$updater.Kill()}
         if($case -eq 'two-pauses'){
             # Deterministically reproduce the former reader/writer conflict: a second
@@ -142,12 +152,15 @@ foreach($case in $cases){
             # not a newly reset two-minute budget, must end this updater.
         }
         if(-not $updater.WaitForExit(15000)){throw 'Updater did not finish after checkpoint release'}
-        if($case -in @('timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging')){
+        if($case -in @('timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','manual-new-download')){
             if($updater.ExitCode -eq 0){throw 'Unsafe resumed update reported success'}
             $expected=if($case -eq 'changed-target'){'foreign modification'}elseif($case -eq 'two-pauses'){'updated'}else{'original'}
             if([IO.File]::ReadAllText($target) -cne $expected -or [IO.File]::Exists($receipt)){throw 'Failed pause validation overwrote targets or committed a receipt'}
             $journal=[IO.File]::ReadAllLines((Join-Path $transaction 'journal.log'))
             if($journal -ccontains 'committed' -or $journal -ccontains 'restored'){throw 'Failed pause validation hid the unresolved transaction'}
+            if($case -eq 'manual-new-download' -and (-not ($journal -match 'Steam download changed') -or $journal -ccontains 'applying')){
+                throw 'Replacing the download after readiness did not block writes before the transaction began.'
+            }
             if($case -in @('timeout','two-pauses')){
                 if(-not ($journal -match 'Game exit wait exceeded 120 seconds')){throw 'Fixture failed for another reason instead of the production shared wait budget'}
                 if($case -eq 'two-pauses' -and @($journal -match '^pause ').Count -ne 2){throw 'Shared-budget regression did not exercise both production pauses'}

@@ -27,7 +27,10 @@
 - [HUD integration](#hud-integration)
 - [Sharing action and HUD hooks](#sharing-action-and-hud-hooks)
 - [Sharing native market price queries](#sharing-native-market-price-queries)
+- [Staged values and health](#staged-values-and-health)
+- [Ordering units taken from AI groups](#ordering-units-taken-from-ai-groups)
 - [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
+- [AI military admission](AI_MILITARY.md)
 - [Assassin obstacle completion](#assassin-obstacle-completion)
 - [Gate access contributions](#gate-access-contributions)
 - [Enemy-unit building proximity and Peace Time](#enemy-unit-building-proximity-and-peace-time)
@@ -60,6 +63,33 @@ Install the complete APIShared package and reference its assemblies with
 Use your plugin's stable GUID for `ApiShared.ForMod`. Keep the resulting client, logger, settings and callbacks in a static runtime or a long-lived publisher. Register managed lifecycle services from `Awake`, after the hard APIShared dependency has initialized. Acquire native services in `WhenReady`. Never treat a native failure as proof that all managed services failed. `WhenReady` is a terminal global-state notification, not a Unity-thread dispatcher: late callbacks run synchronously on the registering thread, early callbacks on the initialization publisher thread. Call Unity/Noesis operations only from a known Unity-thread entry point.
 
 The example library compiles against ordinary public assemblies and has no `InternalsVisibleTo` access. Build it with the game path supplied through `GameDir`; its APIShared reference defaults to this repository's output for verification and can be overridden with `ApiSharedDir` for normal installed use. APIShared's build driver compiles it as a consumer check, but does not install it into the game.
+
+## Current-mission PlayState readiness
+
+`ModApiClient.TryGetMissionPlayStateReadiness` supplies the additive
+`IMissionPlayStateReadinessCapability`. Managed lifecycle Start does not imply that
+Vanilla has published a current-mission `GameData.lastGameState`: multiplayer may
+still wait for peers, and presentation can be paused. Register a stable owner-local
+ID through `TryRegisterObserver(id, onReady, out diagnostic)` on Unity. Keep the
+capability and callback for the process lifetime. Already-ready registration may
+replay synchronously before returning; otherwise delivery occurs on Unity when a
+fresh current-mission PlayState is observed. There is no loading-duration deadline.
+
+`MissionPlayStateReadyNotification` contains immutable `Context` and `IsReplay`.
+`Current` is safe to query from any thread and returns the ready current context,
+or null while waiting/outside a mission. End and replacement invalidate it. Before
+performing deferred work, require `capability.Current?.SessionId` to equal the
+receipt's session. Callbacks are exception-isolated and cannot revive an ended
+session. Registrations made inside a callback receive their replay after it exits.
+
+Readiness tracks managed Start plus a nonnull PlayState reference different from
+the earliest pre-initialization reference. It reuses lifecycle, GuiChecks and the
+existing Unity work publisher; GuiChecks completion alone is not readiness. This
+does not authorize gameplay or establish HUD roots, a player identity, converged
+roster, selected report viewpoint or fresh report values after switching views.
+Keep those feature-specific checks. Existing lifecycle Start behavior is unchanged.
+The compiled [example](../examples/ThirdPartyMod/MissionReadinessExample.cs) shows
+registration and session validation.
 
 ## Deferred Unity work and refresh demand
 
@@ -100,6 +130,32 @@ scheduler paths allocate nothing after warm-up; real demand changes may allocate
 copy-on-write snapshots. Callback cost and application-level scans remain the consumer's
 responsibility. Internal lobby fallback remains 15 rendered frames; save preparation
 continues every frame only while pending and not already loading.
+
+## In-game test automation
+
+Get the owner-bound client with `ApiShared.ForMod(yourGuid).Automation`. After
+APIShared initialization, explicitly start a run on Unity from your development
+build. A run receives a GUID, a sequence of named `AutomationStep` objects and a
+BepInEx logger. It emits one terminal `INGAME_TEST run=… result=…` line and can
+optionally quit the game. The caller owns scenario selection, activation and
+restoration of external settings and files.
+
+Steps yield `AutomationWait.NextFrame`, `Delay` or `Until`, and may throw to
+fail with context. Each step has a monotonic deadline, including during pause.
+Keep callbacks short. An individual synchronous game call cannot be preempted
+by a frame-based timeout. Use unbound steps to load a local save or start local
+Skirmish, and mission-bound steps for the subsequent assertions. Wait separately
+for fresh PlayState and native tick progress. Capture the current mission before
+using a mission-scoped action. Quitting is explicit and applies after success,
+failure or cancellation.
+
+Use the Extender directly for unit and wall creation inside `InSimulation`.
+Return managed values from that scope and keep native pointers inside it.
+`TrySpawnBuilding` confirms an ordinary single-building placement through the
+existing Extender event. Supply the audited sprite variant for the chosen mapper.
+Noesis clicks send input through the active game view. Verify the outcome as a
+separate assertion. The helpers target local tests and leave lobby and mission
+settings policy to the regular game and APIShared entry points.
 
 ## Namespaces and packaging
 
@@ -283,7 +339,7 @@ receive a forwarding logger so their direct Debug calls cannot bypass the gate.
 Successful native-site summaries are not constructed without opt-in; refused
 registrations still produce warnings. Warnings, errors, capability failure results
 and recovery evidence remain available.
-Workshop `Transactions/*/diagnostics.txt` contains installation warnings and is
+Workshop `_APIShared/T/*/diagnostics.txt` contains installation warnings and is
 retained without opt-in, alongside the transaction protocol. The independent
 dependency bootstrap emits only warnings/errors and creates no tracing files.
 
@@ -763,9 +819,12 @@ bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton 
 ## HUD integration
 
 Choose the independent side-HUD capability for actions that do not depend on troop
-selection. Choose the Unit HUD's optional action-button interface for actions on the
-current local troop selection. [HudExample](../examples/ThirdPartyMod/HudExample.cs)
-shows both registrations using only public APIs.
+selection. For the small Vanilla troop-action field, use
+`APIShared.Presentation.TroopActionHud.TryRegisterButton`; APIShared places registered
+actions directly while they fit and provides HUD pages on overflow. For the
+separate strip beside Control Groups, use the Unit HUD's optional action-button
+interface. [HudExample](../examples/ThirdPartyMod/HudExample.cs) shows these registrations
+using only public APIs.
 
 Keep stable owner-local IDs and return fresh unattached controls from factories.
 Use the supplied HUD resource scope and player colour rather than retaining transient
@@ -777,6 +836,48 @@ Factories and commands run on the Unity thread and must not block. Troop descrip
 use Vanilla rollover text; side buttons use the mod-options popup by default.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
+
+### Side-HUD overlays
+
+With APIShared 0.37.0 or later, call `APIShared.Presentation.SideHudVisibility.TryGetState` with the current
+`MainViewModel` on the Unity thread. An overlay can opt into staying visible for
+`HiddenByHudMode`. This state requires an active in-game view, the Vanilla HUD
+mode switched off, and the independent side-HUD flag still enabled. Briefing,
+the game menu and mission-over screens report `Hidden`. If the query returns
+`false`, use your overlay's ordinary visibility rules without the exception.
+
+Read once when attaching the overlay, then refresh on `PropertyChanged` for
+`Show_InGame`, `Show_InGameUI`, `Show_HUD_Extras`, `Show_HUD_Briefing`,
+`Show_HUD_IngameMenu` and `Show_HUD_MissionOver`. Reattach the subscription when
+the view changes. Overlay activation, popup conflicts and session cleanup belong
+to the consumer. Registered side-HUD buttons keep their existing visibility rules.
+
+### Vanilla action-field registration
+
+`TroopActionButtonDefinition` supplies the command, localized rollover text and a
+factory for an unattached Vanilla-styled Button. APIShared controls the button's
+command, enabled state and visibility. Keep the returned handle and call
+`SetVisible(true)` only when the feature applies; new registrations start hidden.
+Priority is nonnegative and followed by owner GUID and button ID for stable ordering.
+Use `RequestButtonRefresh` when sprite/style content must be recreated; prefer the
+handle's simple setters for visibility, availability and rollover text.
+
+Use a context callback to close consumer-owned UI when the own-selection context is
+lost. Page placement is separate from context availability. Ordinarily APIShared
+publishes the provided rollover text, including over a disabled button. Supply a
+hover callback only when your mod owns the complete rollover, such as an icon or
+cost metadata; it must handle false when the button is hidden or the HUD ends.
+
+Legacy XAML hosts retain their original two-slot behavior and are not reparented into
+additional pages. Migrate those contributions explicitly to the typed factory
+registration; remove their old host and layout binding so the same action is not
+registered twice.
+The split navigation button advances through pages with its upper right arrow and
+goes back with its lower left arrow; both wrap. The first page retains Vanilla
+actions, and an action click keeps the chosen page. Consumers do not implement
+navigation or a layout of their own. The full placement, reset, lifecycle and
+failure contracts live in
+[the catalog](API_CATALOG.md#vanilla-troop-action-slots-and-pages).
 
 ### Unit HUD sprites in another player's colour
 
@@ -803,6 +904,23 @@ colours. The Arabic troop variants follow the leased player only for human multi
 otherwise they keep Vanilla's value for the local player. Map sprites, labels, selection and
 control rights are unaffected. The [lease contract](../src/Presentation/UnitHud/UnitHudSpriteColours.cs)
 describes ordering, replay and failure behavior.
+
+## Identifying a Lord skin
+
+Use the one-based player ID in the active mission or editor on the Unity main thread.
+Skin and UI colour are separate lookups:
+
+```csharp
+if (LordSkins.TryGetForPlayer(playerId, out LordSkin skin))
+{
+    PlayerColours.TryGetUiColour(playerId, out int colour);
+    // Select your own portrait using skin and the UI colour. Colour 0 means unavailable.
+}
+```
+
+The skin lookup verifies the registered unit's identity and returns `Unknown` when
+the Lord is absent, dead or has an unrecognized material. Callers that already have
+the material of a Lord can use `LordSkins.TryGetFromMaterial` directly.
 
 ## Sharing action and HUD hooks
 
@@ -892,6 +1010,25 @@ Timing is indicative and not asserted; the host also ran unrelated work (21 to 5
 CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
 
+## Staged values and health
+
+APIShared 0.28.0 adds shared `BeforeFixedValue` and opt-in `AfterFixedValue`
+composition for numerical policies. The normal stage is the default; after-stage
+factors also multiply a winning fixed value. Existing legacy APIs keep their
+meaning, including the absolute coefficient in fear `SetMultiplier`. Read the
+[numeric contract and economy APIs](VALUE_MODIFIERS.md) before mixing policies.
+
+For maximum HP, register `HealthModifiers` after `LibraryLoaded` and enable
+immutable contributions at synchronized mission boundaries. APIShared captures
+the completed native basis and freezes each generation after one application.
+See [the health contract](HEALTH.md) for save migration, category ownership,
+limits, linked siege towers and the [compiled example](../examples/ThirdPartyMod/HealthExample.cs).
+
+For market prices use [MarketPriceModifiers](MARKET_PRICE_MODIFIERS.md) to compose
+per-lot base prices across manual trade, AI, autotrade, HUD and valuation. Existing
+low-level query veto totals remain distinct and compatible. ExtraFeatures' AI
+exception now omits only its own factors, allowing other registered mods to work.
+
 ## Sharing native market price queries
 
 For reserve or quantity policies, see [AI market sell policies](AI_MARKET_SELL.md)
@@ -914,6 +1051,34 @@ trade. Returning zero does not cancel the surrounding transaction. Policies must
 cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
+
+## Ordering units taken from AI groups
+
+`GameTribeManagerAPI.IssueMoveHereCommand` and Vanilla's other group moves silently skip a member
+that still carries the AI's group-move exclusion mark. The AI sets it for its own next group
+order; regrouping keeps it. If your mod moves units out of an AI group (or orders a unit without a
+group) and then gives a group move, clear the mark of exactly those units right before the call with
+`APIShared.Commands.GroupMoveExclusion` (not in APIShared packages up to 0.38.0; check the package
+you require):
+
+```csharp
+using APIShared.Commands;
+
+// Simulation thread, in a context every multiplayer peer executes alike.
+GroupMoveExclusion.TryClear(unitId, out bool wasMarked);
+GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, TribeMoveType.DefaultInSync);
+```
+
+- The mark is simulation state. Call only in a native simulation tick callback or a tick-synchronous
+  Chore that runs on every peer, never from local input, UI or a network thread.
+- Clear only units you order yourself. When you repeat an order of the AI on the AI's own group,
+  keep the marks: they are the AI's current member selection.
+- `TryClear` returns false without a write when `IsAvailable` is false (another CrusaderDE.dll or
+  unit layout; see `UnavailabilityReason`), the ID does not resolve or the unit fails
+  `UnitAccess.IsReallyAlive`. A true result only means the mark is 0; the move can still skip the
+  unit for its own admission rules.
+
+The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
 
 ## Reacting to created and recruited units
 
@@ -1274,6 +1439,13 @@ Vanilla truncates each displayed lobby message at 300 characters. Consumers must
 split longer support reports before sending them and prevent receive/send loops.
 
 `APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
+For blocking Ready/Start and prepared multiplayer-save admission, `LobbyLaunchGuards` supplies a context whose
+`RequiresPeerAgreement` distinguishes the exact Vanilla local Play/Coop branches
+from fresh network lobbies. Prepared saves run the same guards after settings and
+fingerprint validation at host release, client acknowledgement and final start;
+their `HostLoadGame` context has a null lobby receiver, and only a freshly validated
+solo-host roster bypasses peer agreement. In-game MP flags are not lobby evidence. See the
+[launch-guard contract](WORKER_PRODUCTION_BONUS.md#mission-and-multiplayer-responsibility).
 Mods that enforce their own Ready/Start checks register a provider with
 `TryRegisterProvider(owner, id, provider, out diagnostic)`. The provider receives a
 `LobbyLaunchStatusQuery` (lobby ID, host role and the Vanilla view, valid only during
@@ -1541,7 +1713,9 @@ Requires APIShared 0.20.0 or later.
 
 Register with `PackagedLordPresentation.TryRegister(ownerGuid, registrationId, out registration, out reason)` on Unity after managed initialization. Publish immutable PackagedLordPresentationEntry values with registration.SetEntries. Entries bind one-based player IDs, current internal Lord identities, authored fallback names, complete lordmeta.json and an optional private asset-provider GUID. Clear with SetEntries(null) at session end, on abandonment and before replacing an unrelated selection. Hooks and registrations remain installed until process exit.
 
-The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
+The consumer authenticates the selected package and all media paths before publication. Text/message lookups perform no filesystem access or callbacks; portraits use the Unity asset resolver and are cached on demand. Different claims never select an arbitrary owner. Localized fields fall back independently to English; missing titles in an explicit metadata document are empty. Complete original JSON remains available, including fields unknown to this API. Script Extender's global Lord catalog and Lua availability are unchanged. The adapter also fills Coop multiplayer restart names before encoding the same object that later supplies the HUD and save data; ordinary multiplayer keeps its original path.
+
+Passing null metadata preserves the authored name while runtime full-name lookups obtain the nickname suffix from Vanilla's existing `text.txt` / localized generic-title fallback. The current internal name can identify a peer-local media donor and never replaces the authored name. Invalid nickname subtypes retain the authored name without a suffix. Direct SE metadata-title queries report no title for these entries; the original custom-text path remains available. Null and an explicit `{}` are different claims for full-name and title resolution. Non-title lookups retain their previous equivalence: otherwise identical entries with null and `{}` metadata still share their empty media claim, regardless of slot, owner or publication order. Such a title-policy conflict reports no unambiguous metadata title and retains the original custom-text fallback; it must not consult peer-local SE titles or emit registration-miss errors. The public `MetadataJson` property still returns `{}` for null input, and the pure `ResolveName` / `ResolveTitle` methods keep their metadata-only behavior; persist the original nullable metadata separately when that distinction must survive a roundtrip. This title fallback does not opt into local speech metadata, alter media claims or consume synchronized random numbers.
 
 Omitting the provider GUID means metadata-only presentation. Set `allowGlobalMedia: true` only for an authenticated installed source using the Extender's legacy global asset mode; null alone must never opt into global file lookup. Missing optional media does not change synchronized message-clip selection. Asset providers must contain only verified presentation files and must not impersonate the source mod or register its scripts.
 
@@ -1598,3 +1772,40 @@ immediate Unity camera change. Missing or stale targets should keep the camera
 stationary; do not clear unrelated camera reports or enqueue stale cross-mission
 camera work. This broker does not select a building or move the camera itself.
 
+
+## Ally gifts and send-dialog extensions
+
+Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.
+
+Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion.
+
+<a id="fixed-worker-production-bonus"></a>
+
+## Worker production modifiers
+
+For actual-output base quantities, fixed percentages and [per-level fear contributions](WORKER_PRODUCTION_BONUS.md#fear-levels), use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register a process-held desired profile, inspect and present its typed status, and let shared mission admission activate the resolved rules. The channels use staged factors or fixed values. The legacy absolute-percentage facade remains supported. Consumer mods own settings and localization. APIShared owns mode-profile evaluation, exact saved credits, zero-output completion, transport and rendering.
+
+## Weapon workshop options
+
+Register additional recipes with `WeaponProduction.TryRegister` during Unity
+startup. Use `WithIngredientAmount` to set the cost per charge in the workshop's
+native ingredient. The [weapon workshop guide](WEAPON_PRODUCTION.md) covers the
+registration example, ingredient limits, Shift selection, AI, and requirements
+for multiplayer and saved games.
+
+## Huntable prey
+
+Register further unit types for Vanilla Hunters with `HuntablePrey.TryRegister`
+during Unity startup on every peer, and withdraw or restore them logically with
+`TrySetEnabled` before or after a mission, driven by synchronized settings.
+`HuntablePrey.Current` lists the types Hunters may hunt. The
+[huntable-prey guide](HUNTING.md) covers priorities, unsupported types, mission
+freezing, multiplayer agreement and what stays Vanilla behavior.
+
+## Herds
+
+Read and spawn Vanilla's animal herds with `Herds`, and register `HerdRouteEvents` handlers or
+`HerdFlightRules` during Unity startup on every peer to keep herds in an area or calm. Decide
+from simulation data and synchronized settings only; set calm marks and spawn herds inside a
+`SimulationTickEvents` callback. The [herd guide](HERDS.md) covers threads, the editor and the
+limits.

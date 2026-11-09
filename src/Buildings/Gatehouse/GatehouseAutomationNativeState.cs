@@ -64,6 +64,7 @@ namespace APIShared
             new HookHandle<X64InlineHook>(), new HookHandle<X64InlineHook>()
         };
         private HookTransaction transaction;
+        private readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private Func<int, bool> resolver;
         private bool installed;
         private string installationFailure;
@@ -171,8 +172,11 @@ namespace APIShared
                     RequireLive(CouplingRva, CouplingEntry);
                     ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.GatehouseAutomation,
                         ApiSharedNativeSites.GatehouseAutomationSpans(), reason => new InvalidOperationException(reason));
+                    // A consumer may publish during a match, while the simulation thread runs these
+                    // functions: Commit only prepares, the displaced lengths are checked, and only then
+                    // are the patches written. A rejected candidate never unpatches live code.
                     transaction = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                        new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
+                        new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
                     for (int site = 0; site < HookRvas.Length; site++)
                     {
                         int capturedSite = site;
@@ -182,18 +186,16 @@ namespace APIShared
                     }
                     CommitResult result = transaction.Commit();
                     if (!result.IsCompleteSuccess) throw new InvalidOperationException($"Incomplete gate automation transaction: {result}.");
-                    for (int site = 0; site < HookRvas.Length; site++)
-                    {
-                        if (!hooks[site].Success || !hooks[site].IsInstalled ||
-                            hooks[site].Hook.DisplacedByteCount != HookBytes[site].Length)
-                            throw new InvalidOperationException($"Gate automation DisplacedByteCount mismatch at 0x{HookRvas[site]:X}.");
-                    }
+                    RequireHookState(installed: false, "DisplacedByteCount mismatch");
+                    NativeHookPublication.Enable(transaction, result, publication, this,
+                        () => RequireHookState(installed: true, "hook not installed after publication"));
                 }
                 catch (Exception ex)
                 {
-                    // Only the unpublished initialization candidate can be rolled back.
-                    transaction?.Dispose();
-                    ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehouseAutomation);
+                    // Only an unpublished candidate is rolled back; a started publication stays rooted,
+                    // and QueryManual keeps Vanilla behavior because installed remains false.
+                    publication.RollbackUnpublished(transaction,
+                        () => ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehouseAutomation));
                     installationFailure = failure = ex.ToString();
                     NativeApiLog.Error(log, $"capability=gatehouse-automation, status=installation-failed, error={ex}");
                     return false;
@@ -204,6 +206,17 @@ namespace APIShared
             }
             Volatile.Write(ref resolver, value);
             return true;
+        }
+
+        private void RequireHookState(bool installed, string failure)
+        {
+            for (int site = 0; site < HookRvas.Length; site++)
+            {
+                X64InlineHook hook = hooks[site].Hook;
+                if (!hooks[site].Success || hook == null || hook.IsInstalled != installed ||
+                    hook.DisplacedByteCount != HookBytes[site].Length)
+                    throw new InvalidOperationException($"Gate automation {failure} at 0x{HookRvas[site]:X}.");
+            }
         }
 
         private int QueryManual(int buildingId)

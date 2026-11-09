@@ -329,10 +329,6 @@ namespace APIShared.ScriptExtenderFixes
             finally { current?.Release(); }
         }
 
-        private static void Write(string message)
-        {
-            try { logger?.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + Prefix + message); }
-            catch { /* Logging must not interrupt rendering. */ }
-        }
+        private static void Write(string message) => NativeApiLog.Info(logger, Prefix + message);
     }
 }

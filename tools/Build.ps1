@@ -80,11 +80,20 @@ try {
             Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
         }
     }
-    foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests')) {
+    foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests','AiMilitary.NativeTests','WorkerProductionBonus.NativeTests')) {
         Invoke-ApiBuildStep $context $suite -Action {
             Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
                 '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--',
                 (Join-Path $game 'Stronghold Crusader Definitive Edition_Data/Plugins/x86_64/CrusaderDE.dll'))
+        }
+    }
+    Invoke-ApiBuildStep $context 'Health.Tests' -Action {
+        Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root 'tests/Health.Tests/Health.Tests.csproj'), '--configuration', 'Release')
+    }
+    foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests')) {
+        Invoke-ApiBuildStep $context $suite -Action {
+            Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
+                '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")
         }
     }
     Invoke-ApiBuildStep $context 'APIShared.csproj' -Category compile -When always -Action {
@@ -125,6 +134,7 @@ try {
     . (Join-Path $PSScriptRoot 'PublisherPackage.ps1')
     Sync-ApiPublisherPackage $root
     Sync-ApiWorkshopAssets -Root $root
+    Copy-ApiModOptionsView -Root $root
     Remove-ApiLegacyWorkshopView $package
     foreach ($required in @('APIShared.dll','APIShared.xml','APIShared.Content.dll','APIShared.Content.xml','info.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $required))) { throw ($required + ' is missing from the prepared package.') }
@@ -162,6 +172,7 @@ try {
     }
     [void][IO.Directory]::CreateDirectory($destination)
     Assert-ApiWorkshopUnlinkedPath (Join-Path $destination 'Override/Workshop/Workshop.xaml')
+    Assert-ApiWorkshopUnlinkedPath (Join-Path $destination 'Override/APISharedUI/Settings.xaml')
     Remove-ApiLegacyWorkshopView $destination
     foreach ($item in Get-ChildItem -LiteralPath $package -Force) {
         Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force

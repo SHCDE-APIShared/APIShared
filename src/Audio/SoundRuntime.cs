@@ -217,9 +217,8 @@ namespace APIShared.Audio
         {
             if (NativeContract.MeleeFrameRva < 0 || NativeContract.MeleeDamageEndRva > image.Length)
                 throw new InvalidOperationException("Melee damage routine is outside the loaded module.");
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                if (BitConverter.ToString(sha.ComputeHash(image.Slice(NativeContract.MeleeFrameRva, NativeContract.MeleeFrameLength).ToArray())).Replace("-", "") != NativeContract.MeleeFrameHash)
-                    throw new InvalidOperationException("Melee damage frame setup changed or is patched (0x199124..0x1991D9).");
+            if (Sha256Hex.Of(image.Slice(NativeContract.MeleeFrameRva, NativeContract.MeleeFrameLength).ToArray()) != NativeContract.MeleeFrameHash)
+                throw new InvalidOperationException("Melee damage frame setup changed or is patched (0x199124..0x1991D9).");
             foreach (var kill in SoundSources.Kills)
             {
                 int call = kill.ReturnRva - 5;

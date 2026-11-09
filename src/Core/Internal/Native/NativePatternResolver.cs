@@ -43,7 +43,7 @@ namespace APIShared.Internal
                     : "signature-fallback";
             }
 
-            DebugLogHelper.LogDebug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
+            NativeApiLog.Debug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
             return new NativeResolution(rva, method);
         }
 
@@ -74,19 +74,9 @@ namespace APIShared.Internal
                     : "signature-fallback";
             }
 
-            DebugLogHelper.LogDebug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
+            NativeApiLog.Debug(log, $"Native address resolved: name={name}, method={method}, rva=0x{rva:X}.");
             return new NativeResolution(rva, method);
         }
-
-        public static int FindUniquePattern(
-            ReadOnlySpan<byte> memory,
-            string pattern,
-            string name,
-            NativePatternSearchScope searchScope = NativePatternSearchScope.ExecutableSections) =>
-            FindUniquePattern(memory, ParsePattern(pattern), name, searchScope);
-
-        public static bool MatchesPatternAt(ReadOnlySpan<byte> memory, int offset, string pattern) =>
-            MatchesPatternAt(memory, offset, ParsePattern(pattern));
 
         public static NativeCodeRange[] GetExecutableCodeRanges(ReadOnlySpan<byte> memory)
         {

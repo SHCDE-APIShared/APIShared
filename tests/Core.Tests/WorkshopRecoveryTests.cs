@@ -127,11 +127,22 @@ public sealed class WorkshopRecoveryTests
         CollectionAssert.AreEqual(new ulong[] { 123 }, interrupted[0].Items);
         Assert.AreEqual("failure interrupted test", interrupted[0].Failure);
         string request = WorkshopRecovery.StageRollback(game, interrupted, false);
+        Assert.AreEqual(Path.Combine(game, "_APIShared", "T"), Path.GetDirectoryName(request));
         string[] rows = File.ReadAllLines(Path.Combine(request, "operations.tsv"));
         Assert.AreEqual(WorkshopRecovery.Protocol, rows[0]); Assert.AreEqual("stop", rows[1]);
         Assert.AreEqual("partial", File.ReadAllText(Path.Combine(game, Target)));
         Assert.AreEqual("applying", File.ReadAllLines(Path.Combine(old, "journal.log"))[0]);
         Assert.AreNotEqual(old, request);
+    }
+    [TestMethod] public void DuplicateTransactionIdentityBlocksRecoveryWithoutTouchingEitherCopy()
+    {
+        string duplicate = Path.Combine(game, "_APIShared", "T", Path.GetFileName(old));
+        Directory.CreateDirectory(duplicate);
+        string original = File.ReadAllText(Path.Combine(old, "journal.log"));
+        var error = Assert.ThrowsExactly<InvalidDataException>(() => WorkshopRecovery.Inspect(game));
+        Assert.AreEqual(WorkshopDiagnosticLevel.Warning, WorkshopDiagnostics.Level(error));
+        Assert.AreEqual(original, File.ReadAllText(Path.Combine(old, "journal.log")));
+        Assert.IsTrue(Directory.Exists(duplicate));
     }
     [TestMethod] public void MissingBackupDisablesRollbackButKeepsRepairIdentity()
     {

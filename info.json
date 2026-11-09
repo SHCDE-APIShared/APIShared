@@ -3,13 +3,96 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.27.0",
+  "Version": "0.40.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.40.0",
+      "Changes": [
+        "Mods can now set or multiply the production bonus for each non-neutral fear level. They can also reduce output. The neutral level still contributes zero, and the separate fixed production bonus continues to apply where eligible.",
+        "Worker production profiles report the resolved fear bonus for each level. Shared start checks reject unsafe combinations and check agreement between multiplayer peers."
+      ]
+    },
+    {
+      "Version": "0.38.0",
+      "Changes": [
+        "Add the Wildlife hunting service: HuntablePrey lets mods make further animal types huntable, with an optional base meat amount, Hunters taking such animals of their own player and corpse removal when butchering starts; the catalog of a mission is frozen at its start and checked in multiplayer.",
+        "Add HunterTargetPolicies and HunterMeatYieldEvents so mods can admit or refuse Hunter targets and set the meat a Hunter gets per animal.",
+        "Add Herds, HerdRouteEvents and HerdFlightRules so mods can read and spawn animal herds, shorten or redirect their routes and keep deer and goat herds calm.",
+        "Fix the Hunter unit id that the Script Extender reports in OnUnitHunterQueryTarget and OnHunterPickUpMeat."
+      ]
+    },
+    {
+      "Version": "0.37.0",
+      "Changes": [
+        "Add SideHudVisibility.TryGetState so mod overlays can distinguish Hide HUD from other reasons the Vanilla side HUD is hidden."
+      ]
+    },
+    {
+      "Version": "0.36.0",
+      "Changes": [
+        "Expose the current skin of a player's living Lord and classification of captured Lord materials."
+      ]
+    },
+    {
+      "Version": "0.35.0",
+      "Changes": [
+        "Add RouteEngineInfo so rule mods can see whether a route engine applies their rules, and TroopActionHud.ForeignPanelActivating so regular panel menus can close when another mod shows its own troop panel."
+      ]
+    },
+    {
+      "Version": "0.34.0",
+      "Changes": [
+        "Add shared WorkerProductionModifiers profiles for exact Human/AI output-base factors and staged fixed production bonuses; retain the legacy bonus override API.",
+        "Expose immutable desired-owner snapshots, exact resolved amounts and structured validation results for consumer settings and diagnostics.",
+        "Coordinate production protection, fractional save data, unit transfers, atomic critical saves and authenticated multiplayer admission through common APIShared owners."
+      ]
+    },
+    {
+      "Version": "0.33.0",
+      "Changes": [
+        "Add owner-bound first-PlayState readiness for the current mission, with Unity-thread events and replay. Delayed loading, multiplayer startup and pause never expire the wait; existing mission Start semantics stay unchanged."
+      ]
+    },
+    {
+      "Version": "0.32.0",
+      "Changes": [
+        "Add independent owner-bound adornments on Vanilla ally-goods icons; retain commands, bindings and successful controls across selection changes and refreshes."
+      ]
+    },
+    {
+      "Version": "0.31.0",
+      "Changes": [
+        "Add typed Vanilla troop-action buttons with adaptive overflow, an expandable Vanilla-style grid and a persisted local auto-close checkbox; retain legacy host layout and the independent action strip."
+      ]
+    },
+    {
+      "Version": "0.30.0",
+      "Changes": [
+        "Add owner-bound AI military spawn capture, semantic role admission and protected unmanaged troops, with native current-order initialization and regular/additional recruitment accounting.",
+        "Persist editor map declarations, actual saved army state and cumulative engineering provenance, with early load protection and multiplayer map-record readiness.",
+        "Share strategic/task observations and effective Original receipts across consumers without competing native hooks; retain existing save callback timing with opt-in early preparation."
+      ]
+    },
+    {
+      "Version": "0.29.0",
+      "Changes": [
+        "Add cooperative sections and immutable selection observations for the Vanilla ally goods dialog, preserving independent mod controls and quantity commands.",
+        "Add synchronous bounded ally gifts, physical storage queries and native transfer observations with explicit veto and measured balance changes."
+      ]
+    },
+    {
+      "Version": "0.28.0",
+      "Changes": [
+        "Add ordered BeforeFixedValue and opt-in AfterFixedValue numeric contributions for shared health, market base prices, popularity, fear popularity and AI sale policies while preserving existing API meanings and final safety rules.",
+        "Coordinate initialization-only unit and building maximum HP from saved original bases, including same-slot type transitions, legacy Lord import and jointly bounded siege towers; keep maxima frozen after initialization.",
+        "Compose native market lot prices across transaction and display paths, preserve legacy total-price vetoes and direct foreign fixed values, and retain bounded save ownership without multiplier compounding."
+      ]
+    },
     {
       "Version": "0.27.0",
       "Changes": [

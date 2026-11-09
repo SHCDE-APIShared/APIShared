@@ -18,11 +18,15 @@ public sealed class WorkshopDiagnosticsTests
         var logs = new List<(WorkshopDiagnosticLevel Level, string Text)>();
         string context = WorkshopDiagnostics.Context(42, "Pack", "1.0.0", "1.0.1", "prepare Update");
         WorkshopDiagnostics.Failure((level, text) => logs.Add((level, text)), context, exception);
-        Assert.HasCount(2, logs);
+        Assert.HasCount(3, logs);
+        StringAssert.Contains(logs[0].Text, "standalone or manual test installation");
         foreach (var log in logs) {
             Assert.AreEqual(WorkshopDiagnosticLevel.Warning, log.Level);
             StringAssert.Contains(log.Text, "item=42"); StringAssert.Contains(log.Text, "installed=1.0.0");
-            StringAssert.Contains(log.Text, "available=1.0.1"); StringAssert.Contains(log.Text, "existingPath=");
+            StringAssert.Contains(log.Text, "available=1.0.1");
+        }
+        foreach (var log in logs.Skip(1)) {
+            StringAssert.Contains(log.Text, "existingPath=");
             StringAssert.Contains(log.Text, "allowedRoots=" + Path.GetFullPath(Path.Combine(game, "BepInEx/plugins/Pack")));
         }
         // Ownership depends on location, including when both versions are equal.
@@ -54,6 +58,38 @@ public sealed class WorkshopDiagnosticsTests
         var receiptError = new WorkshopCatalogItem { Title = "Installation state", DiagnosticError = new IOException("Unreadable receipt") };
         Assert.AreEqual(WorkshopDiagnosticLevel.Error, WorkshopDiagnostics.Catalog(Write, receiptError));
         StringAssert.Contains(logs[2].Text, "Unreadable receipt");
+    }
+
+    [TestMethod]
+    public void StartupSummarizesUnidentifiedSubscriptionsWithoutBlockingKnownPackages()
+    {
+        var logs = new List<(WorkshopDiagnosticLevel Level, string Text)>();
+        void Write(WorkshopDiagnosticLevel level, string text) => logs.Add((level, text));
+        var unidentified = new[] {
+            new WorkshopCatalogItem { WorkshopId = 1, IsSubscribed = true },
+            new WorkshopCatalogItem { WorkshopId = 2, IsSubscribed = true },
+        };
+        WorkshopDiagnostics.ReportStartupCatalog(Write, unidentified, out bool blocked, out int failures);
+        Assert.IsFalse(blocked);
+        Assert.AreEqual(0, failures);
+        Assert.HasCount(1, logs);
+        Assert.AreEqual(WorkshopDiagnosticLevel.Info, logs[0].Level);
+        StringAssert.Contains(logs[0].Text, "2 subscription");
+
+        logs.Clear();
+        WorkshopDiagnostics.ReportStartupCatalog(Write, new[] {
+            unidentified[0],
+            new WorkshopCatalogItem { WorkshopId = 3, IsSubscribed = true, InstalledVersion = "1.0.0" },
+            new WorkshopCatalogItem { WorkshopId = 4, IsSubscribed = true,
+                DiagnosticError = new InvalidDataException("Malformed manifest") },
+            new WorkshopCatalogItem { WorkshopId = 5, IsSubscribed = true, CanInstall = true,
+                Package = new WorkshopPackage { Version = "1.0.0" } },
+        }, out blocked, out failures);
+        Assert.IsTrue(blocked);
+        Assert.AreEqual(1, failures);
+        CollectionAssert.AreEqual(
+            new[] { WorkshopDiagnosticLevel.Warning, WorkshopDiagnosticLevel.Error, WorkshopDiagnosticLevel.Info },
+            logs.Select(entry => entry.Level).ToArray());
     }
 
     [TestMethod]

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Savegames
 {
@@ -54,16 +55,19 @@ namespace APIShared.Savegames
         /// ignoring case (the archive's name comparison).</summary>
         internal List<KeyValuePair<string, string>> SimulationRecords
         {
-            get
-            {
-                Slot[] snapshot;
-                lock (sync) snapshot = slots;
-                var result = new List<KeyValuePair<string, string>>();
-                foreach (Slot slot in snapshot)
-                    if (slot.SimulationRelevant) result.Add(new KeyValuePair<string, string>(slot.Owner, slot.Identifier));
-                result.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Value, b.Value));
-                return result;
-            }
+            get { return GetSimulationRecords(false); }
+        }
+        internal List<KeyValuePair<string, string>> MapSimulationRecords => GetSimulationRecords(true);
+        private List<KeyValuePair<string, string>> GetSimulationRecords(bool map)
+        {
+            Slot[] snapshot;
+            lock (sync) snapshot = slots;
+            var result = new List<KeyValuePair<string, string>>();
+            foreach (Slot slot in snapshot)
+                if (slot.SimulationRelevant && (!map || slot.Scope == VersionedSaveScope.SaveGamesAndMaps))
+                    result.Add(new KeyValuePair<string, string>(slot.Owner, slot.Identifier));
+            result.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Value, b.Value));
+            return result;
         }
 
         internal bool TryRegister(VersionedSaveDataRegistration registration, out VersionedSaveDataHandle handle, out string reason)
@@ -86,15 +90,7 @@ namespace APIShared.Savegames
                 catch (Exception ex) { reason = "Script Extender registration failed: " + ex.Message; return false; }
                 if (!accepted)
                 { reason = "Script Extender rejected the identifier (already registered by another handler, or invalid)."; return false; }
-                var next = new Slot[slots.Length + 1];
-                Array.Copy(slots, next, slots.Length);
-                next[next.Length - 1] = slot;
-                Array.Sort(next, (a, b) =>
-                {
-                    int comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Identifier, b.Identifier);
-                });
-                slots = next;
+                slots = OrderedRegistrations.WithAdded(slots, slot, Slot.Key);
             }
             handle = slot.Handle;
             reason = string.Empty;
@@ -164,10 +160,59 @@ namespace APIShared.Savegames
             }
         }
 
+        // Called only after the entire early archive read. Missing entries are now known to be absent.
+        // Non-opt-in registrations retain their previous migration/callback timing in EndLoad.
+        internal void PrepareLoad()
+        {
+            Slot[] snapshot;
+            long currentGeneration;
+            VersionedSaveLoadSource source;
+            string file;
+            lock (sync)
+            {
+                if (!windowOpen) return;
+                snapshot = slots; currentGeneration = generation; source = windowSource; file = windowFile;
+            }
+            foreach (Slot slot in snapshot)
+            {
+                byte[] bytes;
+                lock (sync)
+                {
+                    if (!windowOpen || generation != currentGeneration) return;
+                    if (slot.Prepared == null || slot.PreparedOutcome != null) continue;
+                    bytes = slot.Pending;
+                }
+                Outcome outcome = Read(slot, bytes, source, file);
+                lock (sync)
+                {
+                    if (!windowOpen || generation != currentGeneration) return;
+                    slot.PreparedOutcome = outcome;
+                }
+                // Each callback owns its byte arrays. The early consumer may retain or modify
+                // its copy without mutating the cached migration result delivered in Post.
+                try { slot.Prepared(CopyLoad(outcome.Load)); }
+                catch (Exception ex)
+                {
+                    Fail("Versioned save data prepared callback failed for " + slot.Identifier + ": " + ex);
+                    lock (sync)
+                        if (generation == currentGeneration) slot.PreparedFailed = true;
+                }
+            }
+        }
+
+        private static VersionedSaveLoad CopyLoad(VersionedSaveLoad load)
+        {
+            var entries = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            foreach (var entry in load.Entries) entries.Add(entry.Key, (byte[])entry.Value.Clone());
+            return new VersionedSaveLoad(load.Status, load.Source, load.FilePath, load.RecordVersion,
+                load.MinimumReaderVersion, entries, load.KeptEntryCount, load.Detail);
+        }
+
         internal void EndLoad()
         {
             Slot[] snapshot;
             byte[][] pending;
+            Outcome[] prepared;
             long loadGeneration;
             VersionedSaveLoadSource source;
             string file;
@@ -177,7 +222,12 @@ namespace APIShared.Savegames
                 windowOpen = false;
                 snapshot = slots;
                 pending = new byte[snapshot.Length][];
-                for (int i = 0; i < snapshot.Length; i++) { pending[i] = snapshot[i].Pending; snapshot[i].Pending = null; }
+                prepared = new Outcome[snapshot.Length];
+                for (int i = 0; i < snapshot.Length; i++)
+                {
+                    pending[i] = snapshot[i].Pending; snapshot[i].Pending = null;
+                    prepared[i] = snapshot[i].PreparedOutcome;
+                }
                 loadGeneration = generation;
                 source = windowSource;
                 file = windowFile;
@@ -185,14 +235,14 @@ namespace APIShared.Savegames
             for (int i = 0; i < snapshot.Length; i++)
             {
                 Slot slot = snapshot[i];
-                Outcome outcome = Read(slot, pending[i], source, file);
+                Outcome outcome = prepared[i] ?? Read(slot, pending[i], source, file);
                 lock (sync)
                 {
                     if (generation != loadGeneration) return; // A newer load or unload owns the state now.
                     slot.LoadedBytes = outcome.LoadedBytes;
-                    slot.KeepLoaded = outcome.Keep;
+                    slot.KeepLoaded = outcome.Keep || slot.PreparedFailed;
                     slot.Unknown = outcome.Unknown;
-                    slot.Handle.SetKeepsLoaded(outcome.Keep);
+                    slot.Handle.SetKeepsLoaded(slot.KeepLoaded);
                 }
                 if (outcome.Load.Status != VersionedSaveLoadStatus.Restored &&
                     outcome.Load.Status != VersionedSaveLoadStatus.NoRecord &&
@@ -381,6 +431,7 @@ namespace APIShared.Savegames
                 Migrations = migrations;
                 Capture = registration.Capture;
                 Loaded = registration.Loaded;
+                Prepared = registration.Prepared;
                 Scope = registration.Scope;
                 Legacy = registration.LegacyReader;
                 SimulationRelevant = registration.SimulationRelevant;
@@ -393,19 +444,26 @@ namespace APIShared.Savegames
             internal readonly VersionedSaveMigration[] Migrations;
             internal readonly VersionedSaveCapture Capture;
             internal readonly Action<VersionedSaveLoad> Loaded;
+            internal readonly Action<VersionedSaveLoad> Prepared;
             internal readonly VersionedSaveScope Scope;
             internal readonly VersionedSaveLegacyReader Legacy;
             internal readonly bool SimulationRelevant;
             internal readonly VersionedSaveDataHandle Handle;
+            // The save data identifier is the registration ID.
+            internal static readonly Func<Slot, RegistrationKey> Key = slot => new RegistrationKey(slot.Owner, slot.Identifier);
 
             // Guarded by the registry lock.
             internal byte[] Pending;
+            internal Outcome PreparedOutcome;
+            internal bool PreparedFailed;
             internal byte[] LoadedBytes;
             internal bool KeepLoaded;
             internal List<KeyValuePair<string, byte[]>> Unknown;
 
             internal void ResetMission()
             {
+                PreparedOutcome = null;
+                PreparedFailed = false;
                 LoadedBytes = null;
                 KeepLoaded = false;
                 Unknown = null;

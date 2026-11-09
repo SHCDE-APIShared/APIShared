@@ -26,7 +26,7 @@ namespace APIShared.ScriptExtenderFixes
                 Internal.InstalledAssemblyIdentity.GameAssemblyPath(BepInEx.Paths.GameRootPath), managed);
             var candidate = new PopularityDisplayRuntime();
             candidate.presentation = new PopularityPresentation(candidate.Capture,
-                text => log.LogInfo(Stamp(text)), text => log.LogError(Stamp(text)));
+                text => NativeApiLog.Info(log, text), text => NativeApiLog.Error(log, text));
             if (!ApiShared.ForMod(APISharedPlugin.PluginGuid).TryGetMissionLifecycle(out var missions, out var diagnostic) ||
                 !missions.TryRegisterObserver("popularity-display", candidate.Started, candidate.Ended, null, out diagnostic))
                 throw new InvalidOperationException("Popularity display mission lifecycle unavailable: " + diagnostic?.Reason);
@@ -43,6 +43,5 @@ namespace APIShared.ScriptExtenderFixes
             var selection=Economy.PopularityPlayerRuntime.CaptureReport(PlayerPerspectiveAPI.GetViewedPlayerId());
             return new PopularityDisplayCapture(current,parameters.Refresh(selection),selection);
         }
-        private static string Stamp(string text) => "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + text;
     }
 }

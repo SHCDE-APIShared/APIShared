@@ -47,7 +47,7 @@ namespace APIShared.Presentation
             var lines = provider(previousContext);
             if (lines == null || lines.Count == 0)
             { previousLines = null; converted = Array.Empty<TooltipLine>(); return converted; }
-            if (!BuildingTooltipRegistry.Same(previousLines ?? Array.Empty<BuildingTooltipLine>(), lines))
+            if (!BuildingTooltipLines.Same(previousLines ?? Array.Empty<BuildingTooltipLine>(), lines))
             {
                 var copy = new BuildingTooltipLine[lines.Count]; var result = new TooltipLine[lines.Count];
                 for (int i = 0; i < lines.Count; i++)

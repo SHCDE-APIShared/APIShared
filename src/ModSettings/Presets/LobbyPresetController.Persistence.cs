@@ -16,6 +16,8 @@ namespace APIShared.ModSettings
     internal sealed partial class LobbyPresetController
     {
         private bool initialSettingsLoaded;
+        // The disk file lags the working state (deferred single edit or failed write).
+        private bool personalStorageWritePending;
 
         // Runs before UI binding, with writes disabled. External providers retain ownership
         // of their startup configuration; APIShared must not replay a stale working file there.
@@ -98,7 +100,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Preset metadata is invalid: {exception}");
                     storage.BackupCorruptFile();
@@ -130,7 +132,7 @@ namespace APIShared.ModSettings
                 catch (Exception exception)
                 {
                     legacyMigrationPending = true;
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not publish legacy presets; the valid MessagePack data was retained for retry; " +
                         DescribeMigrationFailure(exception));
@@ -157,7 +159,7 @@ namespace APIShared.ModSettings
                     catch (Exception exception)
                     {
                         legacyMigrationPending = true;
-                        DebugLogHelper.LogError(
+                        NativeApiLog.Error(
                             log,
                             $"[{modName}] Could not publish the legacy lobby-settings preset; the original file was retained for retry; " +
                             DescribeMigrationFailure(exception));
@@ -216,21 +218,56 @@ namespace APIShared.ModSettings
             $"destinationDirectoryLength={personalPresetDirectory.Length}, {storage.DiagnosticPaths}, " +
             $"errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}: {error}";
 
+        // Writes the complete current state, so it also completes any deferred single edit.
         private void WriteCombinedPayload()
         {
             if (persistedProperties.Length == 0 || legacyMigrationPending)
+            {
+                // These states never mirror the working state to disk.
+                personalStorageWritePending = false;
                 return;
+            }
 
-            Dictionary<string, byte[]> payload = ComposeSafeTopLevelSnapshot();
-            payload[SchemaVersionKey] = MessagePackSerializer.Serialize(SchemaVersion);
-            payload[CurrentSettingsKey] = MessagePackSerializer.Serialize(preset1 ?? Clone(defaults));
-            if (!string.IsNullOrEmpty(basedOnStableId))
-                payload[BasedOnPresetKey] = MessagePackSerializer.Serialize(basedOnStableId);
-            payload[PresetDirtyKey] = MessagePackSerializer.Serialize(presetDirty);
-            payload[LegacyPresetImportCompletedKey] = MessagePackSerializer.Serialize(legacyPresetImportCompleted);
+            personalStorageWritePending = true;
+            try
+            {
+                Dictionary<string, byte[]> payload = ComposeSafeTopLevelSnapshot();
+                payload[SchemaVersionKey] = MessagePackSerializer.Serialize(SchemaVersion);
+                payload[CurrentSettingsKey] = MessagePackSerializer.Serialize(preset1 ?? Clone(defaults));
+                if (!string.IsNullOrEmpty(basedOnStableId))
+                    payload[BasedOnPresetKey] = MessagePackSerializer.Serialize(basedOnStableId);
+                payload[PresetDirtyKey] = MessagePackSerializer.Serialize(presetDirty);
+                payload[LegacyPresetImportCompletedKey] = MessagePackSerializer.Serialize(legacyPresetImportCompleted);
 
-            storage.Write(payload);
+                personalStorageWritePending = !storage.Write(payload);
+            }
+            finally
+            {
+                // A failed write is retried at the next flush point.
+                if (personalStorageWritePending)
+                    PersonalSettingsWriteQueue.Track(this);
+            }
         }
+
+        // Single edits mirror the working state after a quiet period instead of on every change.
+        private void DeferPersonalStorageWrite()
+        {
+            personalStorageWritePending = true;
+            if (!PersonalSettingsWriteQueue.TryDefer(this))
+                WriteCombinedPayload();
+        }
+
+        /// <summary>Writes a pending personal settings mirror now. Call on the Unity thread; a failure stays pending.</summary>
+        internal void FlushPersonalStorage()
+        {
+            // A snapshot application completes synchronously; its owner writes or defers afterwards.
+            if (personalStorageWritePending && !applying)
+                WriteCombinedPayload();
+        }
+
+#if API_SHARED_PRESET_TESTS
+        internal bool HasPendingPersonalStorageWrite => personalStorageWritePending;
+#endif
 
         private Dictionary<string, byte[]> ComposeSafeTopLevelSnapshot()
         {

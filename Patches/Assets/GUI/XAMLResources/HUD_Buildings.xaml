@@ -56,4 +56,44 @@
   <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='EngineersCostsText']" AttributeName="apt:TooltipAnchor.Anchor" Value="Recruitment" />
   <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='TunellersCostsText']" AttributeName="apt:TooltipAnchor.Anchor" Value="Recruitment" />
   <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='MonkCostsText']" AttributeName="apt:TooltipAnchor.Anchor" Value="Recruitment" />
+  <Operation Type="InsertAfter" XPath="//n:Grid[@Name='BlacksmithsPanel']">
+    <Content>
+      <Grid x:Name="APISharedWeaponProductionPanel" Width="800" Height="170"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Visibility="Collapsed" Panel.ZIndex="30">
+        <Grid.Resources>
+          <Style x:Key="APISharedWeaponProductionButton" TargetType="{x:Type Button}">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Template">
+              <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                  <Border x:Name="Frame" Background="#FF33271C" BorderBrush="#FFA89068" BorderThickness="1" CornerRadius="3">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter TargetName="Frame" Property="Background" Value="#FF55402A" />
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                      <Setter TargetName="Frame" Property="Background" Value="#FF79562A" />
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                      <Setter TargetName="Frame" Property="Opacity" Value="0.45" />
+                    </Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </Setter.Value>
+            </Setter>
+          </Style>
+        </Grid.Resources>
+        <TextBlock x:Name="APISharedWeaponProductionCurrent" Width="152" Height="20" Margin="160,86,0,0"
+                   HorizontalAlignment="Left" VerticalAlignment="Top" FontSize="14"
+                   IsHitTestVisible="False" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="APISharedWeaponProductionNext" Width="152" Height="20" Margin="160,108,0,0"
+                   HorizontalAlignment="Left" VerticalAlignment="Top" FontSize="14"
+                   IsHitTestVisible="False" TextTrimming="CharacterEllipsis" />
+        <Grid x:Name="APISharedWeaponProductionSlots" />
+      </Grid>
+    </Content>
+  </Operation>
 </Patch>

@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Statistics
 {
@@ -13,6 +14,8 @@ namespace APIShared.Statistics
     {
         private static readonly object registrations = new object();
         private static EngineReadbackRegistration[] entries = new EngineReadbackRegistration[0];
+        private static readonly Func<EngineReadbackRegistration, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.Owner, entry.Id);
         private static object gate;
         private static int pending;
         [ThreadStatic] private static int runDepth;
@@ -37,13 +40,9 @@ namespace APIShared.Statistics
             lock (registrations)
             {
                 var current = entries;
-                foreach (var entry in current)
-                    if (entry.Owner == ownerGuid && entry.Id == id) { reason = "Duplicate engine readback registration: " + ownerGuid + "/" + id; return false; }
+                if (OrderedRegistrations.Contains(current, RegistrationKeyOf, ownerGuid, id)) { reason = "Duplicate engine readback registration: " + ownerGuid + "/" + id; return false; }
                 registration = new EngineReadbackRegistration(ownerGuid, id, copy);
-                var next = new EngineReadbackRegistration[current.Length + 1];
-                Array.Copy(current, next, current.Length); next[current.Length] = registration;
-                Array.Sort(next, (a, b) => { int owner = string.CompareOrdinal(a.Owner, b.Owner); return owner != 0 ? owner : string.CompareOrdinal(a.Id, b.Id); });
-                Volatile.Write(ref entries, next);
+                Volatile.Write(ref entries, OrderedRegistrations.WithAdded(current, registration, RegistrationKeyOf));
                 reason = null;
                 return true;
             }

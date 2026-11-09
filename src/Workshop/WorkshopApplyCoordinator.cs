@@ -33,4 +33,20 @@ namespace APIShared.Workshop
             }
         }
     }
+
+    // Queueing is consent to hand off at a normal game exit, not to close the game.
+    internal sealed class WorkshopShutdownHandoff
+    {
+        private Action pending;
+        internal bool Pending => Volatile.Read(ref pending) != null;
+
+        internal void Queue(Action handoff)
+        {
+            if (handoff == null) throw new ArgumentNullException(nameof(handoff));
+            if (Interlocked.CompareExchange(ref pending, handoff, null) != null)
+                throw new InvalidOperationException("A Workshop installation is already queued for game exit.");
+        }
+
+        internal void Run() => Interlocked.Exchange(ref pending, null)?.Invoke();
+    }
 }

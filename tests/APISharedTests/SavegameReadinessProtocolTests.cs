@@ -29,7 +29,7 @@ namespace APISharedTests
                 Records = records, Reason = "why" };
             byte[] bytes = MessagePackSerializer.Serialize(packet);
             var copy = MessagePackSerializer.Deserialize<SavegameLoadPacket>(bytes);
-            Assert.AreEqual(SavegameLoadPacket.CurrentVersion, copy.Version);
+            Assert.AreEqual(2, copy.Version, "Map changes must preserve the published save readiness wire version.");
             Assert.AreEqual(1, copy.Operation);
             Assert.AreEqual("why", copy.Reason);
             Assert.AreEqual(2, copy.Records.Count);
@@ -71,6 +71,64 @@ namespace APISharedTests
             Assert.AreEqual(-1, packet.Operation);
             Assert.IsNull(packet.Token);
         }
+
+        [TestMethod]
+        public void MapProposalAndObservationRoundTripWithMetadata()
+        {
+            var envelope = new MapRecordReadinessPacket { Value = MapProposal(MapRecordReadinessPacket.CurrentVersion) };
+            foreach (int operation in new[] { 0, MapRecordReadinessPacket.ObservationOperation })
+            {
+                envelope.Value.Operation = operation;
+                envelope.Value.Metadata = new byte[] { 7, 9, 11 };
+                byte[] bytes = MessagePackSerializer.Serialize(envelope);
+                var copy = MessagePackSerializer.Deserialize<MapRecordReadinessPacket>(bytes).Value;
+                Assert.AreEqual(4, copy.Version);
+                Assert.AreEqual(operation, copy.Operation);
+                Assert.AreEqual(Token, copy.Token);
+                CollectionAssert.AreEqual(envelope.Value.Metadata, copy.Metadata);
+
+                // A protocol-3 reader reports an unknown map version without interpreting its metadata.
+                var previousReader = new MessagePackReader(bytes);
+                var previousMap = SavegameLoadPacketFormatter.Read(ref previousReader, 3, 2);
+                Assert.AreEqual(copy.Version, previousMap.Version);
+                Assert.AreEqual(-1, previousMap.Operation);
+                Assert.IsNull(previousMap.Token);
+                Assert.IsTrue(previousReader.End);
+
+                var save = MessagePackSerializer.Deserialize<SavegameLoadPacket>(bytes);
+                Assert.AreEqual(copy.Version, save.Version);
+                Assert.AreEqual(-1, save.Operation);
+                Assert.IsNull(save.Metadata);
+            }
+        }
+
+        [DataRow(2)]
+        [DataRow(3)]
+        [TestMethod]
+        public void OldMapProposalsRetainIdentityForScopedCancellation(int version)
+        {
+            var proposal = MapProposal(version);
+            var envelope = new MapRecordReadinessPacket { Value = proposal };
+            var copy = MessagePackSerializer.Deserialize<MapRecordReadinessPacket>(MessagePackSerializer.Serialize(envelope)).Value;
+            Assert.AreEqual(version, copy.Version);
+            Assert.AreEqual(0, copy.Operation);
+            Assert.AreEqual(proposal.Lobby, copy.Lobby);
+            Assert.AreEqual(Token, copy.Token);
+            Assert.AreEqual(proposal.Fingerprint, copy.Fingerprint);
+            Assert.AreEqual(proposal.Roster, copy.Roster);
+            Assert.AreEqual(proposal.Checksum, copy.Checksum);
+
+            copy.Operation = 3;
+            var oldReader = new MessagePackReader(MessagePackSerializer.Serialize(new MapRecordReadinessPacket { Value = copy }));
+            var cancel = SavegameLoadPacketFormatter.Read(ref oldReader, version);
+            Assert.AreEqual(version, cancel.Version);
+            Assert.AreEqual(3, cancel.Operation);
+            Assert.AreEqual(Token, cancel.Token);
+        }
+
+        private static SavegameLoadPacket MapProposal(int version) =>
+            new SavegameLoadPacket { Version = version, Operation = 0, Lobby = 123, Token = Token, SaveName = "map",
+                Fingerprint = new string('A', 64), Roster = "101,102", Checksum = 17 };
 
         [TestMethod]
         public void OversizedOrMalformedRecordListsAreRejected()

@@ -4,7 +4,6 @@ using RedBird.Backends.NativeX64;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 
 namespace APIShared.Audio
 {
@@ -45,7 +44,7 @@ namespace APIShared.Audio
         internal static string HashFile(string path)
         {
             using (var stream = File.OpenRead(path))
-            using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
+                return Sha256Hex.Of(stream);
         }
 
         // suspendThreads=false is for private test copies no other thread can execute (RedBird's

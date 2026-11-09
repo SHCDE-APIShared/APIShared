@@ -49,7 +49,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(log, $"Published preset [{preset.SourcePath}] is incompatible with [{modName}]: {exception.Message}");
+                    NativeApiLog.Error(log, $"Published preset [{preset.SourcePath}] is incompatible with [{modName}]: {exception.Message}");
                 }
             }
             publishedPresets.Clear();
@@ -139,7 +139,7 @@ namespace APIShared.ModSettings
                 catch (Exception exception)
                 {
                     succeeded = false;
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not import staged personal preset [{source}]: {exception.Message}");
                 }
@@ -217,6 +217,8 @@ namespace APIShared.ModSettings
             IEnumerable<PresetSaveSelection> selections,
             bool overwrite)
         {
+            // An explicit save also stores the working settings that are still pending.
+            FlushPersonalStorage();
             PresetSaveSelection[] selectedSettings = (selections ?? Enumerable.Empty<PresetSaveSelection>()).ToArray();
             if (selectedSettings.Length == 0)
                 throw new InvalidDataException("At least one setting must be selected for saving.");
@@ -288,7 +290,7 @@ namespace APIShared.ModSettings
 
         public void LogPresetOperationFailure(string operation, string id, Exception exception)
         {
-            DebugLogHelper.LogError(
+            NativeApiLog.Error(
                 log,
                 $"[{modName}] Personal preset operation [{operation}] for [{id ?? string.Empty}] failed: {exception}");
         }
@@ -421,13 +423,23 @@ namespace APIShared.ModSettings
             catch (PresetSaveFileExistsException) { throw; } // Expected UI conflict retains its typed contract.
             catch (Exception error)
             {
-                try { DebugLogHelper.LogError(log, $"[{modName}] " + DescribePublicationFailure(stage, path, temporaryPath, error)); }
+                try { NativeApiLog.Error(log, $"[{modName}] " + DescribePublicationFailure(stage, path, temporaryPath, error)); }
                 catch { /* Preserve the original publication exception if a logger fails. */ }
                 throw;
             }
             finally
             {
-                if (ownsTemporaryFile && File.Exists(temporaryPath)) File.Delete(temporaryPath);
+                try
+                {
+                    if (ownsTemporaryFile && File.Exists(temporaryPath))
+                        File.Delete(temporaryPath);
+                }
+                catch (Exception exception)
+                {
+                    NativeApiLog.Warning(
+                        log,
+                        $"[{modName}] Could not remove temporary preset file [{temporaryPath}]: {exception.Message}");
+                }
             }
         }
 

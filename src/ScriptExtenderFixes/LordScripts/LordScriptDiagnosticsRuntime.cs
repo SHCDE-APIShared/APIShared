@@ -6,7 +6,6 @@ using SHCDESE.API.Components.ModManager;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace APIShared.ScriptExtenderFixes
 {
@@ -17,7 +16,6 @@ namespace APIShared.ScriptExtenderFixes
     // only: nothing is blocked, sent or changed.
     internal static class LordScriptDiagnosticsRuntime
     {
-        private const int MaxPlayers = 8;
         private static IMissionLifecycleCapability lifecycle;
         private static ManualLogSource log;
         private static bool initialized;
@@ -65,7 +63,7 @@ namespace APIShared.ScriptExtenderFixes
                     packages[registered.Key.GUID] = registered.Key;
 
             var slots = new List<LordScriptSlot>();
-            for (int playerId = 1; playerId <= MaxPlayers; playerId++)
+            for (int playerId = PlayerSlots.FirstPlayerId; playerId <= PlayerSlots.LastPlayerId; playerId++)
             {
                 string name = ai.GetCustomAILordNameByPlayerId(playerId);
                 // Same lookup as Script Extender (culture-sensitive ToLower, matching LordDataDict keys).
@@ -91,8 +89,7 @@ namespace APIShared.ScriptExtenderFixes
             try
             {
                 if (!File.Exists(path)) return "missing";
-                using (SHA256 sha = SHA256.Create())
-                    return BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").Substring(0, 16);
+                return Sha256Hex.Of(File.ReadAllBytes(path)).Substring(0, 16);
             }
             catch (Exception exception)
             {

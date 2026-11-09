@@ -57,6 +57,21 @@ function Sync-ApiWorkshopAssets {
     }
 }
 
+function Copy-ApiModOptionsView {
+    param([Parameter(Mandatory)][string]$Root)
+    $relative = 'Override/APISharedUI/Settings.xaml'
+    $source = Join-Path $Root $relative
+    $target = Join-Path $Root ('BepInEx/plugins/APIShared_Serp/' + $relative)
+    Assert-ApiWorkshopUnlinkedPath $source
+    Assert-ApiWorkshopUnlinkedPath $target
+    $expected = Get-WorkshopFileHash $source
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+    [IO.File]::Copy($source, $target, $true)
+    if ((Get-WorkshopFileHash $target) -cne $expected -or (Get-WorkshopFileHash $source) -cne $expected) {
+        throw 'APIShared Mod Options view differs from source.'
+    }
+}
+
 # Only this previously shipped immutable view is obsolete. Never remove an
 # edited copy or other files from the installed updater/template directory.
 function Remove-ApiLegacyWorkshopView {
