@@ -197,9 +197,11 @@ namespace APIShared
         }
 
         private static readonly Func<bool, int> RunWithConsumers = RunWithSelectionAndReadbacks;
+        private static readonly Func<bool, int> RunWithTroopInput =
+            mpFrameSkip => Units.TroopCommandInputEvents.Run(mpFrameSkip, RunWithConsumers);
 
         private static int RunOriginal(bool mpFrameSkip) =>
-            Simulation.EngineRunEvents.Invoke(mpFrameSkip, RunWithConsumers);
+            Simulation.EngineRunEvents.Invoke(mpFrameSkip, RunWithTroopInput);
 
         private static int RunWithSelectionAndReadbacks(bool mpFrameSkip)
         {

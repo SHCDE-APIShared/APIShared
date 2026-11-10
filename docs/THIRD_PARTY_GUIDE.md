@@ -299,6 +299,18 @@ paths reaching the native pair predicate. It does not cover all attack orders,
 damage sources or the Hunter bypass. A nonmatch preserves the original result.
 This API does not negotiate treaties or synchronize consumer settings itself.
 
+## Troop-command observation
+
+Register with `Units.TroopCommandInputEvents.TryRegister` after managed
+initialization (APIShared 0.44.0+). The observer receives the final local map
+tile and an immutable list of unit IDs in cursor order. Slots filtered out
+by the Extender are omitted. The observer runs synchronously
+under the existing engine monitor before Vanilla processes the tick.
+The Extender's selection replacement gestures do not produce a notification.
+The release can represent a move or another action, and Vanilla can still
+reject it. Treat it as local input only. Keep gameplay policy and multiplayer
+authority in the consumer.
+
 ## Managed save observation
 
 Register with `Savegames.ManagedSaveEvents.TryRegister` during startup

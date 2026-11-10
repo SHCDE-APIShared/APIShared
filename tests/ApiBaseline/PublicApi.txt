@@ -3212,6 +3212,12 @@ APIShared.Units.AttackTargetSelector | public .ctor(int? playerId = null, SHCDES
 APIShared.Units.AttackTargetSelector | public SHCDESE.Interop.eChimps? UnitType { get; }
 APIShared.Units.AttackTargetSelector | public int? PlayerId { get; }
 APIShared.Units.AttackTargetSelector | public uint? GlobalId { get; }
+APIShared.Units.TroopCommandInput | public sealed class APIShared.Units.TroopCommandInput
+APIShared.Units.TroopCommandInput | public System.Collections.Generic.IReadOnlyList<int> UnitsUnderCursor { get; }
+APIShared.Units.TroopCommandInput | public int X { get; }
+APIShared.Units.TroopCommandInput | public int Y { get; }
+APIShared.Units.TroopCommandInputEvents | public static class APIShared.Units.TroopCommandInputEvents
+APIShared.Units.TroopCommandInputEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Units.TroopCommandInput> callback, out string reason, int order = 0)
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4

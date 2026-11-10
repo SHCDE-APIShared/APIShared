@@ -56,6 +56,12 @@ within the same mission and the forward Int32 half-range.
 unit-pair check. Owners publish immutable player, unit type or global ID selectors.
 See [attack target rule integration](THIRD_PARTY_GUIDE.md#attack-target-rules).
 
+## Local troop-command input
+
+`APIShared.Units.TroopCommandInputEvents` reports local command releases with
+the final map tile and the ordered unit IDs under the cursor.
+See [troop-command observation](THIRD_PARTY_GUIDE.md#troop-command-observation).
+
 ## Managed save calls
 
 `APIShared.Savegames.ManagedSaveEvents` pairs passive begin and completion
