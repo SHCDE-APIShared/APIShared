@@ -22,6 +22,7 @@
 - [Shared visible-map entry and pause-menu actions](#shared-visible-map-entry-and-pause-menu-actions)
 - [Managed Script Extender and game targets of Lord presentation and move diagnostics](#managed-script-extender-and-game-targets-of-lord-presentation-and-move-diagnostics)
 - [Enemy-unit proximity and Peace Time](#enemy-unit-proximity-and-peace-time)
+- [Native unit-pair exclusion rules](#native-unit-pair-exclusion-rules)
 - [Huntable prey reservation word](#huntable-prey-reservation-word)
 - [Hunter native sites](#hunter-native-sites)
 - [Hunter owner gates](#hunter-owner-gates)
@@ -1579,3 +1580,20 @@ leaves herds unavailable. Static audit of 2026-11-08.
 - Before adding a hash: repeat the dispatcher, spawn-art and route-reader audit, the register liveness of
   both flight spans, the raw field map against the Extender's `GameTribe`, and check that the Fixes mod
   (it hooks `DeerUpdate` `0x156130`, not these functions) and other plugins leave the spans alone.
+
+## Native unit-pair exclusion rules
+
+The attack target rule entry is pinned to FBCB9319 at RVA `0x1867A0`.
+The Indirect detour displaces 8 bytes (instructions of lengths 5 and 3).
+The next instruction is `48 8B D9`. The full verified prefix includes the
+remaining original prologue through `0x1867B2`. Callers at `0x18795C`,
+`0x188ACE` and `0x18EBFF` pass manager, attacker slot, target slot and a
+byte mode. Nonzero excludes. The live entry must be pristine.
+
+The manager at `0x67E8400` uses the `0x65C` one-based sentinel and
+`0x490` unit stride. Controller, unit type and global identity use the
+verified Extender fields. The optional peace gate uses the existing validated
+native flag anchor. No pattern fallback is allowed because the manager binding,
+unit layout and complete caller contract are image-specific. Revalidate the
+three callers, entry and continuation, live ownership, old QoL compatibility
+and all disjoint QoL body patches for a new image.

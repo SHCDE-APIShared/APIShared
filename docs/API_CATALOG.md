@@ -50,6 +50,31 @@ missions, unfinished/repeated loads and unavailable sources.
 `TryGetElapsedTicks(earlierTick, currentTick, out elapsedTicks)` handles signed wrap
 within the same mission and the forward Int32 half-range.
 
+## Native attack target rules
+
+`APIShared.Units.AttackTargetRules` coordinates exclusions at the audited native
+unit-pair check. Owners publish immutable player, unit type or global ID selectors.
+See [attack target rule integration](THIRD_PARTY_GUIDE.md#attack-target-rules).
+
+## Local troop-command input
+
+`APIShared.Units.TroopCommandInputEvents` reports local command releases with
+the final map tile and the ordered unit IDs under the cursor.
+See [troop-command observation](THIRD_PARTY_GUIDE.md#troop-command-observation).
+
+## Managed save calls
+
+`APIShared.Savegames.ManagedSaveEvents` pairs passive begin and completion
+callbacks at `EngineInterface.SaveSaveGame`. Use it to observe the managed
+result, a veto or an exception. See the [save observer contract](THIRD_PARTY_GUIDE.md#managed-save-observation).
+
+## Managed engine-run boundaries
+
+`APIShared.Simulation.EngineRunEvents.TryRegister` observes the begin and end of
+an admitted managed engine call with one ordered callback snapshot. The pair
+also surrounds calls that return zero or throw. For time-based rules use the
+native tick API above. See the [engine-run contract](THIRD_PARTY_GUIDE.md#managed-engine-run-boundaries).
+
 ## In-game test automation
 
 | Entry point | Contract |
@@ -199,7 +224,8 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
 | `APIShared.ModSettings` | Settings base class, registration, presets, sources and search | Unity-thread UI/registration; host/per-player publication waits for the appropriate lobby/transport identity; personal persistence remains isolated ([guide](MOD_SETTINGS.md#presets-without-serpsmodshost)) |
-| `APIShared.Commands.GameActionEvents` | Managed command Pre/Accepted/Post; mutable payloads and sticky veto | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
+| `APIShared.Commands.GameActionEvents` | Managed command Pre, opt-in final validation, Accepted and Post | Startup-thread registration; actual caller thread; order/owner/ID sorting; process lifetime |
+| `APIShared.Presentation.AllyPanelButtonEvents` | Shared ally-panel button interception; first claim wins and later Pre can veto | Startup-thread registration; actual caller thread; [contract](ALLY_GOODS_PANEL.md#coordinating-button-actions) |
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
 | `ModApiClient.Ui` | Owner-bound deferred Unity posts and coalesced before-render refresh demand | Managed initialization; pause-capable, thread-safe request/delay/cancel/continuous handles; [contract](THIRD_PARTY_GUIDE.md#deferred-unity-work-and-refresh-demand) |
 | `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |

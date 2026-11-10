@@ -8,19 +8,30 @@ namespace APIShared.Simulation
     {
         [ThreadStatic] private static int depth;
         [ThreadStatic] private static int tickDepth;
+        [ThreadStatic] private static int choreDepth;
         internal static bool IsActive => depth > 0;
         internal static bool IsTickActive => tickDepth > 0;
+        internal static bool IsAuthenticatedChore => choreDepth > 0;
         internal static Scope Enter() { depth++; return new Scope(true, false); }
         internal static Scope EnterTick() { depth++; tickDepth++; return new Scope(true, true); }
+        internal static Scope EnterAuthenticatedChore()
+        {
+            depth++;
+            choreDepth++;
+            return new Scope(true, false, true);
+        }
         internal readonly struct Scope : IDisposable
         {
             private readonly bool entered;
             private readonly bool tick;
-            internal Scope(bool entered, bool tick) { this.entered = entered; this.tick = tick; }
+            private readonly bool chore;
+            internal Scope(bool entered, bool tick, bool chore = false)
+            { this.entered = entered; this.tick = tick; this.chore = chore; }
             public void Dispose()
             {
                 if (!entered) return;
                 if (tick) tickDepth--;
+                if (chore) choreDepth--;
                 depth--;
             }
         }

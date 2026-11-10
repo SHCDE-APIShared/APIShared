@@ -23,6 +23,7 @@ namespace APIShared.Events
         internal virtual void ClearCapture() { }
         internal void ResetState() { state = null; }
         internal bool Veto => skip;
+        internal void RejectAfterPre() { skip = true; }
         internal abstract object Capture();
         internal abstract void Restore(object snapshot);
         internal void RestoreVeto(bool value) { skip = value; state = null; }
@@ -46,7 +47,7 @@ namespace APIShared.Events
             internal readonly ulong Mask;
             internal readonly Registration[] Result;
         }
-        [ThreadStatic] private static int notificationDepth;
+        [ThreadStatic] private static Invocation notification;
         // Cached demand is opt-in and requires ownership of every activation transition.
         internal InterceptionEvent(Action install = null, Func<bool> hasDemand = null) { this.install = install; this.hasDemand = hasDemand; }
         internal long CallbackFailures => Interlocked.Read(ref failures);
@@ -56,15 +57,18 @@ namespace APIShared.Events
             {
                 if (hasDemand != null) return hasDemand();
                 foreach (Registration entry in Volatile.Read(ref registrations))
-                    if (entry.IsActive == null || entry.IsActive()) return true;
+                    if (IsActive(entry)) return true;
                 return false;
             }
         }
-        internal bool CanNotify => notificationDepth == 0 && HasObservers;
+        internal bool CanNotify => notification == null && HasObservers;
+        internal bool BlocksNestedCall(int key) => notification?.BlocksNestedCall(this, key) == true;
         internal bool TryRegister(string owner, string id, Action<TPre> pre, Action<TPost> post,
-            out string reason, int order = 0, Action<TPre, object> accepted = null, Func<bool> isActive = null)
+            out string reason, int order = 0, Action<TPre, object> accepted = null, Func<bool> isActive = null,
+            Func<TPre, object, bool> finalValidation = null, Func<int, bool> blocksNested = null)
         {
-            if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || (pre == null && post == null && accepted == null))
+            if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) ||
+                (pre == null && post == null && accepted == null && finalValidation == null))
             { reason = "Owner GUID, registration ID and at least one callback are required."; return false; }
             lock (sync)
             {
@@ -76,15 +80,16 @@ namespace APIShared.Events
                     catch (Exception ex) { reason = "Interception unavailable: " + ex.Message; return false; }
                 }
                 Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
-                    registrations, new Registration(owner, id, pre, post, order, accepted, isActive), Registration.Key));
+                    registrations, new Registration(owner, id, pre, post, order, accepted, isActive,
+                        finalValidation, blocksNested), Registration.Key));
             }
             reason = string.Empty; return true;
         }
 
         internal Invocation Begin(TPre args)
         {
-            Registration[] snapshot = notificationDepth == 0 ? Volatile.Read(ref registrations) : Array.Empty<Registration>();
-            // Only internal service subscriptions can be dormant. Freeze demand with the
+            Registration[] snapshot = notification == null ? Volatile.Read(ref registrations) : Array.Empty<Registration>();
+            // Freeze demand with the
             // invocation so enabling/disabling during Pre cannot mismatch Accepted/Post.
             // Each predicate runs exactly once, in registration order. A dormant service
             // registration would otherwise force a new filtered array on every call of a frequent
@@ -99,7 +104,7 @@ namespace APIShared.Events
                 for (int index = 0; index < count; index++)
                 {
                     Registration entry = snapshot[index];
-                    active[index] = entry.IsActive == null || entry.IsActive();
+                    active[index] = IsActive(entry);
                     if (!active[index]) continue;
                     activeCount++;
                     if (index < 64) activeMask |= 1UL << index;
@@ -121,7 +126,8 @@ namespace APIShared.Events
                 }
             }
             var invocation = new Invocation(this, snapshot, args);
-            notificationDepth++;
+            var previous = notification;
+            notification = invocation;
             try
             {
                 for (int index = 0; index < snapshot.Length; index++)
@@ -139,8 +145,21 @@ namespace APIShared.Events
                     }
                 }
             }
-            finally { notificationDepth--; args.Freeze(); }
+            finally { notification = previous; args.Freeze(); }
             return invocation;
+        }
+
+        private bool IsActive(Registration entry)
+        {
+            if (entry.IsActive == null) return true;
+            if (entry.FinalValidation == null) return entry.IsActive();
+            try { return entry.IsActive(); }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref failures);
+                LogFailure(entry, "IsActive", ex);
+                return true;
+            }
         }
 
         private static void LogFailure(Registration registration, string phase, Exception error)
@@ -154,6 +173,7 @@ namespace APIShared.Events
         {
             private readonly InterceptionEvent<TPre, TPost> owner;
             private readonly Registration[] snapshot;
+            private readonly bool hasFinalValidators;
             private bool completed;
             private bool acceptedNotified;
             internal readonly object[] States;
@@ -165,15 +185,51 @@ namespace APIShared.Events
                 bool needsStates = false;
                 foreach (Registration entry in snapshot) {
                     if (entry.Post != null) HasPostObservers = true;
-                    if (entry.Pre != null && (entry.Post != null || entry.Accepted != null)) needsStates = true;
+                    if (entry.FinalValidation != null) hasFinalValidators = true;
+                    if (entry.Pre != null && (entry.Post != null || entry.Accepted != null || entry.FinalValidation != null))
+                        needsStates = true;
                 }
                 States = needsStates ? new object[snapshot.Length] : Array.Empty<object>();
+            }
+            internal bool BlocksNestedCall(InterceptionEvent<TPre, TPost> registry, int key)
+            {
+                if (owner != registry || !hasFinalValidators) return false;
+                foreach (var entry in snapshot)
+                    if (entry.BlocksNested?.Invoke(key) == true) return true;
+                return false;
+            }
+            internal void ValidateFinalInputs()
+            {
+                if (!hasFinalValidators || Pre.SkipOriginalFunction) return;
+                var previous = notification;
+                notification = this;
+                try
+                {
+                    for (int index = 0; index < snapshot.Length; index++)
+                    {
+                        var entry = snapshot[index];
+                        if (entry.FinalValidation == null) continue;
+                        try
+                        {
+                            if (entry.FinalValidation(Pre, States.Length == 0 ? null : States[index])) continue;
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.Increment(ref owner.failures);
+                            LogFailure(entry, "FinalValidation", ex);
+                        }
+                        Pre.RejectAfterPre();
+                        return;
+                    }
+                }
+                finally { notification = previous; }
             }
             internal void NotifyAccepted()
             {
                 if (acceptedNotified || completed || Pre.SkipOriginalFunction) return;
                 acceptedNotified = true;
-                notificationDepth++;
+                var previous = notification;
+                notification = this;
                 try
                 {
                     for (int index = 0; index < snapshot.Length; index++)
@@ -182,7 +238,7 @@ namespace APIShared.Events
                         catch (Exception ex) { Interlocked.Increment(ref owner.failures); LogFailure(snapshot[index], "Accepted", ex); }
                     }
                 }
-                finally { notificationDepth--; }
+                finally { notification = previous; }
             }
             private static readonly Func<Func<object, TPost>, object, TPost> LegacyPostFactory = (factory, state) => factory(state);
             internal void Complete(Func<object, TPost> createPost) => Complete(createPost, LegacyPostFactory);
@@ -191,7 +247,8 @@ namespace APIShared.Events
             {
                 if (completed) return;
                 completed = true;
-                notificationDepth++;
+                var previous = notification;
+                notification = this;
                 try
                 {
                     for (int index = 0; index < snapshot.Length; index++)
@@ -205,7 +262,7 @@ namespace APIShared.Events
                         }
                     }
                 }
-                finally { notificationDepth--; }
+                finally { notification = previous; }
             }
         }
         internal sealed class Registration
@@ -217,9 +274,16 @@ namespace APIShared.Events
             internal readonly Action<TPost> Post;
             internal readonly Action<TPre, object> Accepted;
             internal readonly Func<bool> IsActive;
-            internal Registration(string owner, string id, Action<TPre> pre, Action<TPost> post, int order, Action<TPre, object> accepted, Func<bool> isActive)
-            { Owner = owner; Id = id; Pre = pre; Post = post; Order = order; Accepted = accepted; IsActive = isActive; }
+            internal readonly Func<TPre, object, bool> FinalValidation;
+            internal readonly Func<int, bool> BlocksNested;
             internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
+            internal Registration(string owner, string id, Action<TPre> pre, Action<TPost> post, int order,
+                Action<TPre, object> accepted, Func<bool> isActive, Func<TPre, object, bool> finalValidation,
+                Func<int, bool> blocksNested)
+            {
+                Owner = owner; Id = id; Pre = pre; Post = post; Order = order; Accepted = accepted;
+                IsActive = isActive; FinalValidation = finalValidation; BlocksNested = blocksNested;
+            }
         }
     }
 

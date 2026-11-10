@@ -3,13 +3,39 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.40.0",
+  "Version": "0.44.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.44.0",
+      "Changes": [
+        "Add a shared observer for local troop-command releases with final map coordinates and cursor targets."
+      ]
+    },
+    {
+      "Version": "0.43.0",
+      "Changes": [
+        "Share the native unit-pair exclusion check between mods with immutable, mission-scoped attack target rules."
+      ]
+    },
+    {
+      "Version": "0.42.0",
+      "Changes": [
+        "Add passive begin and completion callbacks for the managed save entry point."
+      ]
+    },
+    {
+      "Version": "0.41.0",
+      "Changes": [
+        "Expose paired observations around an admitted managed engine run through the existing shared wrapper.",
+        "Add a shared ally-panel button API so mods can coordinate goods and order clicks.",
+        "Add an optional final GameAction validator that can reject a command after other handlers have finished editing its arguments."
+      ]
+    },
     {
       "Version": "0.40.0",
       "Changes": [

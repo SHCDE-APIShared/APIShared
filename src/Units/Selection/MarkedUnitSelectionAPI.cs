@@ -196,7 +196,14 @@ namespace APIShared
             return boundary == null ? RunOriginal(mpFrameSkip) : boundary.Run(mpFrameSkip);
         }
 
-        private static int RunOriginal(bool mpFrameSkip)
+        private static readonly Func<bool, int> RunWithConsumers = RunWithSelectionAndReadbacks;
+        private static readonly Func<bool, int> RunWithTroopInput =
+            mpFrameSkip => Units.TroopCommandInputEvents.Run(mpFrameSkip, RunWithConsumers);
+
+        private static int RunOriginal(bool mpFrameSkip) =>
+            Simulation.EngineRunEvents.Invoke(mpFrameSkip, RunWithTroopInput);
+
+        private static int RunWithSelectionAndReadbacks(bool mpFrameSkip)
         {
             bool readback = Statistics.EngineReadbacks.HasPending;
             bool work = Simulation.SimulationWorkPump.HasPending;
