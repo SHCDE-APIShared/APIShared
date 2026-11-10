@@ -3,13 +3,23 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.44.0",
+  "Version": "0.45.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.45.0",
+      "Changes": [
+        "Decide the mission mode in every case instead of locking gameplay mods: a loaded save uses the mode stored in it, a restart keeps the mode of its mission, and Customize evidence that does not fit the start is ignored and logged as an error.",
+        "Saves that an earlier version marked as conflicting load normally again.",
+        "Mods can declare renamed settings and convert changed ones, so saves, Trail author rules, personal settings and presets written by an older version of a mod keep working.",
+        "Compare the Customize origin between all players before a multiplayer start. A rejected multiplayer start no longer freezes the lobby and is no longer retried every frame.",
+        "Fix saves that could not be loaded after certain AI army assignments or fast group moves, the startup removal of unsubscribed Workshop packages, and missions that were stopped although no mod changed production."
+      ]
+    },
     {
       "Version": "0.44.0",
       "Changes": [

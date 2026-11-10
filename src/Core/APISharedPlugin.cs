@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.44.0";
+        public const string PluginVersion = "0.45.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -28,6 +28,8 @@ namespace APIShared
         {
             Internal.DebugLogHelper.InitializeDiagnostics(Config, Logger);
             ModSettings.ModSettingsApplication.InitializeJournalStorage(RuntimeLogger);
+            var migrationLog = RuntimeLogger;
+            ModSettings.ModSettingsMigration.ReportProblem = text => NativeApiLog.Error(migrationLog, text);
             Localization.GameLocale.Initialize();
             var localizationLog = RuntimeLogger;
             Localization.UiText.Configure(Localization.GameLocale.Current,

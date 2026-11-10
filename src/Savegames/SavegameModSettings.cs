@@ -190,8 +190,12 @@ namespace APIShared
                         throw new InvalidDataException("Savegame baseline unavailable: " + modId);
                     }
                     // Personal values are never captured into a save-owned mission snapshot.
+                    // Stored values and author rules are raw data of the mod version that wrote them:
+                    // move entries under declared former names before they are matched by property name.
+                    Type settingsType = participant.Endpoint.GetType();
                     if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
-                        OverlaySavedHostProperties(snapshot, participant.Properties, stored, modId);
+                        OverlaySavedHostProperties(snapshot, participant.Properties,
+                            ModSettingsMigration.ApplyRenames(settingsType, stored), modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
                         (record.Kind == (int)GameModeKind.CustomTrail || record.Kind == (int)GameModeKind.CoopTrail);
                     if (strictTrail)
@@ -204,10 +208,17 @@ namespace APIShared
                     if (record?.CreatorRules != null &&
                         record.CreatorRules.TryGetValue(modId, out var rules))
                     {
-                        ApplyCreatorRules(snapshot, participant.Properties, rules,
+                        ApplyCreatorRules(snapshot, participant.Properties,
+                            ModSettingsMigration.ApplyRenames(settingsType, rules),
                             current != null && current.TryGetValue(modId, out var currentMod) ? currentMod : null,
                             strictTrail);
                     }
+                    // A change of meaning cannot be declared as a rename. The owner converts such values
+                    // before its setters run, so the later verification compares against what those
+                    // setters are meant to keep.
+                    if (participant.Endpoint is IModSettingsSnapshotMigration migration)
+                        snapshot = migration.System_MigrateMissionSnapshot(snapshot) ??
+                            throw new InvalidDataException("Savegame snapshot migration returned nothing: " + modId);
             return snapshot;
         }
 

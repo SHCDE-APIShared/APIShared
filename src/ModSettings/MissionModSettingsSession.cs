@@ -87,6 +87,16 @@ namespace APIShared.ModSettings
             foreach (string id in entries.Keys)
                 if (!endpointIds.Contains(id))
                     throw new InvalidDataException("Required Map/Trail settings provider is missing or incompatible: " + id);
+            // Former setting names in the document move to the current properties before anything matches
+            // names; otherwise the cleanup below would drop an author's value as unknown.
+            foreach (var item in endpoints)
+                if (entries.TryGetValue(item.Key, out var stored))
+                {
+                    var renamed = MissionModSettingsPreparation.WithCurrentNames(item.Value, stored);
+                    if (ReferenceEquals(renamed, stored)) continue;
+                    entries[item.Key] = renamed;
+                    document.Mods[item.Key] = renamed;
+                }
             bool current = kind == MissionModSettingsApplicationKind.Authoring ||
                 kind == MissionModSettingsApplicationKind.AuthoringTest || kind == MissionModSettingsApplicationKind.Materialized;
             bool materialized = kind == MissionModSettingsApplicationKind.Materialized;

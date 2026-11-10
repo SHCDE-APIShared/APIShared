@@ -154,6 +154,11 @@ properties without changing host authority. `GetMissionHostProperties` filters t
 from mission authoring. Complete configuration backends with personal values implement
 `IModSettingsPersonalPersistenceBackend`; see [personal-value contracts](MOD_SETTINGS.md#personal-values-and-mission-independent-host-settings).
 
+`[ModSettingRenamedFrom]` keeps stored values of a renamed setting (saves, Trail author
+rules, Map/Trail mission settings, personal settings, presets). `IModSettingsSnapshotMigration` converts saved values
+whose meaning changed, and `ModSettingsMigration.MigrateStoredSnapshot` applies both to a
+mod's own stored format; see [renamed and converted settings](MOD_SETTINGS.md#renamed-and-converted-settings).
+
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
 Internal snapshot application suppresses intermediate transport/storage, isolates

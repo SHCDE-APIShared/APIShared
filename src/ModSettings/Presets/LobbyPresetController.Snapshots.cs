@@ -234,6 +234,8 @@ namespace APIShared.ModSettings
 
         private void ValidatePublishedPreset(PublishedModSettingsPreset preset)
         {
+            // Every preset enters this controller here, before anything matches its settings by name.
+            preset.Settings = ModSettingsMigration.ApplyRenames(settingsType, preset.Settings);
             foreach (KeyValuePair<string, PublishedPresetSetting> entry in preset.Settings)
             {
                 if (owner.IsRetiredPresetProperty(entry.Key)) continue;

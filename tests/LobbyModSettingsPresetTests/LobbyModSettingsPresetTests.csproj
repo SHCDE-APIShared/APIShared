@@ -64,6 +64,7 @@
     <Compile Include="..\..\src\ModSettings\ModSettingsStartLog.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Catalog.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Persistence.cs" />
+    <Compile Include="..\..\src\ModSettings\Presets\ModSettingsMigration.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Mission.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\LobbyPresetController.Snapshots.cs" />
     <Compile Include="..\..\src\ModSettings\Presets\ILobbyPresetHost.cs" />

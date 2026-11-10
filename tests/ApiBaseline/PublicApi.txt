@@ -1328,6 +1328,8 @@ APIShared.ModSettings.IModSettingsPresetEndpoint | public System.Collections.Gen
 APIShared.ModSettings.IModSettingsPresetEndpoint | public bool IsMissionPresetActive { get; }
 APIShared.ModSettings.IModSettingsPresetEndpoint | public void System_EnterMissionPreset(System.Collections.Generic.Dictionary<string, byte[]> snapshot, string label, bool editable)
 APIShared.ModSettings.IModSettingsPresetEndpoint | public void System_ExitMissionPreset()
+APIShared.ModSettings.IModSettingsSnapshotMigration | public interface APIShared.ModSettings.IModSettingsSnapshotMigration
+APIShared.ModSettings.IModSettingsSnapshotMigration | public System.Collections.Generic.Dictionary<string, byte[]> System_MigrateMissionSnapshot(System.Collections.Generic.Dictionary<string, byte[]> snapshot)
 APIShared.ModSettings.IModSettingsWorkingCopyEndpoint | public interface APIShared.ModSettings.IModSettingsWorkingCopyEndpoint : APIShared.ModSettings.IModSettingsPresetEndpoint
 APIShared.ModSettings.IModSettingsWorkingCopyEndpoint | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentMissionPresetSnapshot()
 APIShared.ModSettings.IModSettingsWorkingCopyEndpoint | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentWorkingSnapshot()
@@ -1377,6 +1379,9 @@ APIShared.ModSettings.MissionModSettingsSession | public System.Collections.Gene
 APIShared.ModSettings.MissionModSettingsSession | public long? MissionSessionId { get; }
 APIShared.ModSettings.MissionModSettingsSession | public void ConfirmStarted(long sessionId)
 APIShared.ModSettings.MissionModSettingsSession | public void Exit()
+APIShared.ModSettings.ModSettingRenamedFromAttribute | public sealed class APIShared.ModSettings.ModSettingRenamedFromAttribute : System.Attribute
+APIShared.ModSettings.ModSettingRenamedFromAttribute | public .ctor(params string[] formerNames)
+APIShared.ModSettings.ModSettingRenamedFromAttribute | public System.Collections.Generic.IReadOnlyList<string> FormerNames { get; }
 APIShared.ModSettings.ModSettingsApplication | public static class APIShared.ModSettings.ModSettingsApplication
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.Dictionary<string, byte[]> ResumeSnapshot(string id)
 APIShared.ModSettings.ModSettingsApplication | public static System.Collections.Generic.IReadOnlyDictionary<string, APIShared.ModSettings.PresetLobbyModSettingsViewModel> Endpoints { get; }
@@ -1396,6 +1401,8 @@ APIShared.ModSettings.ModSettingsApplication | public static void DiscardPrepara
 APIShared.ModSettings.ModSettingsApplication | public static void EnterContext(string identity)
 APIShared.ModSettings.ModSettingsApplication | public static void ExitContext()
 APIShared.ModSettings.ModSettingsApplication | public static void RestorePreparedSources(string id)
+APIShared.ModSettings.ModSettingsMigration | public static class APIShared.ModSettings.ModSettingsMigration
+APIShared.ModSettings.ModSettingsMigration | public static System.Collections.Generic.Dictionary<string, byte[]> MigrateStoredSnapshot(object settings, System.Collections.Generic.Dictionary<string, byte[]> stored)
 APIShared.ModSettings.ModSettingsMode | public static class APIShared.ModSettings.ModSettingsMode
 APIShared.ModSettings.ModSettingsMode | public static APIShared.ModSettings.ModSettingsModeAvailability GetAvailability(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsMode | public static readonly Noesis.DependencyProperty AvailabilityProperty

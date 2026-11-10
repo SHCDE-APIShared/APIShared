@@ -35,6 +35,22 @@ namespace APISharedTests
             }
         }
 
+        // An endpoint whose stored form changed: the retired flag is converted before any setter runs.
+        private sealed class MigratingEndpointFixture : IModSettingsPresetEndpoint, IModSettingsSnapshotMigration
+        {
+            public bool IsMissionPresetActive => false;
+            public Dictionary<string, byte[]> System_CreateDisabledMissionPresetSnapshot() =>
+                new Dictionary<string, byte[]> { ["Retired"] = new byte[] { 1 } };
+            public void System_EnterMissionPreset(Dictionary<string, byte[]> snapshot, string label, bool editable) { }
+            public void System_ExitMissionPreset() { }
+            public Dictionary<string, byte[]> System_MigrateMissionSnapshot(Dictionary<string, byte[]> snapshot)
+            {
+                var migrated = new Dictionary<string, byte[]>(snapshot) { ["Current"] = snapshot["Retired"] };
+                migrated["Retired"] = new byte[] { 0 };
+                return migrated;
+            }
+        }
+
         internal static void Run(Action<bool, string> check)
         {
             var settingsType = typeof(SavegameModSettings);
@@ -51,6 +67,12 @@ namespace APISharedTests
                 new object[] { "foreign.fixture", participant, null, null, null }); }
             catch (TargetInvocationException error) { rejected = error.InnerException is System.IO.InvalidDataException; }
             check(!rejected, "save preparation must not read or snapshot personal properties");
+            participantType.GetField("Endpoint", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, new MigratingEndpointFixture());
+            participantType.GetField("PersonalProperties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, Array.Empty<PropertyInfo>());
+            var migratedSnapshot = (Dictionary<string, byte[]>)settingsType.GetMethod("ResolveStartupSnapshot", privateFlags).Invoke(null,
+                new object[] { "migrating.fixture", participant, null, null, null });
+            check(migratedSnapshot["Current"][0] == 1 && migratedSnapshot["Retired"][0] == 0,
+                "a saved snapshot was applied in its stored form instead of the endpoint's current form");
             var lease = new SavegameMissionPresetLease();
             var first = new PresetEndpointFixture();
             var second = new PresetEndpointFixture { FailExit = true };

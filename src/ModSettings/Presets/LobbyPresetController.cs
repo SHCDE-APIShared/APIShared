@@ -28,6 +28,7 @@ namespace APIShared.ModSettings
         private const int SchemaVersion = 3;
 
         private readonly ILobbyPresetHost owner;
+        private readonly Type settingsType;
         private readonly ManualLogSource log;
         private readonly string modName;
         private readonly bool routineLoggingEnabled;
@@ -113,6 +114,8 @@ namespace APIShared.ModSettings
                 this.targetGuid);
 
             dynamicProvider = owner.DynamicSettingsProvider;
+            // Dynamic settings have keys, not properties; only a settings class can declare renames.
+            settingsType = dynamicProvider != null ? null : owner.SettingsTarget.GetType();
             persistedProperties = dynamicProvider != null
                 ? dynamicProvider.GetSettings().Select(item => new PresetPropertyAccessor(item, dynamicProvider)).ToArray()
                 : owner.SettingsTarget.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
