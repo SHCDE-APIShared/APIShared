@@ -129,7 +129,6 @@ namespace APISharedTests
                 settings.GetField("preparedApplicationContext", flags).SetValue(null, null);
                 settings.GetField("chosenPath", flags).SetValue(null, hostSide ? path : null);
                 settings.GetField("legacyChoice", flags).SetValue(null, !hostHasRecord);
-                settings.GetField("restoreFailed", flags).SetValue(null, false);
                 // SE may deliver the record in Pre and Post. The client may still
                 // await managed initialization after the surrounding load returns.
                 for (int callback = 0; callback < 3; callback++)
@@ -137,10 +136,9 @@ namespace APISharedTests
                     load.Invoke(null, new object[] { bytes, new LoadContext(true, path) });
                     Assert.AreSame(host, settings.GetField("loaded", flags).GetValue(null));
                     Assert.AreSame(host, SavegameModSettings.PreparedRecordForStart);
-                    Assert.AreEqual(hostHasRecord, SavegameModSettings.TryGetRestoredMode(out var kind, out var variant, out bool locked));
+                    Assert.AreEqual(hostHasRecord, SavegameModSettings.TryGetRestoredMode(out var kind, out var variant));
                     Assert.AreEqual(hostHasRecord ? GameModeKind.CoopTrail : GameModeKind.Unknown, kind);
                     Assert.AreEqual(hostHasRecord ? GameModeLaunchVariant.RestoredCustomizedSave : GameModeLaunchVariant.Standard, variant);
-                    Assert.AreEqual(hostHasRecord && hostSide, locked);
                 }
                 if (abort) coordinator.GetMethod("Abort", flags).Invoke(null, new object[] { "fixture cancelled", false, false, "fixture" });
                 else SavegameLoadCoordinator.FinishLoad();
@@ -152,10 +150,9 @@ namespace APISharedTests
                 load.Invoke(null, new object[] { bytes, new LoadContext(false, path) });
                 Assert.AreSame(host, settings.GetField("loaded", flags).GetValue(null));
                 load.Invoke(null, new object[] { bytes, new LoadContext(true, path) });
-                Assert.IsTrue(SavegameModSettings.TryGetRestoredMode(out var localKind, out var localVariant, out bool localLocked));
+                Assert.IsTrue(SavegameModSettings.TryGetRestoredMode(out var localKind, out var localVariant));
                 Assert.AreEqual(GameModeKind.CustomGame, localKind);
                 Assert.AreEqual(GameModeLaunchVariant.Standard, localVariant);
-                Assert.AreEqual(!hostSide, localLocked);
             }
             finally { foreach (var item in previous) item.Key.SetValue(null, item.Value); }
         }

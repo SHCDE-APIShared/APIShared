@@ -624,12 +624,23 @@ delegate is harmless; replacing it throws. Providers run synchronously on the
 mission capture thread outside the registry lock and should return coherent,
 read-only evidence. Providers added during capture participate in the next capture.
 No replay, implicit dispatch or disposal is involved. Callback failures, invalid
-trail evidence and multiple active providers mark the origin as conflicting.
-Registration order never chooses a winning active provider. Return `None` while
+trail evidence, multiple active providers and evidence that does not fit the start
+the game reports are rejected as a whole: the launch is then classified from the
+game's own data alone, which is the same on every multiplayer peer, and the decision
+is logged as `GAME_MODE_ORIGIN_REJECTED`. No mod is locked and no snapshot is left
+conflicting. Registration order never chooses a winning active provider. Return `None` while
 inactive; set `SupportsBuiltInOrigins` only if your mod tracks built-in trails too.
 The contract uses existing game trail families and ID ranges; it supplies evidence,
 not another mod's permission policy. See the optional
 [customized launch example](../examples/ThirdPartyMod/CustomizedLaunchExample.cs).
+
+Provider evidence classifies new launches only. A restored save takes its mode and
+Customize state from the record APIShared wrote into that save; provider state at
+that moment still describes the previous mission and is not consulted. A restart
+treats its ready source session as that record. Native data overrides the record
+only when it names a definite other mode, and then without Customize. Clear a
+pending origin whenever the launch it announced does not start, otherwise the next
+plain start inherits it.
 
 ## Managed actions and HUD interception
 

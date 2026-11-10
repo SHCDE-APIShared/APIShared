@@ -16,6 +16,11 @@ namespace APIShared.GameModes
     public static class GameModeHelper
     {
         internal static Func<SavedModeEvidence> ReadSavedModeEvidence;
+        // Installed by the mission lifecycle; receives each distinct mode decision once.
+        internal static Action<string> ReportModeDecision;
+        private static string lastModeDecision;
+        // Each mission attempt reports its own decision, even one identical to an earlier attempt's.
+        internal static void BeginModeDecisions() => lastModeDecision = null;
         private const int NoGameValue = -1;
         private const int NoCoopTrail = 0;
         /// <summary>Reads the central current/pending mission snapshot. The legacy save argument does not override authoritative evidence.</summary>
@@ -131,67 +136,33 @@ namespace APIShared.GameModes
                 coopTrailId,
                 campaignMapId,
                 eventTrailType);
-            GameModeKind kind = observedKind;
-            // A successful native load can omit its skirmish subtype (notably for
-            // older multiplayer maps). Preserve the authoritative managed entry
-            // intent only when native data cannot classify the mode at all.
-            if (kind == GameModeKind.Unknown && intent != GameModeKind.Unknown)
-                kind = intent;
-            if (observedKind == GameModeKind.CustomGame && externalOrigin.LaunchPending)
+            string unusableOrigin = ClassifyLaunch(externalOrigin, observedKind, intent, sandsOfTime,
+                customTrailRestart, vanillaCustomized, customizedTrailType, customizedTrailId,
+                skirmishTrailType, coopTrailId, eventTrailType,
+                out GameModeKind kind, out GameModeLaunchVariant launchVariant);
+            if (unusableOrigin != null)
             {
-                GameModeKind originKind = ResolveExternalOriginKind(externalOrigin.Origin);
-                if (originKind != GameModeKind.Unknown)
-                    kind = originKind;
+                // Provider evidence that does not fit this start is never a reason to withhold a
+                // decision: the mode is then classified from the game's own data alone, which is
+                // the same on every multiplayer peer, and the rejected evidence is reported.
+                ExternalCustomizedOrigin rejected = externalOrigin;
+                externalOrigin = default;
+                ClassifyLaunch(externalOrigin, observedKind, intent, sandsOfTime,
+                    customTrailRestart, vanillaCustomized, customizedTrailType, customizedTrailId,
+                    skirmishTrailType, coopTrailId, eventTrailType, out kind, out launchVariant);
+                // A restored save does not consult providers at all; their state before the native
+                // load belongs to the previous mission and is expected to differ.
+                if (!restoredSave)
+                    ReportUnusableOrigin(rejected, unusableOrigin, observedKind, kind, launchVariant, realMultiplayer);
             }
-            if (sandsOfTime && kind != GameModeKind.MapEditor && kind != GameModeKind.CoopTrail)
-                kind = GameModeKind.SandsOfTime;
-            else if (customTrailRestart && (kind == GameModeKind.Unknown || kind == GameModeKind.CustomGame))
-                kind = GameModeKind.CustomTrail;
-            if (vanillaCustomized && customizedTrailId >= 0 && kind == GameModeKind.CustomGame)
-            {
-                bool builtInOriginRequired = externalOrigin.SupportsBuiltInOrigins;
-                if (IsVanillaTrailType(customizedTrailType) &&
-                    (!builtInOriginRequired || externalOrigin.Origin == ExternalCustomizedOrigin.VanillaTrail))
-                    kind = GameModeKind.VanillaTrail;
-                else if (IsSandsTrailType(customizedTrailType) &&
-                    (!builtInOriginRequired || externalOrigin.Origin == ExternalCustomizedOrigin.SandsOfTime))
-                    kind = GameModeKind.SandsOfTime;
-            }
-            GameModeLaunchVariant launchVariant = ResolveLaunchVariant(
-                kind,
-                vanillaCustomized,
-                customizedTrailType,
-                customizedTrailId,
-                observedKind == GameModeKind.CustomGame,
-                externalOrigin);
-            bool conflictingOrigin = externalOrigin.IsInvalid ||
-                (externalOrigin.Origin != ExternalCustomizedOrigin.None &&
-                 (!ExternalOriginMatchesKind(externalOrigin, kind) ||
-                  !ExternalOriginMatchesEvidence(
-                      externalOrigin,
-                      kind,
-                      skirmishTrailType,
-                      coopTrailId,
-                      eventTrailType,
-                      vanillaCustomized,
-                      customizedTrailType,
-                      customizedTrailId)));
 
             if (restoredSave)
             {
-                bool hasSaved = false;
-                GameModeKind savedKind = GameModeKind.Unknown;
-                GameModeLaunchVariant savedVariant = GameModeLaunchVariant.Standard;
-                bool savedLocked = true;
+                // Without the save service there is no record to consult: a legacy save.
                 SavedModeEvidence evidence = ReadSavedModeEvidence?.Invoke() ??
-                    new SavedModeEvidence(false, GameModeKind.Unknown,
-                        GameModeLaunchVariant.Standard, true);
-                hasSaved = evidence.HasSaved;
-                savedKind = evidence.Kind;
-                savedVariant = evidence.Variant;
-                savedLocked = evidence.Locked;
-                ReconcileRestoredSaveMode(observedKind, hasSaved, savedKind, savedVariant,
-                    savedLocked, ref kind, ref launchVariant, ref conflictingOrigin);
+                    new SavedModeEvidence(false, GameModeKind.Unknown, GameModeLaunchVariant.Standard);
+                ReconcileRestoredSaveMode(observedKind, evidence.HasSaved, evidence.Kind, evidence.Variant,
+                    ref kind, ref launchVariant);
             }
 
             return new GameModeSnapshot(
@@ -228,43 +199,123 @@ namespace APIShared.GameModes
                     ? externalOrigin.MissionId
                     : customizedTrailId,
                 externalOrigin.Origin,
-                conflictingOrigin);
+                // Every capture decides its mode; nothing is left conflicting (see ClassifyLaunch).
+                false);
         }
 
+        // Classifies a launch from native data, managed entry intent, Vanilla's Customize fields and
+        // one provider origin. Returns null when that origin is absent or fits the result, otherwise
+        // the reason why it cannot describe this start.
+        private static string ClassifyLaunch(
+            ExternalCustomizedOrigin externalOrigin,
+            GameModeKind observedKind,
+            GameModeKind intent,
+            bool sandsOfTime,
+            bool customTrailRestart,
+            bool vanillaCustomized,
+            int customizedTrailType,
+            int customizedTrailId,
+            int skirmishTrailType,
+            int coopTrailId,
+            int eventTrailType,
+            out GameModeKind kind,
+            out GameModeLaunchVariant launchVariant)
+        {
+            kind = observedKind;
+            // A successful native load can omit its skirmish subtype (notably for
+            // older multiplayer maps). Preserve the authoritative managed entry
+            // intent only when native data cannot classify the mode at all.
+            if (kind == GameModeKind.Unknown && intent != GameModeKind.Unknown)
+                kind = intent;
+            if (observedKind == GameModeKind.CustomGame && externalOrigin.LaunchPending)
+            {
+                GameModeKind originKind = ResolveExternalOriginKind(externalOrigin.Origin);
+                if (originKind != GameModeKind.Unknown)
+                    kind = originKind;
+            }
+            if (sandsOfTime && kind != GameModeKind.MapEditor && kind != GameModeKind.CoopTrail)
+                kind = GameModeKind.SandsOfTime;
+            else if (customTrailRestart && (kind == GameModeKind.Unknown || kind == GameModeKind.CustomGame))
+                kind = GameModeKind.CustomTrail;
+            if (vanillaCustomized && customizedTrailId >= 0 && kind == GameModeKind.CustomGame)
+            {
+                bool builtInOriginRequired = externalOrigin.SupportsBuiltInOrigins;
+                if (IsVanillaTrailType(customizedTrailType) &&
+                    (!builtInOriginRequired || externalOrigin.Origin == ExternalCustomizedOrigin.VanillaTrail))
+                    kind = GameModeKind.VanillaTrail;
+                else if (IsSandsTrailType(customizedTrailType) &&
+                    (!builtInOriginRequired || externalOrigin.Origin == ExternalCustomizedOrigin.SandsOfTime))
+                    kind = GameModeKind.SandsOfTime;
+            }
+            launchVariant = ResolveLaunchVariant(
+                kind,
+                vanillaCustomized,
+                customizedTrailType,
+                customizedTrailId,
+                observedKind == GameModeKind.CustomGame,
+                externalOrigin);
+            if (externalOrigin.IsInvalid)
+                return "a provider failed, supplied invalid trail or mission IDs, or several providers were active at once";
+            if (externalOrigin.Origin == ExternalCustomizedOrigin.None) return null;
+            if (!ExternalOriginMatchesKind(externalOrigin, kind))
+                return "it names another mode than the one the game started";
+            return ExternalOriginMatchesEvidence(externalOrigin, kind, skirmishTrailType, coopTrailId,
+                eventTrailType, vanillaCustomized, customizedTrailType, customizedTrailId)
+                ? null : "its trail or mission IDs differ from those the game reports";
+        }
+
+        // Cold path. A capture repeats at every initialization checkpoint, so one decision is
+        // reported once. Reporting must never disturb the capture itself.
+        private static void ReportUnusableOrigin(ExternalCustomizedOrigin rejected, string reason,
+            GameModeKind observedKind, GameModeKind kind, GameModeLaunchVariant launchVariant, bool realMultiplayer)
+        {
+            try
+            {
+                string text = "GAME_MODE_ORIGIN_REJECTED: customized launch evidence was ignored because " + reason +
+                    ". evidence: origin=" + rejected.Origin + ",trailType=" + rejected.TrailType +
+                    ",trailId=" + rejected.TrailId + ",missionId=" + rejected.MissionId +
+                    ",launchPending=" + rejected.LaunchPending + ",restoredFromSave=" + rejected.RestoredFromSave +
+                    ",invalid=" + rejected.IsInvalid + "; game reports=" + observedKind +
+                    "; decision=" + kind + "/" + launchVariant +
+                    " from the game's own data, so no mod is locked and every player decides alike" +
+                    (realMultiplayer ? " (multiplayer: a player whose provider state differs would otherwise diverge)" : "") +
+                    ". The provider that left this evidence behind should clear it when its launch does not start.";
+                if (text == lastModeDecision) return;
+                lastModeDecision = text;
+                ReportModeDecision?.Invoke(text);
+            }
+            catch { /* Diagnostics only. */ }
+        }
+
+        // A save's own record is the authoritative mode evidence: it was written from the running
+        // mission, while launch-origin providers and frontend fields describe whatever preceded this
+        // load (their state for this save is restored only during the native load). A restart is
+        // the same mission again and treats its ready source session as that record.
+        // Native data can still overrule the record: a definite other mode (campaign, standalone
+        // mission, native trail family) wins without customization, so a record cannot open a
+        // foreign mission. Either way the result is one decided mode, never a lock.
         internal static void ReconcileRestoredSaveMode(
             GameModeKind observedKind,
             bool hasSaved,
             GameModeKind savedKind,
             GameModeLaunchVariant savedVariant,
-            bool savedLocked,
             ref GameModeKind kind,
-            ref GameModeLaunchVariant launchVariant,
-            ref bool conflictingOrigin)
+            ref GameModeLaunchVariant launchVariant)
         {
-            if (!hasSaved && !savedLocked)
+            if (!hasSaved)
             {
-                // A genuinely absent entry is a legacy save. Preserve native mode evidence;
-                // only an unclassified save receives the user's current-settings fallback.
+                // No usable record is a legacy save. Preserve native mode evidence; only an
+                // unclassified save receives the user's current-settings fallback.
                 kind = observedKind == GameModeKind.Unknown ? GameModeKind.CustomGame : observedKind;
                 launchVariant = GameModeLaunchVariant.Standard;
                 return;
             }
-            bool compatibleNativeFamily = observedKind == GameModeKind.CustomGame &&
-                (savedKind == GameModeKind.CustomTrail || savedKind == GameModeKind.CoopTrail ||
-                 savedKind == GameModeKind.VanillaTrail || savedKind == GameModeKind.SandsOfTime);
-            // Frontend Customize fields can survive a save transition and alter
-            // the provisional kind. An exact native/saved match remains valid;
-            // existing conflict evidence is still retained below.
-            if (hasSaved && (savedKind == observedKind || savedKind == kind || compatibleNativeFamily ||
-                (observedKind == GameModeKind.Unknown && savedVariant == GameModeLaunchVariant.Standard)))
-            {
-                kind = savedKind;
-                launchVariant = savedVariant;
-                conflictingOrigin |= savedLocked;
-                return;
-            }
-            launchVariant = GameModeLaunchVariant.Standard;
-            conflictingOrigin = true;
+            // Vanilla loads every customized Trail through its generic CustomGame carrier and can omit
+            // the subtype altogether; neither contradicts a saved Trail family.
+            bool nativeNamesAnotherMode = observedKind != GameModeKind.Unknown &&
+                observedKind != GameModeKind.CustomGame && observedKind != savedKind;
+            kind = nativeNamesAnotherMode ? observedKind : savedKind;
+            launchVariant = nativeNamesAnotherMode ? GameModeLaunchVariant.Standard : savedVariant;
         }
 
         internal static GameModeKind ResolveKind(

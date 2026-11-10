@@ -21,8 +21,11 @@ namespace APIShared
     internal static partial class MapRecordLoadCoordinator
     {
         private delegate void HostStart(Platform_Multiplayer self);
-        private static Hook hook;
+        private delegate bool RefreshLobby(Platform_Multiplayer self, ref EngineInterface.MultiplayerSetupData setup,
+            ref bool refreshTeams, ref bool settingsChanged, bool coop);
+        private static Hook hook, refreshHook;
         private static HostStart original;
+        private static RefreshLobby refreshOriginal;
         private static MessageChannel<MapRecordReadinessPacket> channel;
         private static Presentation.IUiFrameWorkRegistration frameWork;
         private static ManualLogSource log;
@@ -85,6 +88,48 @@ namespace APIShared
                 NativeApiLog.Debug(log, "MAP_RECORD_PREPARATION_READY: permanent pre-GO gate installed.");
             }
             catch { if (hook == null) candidate?.Dispose(); throw; }
+            InstallRejectedStartMask();
+        }
+
+        // Vanilla's lobby Update re-reads the published start value from Steam in every frame and
+        // calls StartGame while it is set. Only the owner can withdraw that value, so a peer whose
+        // start was rejected would run into the same rejection in every frame. This permanent
+        // observer hides the value of exactly that rejected lobby from the local Update until a new
+        // attempt begins, for map starts and multiplayer saves alike. It is optional: without it the
+        // rejection still holds, only repeated.
+        private static void InstallRejectedStartMask()
+        {
+            Hook candidate = null;
+            try
+            {
+                var method = typeof(Platform_Multiplayer).GetMethod(nameof(Platform_Multiplayer.RefreshLobbyList), new[] {
+                    typeof(EngineInterface.MultiplayerSetupData).MakeByRefType(), typeof(bool).MakeByRefType(),
+                    typeof(bool).MakeByRefType(), typeof(bool) });
+                if (method == null || !method.IsPublic || method.IsStatic || method.ReturnType != typeof(bool))
+                    throw new MissingMethodException("Expected public instance Boolean Platform_Multiplayer.RefreshLobbyList(ref MultiplayerSetupData, ref Boolean, ref Boolean, Boolean).");
+                candidate = new Hook(method, (RefreshLobby)MaskRejectedStart, new HookConfig { ManualApply = true });
+                refreshOriginal = candidate.GenerateTrampoline<RefreshLobby>();
+                if (refreshOriginal == null) throw new InvalidOperationException("Lobby refresh original trampoline is unavailable.");
+                refreshHook = candidate; candidate.Apply();
+            }
+            catch (Exception error)
+            {
+                if (refreshHook == null) candidate?.Dispose();
+                NativeApiLog.Error(log, "MAP_RECORD_REJECTED_START_MASK_UNAVAILABLE: a rejected multiplayer map start " +
+                    "is still refused, but Vanilla will retry it in every lobby frame until the host withdraws it: " + error.Message);
+            }
+        }
+
+        private static bool MaskRejectedStart(Platform_Multiplayer self, ref EngineInterface.MultiplayerSetupData setup,
+            ref bool refreshTeams, ref bool settingsChanged, bool coop)
+        {
+            bool result = refreshOriginal(self, ref setup, ref refreshTeams, ref settingsChanged, coop);
+            // Two reference comparisons per lobby frame while nothing was rejected. A rejected
+            // multiplayer save publishes its file name the same way and is hidden alike.
+            var lobby = self.activeLobby;
+            if (lobby != null && (ReferenceEquals(lobby, rejectedNativeLobby) ||
+                SavegameLoadCoordinator.IsRejectedStartLobby(lobby))) lobby.startGame = string.Empty;
+            return result;
         }
 
         private static ulong[] Humans(Platform_Multiplayer.MPLobby lobby)

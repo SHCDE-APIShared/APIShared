@@ -666,7 +666,7 @@ For a same-mission restart, wrap the complete preparation and loading action in
 gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
 restart already use this boundary; opening or cancelling confirmation does not.
 Nested calls share one attempt. Other launches must use their normal entry points.
-Restart authorization retains the source's Customize provenance and conflict locks,
+Restart authorization retains the source's Customize provenance,
 including saves restored without ExtendedData; network and native facts are captured
 again. An incompatible native family cannot inherit the source's gameplay permission.
 
@@ -685,7 +685,7 @@ notifications and must perform their usual cleanup. See the
 
 Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Use `GameModeHelper.Capture()` for a current snapshot where appropriate. Capture itself applies no permissions. Construct `GameplayModActivationProfile` with your own GUID, allowed contexts and `allowRealMultiplayer`, then call `GameplayModModePolicy.IsAllowed`. You can instead implement your own policy directly from the snapshot.
 
-The built-in optional evaluator rejects unknown or conflicting origins. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
+The built-in optional evaluator rejects unknown modes. APIShared's own captures never leave an origin conflicting: unusable provider evidence is ignored, the mode is decided from the game's own data and the decision is logged. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
 
 
 For a cached runtime decision, retain a `GameplayModeGate(profile)` in your static

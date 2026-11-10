@@ -34,10 +34,10 @@ namespace APIShared.GameModes
         SandsOfTime = 1 << 11,
     }
 
-    /// <summary>Caller-defined optional permissions. Unknown or conflicting contexts fail closed when evaluated.</summary>
+    /// <summary>Caller-defined optional permissions. Unknown contexts fail closed when evaluated.</summary>
     public readonly struct GameplayModActivationProfile
     {
-        /// <summary>Caller-defined optional permissions. Unknown or conflicting contexts fail closed when evaluated.</summary>
+        /// <summary>Caller-defined optional permissions. Unknown contexts fail closed when evaluated.</summary>
         public GameplayModActivationProfile(
             string modGuid,
             string displayName,

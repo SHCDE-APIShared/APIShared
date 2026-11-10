@@ -31,6 +31,11 @@ internal static class Program
         Platform_Multiplayer.Instance = new Platform_Multiplayer { activeLobby = lobby };
     }
     private static void Start() => Boundary.MapHook.DynamicInvoke(Mp);
+    private static bool Refresh()
+    {
+        object[] arguments = { Mp, null, false, false, false };
+        return (bool)Boundary.RefreshHook.DynamicInvoke(arguments);
+    }
     private static void Save() => Boundary.SaveHook.DynamicInvoke(Mp, "save-name");
     private static void Tick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/21-map-record-readiness"]();
     private static SavegameLoadPacket Reply(SavegameLoadPacket packet, int operation = 1) => new SavegameLoadPacket {
@@ -112,6 +117,13 @@ internal static class Program
         int announced = Boundary.LocalChat.Count + Boundary.Broadcast.Count;
         Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.LocalChat.Count + Boundary.Broadcast.Count == announced &&
             Boundary.StartWithdrawals == 0, "a client reports a start without preparation once per published GO and never writes lobby data");
+        // Only the host can withdraw the published GO. The rejected client hides it from its own
+        // lobby Update, so Vanilla does not call StartGame again; a new proposal lifts the mask.
+        Boundary.PublishedStart = "GO!aiv";
+        Check(!Refresh() && Mp.activeLobby.startGame == string.Empty, "a rejected client no longer sees the published GO of that attempt");
+        var nextProposal = Reply(request, 0); nextProposal.Token = Guid.NewGuid().ToString("N"); Receive(nextProposal, 2001);
+        Check(!Refresh() && Mp.activeLobby.startGame == "GO!aiv", "the host's next proposal makes its published GO visible again");
+        Boundary.PublishedStart = null;
 
         Reset(); Start(); request = Reply(RequestPacket, 0); request.Token = Guid.NewGuid().ToString("N");
         Reset(client: true); Boundary.Records = new[] { Present(1) }; Receive(request, 2001);
@@ -272,6 +284,22 @@ internal static class Program
         }
         Check(Boundary.Broadcast.Count == 1 && Boundary.Logs.Count(text => text.Contains("SAVE_SETTINGS_LOAD_BLOCKED")) == 1,
             "automatic retries of a rejected save admission produce one announcement");
+        Boundary.PublishedStart = "confirmed-save";
+        Check(!Refresh() && Mp.activeLobby.startGame == string.Empty, "a rejected multiplayer save no longer exposes its published start value");
+        Boundary.PublishedStart = null;
+
+        // Peers classify a mission from their own launch-origin provider, so the origin is part of
+        // the compared lobby state; an ordinary lobby keeps the fingerprint it had without it.
+        Reset(); Start(); string plainFingerprint = RequestPacket.Fingerprint;
+        Boundary.Origin = new APIShared.GameModes.CustomizedLaunchOrigin(APIShared.GameModes.CustomizedLaunchOriginKind.CoopTrail, -1, 2, 5, false, true, false);
+        Reset(); Start(); string customizedFingerprint = RequestPacket.Fingerprint;
+        Boundary.Origin = new APIShared.GameModes.CustomizedLaunchOrigin(APIShared.GameModes.CustomizedLaunchOriginKind.CoopTrail, -1, 2, 6, false, true, false);
+        Reset(); Start(); string otherMissionFingerprint = RequestPacket.Fingerprint;
+        Boundary.Origin = default;
+        Reset(); Start();
+        Check(customizedFingerprint != plainFingerprint && otherMissionFingerprint != customizedFingerprint &&
+            RequestPacket.Fingerprint == plainFingerprint,
+            "a customized launch origin is part of the lobby agreement and absent from an ordinary lobby's fingerprint");
 
         Reset(); Start(); request = RequestPacket; Receive(Reply(request));
         var releasedCancel = Reply(request, 3); releasedCancel.Reason = "peer rejection after GO";

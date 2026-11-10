@@ -126,6 +126,8 @@ namespace APIShared
                 foreach (var hook in candidate.hooks) hook.Apply();
                 candidate.Subscribe();
                 published = service = candidate;
+                // Mode captures run inside this service's checkpoints; their decisions use its log.
+                GameModeHelper.ReportModeDecision = text => candidate.Safe(() => NativeApiLog.Error(log, text));
                 diagnostic = Status(NativeCapabilityState.Available, "Process-wide mission lifecycle installed.");
                 candidate.Safe(() => NativeApiLog.Debug(log, "Process-wide mission lifecycle installed."));
                 return true;
@@ -341,6 +343,7 @@ namespace APIShared
                 SavegameModSettings.FinishLoad();
             waiting = null;
             bool normal = false;
+            GameModeHelper.BeginModeDecisions();
             Safe(() => op.Id = state.Begin(Capture(op)));
             try
             {
@@ -357,11 +360,7 @@ namespace APIShared
                     !op.NativeFailed && op.ManagedSucceeded)
                 {
                     try { SavegameModSettings.ApplyLoadedSettings(Capture(op)); }
-                    catch (Exception error)
-                    {
-                        SavegameModSettings.MarkRestoreFailed();
-                        Report(error);
-                    }
+                    catch (Exception error) { SavegameModSettings.ReportRestoreFailure(error); }
                 }
                 Safe(() =>
                 {
@@ -419,7 +418,7 @@ namespace APIShared
                 () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
                 () => state.Ready(op.Id, Capture(op)),
                 () => { SavegameModSettings.FinishLoad(); MapRecordLoadCoordinator.FinishLoad(); },
-                error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
+                SavegameModSettings.ReportRestoreFailure));
 
         internal static void CompleteDeferredRestore(Action restore, Action ready,
             Action cleanup, Action<Exception> reportRestoreError)

@@ -49,7 +49,6 @@ namespace APIShared
         private static Func<bool> trailCustomizeProvider;
         private static bool activeTrailCustomizeAllowed;
         private static string chosenPath;
-        private static bool restoreFailed;
         private static bool initialized;
         private static readonly SavegameMissionPresetLease ActivePreset = new SavegameMissionPresetLease();
         private static IDisposable missionEndSubscription;
@@ -74,8 +73,8 @@ namespace APIShared
                 GameModeHelper.ReadSavedModeEvidence = () =>
                 {
                     bool present = TryGetRestoredMode(out GameModeKind kind,
-                        out GameModeLaunchVariant variant, out bool locked);
-                    return new SavedModeEvidence(present, kind, variant, locked);
+                        out GameModeLaunchVariant variant);
+                    return new SavedModeEvidence(present, kind, variant);
                 };
                 log = logger;
                 initialized = true;
@@ -116,7 +115,7 @@ namespace APIShared
 
         internal static bool IsCurrentChoiceAllowed(SavegameModSettingsRecord record)
         {
-            if (record == null || record.LockedByConflict) return false;
+            if (record == null) return false;
             GameModeKind kind = (GameModeKind)record.Kind;
             GameModeLaunchVariant variant = (GameModeLaunchVariant)record.Variant;
             if (kind == GameModeKind.CustomTrail || kind == GameModeKind.CoopTrail)
@@ -182,7 +181,7 @@ namespace APIShared
 
         private static Dictionary<string, byte[]> ResolveStartupSnapshot(string modId, CompatibleMod participant,
             SavegameModSettingsRecord record, Dictionary<string, Dictionary<string, byte[]>> values,
-            Dictionary<string, Dictionary<string, byte[]>> current, bool locked)
+            Dictionary<string, Dictionary<string, byte[]>> current)
         {
                     Dictionary<string, byte[]> snapshot =
                         participant.Endpoint.System_CreateDisabledMissionPresetSnapshot();
@@ -195,14 +194,14 @@ namespace APIShared
                         OverlaySavedHostProperties(snapshot, participant.Properties, stored, modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
                         (record.Kind == (int)GameModeKind.CustomTrail || record.Kind == (int)GameModeKind.CoopTrail);
-                    if (strictTrail || locked)
+                    if (strictTrail)
                     {
                         Dictionary<string, byte[]> baseline = participant.Endpoint.System_CreateDisabledMissionPresetSnapshot();
                         foreach (PropertyInfo property in participant.Properties)
                             if (baseline.TryGetValue(property.Name, out byte[] disabled))
                                 snapshot[property.Name] = disabled;
                     }
-                    if (!locked && record?.CreatorRules != null &&
+                    if (record?.CreatorRules != null &&
                         record.CreatorRules.TryGetValue(modId, out var rules))
                     {
                         ApplyCreatorRules(snapshot, participant.Properties, rules,
@@ -232,11 +231,7 @@ namespace APIShared
             ModSettingsApplication.EnterContext("save:" + path + "|" + fingerprint);
             preparedApplicationContext = ModSettingsApplication.ContextId;
             var record = ReadRecordForLoad(path, out _);
-            if (record?.LockedByConflict == true)
-                throw new InvalidDataException("The savegame has conflicting or incomplete settings; startup configuration cannot be verified.");
             var values = legacyChoice || useChosenCurrent && IsCurrentChoiceAllowed(record) ? chosenCurrent : record?.Mods;
-            bool locked = record?.LockedByConflict == true;
-            if (locked) values = null;
             var participants = FindParticipants();
             foreach (var item in participants)
             {
@@ -246,7 +241,7 @@ namespace APIShared
                 // mission; the multiplayer host gate explicitly prepares everyone.
                 if (!allParticipants && (!(participant.Endpoint is PresetLobbyModSettingsViewModel model) || !model.System_HasApplicationBackend)) continue;
                 var snapshot = ModSettingsApplication.ResumeSnapshot(item.Key) ??
-                    ResolveStartupSnapshot(item.Key, participant, record, values, chosenCurrent, locked);
+                    ResolveStartupSnapshot(item.Key, participant, record, values, chosenCurrent);
                 EnterPreparedPreset(item.Key, participant.Endpoint, snapshot);
             }
             preparedPath = path;
@@ -286,29 +281,38 @@ namespace APIShared
                     loaded = ReadRecordForLoad(filePath, out bool legacy);
                     legacyChoice = legacy;
                 }
-                restoreFailed = false;
                 if (chosenCurrent == null) chosenCurrent = fallback;
                 activeCreatorRules = loaded?.CreatorRules;
                 activeTrailCustomizeAllowed = loaded?.TrailCustomizeAllowed == true;
             }
         }
 
-        internal static bool TryGetRestoredMode(out GameModeKind kind,
-            out GameModeLaunchVariant variant, out bool lockedByConflict)
+        // A record's legacy LockedByConflict flag and a missing record are no evidence about the mode.
+        internal static bool TryGetRestoredMode(out GameModeKind kind, out GameModeLaunchVariant variant)
         {
             lock (Sync)
             {
                 kind = loaded == null ? GameModeKind.Unknown : (GameModeKind)loaded.Kind;
                 variant = loaded == null ? GameModeLaunchVariant.Standard : (GameModeLaunchVariant)loaded.Variant;
-                lockedByConflict = loaded == null ? !legacyChoice || restoreFailed :
-                    loaded.LockedByConflict || restoreFailed;
                 return loaded != null;
             }
         }
 
-        internal static void MarkRestoreFailed()
+        // A failed restore changes neither the mission mode nor any mod permission: the mode still
+        // comes from the save's record. What it leaves undecided are the settings themselves, so the
+        // consequence is stated once, in full, instead of locking mods on this peer only.
+        internal static void ReportRestoreFailure(Exception error)
         {
-            lock (Sync) restoreFailed = true;
+            try
+            {
+                NativeApiLog.Error(log, "SAVEGAME_SETTINGS_RESTORE_FAILED: the saved mod settings of this mission could " +
+                    "not be applied after loading. The mission mode and every mod permission stay as recorded in the " +
+                    "save; mods keep the settings that were active when the failure occurred, which can differ from " +
+                    "the saved ones. In multiplayer, players whose restore succeeded use the saved settings, so " +
+                    "gameplay settings can differ between players and desynchronize the game. Reload the save to retry. " +
+                    "Cause: " + error);
+            }
+            catch { /* Called from the lifecycle's cleanup path; diagnostics must not replace its outcome. */ }
         }
 
         internal static void ApplyLoadedSettings(MissionContext context)
@@ -335,7 +339,6 @@ namespace APIShared
                 chosenPath = null;
                 useChosenCurrent = false;
                 legacyChoice = false;
-                restoreFailed = false;
             }
         }
 
@@ -365,7 +368,10 @@ namespace APIShared
                 Version = SchemaVersion,
                 Kind = (int)mission.Mode.Kind,
                 Variant = (int)mission.Mode.LaunchVariant,
-                LockedByConflict = mission.Mode.HasConflictingCustomizedOrigin,
+                // Earlier builds persisted a launch-evidence conflict here, which locked the save for
+                // every later load and re-save. Every capture now decides its mode, so Kind and Variant
+                // above are the complete record; the flag is only set for a size-reduced payload.
+                LockedByConflict = false,
                 Mods = CaptureCompatibleHostSettings(),
                 CreatorRules = CaptureCreatorRules(mission),
                 TrailCustomizeAllowed = CaptureTrailCustomizeAllowed(mission),

@@ -21,7 +21,7 @@ namespace APIShared.GameModes
     /// <summary>One coherent snapshot of a consumer's customized launch. This describes origin; it does not grant permission to another mod.</summary>
     public readonly struct CustomizedLaunchOrigin
     {
-        /// <summary>Creates origin evidence. Invalid kinds or IDs are rejected during capture and mark the origin as conflicting.</summary>
+        /// <summary>Creates origin evidence. Invalid kinds or IDs are rejected during capture; the launch is then classified from the game's own data.</summary>
         public CustomizedLaunchOrigin(CustomizedLaunchOriginKind kind, int trailType, int trailId,
             int missionId, bool restoredFromSave, bool launchPending,
             bool supportsBuiltInOrigins = true)
@@ -62,8 +62,9 @@ namespace APIShared.GameModes
         /// on the mission capture thread, outside the registry lock; it must return a coherent
         /// snapshot without changing game state. There is no replay or implicit thread dispatch.
         /// Repeating the same owner and delegate is harmless; replacing an owner's provider throws.
-        /// Callback failures, invalid evidence and simultaneous active providers mark capture as
-        /// conflicting rather than enabling customized gameplay. An inactive provider returns None.
+        /// Callback failures, invalid evidence, simultaneous active providers and evidence that does not
+        /// fit the start the game reports are ignored as a whole: the launch is classified from the game's
+        /// own data and the decision is logged as an error. An inactive provider returns None.
         /// </summary>
         public static void Register(string ownerGuid, Func<CustomizedLaunchOrigin> capture) =>
             Registry.Register(ownerGuid, capture);

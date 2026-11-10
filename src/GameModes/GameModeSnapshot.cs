@@ -147,21 +147,20 @@ namespace APIShared.GameModes
         public int CustomizedMissionId { get; }
         /// <summary>Provider-supplied customized launch origin as the integer value of <see cref="CustomizedLaunchOriginKind"/>; -1 when the supplied origin was invalid.</summary>
         public int CustomizedOriginKind { get; }
-        /// <summary>True when customization evidence conflicts; the optional permission evaluator denies this context.</summary>
+        /// <summary>Always false for snapshots captured by APIShared: unusable customization evidence is ignored,
+        /// the mode is decided from the game's own data and the decision is logged. Kept for compatibility;
+        /// a caller-constructed snapshot can still set it, and the optional permission evaluator then denies it.</summary>
         public bool HasConflictingCustomizedOrigin { get; }
 
-        // A restart inherits the ready session's authorization evidence even when
-        // the optional origin provider is absent. Customized Trails can use the
-        // generic native CustomGame carrier; use the same audited family policy
-        // as save restoration, while keeping live roster/native facts.
+        // A restart is the same mission again: the ready source session is its record, under the
+        // same rule as save restoration (the record decides unless native data names a definite
+        // other mode). Live roster/native facts are kept. The optional origin provider may be absent.
         internal GameModeSnapshot WithRestartProvenance(GameModeSnapshot source)
         {
             var kind = Kind;
             var variant = LaunchVariant;
-            bool conflict = HasConflictingCustomizedOrigin;
-            if (kind == GameModeKind.Unknown) conflict = true;
-            else GameModeHelper.ReconcileRestoredSaveMode(Kind, true, source.Kind, source.LaunchVariant,
-                source.HasConflictingCustomizedOrigin, ref kind, ref variant, ref conflict);
+            GameModeHelper.ReconcileRestoredSaveMode(Kind, true, source.Kind, source.LaunchVariant,
+                ref kind, ref variant);
             return new GameModeSnapshot(
                 IsRealMultiplayer, IsSingleplayerSkirmishMode, IsSingleplayerSkirmish, IsSingleplayerTrail,
                 IsMapEditor, MultiplayerSave, DirectorAvailable, DirectorMultiplayer, DirectorSkirmish,
@@ -171,7 +170,7 @@ namespace APIShared.GameModes
                 CampaignMapId, EventTrailType,
                 kind == source.Kind ? source.CustomizedTrailId : CustomizedTrailId,
                 kind == source.Kind ? source.CustomizedMissionId : CustomizedMissionId,
-                kind == source.Kind ? source.CustomizedOriginKind : CustomizedOriginKind, conflict);
+                kind == source.Kind ? source.CustomizedOriginKind : CustomizedOriginKind, false);
         }
 
         /// <summary>Formats captured evidence for diagnostics without recapturing live state.</summary>

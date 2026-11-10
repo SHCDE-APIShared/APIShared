@@ -46,17 +46,11 @@ namespace APISharedTests
             participantType.GetField("Properties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant, Array.Empty<PropertyInfo>());
             participantType.GetField("PersonalProperties", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(participant,
                 new[] { typeof(PresetEndpointFixture).GetProperty(nameof(PresetEndpointFixture.UnreadablePersonal)) });
-            var failureField = settingsType.GetField("restoreFailed", privateFlags);
-            object previousFailure = failureField.GetValue(null);
-            try
-            {
-                bool rejected = false;
-                try { settingsType.GetMethod("ResolveStartupSnapshot", privateFlags).Invoke(null,
-                    new object[] { "foreign.fixture", participant, null, null, null, false }); }
-                catch (TargetInvocationException error) { rejected = error.InnerException is System.IO.InvalidDataException; }
-                check(!rejected, "save preparation must not read or snapshot personal properties");
-            }
-            finally { failureField.SetValue(null, previousFailure); }
+            bool rejected = false;
+            try { settingsType.GetMethod("ResolveStartupSnapshot", privateFlags).Invoke(null,
+                new object[] { "foreign.fixture", participant, null, null, null }); }
+            catch (TargetInvocationException error) { rejected = error.InnerException is System.IO.InvalidDataException; }
+            check(!rejected, "save preparation must not read or snapshot personal properties");
             var lease = new SavegameMissionPresetLease();
             var first = new PresetEndpointFixture();
             var second = new PresetEndpointFixture { FailExit = true };
@@ -123,11 +117,13 @@ namespace APISharedTests
                 "savegame metadata failed to round-trip");
             check(SavegameModSettings.IsCurrentChoiceAllowed(restored),
                 "customized Co-op Trail did not allow current host settings");
+            // Earlier builds persisted a launch conflict in this flag and thereby locked the save for
+            // every later load. It stays in the wire format but no longer restricts anything.
             record.LockedByConflict = true;
-            check(!SavegameModSettings.IsCurrentChoiceAllowed(record),
-                "conflicted mission allowed current host settings");
+            check(SavegameModSettings.IsCurrentChoiceAllowed(record),
+                "legacy conflict flag still locked a saved mission");
             check(SavegameModSettings.TryDeserialize(MessagePackSerializer.Serialize(record), out restored) &&
-                restored.LockedByConflict, "saved mission conflict was lost");
+                restored.LockedByConflict, "legacy conflict flag left the wire format");
             record.LockedByConflict = false;
             record.Variant = (int)GameModeLaunchVariant.Standard;
             record.TrailCustomizeAllowed = false;
@@ -249,31 +245,31 @@ namespace APISharedTests
                 restored.Mods["large.mod"].Count < 9,
                 "oversized mod properties displaced required mission metadata");
 
-            GameModeKind kind = GameModeKind.CustomGame;
-            GameModeLaunchVariant variant = GameModeLaunchVariant.Customized;
-            bool conflict = false;
+            // The save's own record decides the restored mode. Native data overrules it only by naming
+            // a definite other mode; launch-origin evidence takes no part and nothing is ever locked.
+            GameModeKind kind = GameModeKind.SandsOfTime;
+            GameModeLaunchVariant variant = GameModeLaunchVariant.Standard;
             GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true,
-                GameModeKind.CustomGame, GameModeLaunchVariant.Standard, true,
-                ref kind, ref variant, ref conflict);
-            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard && conflict,
-                "saved conflict was cleared for a matching mission kind");
-            conflict = true;
-            GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true,
-                GameModeKind.CustomGame, GameModeLaunchVariant.Customized, false,
-                ref kind, ref variant, ref conflict);
-            check(conflict, "conflicting current mission evidence was cleared by saved metadata");
-            conflict = false;
+                GameModeKind.CustomGame, GameModeLaunchVariant.Customized, ref kind, ref variant);
+            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Customized,
+                "stale launch presentation overrode the save's own record");
+            kind = GameModeKind.Unknown;
+            GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.Unknown, true,
+                GameModeKind.CustomTrail, GameModeLaunchVariant.RestoredCustomizedSave, ref kind, ref variant);
+            check(kind == GameModeKind.CustomTrail && variant == GameModeLaunchVariant.RestoredCustomizedSave,
+                "a customized save was not classified from its record before native data arrived");
             GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, false,
-                GameModeKind.Unknown, GameModeLaunchVariant.Standard, false,
-                ref kind, ref variant, ref conflict);
-            check(!conflict && kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard,
+                GameModeKind.Unknown, GameModeLaunchVariant.Standard, ref kind, ref variant);
+            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard,
                 "legacy save did not retain current-settings fallback");
-            kind = GameModeKind.Campaign;
-            conflict = false;
+            kind = GameModeKind.SandsOfTime; variant = GameModeLaunchVariant.Customized;
+            GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.Unknown, false,
+                GameModeKind.Unknown, GameModeLaunchVariant.Standard, ref kind, ref variant);
+            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard,
+                "an unclassified save without a record did not fall back to a custom game");
             GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.Campaign, true,
-                GameModeKind.CoopTrail, GameModeLaunchVariant.Customized, false,
-                ref kind, ref variant, ref conflict);
-            check(kind == GameModeKind.Campaign && conflict && variant == GameModeLaunchVariant.Standard,
+                GameModeKind.CoopTrail, GameModeLaunchVariant.Customized, ref kind, ref variant);
+            check(kind == GameModeKind.Campaign && variant == GameModeLaunchVariant.Standard,
                 "mismatched mission metadata unlocked a campaign");
 
             foreach (GameModeKind saved in Enum.GetValues(typeof(GameModeKind)))
@@ -281,28 +277,19 @@ namespace APISharedTests
                 if (saved == GameModeKind.Unknown) continue;
                 foreach (GameModeLaunchVariant savedVariant in Enum.GetValues(typeof(GameModeLaunchVariant)))
                 {
-                    kind = saved; variant = GameModeLaunchVariant.Standard; conflict = false;
-                    GameModeHelper.ReconcileRestoredSaveMode(saved, true, saved, savedVariant, false,
-                        ref kind, ref variant, ref conflict);
-                    check(kind == saved && variant == savedVariant && !conflict,
+                    kind = saved; variant = GameModeLaunchVariant.Standard;
+                    GameModeHelper.ReconcileRestoredSaveMode(saved, true, saved, savedVariant, ref kind, ref variant);
+                    check(kind == saved && variant == savedVariant,
                         "matching saved mode/variant was not preserved: " + saved + "/" + savedVariant);
                 }
             }
-            kind = GameModeKind.SandsOfTime;
-            variant = GameModeLaunchVariant.Customized;
-            conflict = false;
-            GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true,
-                GameModeKind.CustomGame, GameModeLaunchVariant.Standard, false,
-                ref kind, ref variant, ref conflict);
-            check(kind == GameModeKind.CustomGame && variant == GameModeLaunchVariant.Standard && !conflict,
-                "stale Customize presentation displaced an exact native/saved mode match");
             foreach (var saved in new[] { GameModeKind.CoopTrail, GameModeKind.CustomTrail,
                 GameModeKind.VanillaTrail, GameModeKind.SandsOfTime })
             {
-                kind = GameModeKind.CustomGame; variant = GameModeLaunchVariant.Standard; conflict = false;
+                kind = GameModeKind.CustomGame; variant = GameModeLaunchVariant.Standard;
                 GameModeHelper.ReconcileRestoredSaveMode(GameModeKind.CustomGame, true, saved,
-                    GameModeLaunchVariant.RestoredCustomizedSave, false, ref kind, ref variant, ref conflict);
-                check(kind == saved && variant == GameModeLaunchVariant.RestoredCustomizedSave && !conflict,
+                    GameModeLaunchVariant.RestoredCustomizedSave, ref kind, ref variant);
+                check(kind == saved && variant == GameModeLaunchVariant.RestoredCustomizedSave,
                     "generic native save family lost Trail provenance: " + saved);
             }
 
