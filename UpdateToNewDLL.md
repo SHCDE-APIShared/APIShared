@@ -1350,6 +1350,12 @@ the same save/peer plan before supporting another image. Private execution tests
 exercise the actual checksum continuation stores. Live repair still requires a
 real host/client acceptance run with a forced building and worker mismatch.
 
+The retire pass of lost workshop workers (`WeaponProductionRuntime.RetireLostActors`) relies on
+three Vanilla facts; recheck them for another image: the regular checksum runs only on map
+ticks divisible by 200 (`0xD1AD0`, call at `0xD1DA9`), the Script Extender tick hook in the same
+function runs before that call, and the repair recompute sends no report. The retire interval
+must divide that checksum interval; the source enforces the current values at compile time.
+
 ### Production state archives
 
 Versioned record `APIShared_WorkerProduction`, known entry `state`, uses the
