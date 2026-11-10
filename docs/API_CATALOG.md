@@ -225,6 +225,8 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation; startup member check | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
 | `TryGetGatehouseTiming` | Typed timing/distance settings | Native validation required; exclusive owner; permanent hook and logical state; automation via `IGatehouseAutomationCapability` |
 | `TryGetGatehouseDistanceOrigin` | Vanilla begin coordinate or complete-bounds center | Native validation required; exclusive owner; permanent runtime state |
+| [`BuildingGeometry`](../src/Buildings/BuildingGeometry.cs) | Center of a square footprint in eighths of a tile | Pure coordinate calculation, any thread |
+| [`GatehouseClosingRules`](../src/Buildings/Gatehouse/GatehouseClosingRules.cs) | Exclude candidates beyond both active closing distances | Read-only, use live records in the synchronous gatehouse query |
 | `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation; startup member check | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |

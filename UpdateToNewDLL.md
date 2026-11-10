@@ -1603,3 +1603,26 @@ native flag anchor. No pattern fallback is allowed because the manager binding,
 unit layout and complete caller contract are image-specific. Revalidate the
 three callers, entry and continuation, live ownership, old QoL compatibility
 and all disjoint QoL body patches for a new image.
+
+## Centered gatehouse distance
+
+For native SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`,
+the existing hook at `0xB7B70` replaces 75 bytes ending at `0xB7BBB`.
+`RBX` is the one-based building ID times the native building stride and
+`RBP` is the module base. The grid-width DWORD is at
+`[RBX + RBP + 0x64CCD04]`, corresponding to `GameBuilding.r_OccupyTileGridSize`
+at +0xF8 in the typed record. The native coupling caller `0xC5300`
+uses the same field. The begin coordinates arrive sign-extended in
+`R15D`/`R12D`. The selected access tile fields at `0x64CCD0A/C`
+are independent of the footprint and are excluded from the calculation.
+
+The centered branch reads both unit coordinates before clobbering `EDX`.
+Editor placement `0x118CA0` supplies `tile * 8` to `0x17FEF0`, which
+adds four before writing unit world X/Y. Tile bounds start at `tile * 8`.
+The footprint center is `begin * 8 + size * 4` on each axis.
+It returns the same Chebyshev distance representation in `R8D`.
+An unrecognized grid size or inactive centered origin takes the displaced
+Vanilla path. The gatehouse distance/timing layout remains hash-bound.
+On an unvalidated build or incomplete rule initialization the managed
+range query declines to skip candidates. Re-run the private-buffer native
+distance and gate/bridge backend tests after any layout or code change.

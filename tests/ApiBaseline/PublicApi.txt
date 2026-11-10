@@ -251,6 +251,8 @@ APIShared.BuildingRepairQuote | public int Panel { get; }
 APIShared.BuildingRepairQuote | public int Pitch { get; }
 APIShared.BuildingRepairQuote | public int Stone { get; }
 APIShared.BuildingRepairQuote | public int Wood { get; }
+APIShared.Buildings.BuildingGeometry | public static class APIShared.Buildings.BuildingGeometry
+APIShared.Buildings.BuildingGeometry | public static bool TryGetSquareFootprintCenter(int beginX, int beginY, int gridSize, out int centerX, out int centerY)
 APIShared.Buildings.EnemyProximityContext | public struct APIShared.Buildings.EnemyProximityContext
 APIShared.Buildings.EnemyProximityContext | public byte Unknown { get; }
 APIShared.Buildings.EnemyProximityContext | public int CivilianRadius { get; }
@@ -280,6 +282,8 @@ APIShared.Buildings.EnemyProximityRegistration | public int CallbackErrorCount {
 APIShared.Buildings.EnemyProximityRegistration | public string OwnerGuid { get; }
 APIShared.Buildings.EnemyProximityRegistration | public string RegistrationId { get; }
 APIShared.Buildings.EnemyProximityRegistration | public void SetEnabled(bool enabled)
+APIShared.Buildings.GatehouseClosingRules | public static class APIShared.Buildings.GatehouseClosingRules
+APIShared.Buildings.GatehouseClosingRules | public static bool IsDefinitelyOutsideRange(in SHCDESE.Interop.GameBuilding gate, in SHCDESE.Interop.GameUnit candidate)
 APIShared.Commands.GameActionAcceptedEventArgs | public sealed class APIShared.Commands.GameActionAcceptedEventArgs
 APIShared.Commands.GameActionAcceptedEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public int ActionState { get; }

@@ -1900,3 +1900,21 @@ Read and spawn Vanilla's animal herds with `Herds`, and register `HerdRouteEvent
 from simulation data and synchronized settings only; set calm marks and spawn herds inside a
 `SimulationTickEvents` callback. The [herd guide](HERDS.md) covers threads, the editor and the
 limits.
+
+## Gatehouse geometry and closing range
+
+`APIShared.Buildings.BuildingGeometry.TryGetSquareFootprintCenter` accepts the
+minimum tile coordinates and side length of a square footprint. It returns the
+center in native world coordinates, with eight units per tile. Tile boundaries
+lie at multiples of eight and tile centers are four units farther along each
+axis. An odd side length puts the result at the center of the middle tile. An
+even side length puts it on the boundary between the middle tiles. This
+calculation does not require a live map.
+
+Within a synchronous gatehouse query, use
+`APIShared.Buildings.GatehouseClosingRules.IsDefinitelyOutsideRange` with the
+live gate and unit records. The method uses the current native distance origin
+and the larger of the human and AI thresholds. True allows a consumer to skip
+additional checks. False requires the usual evaluation, including when the
+native rule could not be validated. Keep the rule stable during the query and
+use the timing and origin capabilities to make configuration changes outside it.

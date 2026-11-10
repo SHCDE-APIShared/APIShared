@@ -15,7 +15,6 @@ namespace APIShared
             "F73E9FF6F69D9EC1ECD59D528BC6D4861739F54E0A9C59C6E6BAD91369FA57C8",
             0xB7B70,
             Hex("0F BF 8C 2A 0E 8B 7E 06 42 8D 2C FD 00 00 00 00 8B C1 44 8B C5 2B C5 44 2B C1 3B E9 42 8D 2C E5 00 00 00 00 44 0F 4E C0 48 8D 05 61 84 F4 FF 0F BF 8C 02 10 8B 7E 06 8B D5 2B D1 8B C1 2B C5 3B E9 0F 4E D0 44 3B C2 44 0F 4C C2"),
-            Hex("44 0F BF 84 2A 0E 8B 7E 06 0F BF 8C 2A 10 8B 7E 06 0F BF 84 2B 0A CD 4C 06 44 01 F8 C1 E0 02 44 29 C0 99 31 D0 29 D0 41 89 C0 0F BF 84 2B 0C CD 4C 06 44 01 E0 C1 E0 02 29 C8 99 31 D0 29 D0 41 39 C0 44 0F 4C C0 90 90 90 90 90"),
             0xB7BBB,
             Hex("40 84 F6 75 10 41 81 F8 C8 00 00 00 7D 10 B8 B0 04 00 00 EB 69 41 81 F8 8C 00 00 00 7C 5B"),
             0xB7C32,
@@ -32,7 +31,6 @@ namespace APIShared
             string functionHash,
             int distanceBlockRva,
             byte[] vanillaDistanceBlockBytes,
-            byte[] centeredDistanceBlockBytes,
             int decisionBlockRva,
             byte[] decisionBlockBytes,
             int humanDelayBlockRva,
@@ -48,7 +46,6 @@ namespace APIShared
             FunctionHash = functionHash;
             DistanceBlockRva = distanceBlockRva;
             VanillaDistanceBlockBytes = vanillaDistanceBlockBytes;
-            CenteredDistanceBlockBytes = centeredDistanceBlockBytes;
             DecisionBlockRva = decisionBlockRva;
             DecisionBlockBytes = decisionBlockBytes;
             HumanDelayBlockRva = humanDelayBlockRva;
@@ -66,7 +63,6 @@ namespace APIShared
         public string FunctionHash { get; }
         public int DistanceBlockRva { get; }
         public byte[] VanillaDistanceBlockBytes { get; }
-        public byte[] CenteredDistanceBlockBytes { get; }
         public int DecisionBlockRva { get; }
         public byte[] DecisionBlockBytes { get; }
         public int HumanDelayBlockRva { get; }

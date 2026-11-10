@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.45.0",
+  "Version": "0.46.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.46.0",
+      "Changes": [
+        "Measure centered gatehouse closing distances from the actual footprint, so enemies approaching from opposite sides are treated equally.",
+        "Add a square footprint center helper and a read-only check for candidates outside the active gatehouse closing range."
+      ]
+    },
     {
       "Version": "0.45.0",
       "Changes": [

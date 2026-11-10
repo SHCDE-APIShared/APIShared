@@ -24,8 +24,8 @@ namespace APIShared
 
         private const int UnitXOffset = 0x67E8B0E;
         private const int UnitYOffset = 0x67E8B10;
-        private const int BuildingEndXOffset = 0x64CCD0A;
-        private const int BuildingEndYOffset = 0x64CCD0C;
+        // Slot-relative to the native handler's module + building ID * stride base.
+        private const int BuildingGridSizeOffset = 0x64CCD04;
 
         // Committed hooks stay installed until process exit, and the decision hook calls
         // Automation.QueryAddress from native code. The capability services are created after the
@@ -183,6 +183,16 @@ namespace APIShared
             }
         }
 
+        internal unsafe void ReadClosingRange(out GatehouseDistanceOrigin origin, out int maximumNativeDistance)
+        {
+            origin = Volatile.Read(ref *(int*)originFlag) == 0
+                ? GatehouseDistanceOrigin.VanillaBuildingBegin
+                : GatehouseDistanceOrigin.BuildingBoundsCenter;
+            // Snapshots are immutable and retained for the lifetime of the installed hooks.
+            int* current = (int*)Volatile.Read(ref *(IntPtr*)publishedTiming);
+            maximumNativeDistance = Math.Max(current[0], current[2]);
+        }
+
         internal void ReadTiming(out int aiDistance, out int aiDelay, out int humanDistance, out int humanDelay)
         {
             IntPtr current = Marshal.ReadIntPtr(publishedTiming);
@@ -241,21 +251,29 @@ namespace APIShared
             assembler.mov(rax, originAddress);
             assembler.cmp(__dword_ptr[rax], 0);
             assembler.je(vanilla);
-            assembler.pop(rax);
+            assembler.mov(eax, __dword_ptr[rbx + rbp + BuildingGridSizeOffset]);
+            assembler.cmp(eax, 1);
+            assembler.jb(vanilla);
+            assembler.cmp(eax, Buildings.GatehouseClosingRules.MaximumNativeGridSize);
+            assembler.ja(vanilla);
+            // The centered path replaces EAX anyway. Drop its saved copy and keep the grid size.
+            assembler.add(rsp, sizeof(long));
             assembler.popfq();
 
+            // Both loads need the original unit offset in RDX. CDQ below overwrites it.
             assembler.movsx(r8d, __word_ptr[rdx + rbp + UnitXOffset]);
             assembler.movsx(ecx, __word_ptr[rdx + rbp + UnitYOffset]);
-            assembler.movsx(eax, __word_ptr[rbx + rbp + BuildingEndXOffset]);
-            assembler.add(eax, r15d);
+            // Both axes use begin * 8 + size * 4. Tile * 8 is the boundary.
+            // Editor spawn (0x118CA0 -> 0x17FEF0) stores unit tile centers at tile * 8 + 4.
+            assembler.lea(eax, __[rax + r15 * 2]);
             assembler.shl(eax, 2);
             assembler.sub(eax, r8d);
             assembler.cdq();
             assembler.xor(eax, edx);
             assembler.sub(eax, edx);
             assembler.mov(r8d, eax);
-            assembler.movsx(eax, __word_ptr[rbx + rbp + BuildingEndYOffset]);
-            assembler.add(eax, r12d);
+            assembler.mov(eax, __dword_ptr[rbx + rbp + BuildingGridSizeOffset]);
+            assembler.lea(eax, __[rax + r12 * 2]);
             assembler.shl(eax, 2);
             assembler.sub(eax, ecx);
             assembler.cdq();

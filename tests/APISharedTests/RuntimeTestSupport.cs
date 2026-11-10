@@ -64,11 +64,6 @@ namespace APISharedTests
         private const int DecisionRva = 0x1200;
         private const int HumanDelayRva = 0x1280;
         private static readonly byte[] VanillaDistanceBytes = Hex("01 02 03 04");
-        private static readonly byte[] CenteredDistanceBytes = Hex("05 06 07 08");
-        private static readonly byte[] SupportedCenteredDistanceBytes = Hex(
-            "44 0F BF 84 2A 0E 8B 7E 06 0F BF 8C 2A 10 8B 7E 06 0F BF 84 2B 0A CD 4C 06 " +
-            "44 01 F8 C1 E0 02 44 29 C0 99 31 D0 29 D0 41 89 C0 0F BF 84 2B 0C CD 4C 06 " +
-            "44 01 E0 C1 E0 02 29 C8 99 31 D0 29 D0 41 39 C0 44 0F 4C C0 90 90 90 90 90");
         private static readonly byte[] DecisionBytes = Hex(
             "40 84 F6 75 10 41 81 F8 C8 00 00 00 7D 10 B8 B0 04 00 00 EB 69 41 81 F8 8C 00 00 00 7C 5B");
         private static readonly byte[] HumanDelayBytes = Hex("EB 50 B8 64 00 00 00 48 8D 2D C0 83 F4 FF");
@@ -259,13 +254,14 @@ namespace APISharedTests
 
         private static GatehouseBuildTarget InstallTestGatehouse(byte[] image)
         {
-            Copy(image, DistanceRva, VanillaDistanceBytes);
+            byte[] distanceBlock = GatehouseBuildTarget.Supported.VanillaDistanceBlockBytes;
+            Copy(image, DistanceRva, distanceBlock);
             Copy(image, DecisionRva, DecisionBytes);
             Copy(image, HumanDelayRva, HumanDelayBytes);
             return new GatehouseBuildTarget(
                 "TESTHASH", FunctionRva, FunctionSize,
                 ApiSharedRuntime.ComputeSha256(new ReadOnlySpan<byte>(image, FunctionRva, FunctionSize)),
-                DistanceRva, VanillaDistanceBytes, CenteredDistanceBytes,
+                DistanceRva, distanceBlock,
                 DecisionRva, DecisionBytes, HumanDelayRva, HumanDelayBytes,
                 DecisionRva + 8, DecisionRva + 15, DecisionRva + 24, HumanDelayRva + 3);
         }
@@ -276,7 +272,7 @@ namespace APISharedTests
             int? aiCloseDistanceRva = null) =>
             new GatehouseBuildTarget(
                 source.BuildHash, source.FunctionRva, source.FunctionSize, functionHash ?? source.FunctionHash,
-                source.DistanceBlockRva, source.VanillaDistanceBlockBytes, source.CenteredDistanceBlockBytes,
+                source.DistanceBlockRva, source.VanillaDistanceBlockBytes,
                 source.DecisionBlockRva, source.DecisionBlockBytes, source.HumanDelayBlockRva, source.HumanDelayBlockBytes,
                 aiCloseDistanceRva ?? source.AiCloseDistanceRva, source.AiReopenDelayRva,
                 source.HumanCloseDistanceRva, source.HumanReopenDelayRva);
@@ -304,8 +300,7 @@ namespace APISharedTests
         {
             var target = new GatehouseDistanceOriginTarget(
                 ModuleBase + 0xB7B70,
-                VanillaDistanceBytes,
-                CenteredDistanceBytes);
+                VanillaDistanceBytes);
             return new GatehouseDistanceOriginService("hash", target, state, ownership, mutationSync, null);
         }
 
@@ -415,18 +410,6 @@ namespace APISharedTests
                     Assert(false, message + $" (mismatch at +0x{index:X})");
                     return;
                 }
-        }
-        private static int IndexOfSequence(byte[] source, byte[] sequence)
-        {
-            for (int start = 0; start <= source.Length - sequence.Length; start++)
-            {
-                int index = 0;
-                while (index < sequence.Length && source[start + index] == sequence[index])
-                    index++;
-                if (index == sequence.Length)
-                    return start;
-            }
-            return -1;
         }
         private static void WriteUInt16(byte[] data, int offset, int value) { data[offset] = (byte)value; data[offset + 1] = (byte)(value >> 8); }
         private static void WriteInt32(byte[] data, int offset, int value)

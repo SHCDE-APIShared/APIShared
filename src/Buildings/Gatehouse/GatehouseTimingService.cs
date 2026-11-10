@@ -9,7 +9,7 @@ namespace APIShared
     internal sealed class GatehouseTimingService
     {
         private const int TicksPerSecond = 40;
-        private const int UnitsPerTile = 8;
+        private const int UnitsPerTile = Buildings.BuildingGeometry.NativeUnitsPerTile;
         private readonly string binaryHash;
         private readonly GatehouseTimingTarget target;
         private readonly GatehousePermanentRuntimeState runtimeState;
@@ -40,6 +40,9 @@ namespace APIShared
         }
 
         public IGatehouseTimingCapability Bind(string ownerGuid) => new OwnerCapability(this, ownerGuid);
+
+        internal void ReadClosingRange(out GatehouseDistanceOrigin origin, out int maximumNativeDistance) =>
+            runtimeState.ReadClosingRange(out origin, out maximumNativeDistance);
 
         private bool TrySetManualOnlyResolver(string ownerGuid, Func<int, bool> resolver,
             out NativeCapabilityDiagnostic diagnostic)
