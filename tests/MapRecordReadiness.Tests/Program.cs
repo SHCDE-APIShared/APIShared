@@ -19,7 +19,7 @@ internal static class Program
         APIShared.Economy.WorkerProductionAgreement.Waiting=APIShared.Economy.WorkerProductionAgreement.Blocked=false;
         APIShared.Economy.WorkerProductionAgreement.Checks=0;
         Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.SaveVeto = false; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
-        Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = 0;Boundary.LookupHeader=null;
+        Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = Boundary.StartWithdrawals = 0;Boundary.LookupHeader=null;
         Boundary.Settings = "host-settings"; Boundary.Records = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = Boundary.DuringPrepare = null;
         Boundary.Logs.Clear(); Boundary.Sent.Clear(); Boundary.Broadcast.Clear(); Boundary.LocalChat.Clear();
         Boundary.WaitingBroadcast.Clear(); Boundary.WaitingLocal.Clear();
@@ -109,6 +109,9 @@ internal static class Program
         Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "client may see Vanilla GO before the auxiliary release packet");
         MapRecordLoadCoordinator.FinishLoad(); Receive(request, 2001);
         Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "retired preparation cannot be replayed");
+        int announced = Boundary.LocalChat.Count + Boundary.Broadcast.Count;
+        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.LocalChat.Count + Boundary.Broadcast.Count == announced &&
+            Boundary.StartWithdrawals == 0, "a client reports a start without preparation once per published GO and never writes lobby data");
 
         Reset(); Start(); request = Reply(RequestPacket, 0); request.Token = Guid.NewGuid().ToString("N");
         Reset(client: true); Boundary.Records = new[] { Present(1) }; Receive(request, 2001);
@@ -275,6 +278,7 @@ internal static class Program
         Receive(releasedCancel);
         Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.Broadcast.Count == 1,
             "a GO already published for a cancelled map does not log or announce a second rejection");
+        Check(Boundary.StartWithdrawals == 1, "the host withdraws its published GO when the released map is cancelled before loading");
 
         Reset(solo: true); Save();
         Boundary.Settings = "changed after save publication";

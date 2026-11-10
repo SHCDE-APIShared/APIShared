@@ -41,7 +41,10 @@ namespace APIShared.Lobby
     /// guards after settings preparation at host release, client acknowledgement and final native-start admission;
     /// their receiver is null and rejections use the existing save-preparation failure path. Consumers follow the
     /// context's RequiresPeerAgreement for peer admission and retain their own feature demand and mode policy;
-    /// running-game multiplayer flags do not classify fresh lobby launches. No polling or native game hook is installed.</remarks>
+    /// running-game multiplayer flags do not classify fresh lobby launches. No polling or native game hook is installed.
+    /// A button rejection is announced in the Steam lobby chat. A local skirmish or single-player Coop start
+    /// (RequiresPeerAgreement false) has no such lobby: its reason is only logged, and the guard owner must
+    /// present it to the player itself.</remarks>
     public static class LobbyLaunchGuards
     {
         private delegate void Click(FRONT_Multiplayer self, string command);

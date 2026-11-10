@@ -124,8 +124,10 @@ namespace APIShared.Units.AiMilitary.Orders
                     if (id <= 0 || id >= 4500 || global == 0 || owner < 1 || owner > 8 ||
                         kind <= (int)AiOrderKind.Unknown || kind > (int)AiOrderKind.AttackTile || (uint)x >= 800 || (uint)y >= 800 ||
                         command < 0 || command > ushort.MaxValue || target < 0 || target > ushort.MaxValue ||
-                        action < 0 || action > ushort.MaxValue || moveType < 0 || moveType > ushort.MaxValue)
+                        action < 0 || action > ushort.MaxValue)
                         throw new InvalidDataException("Invalid AI order identity or domain value.");
+                    // moveType is the caller's raw informational value and has no closed domain:
+                    // ObserveMove stores it unvalidated, and the Extender's TribeMoveType.Fast is -255.
                     var group = new AiNativeGroup(id, global, owner);
                     if (parsed.ContainsKey(group)) throw new InvalidDataException("Duplicate AI order identity.");
                     parsed.Add(group, new AiCurrentOrder((AiOrderKind)kind, x, y, command, target, targetGlobal, action, extra, moveType));

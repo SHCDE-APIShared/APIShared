@@ -41,8 +41,11 @@ namespace APIShared.Economy
         internal int ResolvedFixedBonusPercentPreview { get; }
         internal string Digest { get; }
         internal string ServiceKey { get; }
+        // A conflicting customized origin needs no separate rejection: the mode policy denies every
+        // mode-gated owner there, so the candidate differs from the member whenever that changes the
+        // arithmetic. Identical arithmetic (e.g. no gated demand) must not stop a Vanilla mission.
         internal bool Contains(GameModeSnapshot actual,WorkerProductionCompiledRules candidate) => candidate!=null && CanStart &&
-            !actual.HasConflictingCustomizedOrigin && Members.TryGetValue(ModeKey(actual),out var member) && member.Digest==candidate.Digest;
+            Members.TryGetValue(ModeKey(actual),out var member) && member.Digest==candidate.Digest;
         internal static string ModeKey(GameModeSnapshot mode) => ((int)mode.Kind).ToString(CultureInfo.InvariantCulture)+"/"+
             ((int)mode.LaunchVariant).ToString(CultureInfo.InvariantCulture)+"/"+(mode.IsRealMultiplayer ? "1":"0");
         private string HashMembers()

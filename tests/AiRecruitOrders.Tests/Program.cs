@@ -266,5 +266,9 @@ internal static unsafe class Program
         ledger.ObserveAccepted(4, Group, new AiCurrentOrder(AiOrderKind.AttackTile, 20, 30), 1);
         ledger.Restore(ledger.Capture(), 5);
         Check(ledger.TryGetCurrent(5, Group, out order, out _) && order.Kind == AiOrderKind.AttackTile, "persisted attack-tile kind10 remains supported");
+        // The Extender's TribeMoveType.Fast is -255; a captured order must stay loadable.
+        ledger.ObserveAccepted(5, Group, new AiCurrentOrder(AiOrderKind.Hold, 20, 30, moveType: -255), 1);
+        ledger.Restore(ledger.Capture(), 6);
+        Check(ledger.TryGetCurrent(6, Group, out order, out _) && order.MoveType == -255, "a negative raw move type survives the save roundtrip");
     }
 }

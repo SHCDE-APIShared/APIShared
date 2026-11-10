@@ -195,7 +195,11 @@ namespace APIShared
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
             multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), (self, setup, map, coop, mission) =>
             {
-                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true)) return;
+                // Vanilla's lobby Update marks itself as loading and hides its panels right after this
+                // call returns, even when nothing started. Like a rejected StartSave, a rejected map
+                // start therefore unwinds that frame; the coordinator withdraws the host's start value.
+                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true))
+                    throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
                 Run(new Operation { Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
                     Multiplayer = true, File = map?.filePath }, () => multiplayerNew(self, setup, map, coop, mission));
             });

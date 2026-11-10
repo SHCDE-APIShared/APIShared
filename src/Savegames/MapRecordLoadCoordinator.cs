@@ -544,7 +544,15 @@ namespace APIShared
                 System.Threading.Volatile.Write(ref admission, new NativeAdmissionTicket(localPath, localHash));
                 loading = true; Schedule(); return true;
             }
-            catch (Exception error) { Abort(error.Message, notify: true, phase: "before native start"); return false; }
+            catch (Exception error)
+            {
+                Abort(error.Message, notify: true, phase: "before native start");
+                // Vanilla repeats this call every frame while the start value stays published
+                // (a client cannot withdraw it). Every rejection, including one without a
+                // preparation, is reported once; a new request or proposal clears the marker.
+                if (lobby != null) { rejectedNativeLobby = lobby; rejectedNativePath = path; }
+                return false;
+            }
         }
         // Native load may run on another thread. This path reads only an immutable
         // main-thread ticket and this peer's file; no Steam, lobby, settings or UI.
@@ -619,6 +627,16 @@ namespace APIShared
                     NativeApiLog.Error(log, "Map preparation cancellation send failed: " + error.Message);
                 }
                 retired.Add(pending.Token);
+                // The GO already published would make Vanilla call StartGame on every peer in every
+                // frame. Only the owner can withdraw it; Steam applies the owner's own write locally
+                // at once. A native load that has already been admitted keeps its start value.
+                if (attemptHost && released && !loading && currentLobby?.id.m_SteamID == attemptLobby && currentLobby.isHost) try
+                {
+                    if (SteamMatchmaking.GetLobbyOwner(currentLobby.id).m_SteamID == hostId &&
+                        !SteamMatchmaking.SetLobbyData(currentLobby.id, "start", ""))
+                        NativeApiLog.Error(log, "Map start withdrawal was refused by Steam.");
+                }
+                catch (Exception error) { NativeApiLog.Error(log, "Map start withdrawal failed: " + error.Message); }
             }
             string detail = null;
             if (showError)

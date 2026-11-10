@@ -11,7 +11,7 @@ using APIShared.Savegames;
 internal static class Boundary
 {
     internal static Delegate MapHook, SaveHook;
-    internal static int MapStarts, SaveStarts, Captures, Popups;
+    internal static int MapStarts, SaveStarts, Captures, Popups, StartWithdrawals;
     internal static bool MainThread = true, Prepare = true, SendOk = true, SaveVeto;
     internal static ulong Local = 2001, Host = 2001;
     internal static string Settings = "host-settings", Path;
@@ -35,7 +35,12 @@ namespace Steamworks
 {
     public struct CSteamID { public ulong m_SteamID; public CSteamID(ulong value) { m_SteamID = value; } }
     internal static class SteamUser { internal static CSteamID GetSteamID() => new CSteamID(Boundary.Local); }
-    internal static class SteamMatchmaking { internal static CSteamID GetLobbyOwner(CSteamID lobby) => new CSteamID(Boundary.Host); }
+    internal static class SteamMatchmaking
+    {
+        internal static CSteamID GetLobbyOwner(CSteamID lobby) => new CSteamID(Boundary.Host);
+        internal static bool SetLobbyData(CSteamID lobby, string key, string value)
+        { if (key == "start" && value.Length == 0) Boundary.StartWithdrawals++; return true; }
+    }
     internal static class SteamFriends { internal static string GetFriendPersonaName(CSteamID id) => "peer-" + id.m_SteamID; }
 }
 public sealed class Platform_Multiplayer

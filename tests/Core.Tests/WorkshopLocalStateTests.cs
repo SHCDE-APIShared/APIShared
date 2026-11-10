@@ -48,6 +48,10 @@ public sealed class WorkshopLocalStateTests
             item.Receipt = null;
             Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
             Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.ManualAction(item));
+
+            // Exactly the catalog's shape for a receipt whose subscription ended: no receipt object.
+            var unsubscribed = new WorkshopCatalogItem { IsSubscribed = false, InstalledVersion = "1.0.32" };
+            Assert.AreEqual(WorkshopAction.Remove, WorkshopLocalState.StartupAction(unsubscribed, WorkshopLocalStatus.Missing, false));
         } finally {
             Directory.Delete(game, recursive: true);
         }
