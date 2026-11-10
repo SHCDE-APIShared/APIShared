@@ -50,6 +50,10 @@ namespace APIShared.Units.AiMilitary
         {
             var service = Instance;
             capability = service.ready ? new Binding(service, owner) : null;
+            // Observation starts with the first binding, also for a consumer that only asks the quota
+            // marker. Starting it at the first assignment instead would lose the group orders issued
+            // before that call, and an assignment decides on them; the observers fire per AI group
+            // order, not per unit or tick.
             if (capability != null) service.EnableObservation();
             diagnostic = new NativeCapabilityDiagnostic("Units.AiMilitary", service.ready ? NativeCapabilityState.Available :
                 NativeCapabilityState.ValidationFailed, string.Empty, service.ready ? string.Empty : service.failure);

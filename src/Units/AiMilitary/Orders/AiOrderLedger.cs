@@ -11,19 +11,10 @@ namespace APIShared.Units.AiMilitary.Orders
     {
         private readonly AiMilitaryNativeBackend backend;
         private readonly Dictionary<AiNativeGroup, AiCurrentOrder> orders = new Dictionary<AiNativeGroup, AiCurrentOrder>();
-        private readonly Dictionary<AiNativeGroup, int> dispatches = new Dictionary<AiNativeGroup, int>();
         private long generation;
         internal AiOrderLedger(AiMilitaryNativeBackend backend) { this.backend = backend ?? throw new ArgumentNullException(nameof(backend)); }
-        internal void Clear(long worldGeneration) { generation = worldGeneration; orders.Clear(); dispatches.Clear(); }
+        internal void Clear(long worldGeneration) { generation = worldGeneration; orders.Clear(); }
         internal void Invalidate(AiNativeGroup group) { orders.Remove(group); }
-        internal void EnterGroupDispatch(AiNativeGroup group)
-        { dispatches.TryGetValue(group, out int depth); dispatches[group] = depth + 1; }
-        internal void ExitGroupDispatch(AiNativeGroup group)
-        {
-            if (!dispatches.TryGetValue(group, out int depth)) throw new InvalidOperationException("Unbalanced AI group dispatch.");
-            if (depth == 1) dispatches.Remove(group); else dispatches[group] = depth - 1;
-        }
-        internal bool IsInGroupDispatch(AiNativeGroup group) => dispatches.ContainsKey(group);
         internal void ObserveMove(long worldGeneration, AiNativeGroup group, int x, int y,
             short patrol, bool newOrder, int moveType, long rawOriginalResult)
         {
