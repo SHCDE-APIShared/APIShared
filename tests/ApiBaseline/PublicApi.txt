@@ -2527,6 +2527,61 @@ APIShared.Presentation.IngameMenuSlotState | public sealed class APIShared.Prese
 APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuActionInfo Current { get; }
 APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuSlot Slot { get; }
 APIShared.Presentation.IngameMenuSlotState | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.IngameMenuActionInfo> Claims { get; }
+APIShared.Presentation.LordMessageAudio | public sealed class APIShared.Presentation.LordMessageAudio
+APIShared.Presentation.LordMessageAudio | public APIShared.Presentation.LordMessageSourceKind Kind { get; }
+APIShared.Presentation.LordMessageAudio | public bool IsReady { get; }
+APIShared.Presentation.LordMessageAudio | public static APIShared.Presentation.LordMessageAudio FromModAsset(string providerGuid, string relativePath)
+APIShared.Presentation.LordMessageAudio | public static APIShared.Presentation.LordMessageAudio FromVanilla(APIShared.Presentation.VanillaLordMessage message)
+APIShared.Presentation.LordMessageAudio | public string Path { get; }
+APIShared.Presentation.LordMessageContext | public sealed class APIShared.Presentation.LordMessageContext
+APIShared.Presentation.LordMessageContext | public SHCDESE.Interop.AILords? VanillaLord { get; }
+APIShared.Presentation.LordMessageContext | public SHCDESE.Interop.Enums.AILordMessageType MessageType { get; }
+APIShared.Presentation.LordMessageContext | public int HeaderIndex { get; }
+APIShared.Presentation.LordMessageContext | public int TextIndex { get; }
+APIShared.Presentation.LordMessageContext | public int TextSection { get; }
+APIShared.Presentation.LordMessageContext | public int? PlayerId { get; }
+APIShared.Presentation.LordMessageContext | public long InvocationId { get; }
+APIShared.Presentation.LordMessageContext | public string OriginalAudioPath { get; }
+APIShared.Presentation.LordMessageContext | public string OriginalVideoPath { get; }
+APIShared.Presentation.LordMessageEvents | public static class APIShared.Presentation.LordMessageEvents
+APIShared.Presentation.LordMessageEvents | public static bool Available { get; }
+APIShared.Presentation.LordMessageEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Presentation.LordMessagePreEventArgs> pre, System.Action<APIShared.Presentation.LordMessagePostEventArgs> post, out APIShared.Presentation.LordMessageRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.LordMessageEvents | public static long CallbackFailures { get; }
+APIShared.Presentation.LordMessageEvents | public static string Diagnostic { get; }
+APIShared.Presentation.LordMessagePostEventArgs | public sealed class APIShared.Presentation.LordMessagePostEventArgs
+APIShared.Presentation.LordMessagePostEventArgs | public APIShared.Presentation.LordMessageAudio Audio { get; }
+APIShared.Presentation.LordMessagePostEventArgs | public APIShared.Presentation.LordMessageContext Context { get; }
+APIShared.Presentation.LordMessagePostEventArgs | public APIShared.Presentation.LordMessageText Text { get; }
+APIShared.Presentation.LordMessagePostEventArgs | public APIShared.Presentation.LordMessageVideo Video { get; }
+APIShared.Presentation.LordMessagePostEventArgs | public object State { get; }
+APIShared.Presentation.LordMessagePreEventArgs | public sealed class APIShared.Presentation.LordMessagePreEventArgs
+APIShared.Presentation.LordMessagePreEventArgs | public APIShared.Presentation.LordMessageAudio Audio { get; }
+APIShared.Presentation.LordMessagePreEventArgs | public APIShared.Presentation.LordMessageContext Context { get; }
+APIShared.Presentation.LordMessagePreEventArgs | public APIShared.Presentation.LordMessageText Text { get; }
+APIShared.Presentation.LordMessagePreEventArgs | public APIShared.Presentation.LordMessageVideo Video { get; }
+APIShared.Presentation.LordMessagePreEventArgs | public bool TryReplaceAudio(APIShared.Presentation.LordMessageAudio target)
+APIShared.Presentation.LordMessagePreEventArgs | public bool TryReplaceText(APIShared.Presentation.LordMessageText target)
+APIShared.Presentation.LordMessagePreEventArgs | public bool TryReplaceVideo(APIShared.Presentation.LordMessageVideo target)
+APIShared.Presentation.LordMessagePreEventArgs | public object State { get; set; }
+APIShared.Presentation.LordMessageRegistration | public sealed class APIShared.Presentation.LordMessageRegistration
+APIShared.Presentation.LordMessageRegistration | public bool Enabled { get; }
+APIShared.Presentation.LordMessageRegistration | public void SetEnabled(bool value)
+APIShared.Presentation.LordMessageSourceKind | public enum APIShared.Presentation.LordMessageSourceKind : int
+APIShared.Presentation.LordMessageSourceKind | LiteralText = 3
+APIShared.Presentation.LordMessageSourceKind | ModAsset = 2
+APIShared.Presentation.LordMessageSourceKind | Original = 0
+APIShared.Presentation.LordMessageSourceKind | Vanilla = 1
+APIShared.Presentation.LordMessageText | public sealed class APIShared.Presentation.LordMessageText
+APIShared.Presentation.LordMessageText | public APIShared.Presentation.LordMessageSourceKind Kind { get; }
+APIShared.Presentation.LordMessageText | public static APIShared.Presentation.LordMessageText FromText(string text)
+APIShared.Presentation.LordMessageText | public static APIShared.Presentation.LordMessageText FromVanilla(APIShared.Presentation.VanillaLordMessage message)
+APIShared.Presentation.LordMessageText | public string Value { get; }
+APIShared.Presentation.LordMessageVideo | public sealed class APIShared.Presentation.LordMessageVideo
+APIShared.Presentation.LordMessageVideo | public APIShared.Presentation.LordMessageSourceKind Kind { get; }
+APIShared.Presentation.LordMessageVideo | public bool IsReady { get; }
+APIShared.Presentation.LordMessageVideo | public static APIShared.Presentation.LordMessageVideo FromModAsset(string providerGuid, string relativePath)
+APIShared.Presentation.LordMessageVideo | public static APIShared.Presentation.LordMessageVideo FromVanilla(APIShared.Presentation.VanillaLordMessage message)
+APIShared.Presentation.LordMessageVideo | public string Path { get; }
 APIShared.Presentation.MapperSelectionCameraEvents | public static class APIShared.Presentation.MapperSelectionCameraEvents
 APIShared.Presentation.MapperSelectionCameraEvents | public static bool TryRegister(string ownerGuid, string id, System.Action<APIShared.Presentation.MapperSelectionCameraPreEventArgs> pre, System.Action<APIShared.Presentation.MapperSelectionCameraPostEventArgs> post, out string reason, int order = 0)
 APIShared.Presentation.MapperSelectionCameraPostEventArgs | public sealed class APIShared.Presentation.MapperSelectionCameraPostEventArgs
@@ -2691,6 +2746,17 @@ APIShared.Presentation.TroopActionHud | public static void RefreshCurrentPanel()
 APIShared.Presentation.UiWorkClient | public sealed class APIShared.Presentation.UiWorkClient
 APIShared.Presentation.UiWorkClient | public bool TryPost(System.Action callback)
 APIShared.Presentation.UiWorkClient | public bool TryRegisterBeforeRender(string registrationId, System.Action callback, out APIShared.Presentation.IUiFrameWorkRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.VanillaLordMessage | public sealed class APIShared.Presentation.VanillaLordMessage
+APIShared.Presentation.VanillaLordMessage | public Enums.eTextSections TextSection { get; }
+APIShared.Presentation.VanillaLordMessage | public SHCDESE.Interop.AILords Lord { get; }
+APIShared.Presentation.VanillaLordMessage | public SHCDESE.Interop.Enums.AILordMessageType MessageType { get; }
+APIShared.Presentation.VanillaLordMessage | public int TextIndex { get; }
+APIShared.Presentation.VanillaLordMessage | public string AudioPath { get; }
+APIShared.Presentation.VanillaLordMessage | public string VideoPath { get; }
+APIShared.Presentation.VanillaLordMessages | public static class APIShared.Presentation.VanillaLordMessages
+APIShared.Presentation.VanillaLordMessages | public static bool Available { get; }
+APIShared.Presentation.VanillaLordMessages | public static bool TryGet(SHCDESE.Interop.AILords lord, SHCDESE.Interop.Enums.AILordMessageType type, out APIShared.Presentation.VanillaLordMessage message, out string reason)
+APIShared.Presentation.VanillaLordMessages | public static string Diagnostic { get; }
 APIShared.Presentation.VisibleMapRenderEventArgs | public sealed class APIShared.Presentation.VisibleMapRenderEventArgs : System.EventArgs
 APIShared.Presentation.VisibleMapRenderEventArgs | public int Bottom { get; }
 APIShared.Presentation.VisibleMapRenderEventArgs | public int Left { get; }

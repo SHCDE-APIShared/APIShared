@@ -1626,3 +1626,72 @@ Vanilla path. The gatehouse distance/timing layout remains hash-bound.
 On an unvalidated build or incomplete rule initialization the managed
 range query declines to skip candidates. Re-run the private-buffer native
 distance and gate/bridge backend tests after any layout or code change.
+## Vanilla Lord message reference catalog
+
+Owner: `Presentation/VanillaLordMessages`; read-only, no native hooks. Reference
+native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+The full enqueue/presentation audit is retained in the workspace native baseline's
+`knowledge/LORD_MEDIA_LOOKUP.md` and `knowledge/NOTIFICATION_LAST_FRAME.md`.
+
+The native wrapper at RVA `0x103AA0` obtains its original speech Lord from the
+AIC record. The read-only catalog resolves three complete-instruction anchors:
+
+- `0x103ADC`: original AIC indexing followed by `lea r15,[rip+disp32]` at
+  `0x103AEA`. Its resolved target must be module RVA zero. The adjacent built-in
+  limit is 29, crosschecked against the Extender Lord enum.
+- `0x103B22`: generic message formatting indexes the audio table using
+  `message * 0xF0`, then loads `[rbx+r15+audioRva]` at `0x103B38` and
+  `[rbx+r15+videoRva]` at `0x103B45`.
+- `0x103BA3`: the built-in branch computes `message * 30 + lord`, independently
+  loads `[r15+rcx*8+videoRva]` at `0x103BB8` and
+  `[r15+rcx*8+audioRva]` at `0x103BC3`, and computes localized text as
+  `(lord-1)*34 + message` in text section `TEXT_SKIRMISH_SPEECH` (221).
+
+The reference table RVAs are `0x316450` (audio) and `0x318340` (video), but
+production derives them from both addressing forms and rejects disagreement.
+All anchors must occur in one ordered executable-code neighborhood; original
+pointer tables and NUL-terminated ASCII filenames must remain inside mapped
+non-executable PE sections. The snapshot's relocated pointers are interpreted
+relative to the actual module base. All 29 built-in Lords and message categories
+1 through 33 are copied to immutable managed references once; announcements,
+custom-AIC slots and nickname pseudo-categories are not catalog references.
+The active Extender speech/video loaders continue to select language and overrides.
+
+Known identities validate reference bytes without scanning. A missing/changed
+reference takes a unique executable-section semantic pattern fallback. Unknown
+identities use the same fallback with independent stride, base, localization and
+pointer validations. Resolved anchor RVAs are cached under
+`BepInEx/cache/APIShared/lord-messages/<full-native-hash>-<APIShared-version>.bin`.
+A cache hit revalidates complete anchor patterns and addressing; an invalid cache
+is ignored and rescanned. No caller-provided RVA or absolute pointer is accepted.
+Validation failure disables only Vanilla references and reports the precise cause.
+
+For a game update, re-audit both wrapper branches, AIC original-type mapping,
+full table bounds, the two addressing forms, section layout, original filenames,
+localization stride and enums. Execute `VanillaLordMessageTests` against the
+canonical installed DLL. These are static source-reference checks; they do not
+establish live decoding, audible playback or multiplayer acceptance.
+
+### Lord presentation record protocol
+
+The shared Lord message broker separately supports the exact audited native hash
+above. Its managed IL contract validates the loaded `GameMap.processTestMap`
+consumer, but that alone cannot prove the native producer's record grouping.
+`0xFEE50` supplies audio-present in the fourth argument of `0x1A2850` and
+video-present in its fifth argument; the emitter writes those booleans to words
+13 and 14 of the kind-20 record. A complete Lord group then contains channel-1
+speech at gain 100, a kind-22 control record, optional audited frontend
+music/ambient/old-video-stop controls, and a nonlooping kind-21 video start
+(value zero, speech-wait one). The native queue/presentation paths at
+`0x103290`, `0x102A70`, `0xFE570` and `0xFEE50` and their relevant callees form
+this protocol's closed audited controlflow; the existing Extender interior
+speech-path relocation preserves it.
+
+An unknown native identity disables the presentation broker even if the separate
+Vanilla catalog's table-pattern fallback succeeds. Those table anchors prove
+addressing and bounds, not this whole emission/controlflow contract. Extending
+broker support requires a fresh feature audit of the complete producer and
+queue/lifecycle chain, buffer transport, header flags, signed text selectors,
+allowed intervening records and media flags. The consumer continues the original
+managed path without changing the records when the protocol or any individual
+group is unsupported. No speculative group protocol is inferred from old RVAs.

@@ -914,6 +914,16 @@ The opt-in [`SharedToolTipSizing`](../src/ModSettings/UI/SharedToolTipSizing.cs)
 `ReferenceElement` and `ReferenceFontSize`: opened popups match the source HUD's pixel scale.
 Consumers without a reference retain the established resolution presets.
 
+## Lord message replacement
+
+Requires APIShared 0.47.0 or later. `APIShared.Presentation.LordMessageEvents`
+provides owner-bound Pre/Post presentation rules for actual Lord messages. Audio,
+video and text can independently retain the original, reference a Vanilla Lord
+message or use private mod media / consumer-localized text. `VanillaLordMessages`
+resolves original message references without enqueueing a message or using gameplay RNG.
+See the [contract and coverage](LORD_MESSAGES.md) and
+[consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
+
 ## Packaged Lord presentation
 
 Requires APIShared 0.20.0 or later. `APIShared.Presentation.PackagedLordPresentation.TryRegister`

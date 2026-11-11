@@ -46,6 +46,7 @@
 - [Mapper selection camera](#mapper-selection-camera)
 - [Lord statistic columns](#lord-statistic-columns)
 - [Packaged Lord presentation](#packaged-lord-presentation)
+- [Lord message replacement](#lord-message-replacement)
 
 ## Example package requirements
 
@@ -1797,6 +1798,18 @@ A popup that is not attached waits for its view. Closed popups release source/vi
 Enabling takes exclusive sizing ownership from the Extender scaler; disabling restores its prior
 setting. A null reference retains the existing 23/30/45 resolution presets for existing consumers.
 The caller owns the dark/gold, white wrapped-text template and closes its popups when its HUD ends.
+
+## Lord message replacement
+
+Requires APIShared 0.47.0 or later. Register `LordMessageEvents` on Unity after
+readiness, retain the registration and use `SetEnabled` for activation. Each of
+audio, video and text can remain unchanged or select its own typed replacement.
+Use `VanillaLordMessages.TryGet` for an existing Lord/category reference; private
+mod resources and already-localized text do not require a global asset override.
+The service changes actual presentation after native queueing and retains the
+existing `PackagedLordPresentation` contract. See [Lord message replacement](LORD_MESSAGES.md)
+for identity, ordering, callback rollback, resource preparation, coverage and
+submission limits, and the [consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
 
 ## Packaged Lord presentation
 
