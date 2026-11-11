@@ -70,6 +70,7 @@ namespace APIShared.Savegames
         private static ManualLogSource log;
         private static VersionedSaveDataRegistry registry;
         private static List<IDisposable> subscriptions;
+        private static object loadAttempt;
 
         internal static long CallbackFailures
         {
@@ -108,6 +109,16 @@ namespace APIShared.Savegames
             VersionedSaveDataRegistry current;
             lock (Sync) current = registry;
             List<KeyValuePair<string, string>> declared = current?.SimulationRecords;
+            return CaptureDigests(savePath, declared);
+        }
+        internal static IReadOnlyList<SavegameRecordDigest> CaptureMapSimulationDigests(string mapPath)
+        {
+            VersionedSaveDataRegistry current;
+            lock (Sync) current = registry;
+            return CaptureDigests(mapPath, current?.MapSimulationRecords);
+        }
+        private static IReadOnlyList<SavegameRecordDigest> CaptureDigests(string savePath, List<KeyValuePair<string, string>> declared)
+        {
             if (declared == null || declared.Count == 0) return Array.Empty<SavegameRecordDigest>();
             if (!MapArchive.TryLoad(savePath, out MapArchive archive))
             {
@@ -154,9 +165,8 @@ namespace APIShared.Savegames
             {
                 if (args == null) return;
                 if (args.Phase == EventHookPhase.Pre)
-                    registry?.BeginLoad(args.LoadingEditorMap ? VersionedSaveLoadSource.EditorMap : VersionedSaveLoadSource.SaveGame,
-                        args.FileName);
-                else if (args.Phase == EventHookPhase.Post) registry?.EndLoad();
+                    BeginArchive(args);
+                else if (args.Phase == EventHookPhase.Post) { registry?.EndLoad(); loadAttempt = null; }
             }
             catch (Exception ex) { Report(ex); }
         }
@@ -170,9 +180,8 @@ namespace APIShared.Savegames
             {
                 if (args == null) return;
                 if (args.Phase == EventHookPhase.Pre)
-                    registry?.BeginLoad(args.bMultiplayerSave != 0 || SavegameLoadCoordinator.IsLoadingMultiplayerSave
-                        ? VersionedSaveLoadSource.MultiplayerSave : VersionedSaveLoadSource.MapToPlay, args.FileName);
-                else if (args.Phase == EventHookPhase.Post) registry?.EndLoad();
+                    BeginArchive(args);
+                else if (args.Phase == EventHookPhase.Post) { registry?.EndLoad(); loadAttempt = null; }
             }
             catch (Exception ex) { Report(ex); }
         }
@@ -180,6 +189,41 @@ namespace APIShared.Savegames
         internal static void OnUnloadMap(MapUnloadEventArgs args)
         {
             try { registry?.Unload(); }
+            catch (Exception ex) { Report(ex); }
+        }
+
+        // The corrected SE archive handler invokes these around its own Pre-phase LoadMapArchive.
+        // The ordinary R3 Pre may run before or after that handler: the same EventArgs is the token,
+        // so it never erases data that was already delivered/prepared for that exact invocation.
+        internal static void BeginArchive(LoadSaveGameEventArgs args)
+        {
+            try
+            {
+                if (args == null || args.Phase != EventHookPhase.Pre || ReferenceEquals(loadAttempt, args)) return;
+                loadAttempt = args;
+                registry?.BeginLoad(args.LoadingEditorMap ? VersionedSaveLoadSource.EditorMap : VersionedSaveLoadSource.SaveGame, args.FileName);
+            }
+            catch (Exception ex) { Report(ex); }
+        }
+        internal static void BeginArchive(MapLoadEventArgs args)
+        {
+            try
+            {
+                if (args == null || args.Phase != EventHookPhase.Pre || ReferenceEquals(loadAttempt, args)) return;
+                loadAttempt = args;
+                registry?.BeginLoad(args.bMultiplayerSave != 0 || SavegameLoadCoordinator.IsLoadingMultiplayerSave
+                    ? VersionedSaveLoadSource.MultiplayerSave : VersionedSaveLoadSource.MapToPlay, args.FileName);
+            }
+            catch (Exception ex) { Report(ex); }
+        }
+        internal static void CompleteArchive(LoadSaveGameEventArgs args)
+        {
+            try { if (args?.Phase == EventHookPhase.Pre && ReferenceEquals(loadAttempt, args)) registry?.PrepareLoad(); }
+            catch (Exception ex) { Report(ex); }
+        }
+        internal static void CompleteArchive(MapLoadEventArgs args)
+        {
+            try { if (args?.Phase == EventHookPhase.Pre && ReferenceEquals(loadAttempt, args)) registry?.PrepareLoad(); }
             catch (Exception ex) { Report(ex); }
         }
 

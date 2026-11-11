@@ -56,7 +56,7 @@ namespace APIShared.Units
         public eChimps PreviousUnitType { get; }
         /// <summary>Gets the Script Extender event that started tracking this unit.</summary>
         public UnitSettledCause Cause { get; }
-        /// <summary>Gets the simulation tick passed by SE <c>OnTick</c> at settlement.</summary>
+        /// <summary>Gets the local engine-run tick passed by SE <c>OnTick</c> at settlement; not the saved native map tick.</summary>
         public int SimulationTick { get; }
         /// <summary>Gets how many SE ticks examined this unit, including the settling tick (at least 1).</summary>
         public int TicksObserved { get; }

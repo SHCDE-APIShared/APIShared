@@ -21,11 +21,11 @@ public sealed class WorkshopBootstrap : BaseUnityPlugin
         log = Logger;
         CrusaderLibrary.Instance.LibraryLoaded += context => log.LogInfo("Workshop bootstrap active after startup cleanup: @@GUID@@");
         if (CentralAPISharedReady()) return;
-        string text = "@@NAME@@ requires the separate APIShared @@MINIMUM@@+ item. Subscribe to APIShared, restart and accept the automatic installation prompts. Existing modpack files remain until migration is confirmed.\n\n" +
-            "@@NAME@@ benötigt das separate APIShared-Item @@MINIMUM@@+. APIShared abonnieren, neu starten und die automatischen Installationsabfragen bestätigen. Bestehende Modpackdateien bleiben bis zur bestätigten Übernahme erhalten.\n\n" +
-            "Yes / Ja: open Workshop / Workshop öffnen.";
+        APIShared.Localization.GameLocale.Initialize();
+        APIShared.Localization.UiText.Configure(APIShared.Localization.GameLocale.Current);
+        string text = APIShared.Localization.UiText.Get("Bootstrap.Required", "Name", "@@NAME@@", "Minimum", "@@MINIMUM@@");
         log.LogWarning(text);
-        if (MessageBoxW(IntPtr.Zero, text, "APIShared required / benötigt", 0x34) == 6)
+        if (MessageBoxW(IntPtr.Zero, text, APIShared.Localization.UiText.Get("Bootstrap.Title"), 0x34) == 6)
             Process.Start(new ProcessStartInfo("https://steamcommunity.com/sharedfiles/filedetails/?id=@@WORKSHOP@@") { UseShellExecute = true });
     }
 

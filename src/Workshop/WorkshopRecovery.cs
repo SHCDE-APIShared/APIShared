@@ -16,6 +16,9 @@ namespace APIShared.Workshop
         internal string[] Targets = new string[0];
         internal ulong[] Items = new ulong[0];
         internal WorkshopRecoveryProgress Progress = new WorkshopRecoveryProgress();
+        // False when operations.tsv cannot be read: the updater cannot supersede such a
+        // transaction, so a confirmed complete repair archives it instead.
+        internal bool Readable;
         internal bool CanRollback => RollbackError == null;
         internal string Reference => Path.GetFileName(Directory) + "\t" + OperationsHash + "\t" + JournalHash;
     }
@@ -27,13 +30,13 @@ namespace APIShared.Workshop
         internal int Completed, Total;
         internal string LastCompleted, Pending;
 
-        internal string Describe(bool german)
+        internal string Describe(bool german) => Describe(german ? "de-DE" : "en-US");
+        internal string Describe(string locale)
         {
-            if (!Reliable) return german ? "Fortschritt nicht zuverlässig bestimmbar." : "Progress cannot be determined reliably.";
-            string text = german ? Completed + " von " + Total + " Operationen als abgeschlossen protokolliert."
-                : Completed + " of " + Total + " operations recorded as completed.";
-            if (LastCompleted != null) text += "\n" + (german ? "Zuletzt abgeschlossen: " : "Last completed: ") + LastCompleted;
-            if (Pending != null) text += "\n" + (german ? "Begonnen, ohne protokollierten Abschluss: " : "Started without a recorded completion: ") + Pending;
+            if (!Reliable) return Localization.UiText.ForLocale(locale, "Workshop.Recovery.Unreliable");
+            string text = Localization.UiText.ForLocale(locale, "Workshop.Recovery.Progress", "Completed", Completed, "Total", Total);
+            if (LastCompleted != null) text += "\n" + Localization.UiText.ForLocale(locale, "Workshop.Recovery.Last", "Value", LastCompleted);
+            if (Pending != null) text += "\n" + Localization.UiText.ForLocale(locale, "Workshop.Recovery.Pending", "Value", Pending);
             return text;
         }
     }
@@ -45,29 +48,10 @@ namespace APIShared.Workshop
             ? answer == 6 ? Choice.Repair : answer == 7 ? Choice.Rollback : Choice.Later
             : answer == 6 ? Choice.CompleteRepair : Choice.Later;
 
-        internal static string[] PreservedAssemblies(string game, WorkshopPackage package)
-        {
-            string full = Path.GetFullPath(game).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            var delivered = new HashSet<string>(package.Files.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
-            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string root in package.Roots) {
-                string directory = WorkshopPaths.Inside(game, root);
-                if (!System.IO.Directory.Exists(directory)) continue;
-                foreach (string file in WorkshopPaths.Enumerate(directory)) {
-                    string relative = file.Substring(full.Length).Replace('\\', '/');
-                    if (Path.GetExtension(file).Equals(".dll", StringComparison.OrdinalIgnoreCase) && !delivered.Contains(relative) &&
-                        !relative.Split('/').Any(p => p.Equals("config", StringComparison.OrdinalIgnoreCase) || p.Equals("LobbyModSettings", StringComparison.OrdinalIgnoreCase)))
-                        result.Add(relative);
-                }
-            }
-            return result.OrderBy(x => x, StringComparer.Ordinal).ToArray();
-        }
         internal const string Protocol = "APISHARED-WORKSHOP-RECOVERY-1";
-        internal static string Describe(WorkshopInterruptedTransaction entry, bool german)
-        {
-            return (entry.Failure ?? (german ? "Unterbrochen ohne protokollierten Fehler." : "Interrupted without a recorded error."))
-                + "\n" + entry.Progress.Describe(german);
-        }
+        internal static string Describe(WorkshopInterruptedTransaction entry, bool german) => Describe(entry, german ? "de-DE" : "en-US");
+        internal static string Describe(WorkshopInterruptedTransaction entry, string locale) =>
+            (entry.Failure ?? Localization.UiText.ForLocale(locale, "Workshop.Recovery.Interrupted")) + "\n" + entry.Progress.Describe(locale);
 
         internal static WorkshopRecoveryProgress Progress(string[] journal, string[][] rows)
         {
@@ -95,9 +79,9 @@ namespace APIShared.Workshop
 
         // Supersession is evidence in a committed replacement transaction, never
         // an early mutation of the failed transaction. Its original bytes remain.
-        internal static bool Superseded(string root, string directory)
+        private static bool Superseded(string[] directories, string directory)
         {
-            foreach (string candidate in System.IO.Directory.EnumerateDirectories(root)) {
+            foreach (string candidate in directories) {
                 string file = WorkshopPaths.Inside(candidate, "supersedes.tsv");
                 if (!Journal(candidate).Contains("committed") || !File.Exists(file)) continue;
                 string pin = WorkshopPaths.Inside(candidate, "supersedes.sha256");
@@ -119,13 +103,12 @@ namespace APIShared.Workshop
         }
         internal static IReadOnlyList<WorkshopInterruptedTransaction> Inspect(string game)
         {
-            string root = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions");
             var result = new List<WorkshopInterruptedTransaction>();
-            if (!System.IO.Directory.Exists(root)) return result;
-            foreach (string directory in System.IO.Directory.EnumerateDirectories(root)) {
+            string[] directories = WorkshopInstallation.TransactionDirectories(game);
+            foreach (string directory in directories) {
                 WorkshopPaths.CheckLinks(directory);
                 string[] journal = Journal(directory);
-                if (!journal.Contains("applying") || Finished(directory) || Superseded(root, directory)) continue;
+                if (!journal.Contains("applying") || Finished(directory) || Superseded(directories, directory)) continue;
                 var entry = new WorkshopInterruptedTransaction {
                     Directory = directory,
                     OperationsHash = WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(directory, "operations.tsv")),
@@ -134,6 +117,7 @@ namespace APIShared.Workshop
                 };
                 try {
                     var rows = ReadOperations(game, directory);
+                    entry.Readable = true;
                     entry.Progress = Progress(journal, rows);
                     entry.Targets = rows.Select(r => r[1]).ToArray();
                     entry.Items = rows.Where(r => r[0].StartsWith("receipt-", StringComparison.Ordinal))
@@ -209,22 +193,60 @@ namespace APIShared.Workshop
         {
             ValidateReferences(game, entries);
             if (entries.Count == 0 || entries.Any(x => !x.CanRollback)) throw new InvalidOperationException("Rollback is not available for every interrupted transaction.");
-            string directory = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Transactions/" + Guid.NewGuid().ToString("N"));
-            System.IO.Directory.CreateDirectory(directory);
+            string directory = WorkshopInstallation.CreateTransaction(game, Guid.NewGuid().ToString("N"));
             File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), new[] { Protocol, restart ? "restart" : "stop" }.Concat(entries.Select(x => x.Reference)), new UTF8Encoding(false));
             return directory;
         }
+        // A superseded transaction must be readable and completely covered by the replacement
+        // batch, with the same rule the updater applies before it starts (see WorkshopRepairPlanner).
         internal static void AssertRepairCoverage(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, IReadOnlyList<WorkshopInstallPlan> plans)
         {
-            ValidateReferences(game, entries);
-            var items = new HashSet<ulong>(plans.Select(x => x.WorkshopId));
-            foreach (var entry in entries) {
-                var rows = ReadOperations(game, entry.Directory);
-                if (entry.Items.Length == 0 || entry.Items.Any(id => !items.Contains(id))) throw new InvalidOperationException("A complete repair requires every affected Workshop package to be available and subscribed.");
-                foreach (var row in rows.Where(r => !r[0].StartsWith("receipt-", StringComparison.Ordinal)))
-                    if (!plans.Any(p => p.Package != null && p.Package.Roots.Any(root => row[1].StartsWith(root + "/", StringComparison.OrdinalIgnoreCase))))
-                        throw new InvalidOperationException("Interrupted target is outside the confirmed repair packages: " + row[1]);
-            }
+            var current = Inspect(game).Where(x => x.Readable).Select(x => x.Reference).OrderBy(x => x, StringComparer.Ordinal);
+            if (!current.SequenceEqual(entries.Select(x => x.Reference).OrderBy(x => x, StringComparer.Ordinal)))
+                throw new IOException("Interrupted transactions changed; inspect and confirm recovery again.");
+            if (entries.Any(x => !x.Readable)) throw new InvalidOperationException("An unreadable transaction cannot be superseded; archive it first.");
+            WorkshopRepairPlanner.AssertCoverage(game, entries, plans);
+        }
+
+        // Unreadable transactions cannot be superseded by the updater. After explicit consent
+        // to a complete repair they are moved, never deleted, out of Transactions; Restore
+        // returns them if the repair could not be handed off.
+        internal static string ArchiveRoot(string game) => WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "Unrecoverable");
+        internal static IReadOnlyList<KeyValuePair<string, string>> Archive(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries)
+        {
+            var moved = new List<KeyValuePair<string, string>>();
+            if (entries == null || entries.Count == 0) return moved;
+            WorkshopTransaction.EnterState();
+            try {
+                var current = Inspect(game);
+                foreach (var entry in entries) {
+                    var live = current.FirstOrDefault(x => x.Reference == entry.Reference);
+                    if (live == null || live.Readable) throw new IOException("Interrupted transactions changed; inspect and confirm recovery again.");
+                }
+                string archive = ArchiveRoot(game);
+                System.IO.Directory.CreateDirectory(archive);
+                try {
+                    foreach (var entry in entries) {
+                        string target = WorkshopPaths.Inside(archive, Path.GetFileName(entry.Directory));
+                        if (System.IO.Directory.Exists(target)) target += "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
+                        System.IO.Directory.Move(entry.Directory, target);
+                        moved.Add(new KeyValuePair<string, string>(entry.Directory, target));
+                    }
+                } catch { RestoreLocked(moved); throw; }
+                return moved;
+            } finally { WorkshopTransaction.StateGate.Release(); }
+        }
+        internal static void Restore(IReadOnlyList<KeyValuePair<string, string>> moved)
+        {
+            if (moved == null || moved.Count == 0) return;
+            WorkshopTransaction.EnterState();
+            try { RestoreLocked(moved); }
+            finally { WorkshopTransaction.StateGate.Release(); }
+        }
+        private static void RestoreLocked(IEnumerable<KeyValuePair<string, string>> moved)
+        {
+            foreach (var pair in moved.Reverse())
+                if (System.IO.Directory.Exists(pair.Value) && !System.IO.Directory.Exists(pair.Key)) System.IO.Directory.Move(pair.Value, pair.Key);
         }
     }
 }

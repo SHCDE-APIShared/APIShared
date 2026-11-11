@@ -203,6 +203,20 @@ namespace APISharedTests
                 "an unresolved settings localization key must use the APIShared fallback");
             Assert(viewModel.ClientOptionsText == "Translated client options",
                 "a resolved settings localization value must win over the APIShared fallback");
+            Assert(viewModel.LastFallback == "LOCAL CLIENT OPTIONS", "consumer overrides retain the established English fallback");
+            APIShared.Localization.UiText.Configure(() => "de-DE");
+            try
+            {
+                Assert(viewModel.HostOptionsText == "HOST-OPTIONEN", "unresolved consumer keys use the selected catalog");
+                Assert(viewModel.ClientOptionsText == "Translated client options", "consumer translations retain precedence");
+                viewModel.FailTranslation = true;
+                Assert(viewModel.ClientOptionsText == "LOKALE CLIENT-OPTIONEN", "broken consumer translations use the catalog safely");
+            }
+            finally
+            {
+                viewModel.FailTranslation = false;
+                APIShared.Localization.UiText.Configure(() => "en-US");
+            }
             Assert(viewModel.System_PresetSaveBulkModeIndex == (int)PresetSaveBulkMode.HostFixed,
                 "an empty preset-save list must report the Host Fixed default, not mixed");
 

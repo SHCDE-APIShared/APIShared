@@ -39,9 +39,7 @@ namespace APIShared.Workshop
                 throw new InvalidOperationException("Batch plans must share an owner and game, with unique Workshop IDs.");
             if (repair != null) WorkshopRecovery.AssertRepairCoverage(first.GameRoot, repair, plans);
             foreach (var candidate in plans) Validate(candidate, repair);
-            string directory = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(first.GameRoot), "Transactions/" + operationId);
-            if (Directory.Exists(directory)) throw new InvalidOperationException("Plan has already been staged.");
-            Directory.CreateDirectory(directory);
+            string directory = WorkshopInstallation.CreateTransaction(first.GameRoot, operationId);
             var lines = new List<string> { protocol };
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var warnings = new List<string>();
@@ -83,6 +81,8 @@ namespace APIShared.Workshop
                 File.WriteAllText(WorkshopPaths.Inside(directory, "supersedes.sha256"), WorkshopInventory.Hash(WorkshopPaths.Inside(directory, "supersedes.tsv")), new UTF8Encoding(false));
             }
             File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), lines, new UTF8Encoding(false));
+            // API_SHARED_DIAGNOSTICS: these are retained installation warnings, not routine tracing;
+            // keep them available without diagnostic opt-in, alongside transaction/recovery evidence.
             File.WriteAllLines(WorkshopPaths.Inside(directory, "diagnostics.txt"), warnings, new UTF8Encoding(false));
             File.WriteAllText(WorkshopPaths.Inside(directory, "operations.sha256"), WorkshopInventory.Hash(WorkshopPaths.Inside(directory, "operations.tsv")), new UTF8Encoding(false));
             return directory;
@@ -98,9 +98,14 @@ namespace APIShared.Workshop
                 if (WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(plan.GameRoot, target.Key)) != target.Value) throw new InvalidOperationException("Target changed after planning: " + target.Key);
             if (plan.Package != null)
             {
-                if (WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(plan.Source, WorkshopPackage.ManifestFileName)) != plan.ManifestHash) throw new InvalidOperationException("Package changed; prepare again.");
+                ValidateManifest(plan);
                 WorkshopPaths.Verify(plan.Package, plan.Source); WorkshopInstallation.AssertOwnership(plan.GameRoot, plan.WorkshopId, plan.Package);
             }
+        }
+        internal static void ValidateManifest(WorkshopInstallPlan plan)
+        {
+            if (WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(plan.Source, WorkshopPackage.ManifestFileName)) != plan.ManifestHash)
+                throw WorkshopDiagnostics.Blocked("Workshop package changed; prepare and confirm a new plan.");
         }
         private static string Row(string kind, string target, int ordinal, string before, string after) =>
             string.Join("\t", kind, target, ordinal.ToString(CultureInfo.InvariantCulture), before, after);

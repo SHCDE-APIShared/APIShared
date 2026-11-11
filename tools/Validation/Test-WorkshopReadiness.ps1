@@ -43,6 +43,7 @@ $writer=$writer.Replace("`r`n","`n").Replace("`n","`r`n")
 $assembly=[Reflection.Assembly]::LoadFrom($copy)
 $type=$assembly.GetType('APIShared.Workshop.WorkshopUpdaterLauncher',$true)
 $launch=$type.GetMethod('Launch',[Reflection.BindingFlags]'Static,NonPublic')
+$launchParameters=$launch.GetParameters()
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Concurrent;
@@ -64,7 +65,10 @@ foreach($mode in $cases){
     $queue=[WorkshopReadinessFixtureQueue]::new()
     [Threading.SynchronizationContext]::SetSynchronizationContext($queue)
     try {
-        $task=$launch.Invoke($null,[object[]]@([string]$transaction,[string]$fixture))
+        $launchArguments=@([string]$transaction,[string]$fixture)
+        # Reflection needs a slot for the optional manual plan. Older launchers have only two parameters.
+        if($launchParameters.Count -eq 3 -and $launchParameters[2].IsOptional){$launchArguments+=[Type]::Missing}
+        $task=$launch.Invoke($null,[object[]]$launchArguments)
         $watch=[Diagnostics.Stopwatch]::StartNew()
         if($mode -in @('exited-valid','exited-empty','wrong-hash')){
             # Delay the actual launcher's continuation until its owned updater

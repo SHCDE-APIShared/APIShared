@@ -8,10 +8,12 @@ $output=Join-Path $root '.local/WorkshopUploader'
 & dotnet build (Join-Path $PSScriptRoot 'WorkshopUploader.csproj') --configuration Release --output $output --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Workshop uploader build failed.' }
 Copy-Item -LiteralPath $native -Destination $output
-foreach ($launcher in @('UploadMod.bat','UploadMod-linux.sh')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $launcher) -Destination $output -Force }
+foreach ($launcher in @('UploadMod.bat','UploadMod-linux.sh','PublisherText.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $launcher) -Destination $output -Force }
+[void][IO.Directory]::CreateDirectory((Join-Path $output 'Locales'))
+Get-ChildItem -LiteralPath (Join-Path $root 'Locales') -File -Filter '*.txt' | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $output 'Locales') -Force }
 . (Join-Path $PSScriptRoot 'PublisherBuildProof.ps1')
 $inputs=@(Get-WorkshopPublisherInputs $root $env:SHCDE_GAME_DIR)
-$outputs=@(Get-ChildItem -LiteralPath $output -File|Where-Object {$_.Extension -in @('.exe','.dll','.config','.bat','.sh')}|ForEach-Object {[ordered]@{Name=$_.Name;Sha256=(Get-PublisherHash $_.FullName)}})
+$outputs=@(Get-ChildItem -LiteralPath $output -Recurse -File|Where-Object {$_.Extension -in @('.exe','.dll','.config','.bat','.sh','.ps1','.txt')}|ForEach-Object {[ordered]@{Name=$_.FullName.Substring($output.Length+1).Replace('\','/');Sha256=(Get-PublisherHash $_.FullName)}})
 $proof=[ordered]@{SchemaVersion=1;GameDir=$env:SHCDE_GAME_DIR;Inputs=$inputs;Outputs=$outputs}
 [IO.File]::WriteAllText((Join-Path $output 'build-proof.json'),(($proof|ConvertTo-Json -Depth 5)+"`r`n"),[Text.UTF8Encoding]::new($false))
 Write-Host "Workshop uploader ready: $output"

@@ -53,14 +53,11 @@ namespace APIShared.Workshop
         // Exceptions propagate; callers treat them as "run the external pass".
         internal static bool MayChange(string game)
         {
-            string state = Path.Combine(Path.GetFullPath(game), "_APIShared", "Workshop");
-            string root = Path.Combine(state, "Transactions");
-            // Both scripts exit before taking the lock when Transactions is absent.
-            if (!Directory.Exists(root)) return false;
+            string state = WorkshopInstallation.StateRoot(game);
             // A worklist always resumes first; nothing else runs while it remains.
-            if (File.Exists(Path.Combine(state, "cleanup.pending.tsv"))) return true;
+            if (File.Exists(WorkshopPaths.Inside(state, "cleanup.pending.tsv"))) return true;
             var scanned = new List<Node>();
-            foreach (var directory in new DirectoryInfo(root).EnumerateDirectories()) scanned.Add(Read(directory));
+            foreach (string directory in WorkshopInstallation.TransactionDirectories(game)) scanned.Add(Read(new DirectoryInfo(directory)));
             if (scanned.Count == 0) return false;
             // Windows orders legacy journals by tick time and keys nodes case-
             // insensitively; Proton uses whole seconds and case-sensitive IDs.

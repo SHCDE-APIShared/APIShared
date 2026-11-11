@@ -3,7 +3,7 @@ setlocal EnableExtensions
 set "PUBLISHER_NOPAUSE=0"
 for %%A in (%*) do if /I "%%~A"=="/nopause" set "PUBLISHER_NOPAUSE=1"
 if not exist "%~dp0WorkshopUploader.exe" (
-  echo ERROR: The APIShared Workshop Publisher package is incomplete.
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0PublisherText.ps1" -Key Launcher.PackageMissing
   set "PUBLISHER_RESULT=1"
   goto :finish
 )

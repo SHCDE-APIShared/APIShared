@@ -27,7 +27,7 @@ maintenance_completed() {
 }
 maintenance_digest() { printf '%s' "$1" | sha256sum | cut -d ' ' -f1; }
 maintenance_node() {
-    local id=$1 dir="$state/Transactions/$1" file protocol line r_id r_ops r_journal extra i ordinal kind expected timestamp
+    local id=$1 dir=${m_directories[$1]} file protocol line r_id r_ops r_journal extra i ordinal kind expected timestamp
     m_scan_files=(); maintenance_files "$dir" || return 1
     [[ -f $dir/operations.tsv && -f $dir/journal.log ]] || return 1
     if [[ -f $dir/operations.sha256 ]]; then [[ $(cat -- "$dir/operations.sha256") == "$(hash "$dir/operations.tsv")" ]] || return 1; fi
@@ -83,19 +83,24 @@ maintenance_node() {
 }
 maintenance_scan() {
     local dir id other line changed all item key count timestamp
-    for dir in "$state"/Transactions/* "$state"/Transactions/.[!.]*; do
+    for dir in "$legacy_root"/* "$legacy_root"/.[!.]* "$short_root"/* "$short_root"/.[!.]*; do
         [[ -d $dir || -L $dir ]] || continue
-        id=$(basename -- "$dir"); m_ids+=("$id"); m_valid[$id]=0; m_keep[$id]=1; m_refs[$id]=''; m_resolved[$id]=0
-        if [[ $id =~ ^[a-f0-9]{32}$ ]] && maintenance_node "$id"; then m_keep[$id]=0
-        else printf 'Workshop maintenance retained: %s; incomplete, changed or unknown transaction\n' "$dir"; fi
+        id=${dir##*/}
+        if [[ $id =~ ^[a-f0-9]{32}$ ]]; then
+            [[ -z ${m_directories[$id]:-} ]] || return 1
+            m_directories[$id]=$dir
+            m_ids+=("$id"); m_valid[$id]=0; m_keep[$id]=1; m_refs[$id]=''; m_resolved[$id]=0
+            if maintenance_node "$id"; then m_keep[$id]=0; continue; fi
+        else m_deferred=$((m_deferred+1)); fi
+        printf 'Workshop maintenance retained: %s; incomplete, changed or unknown transaction\n' "$dir"
     done
     for id in "${m_ids[@]}"; do
         [[ ${m_valid[$id]} == 1 && ${m_request[$id]} == 0 ]] || continue
-        journal_has "$state/Transactions/$id" committed || continue
+        journal_has "${m_directories[$id]}" committed || continue
         while IFS= read -r line; do
             [[ -n $line ]] || continue; reference "$line" || return 1
             other=$ref_id; [[ -n ${m_valid[$other]:-} ]] || continue
-            if [[ $(hash "$(inside "$state/Transactions/$other" operations.tsv)") == "$ref_ops" && $(hash "$(inside "$state/Transactions/$other" journal.log)") == "$ref_journal" ]]; then m_resolved[$other]=1; fi
+            if [[ $(hash "$(inside "${m_directories[$other]}" operations.tsv)") == "$ref_ops" && $(hash "$(inside "${m_directories[$other]}" journal.log)") == "$ref_journal" ]]; then m_resolved[$other]=1; fi
         done <<< "${m_refs[$id]}"
     done
     for id in "${m_ids[@]}"; do
@@ -131,7 +136,7 @@ maintenance_scan() {
     done
 }
 maintenance_visit() {
-    local id=$1 other line file mode
+    local id=$1 other line file path pin mode root=legacy dir=${m_directories[$1]}
     [[ ${m_visited[$id]:-0} == 0 ]] || return 0
     [[ ${m_visiting[$id]:-0} == 0 ]] || return 1
     m_visiting[$id]=1
@@ -146,20 +151,31 @@ maintenance_visit() {
     while IFS= read -r file; do
         [[ -n $file ]] || continue
         [[ $mode == all || $file == New/* ]] || continue
-        rows+="F"$'\t'"$id"$'\t'"$file"$'\t'"$(hash "$(inside "$state/Transactions/$id" "$file")")"$'\n'
+        path=$(inside "$dir" "$file") || return 1
+        pin=$(hash "$path") || return 1
+        [[ $pin =~ ^[a-f0-9]{64}$ ]] || return 1
+        rows+="F"$'\t'"$id"$'\t'"$file"$'\t'"$pin"$'\n'
     done <<< "${m_files[$id]}"
     if [[ -n $rows || $mode == all ]]; then
-        m_payload+="D"$'\t'"$id"$'\t'"$mode"$'\n'
+        [[ ${dir%/*} != "$short_root" ]] || root=short
+        m_payload+="D"$'\t'"$id"$'\t'"$mode"$'\t'"$root"$'\n'
         if [[ $mode == all ]]; then while IFS= read -r line; do [[ -n $line ]] || continue; reference "$line" || return 1; m_payload+="R"$'\t'"$id"$'\t'"$ref_id"$'\n'; done <<< "${m_refs[$id]}"; fi
         m_payload+="$rows"
     fi
 }
 maintenance_execute() {
-    local id=$1 mode=$2 file key path bytes reference_file line child nested
-    local dir="$state/Transactions/$id"
+    local id=$1 mode=$2 dir=$3 file key path bytes line child nested predecessor actual
+    unlinked "$dir" || return 1
+    [[ ! -e $dir || -d $dir ]] || return 1
     [[ -d $dir ]] || return 0
+    actual=$(transaction_directory "$id") || return 1
+    [[ $actual == "$dir" ]] || return 1
     if [[ $mode == all ]]; then
-        while IFS= read -r line; do [[ -n $line ]] || continue; [[ ! -d $state/Transactions/$line ]] || return 1; done <<< "${m_dependencies[$id]:-}"
+        while IFS= read -r line; do
+            [[ -n $line ]] || continue
+            predecessor=$(transaction_directory "$line") || return 1
+            [[ -z $predecessor ]] || return 1
+        done <<< "${m_dependencies[$id]:-}"
     fi
     m_scan_files=(); maintenance_files "$dir" || return 1
     for file in "${m_scan_files[@]}"; do
@@ -168,7 +184,11 @@ maintenance_execute() {
         [[ -n ${m_pins[$key]:-} && $(hash "$(inside "$dir" "$file")") == "${m_pins[$key]}" ]] || return 1
     done
     if [[ $mode == all && -f $dir/supersedes.tsv ]]; then
-        while IFS= read -r line; do reference "$line" || return 1; [[ ! -d $state/Transactions/$ref_id ]] || return 1; done < "$dir/supersedes.tsv"
+        while IFS= read -r line; do
+            reference "$line" || return 1
+            predecessor=$(transaction_directory "$ref_id") || return 1
+            [[ -z $predecessor ]] || return 1
+        done < "$dir/supersedes.tsv"
     fi
     # Journal first for approved whole-directory retirement. Otherwise deleting
     # operations before an applying journal could invalidate its replacement pin.
@@ -192,15 +212,22 @@ maintenance_execute() {
     if [[ $mode == all ]]; then rmdir -- "$dir" || return 1; m_removed=$((m_removed+1)); fi
 }
 maintenance_resume() {
-    local pending="$state/cleanup.pending.tsv" header digest payload line tag id mode file pin extra current='' remaining=0
+    local pending=$1 header digest tag id file pin extra current='' remaining=0
     [[ -f $pending ]] || return 0
     unlinked "$pending" || return 1
     IFS= read -r header < "$pending"; digest=$(sed -n '2p' -- "$pending")
-    [[ $header == APISHARED-WORKSHOP-CLEANUP-1 && $digest =~ ^[a-f0-9]{64}$ && $(tail -n +3 -- "$pending" | sha256sum | cut -d ' ' -f1) == "$digest" ]] || return 1
-    local -a actions=(); local -A modes=() m_pins=() m_dependencies=() references_seen=()
+    [[ ( $header == APISHARED-WORKSHOP-CLEANUP-1 || $header == APISHARED-WORKSHOP-CLEANUP-2 ) && $digest =~ ^[a-f0-9]{64}$ && $(tail -n +3 -- "$pending" | sha256sum | cut -d ' ' -f1) == "$digest" ]] || return 1
+    local -a actions=(); local -A modes=() directories=() m_pins=() m_dependencies=() references_seen=()
     while IFS=$'\t' read -r tag id file pin extra; do
         [[ -n $tag ]] || continue
-        if [[ $tag == D && $id =~ ^[a-f0-9]{32}$ && ( $file == all || $file == new ) && -z ${pin:-} && -z ${extra:-} && -z ${modes[$id]:-} ]]; then
+        if [[ $tag == D && $id =~ ^[a-f0-9]{32}$ && ( $file == all || $file == new ) && -z ${extra:-} && -z ${modes[$id]:-} ]]; then
+            # An older list only authorized its legacy path, even if that ID
+            # now exists under the short root with the same file contents.
+            case "$header:$pin" in
+                APISHARED-WORKSHOP-CLEANUP-1:|APISHARED-WORKSHOP-CLEANUP-2:legacy) directories[$id]="$legacy_root/$id" ;;
+                APISHARED-WORKSHOP-CLEANUP-2:short) directories[$id]="$short_root/$id" ;;
+                *) return 1 ;;
+            esac
             current=$id; actions+=("$id"); modes[$id]=$file
         elif [[ $tag == R && $id == "$current" && ${modes[$id]} == all && $file =~ ^[a-f0-9]{32}$ && -z ${pin:-} && -z ${extra:-} && -z ${references_seen[$id/$file]:-} ]]; then
             m_dependencies[$id]+="$file"$'\n'; references_seen[$id/$file]=1
@@ -211,25 +238,27 @@ maintenance_resume() {
         else return 1; fi
     done < <(tail -n +3 -- "$pending")
     for id in "${actions[@]}"; do
-        if ! maintenance_execute "$id" "${modes[$id]}"; then remaining=1; m_deferred=$((m_deferred+1)); printf 'Workshop maintenance deferred: %s; changed/locked content or retained predecessor\n' "$state/Transactions/$id"; fi
+        if ! maintenance_execute "$id" "${modes[$id]}" "${directories[$id]}"; then remaining=1; m_deferred=$((m_deferred+1)); printf 'Workshop maintenance deferred: %s; changed/locked content or retained predecessor\n' "${directories[$id]}"; fi
     done
     if [[ $remaining == 0 ]]; then rm -- "$pending" || return 1; fi
 }
 maintenance_run() {
-    local pending="$state/cleanup.pending.tsv" id
-    if [[ -f $pending ]]; then maintenance_resume || return 1; fi
+    local pending id
+    pending=$(inside "$state" cleanup.pending.tsv) || return 1
+    [[ ! -e $pending || -f $pending ]] || return 1
+    if [[ -f $pending ]]; then maintenance_resume "$pending" || return 1; fi
     [[ ! -f $pending ]] || return 0
     local -a m_ids=() m_scan_files=()
-    local -A m_valid=() m_terminal=() m_resolved=() m_keep=() m_request=() m_time=() m_refs=() m_items=() m_files=() m_visited=() m_visiting=()
+    local -A m_valid=() m_terminal=() m_resolved=() m_keep=() m_request=() m_time=() m_refs=() m_items=() m_files=() m_visited=() m_visiting=() m_directories=()
     maintenance_scan || return 1
     local m_payload=''
     for id in "${m_ids[@]}"; do maintenance_visit "$id" || return 1; done
     [[ -n $m_payload ]] || return 0
     local temporary
     temporary=$(inside "$state" cleanup.pending.tmp) || return 1
-    printf 'APISHARED-WORKSHOP-CLEANUP-1\n%s\n%s' "$(maintenance_digest "$m_payload")" "$m_payload" > "$temporary" || return 1
+    printf 'APISHARED-WORKSHOP-CLEANUP-2\n%s\n%s' "$(maintenance_digest "$m_payload")" "$m_payload" > "$temporary" || return 1
     sync -f "$temporary" || return 1; mv -T -- "$temporary" "$pending" || return 1; sync -f "$state" || return 1
-    maintenance_resume
+    maintenance_resume "$pending"
 }
 maintenance() {
     local m_removed=0 m_bytes=0 m_deferred=0

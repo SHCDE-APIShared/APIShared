@@ -3,7 +3,7 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.10.0",
+  "Version": "0.47.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
@@ -11,10 +11,340 @@
   "NetworkMode": 1,
   "SerpChangelog": [
     {
-      "Version": "0.10.0",
+      "Version": "0.47.0",
       "Changes": [
-        "Unreleased development: prepare and verify savegame host settings before loading, including Solo Multiplayer and Coop provenance, with authenticated peer readiness and isolated personal presets.",
-        "Use a distinct network-compatible version for the new save-readiness control packet registration."
+        "Add owner-bound Lord message presentation events with independent voice, video and text replacement, using existing Vanilla messages or private mod resources.",
+        "Keep native message queueing and gameplay random state unchanged; bind replacement subtitles to the actual displayed message and retain original components unless explicitly replaced.",
+        "Development addition: add general Unit Voices rules for attributed troop orders, recruitment, siege and special actions, and civilian comments, with Vanilla cue replacement, prepared private mod/map recordings, suppression and per-request volume factors.",
+        "Coordinate Unit Voices and Lord message audio at their shared playback site while preserving the existing SFX API; keep consumer-specific skin and faction rules outside APIShared."
+      ]
+    },
+    {
+      "Version": "0.46.0",
+      "Changes": [
+        "Measure centered gatehouse closing distances from the actual footprint, so enemies approaching from opposite sides are treated equally.",
+        "Add a square footprint center helper and a read-only check for candidates outside the active gatehouse closing range."
+      ]
+    },
+    {
+      "Version": "0.45.0",
+      "Changes": [
+        "Decide the mission mode in every case instead of locking gameplay mods: a loaded save uses the mode stored in it, a restart keeps the mode of its mission, and Customize evidence that does not fit the start is ignored and logged as an error.",
+        "Saves that an earlier version marked as conflicting load normally again.",
+        "Mods can declare renamed settings and convert changed ones, so saves, Trail author rules, personal settings and presets written by an older version of a mod keep working.",
+        "Compare the Customize origin between all players before a multiplayer start. A rejected multiplayer start no longer freezes the lobby and is no longer retried every frame.",
+        "Fix saves that could not be loaded after certain AI army assignments or fast group moves, the startup removal of unsubscribed Workshop packages, and missions that were stopped although no mod changed production."
+      ]
+    },
+    {
+      "Version": "0.44.0",
+      "Changes": [
+        "Add a shared observer for local troop-command releases with final map coordinates and cursor targets."
+      ]
+    },
+    {
+      "Version": "0.43.0",
+      "Changes": [
+        "Share the native unit-pair exclusion check between mods with immutable, mission-scoped attack target rules."
+      ]
+    },
+    {
+      "Version": "0.42.0",
+      "Changes": [
+        "Add passive begin and completion callbacks for the managed save entry point."
+      ]
+    },
+    {
+      "Version": "0.41.0",
+      "Changes": [
+        "Expose paired observations around an admitted managed engine run through the existing shared wrapper.",
+        "Add a shared ally-panel button API so mods can coordinate goods and order clicks.",
+        "Add an optional final GameAction validator that can reject a command after other handlers have finished editing its arguments."
+      ]
+    },
+    {
+      "Version": "0.40.0",
+      "Changes": [
+        "Mods can now set or multiply the production bonus for each non-neutral fear level. They can also reduce output. The neutral level still contributes zero, and the separate fixed production bonus continues to apply where eligible.",
+        "Worker production profiles report the resolved fear bonus for each level. Shared start checks reject unsafe combinations and check agreement between multiplayer peers."
+      ]
+    },
+    {
+      "Version": "0.38.0",
+      "Changes": [
+        "Add the Wildlife hunting service: HuntablePrey lets mods make further animal types huntable, with an optional base meat amount, Hunters taking such animals of their own player and corpse removal when butchering starts; the catalog of a mission is frozen at its start and checked in multiplayer.",
+        "Add HunterTargetPolicies and HunterMeatYieldEvents so mods can admit or refuse Hunter targets and set the meat a Hunter gets per animal.",
+        "Add Herds, HerdRouteEvents and HerdFlightRules so mods can read and spawn animal herds, shorten or redirect their routes and keep deer and goat herds calm.",
+        "Fix the Hunter unit id that the Script Extender reports in OnUnitHunterQueryTarget and OnHunterPickUpMeat."
+      ]
+    },
+    {
+      "Version": "0.37.0",
+      "Changes": [
+        "Add SideHudVisibility.TryGetState so mod overlays can distinguish Hide HUD from other reasons the Vanilla side HUD is hidden."
+      ]
+    },
+    {
+      "Version": "0.36.0",
+      "Changes": [
+        "Expose the current skin of a player's living Lord and classification of captured Lord materials."
+      ]
+    },
+    {
+      "Version": "0.35.0",
+      "Changes": [
+        "Add RouteEngineInfo so rule mods can see whether a route engine applies their rules, and TroopActionHud.ForeignPanelActivating so regular panel menus can close when another mod shows its own troop panel."
+      ]
+    },
+    {
+      "Version": "0.34.0",
+      "Changes": [
+        "Add shared WorkerProductionModifiers profiles for exact Human/AI output-base factors and staged fixed production bonuses; retain the legacy bonus override API.",
+        "Expose immutable desired-owner snapshots, exact resolved amounts and structured validation results for consumer settings and diagnostics.",
+        "Coordinate production protection, fractional save data, unit transfers, atomic critical saves and authenticated multiplayer admission through common APIShared owners."
+      ]
+    },
+    {
+      "Version": "0.33.0",
+      "Changes": [
+        "Add owner-bound first-PlayState readiness for the current mission, with Unity-thread events and replay. Delayed loading, multiplayer startup and pause never expire the wait; existing mission Start semantics stay unchanged."
+      ]
+    },
+    {
+      "Version": "0.32.0",
+      "Changes": [
+        "Add independent owner-bound adornments on Vanilla ally-goods icons; retain commands, bindings and successful controls across selection changes and refreshes."
+      ]
+    },
+    {
+      "Version": "0.31.0",
+      "Changes": [
+        "Add typed Vanilla troop-action buttons with adaptive overflow, an expandable Vanilla-style grid and a persisted local auto-close checkbox; retain legacy host layout and the independent action strip."
+      ]
+    },
+    {
+      "Version": "0.30.0",
+      "Changes": [
+        "Add owner-bound AI military spawn capture, semantic role admission and protected unmanaged troops, with native current-order initialization and regular/additional recruitment accounting.",
+        "Persist editor map declarations, actual saved army state and cumulative engineering provenance, with early load protection and multiplayer map-record readiness.",
+        "Share strategic/task observations and effective Original receipts across consumers without competing native hooks; retain existing save callback timing with opt-in early preparation."
+      ]
+    },
+    {
+      "Version": "0.29.0",
+      "Changes": [
+        "Add cooperative sections and immutable selection observations for the Vanilla ally goods dialog, preserving independent mod controls and quantity commands.",
+        "Add synchronous bounded ally gifts, physical storage queries and native transfer observations with explicit veto and measured balance changes."
+      ]
+    },
+    {
+      "Version": "0.28.0",
+      "Changes": [
+        "Add ordered BeforeFixedValue and opt-in AfterFixedValue numeric contributions for shared health, market base prices, popularity, fear popularity and AI sale policies while preserving existing API meanings and final safety rules.",
+        "Coordinate initialization-only unit and building maximum HP from saved original bases, including same-slot type transitions, legacy Lord import and jointly bounded siege towers; keep maxima frozen after initialization.",
+        "Compose native market lot prices across transaction and display paths, preserve legacy total-price vetoes and direct foreign fixed values, and retain bounded save ownership without multiplier compounding."
+      ]
+    },
+    {
+      "Version": "0.27.0",
+      "Changes": [
+        "Add owner-bound mapper selection camera observations with scoped suppression of automatic building centering, preserving selection, player identity and other camera calls.",
+        "Linux/Proton Workshop updater: host commands and updater handoffs report their output and exit code through files in an owned run directory, because Unity's Mono reports Linux programs started under Wine as exited at once. Steam's reaper and pressure-vessel wrappers are no longer mistaken for the running game, and an automatic handoff refuses before readiness when the game is not visible.",
+        "Linux/Proton: resolve Wine dosdevices drive links for non-Z: drives (Proton 10 and older) and retry a failed shared Proton context instead of caching the failure. Real Proton publishing and update tests are still recommended; automated tests do not certify Linux support."
+      ]
+    },
+    {
+      "Version": "0.26.0",
+      "Changes": [
+        "Add ModApiClient.Ui with shared deferred Unity dispatch and owner-bound coalesced, monotonic delayed and explicitly continuous presentation work.",
+        "Share one process-owned frame publisher across managed UI services; preserve GUI completion phases, lobby fallback frames and decisive save-load checks. While the side-HUD host is missing, its search retries at most every 100 ms instead of every frame; known HUD, property and registration changes search immediately.",
+        "Multiplayer: while an eliminated participant views another player, native network timing and heartbeat reads keep the participant's own identity instead of the viewed player; reports still show the selected player. Foreign participant views are offered only when all four native read sites validate.",
+        "Script Extender fix: the campfire's floating popularity mask matches its displayed value (red below 40, neutral 40 to 59, green from 60). Other floating icons and simulation state are unchanged.",
+        "Linux/Proton: translate host paths through the active Wine drive mappings instead of an assumed Z: drive, with an optional APIShared.ProtonPaths.cfg override. Releases add a separate manual APIShared.ProtonWorkshopFix patcher asset for first Script Extender installations under Proton; it is not part of the APIShared package and stays inactive on Windows."
+      ]
+    },
+    {
+      "Version": "0.25.0",
+      "Changes": [
+        "Add shared enemy-unit building proximity policies and a validated active Peace Time reader; consumers compose overrides, limits and authoritative vetoes.",
+        "Add ObserverCommandExceptions: mods can allow single local commands of a confirmed observer (such as an eliminated participant viewing another player) that an enforcing mod would otherwise veto.",
+        "TrySetSpectatorControl: after an unconfirmed view rollback, GetLocalPlayerId reports the spectator identity instead of the failed target; ClearEliminatedPlayerView does not end an original spectator's input control.",
+        "Add PresetLobbyModSettingsViewModel.IsApplyingMissionSettingsSnapshot so consumers can lock individual settings during a mission while authoritative mission restores still apply.",
+        "Packaged Lord media and the Lord media correction share one Script Extender hook.",
+        "Behavior change: a TrySetSpectatorView selection no longer survives native world changes; every load, unload or new mission clears it with a Cleared notification (in 0.16.3 it persisted). Consumers must select the view again for each mission. TrySetSpectatorView also returns false while another role owns the participant view or a Save/send scope is active.",
+        "Documentation: player views and control, Script Extender fixes and mod settings have their own guides."
+      ]
+    },
+    {
+      "Version": "0.24.0",
+      "Changes": [
+        "Add immutable current player-defeat snapshots and ordered state observers, including loaded losses, without replaying existing transition events.",
+        "Add eliminated-participant perspectives that preserve positive local identity, protect Save and Chore submission identity, and retain the original-spectator contract.",
+        "Add spectator input control: an original offline spectator controls one chosen player with Vanilla input (TryRegisterSpectatorControl installs the input hooks only on demand; TrySetSpectatorControl, ClearSpectatorControl, GetInputControlledPlayerId).",
+        "Add PlayerColours.TryGetUiColour (Vanilla's UI/portrait colour of a player) and the exclusive UnitHudSpriteColours lease that draws the unit HUD sprites in another player's colour on the existing sprite hook, restoring Vanilla's values on release and mission end.",
+        "Add ModApiClient.TryGetPlagueHeightPolicy for reading the active plague standing-height policy."
+      ]
+    },
+    {
+      "Version": "0.23.0",
+      "Changes": [
+        "Add mission-scoped SimulationClock reads after native initialization and overflow-safe elapsed ticks.",
+        "Add ModNetworkClient.RegisterAuthenticatedChore: Chore channels whose sender is verified from the executing native slot, submitted once through the raw Chore queue without Steam fallback.",
+        "Invalidate native clock access before nested/repeated loads and retirement; preserve ready-only tick events and existing Extender clocks.",
+        "Clients that previously joined as host restore their own mission-independent Host values before persisting; personal edits no longer fail while another mission's restart preparation is pending.",
+        "Migration note: multiplayer saves written before 0.20.0 now load with SaveContext.IsSaveFile=true; handlers branching on it must accept map-format records.",
+        "Coop restart Lord presentation can no longer abort a game start on invalid lobby data.",
+        "A disabled authenticated Chore dispatcher is logged once.",
+        "Third-party mod components are no longer bound to file hashes: the UU-ImGUI shutdown fix checks the used members/IL contracts, native pairing and a MonoMod routing/calli probe; audio requires RedBird NativeX64 1.5.0 or newer plus its validated hooks."
+      ]
+    },
+    {
+      "Version": "0.22.0",
+      "Changes": [
+        "Add SimulationTickEvents with the native save-preserved map tick, ready-mission gating, stable process-lifetime registrations and isolated callbacks.",
+        "SimulationTickEvents does not use the Extender OnTick argument (a local engine-run counter); Extender tick events, R3 schedulers, timestamps and timer formats are unchanged."
+      ]
+    },
+    {
+      "Version": "0.21.0",
+      "Changes": [
+        "Keep Player and Local ModSettings personally editable and persistent across mission contexts; mission sources now own only mission-dependent Host values.",
+        "Add optional MissionIndependent Host settings, filtered mission metadata and separated personal backend persistence while preserving Host network authority.",
+        "Preserve accepted personal changes through source resets, save loads, failed restoration and prepared restarts."
+      ]
+    },
+    {
+      "Version": "0.20.0",
+      "Changes": [
+        "Add scoped packaged Lord presentation with complete lossless lordmeta.json, independent locale fallback, optional private media and synchronized speech selection.",
+        "Preserve claimed Coop AI names and portraits in the original restart object before serialization, without changing Lord gameplay types or Script Extender's global catalog.",
+        "Behavior change for every Script Extender mod-data handler: synchronized multiplayer saves and autosaves now report SaveContext.IsSaveFile=true (FilePath unavailable), multiplayer-save loads are classified as saves and editor loads through the save loader as maps. Unsupported images keep the original save path.",
+        "Add the Script Extender move-command failure context (patrol, order and move type) to the existing error log without changing command behavior.",
+        "Clarify savegame ModSettings source and fallback diagnostics and skipped Workshop subscription diagnostics."
+      ]
+    },
+    {
+      "Version": "0.19.0",
+      "Changes": [
+        "Add a Lord statistics column broker with owner-bound, renderer-demanded value providers, localized metadata and logical activation.",
+        "Add demand-driven engine readbacks that copy prepared raw data immediately before Vanilla publishes a completed run buffer, without an additional hook."
+      ]
+    },
+    {
+      "Version": "0.18.0",
+      "Changes": [
+        "Add opt-in visible-map render coordination with native dormant bypass and isolated preparation/cleanup callbacks.",
+        "Add shared pause-menu actions preserving Vanilla Quit, and opt-in popup sizing from the common resolution presets.",
+        "Add passive route tile rules (Forbidden/Penalty per player) with a change journal and an optional replan policy for supporting route engines; Vanilla searches are unaffected."
+      ]
+    },
+    {
+      "Version": "0.17.0",
+      "Changes": [
+        "Add shared end-screen Pre/Accepted/Post events for buttons, game-over state and game-over text without changing existing API contracts.",
+        "Coordinate preview cancellation and delayed exit through guarded, caller-thread, at-most-once original continuations with isolated consumer failures."
+      ]
+    },
+    {
+      "Version": "0.16.4",
+      "Changes": [
+        "Keep Map/Trail/Save source labels visible after loading personal presets and associate restored preset state with the correct mission working-copy session.",
+        "Add bounded settings-transition and persistence diagnostics with context/source/preset identities, dirty state, actual write results and target paths; include available exception type, HResult and exception details on failure.",
+        "Add Personal Settings as a reset source for editable Map and Trail working copies without leaving their context or overwriting personal settings and preset files.",
+        "Keep source selection, host/client ownership and backend restart handling consistent; prepare all target snapshots before a shared reset and preserve untouched backend state on failure.",
+        "Lords without registered Script Extender metadata quietly keep the original game media; a mission-start diagnostic reports used Lord packages whose lordmeta.json was not registered by the Script Extender."
+      ]
+    },
+    {
+      "Version": "0.16.3",
+      "Changes": [
+        "Add owner-bound multiplayer map lookup providers and result observers for verified content outside Vanilla map catalogs.",
+        "Add lobby system-message classification through the existing renderer; preserve ordinary chat and existing localization.",
+        "Add owner-bound lobby launch-status providers with localized, deduplicated blocking and loading messages, local/lobby scopes and explicit rejected-command reporting; preserve Vanilla Ready/Start decisions.",
+        "Apply queued host settings on the Unity thread before multiplayer map initialization, preserving packet order and invalidating stale lobby or mission deliveries.",
+        "Support the current Fixes wheat-sale emitter as well as the historical stack-based variants; validate the complete bounded prefix, player identity and memory preimage before the single startup correction.",
+        "Log selected Custom Lord init.lua identities and warn when a package containing a script declares the local-only NetworkMode; preserve the Script Extender script-loading decision.",
+        "Correct lobby mismatch reporting and load-dialog integration while preserving consumer callbacks, cancellation and existing save/load behavior.",
+        "Include every changelog entry since the previous published stable APIShared release in GitHub release notes.",
+        "Give a confirmed multiplayer save load its own bounded 30-second start window and capture each participant snapshot once when checking host settings.",
+        "Validate the prepared plague-height backend stubs against the complete generated machine-code contract instead of fixed RedBird/Iced file hashes; reject incompatible output before activation.",
+        "Extend the hash-bound NativeKnowledge function annotations and integration reference without introducing a native invocation API."
+      ]
+    },
+    {
+      "Version": "0.16.2",
+      "Changes": [
+        "Move APIShared-owned interface text to cached UTF-8 language catalogs, with complete German/English, English substitutes for other game languages and embedded English recovery.",
+        "Preserve consumer preset translations and English fallback contracts. Package independent localization resources with the Workshop publisher and generated warning bootstrap.",
+        "Name the lobby rejection dialog Different mods without asserting incompatibility; retain complete difference values in the client log."
+      ]
+    },
+    {
+      "Version": "0.16.1",
+      "Changes": [
+        "Add opt-in TextBox StateValue metadata for configured-value search filters. Bind an authoritative numeric property independently of formatted display text and use InactiveValues to declare neutral values.",
+        "Preserve all existing checkbox, slider and unannotated TextBox behavior. Observe numeric changes through the existing managed catalog; unsupported bindings and nonnumeric values remain unknown.",
+        "Include the reviewed lobby rejection popup correction: show named differences and local/host versions, preserve the Extender join decision and always point to the complete client log."
+      ]
+    },
+    {
+      "Version": "0.16.0",
+      "Changes": [
+        "Add owner-bound PopularityOverrides registrations and immutable PopularityOverrideValues for independent nullable Human/AI report-point contributions across ordinary popularity sources.",
+        "Add FearPopularityRegistration.SetTargetedLevelContributions while retaining all existing multiplier and uniform level-table APIs. Compose by source, role and level; copy and validate complete updates before atomic publication.",
+        "Capture the audited player/resource identity once per Extender calculation; select each contribution before its original arithmetic. Reports and previews use the same viewed-player policy, preserving foreign global values and independent legacy fear availability.",
+        "Add live Active/Inactive state filtering to registered local and global ModSettings searches, including safe checkbox and slider classification, explicit inactive values, inherited filter context and state-change notifications.",
+        "Keep preset snapshots, search catalogs and state filters consistent after setting restoration; preserve host authority, mission locks and existing text-only search behavior."
+      ]
+    },
+    {
+      "Version": "0.15.0",
+      "Changes": [
+        "Add FearPopularityRegistration.SetLevelContributions for fixed whole popularity points per signed fear level. Positive and negative levels can be configured independently, including zero-valued contributions; the neutral fear level remains unchanged.",
+        "Compose per-level tables with existing multiplier registrations using the established order, owner GUID and registration ID. Unspecified levels retain earlier applicable policies or the original Script Extender calculation. Input tables are copied, setters replace the registration's complete configuration, and invalid or overflowing updates preserve its previous state.",
+        "Keep simulation and the popularity report on the same selected fear contribution. When an override replaces a foreign Script Extender coefficient, the report no longer evaluates that unused coefficient first, avoiding unrelated overflow."
+      ]
+    },
+    {
+      "Version": "0.14.0",
+      "Changes": [
+        "Add an owner-bound plague-height capability for independent wall, gate, tower and keep policies with configurable height tolerance. Native hooks and a common standing-height helper avoid managed callbacks for damage candidates.",
+        "Compose active owners by surface and maximum tolerance; with no active policy, all four hooks retain the complete Vanilla path. Hooks remain installed for the process lifetime and unsupported native images disable only this capability."
+      ]
+    },
+    {
+      "Version": "0.13.0",
+      "Changes": [
+        "Add general multi-mod tooltip contributions with literal strings, text/image segments and semantic placements for buildings, recruitment, siege construction and repair. Preserve existing Vanilla controls and collapse empty content completely.",
+        "Keep the existing building-text and repair binding contracts compatible; centralize rendering, hover context and mission/HUD retirement."
+      ]
+    },
+    {
+      "Version": "0.12.6",
+      "Changes": [
+        "Add shared AI market reserve and pre-booking quantity policies, with composable native stock safety, ordered optional callbacks and process-lifetime hook ownership. The hook backend is verified at run time (displaced span, generated stub, jump form) instead of by pinned backend file hashes, so Script Extender updates keep the policies; another mod's hook at an audited continuation boundary is accepted.",
+        "Public provider APIs instead of friend internals: RouteSearchEvents.BeginSearch with a public RouteSearchContext, AssassinPathAPI.BeginRouteOutput, EnemyBridgeDiagnosticBridge.PublishTopologyOwner and GateRoutingNativeLayout (run-time values instead of compiled-in constants); BugfixesAndQoL no longer has InternalsVisibleTo access.",
+        "Fixes: ModSettings search ignores unresolvable markup extensions and reads {}-escaped text, Workshop startup retries a subscription list that changes during Steam initialization, recruitment variant buttons attach their hover handlers once, search case folding no longer depends on the current culture, and a Workshop upload whose Unity dispatcher is gone fails instead of staying active."
+      ]
+    },
+    {
+      "Version": "0.12.5",
+      "Changes": [
+        "First public release since 0.9.2; summarizes the unreleased development versions 0.10.0 to 0.12.4.",
+        "Multiplayer: every player needs the same APIShared version. A peer with an older save-readiness protocol blocks loading a save with a message naming both versions; update APIShared and the mods for all players together.",
+        "Savegames: prepare and verify host settings before loading (including Solo Multiplayer and Coop provenance) with authenticated peer readiness; own the load checkbox; load saves whose settings record is damaged or newer with the current settings instead of aborting.",
+        "Versioned per-mod save records (VersionedSaveData) with multiplayer comparison of simulation records, plus UnitSettledEvents, attributed SoundSourceEvents with source selection, the cooperative native-site registry, rounded fear popularity and MissionRestart.Run.",
+        "ModSettings presets: stored under Documents/SHCDE/APIShared so long game paths no longer prevent saving; reflected settings apply independently, a rejected value falls back to its default, and mission exit retries a failing setter at most three times; snapshots keep their ownership, Customize drafts and omitted nullable values.",
+        "Lobby settings arrive through the Unity main-thread FIFO with sender authority rechecked at delivery; personal settings wait for late player assignments; the applied settings of every registered mod are logged once per mission start as compact JSON.",
+        "Mission settings authoring, preparation and session services, immutable mod-data access, Trail-container extraction and the separate APIShared.Content library; mission restarts keep origin, active presets and author rules.",
+        "Coop AI start import: owner-bound plans for custom castles and AICs, a start preview (ICoopAiStartPreviewCapability) for start-button checks, and CoopAiSlotPlan.ConfirmedCandidateCount so a partly confirmed castle list yields to a synchronized complete one.",
+        "New shared services: RecruitmentAvailability, TroopActionHud, load/save requester coordination and explicit managed ModSettings search catalogs (with Unicode and emoji repair).",
+        "Optional Fixes mod: the wheat-sale hook correction is derived from the actual game and Fixes code instead of file hashes, versions or fixed addresses; the Script Extender popularity display and interpolate-event reuse are corrected safely.",
+        "Workshop: complete repair as a clean reinstallation, early dependency bootstrap, and Script Extender cleanup accepted by signature and IL validation instead of binary hashes.",
+        "Logging: warnings and errors as throttled MOD_WARNING/MOD_FAILURE lines with feature and cause; Info is always written and kept to one-time markers; Debug output is opt-in.",
+        "Robustness: managed capability members are checked at startup with isolated initialization; skirmish restarts in the editor, from another thread or without a tracked mission keep Vanilla's restart.",
+        "Performance: faster startup (no thread suspension during the library-load run, cached fingerprints and pattern checks), fewer allocations in broker, audio, HUD and selection paths, optimized Release build, and cheaper assassin drawbridge route reconstruction.",
+        "Supports long installation paths and isolated working-tree builds; public API compatibility baselines and regression tests are maintained separately from in-game acceptance."
       ]
     },
     {

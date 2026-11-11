@@ -5,11 +5,121 @@ using APIShared.Events;
 using APIShared.Presentation;
 using APIShared.Recruitment;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using TestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
 namespace APISharedTests
 {
     public partial class RuntimeTests
     {
+        [TestMethod]
+        public void GameActionValidatorChecksFinalInputsAndOwnStateAfterEqualPriorityPre()
+        {
+            var events = new InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs>();
+            var ticket = new object();
+            GameActionFinalValidationEventArgs inputs = null;
+            GameActionPostEventArgs completion = null;
+            int accepted = 0, originals = 0;
+            TestAssert.IsTrue(GameActionEvents.TryRegisterValidator(events, "a", "guard", a => a.State = ticket,
+                a => completion = a, a => { inputs = a; return a.Value2 == a.OriginalValue2; },
+                out _, order: int.MaxValue, accepted: _ => accepted++));
+            TestAssert.IsFalse(events.TryRegister("a", "guard", _ => { }, null, out _));
+            TestAssert.IsTrue(events.TryRegister("b", "edit", a =>
+            {
+                a.StructureId = 4;
+                a.ActionState = 5;
+                a.Value2 = 6;
+                a.State = new object();
+            }, null, out _, order: int.MaxValue));
+
+            int result = GameActionEvents.DispatchThrough(events, Enums.GameActionCommand.Ally_Orders, 1, 2, 3,
+                (_, _, _, _) => ++originals);
+            TestAssert.AreEqual(0, result);
+            TestAssert.AreEqual(0, originals);
+            TestAssert.AreEqual(0, accepted);
+            TestAssert.AreEqual(Enums.GameActionCommand.Ally_Orders, inputs.Command);
+            TestAssert.AreEqual((1, 2, 3), (inputs.OriginalStructureId, inputs.OriginalActionState, inputs.OriginalValue2));
+            TestAssert.AreEqual((4, 5, 6), (inputs.StructureId, inputs.ActionState, inputs.Value2));
+            TestAssert.AreSame(ticket, inputs.State);
+            TestAssert.AreSame(ticket, completion.State);
+            TestAssert.IsTrue(completion.WasSkipped);
+        }
+
+        [TestMethod]
+        [DataRow(true, false)]
+        [DataRow(false, true)]
+        [DataRow(false, false)]
+        public void GameActionValidatorHandlesPreVetoFailureAndAcceptance(bool preVeto, bool validatorFails)
+        {
+            var events = new InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs>();
+            GameActionPostEventArgs completion = null;
+            int validations = 0, accepted = 0, originals = 0;
+            TestAssert.IsTrue(events.TryRegister("a", "optional-veto", a => a.SkipOriginalFunction = preVeto, null, out _));
+            TestAssert.IsTrue(GameActionEvents.TryRegisterValidator(events, "b", "guard", null,
+                a => completion = a, _ =>
+                {
+                    validations++;
+                    if (validatorFails) throw new InvalidOperationException("validator failed");
+                    return true;
+                }, out _, accepted: _ => accepted++));
+            int result = GameActionEvents.DispatchThrough(events, Enums.GameActionCommand.Ally_RequestGoods, 1, 2, 3,
+                (_, _, _, _) => ++originals);
+
+            bool skipped = preVeto || validatorFails;
+            TestAssert.AreEqual(preVeto ? 0 : 1, validations);
+            TestAssert.AreEqual(validatorFails ? 1L : 0L, events.CallbackFailures);
+            TestAssert.AreEqual(skipped ? 0 : 1, accepted);
+            TestAssert.AreEqual(skipped ? 0 : 1, originals);
+            TestAssert.AreEqual(skipped ? 0 : 1, result);
+            TestAssert.AreEqual(skipped, completion.WasSkipped);
+        }
+
+        [TestMethod]
+        [DataRow("Pre")]
+        [DataRow("FinalValidation")]
+        [DataRow("Accepted")]
+        [DataRow("Post")]
+        public void GameActionBlocksOnlyConfiguredNestedCommandsForTheActiveInvocation(string phase)
+        {
+            var events = new InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs>();
+            var guarded = Enums.GameActionCommand.Ally_Orders;
+            var ordinary = Enums.GameActionCommand.MakeTroop;
+            var commandList = new[] { guarded };
+            bool active = true;
+            int nestedGuarded = -1, nestedOrdinary = -1, originals = 0, notifications = 0;
+            GameActionEvents.Call original = (_, _, _, _) => { originals++; return 99; };
+            void InvokeNested()
+            {
+                notifications++;
+                // The protection and activation remain paired with the invoking callback.
+                active = false;
+                nestedGuarded = GameActionEvents.DispatchThrough(events, guarded, 1, 2, 3, original);
+                nestedOrdinary = GameActionEvents.DispatchThrough(events, ordinary, 1, 2, 3, original);
+            }
+
+            TestAssert.IsTrue(GameActionEvents.TryRegisterValidator(events, "a", "guard", null, null,
+                _ => true, out _, strictNestedKinds: commandList, isActive: () => active));
+            TestAssert.IsTrue(GameActionEvents.TryRegisterValidator(events, "b", "nested",
+                phase == "Pre" ? _ => InvokeNested() : null,
+                phase == "Post" ? _ => InvokeNested() : null,
+                _ =>
+                {
+                    if (phase == "FinalValidation") InvokeNested();
+                    return true;
+                },
+                out _, accepted: phase == "Accepted" ? _ => InvokeNested() : null));
+            commandList[0] = ordinary;
+
+            TestAssert.AreEqual(99, GameActionEvents.DispatchThrough(events, ordinary, 1, 2, 3, original));
+            TestAssert.AreEqual(2, originals);
+            TestAssert.AreEqual(0, nestedGuarded);
+            TestAssert.AreEqual(99, nestedOrdinary);
+            TestAssert.AreEqual(99, GameActionEvents.DispatchThrough(events, ordinary, 1, 2, 3, original));
+            TestAssert.AreEqual(5, originals);
+            TestAssert.AreEqual(99, nestedGuarded);
+            TestAssert.AreEqual(99, nestedOrdinary);
+            TestAssert.AreEqual(2, notifications);
+        }
+
         [TestMethod]
         public void RecruitmentCtrlCeilingBecomesConcreteEvenWhenAssignedTheSameAmount()
         {

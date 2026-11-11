@@ -19,7 +19,7 @@
       <Grid shared:ModSettingsMode.Key="enable"><CheckBox Content="Enable example" IsChecked="{Binding EnableMod}" ToolTip="Allows the host to activate this example." ToolTipService.ShowDuration="60000" /></Grid>
     </StackPanel>
     <TextBlock Text="CLIENT OPTIONS" Margin="0,12,0,0" />
-    <StackPanel IsEnabled="{Binding CanEditClientSettings}">
+    <StackPanel IsEnabled="{Binding CanEditClientSettings}" Opacity="{Binding ClientSettingsOpacity}">
       <CheckBox Content="Show overlay" IsChecked="{Binding ShowOverlay}" ToolTip="Local presentation preference, stored in personal presets." ToolTipService.ShowDuration="60000" />
     </StackPanel>
     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">

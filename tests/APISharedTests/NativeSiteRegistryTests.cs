@@ -24,26 +24,39 @@ namespace APISharedTests
             int feature = 0;
             foreach (KeyValuePair<string, NativeSiteSpan[]> group in ApiSharedNativeSites.All())
             {
-                // Distinct owners: any overlap between two APIShared features would be refused here.
+                // Distinct owners: independent writers cannot overlap. A call-only client can
+                // invoke another feature's occupied entry without acquiring patch ownership.
                 NativeSiteRegistrationResult result = registry.RegisterSites("Feature" + feature++, group.Key, group.Value);
                 MsAssert.AreEqual(NativeSiteRegistrationStatus.Accepted, result.Status, group.Key + ": " + result.Reason);
-                MsAssert.AreEqual(0, result.SharedWith.Count, group.Key + " shares no byte with another APIShared feature");
+                foreach (NativeSiteRegistration shared in result.SharedWith)
+                    MsAssert.IsTrue(shared.Mode == NativeSiteMode.CallOnly || group.Value.Any(span =>
+                        span.Mode == NativeSiteMode.CallOnly && span.Rva < shared.Rva + shared.Length &&
+                        shared.Rva < span.Rva + span.Length), group.Key + " may share only an explicitly call-only entry");
             }
 
             var expectedWriters = new (int Rva, int Length, string Group)[]
             {
+                (0x3F1F3, 15, ApiSharedNativeSites.AiMarketSell), (0x29723, 15, ApiSharedNativeSites.AiMarketSell),
                 (0x2960, 15, ApiSharedNativeSites.Audio), (0x2990, 15, ApiSharedNativeSites.Audio), (0x1A41E0, 14, ApiSharedNativeSites.Audio),
                 (0xB7B70, 75, ApiSharedNativeSites.GatehousePermanent), (0xB7BBB, 37, ApiSharedNativeSites.GatehousePermanent),
                 (0xB7A4E, 17, ApiSharedNativeSites.GatehouseAutomation), (0xB79E2, 18, ApiSharedNativeSites.GatehouseAutomation),
                 (0x51790, 17, ApiSharedNativeSites.AivBuildStep),
                 (0xCEB10, 10, ApiSharedNativeSites.MarketPrices), (0xCEB90, 10, ApiSharedNativeSites.MarketPrices),
                 (0xD9C40, 10, ApiSharedNativeSites.AssassinPath), (0xE19F9, 23, ApiSharedNativeSites.AssassinPath),
+                (0xE19C0, 14, ApiSharedNativeSites.AssassinPath),
                 (0x16CD70, 10, ApiSharedNativeSites.AssassinAttack),
                 (0x1232E0, 6, ApiSharedNativeSites.GateMovement), (0xDC3C0, 6, ApiSharedNativeSites.GateMovement),
                 (0x113BC0, 10, ApiSharedNativeSites.GateMovement), (0x8F251, 29, ApiSharedNativeSites.GateMovement),
                 (0x8F1BF, 14, ApiSharedNativeSites.GateMovement), (0xDB857, 17, ApiSharedNativeSites.GateMovement),
                 (0xE2705, 20, ApiSharedNativeSites.GateComparisons), (0xE3024, 20, ApiSharedNativeSites.GateComparisons),
-                (0x185D55, 20, ApiSharedNativeSites.GateDescent)
+                (0x185D55, 20, ApiSharedNativeSites.GateDescent),
+                (0x13030, 6, ApiSharedNativeSites.SynchronizedSave),
+                (0x869D2, 6, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x27FEB, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x27FFF, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x28019, 7, ApiSharedNativeSites.PlayerViewNetwork),
+                (0x45F20, 7, ApiSharedNativeSites.MapperCamera),
+                (0x41D60, 10, ApiSharedNativeSites.VisibleMapRender)
             };
             foreach (var expected in expectedWriters)
             {
@@ -53,11 +66,24 @@ namespace APISharedTests
             }
             MsAssert.AreEqual(91, registry.Registrations.Count(r => r.Name == ApiSharedNativeSites.Audio && r.Mode == NativeSiteMode.Observe),
                 "every decoded audio catalog CALL site is observed");
-            foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17) })
+            foreach (var observed in new[] { (0xB7C32, 7), (0xC5300, 15), (0xCEB1A, 21), (0xCEB9A, 21), (0x122800, 24), (0x185934, 4), (0xD51A0, 17), (0x13036, 13) })
                 MsAssert.AreEqual(1, registry.Registrations.Count(r => r.Rva == observed.Item1 && r.Length == observed.Item2 && r.Mode == NativeSiteMode.Observe),
                     $"observed span 0x{observed.Item1:X}+{observed.Item2}");
-            MsAssert.AreEqual(0, registry.Registrations.Count(r => r.Mode == NativeSiteMode.ChainableEntry || r.Mode == NativeSiteMode.CallOnly),
-                "APIShared's backends refuse occupied entries, so none of its own sites is chainable");
+            MsAssert.AreEqual(0, registry.Registrations.Count(r => r.Mode == NativeSiteMode.ChainableEntry),
+                "APIShared's native patch backends refuse occupied entries; callers do not own patches");
+            var militaryCalls = registry.Registrations.Where(r => r.Name == "Units.AiMilitary.Calls").ToArray();
+            MsAssert.IsTrue(militaryCalls.Length > 0 && militaryCalls.All(r => r.Mode == NativeSiteMode.CallOnly));
+            foreach (var call in militaryCalls)
+                if (registry.TryGetWriter(call.Rva, out var writer))
+                    MsAssert.AreNotEqual(call.Name, writer.Name, "Military live-entry calls cannot acquire a writer claim.");
+            // The Extender already owns this entry. The managed Original.Invoke adapter
+            // must never regain an exclusive native writer claim here.
+            var allyTransfer = registry.Registrations.Single(r => r.Name == APIShared.Economy.AllyTransfersNative.SiteName &&
+                r.Rva == APIShared.Economy.AllyTransfersNative.TransferRva);
+            MsAssert.AreEqual(NativeSiteMode.CallOnly, allyTransfer.Mode);
+            MsAssert.IsFalse(registry.TryGetWriter(allyTransfer.Rva, out _), "SE retains the sole native transfer hook");
+            MsAssert.AreEqual(1, registry.Registrations.Count(r => r.Name == APIShared.Economy.AllyTransfersNative.SiteName &&
+                r.Rva == APIShared.Economy.AllyTransfersNative.CapacityRva && r.Mode == NativeSiteMode.Observe));
         }
 
         [TestMethod]
@@ -72,13 +98,24 @@ namespace APISharedTests
                 ("APIShared.GatehouseAutomationNativeState", "TryPublish", -1, m => m.Name == "Commit"),
                 ("APIShared.AivBuildStepService", "TryCreate", 8, m => m.Name == "Commit"),
                 ("APIShared.Economy.MarketPriceNativeRuntime", "EnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.AiMarketSellNativeRuntime", "EnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WorkerProductionBonusNativeRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WorkerProductionOutputNativeRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WeaponProductionNativeRuntime/Adapter", "Install", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.HunterNativeSites", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.HunterOwnerGates", "TryEnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.HerdRuntime", "TryEnsureFlightGates", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinPathAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "RegisterGuard", 3, m => m.Name == "GetDelegateForFunctionPointer"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallMovement", -1, m => m.Name == "InstallMovementHooks"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallComparisons", -1, m => m.Name == "InstallComparisonHooks"),
                 ("APIShared.GateRouting.Native.GateRoutingNativeHooks", "InstallDescent", -1, m => m.Name == "Commit"),
-                ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook")
+                ("APIShared.BuildingRepairService", "TryCreate", 7, m => m.Name == ".ctor" && m.DeclaringType.Name == "Hook"),
+                ("APIShared.ScriptExtenderFixes.SynchronizedSaveRuntime", "Initialize", -1, m => m.Name == "Commit"),
+                ("APIShared.PlayerControl.PlayerViewNetworkNative", "Initialize", -1, m => m.Name == "Enable"),
+                ("APIShared.Presentation.MapperCameraNative", "Initialize", -1, m => m.Name == "Enable"),
+                ("APIShared.Presentation.VisibleMapRenderEvents", "EnsureInstalled", -1, m => m.Name == "Enable")
             };
             using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
             {
@@ -90,22 +127,47 @@ namespace APISharedTests
                     Mono.Cecil.MethodDefinition method = type.Methods.Single(m => m.Name == installer.Method &&
                         (installer.Parameters < 0 || m.Parameters.Count == installer.Parameters));
                     List<Mono.Cecil.MethodReference> calls = CallsInOrder(method, new HashSet<Mono.Cecil.MethodDefinition>());
-                    int claim = calls.FindIndex(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Claim");
+                    int claim = calls.FindIndex(m => IsSiteCall(m, "Claim"));
                     int publish = calls.FindIndex(m => installer.Publishes(m));
                     MsAssert.IsTrue(claim >= 0, name + " claims its native sites");
                     MsAssert.IsTrue(publish >= 0, name + " still contains its publication call");
                     MsAssert.IsTrue(claim < publish, name + " claims before it installs or uses the site");
                     // The release may sit in a rollback helper of the same type (audio's RollbackUnpublished).
-                    MsAssert.IsTrue(calls.Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Release"),
+                    MsAssert.IsTrue(calls.Any(m => IsSiteCall(m, "Release") || m.DeclaringType.Name == "NativeInlineStubGroup" && m.Name == "RollbackUnpublished"),
                         name + " releases its claim when the installation is not published");
                 }
             }
         }
 
-        // The method's calls in IL order, with each call into a method of the same type followed in place
-        // by that method's own calls (recursively, skipping methods already on the path). An installer can
-        // move its claim, publication or release into a helper without leaving this check, as audio's
-        // Install did with CreateHooks (#20).
+        [TestMethod]
+        [TestCategory("NativeSites")]
+        public void VerifyInlineStubGroupClaimsAndReleasesItsSites()
+        {
+            // Installers above may claim and release through NativeInlineStubGroup; the group itself
+            // must forward to the site registry and keep the release inside its rollback path.
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(ApiSharedRuntime).Assembly.Location))
+            {
+                Mono.Cecil.TypeDefinition type = assembly.MainModule.GetType("APIShared.NativeInlineStubGroup");
+                MsAssert.IsNotNull(type);
+                List<Mono.Cecil.MethodReference> Calls(string name) =>
+                    CallsInOrder(type.Methods.Single(m => m.Name == name), new HashSet<Mono.Cecil.MethodDefinition>());
+                MsAssert.IsTrue(Calls("Claim").Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Claim"));
+                MsAssert.IsFalse(Calls("Begin").Concat(Calls("Add")).Concat(Calls("Commit")).Concat(Calls("Publish"))
+                    .Any(m => m.DeclaringType.Name == "ApiSharedNativeSites"), "only Claim and the rollback touch the registry");
+                List<Mono.Cecil.MethodReference> rollback = Calls("RollbackUnpublished");
+                MsAssert.IsTrue(rollback.Any(m => m.DeclaringType.Name == "NativeHookPublicationState" && m.Name == "RollbackUnpublished"));
+                MsAssert.IsTrue(rollback.Any(m => m.DeclaringType.Name == "ApiSharedNativeSites" && m.Name == "Release"),
+                    "the claim is released only through the publication barrier's candidate cleanup");
+            }
+        }
+
+        private static bool IsSiteCall(Mono.Cecil.MethodReference method, string name) =>
+            method.Name == name && (method.DeclaringType.Name == "ApiSharedNativeSites" || method.DeclaringType.Name == "NativeInlineStubGroup");
+
+        // Follow calls and callback bodies within the installer's lexical owner (including nested
+        // installation objects/closures). Cleanup may be supplied to a publication barrier as an
+        // Action rather than called directly. This proves presence/order, not rollback safety;
+        // NativeHookPublicationTests separately exercise the barrier and forbid direct teardown.
         private static List<Mono.Cecil.MethodReference> CallsInOrder(Mono.Cecil.MethodDefinition method,
             HashSet<Mono.Cecil.MethodDefinition> path)
         {
@@ -114,10 +176,14 @@ namespace APISharedTests
             foreach (Mono.Cecil.Cil.Instruction instruction in method.Body.Instructions)
             {
                 if (instruction.OpCode.Code != Mono.Cecil.Cil.Code.Call && instruction.OpCode.Code != Mono.Cecil.Cil.Code.Callvirt &&
-                    instruction.OpCode.Code != Mono.Cecil.Cil.Code.Newobj) continue;
+                    instruction.OpCode.Code != Mono.Cecil.Cil.Code.Newobj && instruction.OpCode.Code != Mono.Cecil.Cil.Code.Ldftn) continue;
                 var callee = (Mono.Cecil.MethodReference)instruction.Operand;
                 calls.Add(callee);
-                if (callee.DeclaringType.FullName != method.DeclaringType.FullName) continue;
+                Mono.Cecil.TypeReference calleeOwner = callee.DeclaringType;
+                Mono.Cecil.TypeReference methodOwner = method.DeclaringType;
+                while (calleeOwner.DeclaringType != null) calleeOwner = calleeOwner.DeclaringType;
+                while (methodOwner.DeclaringType != null) methodOwner = methodOwner.DeclaringType;
+                if (calleeOwner.FullName != methodOwner.FullName) continue;
                 Mono.Cecil.MethodDefinition body = callee.Resolve();
                 if (body != null && body.HasBody && !path.Contains(body)) calls.AddRange(CallsInOrder(body, path));
             }

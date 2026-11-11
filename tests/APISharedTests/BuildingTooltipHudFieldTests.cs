@@ -45,5 +45,18 @@ namespace APISharedTests
             TestContext.WriteLine("TOOLTIP_ALLOC HudSelection.Resolve: bytesPerCall={0:F1}", best / 20000.0);
             Assert.AreEqual(0L, best, "HUD selection reads must not box or reflect per update.");
         }
+        [TestMethod]
+        public void RepairContextUsesVanillaOtherDataAndVisibility()
+        {
+            var hud = (HUD_Main)FormatterServices.GetUninitializedObject(typeof(HUD_Main));
+            var selection = new BuildingTooltipPresentation.HudSelection();
+            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            foreach (bool visible in new[] { false, true }) foreach (int kind in new[] { -1, 0, 1, 2 })
+            {
+                typeof(HUD_Main).GetField("OtherVisible", Flags).SetValue(hud, visible);
+                typeof(HUD_Main).GetField("OtherData1", Flags).SetValue(hud, kind);
+                Assert.AreEqual(visible && kind == 1, selection.IsRepair(hud));
+            }
+        }
     }
 }

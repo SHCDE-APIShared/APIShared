@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 
 namespace APIShared.Workshop
 {
@@ -57,19 +56,23 @@ namespace APIShared.Workshop
         internal static string Text(Dictionary<string, object> row, string key) =>
             row.TryGetValue(key, out object value) && value is string text ? text : throw new InvalidDataException("Missing inventory string: " + key);
 
+        // Read-only copies: both calls return a new array each time, once per path segment otherwise.
+        private static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
+        private static readonly char[] WildcardChars = "*?[]".ToCharArray();
+
         internal static void CheckGuid(string guid)
         {
             if (string.IsNullOrWhiteSpace(guid) || guid == "." || guid.Contains("..") ||
-                guid.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || guid.IndexOfAny("*?[]".ToCharArray()) >= 0 || guid.Contains("/") || guid.Contains("\\") || guid.TrimEnd(' ', '.') != guid || IsDeviceName(guid))
+                guid.IndexOfAny(InvalidFileNameChars) >= 0 || guid.IndexOfAny(WildcardChars) >= 0 || guid.Contains("/") || guid.Contains("\\") || guid.TrimEnd(' ', '.') != guid || IsDeviceName(guid))
                 throw new InvalidDataException("Unsafe inventory GUID.");
         }
 
         internal static string CheckPath(string path)
         {
             string[] segments = path?.Split('/') ?? Array.Empty<string>();
-            if (string.IsNullOrWhiteSpace(path) || path.Contains("\\") || path.Contains(":") || path.IndexOfAny("*?[]".ToCharArray()) >= 0 ||
+            if (string.IsNullOrWhiteSpace(path) || path.Contains("\\") || path.Contains(":") || path.IndexOfAny(WildcardChars) >= 0 ||
                 Path.IsPathRooted(path) || segments.Any(x => x == "" || x == "." || x == "..") ||
-                segments.Any(x => x.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || x.TrimEnd(' ', '.') != x ||
+                segments.Any(x => x.IndexOfAny(InvalidFileNameChars) >= 0 || x.TrimEnd(' ', '.') != x ||
                     IsDeviceName(x)) ||
                 segments.Any(x => string.Equals(x, "LobbyModSettings", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(x, "config", StringComparison.OrdinalIgnoreCase)) ||
@@ -105,7 +108,7 @@ namespace APIShared.Workshop
         internal static string Hash(string path)
         {
             using (var stream = File.OpenRead(path))
-            using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+                return Sha256Hex.Of(stream).ToLowerInvariant();
         }
 
         internal static bool IsContainedWithoutLinks(string root, string path)

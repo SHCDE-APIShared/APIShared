@@ -15,6 +15,7 @@ namespace APIShared
             this.api = api ?? throw new ArgumentNullException(nameof(api));
             Network = new Networking.ModNetworkClient(ownerGuid);
             Workshop = new Workshop.WorkshopClient(ownerGuid);
+            Ui = new Presentation.UiWorkClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
@@ -23,6 +24,10 @@ namespace APIShared
         public Networking.ModNetworkClient Network { get; }
         /// <summary>Owner-bound Workshop upload, receipt-based installation and catalog service. Steam calls require the Unity thread; planning never installs files.</summary>
         public Workshop.WorkshopClient Workshop { get; }
+        /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
+        public Presentation.UiWorkClient Ui { get; }
+        /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>
+        public Automation.AutomationClient Automation => new Automation.AutomationClient(this);
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 
@@ -36,6 +41,17 @@ namespace APIShared
         /// <summary>Acquires mission initialization/start/end observations and current context for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IMissionLifecycleCapability"/> for operation/thread contracts.</summary>
         public bool TryGetMissionLifecycle(out IMissionLifecycleCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetMissionLifecycle(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires first-current-mission PlayState observation, independent of managed Start and loading duration.
+        /// Register on Unity and retain the capability; its Current receipt is invalidated at mission end/replacement.</summary>
+        public bool TryGetMissionPlayStateReadiness(out IMissionPlayStateReadinessCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetMissionPlayStateReadiness(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires semantic military AI admission, protected placement and map declarations.
+        /// Acquisition enables native group-order observation for this process; no unit is changed.
+        /// Completion callbacks use their committing thread and never implicitly dispatch UI work.</summary>
+        public bool TryGetAiMilitary(out Units.AiMilitary.IAiMilitaryCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            Units.AiMilitary.AiMilitaryService.TryGet(OwnerGuid, out capability, out diagnostic);
 
         /// <summary>Acquires exclusive gatehouse distance-origin configuration for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IGatehouseDistanceOriginCapability"/> for operation/thread contracts.</summary>
         public bool TryGetGatehouseDistanceOrigin(out IGatehouseDistanceOriginCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
@@ -73,6 +89,21 @@ namespace APIShared
         /// <summary>Acquires ordered briefing-gold presentation adjustments for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IBriefingGoldPresentationCapability"/> for operation/thread contracts.</summary>
         public bool TryGetBriefingGoldPresentation(out IBriefingGoldPresentationCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetBriefingGoldPresentation(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires Coop Trail AI castle and custom-AIC import planning for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="ICoopAiStartImportCapability"/> for timing, thread and failure contracts.</summary>
+        public bool TryGetCoopAiStartImport(out ICoopAiStartImportCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetCoopAiStartImport(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires the optional native plague standing-height service. No policy is activated by acquisition.</summary>
+        public bool TryGetPlagueHeight(out IPlagueHeightCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            PlagueHeightService.TryGet(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Reads the effective plague standing-height policy of all owners (the one the native damage
+        /// path applies). Any thread; no allocation, lock or callback. Returns false with an inactive policy when
+        /// the service is unavailable (then the native path is Vanilla). The value changes only when an owner sets
+        /// a policy, which owners do on the main thread before/after simulation, identically on all peers.</summary>
+        public bool TryGetPlagueHeightPolicy(out PlagueHeightPolicy policy, out NativeCapabilityDiagnostic diagnostic) =>
+            PlagueHeightService.TryGetPolicy(out policy, out diagnostic);
 
         /// <summary>Acquires building repair quotes and tooltip presentation for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IBuildingRepairCapability"/> for operation/thread contracts.</summary>
         public bool TryGetBuildingRepair(out IBuildingRepairCapability capability, out NativeCapabilityDiagnostic diagnostic) =>

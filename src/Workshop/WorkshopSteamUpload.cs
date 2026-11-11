@@ -14,7 +14,9 @@ namespace APIShared.Workshop
     {
         private const uint AppId = 3024040;
         internal static WorkshopSteamBackend Backend = new WorkshopSteamBackend();
+        // Written on the Unity thread and, when the dispatcher is gone, by the failing worker.
         private static readonly Dictionary<string, Upload> Active = new Dictionary<string, Upload>();
+        private static readonly object ActiveSync = new object();
         private static readonly List<object> Queries = new List<object>();
         private sealed class Upload
         {
@@ -38,10 +40,13 @@ namespace APIShared.Workshop
         {
             WorkshopPublisherContext.RequireSteam();
             if (plan == null || plan.Owner != owner || plan.Published) throw new ArgumentException("Invalid, foreign or already submitted upload plan.");
-            if (Active.Values.Any(x => x.Plan.PackageId.Equals(plan.PackageId, StringComparison.OrdinalIgnoreCase) || plan.WorkshopId != 0 && x.Id == plan.WorkshopId)) throw new InvalidOperationException("This package or Workshop item is already being published.");
-            plan.Published = true;
-            var upload = new Upload { Plan = plan, Id = plan.Options.WorkshopId, Operation = new WorkshopOperation(plan.OperationId) };
-            Active.Add(plan.OperationId, upload);
+            Upload upload;
+            lock (ActiveSync) {
+                if (Active.Values.Any(x => x.Plan.PackageId.Equals(plan.PackageId, StringComparison.OrdinalIgnoreCase) || plan.WorkshopId != 0 && x.Id == plan.WorkshopId)) throw new InvalidOperationException("This package or Workshop item is already being published.");
+                plan.Published = true;
+                upload = new Upload { Plan = plan, Id = plan.Options.WorkshopId, Operation = new WorkshopOperation(plan.OperationId) };
+                Active.Add(plan.OperationId, upload);
+            }
             upload.Operation.Set(WorkshopOperationState.Preparing, "Checking immutable upload snapshot.", upload.Id);
             Worker(upload, () => {
                 foreach (string file in WorkshopPaths.Enumerate(plan.Snapshot).Concat(new[] { plan.Options.PreviewFile }))
@@ -63,7 +68,7 @@ namespace APIShared.Workshop
         private static void Guard(Upload upload, Action action)
         {
             try { action(); }
-            catch (Exception ex) { ReleaseSnapshot(upload); upload.Operation.Set(WorkshopOperationState.Failed, ex.Message, upload.Id); Active.Remove(upload.Plan.OperationId); WorkshopPublisherContext.Log("Upload failed: " + ex); }
+            catch (Exception ex) { ReleaseSnapshot(upload); upload.Operation.Set(WorkshopOperationState.Failed, ex.Message, upload.Id); Retire(upload); WorkshopPublisherContext.Log("Upload failed: " + ex); }
         }
         private static void ReleaseSnapshot(Upload upload) { foreach (var file in upload.SnapshotLocks) file.Dispose(); upload.SnapshotLocks.Clear(); }
         private static void Require(bool result, string step) { if (!result) throw new IOException("Steam rejected " + step + "."); }
@@ -75,9 +80,16 @@ namespace APIShared.Workshop
                 if (!WorkshopPublisherContext.Enqueue(() => Guard(upload, () => {
                     if (task.IsFaulted) throw task.Exception.GetBaseException();
                     next();
-                }))) WorkshopPublisherContext.Log("Workshop operation cannot continue: Unity dispatcher unavailable: " + upload.Plan.OperationId);
+                }))) {
+                    // No Unity callback can follow: fail the operation here so the package can be published again.
+                    WorkshopPublisherContext.Log("Workshop operation cannot continue: Unity dispatcher unavailable: " + upload.Plan.OperationId);
+                    ReleaseSnapshot(upload);
+                    upload.Operation.Set(WorkshopOperationState.Failed, "Unity dispatcher unavailable; the upload was stopped.", upload.Id);
+                    Retire(upload);
+                }
             });
         }
+        private static void Retire(Upload upload) { lock (ActiveSync) Active.Remove(upload.Plan.OperationId); }
         private static void QueryExisting(Upload upload)
         {
             upload.Operation.Step = "QueryExisting";
@@ -230,7 +242,7 @@ namespace APIShared.Workshop
                 ReleaseSnapshot(upload);
                 upload.Operation.Set(WorkshopOperationState.Succeeded, "Published successfully.", upload.Id);
                 Backend.ActivateGameOverlayToWebPage("steam://url/CommunityFilePage/" + upload.Id);
-                Active.Remove(upload.Plan.OperationId); return;
+                Retire(upload); return;
             }
             ulong child = upload.Dependencies.Dequeue();
             upload.Operation.Step = "AddDependency";
@@ -244,7 +256,9 @@ namespace APIShared.Workshop
         internal static void RefreshProgress()
         {
             WorkshopPublisherContext.RequireSteam();
-            foreach (var upload in Active.Values.ToArray()) {
+            Upload[] uploads;
+            lock (ActiveSync) uploads = Active.Values.ToArray();
+            foreach (var upload in uploads) {
                 if (upload.Submit == null || upload.Operation.State != WorkshopOperationState.Submitted) continue;
                 var status = Backend.GetItemUpdateProgress(upload.Handle, out ulong processed, out ulong total);
                 upload.Operation.Set(WorkshopOperationState.Submitted, status + ": " + processed + " / " + total + " bytes", upload.Id);

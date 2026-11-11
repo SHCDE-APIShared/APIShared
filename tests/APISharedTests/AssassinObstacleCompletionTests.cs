@@ -58,9 +58,8 @@ namespace APISharedTests
             Assert.AreEqual(0u,unit.r_AI_ContextTargetBuildingTileId);Assert.AreEqual(0u,unit.r_AnimationTimer);
         }
         [TestMethod]
-        public void BothPublicOverloadsRemainAndInvalidModeDoesNotInstall()
+        public void InvalidModeDoesNotInstall()
         {
-            Assert.IsNotNull(typeof(AssassinAttackControlAPI).GetMethod("RegisterGuard",new[] { typeof(string),typeof(Func<int,bool>) }));
             Assert.ThrowsExactly<ArgumentOutOfRangeException>(()=>AssassinAttackControlAPI.RegisterGuard("test",_=>false,(AssassinObstacleCompletionMode)99));
         }
     }

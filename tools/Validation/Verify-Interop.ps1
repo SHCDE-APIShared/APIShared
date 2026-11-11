@@ -21,11 +21,10 @@ function Get-NativeSize($type) {
         }
     }
 }
-$sourcePaths = @(
-    (Join-Path $apiRoot 'src\Units\UnitAccess.cs'),
-    (Join-Path $apiRoot 'src\Units\Settled\UnitSettledScriptExtenderSource.cs')) + $AdditionalSourceFiles
-$source = (@($sourcePaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n")
-$consumed = @([regex]::Matches($source, '\br_\w+') | ForEach-Object Value | Sort-Object -Unique)
+. (Join-Path $PSScriptRoot 'SourceContracts.Common.ps1')
+# Native layout expectations below are deliberate ABI contracts. Select consumed
+# identifiers from parsed owners, independent of filenames, comments and literals.
+$consumed = (Invoke-ApiSourceContracts -Root $apiRoot -Group interop -AdditionalSourceFiles $AdditionalSourceFiles) -join "`n" | ConvertFrom-Json
 $rows = @()
 $expected = @{
     'GameUnit.r_AliveState' = 'SHCDESE.Interop.Enums.AliveState|136|2'
@@ -36,6 +35,8 @@ $expected = @{
     'GameUnit.r_CurrentTilePositionY' = 'System.UInt16|194|2'
     'GameUnit.r_TargetTilePositionX' = 'System.UInt16|196|2'
     'GameUnit.r_TargetTilePositionY' = 'System.UInt16|198|2'
+    # Formation speech consumes these audited tile and leader fields (GameUnit/GameTribe layout).
+    'GameUnit.r_CurrentPositionTileId' = 'System.UInt32|208|4'
     'GameUnit.r_IsKilledByProjectile' = 'System.UInt16|668|2'
     'GameUnit.r_TribeId' = 'System.UInt16|724|2'
     'GameUnit.r_AttackMoveToTargetTileX' = 'System.UInt16|728|2'
@@ -43,6 +44,9 @@ $expected = @{
     'GameTribe.r_PlayerIdOwner' = 'System.UInt16|2|2'
     'GameTribe.r_GlobalId' = 'System.UInt32|10|4'
     'GameTribe.r_AliveState' = 'SHCDESE.Interop.Enums.AliveState|22|2'
+    'GameTribe.r_LeaderUnitId' = 'System.UInt16|48|2'
+    # Separate patrol flag: audited manager header, independent of ordinary command mode.
+    'GameTribeManager.r_TroopsPatrolMode' = 'System.UInt32|28|4'
     'GameCursorManager.r_IsCursorInGame' = 'System.UInt32|8|4'
     'GameCursorManager.r_HoverOverBuildingId' = 'System.UInt32|36|4'
     'GameCursorManager.r_HoverOverUnitId' = 'System.UInt32|48|4'
@@ -51,7 +55,9 @@ $expected = @{
     'GameCursorManager.r_HoveringOverWall' = 'System.UInt32|116|4'
 }
 $found = @()
-foreach ($name in @('GameUnit','GameTribe','GameCursorManager')) {
+$typeNames = @('GameUnit','GameTribe','GameCursorManager')
+if ($consumed -contains 'r_TroopsPatrolMode') { $typeNames += 'GameTribeManager' }
+foreach ($name in $typeNames) {
     $type = $assembly.MainModule.GetType('SHCDESE.Interop.' + $name)
     if ($null -eq $type -or -not $type.IsSequentialLayout -or $type.PackingSize -ne 1) { throw "Unexpected layout: $name" }
     $offset = 0
@@ -68,7 +74,9 @@ foreach ($name in @('GameUnit','GameTribe','GameCursorManager')) {
         $offset += $size
     }
     if ($type.ClassSize -gt 0 -and $offset -gt $type.ClassSize) { throw "Fields exceed stride: $name $offset" }
-    $requiredSize = @{ GameUnit = 1168; GameTribe = 1672; GameCursorManager = 1152 }[$name]
+    # The SE manager view contains its 42-byte header and the first 1672-byte
+    # tribe entry, not the full native 4500-entry allocation.
+    $requiredSize = @{ GameUnit = 1168; GameTribe = 1672; GameCursorManager = 1152; GameTribeManager = 1714 }[$name]
     if ($offset -ne $requiredSize) { throw "Changed structure size: $name $offset" }
     $rows += "$name computedSize=$offset declaredSize=$($type.ClassSize) pack=$($type.PackingSize)"
 }

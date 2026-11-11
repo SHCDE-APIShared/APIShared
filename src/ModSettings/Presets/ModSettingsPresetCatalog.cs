@@ -52,7 +52,9 @@ namespace APIShared.ModSettings
             Version targetVersion,
             string targetPluginDirectory,
             string personalPresetRoot,
-            ManualLogSource log)
+            ManualLogSource log,
+            string legacyPersonalPresetRoot = null,
+            Action<PublishedModSettingsPreset> validatePreset = null)
         {
             targetGuid = RequireSafePathSegment(targetGuid, "target plugin GUID");
             var providers = new List<PresetProvider>();
@@ -65,6 +67,9 @@ namespace APIShared.ModSettings
                 personalPresetRoot,
                 ModSettingsPresetSourceKind.Personal,
                 directoryIsTarget: true);
+            if (!string.IsNullOrEmpty(legacyPersonalPresetRoot))
+                AddProvider(providers, seenDirectories, "personal:" + targetGuid, "Personal",
+                    legacyPersonalPresetRoot, ModSettingsPresetSourceKind.Personal, directoryIsTarget: true);
             AddProvider(
                 providers,
                 seenDirectories,
@@ -78,7 +83,7 @@ namespace APIShared.ModSettings
                 if (!Directory.Exists(provider.Value))
                 {
                     if (string.Equals(Path.GetExtension(provider.Value), ".semod", StringComparison.OrdinalIgnoreCase))
-                        DebugLogHelper.LogWarning(log, "Preset provider [" + provider.Key.Name + "] is a .semod archive and is skipped; published presets currently require a loose folder.");
+                        NativeApiLog.Warning(log, "Preset provider [" + provider.Key.Name + "] is a .semod archive and is skipped; published presets currently require a loose folder.");
                     continue;
                 }
                 AddProvider(
@@ -111,7 +116,7 @@ namespace APIShared.ModSettings
                     .Take(MaximumFilesPerProvider + 1).ToArray();
                 if (files.Length > MaximumFilesPerProvider)
                 {
-                    DebugLogHelper.LogError(log, "Preset provider [" + provider.Name + "] exceeds the per-target file limit and is ignored.");
+                    NativeApiLog.Error(log, "Preset provider [" + provider.Name + "] exceeds the per-target file limit and is ignored.");
                     continue;
                 }
                 foreach (string file in files)
@@ -126,12 +131,13 @@ namespace APIShared.ModSettings
                         PublishedModSettingsPreset preset = ModSettingsPresetJson.Parse(
                             ReadPresetText(fullPath), provider.Guid, provider.Name, targetGuid, fullPath);
                         preset.SourceKind = provider.SourceKind;
+                        validatePreset?.Invoke(preset);
                         if (!MatchesVersion(targetVersion, preset.MinimumTargetVersion, preset.MaximumTargetVersion)) continue;
                         providerPresets.Add(preset);
                     }
                     catch (Exception exception)
                     {
-                        DebugLogHelper.LogError(log, "Published preset [" + file + "] was rejected: " + exception.Message);
+                        NativeApiLog.Error(log, "Published preset [" + file + "] was rejected: " + exception.Message);
                     }
                 }
                 var duplicatedIds = new HashSet<string>(
@@ -142,7 +148,7 @@ namespace APIShared.ModSettings
                     StringComparer.OrdinalIgnoreCase);
                 foreach (string duplicateId in duplicatedIds)
                 {
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         "Preset provider [" + provider.Name + "] contains duplicate id [" + duplicateId + "] for target [" + targetGuid + "]; all duplicates are ignored.");
                 }
@@ -150,12 +156,13 @@ namespace APIShared.ModSettings
                 {
                     if (result.Count >= MaximumPresetsPerTarget)
                     {
-                        DebugLogHelper.LogError(log, "Published presets for target [" + targetGuid + "] exceed the global limit; remaining presets are ignored.");
+                        NativeApiLog.Error(log, "Published presets for target [" + targetGuid + "] exceed the global limit; remaining presets are ignored.");
                         break;
                     }
                     if (!identities.Add(preset.StableId))
                     {
-                        DebugLogHelper.LogError(log, "Duplicate provider/target/preset identity [" + preset.StableId + "] was ignored.");
+                        if (preset.SourceKind != ModSettingsPresetSourceKind.Personal)
+                            NativeApiLog.Error(log, "Duplicate provider/target/preset identity [" + preset.StableId + "] was ignored.");
                         continue;
                     }
                     result.Add(preset);
@@ -163,7 +170,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         "Preset provider [" + provider.Name + "] was rejected: " + exception.Message);
                 }

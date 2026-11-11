@@ -84,6 +84,7 @@ namespace APIShared
             new Dictionary<string, Func<ManagedMemberContract>>(StringComparer.Ordinal)
             {
                 [NativeCapabilityIds.MissionLifecycle] = MissionLifecycleService.MemberContract,
+                [NativeCapabilityIds.MissionPlayStateReadiness] = MissionPlayStateReadinessService.MemberContract,
                 [NativeCapabilityIds.LobbyState] = LobbyStateService.MemberContract,
                 [NativeCapabilityIds.PlayerDefeat] = PlayerDefeatService.MemberContract,
                 [NativeCapabilityIds.BriefingGoldPresentation] = BriefingGoldPresentationService.MemberContract,
@@ -91,6 +92,7 @@ namespace APIShared
                 [NativeCapabilityIds.BuildingRepair] = BuildingRepairService.MemberContract,
                 [NativeCapabilityIds.UnitHudPresentation] = UnitHudPresentationService.MemberContract,
                 [NativeCapabilityIds.BuildingPanelExtensions] = BuildingPanelExtensionsService.MemberContract,
+                [NativeCapabilityIds.CoopAiStartImport] = CoopAiStartImportService.MemberContract,
             };
 
         // Called once at the start of the capability's creation. On a mismatch only this capability reports

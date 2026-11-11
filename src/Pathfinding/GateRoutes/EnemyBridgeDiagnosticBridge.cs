@@ -3,6 +3,8 @@ using System.Threading;
 
 namespace APIShared
 {
+    // API_SHARED_DIAGNOSTICS: explicit TryRegister demand; no scheduler, hook or log
+    // is installed by registration. The consumer owns its diagnostic enable switch.
     /// <summary>Read-only bridge diagnostics, independent of the gate policy registration.</summary>
     public interface IEnemyBridgePathObserver : IEnemyGateAssassinObserver
     {
@@ -30,7 +32,10 @@ namespace APIShared
         private static int topologyPublished;
         /// <summary>True only after the existing owner has validated its permanent hook.</summary>
         public static bool TopologyAvailable => Volatile.Read(ref topologyPublished) != 0;
-        internal static void PublishTopologyOwner() => Volatile.Write(ref topologyPublished, 1);
+        /// <summary>Marks <see cref="TopologyAvailable"/> for the rest of the process. Only the mod that owns the
+        /// permanent topology hook calls it, once, after validating that hook and before reporting BeginTopology /
+        /// EndTopology. Idempotent; installs nothing and cannot be revoked.</summary>
+        public static void PublishTopologyOwner() => Volatile.Write(ref topologyPublished, 1);
         private sealed class TopologyCall
         {
             internal IEnemyBridgeTopologyObserver Observer;

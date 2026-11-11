@@ -64,6 +64,7 @@ namespace APIShared
         private readonly Dictionary<int, RecruitmentRegistration[]> recruitmentViews =
             new Dictionary<int, RecruitmentRegistration[]>();
         private readonly HashSet<string> loggedCategoryConflicts = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<(int, uint, int, string, string)> seenCategoryConflicts = new HashSet<(int, uint, int, string, string)>();
         private readonly HashSet<string> loggedCallbackFailures = new HashSet<string>(StringComparer.Ordinal);
         private readonly ManualLogSource log;
         private readonly string binaryHash;
@@ -89,6 +90,7 @@ namespace APIShared
 
 
         private IDisposable mapUnloadSubscription;
+        private IDisposable spriteMissionStartSubscription;
         private HUD_Troops activeTroopPanel;
         private Grid[] categoryHosts;
         private Button[] categoryButtons;
@@ -117,6 +119,7 @@ namespace APIShared
         private int[] lastTroopSelectionIds = Array.Empty<int>();
         private int[] lastTroopSelectionTypes = Array.Empty<int>();
         private bool hasRenderedTroopSelection;
+        private LocalSelectionSnapshot lastRenderedTroopSelection;
         private int lastSpriteColour;
         private bool lastSpriteArabic;
         private bool hasSpriteContext;
@@ -134,7 +137,6 @@ namespace APIShared
         private TextBlock unitDetailDescription;
         [ThreadStatic]
         private static bool updateSpritesActive;
-        [ThreadStatic]
         private bool sharedEventsPublished;
         private static int createTroopContextType;
 

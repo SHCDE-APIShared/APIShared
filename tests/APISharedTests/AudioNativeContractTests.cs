@@ -24,7 +24,7 @@ public sealed unsafe class AudioNativeContractTests
     [TestMethod]
     public void AuditedBinaryPathsMembersMarkerTransportIlAndNativeBackend()
     {
-        game = Environment.GetEnvironmentVariable("SHCDE_GAME_DIR") ?? @"E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition";
+        game = APISharedTests.InstalledTestEnvironment.GameDirectory();
         Run();
     }
     private static void Check(bool value, string message)
@@ -38,8 +38,12 @@ public sealed unsafe class AudioNativeContractTests
         var files = new InstalledAudioFiles(game);
         files.Validate();
         Check(NativeContract.HashFile(files.Native) == NativeContract.NativeHash, "native identity");
-        Check(NativeContract.HashFile(files.Managed) == NativeContract.ManagedHash, "managed identity");
-        Check(NativeContract.HashFile(files.Backend) == NativeContract.BackendHash, "installed backend identity");
+        // The backend is accepted by minimum version and by the hook contract Probe checks below.
+        bool older = false;
+        try { NativeContract.ValidateBackendVersion(new Version(1, 4, 9, 0)); }
+        catch (InvalidOperationException) { older = true; }
+        Check(older, "backend below the minimum version rejected");
+        NativeContract.ValidateBackendVersion(new Version(NativeContract.MinimumBackendVersion.Major + 1, 0, 0, 0));
         Paths(files);
         SoundRuntime.ValidateMembers();
         SoundRuntime.ValidateUnitMembers();
@@ -58,13 +62,13 @@ public sealed unsafe class AudioNativeContractTests
         var fromBytes = Assembly.Load(File.ReadAllBytes(files.Managed));
         Check(fromBytes.Location == "", "real byte-loaded assembly has empty Location like Unity");
         files.Validate();
-        Check(File.Exists(files.Managed) && File.Exists(files.Native) && File.Exists(files.Backend), "canonical files resolve independently of empty Location");
+        Check(File.Exists(files.Managed) && File.Exists(files.Native), "canonical files resolve independently of empty Location");
         bool missing = false;
-        try { InstalledAudioFiles.ValidateFile(files.Managed + ".missing-unit-audio", NativeContract.ManagedHash); }
+        try { new InstalledAudioFiles(Path.Combine(game, "missing-unit-audio")).Validate(NativeContract.NativeHash); }
         catch (FileNotFoundException) { missing = true; }
         Check(missing && !SoundContextPolicy.Active, "missing file rejected before activation");
         bool changed = false;
-        try { InstalledAudioFiles.ValidateFile(files.Managed, new string('0', 64)); }
+        try { files.Validate(new string('0', 64)); }
         catch (InvalidOperationException) { changed = true; }
         Check(changed && !SoundContextPolicy.Active, "hash mismatch rejected before activation");
         bool empty = false;
@@ -192,6 +196,62 @@ public sealed unsafe class AudioNativeContractTests
             return;
         }
         ProbeBridge(copy, size, entry);
+        IntPtr filteredCopy=VirtualAlloc(IntPtr.Zero,new UIntPtr((uint)size),0x3000,0x40);
+        Check(filteredCopy!=IntPtr.Zero,"private executable copy for the return filter");Marshal.Copy(image,Offset(image,rva),filteredCopy,size);
+        ProbeFilteredBridge(filteredCopy, size, entry);
+    }
+    // Same copied wrapper behind a bridge with a native return filter: with active demand only the
+    // caller whose return address is in the filter enters managed code; the other caller runs the
+    // displaced prologue and original exactly once without a managed transition.
+    private static void ProbeFilteredBridge(IntPtr copy, int size, byte[] expected)
+    {
+        int emissions = 0;
+        IntPtr manager = copy + 256;
+        SoundRuntime.Emit observer = (m,sound,x,y,flag) => { Check(m == manager && sound == 180, "filtered wrapper forwards the effect once"); emissions++; };
+        var emitEntry = RedBird.X64.Assembly.ExecutableFunction.Create(asm => {
+            asm.mov(Iced.Intel.AssemblerRegisters.rax, unchecked((ulong)Marshal.GetFunctionPointerForDelegate(observer).ToInt64()));
+            asm.jmp(Iced.Intel.AssemblerRegisters.rax);
+        });
+        roots.Add(observer);roots.Add(emitEntry);
+        var observerCode = Read(emitEntry.EntryPoint,12);Marshal.Copy(observerCode,0,copy+128,observerCode.Length);
+        Marshal.WriteInt32(copy,21,256-25);Marshal.WriteInt32(copy,31,128-35);
+        RedBird.X64.Assembly.ExecutableFunction Caller() => RedBird.X64.Assembly.ExecutableFunction.Create(asm => {
+            asm.sub(Iced.Intel.AssemblerRegisters.rsp, 0x28);
+            asm.mov(Iced.Intel.AssemblerRegisters.rax, unchecked((ulong)copy.ToInt64()));
+            asm.call(Iced.Intel.AssemblerRegisters.rax);
+            asm.add(Iced.Intel.AssemblerRegisters.rsp, 0x28); asm.ret();
+        });
+        ulong ReturnAddress(RedBird.X64.Assembly.ExecutableFunction function)
+        {
+            var decoder = Iced.Intel.Decoder.Create(64,new Iced.Intel.ByteArrayCodeReader(Read(function.EntryPoint,32)));
+            decoder.IP = unchecked((ulong)function.EntryPoint.ToInt64());
+            Iced.Intel.Instruction call; do call = decoder.Decode(); while (call.Mnemonic != Iced.Intel.Mnemonic.Call);
+            return call.NextIP;
+        }
+        var attributed = Caller(); var other = Caller(); roots.Add(attributed); roots.Add(other);
+        var filter = SoundReturnFilter.ForAddresses(new[] { ReturnAddress(attributed) });
+        Check(filter.Contains(ReturnAddress(attributed)) && !filter.Contains(ReturnAddress(other)), "managed filter mirror");
+        IntPtr demand = Marshal.AllocHGlobal(8); Marshal.WriteInt64(demand, 0); roots.Add(demand);
+        NativeDetour<SoundRuntime.Wrapper> hook = null; int callbacks = 0;
+        SoundRuntime.OriginWrapper callback = (unused,x,y,sound,entry) => { callbacks++; hook.Original(unused,x,y,sound); };
+        SoundRuntime.Wrapper fallback = (unused,x,y,sound) => { throw new InvalidOperationException("bridge must capture origin"); };
+        var bridge = new SoundReturnAddressBridge(callback, demand, filter);
+        var request = new DetourRequest<SoundRuntime.Wrapper> { Name="private filtered source bridge",TargetAddress=unchecked((ulong)copy.ToInt64()),Callback=fallback,IntermediaryFactory=bridge };
+        hook = (NativeDetour<SoundRuntime.Wrapper>)NativeContract.Backend(size, false).CreateDetour(in request);
+        roots.Add(copy);roots.Add(hook);roots.Add(callback);roots.Add(fallback);roots.Add(bridge);roots.Add(filter);
+        NativeContract.Validate(hook,15,request.TargetAddress,expected); bridge.Validate(hook);
+        hook.Enable(); NativeContract.Validate(hook,15,request.TargetAddress,expected); bridge.Validate(hook);
+        var invokeAttributed = Marshal.GetDelegateForFunctionPointer<SoundRuntime.Wrapper>(attributed.EntryPoint);
+        var invokeOther = Marshal.GetDelegateForFunctionPointer<SoundRuntime.Wrapper>(other.EntryPoint);
+        roots.Add(invokeAttributed); roots.Add(invokeOther);
+        invokeAttributed(new IntPtr(123), -17, 300, 180);
+        Check(callbacks == 0 && emissions == 1, "dormant guard precedes the return filter");
+        Marshal.WriteByte(demand, 1);
+        invokeOther(new IntPtr(123), -17, 300, 180);
+        Check(callbacks == 0 && emissions == 2, "unattributed origin stays native with active demand and runs the original once");
+        invokeAttributed(new IntPtr(123), -17, 300, 180);
+        Check(callbacks == 1 && emissions == 3, "catalog origin enters managed code once and runs the original once");
+        SoundReturnAddressBridge.ValidateScratchFree(expected);
     }
     private static void ProbeEmitterBridge(IntPtr copy, int size)
     {
@@ -395,7 +455,7 @@ public sealed unsafe class AudioNativeContractTests
     [TestMethod]
     public void ScriptExtenderMeleeHooksKeepKillAttributionButPinnedChangesFail()
     {
-        game = Environment.GetEnvironmentVariable("SHCDE_GAME_DIR") ?? @"E:\ProgrammeE\Steam\steamapps\common\Stronghold Crusader Definitive Edition";
+        game = APISharedTests.InstalledTestEnvironment.GameDirectory();
         byte[] file = File.ReadAllBytes(new InstalledAudioFiles(game).Native);
         const int start = NativeContract.MeleeDamageRva, length = 0x199B43 - NativeContract.MeleeDamageRva;
         byte[] Mapped(byte[] code) { var mapped = new byte[start + length + 0x100]; Array.Copy(code, 0, mapped, start, length); return mapped; }

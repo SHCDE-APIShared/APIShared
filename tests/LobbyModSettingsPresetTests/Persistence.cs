@@ -16,6 +16,43 @@ namespace LobbyModSettingsPresetTests
     public partial class PresetTests
     {
         [TestMethod]
+        public void PublicationDiagnosticIdentifiesStageBothPathLengthsAndIoFailure()
+        {
+            string target = new string('x', 224);
+            string staging = new string('y', 261);
+            var failure = new DirectoryNotFoundException("fixture missing directory");
+            string diagnostic = LobbyPresetController.DescribePublicationFailure("write-staging-file", target, staging, failure);
+            Assert(diagnostic.Contains("stage=write-staging-file") && diagnostic.Contains("targetPathLength=224") &&
+                diagnostic.Contains("temporaryPathLength=261") && diagnostic.Contains("errorType=System.IO.DirectoryNotFoundException") &&
+                diagnostic.Contains("fixture missing directory") && diagnostic.Contains("hresult=0x"),
+                "Publication diagnostic omitted the failed operation, exact path lengths or original IO cause.");
+        }
+
+        [TestMethod]
+        public void LegacyPublicationWithLongInstallationPath()
+        {
+            PersonalSettingsPaths.TestDocumentsDirectory = _ => Path.Combine(testRoot, "RedirectedDocuments");
+            // Match the player's 224-character final path; the old staging suffix made it 261.
+            const string finalName = "preset_legacy-preset-1.json";
+            string suffix = Path.Combine("LobbyModSettings", "Presets", "Override", TargetGuid, finalName);
+            string basePath = Path.Combine(testRoot, "LongInstall");
+            int padding = 224 - (Path.Combine(basePath, "x", suffix).Length - 1);
+            Assert(padding > 0 && padding <= 200, "The test root cannot represent the reported installation path.");
+            string installRoot = Path.Combine(basePath, new string('x', padding));
+            string assemblyPath = Path.Combine(installRoot, "PresetTest.dll");
+            string settingsPath = Path.Combine(installRoot, "LobbyModSettings", ModName + ".msgpack");
+            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));
+            WriteLegacy(settingsPath, false, 64);
+            FakeSettings settings = Start(assemblyPath, settingsPath, () => false);
+            string personalPath = Path.Combine(PersonalDirectory(installRoot), finalName);
+            Assert(Path.Combine(installRoot, suffix).Length == 224 && File.Exists(personalPath),
+                "Legacy migration did not publish at the reported final path length.");
+            Assert(settings.Number == 64 && MessagePackSerializer.Deserialize<int>(Read(settingsPath)[SchemaKey]) == 3,
+                "Long-path publication did not preserve and migrate the working settings.");
+            Assert(Directory.GetFiles(Path.GetDirectoryName(personalPath), "*.tmp").Length == 0,
+                "Successful publication retained a temporary file.");
+        }
+        [TestMethod]
         public void ViewModelWithoutPersistentSettings() => TestViewModelWithoutPersistentSettings(testRoot);
 
         private static void TestViewModelWithoutPersistentSettings(string root)
@@ -57,10 +94,10 @@ namespace LobbyModSettingsPresetTests
 
             var settings = new FakeSettings();
             settings.PreparePresets(null, assemblyPath, ModName);
-            string presetsPath = Path.Combine(failureRoot, "LobbyModSettings", "Presets");
+            string presetsPath = PersonalDirectory(failureRoot);
             Directory.Delete(presetsPath, recursive: true);
             File.WriteAllText(presetsPath, "blocks the preset directory");
-            ApplyTopLevelSettings(settings, Read(settingsPath));
+            settings.LoadInitialPresetSettings();
             AttachExtenderSave(settings, settingsPath, () => false);
             settings.ActivatePresets();
 
@@ -69,7 +106,7 @@ namespace LobbyModSettingsPresetTests
             Assert(Directory.GetFiles(Path.GetDirectoryName(settingsPath),
                     ModName + ".msgpack.corrupt-*").Length == 0,
                 "A failed legacy JSON publication mislabeled valid MessagePack data as corrupt.");
-            Assert(!File.Exists(Path.Combine(presetsPath, "Override", TargetGuid, "preset_legacy-preset-1.json")),
+            Assert(!File.Exists(Path.Combine(presetsPath, "preset_legacy-preset-1.json")),
                 "A failed legacy JSON publication unexpectedly produced a personal preset.");
         }
         [TestMethod]
@@ -185,8 +222,7 @@ namespace LobbyModSettingsPresetTests
                 preset2Enabled: true, preset2Number: 32,
                 publishedStableId: string.Empty);
 
-            string personalDirectory = Path.Combine(
-                retryRoot, "LobbyModSettings", "Presets", "Override", TargetGuid);
+            string personalDirectory = PersonalDirectory(retryRoot);
             Directory.CreateDirectory(personalDirectory);
             string presetOnePath = Path.Combine(personalDirectory, "preset_legacy-preset-1.json");
             File.WriteAllText(presetOnePath, CreateLegacyPresetJson(
@@ -208,8 +244,7 @@ namespace LobbyModSettingsPresetTests
                 preset2Enabled: true, preset2Number: 42,
                 publishedStableId: string.Empty);
             byte[] original = File.ReadAllBytes(conflictSettings);
-            string conflictDirectory = Path.Combine(
-                conflictRoot, "LobbyModSettings", "Presets", "Override", TargetGuid);
+            string conflictDirectory = PersonalDirectory(conflictRoot);
             Directory.CreateDirectory(conflictDirectory);
             string conflictPath = Path.Combine(conflictDirectory, "preset_legacy-preset-1.json");
             File.WriteAllText(conflictPath, "{\"unrelated\":true}");

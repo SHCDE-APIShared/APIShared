@@ -1,4 +1,54 @@
+function Get-ApiPreviousReleaseVersion {
+    param($Releases, [string]$CurrentVersion)
+    $current = [version]$CurrentVersion
+    $versions = @(foreach ($release in @($Releases)) {
+        if (-not $release.isDraft -and -not $release.isPrerelease -and
+            [string]$release.tagName -cmatch '^APIShared/v(\d+\.\d+\.\d+)$') {
+            $version = [version]$Matches[1]
+            if ($version -lt $current) { $version }
+        }
+    })
+    return [string]($versions | Sort-Object -Descending | Select-Object -First 1)
+}
+
+function Get-ApiReleaseChangeNotes {
+    param($Manifest, [AllowEmptyString()][string]$PreviousVersion)
+    $current = [version]$Manifest.Version
+    $previous = if ($PreviousVersion) { [version]$PreviousVersion } else { $null }
+    if ($previous -and $previous -ge $current) { throw 'Previous APIShared release must precede the current version.' }
+    $seen = [Collections.Generic.HashSet[version]]::new()
+    foreach ($entry in @($Manifest.SerpChangelog)) {
+        $version = [version]$entry.Version
+        if (-not $seen.Add($version) -or @($entry.Changes).Count -eq 0) { throw "Duplicate/empty APIShared changelog entry: $version" }
+        foreach ($change in $entry.Changes) {
+            if ($change -isnot [string] -or [string]::IsNullOrWhiteSpace($change)) { throw "Invalid APIShared changelog text: $version" }
+        }
+    }
+    if (-not $seen.Contains($current)) { throw "Missing APIShared changelog entry for $current." }
+    $sections = @(foreach ($entry in @($Manifest.SerpChangelog | Where-Object {
+        [version]$_.Version -le $current -and ($null -eq $previous -or [version]$_.Version -gt $previous)
+    } | Sort-Object { [version]$_.Version } -Descending)) {
+        (@("### v$($entry.Version)", '') + @($entry.Changes | ForEach-Object { '- ' + $_ })) -join "`r`n"
+    })
+    return $sections -join "`r`n`r`n"
+}
+
 # Release-only process adapter: stderr is diagnostic data, never a PowerShell error stream.
+function Invoke-ApiReleasePublication {
+    param([string]$Repository, [string]$Tag, [string]$Commit, [string[]]$Assets,
+        [string]$Notes, [bool]$Publish, [string[]]$CreationArguments, [string]$Executable = 'gh')
+    $existing = Get-ApiGitHubRelease $Repository $Tag $Executable
+    if ($null -ne $existing) {
+        if (-not $existing.isDraft -or $existing.targetCommitish -ne $Commit) {
+            throw 'An existing published or different-source release must never be replaced.'
+        }
+        $result = Invoke-ApiReleaseGitHub (@('release', 'upload', $Tag) + $Assets + @('--repo', $Repository, '--clobber')) $Executable
+        if ($result.ExitCode -ne 0) { throw ('Could not resume the matching draft assets. ' + $result.Diagnostic) }
+        $result = Invoke-ApiReleaseGitHub @('release', 'edit', $Tag, '--repo', $Repository, '--notes-file', $Notes, "--draft=$(-not $Publish)") $Executable
+    } else { $result = Invoke-ApiReleaseGitHub $CreationArguments $Executable }
+    if ($result.ExitCode -ne 0) { throw ('GitHub release creation failed; the validated local artifact was preserved. ' + $result.Diagnostic) }
+}
+
 function ConvertTo-ApiReleaseProcessArgument([string]$Argument) {
     $escaped = [regex]::Replace($Argument, '(\\*)"', '$1$1\"')
     return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'

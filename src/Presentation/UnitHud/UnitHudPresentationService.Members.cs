@@ -90,12 +90,9 @@ namespace APIShared
             .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GamePlayerManagerAPI))
             .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "GetLocalPlayerId", typeof(int))
             .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GameUnitManagerAPI))
+            .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "GetUnitsAsSpan", typeof(global::System.Span<global::SHCDESE.Interop.GameUnit>))
             .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "IsValidId", typeof(bool), typeof(int))
-            .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "QueryUnits", typeof(global::SHCDESE.Interop.Query.GameStructQuery<global::SHCDESE.Interop.GameUnit>))
             .Method(typeof(global::SHCDESE.API.GameUnitManagerAPI), "TryGetUnitById", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.GameUnit*).MakeByRefType())
-            .Method(typeof(global::SHCDESE.Interop.Query.GameStructQuery<global::SHCDESE.Interop.GameUnit>), "ToIdList", typeof(void), typeof(global::System.Collections.Generic.List<int>))
-            .Method(typeof(global::SHCDESE.Interop.Query.GameStructQuery<global::SHCDESE.Interop.GameUnit>), "Where", typeof(global::SHCDESE.Interop.Query.GameStructQuery<global::SHCDESE.Interop.GameUnit>), typeof(global::SHCDESE.Interop.Query.RefPredicate<global::SHCDESE.Interop.GameUnit>))
-            .Method(typeof(global::SHCDESE.Interop.Query.RefPredicate<global::SHCDESE.Interop.GameUnit>), ".ctor", typeof(void), typeof(object), typeof(IntPtr))
             .Method(typeof(global::SpriteMapping), "RemapMPLoadedColour", typeof(int), typeof(int));
     }
 }

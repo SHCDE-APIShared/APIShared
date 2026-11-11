@@ -37,13 +37,13 @@ public sealed class WorkshopMaintenancePlanTests
         internal Builder(string game) { Game = game; State = Path.Combine(game, "_APIShared", "Workshop"); Transactions = Path.Combine(State, "Transactions"); }
         internal static string Hash(string path) => WorkshopInventory.Hash(path);
         internal void Write(string path, string text) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, text, Utf8); }
-        internal string Dir(int number) => Path.Combine(Transactions, number.ToString("x32"));
+        internal string Dir(int number, bool compact = false) => Path.Combine(compact ? Path.Combine(Game, "_APIShared", "T") : Transactions, number.ToString("x32"));
         // Mirrors Test-WorkshopMaintenance.ps1 New-Transaction: one payload row,
         // one receipt row per item, committed (or open) journal, UTC sidecar or
         // legacy journal time.
-        internal string Transaction(int number, string[] items = null!, bool open = false, bool legacy = false, bool keepNew = true, string journal = null!)
+        internal string Transaction(int number, string[] items = null!, bool open = false, bool legacy = false, bool keepNew = true, string journal = null!, bool compact = false)
         {
-            string dir = Dir(number);
+            string dir = Dir(number, compact);
             Write(Path.Combine(dir, "New", "0"), "new " + number); Write(Path.Combine(dir, "Backup", "0"), "old " + number);
             var rows = new List<string> { "APISHARED-WORKSHOP-2", "write\tBepInEx/plugins/Example/Example.dll\t0\t" + Hash(Path.Combine(dir, "Backup", "0")) + "\t" + Hash(Path.Combine(dir, "New", "0")) };
             int ordinal = 1;
@@ -94,11 +94,12 @@ public sealed class WorkshopMaintenancePlanTests
         yield return new Case { Name = "fresh-install-with-staging-copies", Build = b => b.Transaction(1) };
         yield return new Case { Name = "two-retained-without-staging", Build = b => { b.Transaction(1, keepNew: false); b.Transaction(2, keepNew: false); } };
         yield return new Case { Name = "retention-over-limit", Build = b => { b.Transaction(1, keepNew: false); b.Transaction(2, keepNew: false); b.Transaction(3, keepNew: false); } };
+        yield return new Case { Name = "retention-over-both-roots", Build = b => { b.Transaction(1, keepNew: false); b.Transaction(2, keepNew: false, compact: true); b.Transaction(3, keepNew: false, compact: true); } };
         yield return new Case { Name = "legacy-prune-forty", Build = b => { for (int i = 1; i <= 40; i++) b.Transaction(i, legacy: true); } };
         yield return new Case { Name = "legacy-same-second", Build = b => {
             for (int i = 1; i <= 3; i++) { string dir = b.Transaction(i, legacy: true, keepNew: false); File.SetLastWriteTimeUtc(Path.Combine(dir, "journal.log"), new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(100 * (4 - i))); }
         } };
-        yield return new Case { Name = "mixed-batches", Build = b => { b.Transaction(1); b.Transaction(2, new[] { "456" }); b.Transaction(3, new[] { "123", "456" }); b.Transaction(4); b.Transaction(5); } };
+        yield return new Case { Name = "mixed-batches", Build = b => { b.Transaction(1); b.Transaction(2, new[] { "456" }); b.Transaction(3, new[] { "123", "456" }, compact: true); b.Transaction(4); b.Transaction(5, compact: true); } };
         yield return new Case { Name = "mixed-batches-steady", Build = b => { b.Transaction(2, new[] { "456" }, keepNew: false); b.Transaction(3, new[] { "123", "456" }, keepNew: false); b.Transaction(4, keepNew: false); b.Transaction(5, keepNew: false); } };
         yield return new Case { Name = "interrupted-only", Build = b => b.Transaction(1, open: true) };
         yield return new Case { Name = "interrupted-with-history", Build = b => { b.Transaction(1, open: true); b.Transaction(2, keepNew: false); b.Transaction(3, keepNew: false); } };

@@ -9,7 +9,8 @@ Extender-managed maps and explicitly declared loose packages are separate paths.
 - [Publishing](#loose-workshop-packages): the external uploader and platform limits.
 - [Package format](#package-format-and-bootstrap): inventory and bootstrap preparation.
 - [Installation and recovery](#installation-and-recovery): receipts, embedded-copy replacement and transactions.
-- [Internal implementation](#internal-implementation): staging hooks and persistent publishers.
+- [Linux paths and first-install repair](#linux-paths-and-first-install-repair): Wine drive mappings and the independent manual patcher.
+- [Internal implementation](#internal-implementation): staging hooks, the independent patcher and persistent publishers.
 
 ## Workshop inventory
 
@@ -17,7 +18,7 @@ Extender-managed maps and explicitly declared loose packages are separate paths.
 
 ## Workshop publishing and loose packages
 
-APIShared's built-in Workshop workflow has no Mod Options page. Startup prepares subscribed package changes for one explicit confirmation and a single post-exit batch update. Authors use the shipped UploadMod.bat or UploadMod-linux.sh under BepInEx/tools/APISharedWorkshopPublisher; both use the same APIShared publisher. Linux execution through the existing Proton prefix awaits practical publishing verification.
+Players manage subscribed packages in **Mod Options → APIShared → Workshop**. Startup offers use one explicit confirmation and a single post-exit batch update. Authors use the shipped UploadMod.bat or UploadMod-linux.sh under BepInEx/tools/APISharedWorkshopPublisher; both use the same APIShared publisher. Linux execution through the existing Proton prefix awaits practical publishing verification.
 
 `ApiShared.ForMod(guid).Workshop` is independent of native capability readiness. Its [public client](../src/Workshop/WorkshopClient.cs) validates packages, captures a subscription catalog, queries owned SHCDE items, prepares upload snapshots and owner-bound installation plans, and explicitly publishes or applies a plan. Calls that access Steam require initialized Steamworks on Unity; file preparation runs on workers. Failures throw with the relevant step, and submitted operations expose status, diagnostic, operation ID and Unity-thread Changed notifications. Closing a view does not cancel a submitted request.
 
@@ -29,7 +30,7 @@ An embedded APIShared copy requires explicit package replacement; subscribing to
 
 ## Workshop package cleanup
 
-APIShared automatically installs a permanent staging callback for audited Script Extender binaries (an explicit SHA-256 allow-list, currently official 2.14.0 and 2.14.1 plus one local 2.14.1 build), exclusively for cleaning obsolete files from its own installed packages. Foreign `.map` items remain entirely Extender-managed. Any other binary, whatever its version, disables this self-cleanup with the warning `Workshop cleanup unavailable: unsupported Script Extender binary`; other services remain available. Neither Extender sources nor its updater are replaced. The inventory helpers and schema below describe delivered files and verified release hashes. This callback does not clean foreign maps.
+APIShared automatically installs a permanent staging callback when the loaded Script Extender satisfies the managed method contract, exclusively for cleaning obsolete files from its own installed packages. There is no exact SE version or whole-assembly hash allow-list; the declared minimum SE version remains required. Foreign `.map` items remain entirely Extender-managed. A missing or incompatible signature, managed body or IL transformation disables only this self-cleanup with a `Workshop cleanup unavailable:` warning describing the failed check; other services remain available. Neither Extender sources nor its updater are replaced. The inventory helpers and schema below describe delivered files and verified release hashes. This callback does not clean foreign maps.
 
 Generate `apishared-workshop-files.json` inside `BepInEx/plugins/<GUID>` from the final package with `tools/WorkshopPackage.ps1` and `New-ApiWorkshopInventory -Directory <package>`. The JSON contract is schema 1, `Guid`, `Version`, `Files` and optional `LegacyFiles`; both file collections contain `{ "Path": "relative/path", "Sha256": "64 lowercase hexadecimal digits" }`. Identity and version must match the package's `info.json`. `Files` lists immutable delivered files, excluding the inventory itself. Never list user settings, captures, generated files or other mutable data. The helper excludes `config` and `LobbyModSettings`; authors must keep all other user data outside package staging.
 
@@ -39,13 +40,15 @@ Deletion is deferred through `_SE/.staging/delete_list.txt`; installed files are
 
 ## Loose Workshop packages
 
-APIShared has no Workshop page in Mod Options. A statically rooted Steam-initialization subscriber discovers first installations, newer receipt versions and confirmed unsubscribes at startup. One bilingual confirmation lists all changes: Yes stages one batch and restarts; No leaves installed files unchanged and suppresses another prompt during that start. Extender work and bootstrap installation take priority. The updater backs up every affected file and commits all receipts after file changes, with recovery for the complete batch. Invalid dependencies or ownership conflicts defer changes safely.
+Open **Mod Options → APIShared → Workshop** to install the version supplied by Steam. The tab lists subscribed APIShared packages even if their payload is absent from the game. Review the target version and planned changes before choosing **Queue installation**. You can do this from a multiplayer lobby or a single-player setup screen. On normal exit, APIShared checks Steam and Script Extender again and stages the confirmed plan through the same transaction path as other installs. The updater checks the confirmed Steam manifest again after game exit and before changing installed files. If the download changed or another update is pending, the log records why the queued installation was skipped. Confirm a new preview once the download and other updates have settled. The updater backs up affected files and commits the receipt last. Start the game yourself after the update completes. A forced termination or crash before the shutdown callback requires confirming the installation again.
+
+A statically rooted Steam-initialization subscriber offers newer releases for intact receipt-owned installations and handles confirmed unsubscribes. The local **Offer updates at startup** switch controls offers per Workshop item and defaults to on. Missing or changed payload files preserve the local choice, including standalone development builds. First installations are offered in the tab. Extender work and bootstrap installation take priority. Invalid dependencies or ownership conflicts defer changes safely.
 
 Startup diagnostics use timestamped Info, Warning and Error entries. Warnings explain policy blockers (including every conflicting plugin/asset GUID with its existing path and allowed payload roots, package versions and Workshop ID). Errors identify technical failures with their step and exception details, including unreadable manifests or receipts and updater handoff failures. Each startup attempt ends with a result: current, blocked, declined, awaiting restart or failed; blocked items and technical failures cannot be reported as current. Awaiting restart confirms handoff only, not a committed installation. Repeated Steam initialization does not repeat the decision or its warnings. Pure Script Extender maps remain outside this package catalog.
 
 Authors use `BepInEx/tools/APISharedWorkshopPublisher/UploadMod.bat`, shipped by APIShared outside the plugin scan. No running game or separate Steam password is needed; Steam must be running, signed in and online. The wizard accepts a prepared manifest or generates one from Payload, collects prerequisites/dependencies, offers owned SHCDE items and publishing metadata, validates a private snapshot and requires typing `UPLOAD` before submission. `/validate` skips Steam initialization and publishing, `/test` uses private visibility and account-scoped separate IDs, `/nopause` only suppresses the BAT closing pause; `/cancel` cancels a prompt. Saved settings and immediately persisted item IDs live in LocalApplicationData/APIShared/WorkshopPublisher, scoped by app/account/mode/package. Never add this state to uploaded content.
 
-Linux users can run `bash UploadMod-linux.sh`. It uses the existing SHCDE Proton prefix, not a separate uploader. With custom Steam/Proton locations set `STEAM_COMPAT_CLIENT_INSTALL_PATH`, `STEAM_COMPAT_DATA_PATH` (directory containing pfx), and `APISHARED_PROTON` (the selected Proton script). Python 3 is required by Proton; host paths such as `/home/user/My Mod` are accepted by the wizard through Wine Z:. This launcher has automated syntax/argument tests; successful real Proton publishing is still required before claiming Linux support.
+Linux users can run `bash UploadMod-linux.sh`. It uses the existing SHCDE Proton prefix, not a separate uploader. With custom Steam/Proton locations set `STEAM_COMPAT_CLIENT_INSTALL_PATH`, `STEAM_COMPAT_DATA_PATH` (directory containing pfx), and `APISHARED_PROTON` (the selected Proton script). Python 3 is required by Proton; host paths such as `/home/user/My Mod` are translated using the active Wine mappings rather than an assumed Z: drive. This launcher has automated syntax/argument tests; successful real Proton publishing is still required before claiming Linux support.
 
 Build, ZIP and map contain the same complete tool with a separate `publisher-files.json` inventory. Only the fixed tool filenames are accepted; plugin inventories and runtime binary restrictions are separate contracts. Publisher sources, build and shared Steam state machine belong to APIShared. Maintainer drivers use the same helper.
 This capability is under platform testing in the source checkout. Before distributing API consumers, choose a published release containing the capability and declare that release as their minimum dependency. See the compiled [Workshop example](../examples/ThirdPartyMod/WorkshopExample.cs) for explicit preview/confirmation callbacks and task-based failure handling.
@@ -84,7 +87,7 @@ For authors without an existing manifest, `WorkshopPackageDraft` supplies identi
 
 ### Installation and recovery
 
-Automatic startup discovery waits inside the Script Extender Steam-initialization event until the player decides. File validation and staging run in the background; only APIShared continuations return to the blocked game thread. The Extender handles its maps first. An installed bootstrap is not a payload receipt: existing plugin files without a receipt are offered for confirmed adoption with backup. Declining preserves files and offers the pending change again on the next start. Asset GUIDs with author-defined, nonnumeric versions satisfy dependencies without version bounds; bounded dependencies require a comparable numeric version. Loaded plugin versions take precedence over asset metadata.
+Automatic startup discovery waits inside the Script Extender Steam-initialization event until the player decides. File validation and staging run in the background. Only APIShared continuations return to the blocked game thread. The Extender handles its maps first and writes its separate bootstrap record. Existing plugin files without a payload receipt can be explicitly adopted from Mod Options with backup. Declining a startup offer preserves files and rediscovers eligible updates on the next start. Asset GUIDs with author-defined, nonnumeric versions satisfy dependencies without version bounds. Bounded dependencies require a comparable numeric version. Loaded plugin versions take precedence over asset metadata.
 
 The public Workshop capability remains available for consumer mods with their own explicitly confirmed workflows. Upload snapshots include only declared content and optional bootstrap; changed content requires a greater package version. Steam dependencies are soft links and do not replace local prerequisite checks.
 
@@ -98,15 +101,22 @@ var operation = await workshop.ApplyAsync(plan);
 // AwaitingRestart means handoff. The receipt, written last by the updater, proves successful installation.
 ```
 
-Receipt equality suppresses automatic repair even when local DLLs differ or disappear. Updates replace delivered files with backups after consent; obsolete files are removed only when their current hash matches a receipt or verified history. Settings, unknown files and modified obsolete files survive removal and package replacement. Invalid/missing receipts allow explicitly chosen installation with backup, never an assertion of successful adoption. Steam failures/downloads/missing folders do not mean unsubscribe.
+Startup update offers require the recorded immutable files to still match the receipt. Explicit installation from Mod Options can replace delivered files with backups after consent. Obsolete files are removed only when their current hash matches a receipt or verified history. Settings, unknown files and modified obsolete files survive removal and package replacement. Invalid or missing receipts require an explicitly chosen installation with backup. Steam failures, downloads and missing content folders do not indicate an unsubscribe.
 
-Transactions and upload IDs live under `_APIShared/Workshop`, independently of `_SE`. The external updater checks operation-list hashes, staged bytes, targets and links; backs up before writing; journals each step; and commits the receipt last. Keep the entire transaction directory after an interruption, including backups and journals.
+New installation and recovery transactions live under `_APIShared/T/<id>`. APIShared also reads existing `_APIShared/Workshop/Transactions/<id>` directories in place. Receipts and publishing state live under `_APIShared/Workshop`, independently of `_SE`. The external updater checks operation-list hashes, staged bytes, targets and links, backs up before writing, journals each step and commits the receipt last. Keep the entire transaction directory after an interruption, including backups and journals. Before installing an older APIShared version, finish or recover open transactions and finish pending cleanup with the current updater. Older updaters only recognize the legacy location.
 
 The recovery dialog and startup log share a read-only progress report: completed operations out of the complete operation list (including receipt operations), the last completed relative target, and any started operation without a recorded completion. An interruption without a failure entry is identified as such; neither the last completed file nor the next file is asserted to have caused it. Invalid, duplicated or contradictory progress markers produce an unreliable-progress notice without changing rollback eligibility. Existing recorded failures remain visible. Reports are available in German and English and do not add files or rewrite journals.
 
-Before offering ordinary updates, startup inspects unfinished installations and presents a recovery dialog. When rollback is available, **Yes** restores the previous state, restarts, and offers the current update again; **No** restores the previous state and closes the game without starting another installation; **Cancel** postpones recovery. The next manual start after rollback offers available updates normally. No persistent update suppression is stored. When rollback is unavailable, the dialog explains why and offers complete repair or postponement. Complete repair requires an additional confirmation of the affected current packages. It backs up existing delivered files, replaces the current package inventory and preserves settings, unknown files and obsolete files. All affected packages must be identifiable, subscribed, available and cover the interrupted operations. Unreadable operation lists or unavailable packages require manual assistance; they are never bypassed by deleting journals.
+Before offering ordinary updates, startup inspects unfinished installations and presents a recovery dialog. When rollback is available, **Yes** restores the previous state, restarts, and offers the current update again; **No** restores the previous state and closes the game without starting another installation; **Cancel** postpones recovery. The next manual start after rollback offers available updates normally. No persistent update suppression is stored. A rollback whose earlier attempt recorded a failure is not offered again.
 
-Complete repair also lists retained DLLs inside the affected package roots but outside the current inventory, both before confirmation and in the log. This includes unknown assemblies; a warning is not a claim that they are faulty. Settings directories and other package roots are excluded. These files are reported, not deleted, and complete repair does not promise to remove obsolete assemblies.
+When rollback is unavailable, the dialog explains why and offers complete repair or postponement. Complete repair is a clean reinstallation from the Steam downloads and does not depend on the interrupted transaction's backups, so it is always possible once Steam provides the subscribed packages ([WorkshopRepairPlanner](../src/Workshop/WorkshopRepairPlanner.cs)):
+
+- Affected packages are those named by the interrupted receipts and those owning an interrupted plugin folder. If an operation list is unreadable, every APIShared-managed package is affected.
+- Subscribed packages are reinstalled: their complete current inventory is written, and the affected plugin folders lose every assembly outside that inventory, existing files of earlier releases (receipt or declared history, modified or not) and every file touched by the interrupted transaction.
+- Affected packages that are no longer subscribed are removed the same way, including those without a valid receipt. Interrupted plugin folders that no current package owns are cleaned completely.
+- Settings (`config`, `LobbyModSettings`) and other unknown non-assembly data files remain. The updater backs up every replaced or deleted file before the first change, as for any installation.
+- The dialog lists every package with its action and the number of removed files, and requires confirmation. The committed replacement supersedes readable interrupted transactions. Unreadable transactions cannot be superseded by the updater; after confirmation they are moved, never deleted, to `_APIShared/Workshop/Unrecoverable` and moved back if the repair cannot be handed off.
+- Conditions the player can resolve (a download still in progress, a missing prerequisite) are shown with the reason; nothing is changed and the repair is offered again on the next start. Recovery data is never bypassed by deleting journals.
 
 Startup-only consent expires when the blocking Steam callback returns and is valid only on its owning thread/context. An automatic update or recovery may close the game only after consent and confirmed updater readiness; each requested exit logs its reason and transaction before calling Unity. The public consumer-initiated workflow keeps its existing contract. A linked game path remains unsupported for automatic installation and is reported as a startup blocker with advice to use the canonical path or update manually; this does not relax link checks.
 
@@ -122,19 +132,84 @@ If a game process appears during backup, application or restoration, the updater
 
 Recovery checks every required backup before restoring any target. Independent interrupted transactions can be restored together; overlapping transactions require complete repair. A fresh recovery request has independent readiness and cancellation files, so a cancelled old installation cannot cancel newly approved recovery. Already restored targets can be skipped after another interruption. The request also retains changed interrupted bytes in `RecoveryBackup`. File changes happen only after game exit, with the updater lock held and no pending Extender staging. Failures retain evidence and are reported with the transaction path; startup logs previous outcomes and offers recovery again when required.
 
-Manual recovery remains supported with the game closed: run the installed `Workshop/workshop-updater.ps1` with the original `-GameRoot`, `-Transaction`, `-OperationsHash` and `-Recover`, or the host bash script with the same three positional arguments and `--recover`. Successful manual recovery restores original files/receipt and exits with code 2. Never manually delete backups while a transaction is unresolved. Proton requires Wine Z: paths and host bash/flock/coreutils; paths that cannot be translated are rejected before game exit.
+Manual recovery remains supported with the game closed: run the installed `Workshop/workshop-updater.ps1` with the original `-GameRoot`, `-Transaction`, `-OperationsHash` and `-Recover`, or the host bash script with the same three positional arguments and `--recover`. Successful manual recovery restores original files/receipt and exits with code 2. Never manually delete backups while a transaction is unresolved. Proton requires translatable Wine paths and host bash/flock/coreutils; paths that cannot be translated are rejected before game exit.
 
 ### Automatic history retention
 
-Startup waits for an external maintenance pass before recovery inspection and update planning. The updater also runs maintenance after successful installation or recovery, before automatic restart. This mode only touches `_APIShared/Workshop/Transactions` and its single pending cleanup worklist; it does not require game exit, change installed files, or modify `Receipts`, `Publishing` or `Uploads`. Externally managed installations remain read-only. No maintenance dialogs are shown. Warnings never roll back a committed installation.
+Startup waits for an external maintenance pass before recovery inspection and update planning. The updater also runs maintenance after successful installation or recovery, before automatic restart. The pass covers both transaction directories and uses one pending worklist under `_APIShared/Workshop`. It can run with the game open. Externally managed installations remain read-only. Warnings never roll back a committed installation.
 
-The two newest validated terminal installation/update transactions per Workshop item retain their backups. A mixed batch is retained whenever any of its items needs it. Verified completed `New` copies can be removed independently. New completions have an immutable UTC sidecar; legacy histories use journal modification time, with transaction ID as the deterministic tie-breaker. Open transactions, incomplete metadata, changed content, unknown files and links are retained with diagnostics. Recovery requests and their interrupted-byte snapshots are retained while an original still needs them. Therefore unresolved or ambiguous history can exceed the ordinary two-per-item bound.
+The two newest validated terminal installation/update transactions per Workshop item retain their backups across both locations. A mixed batch is retained whenever any of its items needs it. Verified completed `New` copies can be removed independently. New completions have an immutable UTC sidecar. Legacy histories use journal modification time, with transaction ID as the deterministic tie-breaker. Open transactions, incomplete metadata, changed content, unknown files and links are retained with diagnostics. Recovery requests and their interrupted-byte snapshots are retained while an original still needs them. Therefore unresolved or ambiguous history can exceed the ordinary two-per-item bound.
 
-Replacement proofs and recovery references form a dependency graph: an old resolved failure is removed before the successful replacement proving it resolved. A locked or partially removed predecessor keeps that proof. A checksummed `cleanup.pending.tsv` records the exact approved file hashes before deletion; interrupted cleanup resumes rather than reclassifying half-deleted metadata. Approved journals are retired before operations metadata, so partial deletion cannot leave a newly unrecognizable applying transaction. Unknown or changed content stops the affected deletion. Completed worklists are deleted; no permanent record or archive is created per removed transaction. Summary output reports removed transactions, freed bytes and deferred cases. Windows uses the updater's exclusive file handle and Proton its real host `flock`; managed staging is serialized with startup maintenance.
+Replacement proofs and recovery references form a dependency graph. An old resolved failure is removed before the successful replacement proving it resolved. A locked or partially removed predecessor keeps that proof. A checksummed `cleanup.pending.tsv` records the approved file hashes and the location of each deletion before it starts. Existing worklists without a location apply to the legacy directory. Interrupted cleanup resumes from the worklist. Approved journals are retired before operations metadata, so partial deletion cannot leave an applying transaction without a matching replacement proof. Unknown or changed content stops the affected deletion. Completed worklists are deleted. Summary output reports removed transactions, freed bytes and deferred cases. Windows uses the updater's exclusive file handle and Proton its real host `flock`. Managed staging is serialized with startup maintenance.
 
 Extender staging/download restarts take precedence. Under `SCDEModManagerLaunchId`, installation remains read-only, including restart and reactivation; uploads are available. The external manager's current importer is separate. Loose APIShared packages require an importer explicitly supported by that manager. Publish APIShared's independently managed map first; test package replacement at the existing modpack ID using the same map filename and a separate bootstrap GUID before replacing the live release. Do not publish loose packages until real Windows/Proton and Steam tests pass.
 
 Platform-test records are optional and are not read by the maintainer release/upload drivers. Missing, outdated or malformed records do not block manual publication. SerpsMods publishes a separate Workshop-content ZIP alongside its ordinary plugin ZIP; reusing a release restores the complete verified content ZIP, including manifest and Payload, rather than just its bootstrap map.
+
+## Linux paths and first-install repair
+
+### Path configuration
+
+APIShared's updater translates game, script and transaction paths through Wine's own
+path API. Mapped S:, Z: and user-defined drives use the same resolver;
+interpreter discovery uses the reverse translation of `/bin/bash` or `/usr/bin/bash`.
+This applies to installation, status queries, recovery and history maintenance.
+The publisher uses the same native translation for author-supplied host paths.
+Wine before 10.13 (Proton 10 and older) reports drives other than a root-mapped Z:
+through the prefix's `dosdevices/<x>:` link; APIShared resolves only that drive link
+once per drive with host `realpath`, so the link checks below the drive root still apply.
+Only a confirmed Linux Wine/Proton host activates this path. Native Windows keeps
+the existing PowerShell updater and does not read the new configuration or retry state.
+Both Linux updaters require host Bash, flock and GNU coreutils.
+
+Normally no configuration is needed. The optional
+`BepInEx/config/APIShared.ProtonPaths.cfg` is shared by the independent patcher and
+the APIShared updater. It is read once per process and existing contents are not rewritten:
+
+    [ProtonPaths]
+    HostGameDirectory =
+    WineBashPath =
+
+`HostGameDirectory` is an absolute Linux path to this exact game installation, used
+only when automatic translation needs an explicit override. An identity probe
+checks both filesystem views before any update can close the game. `WineBashPath`
+is the absolute Windows/Wine path to the host Bash when automatic discovery fails.
+Invalid explicit values are reported, not silently ignored. Restart after editing.
+Existing containment, hash, link, transaction and external-management boundaries still apply.
+
+### Manual first-install repair
+
+If Script Extender cannot install APIShared in the first place, the APIShared runtime
+cannot repair that earlier step. The separate manual asset
+`APIShared-ProtonWorkshopFix-v<version>.zip` contains one independent preloader:
+`BepInEx/patchers/APIShared.ProtonWorkshopFix.dll`. Close the game, copy that DLL
+to the matching game path, retain the APIShared subscription, then start and accept
+the normal Script Extender installation prompt. Keep exactly one patcher copy.
+The asset contains no APIShared runtime and is not automatically installed by the
+normal APIShared ZIP/map. The [dependency-index bootstrap](DEPENDENCY_BOOTSTRAP.md)
+is a separate feature.
+
+An already exhausted deployment counter receives one additional confirmed attempt
+after successful preflight. Declining does not consume it; a failed retry does not
+repeat automatically. Failed copies retain staging and diagnostics. Inspect
+`BepInEx/LogOutput.log` and the attempt's `journal.log` under
+`BepInEx/cache/APIShared.ProtonWorkshopFix/` when the handoff fails.
+The patcher is inert under native Windows and externally managed launches.
+Remove or replace it only with the game closed.
+
+### Platform acceptance limits
+
+Automated path, IL, counter and package checks exercise separate boundaries.
+The native Bash fixtures are required by the Linux CI job; they do not run Wine,
+Unity Mono or Steam. The [host-run protocol](#linux-host-processes-and-game-exit-detection)
+under Unity Mono, game-exit detection beside Steam's wrapper processes, real argument
+conversion, hook activation after startup cleanup,
+first installation without APIShared on S:, Z: and a custom mapping, configuration
+overrides, a failed one-time retry, Steam restart and subsequent APIShared status and
+recovery still require Proton acceptance. Test APIShared's updater both with and
+without the manual patcher. Native Windows acceptance must confirm the unchanged
+launcher and absence of new hooks, host processes and retry state. Automated checks
+alone do not establish these live results or successful Proton publishing.
 
 ## Internal implementation
 
@@ -153,6 +228,84 @@ The optional native Linux [coordination fixture](../tools/Validation/test-worksh
 For interactive Windows acceptance after `build.bat`, close the game and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Validation/Test-WorkshopLiveRestart.ps1 -GameRoot "<game-root>"`. The [live restart probe](../tools/Validation/Test-WorkshopLiveRestart.ps1) verifies the installed build, refuses existing unresolved history and reserves only its own text marker plus a verified-absent test receipt address (the receipt operation leaves it absent). A private helper checkpoint waits for the operator to launch through Steam. Acknowledge the active-updater notice, observe this start closing, then wait for the updater's automatic Steam restart. The probe checks one transaction-specific runtime quit log and the pause/resume/commit sequence, removes only its unchanged marker, and retains evidence. It does not terminate the real game directly. The operator must confirm that the second start stays open before recording a pass.
 
 Windows M3 acceptance passed on 2026-10-14 with the installed APIShared 0.9.1 development build, Script Extender 2.14.1, Fixes 1.26.4 and SerpsMods 1.0.27. Transaction `0f55645995994ab3b43cd34a1f568c68` recorded pause, resume and commit, with exactly one confirmed-handoff runtime quit at 23:37:51 Europe/Berlin. The automatic second start loaded the tested DLL, reported `startup result=current; blocked=False; technicalErrors=0`, and the operator confirmed that the main menu remained open. The probe was removed, its receipt address remained absent, the updater lock was released and installed package hashes still matched the build evidence. Evidence is retained locally in `.local/live-restart-tests/0f55645995994ab3b43cd34a1f568c68`. This exercises the real startup guard with a synthetic file transaction; recovery/payload fault coverage comes from the production fixtures. Native Linux/Proton acceptance and integration of the separately assigned M1/M2/Bash fixes remain outstanding.
+
+### Workshop staging integration
+
+`Workshop/WorkshopCleanupRuntime` is rooted by a static `ILHook` installed in APIShared `Awake`. It intercepts every return of `MapModManager.TryStageModUpdate`; incoming branch labels are retargeted through the callback. The exact nonpublic instance signature and a managed body with return sites gate installation. Dry transformation/compilation of the loaded method occurs before publication; incompatible code stays unhooked regardless of its SE version. Complete SE assembly hashes do not authorize or refuse installation. There is no lifecycle unpatch, dispatcher or coroutine. The Extender's Steam initialization publisher supplies the long-lived invocation path; the first staging callback logs its execution after startup cleanup.
+
+The staging callback only cleans obsolete APIShared package files. Foreign map packages remain exclusively Extender-owned. `WorkshopInventory` and its schema are public helpers; shipping an inventory does not opt a foreign map into APIShared deployment.
+
+The owner-bound `ModApiClient.Workshop` capability handles a different schema, `apishared-workshop.json`, and exclusively declared loose `Payload` files. `WorkshopPackageCodec`, `WorkshopPaths`, `WorkshopInstallation`, `WorkshopTransaction` and `WorkshopPublishing` contain testable file policy without game dependencies. `WorkshopRuntime` captures Steam state on Unity and delegates file preparation to workers. `WorkshopSteamUpload` roots its own call-results and never uses Vanilla's stateful upload singleton. The view is presentation state rather than persisted lobby settings. Callbacks are retained by static fields and Extender publishers after plugin-component destruction.
+
+Receipts under `_APIShared/Workshop/Receipts` record the last committed delivery. Catalog discovery reads metadata. Startup offers and the Mod Options status additionally compare immutable files against the receipt on a worker. Planning has no installation side effects. Explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery. Backups and journals remain available. The Proton backend reaches host Bash through the active Wine mappings, requires flock/coreutils and waits for the game process as described under [Linux host processes](#linux-host-processes-and-game-exit-detection).
+
+Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself is distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
+
+Dialog recovery uses an internal `APISHARED-WORKSHOP-RECOVERY-1` operation file: restart/stop followed by interrupted transaction IDs and SHA-256 pins of their operation lists and journals. Existing installation protocols 1 and 2 are retained. Confirmed complete repairs carry `supersedes.tsv` plus its hash; launch pins that hash separately. Only a committed replacement with unchanged reference bytes resolves the original transactions. Original journals and backups remain intact while unresolved, including when replacement itself fails; validated resolved history follows the retention policy above. Recovery does not change public Workshop signatures or automatically repair a current receipt.
+
+The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Review the staging semantics when the Extender changes and run the installed-contract and transformation checks; see [Workshop staging cleanup](../UpdateToNewDLL.md#workshop-staging-cleanup). These contracts concern managed Workshop staging, not native gameplay hooks.
+
+### Linux host processes and game-exit detection
+
+Under Wine a Linux program started by the game has no Windows process. ntdll's
+`fork_and_exec` (Proton 10 and 11) returns process handle 0, detaches the program with
+`setsid` and connects its stdin/stdout to `/dev/null`. Unity's Mono `Process` then
+reports it as exited at once with exit code 0 and empty output, and `Kill` cannot reach
+it. `HostRun` in `src/Workshop/Proton/ProtonProcess.cs` therefore never consults the
+`Process` object: a fixed Bash wrapper runs the requested arguments in the same host
+Bash and atomically publishes stdout, stderr and the exit code as files in an owned run
+directory under the Wine temp folder. Short commands wait for that record within their
+budget; an unfinished run is reported as a timeout and keeps running. Updater handoffs
+replace `HasExited` with the exit record and are stopped only through their cancel files.
+Linux history maintenance keeps the transaction state gate after its timeout until the
+pass publishes its exit record, as for a child that survived its kill.
+
+Wine's double fork turns every updater into an orphan that Steam's subreapers (`reaper`
+and pressure-vessel's `pv-adverb`) adopt. They wait for all descendants and name the game
+only as a later argument. Both Linux updaters therefore count a process as the game only
+when argv[0] or argv[1] names the game executable, which is Wine's program position after
+its loader. An automatic APIShared handoff refuses before readiness when that game is not
+visible, so a detector mismatch keeps the game open. A Steam restart requested while Steam
+still tracks the old launch can fail; the update itself is unaffected and the game is then
+started manually.
+
+### Independent Linux first-install patcher
+
+The [manual patcher](#manual-first-install-repair) source-links the internal
+`src/Workshop/Proton` path and process helpers; it has no APIShared runtime dependency.
+Its preloader observes `Chainloader ready`, then checks already loaded and newly
+loaded Extender assemblies before plugin Awake. It neither initializes MapModManager
+nor installs a runtime AssemblyResolve handler. APIShared itself adds no Extender
+hooks for this correction and changes only its own Workshop launcher.
+
+After Linux confirmation, the patcher validates the Extender method and control-flow
+contracts and prepares both transformed delegates before publishing its two hooks.
+One redirects the Linux launcher, reading the private ByRef context through its
+getters; the other preserves the original attempt-counter calls and adds the
+one-time retry gate. Activation follows successful installation of both hooks.
+Published hooks remain rooted for the process lifetime, including partial failures;
+an inactive gate preserves the original method bodies. At an active launcher failure,
+returning false keeps the game open without falling back to the original Linux launch.
+
+A confirmed retry exclusively claims the generation-1 record
+`BepInEx/config/APIShared.ProtonWorkshopFix/retry-v1.state` before permitting launch.
+Existing malformed or incomplete records are treated as consumed. The original raw
+counter is incremented with saturation; after success the Extender still owns its
+ordinary counter reset.
+
+The embedded helper uses the hash-bound `APISHARED-SE-PROTON-1` request and its own
+cache directory and lock. All delete-list targets are translated and checked inside
+the game directory. Readiness requires a live helper and visible game process before
+the Extender may close the game. The helper then waits for game exit, rechecks sources,
+applies payload files before metadata, and retains staging on failure or unknown files.
+It does not overwrite the Extender's script or change APIShared's transaction format.
+See [contributor build and check instructions](../CONTRIBUTING.md#building-and-checking-the-optional-proton-patcher)
+and the [platform acceptance limits](#platform-acceptance-limits).
+
+## Dated release acceptance records
+
+These sections record the acceptance of earlier Workshop-only hotfix releases. They are
+historical evidence, not current requirements.
 
 ### Workshop-only 0.9.1 hotfix candidate
 
@@ -173,19 +326,3 @@ For an interrupted installation, install the APIShared hotfix and start the game
 Version 0.9.2 retains the released 0.9.1 recovery, retention and startup coordination. It fixes the readiness-file sharing race and rejects an updater that exited before the handoff was confirmed. Proton restarts try `steam -applaunch 3024040` if `xdg-open` is missing or fails. A restart failure reports how to start Steam manually and does not undo a committed installation.
 
 The release is prepared on `main` with only the released Workshop runtime and these corrections. Previously unreleased development functions remain on `develop` as 0.10.0; branch history is preserved. Public APIs and transaction formats are unchanged. Updating APIShared is sufficient; no modpack release is required. Keep interrupted transactions and backups, and use the repair dialog rather than deleting recovery data. Native Linux fixtures cover the production Bash updater and simulated Steam restart commands; they do not establish complete Proton/Steam runtime acceptance.
-
-### Workshop staging integration
-
-`Workshop/WorkshopCleanupRuntime` is rooted by a static `ILHook` installed in APIShared `Awake`. It intercepts every return of `MapModManager.TryStageModUpdate`; incoming branch labels are retargeted through the callback. An allow-listed assembly SHA-256 (`AuditedExtenderHashes`) and the exact method signature gate installation. Dry transformation/compilation of the loaded method occurs before publication, so an allow-listed binary whose IL no longer validates still stays unhooked. There is no lifecycle unpatch, dispatcher or coroutine. The Extender's Steam initialization publisher supplies the long-lived invocation path; the first staging callback logs its execution after startup cleanup.
-
-The staging callback only cleans obsolete APIShared package files. Foreign map packages remain exclusively Extender-owned. `WorkshopInventory` and its schema are public helpers; shipping an inventory does not opt a foreign map into APIShared deployment.
-
-The owner-bound `ModApiClient.Workshop` capability handles a different schema, `apishared-workshop.json`, and exclusively declared loose `Payload` files. `WorkshopPackageCodec`, `WorkshopPaths`, `WorkshopInstallation`, `WorkshopTransaction` and `WorkshopPublishing` contain testable file policy without game dependencies. `WorkshopRuntime` captures Steam state on Unity and delegates file preparation to workers. `WorkshopSteamUpload` roots its own call-results and never uses Vanilla's stateful upload singleton. The view is presentation state rather than persisted lobby settings. Callbacks are retained by static fields and Extender publishers after plugin-component destruction.
-
-Receipts under `_APIShared/Workshop/Receipts` determine update eligibility. Discovery does not hash or repair installed files. Planning has no installation side effects; explicit application rechecks source, receipt, targets, Steam subscriptions, prerequisites, external ownership and Extender staging. Separate scripts apply the immutable operation protocol only after game exit, back up all existing targets before changing them, journal writes, and commit the receipt last. Interrupted application requires explicit recovery; backups and journals remain available. No recursive plugin-directory removal occurs. The Proton backend uses the host bash through Wine's Z: mapping, requires flock/coreutils and conservatively waits for all matching game executables.
-
-Mixed packages reserve a distinct bootstrap GUID/folder and exactly one retained map filename. The actual map archive is audited against that folder as well as the declaration; bootstrap and loose files cannot share targets. APIShared itself is distributed as an Extender-managed map. Installation is read-only under `SCDEModManagerLaunchId`; publishing is still available. No competing native or Fixes hooks are introduced.
-
-Dialog recovery uses an internal `APISHARED-WORKSHOP-RECOVERY-1` operation file: restart/stop followed by interrupted transaction IDs and SHA-256 pins of their operation lists and journals. Existing installation protocols 1 and 2 are retained. Confirmed complete repairs carry `supersedes.tsv` plus its hash; launch pins that hash separately. Only a committed replacement with unchanged reference bytes resolves the original transactions. Original journals and backups remain intact while unresolved, including when replacement itself fails; validated resolved history follows the retention policy above. Recovery does not change public Workshop signatures or automatically repair a current receipt.
-
-The installed managed contracts are checked by `tools/Validation/Verify-WorkshopContracts.ps1`, with file-policy regressions in Core.Tests and an installed-method IL transformation regression in APISharedTests. Renew the complete installer audit and binary allow-list when the Extender changes; see [Workshop staging cleanup](../UpdateToNewDLL.md#workshop-staging-cleanup). These contracts concern managed Workshop staging, not native gameplay hooks.

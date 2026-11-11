@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Operation Type="AddNamespace" AttributeName="apt" Value="clr-namespace:APIShared.Presentation;assembly=APIShared" />
   <Operation Type="SetAttribute" XPath="//n:Grid[@Name='TroopSelectionControls']" AttributeName="Panel.ZIndex" Value="3" />
   <Operation Type="SetAttribute" XPath="//n:Button[@Name='ToggleControlGroups']" AttributeName="Panel.ZIndex" Value="4" />
   <Operation Type="Add" XPath="//n:UserControl.Resources">
@@ -14,6 +15,39 @@
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Icon" Property="Opacity" Value="0.4"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate></Setter.Value></Setter>
+      </Style>
+    </Content>
+  </Operation>
+  <Operation Type="Add" XPath="//n:UserControl.Resources">
+    <Content>
+      <Style x:Key="APISharedTroopPageButtonStyle" TargetType="{x:Type Button}">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="{x:Type Button}">
+              <Border Background="Transparent">
+                <Grid IsHitTestVisible="False" FlowDirection="LeftToRight" RenderTransformOrigin="0.5,0.5"
+                      RenderTransform="{Binding Tag, RelativeSource={RelativeSource Mode=TemplatedParent}}">
+                  <Image x:Name="IdleArrow" Source="{TemplateBinding local:PropEx.Sprite1}" />
+                  <Image x:Name="HoverArrow" Source="{TemplateBinding local:PropEx.Sprite2}" Visibility="Hidden" />
+                  <Image x:Name="PressedArrow" Source="{TemplateBinding local:PropEx.Sprite3}" Visibility="Hidden" />
+                </Grid>
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="IdleArrow" Property="Visibility" Value="Hidden" />
+                  <Setter TargetName="HoverArrow" Property="Visibility" Value="Visible" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                  <Setter TargetName="IdleArrow" Property="Visibility" Value="Hidden" />
+                  <Setter TargetName="HoverArrow" Property="Visibility" Value="Hidden" />
+                  <Setter TargetName="PressedArrow" Property="Visibility" Value="Visible" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
       </Style>
     </Content>
   </Operation>
@@ -49,4 +83,5 @@
       </Grid>
     </Content>
   </Operation>
+  <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='TroopsPanelRollover']" AttributeName="apt:TooltipAnchor.Anchor" Value="SiegeConstruction" />
 </Patch>

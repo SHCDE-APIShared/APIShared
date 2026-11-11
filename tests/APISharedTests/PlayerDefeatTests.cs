@@ -140,6 +140,202 @@ namespace APISharedTests
                 "player-defeat capability ID is stable");
         }
 
+        [TestMethod]
+        public void LoadedLossIsQueryableStateWithoutReplayingTransitions()
+        {
+            long? session = 71;
+            var observations = Slots(Slot(WinLossState.Loss), Slot(WinLossState.None));
+            var service = PlayerDefeatService.TestCreate(() => session, () => observations);
+            var capability = (IPlayerDefeatStateCapability)service.Bind("consumer");
+            int transitions = 0;
+            var snapshots = new List<PlayerDefeatSnapshot>();
+            Assert.IsTrue(capability.TryRegisterObserver("transitions", _ => transitions++, _ => transitions++, out _));
+            Assert.IsTrue(capability.TryRegisterStateObserver("states", snapshots.Add, out _));
+            Assert.IsFalse(capability.TryGetObservedState(71, 1, out _));
+            service.TestTick(3);
+            Assert.IsTrue(capability.TryGetObservedState(71, 1, out var loss));
+            Assert.IsTrue(loss.Readable && loss.OfficialLoss && loss.IsEliminated);
+            Assert.IsFalse(loss.HasLivingLord || loss.LordDeathConfirmed);
+            Assert.AreEqual(3, loss.SimulationTick);
+            Assert.AreEqual(0, transitions);
+            Assert.AreEqual(8, snapshots.Count);
+            Assert.IsTrue(capability.TryGetObservedState(71, 2, out var lordless));
+            Assert.IsFalse(lordless.IsEliminated, "absence in a baseline grants no elimination rights");
+            Assert.IsFalse(capability.TryGetObservedState(72, 1, out _));
+            Assert.IsFalse(capability.TryGetObservedState(71, 0, out _));
+            Assert.IsFalse(capability.TryGetObservedState(71, 9, out _));
+
+            var replay = new List<PlayerDefeatSnapshot>();
+            Assert.IsTrue(capability.TryRegisterStateObserver("late", replay.Add, out _));
+            Assert.AreEqual(8, replay.Count);
+            for (int i = 0; i < replay.Count; i++) Assert.AreSame(snapshots[i], replay[i]);
+            Assert.IsFalse(capability.TryRegisterObserver("late", _ => { }, null, out _),
+                "state and transition registrations share the owner-local ID namespace");
+            Assert.AreEqual(0, transitions);
+        }
+
+        [TestMethod]
+        public void StableObservationsReuseSnapshotsAndConfirmedDeathPrecedesTransitions()
+        {
+            var observations = Slots(Living(10, 100));
+            var service = PlayerDefeatService.TestCreate(() => 81, () => observations);
+            var capability = (IPlayerDefeatStateCapability)service.Bind("consumer");
+            int changes = 0, deaths = 0;
+            bool stateWasCommitted = false;
+            Assert.IsTrue(capability.TryRegisterStateObserver("state", _ => changes++, out _));
+            Assert.IsTrue(capability.TryRegisterObserver("death", _ => {
+                deaths++;
+                stateWasCommitted = capability.TryGetObservedState(81, 1, out var committed) && committed.IsEliminated;
+            }, null, out _));
+            service.TestTick(1);
+            Assert.IsTrue(capability.TryGetObservedState(81, 1, out var first));
+            service.TestTick(2);
+            Assert.IsTrue(capability.TryGetObservedState(81, 1, out var unchanged));
+            Assert.AreSame(first, unchanged, "unchanged ticks allocate no new state snapshots");
+            Assert.AreEqual(1, unchanged.SimulationTick);
+            Assert.AreEqual(8, changes);
+            observations = Slots(Slot(WinLossState.None));
+            service.TestTick(3);
+            Assert.IsTrue(capability.TryGetObservedState(81, 1, out var dead));
+            Assert.IsTrue(dead.LordDeathConfirmed && dead.IsEliminated && !dead.OfficialLoss && !dead.HasLivingLord);
+            Assert.AreEqual(1, deaths);
+            Assert.IsTrue(stateWasCommitted, "transition observers can query the already committed elimination state");
+            Assert.AreEqual(9, changes);
+        }
+
+        [TestMethod]
+        public void UnreadableCaptureInvalidatesRightsAndRetainsConfirmedHistoryForRecovery()
+        {
+            bool fail = false;
+            var observations = Slots(Living(11, 110));
+            var service = PlayerDefeatService.TestCreate(() => 91, () => {
+                if (fail) throw new InvalidOperationException("unavailable capture");
+                return observations;
+            });
+            var capability = (IPlayerDefeatStateCapability)service.Bind("consumer");
+            Assert.IsTrue(capability.TryRegisterStateObserver("state", _ => { }, out _));
+            service.TestTick(1);
+            observations = Slots(Slot(WinLossState.None));
+            service.TestTick(2);
+            Assert.IsTrue(capability.TryGetObservedState(91, 1, out var dead) && dead.IsEliminated);
+            fail = true;
+            service.TestTick(3);
+            Assert.IsTrue(capability.TryGetObservedState(91, 1, out var unknown));
+            Assert.IsFalse(unknown.Readable || unknown.IsEliminated || unknown.LordDeathConfirmed);
+            fail = false;
+            service.TestTick(4);
+            Assert.IsTrue(capability.TryGetObservedState(91, 1, out var restored) && restored.LordDeathConfirmed && restored.IsEliminated);
+            observations = null;
+            service.TestTick(5);
+            Assert.IsTrue(capability.TryGetObservedState(91, 1, out unknown) && !unknown.Readable && !unknown.IsEliminated);
+        }
+
+        [TestMethod]
+        public void EndedSessionCannotGrantRightsBeforeOrAfterTheNextTick()
+        {
+            long? session = 101;
+            var observations = Slots(Slot(WinLossState.Loss));
+            var service = PlayerDefeatService.TestCreate(() => session, () => observations);
+            var capability = (IPlayerDefeatStateCapability)service.Bind("consumer");
+            var changes = new List<PlayerDefeatSnapshot>();
+            Assert.IsTrue(capability.TryRegisterStateObserver("state", changes.Add, out _));
+            service.TestTick(1);
+            Assert.IsTrue(capability.TryGetObservedState(101, 1, out var ended) && ended.IsEliminated);
+            session = null;
+            Assert.IsFalse(capability.TryGetObservedState(101, 1, out _), "lookup sees lifecycle invalidation immediately");
+            service.TestTick(2);
+            Assert.IsFalse(changes[changes.Count - 1].Readable);
+            Assert.AreEqual(101L, changes[changes.Count - 1].SessionId);
+            session = 102;
+            observations = Slots(Slot(WinLossState.None));
+            Assert.IsFalse(capability.TryGetObservedState(102, 1, out _));
+            service.TestTick(3);
+            Assert.IsTrue(capability.TryGetObservedState(102, 1, out var fresh) && !fresh.IsEliminated);
+            Assert.IsFalse(capability.TryGetObservedState(101, 1, out _));
+            Assert.IsTrue(ended.IsEliminated, "retained snapshots are immutable historical values, not live permission tokens");
+        }
+
+        [TestMethod]
+        public void ReentrantStateRegistrationReplaysCommittedStateOnceInPlayerOrder()
+        {
+            var service = PlayerDefeatService.TestCreate(() => 111, () => Slots(Slot(WinLossState.Loss)));
+            var alpha = (IPlayerDefeatStateCapability)service.Bind("alpha");
+            var beta = (IPlayerDefeatStateCapability)service.Bind("beta");
+            var calls = new List<string>();
+            var replay = new List<PlayerDefeatSnapshot>();
+            Assert.IsTrue(alpha.TryRegisterStateObserver("first", snapshot => {
+                calls.Add("a" + snapshot.PlayerId);
+                if (snapshot.PlayerId == 1)
+                {
+                    Assert.IsTrue(beta.TryRegisterStateObserver("late", value => {
+                        replay.Add(value); calls.Add("b" + value.PlayerId);
+                    }, out _));
+                    throw new InvalidOperationException("isolated callback");
+                }
+            }, out _));
+            service.TestTick(1);
+            Assert.AreEqual(8, replay.Count, "the new observer gets targeted replay, never earlier queued publications twice");
+            Assert.AreEqual("a1,a2,a3,a4,a5,a6,a7,a8,b1,b2,b3,b4,b5,b6,b7,b8", string.Join(",", calls));
+            Assert.IsFalse(alpha.TryRegisterStateObserver("", _ => { }, out _));
+            Assert.IsFalse(alpha.TryRegisterStateObserver("null", null, out _));
+        }
+
+        [TestMethod]
+        public void ConcurrentSnapshotQueriesSeeWholeImmutableValues()
+        {
+            var service = PlayerDefeatService.TestCreate(() => 121, () => Slots(Slot(WinLossState.Loss)));
+            var capability = (IPlayerDefeatStateCapability)service.Bind("consumer");
+            Assert.IsTrue(capability.TryRegisterStateObserver("state", _ => { }, out _));
+            service.TestTick(1);
+            var reader = System.Threading.Tasks.Task.Run(() => {
+                for (int i = 0; i < 1000; i++)
+                {
+                    Assert.IsTrue(capability.TryGetObservedState(121, 1, out var snapshot));
+                    Assert.IsTrue(snapshot.SessionId == 121 && snapshot.PlayerId == 1 && snapshot.OfficialLoss && snapshot.IsEliminated);
+                }
+            });
+            for (int i = 2; i < 100; i++) service.TestTick(i);
+            Assert.IsTrue(reader.Wait(TimeSpan.FromSeconds(5)));
+        }
+
+        [TestMethod]
+        public void ConcurrentStateReplayCannotMoveTransitionsOffTheirTickPublisher()
+        {
+            var observations = Slots(Living(12, 120));
+            var service = PlayerDefeatService.TestCreate(() => 131, () => observations);
+            var capability = (IPlayerDefeatStateCapability)service.Bind("consumer");
+            int transitionThread = 0, transitions = 0;
+            Assert.IsTrue(capability.TryRegisterObserver("transition", _ => {
+                transitionThread = System.Threading.Thread.CurrentThread.ManagedThreadId;
+                transitions++;
+            }, null, out _));
+            service.TestTick(1);
+            using (var enteredReplay = new System.Threading.ManualResetEventSlim())
+            using (var releaseReplay = new System.Threading.ManualResetEventSlim())
+            {
+                var replay = System.Threading.Tasks.Task.Run(() => capability.TryRegisterStateObserver("replay", snapshot => {
+                    if (snapshot.PlayerId != 1) return;
+                    enteredReplay.Set();
+                    releaseReplay.Wait(TimeSpan.FromSeconds(5));
+                }, out _));
+                try
+                {
+                    Assert.IsTrue(enteredReplay.Wait(TimeSpan.FromSeconds(5)), "another thread owns the state-replay drain");
+                    int tickThread = System.Threading.Thread.CurrentThread.ManagedThreadId;
+                    observations = Slots(Slot(WinLossState.None));
+                    service.TestTick(2);
+                    Assert.AreEqual(1, transitions, "transitions remain synchronous even while replay delivery is blocked");
+                    Assert.AreEqual(tickThread, transitionThread, "state replay cannot drain simulation callbacks on its own thread");
+                    Assert.IsTrue(capability.TryGetObservedState(131, 1, out var current) && current.IsEliminated);
+                }
+                finally
+                {
+                    releaseReplay.Set();
+                    Assert.IsTrue(replay.Wait(TimeSpan.FromSeconds(5)));
+                }
+            }
+        }
+
         private static PlayerDefeatObservation Living(int unitId, int globalId) =>
             new PlayerDefeatObservation(true, WinLossState.None, true, unitId, globalId);
 

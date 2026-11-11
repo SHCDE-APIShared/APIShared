@@ -31,6 +31,26 @@ try{
         $assembly=$null
         try{$assembly=[Mono.Cecil.AssemblyDefinition]::ReadAssembly($file.FullName,$parameters)}catch [BadImageFormatException]{continue}
         try{
+            # Reference resolution alone cannot detect two owners of the requester hook.
+            # Use the published plugin identity and the same opt-in contract as the runtime
+            # guard; filenames/folder names and package versions do not prove migration.
+            foreach($pluginType in $assembly.MainModule.GetTypes()){
+                $isExtendedData=@($pluginType.CustomAttributes | Where-Object {
+                    $_.AttributeType.FullName -eq 'BepInEx.BepInPlugin' -and
+                    $_.ConstructorArguments.Count -ge 1 -and
+                    [string]$_.ConstructorArguments[0].Value -eq 'ExtendedData_Serp'
+                }).Count -gt 0
+                if(-not $isExtendedData){continue}
+                $marker=@($pluginType.Fields | Where-Object {
+                    $_.Name -ceq 'UsesApiSharedSaveLoadDialog' -and $_.IsPublic -and
+                    $_.IsStatic -and $_.IsLiteral -and $_.HasConstant -and
+                    $_.FieldType.FullName -eq 'System.Boolean' -and
+                    $_.Constant -is [bool] -and $_.Constant -eq $true
+                })
+                if($marker.Count -ne 1){
+                    $failures.Add($file.FullName+': Update ExtendedData together with APIShared: the installed ExtendedData still owns the load/save requester.')
+                }
+            }
             foreach($reference in @($assembly.MainModule.GetTypeReferences())+@($assembly.MainModule.GetMemberReferences())){
                 $type=if($reference -is [Mono.Cecil.TypeReference]){$reference}else{$reference.DeclaringType}
                 if(-not $type -or $type.GetElementType().Scope.Name -ne 'APIShared'){continue}
@@ -39,6 +59,6 @@ try{
             }
         }finally{$assembly.Dispose()}
     }
-    if($failures.Count){throw ("Installed consumers require members absent from the candidate:`n"+($failures -join "`n"))}
+    if($failures.Count){throw ("Installed consumers are incompatible with the candidate:`n"+($failures -join "`n"))}
     Write-Host ('PASS: '+$checked+' installed APIShared type/member references resolve against candidate '+$candidate.Name.Version+'.')
 }finally{$candidate.Dispose();$resolver.Dispose()}

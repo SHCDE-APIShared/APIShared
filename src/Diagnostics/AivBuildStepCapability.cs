@@ -1,3 +1,4 @@
+using APIShared.Events;
 using BepInEx.Logging;
 using RedBird.Abstractions.Hooks;
 using RedBird.Abstractions.Hooks.Transaction;
@@ -10,6 +11,8 @@ using System.Threading;
 
 namespace APIShared
 {
+    // API_SHARED_DIAGNOSTICS: consumer opt-in is TryRegisterObserver. The permanent
+    // hook passes straight through without observers; no automatic recording or output.
     internal sealed class AivBuildStepService
     {
         internal const int FunctionRva = 0x51790;
@@ -35,6 +38,8 @@ namespace APIShared
         private readonly ManualLogSource log;
         private readonly DetourHandle<ExecuteBuildStepDelegate> hook = new DetourHandle<ExecuteBuildStepDelegate>();
         private HookTransaction transaction;
+        private readonly NativeHookPublicationState publication = new NativeHookPublicationState();
+        private static AivBuildStepService publicationCandidate;
 
         internal AivBuildStepService(string hash, ManualLogSource logger)
         {
@@ -72,14 +77,26 @@ namespace APIShared
             }
 
             HookTransaction pending = null;
+            AivBuildStepService candidate = null;
+            bool claimed = false;
             try
             {
+                // A failed published candidate remains the process owner, even when the runtime
+                // exposes no capability. Retrying must not prepare another hook at the same site.
+                AivBuildStepService previous = publicationCandidate;
+                if (previous != null)
+                {
+                    previous.publication.ThrowIfUnavailable();
+                    service = previous;
+                    diagnostic = previous.Available("The AIV build-step hook is already installed.");
+                    return true;
+                }
                 if (moduleBase == 0 || region == null)
                     throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
                         "The native module or RedBird scan region is unavailable.");
                 NativePeImage image = NativePeImage.Parse(memory);
                 image.RequireExecutableRange(FunctionRva, FunctionSize, "AIV ExecuteBuildStep");
-                int match = CompiledFunctionPattern.FindUnique(memory);
+                int match = CompiledFunctionPattern.FindUniqueAtReference(memory, FunctionRva);
                 if (match < 0)
                     throw new NativeResolutionException(
                         match == -2 ? NativeCapabilityState.Ambiguous : NativeCapabilityState.PatternMissing,
@@ -94,7 +111,8 @@ namespace APIShared
 
                 ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.AivBuildStep, ApiSharedNativeSites.AivBuildStepSpans(),
                     reason => new NativeResolutionException(NativeCapabilityState.Conflict, reason));
-                var candidate = new AivBuildStepService(hash, log);
+                claimed = true;
+                candidate = new AivBuildStepService(hash, log);
                 // InstallOnCommit = false: Commit attaches candidate.hook's original before the patch is
                 // written, so ExecuteBuildStep always finds it (NativeHookPublication).
                 pending = new HookTransaction(
@@ -103,8 +121,9 @@ namespace APIShared
                     new HookTransactionOptions
                     {
                         FailureMode = TransactionFailureMode.RollbackAndThrow,
-                        OwnsHooks = false,
-                        InstallOnCommit = false
+                        OwnsHooks = true,
+                        InstallOnCommit = false,
+                        Backend = NativeStartupPatchWindow.Backend()
                     });
                 pending.AddDetour(
                     candidate.hook,
@@ -114,35 +133,45 @@ namespace APIShared
                 if (!result.IsCompleteSuccess || !candidate.hook.Success)
                     throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
                         "The AIV ExecuteBuildStep detour was not installed atomically.");
-                NativeHookPublication.Enable(pending, result);
-                if (!candidate.hook.IsInstalled)
-                    throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
-                        "The AIV ExecuteBuildStep detour was prepared but not written.");
-
                 candidate.transaction = pending;
+                publicationCandidate = candidate;
+                NativeHookPublication.Enable(pending, result, candidate.publication, candidate, () =>
+                {
+                    if (!candidate.hook.IsInstalled)
+                        throw new NativeResolutionException(NativeCapabilityState.ValidationFailed,
+                            "The AIV ExecuteBuildStep detour was prepared but not written.");
+                });
                 pending = null;
                 service = candidate;
                 diagnostic = Diagnostic(hash, NativeCapabilityState.Available,
                     $"AIV ExecuteBuildStep is owned by APIShared at RVA 0x{FunctionRva:X}; function SHA-256={FunctionHash}.");
-                NativeApiLog.Debug(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, rva=0x{FunctionRva:X}, status=installed");
+                try { NativeApiLog.Debug(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, rva=0x{FunctionRva:X}, status=installed"); } catch { }
                 return true;
             }
             catch (NativeResolutionException ex)
             {
-                pending?.Dispose();
-                ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.AivBuildStep);
+                RollbackCandidate(candidate, pending, ownership, claimed);
                 diagnostic = Diagnostic(hash, ex.State, ex.Message);
-                NativeApiLog.Error(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, status=unavailable, error={ex.Message}");
+                try { NativeApiLog.Error(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, status=unavailable, error={ex.Message}"); } catch { }
                 return false;
             }
             catch (Exception ex)
             {
-                pending?.Dispose();
-                ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.AivBuildStep);
+                RollbackCandidate(candidate, pending, ownership, claimed);
                 diagnostic = Diagnostic(hash, NativeCapabilityState.Faulted, ex.Message);
-                NativeApiLog.Error(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, status=faulted, error={ex}");
+                try { NativeApiLog.Error(log, $"capability={NativeCapabilityIds.AivBuildStep}, build={hash}, status=faulted, error={ex}"); } catch { }
                 return false;
             }
+        }
+
+        private static void RollbackCandidate(AivBuildStepService candidate, HookTransaction pending,
+            NativeOwnershipRegistry ownership, bool claimed)
+        {
+            (candidate?.publication ?? new NativeHookPublicationState()).RollbackUnpublished(pending, () =>
+            {
+                if (candidate != null && ReferenceEquals(publicationCandidate, candidate)) publicationCandidate = null;
+                if (claimed) ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.AivBuildStep);
+            });
         }
 
         internal IAivBuildStepCapability Bind(string ownerGuid) => new Binding(this, ownerGuid);
@@ -177,11 +206,8 @@ namespace APIShared
                     return false;
                 }
 
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(ownerGuid, registrationId, observer);
-                Array.Sort(next, Registration.Compare);
-                Volatile.Write(ref registrations, next);
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(ownerGuid, registrationId, observer), Registration.Key));
             }
             diagnostic = Available("The AIV build-step observer was registered for the process lifetime.");
             return true;
@@ -196,7 +222,7 @@ namespace APIShared
         {
             // Published hooks stay installed. An unused observer must not allocate per native call.
             Registration[] snapshot = Volatile.Read(ref registrations);
-            if (snapshot.Length == 0)
+            if (!publication.IsReady || snapshot.Length == 0)
                 return hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced);
             return ExecuteObservedBuildStep(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced, snapshot);
         }
@@ -314,11 +340,7 @@ namespace APIShared
             internal string OwnerGuid { get; }
             internal string RegistrationId { get; }
             internal IAivBuildStepObserver Observer { get; }
-            internal static int Compare(Registration left, Registration right)
-            {
-                int owner = string.CompareOrdinal(left.OwnerGuid, right.OwnerGuid);
-                return owner != 0 ? owner : string.CompareOrdinal(left.RegistrationId, right.RegistrationId);
-            }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.OwnerGuid, entry.RegistrationId);
         }
 
         private sealed class ActiveInvocation

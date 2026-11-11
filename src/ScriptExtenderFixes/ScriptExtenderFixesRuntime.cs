@@ -9,16 +9,15 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Threading;
 
 namespace APIShared.ScriptExtenderFixes
 {
-    // Optional, binary-bound fixes. No new public API or dependency on the author's mods.
+    // Optional, contract-bound fixes. No new public API or dependency on the author's mods.
+    // Third-party binaries are accepted by the features this fix actually uses (types,
+    // members, IL/ABI contracts and a MonoMod behavior probe), never by file hash.
     internal static class ScriptExtenderFixesRuntime
     {
-        internal const string ManagedHash = "D98415528BA84F0DFF17F283F72D0003D65ECA8F30993E5BAFE1D425BA8CE9B7";
-        internal const string NativeHash = "BF43F0854C7CA51C33862D092E53E39FAE8FC6528C8103E4563D000EAF507E80";
         private const uint WindowClose = 0x0010;
         private static readonly ImGuiShutdownState state = new ImGuiShutdownState();
         private static ILHook[] hooks;
@@ -32,7 +31,7 @@ namespace APIShared.ScriptExtenderFixes
             if (Volatile.Read(ref active) != 0) return;
             logger = log;
             bool enabled = config.Bind("ScriptExtenderFixes", "EnableImGuiShutdownFix", true,
-                "Protect the audited bundled UU-ImGUI shutdown paths. Applies after restarting the game; unknown binaries are skipped.").Value;
+                "Protect the bundled UU-ImGUI shutdown paths. Applies after restarting the game; binaries without the required contracts are skipped.").Value;
             if (!enabled) { Write("disabled by startup configuration"); return; }
             var candidates = new List<ILHook>();
             ImGuiShutdownCompiler compilerCandidate = null;
@@ -45,12 +44,10 @@ namespace APIShared.ScriptExtenderFixes
                 using (var process = Process.GetCurrentProcess())
                     loadedNative = process.Modules.Cast<ProcessModule>().Single(m =>
                         string.Equals(m.ModuleName, "cimguiaio.dll", StringComparison.OrdinalIgnoreCase)).FileName;
-                if (IntPtr.Size != 8 || !Supports(Hash(assembly.Location), Hash(nativePath)) ||
-                    !string.Equals(Hash(loadedNative), NativeHash, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("unsupported UU-ImGUI managed/native fingerprints");
-                if (Hash(typeof(DynamicMethodDefinition).Assembly.Location) != "9D1495F147AC93C4F81F84538C1A326E8F8A6AEFC78D6289D798F3CE1162C5E9" ||
-                    Hash(typeof(ILHook).Assembly.Location) != "40E49BB314391CD7BDDC2644F8553EEBA92C194B940836B103DF16955C464E0C")
-                    throw new InvalidOperationException("unsupported MonoMod compiler/hook fingerprints");
+                // The loaded native partner must be the one bundled with this managed assembly.
+                // The managed side's trampoline ABI is validated per method below.
+                if (IntPtr.Size != 8 || !SameContent(nativePath, loadedNative))
+                    throw new InvalidOperationException("loaded cimguiaio.dll is not the native partner bundled with UU-ImGUI");
 
                 Type windows = assembly.GetType("UUIMGUI.Hooks.Windows.LibWindows", true);
                 Type graphics = assembly.GetType("UUIMGUI.Hooks.D3D11.LibD3D11", true);
@@ -118,17 +115,19 @@ namespace APIShared.ScriptExtenderFixes
                     using (var backup = new DynamicMethodDefinition(edit.Item1))
                         ImGuiShutdownCompiler.GenerateAudited(backup, edit.Item1).MethodHandle.GetFunctionPointer();
                 }
-                compilerCandidate = new ImGuiShutdownCompiler(edits.Select(edit => edit.Item1));
+                compilerCandidate = new ImGuiShutdownCompiler(edits.Select(edit => edit.Item1)
+                    .Concat(new[] { ImGuiShutdownProbe.Target }));
                 compilerCandidate.Hook.Apply();
+                ImGuiShutdownProbe.Verify(compilerCandidate, ImGuiShutdownProbe.Target, candidates);
                 foreach (var edit in edits)
                     candidates.Add(new ILHook(edit.Item1, edit.Item2,
                         new ILHookConfig { ManualApply = true, ID = "APIShared.ScriptExtenderFixes.ImGuiShutdown." + edit.Item1.Name }));
-                foreach (var candidate in candidates) candidate.Apply();
+                foreach (var candidate in candidates) if (!candidate.IsApplied) candidate.Apply();
                 hooks = candidates.ToArray();
                 compiler = compilerCandidate;
                 UnityEngine.Application.quitting += OnQuitting;
                 Volatile.Write(ref active, 1);
-                Write("installed; UU-ImGUI 1.6.7 and MonoMod fingerprints, eight managed dispatch contracts and original backups validated; scoped MethodBuilder compiler; resources retained until process exit");
+                Write("installed; UU-ImGUI native pairing, eight managed dispatch contracts, original backups and MonoMod routing/calli probe validated; scoped MethodBuilder compiler; resources retained until process exit");
             }
             catch (Exception ex)
             {
@@ -138,9 +137,43 @@ namespace APIShared.ScriptExtenderFixes
             }
         }
 
-        internal static bool Supports(string managed, string native) =>
-            string.Equals(managed, ManagedHash, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(native, NativeHash, StringComparison.OrdinalIgnoreCase);
+        // Pairing instead of a fixed fingerprint: the process must have loaded exactly the
+        // native file shipped beside the managed assembly. Missing files fail closed.
+        internal static bool SameContent(string expected, string loaded)
+        {
+            if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(loaded) ||
+                !File.Exists(expected) || !File.Exists(loaded)) return false;
+            using (var left = File.OpenRead(expected))
+            using (var right = File.OpenRead(loaded))
+            {
+                long remaining = left.Length;
+                if (remaining != right.Length) return false;
+                if (remaining == 0) return true;
+                int blockSize = (int)Math.Min(remaining, 64 * 1024);
+                var leftBytes = new byte[blockSize];
+                var rightBytes = new byte[blockSize];
+                while (remaining > 0)
+                {
+                    int count = (int)Math.Min(remaining, blockSize);
+                    ReadBlock(left, leftBytes, count);
+                    ReadBlock(right, rightBytes, count);
+                    if (!leftBytes.AsSpan(0, count).SequenceEqual(rightBytes.AsSpan(0, count))) return false;
+                    remaining -= count;
+                }
+                return true;
+            }
+        }
+
+        private static void ReadBlock(FileStream stream, byte[] buffer, int count)
+        {
+            int offset = 0;
+            while (offset < count)
+            {
+                int read = stream.Read(buffer, offset, count - offset);
+                if (read == 0) throw new EndOfStreamException("Native partner changed during comparison: " + stream.Name);
+                offset += read;
+            }
+        }
 
         private static MethodInfo Method(Type type, string name, bool isStatic, Type result, params Type[] parameters)
         {
@@ -149,13 +182,6 @@ namespace APIShared.ScriptExtenderFixes
             if (method == null || method.ReturnType != result || method.GetMethodBody() == null)
                 throw new MissingMethodException(type.FullName, name);
             return method;
-        }
-
-        private static string Hash(string path)
-        {
-            using (var stream = File.OpenRead(path))
-            using (var sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
         }
 
         private static bool Retain() => Volatile.Read(ref active) != 0 && state.IsShutdown;
@@ -187,17 +213,22 @@ namespace APIShared.ScriptExtenderFixes
             if (exit) BeginShutdown("UU-ImGUI UnHookSafely(exit)");
             return Retain();
         }
+        // A failure after the first Apply leaves live hooks: the swap-chain Present callback may run on
+        // the render thread, so undoing them could race code inside an edited body. Applied hooks stay
+        // rooted instead; while active == 0 every guard returns the original SE behavior.
+        private static readonly List<object> RetainedCandidates = new List<object>();
         private static void RollbackUnpublished(List<ILHook> candidates, ImGuiShutdownCompiler compilerCandidate)
         {
+            if (compilerCandidate?.Hook.IsApplied == true || candidates.Any(candidate => candidate.IsApplied))
+            {
+                lock (RetainedCandidates) { RetainedCandidates.AddRange(candidates); RetainedCandidates.Add(compilerCandidate); }
+                return;
+            }
             for (int index = candidates.Count - 1; index >= 0; index--)
                 candidates[index].Dispose();
             compilerCandidate?.Hook.Dispose();
         }
-        private static void Write(string message)
-        {
-            try { logger?.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] SE_IMGUI_SHUTDOWN_FIX: " + message); }
-            catch { /* Logging must not interrupt native message forwarding or quit. */ }
-        }
+        private static void Write(string message) => NativeApiLog.Info(logger, "SE_IMGUI_SHUTDOWN_FIX: " + message);
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
         private static extern IntPtr GetWindowLongPtrW(IntPtr hwnd, int index);
         [DllImport("user32.dll", EntryPoint = "CallWindowProcW")]

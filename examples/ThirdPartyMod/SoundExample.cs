@@ -12,14 +12,17 @@ namespace ThirdPartyMod
         private static readonly HashSet<uint> tagged = new HashSet<uint>();
         internal static bool Preload(string ownerGuid, out string reason) =>
             SoundClips.TryLoadModClip(ownerGuid, "Chime", "Sounds/chime.wav", value => clip = value, out clip, out reason);
+        // Selecting only the needed situation keeps every other soldier sound out of managed code.
         internal static bool Register(string ownerGuid, out string reason) =>
+            SoundSourceSelection.TryCreate(null, new[] { SoundSituation.ArabianIdleSwordDraw }, out var draw, out reason) &&
             SoundEvents.TryRegister(ownerGuid, "IdleSwordDraw", args => {
                 if (args.Context.Situation == SoundSituation.ArabianIdleSwordDraw)
                     { args.MultiplyVolume(.25f); /* Optional: args.TryReplaceClip(clip); */ }
-            }, null, out registration, out reason);
+            }, null, draw, out registration, out reason);
         // Native stage: runs on the game-tick thread before the record exists; no Unity calls here.
         internal static bool RegisterKillCues(string ownerGuid, out string reason) =>
-            SoundSourceEvents.TryRegister(ownerGuid, "TaggedPikemanKillCue", OnSource, out killCues, out reason);
+            SoundSourceSelection.TryCreate(null, new[] { SoundSituation.MeleeKill }, out var kills, out reason) &&
+            SoundSourceEvents.TryRegister(ownerGuid, "TaggedPikemanKillCue", OnSource, kills, out killCues, out reason);
         private static void OnSource(ref SoundSourceArgs args)
         {
             // Pikeman (type 25) kill cues 240/241 become the Spearman bank 118/153 for tagged attackers only.

@@ -3,12 +3,82 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace APIShared.Workshop
 {
     internal static class WorkshopInstallation
     {
+        private static readonly Regex TransactionId = new Regex("^[a-f0-9]{32}\\z", RegexOptions.CultureInvariant);
+
         internal static string StateRoot(string game) => WorkshopPaths.Inside(game, "_APIShared/Workshop");
+        private static string ShortTransactions(string game) => WorkshopPaths.Inside(game, "_APIShared/T");
+        private static string LegacyTransactions(string game) => WorkshopPaths.Inside(StateRoot(game), "Transactions");
+
+        internal static string[] TransactionDirectories(string game)
+        {
+            var directories = new List<string>();
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string root in new[] { LegacyTransactions(game), ShortTransactions(game) }) {
+                if (!TransactionDirectoryExists(root)) continue;
+                foreach (string directory in Directory.EnumerateDirectories(root)) {
+                    string id = Path.GetFileName(directory);
+                    if (TransactionId.IsMatch(id.ToLowerInvariant()) && !ids.Add(id))
+                        throw BlockedTransactionPath("Duplicate Workshop transaction ID: " + id);
+                    directories.Add(directory);
+                }
+            }
+            return directories.ToArray();
+        }
+
+        internal static string FindTransaction(string game, string id)
+        {
+            if (!TransactionId.IsMatch(id)) throw new InvalidDataException("Invalid Workshop transaction ID.");
+            string legacy = null;
+            string root = LegacyTransactions(game);
+            // Avoid normalizing a hypothetical legacy path that may exceed MAX_PATH
+            // even though the actual transaction fits in the short layout.
+            if (TransactionDirectoryExists(root)) {
+                foreach (string entry in Directory.EnumerateFileSystemEntries(root)) {
+                    if (!string.Equals(Path.GetFileName(entry), id, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (legacy != null) throw BlockedTransactionPath("Duplicate Workshop transaction ID: " + id);
+                    WorkshopPaths.CheckLinks(entry);
+                    if (TransactionDirectoryExists(entry)) legacy = entry;
+                }
+            }
+            root = ShortTransactions(game);
+            if (!TransactionDirectoryExists(root)) return legacy;
+            string compact = WorkshopPaths.Inside(root, id);
+            if (!TransactionDirectoryExists(compact)) return legacy;
+            if (legacy != null) throw BlockedTransactionPath("Duplicate Workshop transaction ID: " + id);
+            return compact;
+        }
+
+        internal static string CreateTransaction(string game, string id)
+        {
+            if (FindTransaction(game, id) != null) throw new InvalidOperationException("Plan has already been staged.");
+            string directory = WorkshopPaths.Inside(ShortTransactions(game), id);
+            Directory.CreateDirectory(directory);
+            return directory;
+        }
+
+        private static bool TransactionDirectoryExists(string path)
+        {
+            try {
+                if ((File.GetAttributes(path) & FileAttributes.Directory) == 0)
+                    throw BlockedTransactionPath("Workshop transaction path is not a directory: " + path);
+                return true;
+            } catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }
+
+        private static InvalidDataException BlockedTransactionPath(string message)
+        {
+            var exception = new InvalidDataException(message);
+            WorkshopDiagnostics.MarkBlocked(exception);
+            return exception;
+        }
+
         internal static string ReceiptPath(string game, ulong id) => WorkshopPaths.Inside(StateRoot(game), "Receipts/" + id.ToString(CultureInfo.InvariantCulture) + ".json");
         internal static string CurrentHash(string path) => File.Exists(path) ? WorkshopInventory.Hash(path) : "missing";
         internal static WorkshopReceipt ReadReceipt(string game, ulong id)

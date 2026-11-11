@@ -125,7 +125,6 @@ namespace APIShared
                     setUpHook.Install(typeof(MainViewModel), nameof(MainViewModel.setUpInbuilding), typeof(void),
                         new[] { typeof(int), typeof(int) }, OnSetUp, "BuildingPanelExtensions.setUpInbuilding");
                     PresentationEvents.SetGuiChecksPost(guiPost);
-                    APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
                     missionEndSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(OnMissionEnded);
                     hooksInstalled = true;
                     TryLog(false, "Building panel extension refresh hooks installed (setUpInbuilding and GuiChecks Post).");

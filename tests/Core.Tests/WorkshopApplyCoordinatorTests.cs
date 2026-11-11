@@ -6,6 +6,22 @@ namespace APIShared.Core.Tests;
 [TestClass]
 public sealed class WorkshopApplyCoordinatorTests
 {
+    [TestMethod]
+    public void ConfirmedManualInstallHandsOffOnlyAtShutdownAndOnlyOnce()
+    {
+        var handoff = new WorkshopShutdownHandoff();
+        int launches = 0;
+        handoff.Run();
+        handoff.Queue(() => launches++);
+        Assert.IsTrue(handoff.Pending);
+        Assert.AreEqual(0, launches);
+        Assert.ThrowsExactly<InvalidOperationException>(() => handoff.Queue(() => launches += 10));
+        handoff.Run();
+        handoff.Run();
+        Assert.AreEqual(1, launches);
+        Assert.IsFalse(handoff.Pending);
+    }
+
     private static Task<WorkshopOperation> Failed(WorkshopOperation operation)
     {
         operation.Set(WorkshopOperationState.Failed, "handoff failed");

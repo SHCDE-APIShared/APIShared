@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><StartupObject>Program</StartupObject><IsTestProject>false</IsTestProject><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><LangVersion>latest</LangVersion><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" /><Compile Include="Boundary.cs" />
+    <Compile Include="../../src/Health/HealthContracts.cs" /><Compile Include="../../src/Health/HealthModifiers.cs" />
+    <Compile Include="../../src/Health/HealthArithmetic.cs" /><Compile Include="../../src/Health/HealthSaveState.cs" /><Compile Include="../../src/Health/HealthRuntime.cs" />
+    <Compile Include="../../src/Modifiers/ValueModifiers.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" />
+  </ItemGroup>
+</Project>

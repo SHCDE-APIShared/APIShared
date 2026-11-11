@@ -24,22 +24,53 @@ service installs it; the spans are listed there and built in
 registration fails that service closed like an occupied entry.
 
 Capability failures remain independent. Hash-bound catalogs, live-byte validation
-and the existing unique-pattern resolution policy determine support. A pattern
+and the existing unique-pattern resolution policy determine support. Resolvers that
+already require the supported hash accept a pattern match at its audited reference
+RVA without rescanning the mapped image (`CompiledBytePattern.FindUniqueAtReference`;
+the full scan proved uniqueness for that hash and costs about 70 ms at startup); any
+other bytes keep the full unique scan. A pattern
 match is not permission to bypass function, layout, overlap or backend validation.
 Game or Extender version numbers alone are not evidence of native compatibility.
 
 ## Hook backend contracts
 
+The single audited exception is the [Fixes wheat-sale startup correction](FIXES_COMPATIBILITY.md):
+one validated displacement byte for the legacy prefix, or one fully validated
+prefix replacement for the division variant, during synchronous pre-game
+initialization under the engine lock. The user-authorized extension of 2026-10-26
+retains the allocation, native entry, displaced code and return. It permits no
+general repatching, later retry or teardown undo.
+
 Published hooks remain installed for the process lifetime. Activation changes are
 logical gates; inactive callbacks preserve the original behavior. Installation
-rollback is limited to a candidate that has not completed installation.
+rollback is limited to a prepared candidate before the first patch activation attempt.
+An activation attempt is irreversible even when it throws: the backend may already
+have made executable code reachable. Installation success is not the publication boundary.
 
 A native call can enter a detour as soon as its patch is written, while RedBird's
 default commit attaches the detour handles only after writing every patch. Detours
 whose callbacks read a handle or its original therefore commit with
 `InstallOnCommit = false`, publish that handle, and only then write their patches
-through `NativeHookPublication.Enable` (issue #28). A failed candidate has its
-patches removed before its handle is unpublished.
+through `NativeHookPublication.Enable` (issue #28). Before the first activation
+attempt, a shared publication state permanently roots the transaction, handles and
+callback owner. A later activation or validation failure stops installation without
+disabling, disposing or unpublishing anything, and retains the native-site claims.
+Only a candidate that has never attempted activation may be disposed and release
+its claims. Full feature readiness follows all patch writes and post-write checks;
+until then, and after failure, callbacks preserve the original path. Subsequent
+requests report the retained failure instead of retrying a partial installation.
+Gate-routing providers must retain their supplied buffers even when installation
+throws; published callbacks may still access them for the rest of the process.
+
+RedBird's NativeX64 detour backend suspends every other process thread around each
+patch (about 60 ms per detour). APIShared-owned detours skip that suspension only
+inside `NativeStartupPatchWindow`: the synchronous run that raises
+`CrusaderLibrary.LibraryLoaded`, on the thread that started APIShared's handler,
+until the next Unity main-thread turn. This covers APIShared's own startup detours
+and shared detours that consumers request from their own `LibraryLoaded` handlers.
+No simulation, AI, pathing, market or unit-speech code has run at that point, and
+the Script Extender writes its own detours there without suspension. Every other
+installation keeps suspension; scheme, jump and chaining options never change.
 
 RedBird inline-hook size is a minimum: actual displacement is instruction-aligned
 and can exceed the requested size. Function detours have a separate scheme-dependent
@@ -47,18 +78,24 @@ contract. Validate the real backend, complete displaced range, incoming branches
 continuation and ABI before publishing. Context register masks must preserve live
 registers; SIMD state and flags need separate verification. Do not assume a context
 wrapper preserves the original flags. Keep assembler labels valid and decode emitted
-stubs, not only their intended pseudo-code.
+stubs, not only their intended pseudo-code. APIShared's purely native inline stubs share
+these checks (length probe, expected stub, installed jump and padding) and their
+claim/prepare/publish/rollback steps through `Core/Internal/Native/NativeInlineStub` and
+`NativeInlineStubGroup`; each owner keeps its own check order and diagnostics.
 
-The gatehouse centered-distance replacement loads both unit coordinates before
-using `cdq`, because `cdq` overwrites EDX and would otherwise destroy the live record
-offset. Timing and automation share coordinated ranges; changes must preserve their
-non-overlap and the original inactive paths. Existing backend tests execute productive
-stubs on isolated buffers, never on another running game's executable pages.
+The gatehouse centered-distance replacement uses the signed begin tile and
+the audited square grid size. Each axis uses begin * 8 + size * 4 in unit world
+coordinates, where tile centers are at tile * 8 + 4. The engine selects the access coordinates
+independently, and they can move around the footprint. The stub loads both unit
+coordinates before the first `cdq` overwrites the unit offset. Timing and
+automation share coordinated ranges. Backend tests execute the production stubs
+with the audited native layout and verify their Vanilla paths.
 
 Market queries validate each complete 31-byte function before installation. Only
 the audited image and NativeX64 Indirect schema are accepted: six patch bytes
 displace ten instruction-aligned bytes. Validation checks the target, patch form,
-pointer slot, hook entry and trampoline continuation before publication. Unknown
+pointer slot, hook entry and trampoline continuation before feature readiness. These
+post-write checks cannot authorize rollback. Unknown
 images or occupied entries fail closed. The helpers serve AI affordability, trade
 execution and ally valuations; replacements must preserve consistent policy across
 those callers. See [market query semantics](API_CATALOG.md#native-market-price-queries).

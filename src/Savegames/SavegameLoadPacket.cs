@@ -26,6 +26,36 @@ namespace APIShared
         internal string Reason;
     }
 
+    // Maps use their own Extender channel and fingerprint version. The payload layout
+    // is shared with save readiness, whose protocol version remains unchanged.
+    [MessagePackFormatter(typeof(MapRecordReadinessPacketFormatter))]
+    internal sealed class MapRecordReadinessPacket
+    {
+        internal const int LegacyMapVersion = 2;
+        internal const int PreviousVersion = 3;
+        internal const int CurrentVersion = 4;
+        internal const int ObservationOperation = 4;
+        internal SavegameLoadPacket Value;
+    }
+
+    internal sealed class MapRecordReadinessPacketFormatter : IMessagePackFormatter<MapRecordReadinessPacket>
+    {
+        private readonly SavegameLoadPacketFormatter formatter = new SavegameLoadPacketFormatter();
+
+        public MapRecordReadinessPacketFormatter() { }
+
+        public void Serialize(ref MessagePackWriter writer, MapRecordReadinessPacket value, MessagePackSerializerOptions options)
+            => formatter.Serialize(ref writer, value?.Value, options);
+
+        public MapRecordReadinessPacket Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
+        {
+            // Old proposals keep their identity only for a scoped cancellation in the sender's version.
+            var value = SavegameLoadPacketFormatter.Read(ref reader, MapRecordReadinessPacket.CurrentVersion,
+                MapRecordReadinessPacket.PreviousVersion, MapRecordReadinessPacket.LegacyMapVersion);
+            return value == null ? null : new MapRecordReadinessPacket { Value = value };
+        }
+    }
+
     // Protocol 1 is a nine-element array starting with the operation. Protocol 2 and every later
     // version start with the version and never use nine elements, so each build recognizes a
     // mismatched peer instead of misreading it. A packet from an unknown later version keeps only its
@@ -66,6 +96,10 @@ namespace APIShared
         }
 
         public SavegameLoadPacket Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
+            => Read(ref reader, SavegameLoadPacket.CurrentVersion);
+
+        internal static SavegameLoadPacket Read(ref MessagePackReader reader, int currentVersion,
+            int? previousVersion = null, int? legacyMapVersion = null)
         {
             if (reader.TryReadNil()) return null;
             int fields = reader.ReadArrayHeader();
@@ -74,7 +108,7 @@ namespace APIShared
             {
                 if (fields < 1) throw new InvalidOperationException("Unsupported save readiness packet.");
                 version = reader.ReadInt32();
-                if (version != SavegameLoadPacket.CurrentVersion || fields != CurrentFields)
+                if (fields != CurrentFields || (version != currentVersion && version != previousVersion && version != legacyMapVersion))
                 {
                     for (int i = 1; i < fields; i++) reader.Skip();
                     return new SavegameLoadPacket { Version = version, Operation = -1 };

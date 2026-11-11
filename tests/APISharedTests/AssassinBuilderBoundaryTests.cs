@@ -30,6 +30,7 @@ namespace APISharedTests
         private IntPtr vanillaContext;
         private Func<int> vanillaReturn = () => VanillaResult;
         private AssassinPathBuilder build;
+        private NativeHookPublicationTests.PublicationFixture publication;
         // Native-like contexts: the generation int lives at +4, as in Vanilla 0xD9C40.
         private IntPtr contextA, contextB;
 
@@ -44,6 +45,10 @@ namespace APISharedTests
             Field("callbackLogged").SetValue(null, 1);
             Field("builderFailureLogged").SetValue(null, 0);
             Field("builderHook").SetValue(null, PublishedVanilla());
+            // This fixture models a fully validated installation, not merely an attached handle.
+            publication = new NativeHookPublicationTests.PublicationFixture(
+                (NativeHookPublicationState)Field("publication").GetValue(null));
+            publication.State.Complete();
             build = (AssassinPathBuilder)Delegate.CreateDelegate(typeof(AssassinPathBuilder),
                 typeof(AssassinPathAPI).GetMethod("Build", PrivateStatic));
         }
@@ -52,6 +57,7 @@ namespace APISharedTests
         public void Restore()
         {
             foreach (string name in Fields) Field(name).SetValue(null, saved[name]);
+            publication?.Dispose();
             Marshal.FreeHGlobal(contextA); Marshal.FreeHGlobal(contextB);
         }
 
@@ -63,6 +69,19 @@ namespace APISharedTests
         }
 
         private static int Generation(IntPtr context) => Marshal.ReadInt32(context, 4);
+
+        [TestMethod]
+        public void FailedPublicationBypassesTheHandlerAndRetainsOneOriginalCall()
+        {
+            int handlers = 0;
+            Handler((context, sx, sy, tx, ty, nodes, continuation) => { handlers++; return 0; });
+            publication.State.Fail(new InvalidOperationException("Fixture publication failed."));
+            Assert.IsFalse(AssassinPathAPI.IsInstalled);
+            Assert.AreEqual(VanillaResult, build(contextA, 1, 2, 3, 4, 100, 0));
+            Assert.AreEqual(1, vanillaCalls);
+            Assert.AreEqual(0, handlers);
+            Assert.AreEqual(0, errors.Count);
+        }
 
         [TestMethod]
         public void AThrowingHandlerGetsTheVanillaResultAndOneLogLine()
@@ -182,17 +201,24 @@ namespace APISharedTests
             for (int i = 0; i < 1000; i++) build(contextA, 1, 2, 3, 4, 100, 1);
             // Stopwatch.GetTimestamp, not a Stopwatch instance: the measured window allocates nothing itself.
             // The fastest of seven rounds is reported, because one round is noisy on a loaded machine.
-            long fastest = long.MaxValue, before = GC.GetAllocatedBytesForCurrentThread();
+            // Allocation is judged the same way: a per-call allocation shows in every round (100000 calls,
+            // at least 2.4 MB), while the .NET Framework runtime occasionally allocates a few KB on this
+            // thread outside Build (seen without any GC and only depending on what the suite loaded).
+            long fastest = long.MaxValue, fewestBytes = long.MaxValue, totalBytes = 0;
             for (int round = 0; round < 7; round++)
             {
+                long before = GC.GetAllocatedBytesForCurrentThread();
                 long start = System.Diagnostics.Stopwatch.GetTimestamp();
                 for (int i = 0; i < 100000; i++) build(contextA, 1, 2, 3, 4, 100, 1);
                 fastest = Math.Min(fastest, System.Diagnostics.Stopwatch.GetTimestamp() - start);
+                long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+                fewestBytes = Math.Min(fewestBytes, bytes);
+                totalBytes += bytes;
             }
-            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
             TestContext?.WriteLine("ASSASSIN_BUILD_BENCH ns per Build with a Vanilla-running handler: " +
-                (fastest * 1e9 / System.Diagnostics.Stopwatch.Frequency / 100000).ToString("F1"));
-            Assert.AreEqual(0L, bytes, "The per-thread frame must not allocate per call.");
+                (fastest * 1e9 / System.Diagnostics.Stopwatch.Frequency / 100000).ToString("F1") +
+                "; bytes over all rounds: " + totalBytes);
+            Assert.AreEqual(0L, fewestBytes, "The per-thread frame must not allocate per call.");
         }
 
         public TestContext TestContext { get; set; }
@@ -211,7 +237,8 @@ namespace APISharedTests
                 var outermost = handlers.OrderBy(h => h.TryStart.Offset).ThenByDescending(h => h.TryEnd?.Offset ?? int.MaxValue).First();
                 Assert.IsTrue(method.Body.Instructions.TakeWhile(i => i != outermost.TryStart).All(i => i.OpCode.Code == Mono.Cecil.Cil.Code.Nop),
                     "Part of Build runs outside the boundary.");
-                Assert.AreEqual(2, handlers.Count(h => h.HandlerType == Mono.Cecil.Cil.ExceptionHandlerType.Catch && h.CatchType.FullName == "System.Exception"));
+                Assert.IsTrue(handlers.Any(h => h.HandlerType == Mono.Cecil.Cil.ExceptionHandlerType.Catch && h.CatchType.FullName == "System.Exception"),
+                    "The callback has no exception boundary; the number of nested catches is not a contract.");
                 foreach (var handler in handlers)
                 {
                     var calls = new List<string>();

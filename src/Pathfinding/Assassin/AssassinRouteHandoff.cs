@@ -3,6 +3,19 @@ using System.Diagnostics;
 
 namespace APIShared
 {
+    /// <summary>One single-unit route output frame opened by <see cref="AssassinPathAPI.BeginRouteOutput"/>.</summary>
+    public sealed class AssassinRouteOutputFrame
+    {
+        private readonly AssassinRouteHandoff frame;
+        internal AssassinRouteOutputFrame(AssassinRouteHandoff frame) { this.frame = frame; }
+        /// <summary>Publishes a staged route after re-validating identity and route, otherwise returns
+        /// <paramref name="originalResult"/> unchanged. Call once with the original builder result while this
+        /// frame is current; a frame without a staged route always returns the original result.</summary>
+        public int Complete(int originalResult) => frame.Complete(originalResult);
+        /// <summary>Closes this frame and restores the outer one. Throws when this frame is not current.</summary>
+        public void Leave() => frame.Leave();
+    }
+
     // A synchronous F4930 frame, never a command-global or cross-unit route cache.
     internal sealed class AssassinRouteHandoff
     {

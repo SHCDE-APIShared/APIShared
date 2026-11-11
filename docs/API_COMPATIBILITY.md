@@ -1,5 +1,11 @@
 # API compatibility baseline
 
+The compiled-surface comparison that the 2026-10-22 NativeKnowledge source integration
+left open has been run. On 2026-11-03, `build.bat /workspace /tests:full /nopause /noinstall`
+built commit `7beefa3` (0.26.0; only the `info.json` changelog text changed in the working
+tree) and passed: `PublicSurfaceMatchesTheBaseline` and the other `APISharedTests` (536 passed,
+the opt-in friend-consumer rescan skipped) and all 361 Core.Tests cases.
+
 The checked-in baseline catches accidental binary and source breaks of the managed API,
 including the internals that `InternalsVisibleTo` consumers compile against. Intentional
 breaks remain possible under the [maintainer policy](../CONTRIBUTING.md#compatibility-and-releases);
@@ -16,7 +22,9 @@ this guide explains how to record them. Native contracts are covered by
 Each `InternalsVisibleTo` grant except `APISharedTests` needs exactly one pin file, and each
 pin file needs its grant. Pinned internals are compatibility-relevant until a public
 replacement exists and the consumer builds that use them are no longer supported. Each pin
-file header names the consumer builds it was scanned from.
+file header names the consumer builds it was scanned from. Consumer mods use the public API;
+a friend grant is an exception that needs a documented reason. Without grants, the friend
+checks have nothing to compare and pass.
 
 `PluginVersion` is recorded without its value, because the value changes with every release.
 
@@ -75,7 +83,7 @@ Scan compiled consumer assemblies, such as release assets or a local consumer bu
 the current build:
 
 ```powershell
-$env:APISHARED_CONSUMER_SCAN = 'path\to\BugfixesAndQoL.dll;path\to\MoatMove.dll'
+$env:APISHARED_CONSUMER_SCAN = 'path\to\FriendConsumer.dll'
 dotnet test tests/APISharedTests/APISharedTests.csproj --configuration Release --filter "FullyQualifiedName~ScannedFriendConsumersBindOnlyPinnedInternals"
 Remove-Item Env:APISHARED_CONSUMER_SCAN
 ```

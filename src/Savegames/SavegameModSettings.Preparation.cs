@@ -19,12 +19,14 @@ namespace APIShared
         private static readonly Dictionary<string, Dictionary<string, byte[]>> preparedSnapshots =
             new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
         private static string preparedPath;
+        private static string preparedApplicationContext;
         private static SavegameModSettingsRecord preparedRecord;
         private static bool preparedApplied, preparedTransferred;
         internal static SavegameModSettingsRecord PreparedRecordForStart => preparedRecord;
 
         private static void EnterPreparedPreset(string id, IModSettingsPresetEndpoint endpoint, Dictionary<string, byte[]> snapshot)
         {
+            if (ModSettingsApplication.GetMissionHostProperties(endpoint).Length == 0) return;
             // Re-entering would replace suspended preset attribution with the
             // temporary source. Keep one entry per participant and transaction.
             if (preparedEndpoints.Values.Contains(endpoint) && endpoint.IsMissionPresetActive) return;
@@ -34,7 +36,7 @@ namespace APIShared
             preparedSnapshots[id] = snapshot.ToDictionary(x => x.Key, x => x.Value == null ? null : (byte[])x.Value.Clone(), StringComparer.Ordinal);
             endpoint.System_EnterMissionPreset(snapshot, "Savegame", false);
             if (!endpoint.IsMissionPresetActive) throw new InvalidOperationException("Savegame preset did not become active.");
-            foreach (var property in ModSettingsApplication.GetHostProperties(endpoint))
+            foreach (var property in ModSettingsApplication.GetMissionHostProperties(endpoint))
             {
                 if (!snapshot.TryGetValue(property.Name, out var bytes)) throw new InvalidDataException("Missing prepared host value: " + id + "." + property.Name);
                 var expected = MessagePackSerializer.Deserialize(property.PropertyType, bytes);
@@ -60,8 +62,6 @@ namespace APIShared
             if (multiplayer) throw new InvalidOperationException("Multiplayer save settings have not been prepared.");
             var participants = FindParticipants();
             var values = legacyChoice || useChosenCurrent && IsCurrentChoiceAllowed(loaded) ? chosenCurrent : loaded?.Mods;
-            bool locked = loaded?.LockedByConflict == true;
-            if (locked) values = null;
             // This is local save restoration, not a client edit or network receive.
             // The installed internal scope is signature-checked; callback errors
             // are rethrown because the Extender otherwise logs and swallows them.
@@ -69,7 +69,7 @@ namespace APIShared
             {
                 foreach (var entry in participants)
                     EnterPreparedPreset(entry.Key, entry.Value.Endpoint, ResolveStartupSnapshot(entry.Key,
-                        entry.Value, loaded, values, chosenCurrent, locked));
+                        entry.Value, loaded, values, chosenCurrent));
             });
             preparedPath = chosenPath;
             preparedRecord = loaded;
@@ -85,7 +85,7 @@ namespace APIShared
         {
             if (!string.Equals(preparedPath, Normalize(path), StringComparison.OrdinalIgnoreCase) || !preparedApplied)
             {
-                if (!string.Equals(chosenPath, Normalize(path), StringComparison.OrdinalIgnoreCase)) PrepareLoad(path, false);
+                if (!string.Equals(chosenPath, Normalize(path), StringComparison.OrdinalIgnoreCase)) PrepareLoad(path, true);
                 if (!PrepareLoadCore(path, useChosenCurrent, true))
                     throw new InvalidOperationException("Savegame configuration is not ready; restart or backend synchronization is required.");
             }
@@ -112,14 +112,16 @@ namespace APIShared
             }
         }
 
-        internal static string CaptureHostFingerprint()
+        internal static string CaptureHostFingerprint() => SavegameLoadAgreement.Fingerprint(CaptureHostSettingsForReadiness());
+
+        internal static Dictionary<string, Dictionary<string, byte[]>> CaptureHostSettingsForReadiness()
         {
-            var values = CaptureCompatibleHostSettings();
             var participants = FindParticipants();
+            var values = CaptureCompatibleHostSettings(participants);
             if (values.Count != participants.Count || participants.Any(p =>
                 !values.TryGetValue(p.Key, out var properties) || properties.Count != p.Value.Properties.Length))
                 throw new InvalidDataException("Incomplete host settings snapshot.");
-            return SavegameLoadAgreement.Fingerprint(values);
+            return values;
         }
 
         internal static void AcceptPreparedClient(string path, SavegameModSettingsRecord record)
@@ -130,7 +132,7 @@ namespace APIShared
                 // The fingerprint was checked after authenticated host sync.
                 // Capture all host values plus this client's own personal values.
                 var snapshot = ResolveStartupSnapshot(entry.Key, entry.Value, null,
-                    CaptureCompatibleHostSettings(), null, false);
+                    CaptureCompatibleHostSettings(), null);
                 EnterPreparedPreset(entry.Key, entry.Value.Endpoint, snapshot);
             }
             preparedPath = Normalize(path);
@@ -150,26 +152,23 @@ namespace APIShared
                 try { entry.Value.System_ExitMissionPreset(); }
                 catch (Exception error) { NativeApiLog.Error(log, "Could not restore own preset for " + entry.Key + ": " + error); }
             }
-            if (preparedEndpoints.Count != 0) ModSettingsApplication.ExitContext();
+            if (preparedEndpoints.Count != 0 || preparedApplicationContext != null &&
+                ModSettingsApplication.ContextId == preparedApplicationContext)
+                ModSettingsApplication.ExitContext();
             ClearPreparation();
         }
 
         private static void ClearPreparation()
         {
             preparedEndpoints.Clear(); preparedPath = null; preparedRecord = null;
+            preparedApplicationContext = null;
             preparedSnapshots.Clear();
             preparedApplied = false; preparedTransferred = false;
         }
 
         private static void RunLocalRestore(Action action)
         {
-            var method = typeof(GameXAMLManagerAPI).GetMethod("RunWithChangeOrigin", BindingFlags.Instance | BindingFlags.NonPublic,
-                null, new[] { typeof(LobbyModSettingsChangeOrigin), typeof(Action) }, null);
-            if (method == null || method.ReturnType != typeof(void)) throw new MissingMethodException("Extender restore-origin scope is unavailable.");
-            ExceptionDispatchInfo failure = null;
-            Action guarded = () => { try { action(); } catch (Exception error) { failure = ExceptionDispatchInfo.Capture(error); } };
-            method.Invoke(GameXAMLManagerAPI.Instance, new object[] { LobbyModSettingsChangeOrigin.InitialLoad, guarded });
-            failure?.Throw();
+            LobbySettingsRestoreScope.Execute(action);
         }
     }
 }

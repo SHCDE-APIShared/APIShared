@@ -41,6 +41,8 @@ namespace APIShared.ModSettings
             if (HasActivationFailures) throw new InvalidOperationException(string.Join("; ", activationFailures.Select(x => x.Key + ": " + x.Value)) + " Restart the game before starting.");
         }
         private static string journalPath, contextId = "";
+        private static PersonalDataFile journalFile;
+        private static BepInEx.Logging.ManualLogSource journalLog;
         private static Dictionary<string, Dictionary<string, byte[]>> resume;
         private static string resumeContext;
         private static bool consumed;
@@ -56,12 +58,11 @@ namespace APIShared.ModSettings
             if (endpoints.TryGetValue(id, out var previous) && !ReferenceEquals(previous, endpoint))
                 throw new InvalidOperationException("Duplicate configuration endpoint: " + id);
             endpoints[id] = endpoint;
-            if (journalPath == null)
 #if API_SHARED_PRESET_TESTS
+            if (journalPath == null)
                 journalPath = Path.Combine(Path.GetDirectoryName(assemblyPath), "RestartPreparation.json");
-#else
-                journalPath = Path.Combine(BepInEx.Paths.ConfigPath, "APIShared", "RestartPreparation.json");
 #endif
+            EnsureJournalPath();
         }
 
         /// <summary>Discovers host-owned settings, including dynamic descriptors adapted for existing schema consumers.</summary>
@@ -75,16 +76,94 @@ namespace APIShared.ModSettings
                     !x.GetCustomAttributes(true).Any(a => a.GetType().Name == "DoNotPersistAttribute")).ToArray();
         }
 
+        /// <summary>Discovers host settings owned by mission sources. Network host ownership is unchanged.</summary>
+        public static PropertyInfo[] GetMissionHostProperties(object endpoint)
+        {
+            if (endpoint is PresetLobbyModSettingsViewModel model)
+            {
+                var independent = new HashSet<string>(model.System_GetPresetSettingDescriptors()
+                    .Where(item => item.MissionIndependent).Select(item => item.PropertyName), StringComparer.Ordinal);
+                return GetHostProperties(endpoint).Where(property => !independent.Contains(property.Name) &&
+                    !property.IsDefined(typeof(MissionIndependentAttribute), true)).ToArray();
+            }
+            return GetHostProperties(endpoint).Where(property =>
+                !property.IsDefined(typeof(MissionIndependentAttribute), true)).ToArray();
+        }
+
         /// <summary>Whether an unconsumed durable startup preparation exists; may read and validate its journal.</summary>
         public static bool HasRestartPreparation
         {
-            get { EnsureJournalPath(); return resume != null || (journalPath != null && File.Exists(journalPath)); }
+            get
+            {
+                try { return resume != null || ReadJournalBytes() != null; }
+                // Noesis binds this getter directly. Unresolved storage remains visible; the
+                // description reports its error, and launch/read/discard still enforce safety gates.
+                catch (Exception) { return true; }
+            }
         }
+        // The static coordinator and its callers survive the plugin's startup cleanup.
+        internal static void InitializeJournalStorage(BepInEx.Logging.ManualLogSource logger) => journalLog = logger;
+
+        // The normalized configuration root preserves the old journal's installation boundary.
+        // Plugin versions and installation subfolders do not enter the identity.
+        internal static PersonalDataFile CreateJournalStorage(string configPath)
+        {
+            string identity = PersonalDataIO.Normalize(configPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Replace('/', '\\').ToUpperInvariant();
+            string installationId = Digest(identity).Substring(0, 16).ToLowerInvariant();
+            string documents = PersonalDataFile.TestDocumentsDirectory != null
+                ? PersonalDataFile.TestDocumentsDirectory() : PersonalDataFile.GetDocuments();
+            string target = Path.Combine(documents, "SHCDE", "APIShared", "Inst", installationId, "RestartPreparation.json");
+            return new PersonalDataFile(target, Path.Combine(configPath, "APIShared", "RestartPreparation.json"),
+                ReportJournalStorage, identity,
+                maximumReadBytes: 8L * 1024 * 1024);
+        }
+
+        private static void ReportJournalStorage(string message)
+        {
+            if (message.Contains("failed") || message.Contains("pending") || message.Contains("retained"))
+                NativeApiLog.Warning(journalLog, "Restart preparation storage: " + message);
+            else NativeApiLog.Info(journalLog, "Restart preparation storage: " + message);
+        }
+
         private static void EnsureJournalPath()
         {
+            if (journalFile != null && string.Equals(journalFile.Path, journalPath, StringComparison.Ordinal)) return;
 #if !API_SHARED_PRESET_TESTS
-            if (journalPath == null) journalPath = Path.Combine(BepInEx.Paths.ConfigPath, "APIShared", "RestartPreparation.json");
+            journalFile = CreateJournalStorage(BepInEx.Paths.ConfigPath);
+            journalPath = journalFile.Path;
+#else
+            // Classic fixtures explicitly select their isolated file. Storage/migration tests
+            // use CreateJournalStorage with injected Documents and configuration roots.
+            journalFile = journalPath == null ? null : new PersonalDataFile(journalPath, null,
+                maximumReadBytes: 8L * 1024 * 1024);
 #endif
+        }
+
+        private static byte[] ReadJournalBytes()
+        {
+            EnsureJournalPath();
+            return journalFile?.ReadAllBytes();
+        }
+
+        private static bool IsJournalSizeFailure(Exception error)
+        {
+            for (; error != null; error = error.InnerException)
+                if (error is PersonalDataSizeException) return true;
+            return false;
+        }
+
+        private static void DeleteJournal(bool explicitDiscard = false)
+        {
+            EnsureJournalPath();
+            try { journalFile?.Delete(); }
+            catch (IOException error) when (explicitDiscard && IsJournalSizeFailure(error))
+            {
+                // This is a user-authorized reset, never an ordinary consume/rollback path.
+                // The store revalidates receipts/identity/access and preserves oversized originals.
+                journalFile.ResetAllBytes(Array.Empty<byte>());
+                journalFile.Delete();
+            }
         }
         /// <summary>Returns a user-facing explanation of startup preparation, including damaged journal diagnostics.</summary>
         public static string DescribeRestartPreparation()
@@ -148,7 +227,8 @@ namespace APIShared.ModSettings
         public static bool Commit(string id)
         {
             if (!endpoints.TryGetValue(id, out var endpoint)) return false;
-            byte[] previous = journalPath != null && File.Exists(journalPath) ? File.ReadAllBytes(journalPath) : null;
+            endpoint.PersistPersonalConfiguration();
+            byte[] previous = ReadJournalBytes();
             var previousSources = preparedSources; var previousResume = resume; var previousFingerprints = personalFingerprints; string previousContext = resumeContext;
             bool written = contextId.Length != 0 && endpoint.System_ConfigurationNeedsRestart();
             if (written) SavePreparation(); // Durable intent precedes package publication.
@@ -157,7 +237,7 @@ namespace APIShared.ModSettings
             {
                 if (written)
                 {
-                    if (previous == null) File.Delete(journalPath);
+                    if (previous == null) DeleteJournal();
                     else PublishJournal(previous);
                     preparedSources = previousSources; resume = previousResume; personalFingerprints = previousFingerprints; resumeContext = previousContext;
                 }
@@ -169,11 +249,12 @@ namespace APIShared.ModSettings
         public static bool PrepareLaunch()
         {
             RequireActivatedIntegrations();
+            foreach (var endpoint in endpoints.Values.ToArray()) endpoint.PersistPersonalConfiguration();
             ReadJournal();
             if (resume != null && !consumed && resumeContext == contextId)
                 foreach (string id in resume.Keys)
                     if (!endpoints.ContainsKey(id)) throw new InvalidDataException("Required settings provider is missing: " + id);
-            byte[] previous = journalPath != null && File.Exists(journalPath) ? File.ReadAllBytes(journalPath) : null;
+            byte[] previous = ReadJournalBytes();
             var previousSources = preparedSources; var previousResume = resume;
             var previousPersonal = personalFingerprints;
             string previousContext = resumeContext;
@@ -196,7 +277,7 @@ namespace APIShared.ModSettings
             {
                 if (written)
                 {
-                    if (previous == null) File.Delete(journalPath); else PublishJournal(previous);
+                    if (previous == null) DeleteJournal(); else PublishJournal(previous);
                     preparedSources = previousSources; resume = previousResume; personalFingerprints = previousPersonal; resumeContext = previousContext;
                 }
                 throw;
@@ -209,7 +290,7 @@ namespace APIShared.ModSettings
             if (resume != null && resumeContext != contextId) return;
             // Keep active settings and the identity available for an in-session mission restart.
             consumed = true;
-            if (journalPath != null && File.Exists(journalPath)) File.Delete(journalPath);
+            DeleteJournal();
             resume = null;
             NotifyPreparationChanged();
         }
@@ -243,7 +324,7 @@ namespace APIShared.ModSettings
             if (personalFingerprints != null)
                 unavailable.AddRange(personalFingerprints.Keys.Where(id => !endpoints.ContainsKey(id)));
             foreach (var endpoint in endpoints.Values) endpoint.DiscardApplicationPackage();
-            if (journalPath != null && File.Exists(journalPath)) File.Delete(journalPath);
+            DeleteJournal(explicitDiscard: true);
             resume = null; resumeContext = null; consumed = false;
             personalFingerprints = null; preparedSources = null;
             foreach (var endpoint in endpoints.Values) endpoint.RefreshConfigurationBindings();
@@ -254,12 +335,20 @@ namespace APIShared.ModSettings
 #if API_SHARED_PRESET_TESTS
         internal static void ResetForTests(string path)
         {
-            endpoints.Clear(); journalPath = path; resume = null; resumeContext = null;
+            endpoints.Clear(); journalPath = path; journalFile = null; resume = null; resumeContext = null;
             activationFailures.Clear(); personalFingerprints = null; preparedSources = null;
             contextId = ""; consumed = false;
         }
+
+        internal static string ResetJournalStorageForTests(string configPath)
+        {
+            ResetForTests(null);
+            journalFile = CreateJournalStorage(configPath);
+            return journalPath = journalFile.Path;
+        }
 #endif
 
+        // No null check needed: SavePreparation and ReadJournal throw before null can arrive here.
         private static Dictionary<string, byte[]> Clone(Dictionary<string, byte[]> source) =>
             source.ToDictionary(x => x.Key, x => (byte[])x.Value.Clone(), StringComparer.Ordinal);
 
@@ -289,26 +378,55 @@ namespace APIShared.ModSettings
             preparedSources = sources; resume = snapshots; personalFingerprints = fingerprints; resumeContext = contextId; consumed = false;
         }
 
+        // A legitimate personal edit must not invalidate an already prepared mission restart.
+        // Validate before persistence; update only its ownership fingerprint afterwards, retaining
+        // the prepared host snapshot and source metadata rather than capturing a newer draft.
+        internal static void ValidatePersonalPersistence(string id)
+        {
+            ReadJournal();
+            if (resume == null || consumed || personalFingerprints == null || !personalFingerprints.TryGetValue(id, out var expected)) return;
+            // Personal values are not mission-supplied: only an unexplained change of the
+            // own configuration is a conflict, independently of the currently entered context.
+            if (!endpoints.TryGetValue(id, out var endpoint) || endpoint.System_OwnConfigurationFingerprint() != expected)
+                throw new InvalidDataException("Personal settings changed after restart preparation: " + id);
+        }
+
+        internal static void PersonalValuesPersisted(string id)
+        {
+            if (resume == null || consumed || personalFingerprints == null || !personalFingerprints.ContainsKey(id)) return;
+            var fingerprints = new Dictionary<string, string>(personalFingerprints, StringComparer.Ordinal);
+            fingerprints[id] = endpoints[id].System_OwnConfigurationFingerprint();
+            string payload = DependencyFreeJson.Serialize(new Dictionary<string, object> {
+                ["schema"] = 1, ["context"] = resumeContext,
+                ["mods"] = resume.ToDictionary(item => item.Key, item => (object)item.Value.ToDictionary(
+                    value => value.Key, value => (object)Convert.ToBase64String(value.Value), StringComparer.Ordinal), StringComparer.Ordinal),
+                ["sources"] = preparedSources.ToDictionary(item => item.Key, item => (object)item.Value),
+                ["personal"] = fingerprints.ToDictionary(item => item.Key, item => (object)item.Value)
+            });
+            byte[] bytes = Encoding.UTF8.GetBytes(DependencyFreeJson.Serialize(new Dictionary<string, object> { ["payload"] = payload, ["sha256"] = Digest(payload) }));
+            if (bytes.Length > 8 * 1024 * 1024) throw new InvalidDataException("Restart preparation exceeds 8 MiB.");
+            PublishJournal(bytes);
+            personalFingerprints = fingerprints;
+        }
+
         private static string Digest(string text)
         {
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "");
+            return Sha256Hex.Of(Encoding.UTF8.GetBytes(text));
         }
 
         private static void PublishJournal(byte[] bytes)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(journalPath));
-            string temporary = journalPath + ".tmp";
-            using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
-            { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
-            if (File.Exists(journalPath)) File.Replace(temporary, journalPath, null); else File.Move(temporary, journalPath);
+            EnsureJournalPath();
+            if (journalFile == null) throw new InvalidOperationException("Restart storage is not initialized.");
+            journalFile.WriteAllBytes(bytes);
         }
 
         private static void ReadJournal()
         {
-            EnsureJournalPath();
-            if (resume != null || journalPath == null || !File.Exists(journalPath)) return;
-            using (var stream = new FileStream(journalPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            if (resume != null) return;
+            byte[] bytes = ReadJournalBytes();
+            if (bytes == null) return;
+            using (var stream = new MemoryStream(bytes, false))
             {
                 if (stream.Length > 8 * 1024 * 1024) throw new InvalidDataException("Restart preparation exceeds 8 MiB.");
                 using (var reader = new StreamReader(stream))
@@ -365,7 +483,8 @@ namespace APIShared.ModSettings
             public override ParameterInfo[] GetIndexParameters() => Array.Empty<ParameterInfo>();
             public override object[] GetCustomAttributes(bool inherit) => Array.Empty<object>();
             public override object[] GetCustomAttributes(Type attributeType, bool inherit) => Array.Empty<object>();
-            public override bool IsDefined(Type attributeType, bool inherit) => attributeType == typeof(RequiresRestartAttribute) && descriptor.RequiresRestart;
+            public override bool IsDefined(Type attributeType, bool inherit) => (attributeType == typeof(RequiresRestartAttribute) && descriptor.RequiresRestart) ||
+                (attributeType == typeof(MissionIndependentAttribute) && descriptor.MissionIndependent);
         }
     }
 }

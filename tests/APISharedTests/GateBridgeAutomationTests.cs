@@ -161,6 +161,7 @@ namespace APISharedTests
                 for (int i = hooks.Count - 1; i >= 0; i--) hooks[i].Dispose();
                 VirtualFree(allocation, UIntPtr.Zero, 0x8000);
             }
+            RunDistanceOrigin(assert, installedImage);
             RunCompleteCoupling(assert, installedImage);
             RunDelayFlow(assert, installedImage);
         }

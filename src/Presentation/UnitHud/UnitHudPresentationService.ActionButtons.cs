@@ -46,6 +46,7 @@ namespace APIShared
                 actionButtonSnapshot = null;
                 hasActionButtons = true;
                 pendingPresentation = true;
+                UpdateFrameDemand();
             }
             diagnostic = Available("Own-troop action button registered for the process lifetime.");
             return true;
@@ -212,6 +213,7 @@ namespace APIShared
                 if (!MainViewModel.viewModelLoaded || !TryGetActionContext(MainViewModel.Instance, out _)) return;
                 actionPage = UnitHudActionButtonLayout.NextPage(actionPage, actionVisibleCount, actionCapacity);
                 pendingPresentation = true;
+                UpdateFrameDemand();
             };
             actionPage = 0;
         }
@@ -394,6 +396,7 @@ namespace APIShared
                 {
                     if (Visible != visible) service.actionButtonSnapshot = null;
                     Visible = visible; service.pendingPresentation = true;
+                    service.UpdateFrameDemand();
                 }
             }
             public void SetEnabled(bool enabled)
@@ -402,6 +405,7 @@ namespace APIShared
                 {
                     if (Enabled != enabled) service.actionButtonSnapshot = null;
                     Enabled = enabled; service.pendingPresentation = true;
+                    service.UpdateFrameDemand();
                 }
             }
             public void SetTooltip(string tooltip)
@@ -411,11 +415,12 @@ namespace APIShared
                 {
                     if (!string.Equals(Tooltip, tooltip, StringComparison.Ordinal)) service.actionButtonSnapshot = null;
                     Tooltip = tooltip; service.pendingPresentation = true;
+                    service.UpdateFrameDemand();
                 }
             }
             public void RequestContentRefresh()
             {
-                lock (service.sync) { Version++; service.actionButtonSnapshot = null; service.pendingPresentation = true; }
+                lock (service.sync) { Version++; service.actionButtonSnapshot = null; service.pendingPresentation = true; service.UpdateFrameDemand(); }
             }
         }
     }

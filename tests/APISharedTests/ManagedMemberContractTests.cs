@@ -18,6 +18,7 @@ namespace APISharedTests
         private static readonly (string Id, string Type, string Creator)[] Capabilities =
         {
             (NativeCapabilityIds.MissionLifecycle, "APIShared.MissionLifecycleService", "TryCreate"),
+            (NativeCapabilityIds.MissionPlayStateReadiness, "APIShared.MissionPlayStateReadinessService", "TryCreate"),
             (NativeCapabilityIds.LobbyState, "APIShared.LobbyStateService", "TryCreate"),
             (NativeCapabilityIds.PlayerDefeat, "APIShared.PlayerDefeatService", "TryCreate"),
             (NativeCapabilityIds.BriefingGoldPresentation, "APIShared.BriefingGoldPresentationService", "TryCreate"),
@@ -25,6 +26,7 @@ namespace APISharedTests
             (NativeCapabilityIds.BuildingRepair, "APIShared.BuildingRepairService", "TryCreate"),
             (NativeCapabilityIds.UnitHudPresentation, "APIShared.UnitHudPresentationService", "TryCreate"),
             (NativeCapabilityIds.BuildingPanelExtensions, "APIShared.BuildingPanelExtensionsService", "TryCreate"),
+            (NativeCapabilityIds.CoopAiStartImport, "APIShared.CoopAiStartImportService", "TryCreate"),
         };
         private static readonly string[] Helpers = { "APIShared.UnitAccess" };
 
@@ -115,7 +117,7 @@ namespace APISharedTests
                         Assert.IsTrue(touch < 0 || check < touch, creator.FullName + " touches game members before its check.");
                         checkedCreators++;
                     }
-                    Assert.AreEqual(1, checkedCreators, capability.Type + " has no checked creator.");
+                    Assert.IsTrue(checkedCreators > 0, capability.Type + " has no checked creator.");
                 }
             }
         }

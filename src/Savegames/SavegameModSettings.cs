@@ -40,6 +40,7 @@ namespace APIShared
         private static readonly object Sync = new object();
         private static ManualLogSource log;
         private static SavegameModSettingsRecord loaded;
+        // chosenCurrent/chosenPath: every writer and every reader outside Sync runs on the Unity thread.
         private static Dictionary<string, Dictionary<string, byte[]>> chosenCurrent;
         private static bool useChosenCurrent;
         private static bool legacyChoice;
@@ -48,7 +49,6 @@ namespace APIShared
         private static Func<bool> trailCustomizeProvider;
         private static bool activeTrailCustomizeAllowed;
         private static string chosenPath;
-        private static bool restoreFailed;
         private static bool initialized;
         private static readonly SavegameMissionPresetLease ActivePreset = new SavegameMissionPresetLease();
         private static IDisposable missionEndSubscription;
@@ -58,7 +58,6 @@ namespace APIShared
             lock (Sync)
             {
                 if (initialized) return;
-                APIShared.Internal.MissionEvents.SetOwner("APIShared_Serp");
                 missionEndSubscription = APIShared.Internal.MissionEvents.Ended.Subscribe(OnMissionEnded);
                 try
                 {
@@ -74,8 +73,8 @@ namespace APIShared
                 GameModeHelper.ReadSavedModeEvidence = () =>
                 {
                     bool present = TryGetRestoredMode(out GameModeKind kind,
-                        out GameModeLaunchVariant variant, out bool locked);
-                    return new SavedModeEvidence(present, kind, variant, locked);
+                        out GameModeLaunchVariant variant);
+                    return new SavedModeEvidence(present, kind, variant);
                 };
                 log = logger;
                 initialized = true;
@@ -116,7 +115,7 @@ namespace APIShared
 
         internal static bool IsCurrentChoiceAllowed(SavegameModSettingsRecord record)
         {
-            if (record == null || record.LockedByConflict) return false;
+            if (record == null) return false;
             GameModeKind kind = (GameModeKind)record.Kind;
             GameModeLaunchVariant variant = (GameModeLaunchVariant)record.Variant;
             if (kind == GameModeKind.CustomTrail || kind == GameModeKind.CoopTrail)
@@ -131,26 +130,58 @@ namespace APIShared
         public static IReadOnlyDictionary<string, IModSettingsPresetEndpoint> GetCompatibleParticipants() =>
             FindParticipants().ToDictionary(item => item.Key, item => item.Value.Endpoint, StringComparer.Ordinal);
 
+        /// <summary>Inspects the existing lobby registrations and dynamic configuration endpoints,
+        /// returning read-only metadata for accepted and rejected participants, ordered by GUID.</summary>
+        /// <remarks>Call on the Unity thread after LibraryLoaded and settings registration. No caching,
+        /// provider registration, replay, persistence or settings application occurs. The existing contract
+        /// calls each otherwise eligible lobby endpoint's disabled-snapshot factory once; factories must
+        /// not apply settings. Metadata/snapshot failures reject only that participant. Discovery source
+        /// failures propagate. Conflicting accepted providers are reported here; automatic operations and
+        /// GetCompatibleParticipants continue to throw for that conflict. Dynamic endpoints retain their
+        /// existing explicit registration contract, independent of an optional lobby panel.</remarks>
+        public static IReadOnlyList<ModSettingsParticipantInfo> GetParticipantDiagnostics() =>
+            GetParticipantDiagnostics(ModSettingsParticipantPurpose.AutomaticSavegame);
+
+        /// <summary>Inspects participants for automatic savegames or Map/Trail authoring using
+        /// the same caller-thread, snapshot-factory and read-only metadata contract as the default query.</summary>
+        /// <remarks>MissionAuthoring does not apply savegame-only exclusions. For those excluded
+        /// endpoints not represented by an explicit dynamic provider, it runs the
+        /// authoring current-value serialization probes before checking the disabled snapshot.
+        /// Consumer-specific authoring opt-outs remain with consumers.</remarks>
+        /// <exception cref="ArgumentOutOfRangeException">The purpose is not supported.</exception>
+        public static IReadOnlyList<ModSettingsParticipantInfo> GetParticipantDiagnostics(ModSettingsParticipantPurpose purpose)
+        {
+            if (purpose != ModSettingsParticipantPurpose.AutomaticSavegame && purpose != ModSettingsParticipantPurpose.MissionAuthoring)
+                throw new ArgumentOutOfRangeException(nameof(purpose));
+            return Array.AsReadOnly(InspectParticipants(purpose).OrderBy(item => item.ModGuid, StringComparer.Ordinal).ToArray());
+        }
+
         /// <summary>Records the confirmed host choice for exactly one selected save.</summary>
         public static void PrepareLoad(string savePath, bool useCurrentSettings)
         {
             ReleaseUnstartedPreparation();
             string path = Normalize(savePath);
             SavegameLoadChoiceState state = GetLoadChoiceState(path);
+            // An unreadable record loads like a legacy save (see ReadRecordForLoad).
+            bool legacy = state == SavegameLoadChoiceState.Legacy || state == SavegameLoadChoiceState.Invalid;
             Dictionary<string, Dictionary<string, byte[]>> current = CaptureCompatibleHostSettings();
             lock (Sync)
             {
                 chosenPath = path.Length == 0 ? null : path;
                 chosenCurrent = current;
-                useChosenCurrent = state == SavegameLoadChoiceState.Legacy ||
-                    state == SavegameLoadChoiceState.Selectable && useCurrentSettings;
-                legacyChoice = state == SavegameLoadChoiceState.Legacy;
+                useChosenCurrent = SavegameLoadDecision.UseCurrent(state, useCurrentSettings);
+                legacyChoice = legacy;
             }
+            NativeApiLog.Info(log, "Savegame settings source selected: file=" + path + ",recordState=" + state +
+                ",requestedCurrent=" + useCurrentSettings + ",effectiveSource=" +
+                (legacy || SavegameLoadDecision.UseCurrent(state, useCurrentSettings) ? "current-host-settings" : "saved-host-settings") +
+                ",choice=" + (legacy ? "forced-no-usable-record" : "host-choice-subject-to-author-rules") +
+                "; existing Trail author rules and current personal/client settings remain applicable.");
         }
 
         private static Dictionary<string, byte[]> ResolveStartupSnapshot(string modId, CompatibleMod participant,
             SavegameModSettingsRecord record, Dictionary<string, Dictionary<string, byte[]>> values,
-            Dictionary<string, Dictionary<string, byte[]>> current, bool locked)
+            Dictionary<string, Dictionary<string, byte[]>> current)
         {
                     Dictionary<string, byte[]> snapshot =
                         participant.Endpoint.System_CreateDisabledMissionPresetSnapshot();
@@ -158,47 +189,47 @@ namespace APIShared
                     {
                         throw new InvalidDataException("Savegame baseline unavailable: " + modId);
                     }
-                    // Player-owned and local values are outside the savegame host contract.
-                    foreach (PropertyInfo property in participant.PersonalProperties)
-                    {
-                        try
-                        {
-                            object value = property.GetValue(participant.Endpoint);
-                            if (value != null)
-                                snapshot[property.Name] = MessagePackSerializer.Serialize(property.PropertyType, value);
-                        }
-                        catch (Exception error)
-                        {
-                            MarkRestoreFailed();
-                            NativeApiLog.Error(log, "Could not preserve local setting " +
-                                modId + "." + property.Name + ": " + error.Message);
-                            throw new InvalidDataException("Cannot prepare a save without preserving personal setting " + modId + "." + property.Name, error);
-                        }
-                    }
+                    // Personal values are never captured into a save-owned mission snapshot.
+                    // Stored values and author rules are raw data of the mod version that wrote them:
+                    // move entries under declared former names before they are matched by property name.
+                    Type settingsType = participant.Endpoint.GetType();
                     if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
-                        OverlaySavedHostProperties(snapshot, participant.Properties, stored, modId);
+                        OverlaySavedHostProperties(snapshot, participant.Properties,
+                            ModSettingsMigration.ApplyRenames(settingsType, stored), modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
                         (record.Kind == (int)GameModeKind.CustomTrail || record.Kind == (int)GameModeKind.CoopTrail);
-                    if (strictTrail || locked)
+                    if (strictTrail)
                     {
                         Dictionary<string, byte[]> baseline = participant.Endpoint.System_CreateDisabledMissionPresetSnapshot();
                         foreach (PropertyInfo property in participant.Properties)
                             if (baseline.TryGetValue(property.Name, out byte[] disabled))
                                 snapshot[property.Name] = disabled;
                     }
-                    if (!locked && record?.CreatorRules != null &&
+                    if (record?.CreatorRules != null &&
                         record.CreatorRules.TryGetValue(modId, out var rules))
                     {
-                        ApplyCreatorRules(snapshot, participant.Properties, rules,
+                        ApplyCreatorRules(snapshot, participant.Properties,
+                            ModSettingsMigration.ApplyRenames(settingsType, rules),
                             current != null && current.TryGetValue(modId, out var currentMod) ? currentMod : null,
                             strictTrail);
                     }
+                    // A change of meaning cannot be declared as a rename. The owner converts such values
+                    // before its setters run, so the later verification compares against what those
+                    // setters are meant to keep.
+                    if (participant.Endpoint is IModSettingsSnapshotMigration migration)
+                        snapshot = migration.System_MigrateMissionSnapshot(snapshot) ??
+                            throw new InvalidDataException("Savegame snapshot migration returned nothing: " + modId);
             return snapshot;
         }
 
         /// <summary>Validates required startup values before the original load callback runs.</summary>
         public static bool PrepareLoadWithRestartCheck(string savePath, bool useCurrentSettings)
             => PrepareLoadCore(savePath, useCurrentSettings, false);
+
+        // Absence of a usable dialog choice means current settings, but PrepareLoad still
+        // enforces SavedOnly and creator rules. Explicit public Boolean calls retain their contract.
+        internal static bool PrepareAutomaticLoadWithRestartCheck(string savePath, bool? choice)
+            => PrepareLoadCore(savePath, choice ?? true, false);
 
         private static bool PrepareLoadCore(string savePath, bool useCurrentSettings, bool allParticipants)
         {
@@ -207,16 +238,11 @@ namespace APIShared
             string path = Normalize(savePath);
             string fingerprint;
             using (var file = File.OpenRead(path))
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                fingerprint = BitConverter.ToString(sha.ComputeHash(file)).Replace("-", "");
+                fingerprint = Sha256Hex.Of(file);
             ModSettingsApplication.EnterContext("save:" + path + "|" + fingerprint);
-            if (ReadRecord(path, out var record) == RecordReadState.Invalid)
-                throw new InvalidDataException("The selected savegame ModSettings archive is invalid.");
-            if (record?.LockedByConflict == true)
-                throw new InvalidDataException("The savegame has conflicting or incomplete settings; startup configuration cannot be verified.");
+            preparedApplicationContext = ModSettingsApplication.ContextId;
+            var record = ReadRecordForLoad(path, out _);
             var values = legacyChoice || useChosenCurrent && IsCurrentChoiceAllowed(record) ? chosenCurrent : record?.Mods;
-            bool locked = record?.LockedByConflict == true;
-            if (locked) values = null;
             var participants = FindParticipants();
             foreach (var item in participants)
             {
@@ -226,7 +252,7 @@ namespace APIShared
                 // mission; the multiplayer host gate explicitly prepares everyone.
                 if (!allParticipants && (!(participant.Endpoint is PresetLobbyModSettingsViewModel model) || !model.System_HasApplicationBackend)) continue;
                 var snapshot = ModSettingsApplication.ResumeSnapshot(item.Key) ??
-                    ResolveStartupSnapshot(item.Key, participant, record, values, chosenCurrent, locked);
+                    ResolveStartupSnapshot(item.Key, participant, record, values, chosenCurrent);
                 EnterPreparedPreset(item.Key, participant.Endpoint, snapshot);
             }
             preparedPath = path;
@@ -252,49 +278,61 @@ namespace APIShared
         internal static void BeginLoad(string filePath, bool multiplayer)
         {
             SavegameLoadCoordinator.ValidateStart(filePath, multiplayer);
+            if (!multiplayer && !string.Equals(chosenPath, Normalize(filePath), StringComparison.OrdinalIgnoreCase))
+                PrepareLoad(filePath, true);
             Dictionary<string, Dictionary<string, byte[]>> fallback = null;
             lock (Sync) { if (chosenCurrent == null) fallback = CaptureCompatibleHostSettings(); }
             lock (Sync)
             {
-                // Multiplayer saves use OnLoadMap, whose Extender LoadContext is
-                // incorrectly marked as a map. The confirmed entry owns this read.
+                // Multiplayer saves use OnLoadMap. The confirmed preparation owns
+                // this read, including an authoritative absence of metadata.
                 if (multiplayer) loaded = PreparedRecordForStart;
                 else
                 {
-                    RecordReadState read = ReadRecord(filePath, out var record);
-                    if (read == RecordReadState.Invalid) throw new InvalidDataException("Invalid savegame ModSettings archive.");
-                    loaded = record;
-                    legacyChoice = read == RecordReadState.Missing;
+                    loaded = ReadRecordForLoad(filePath, out bool legacy);
+                    legacyChoice = legacy;
                 }
-                restoreFailed = false;
                 if (chosenCurrent == null) chosenCurrent = fallback;
                 activeCreatorRules = loaded?.CreatorRules;
                 activeTrailCustomizeAllowed = loaded?.TrailCustomizeAllowed == true;
             }
         }
 
-        internal static bool TryGetRestoredMode(out GameModeKind kind,
-            out GameModeLaunchVariant variant, out bool lockedByConflict)
+        // A record's legacy LockedByConflict flag and a missing record are no evidence about the mode.
+        internal static bool TryGetRestoredMode(out GameModeKind kind, out GameModeLaunchVariant variant)
         {
             lock (Sync)
             {
                 kind = loaded == null ? GameModeKind.Unknown : (GameModeKind)loaded.Kind;
                 variant = loaded == null ? GameModeLaunchVariant.Standard : (GameModeLaunchVariant)loaded.Variant;
-                lockedByConflict = loaded == null ? !legacyChoice || restoreFailed :
-                    loaded.LockedByConflict || restoreFailed;
                 return loaded != null;
             }
         }
 
-        internal static void MarkRestoreFailed()
+        // A failed restore changes neither the mission mode nor any mod permission: the mode still
+        // comes from the save's record. What it leaves undecided are the settings themselves, so the
+        // consequence is stated once, in full, instead of locking mods on this peer only.
+        internal static void ReportRestoreFailure(Exception error)
         {
-            lock (Sync) restoreFailed = true;
+            try
+            {
+                NativeApiLog.Error(log, "SAVEGAME_SETTINGS_RESTORE_FAILED: the saved mod settings of this mission could " +
+                    "not be applied after loading. The mission mode and every mod permission stay as recorded in the " +
+                    "save; mods keep the settings that were active when the failure occurred, which can differ from " +
+                    "the saved ones. In multiplayer, players whose restore succeeded use the saved settings, so " +
+                    "gameplay settings can differ between players and desynchronize the game. Reload the save to retry. " +
+                    "Cause: " + error);
+            }
+            catch { /* Called from the lifecycle's cleanup path; diagnostics must not replace its outcome. */ }
         }
 
         internal static void ApplyLoadedSettings(MissionContext context)
         {
             if (context == null || !context.IsSave) return;
             if (!preparedApplied) throw new InvalidOperationException("Savegame reached completion without settings preparation.");
+            string applicationContext = ModSettingsApplication.ContextId;
+            ActivePreset.TrackSession(context.SessionId,
+                applicationContext.StartsWith("save:", StringComparison.Ordinal) ? applicationContext : null);
             foreach (var entry in preparedEndpoints)
                 ActivePreset.Track(context.SessionId, entry.Key, entry.Value);
             preparedTransferred = true;
@@ -312,16 +350,23 @@ namespace APIShared
                 chosenPath = null;
                 useChosenCurrent = false;
                 legacyChoice = false;
-                restoreFailed = false;
             }
         }
 
         private static void OnMissionEnded(MissionLifecycleNotification notification)
         {
-            if (notification?.Context?.IsSave != true) return;
+            if (notification?.Context == null) return;
+            if (notification.ReplacementContext?.RestartedFromSessionId == notification.Context.SessionId)
+            {
+                ActivePreset.Transfer(notification.Context.SessionId, notification.ReplacementContext.SessionId);
+                return;
+            }
             ActivePreset.ReleaseOnEnd(notification.Context.SessionId,
                 (modId, error) => NativeApiLog.Error(log,
-                    "Could not leave savegame settings for " + modId + ": " + error));
+                    "Could not leave savegame settings for " + modId + ": " + error),
+                // Reloading the same save reuses its content identity. The new
+                // preparation, not the retiring session, already owns that context.
+                releaseApplicationContext: notification.ReplacementContext?.IsSave != true || preparedApplicationContext == null);
         }
 
         private static byte[] Save(SaveContext context)
@@ -334,7 +379,10 @@ namespace APIShared
                 Version = SchemaVersion,
                 Kind = (int)mission.Mode.Kind,
                 Variant = (int)mission.Mode.LaunchVariant,
-                LockedByConflict = mission.Mode.HasConflictingCustomizedOrigin,
+                // Earlier builds persisted a launch-evidence conflict here, which locked the save for
+                // every later load and re-save. Every capture now decides its mode, so Kind and Variant
+                // above are the complete record; the flag is only set for a size-reduced payload.
+                LockedByConflict = false,
                 Mods = CaptureCompatibleHostSettings(),
                 CreatorRules = CaptureCreatorRules(mission),
                 TrailCustomizeAllowed = CaptureTrailCustomizeAllowed(mission),
@@ -349,9 +397,11 @@ namespace APIShared
             try
             {
                 Dictionary<string, Dictionary<string, TrailCreatorRule>> rules;
+                // Checked, no deadlock: the only provider (ExtendedData) reads synchronously and takes
+                // no lock that waits on Sync; Monitor locks are reentrant.
                 lock (Sync)
                 {
-                    rules = mission.IsSave ? activeCreatorRules : creatorRulesProvider?.Invoke();
+                    rules = mission.IsSave || ActivePreset.Contains(mission.SessionId) ? activeCreatorRules : creatorRulesProvider?.Invoke();
                 }
                 return rules ?? new Dictionary<string, Dictionary<string, TrailCreatorRule>>(StringComparer.Ordinal);
             }
@@ -368,7 +418,7 @@ namespace APIShared
                 return false;
             try
             {
-                lock (Sync) return mission.IsSave ? activeTrailCustomizeAllowed : trailCustomizeProvider?.Invoke() == true;
+                lock (Sync) return mission.IsSave || ActivePreset.Contains(mission.SessionId) ? activeTrailCustomizeAllowed : trailCustomizeProvider?.Invoke() == true;
             }
             catch (Exception error)
             {
@@ -380,25 +430,8 @@ namespace APIShared
         internal static void ApplyCreatorRules(Dictionary<string, byte[]> snapshot,
             IEnumerable<PropertyInfo> properties, Dictionary<string, TrailCreatorRule> rules,
             Dictionary<string, byte[]> current, bool strictTrail)
-        {
-            foreach (PropertyInfo property in properties)
-            {
-                if (!rules.TryGetValue(property.Name, out TrailCreatorRule rule)) continue;
-                byte[] bytes = rule.Mode == 1 ?
-                    current != null && current.TryGetValue(property.Name, out byte[] player) ? player : null :
-                    strictTrail && rule.Mode == 2 ? rule.FixedValue : null;
-                if (bytes == null) continue;
-                try
-                {
-                    if (MessagePackSerializer.Deserialize(property.PropertyType, bytes) != null)
-                        snapshot[property.Name] = (byte[])bytes.Clone();
-                }
-                catch (Exception error)
-                {
-                    NativeApiLog.Error(log, "Invalid Trail creator rule " + property.Name + ": " + error.Message);
-                }
-            }
-        }
+            => MissionModSettingsCreatorRules.Apply(snapshot, properties, rules, current, strictTrail,
+                (name, error) => NativeApiLog.Error(log, "Invalid Trail creator rule " + name + ": " + error.Message));
 
         private static void Load(byte[] bytes, LoadContext context)
         {
@@ -408,266 +441,12 @@ namespace APIShared
                 if (chosenPath != null &&
                     !string.Equals(chosenPath, Normalize(context.FilePath), StringComparison.OrdinalIgnoreCase))
                     return;
+                // Host provenance (including a missing record) remains authoritative
+                // through both archive callbacks and a delayed client start. Local
+                // Coop uses this same confirmed load phase without real networking.
+                if (SavegameLoadCoordinator.IsLoadingMultiplayerSave) return;
                 loaded = record;
             }
-        }
-
-        private enum RecordReadState { Invalid, Missing, Valid }
-
-        private static bool TryReadRecord(string path, out SavegameModSettingsRecord record) =>
-            ReadRecord(path, out record) == RecordReadState.Valid;
-
-        private static RecordReadState ReadRecord(string path, out SavegameModSettingsRecord record)
-        {
-            record = null;
-            try
-            {
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return RecordReadState.Invalid;
-                if (!MapArchive.TryLoad(path, out MapArchive archive))
-                {
-                    // Vanilla saves may have no appended ZIP at all. An identifiable
-                    // damaged ZIP is different from a genuinely missing mod entry.
-                    return ZipUtil.FindEocdHeaderIndex(path) < 0 &&
-                        ZipUtil.FindFirstZipHeaderIndex(path) < 0
-                        ? RecordReadState.Missing : RecordReadState.Invalid;
-                }
-                using (archive)
-                {
-                    byte[] bytes = archive.TryReadBinaryFile(EntryName, true);
-                    if (bytes == null) return RecordReadState.Missing;
-                    return TryDeserialize(bytes, out record) ? RecordReadState.Valid : RecordReadState.Invalid;
-                }
-            }
-            catch (Exception error)
-            {
-                NativeApiLog.Error(log, "Could not inspect savegame ModSettings: " + error.Message);
-                return RecordReadState.Invalid;
-            }
-        }
-
-        internal static bool TryDeserialize(byte[] bytes, out SavegameModSettingsRecord record)
-        {
-            record = null;
-            if (bytes == null || bytes.Length == 0 || bytes.Length > MaximumBytes) return false;
-            try
-            {
-                SavegameModSettingsRecord candidate = MessagePackSerializer.Deserialize<SavegameModSettingsRecord>(bytes);
-                if (candidate == null || candidate.Version != SchemaVersion || candidate.Mods == null ||
-                    candidate.CreatorRules == null ||
-                    !Enum.IsDefined(typeof(GameModeKind), candidate.Kind) ||
-                    !Enum.IsDefined(typeof(GameModeLaunchVariant), candidate.Variant)) return false;
-                if (candidate.Kind == (int)GameModeKind.Unknown || candidate.Kind == (int)GameModeKind.MapEditor ||
-                    candidate.Mods.Count > MaximumMods) return false;
-                foreach (KeyValuePair<string, Dictionary<string, byte[]>> mod in candidate.Mods)
-                {
-                    if (string.IsNullOrWhiteSpace(mod.Key) || mod.Key.Length > 256 ||
-                        mod.Value == null || mod.Value.Count > MaximumPropertiesPerMod) return false;
-                    foreach (KeyValuePair<string, byte[]> property in mod.Value)
-                        if (string.IsNullOrWhiteSpace(property.Key) || property.Key.Length > 256 ||
-                            property.Value == null || property.Value.Length > MaximumPropertyBytes) return false;
-                }
-                if (candidate.CreatorRules.Count > MaximumMods) return false;
-                foreach (var mod in candidate.CreatorRules)
-                {
-                    if (string.IsNullOrWhiteSpace(mod.Key) || mod.Key.Length > 256 ||
-                        mod.Value == null || mod.Value.Count > MaximumPropertiesPerMod) return false;
-                    foreach (var property in mod.Value)
-                    {
-                        TrailCreatorRule rule = property.Value;
-                        if (string.IsNullOrWhiteSpace(property.Key) || property.Key.Length > 256 ||
-                            rule == null || rule.Mode < 0 || rule.Mode > 2 ||
-                            (rule.Mode == 2 && (rule.FixedValue == null || rule.FixedValue.Length > MaximumPropertyBytes)) ||
-                            (rule.Mode != 2 && rule.FixedValue != null)) return false;
-                    }
-                }
-                record = candidate;
-                return true;
-            }
-            catch (Exception error)
-            {
-                NativeApiLog.Error(log, "Invalid savegame ModSettings: " + error.Message);
-                return false;
-            }
-        }
-
-        private static Dictionary<string, Dictionary<string, byte[]>> CaptureCompatibleHostSettings()
-        {
-            var result = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.Ordinal);
-            Dictionary<string, CompatibleMod> participants;
-            try { participants = FindParticipants(); }
-            catch (Exception error)
-            {
-                NativeApiLog.Error(log, "Could not enumerate savegame settings participants: " + error);
-                return result;
-            }
-            foreach (KeyValuePair<string, CompatibleMod> participant in participants
-                .OrderBy(item => item.Key, StringComparer.Ordinal).Take(MaximumMods))
-            {
-                if (participant.Key.Length > 256) continue;
-                result[participant.Key] = CaptureHostProperties(participant.Value.Endpoint,
-                    participant.Value.Properties.Take(MaximumPropertiesPerMod), participant.Key);
-            }
-            return result;
-        }
-
-        internal static Dictionary<string, byte[]> CaptureHostProperties(
-            object endpoint, IEnumerable<PropertyInfo> hostProperties, string modId)
-        {
-            var properties = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-            foreach (PropertyInfo property in hostProperties)
-            {
-                if (property.Name.Length > 256) continue;
-                try
-                {
-                    byte[] bytes = MessagePackSerializer.Serialize(
-                        property.PropertyType, property.GetValue(endpoint));
-                    if (bytes != null && bytes.Length <= MaximumPropertyBytes)
-                        properties[property.Name] = bytes;
-                    else
-                        NativeApiLog.Error(log, "Savegame setting exceeds the property limit: " +
-                            modId + "." + property.Name);
-                }
-                catch (Exception error)
-                {
-                    NativeApiLog.Error(log, "Could not capture savegame setting " +
-                        modId + "." + property.Name + ": " + error.Message);
-                }
-            }
-            return properties;
-        }
-
-        internal static void OverlaySavedHostProperties(Dictionary<string, byte[]> snapshot,
-            IEnumerable<PropertyInfo> hostProperties, Dictionary<string, byte[]> stored, string modId)
-        {
-            if (snapshot == null || stored == null) return;
-            foreach (PropertyInfo property in hostProperties)
-            {
-                if (!stored.TryGetValue(property.Name, out byte[] bytes) || bytes == null) continue;
-                try
-                {
-                    object value = MessagePackSerializer.Deserialize(property.PropertyType, bytes);
-                    if (value != null) snapshot[property.Name] = (byte[])bytes.Clone();
-                }
-                catch (Exception error)
-                {
-                    NativeApiLog.Error(log, "Invalid saved setting " + modId + "." +
-                        property.Name + ": " + error.Message);
-                }
-            }
-        }
-
-        internal static byte[] SerializeWithinLimit(SavegameModSettingsRecord record)
-        {
-            byte[] bytes = MessagePackSerializer.Serialize(record);
-            if (bytes.Length <= MaximumBytes) return bytes;
-            record.LockedByConflict = true; // A reduced payload must never admit an unverifiable startup configuration.
-            foreach (string modId in record.Mods.Keys.OrderByDescending(value => value, StringComparer.Ordinal).ToArray())
-            {
-                Dictionary<string, byte[]> properties = record.Mods[modId];
-                foreach (string propertyName in properties.Keys.OrderByDescending(value => value, StringComparer.Ordinal).ToArray())
-                {
-                    properties.Remove(propertyName);
-                    NativeApiLog.Error(log, "Omitted savegame setting to stay within the payload limit: " +
-                        modId + "." + propertyName);
-                    bytes = MessagePackSerializer.Serialize(record);
-                    if (bytes.Length <= MaximumBytes) return bytes;
-                }
-                record.Mods.Remove(modId);
-                bytes = MessagePackSerializer.Serialize(record);
-                if (bytes.Length <= MaximumBytes) return bytes;
-            }
-            // Rules cannot be truncated selectively: doing so could turn a fixed
-            // Trail restriction into an unrestricted current value on restore.
-            record.LockedByConflict = true;
-            record.CreatorRules?.Clear();
-            bytes = MessagePackSerializer.Serialize(record);
-            if (bytes.Length <= MaximumBytes) return bytes;
-            throw new InvalidDataException("Savegame mode metadata alone exceeds the payload limit.");
-        }
-
-        private sealed class CompatibleMod
-        {
-            internal IModSettingsPresetEndpoint Endpoint;
-            internal PropertyInfo[] Properties;
-            internal PropertyInfo[] PersonalProperties;
-        }
-
-        private static Dictionary<string, CompatibleMod> FindParticipants()
-        {
-            var result = new Dictionary<string, CompatibleMod>(StringComparer.Ordinal);
-            foreach (IGrouping<string, LobbyModSettingsEntry> group in GameXAMLManagerAPI.Instance.RegisteredModSettings
-                .Where(entry => entry?.Plugin?.Info?.Metadata?.GUID != null)
-                .GroupBy(entry => entry.Plugin.Info.Metadata.GUID, StringComparer.Ordinal))
-            {
-                if (group.Count() != 1 || group.Any(entry => IsOptedOut(entry.Plugin))) continue;
-                LobbyModSettingsEntry registration = group.First();
-                if (!(registration.ViewModel is IModSettingsPresetEndpoint endpoint)) continue;
-                PropertyInfo[] properties = registration.ViewModel.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(property => property.CanRead && property.CanWrite &&
-                        property.GetCustomAttributes(false).Any(attribute => attribute.GetType().Name == "SyncHostOnlyAttribute") &&
-                        !property.GetCustomAttributes(false).Any(attribute => attribute.GetType().Name == "DoNotPersistAttribute"))
-                    .OrderBy(property => property.Name, StringComparer.Ordinal).ToArray();
-                PropertyInfo[] personalProperties = registration.ViewModel.GetType()
-                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(property => property.CanRead && property.CanWrite &&
-                        !property.GetCustomAttributes(false).Any(attribute => attribute.GetType().Name == "DoNotPersistAttribute") &&
-                        property.GetCustomAttributes(false).Any(attribute =>
-                            attribute.GetType().Name == "SyncPerPlayerAttribute" ||
-                            attribute.GetType().Name == "PresetLocalAttribute"))
-                    .ToArray();
-                if (properties.Length == 0 || properties.Any(property =>
-                    property.Name == "EnableMod" && property.PropertyType != typeof(bool)) ||
-                    properties.GroupBy(property => property.Name, StringComparer.Ordinal).Any(items => items.Skip(1).Any()))
-                    continue;
-                try
-                {
-                    Dictionary<string, byte[]> disabled = endpoint.System_CreateDisabledMissionPresetSnapshot();
-                    if (disabled == null) continue;
-                    bool valid = true;
-                    foreach (PropertyInfo property in properties)
-                    {
-                        if (!disabled.TryGetValue(property.Name, out byte[] value) || value == null)
-                        {
-                            valid = false;
-                            break;
-                        }
-                        object disabledValue = MessagePackSerializer.Deserialize(property.PropertyType, value);
-                        if (property.Name == "EnableMod" && disabledValue is bool enabled && enabled)
-                        {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    if (!valid) continue;
-                    result[group.Key] = new CompatibleMod
-                    {
-                        Endpoint = endpoint,
-                        Properties = properties,
-                        PersonalProperties = personalProperties,
-                    };
-                }
-                catch (Exception error)
-                {
-                    NativeApiLog.Error(log, "Incompatible savegame settings for " + group.Key + ": " + error.Message);
-                }
-            }
-            foreach (var registered in ModSettingsApplication.Endpoints)
-            {
-                if (!registered.Value.System_HasDynamicSettings) continue;
-                if (result.ContainsKey(registered.Key)) throw new InvalidOperationException("Duplicate settings provider: " + registered.Key);
-                result[registered.Key] = new CompatibleMod
-                {
-                    Endpoint = registered.Value,
-                    Properties = ModSettingsApplication.GetHostProperties(registered.Value),
-                    PersonalProperties = Array.Empty<PropertyInfo>()
-                };
-            }
-            return result;
-        }
-
-        private static bool IsOptedOut(object plugin)
-        {
-            return SavegameSettingsParticipation.IsExcluded(plugin?.GetType());
         }
 
         private static string Normalize(string path)

@@ -5,6 +5,8 @@ $metadata = [pscustomobject]@{ Dependencies = @([pscustomobject]@{ GUID = 'other
 Assert-PluginDependencyMetadata $source $metadata 'ArbitraryGuid'
 $constantSource = 'const string DependencyGuid = "other.author.api"; const string Minimum = "1.2.0"; [BepInDependency(DependencyGuid, Minimum)]'
 Assert-PluginDependencyMetadata $constantSource $metadata 'NamedConstants'
+$multiple = [pscustomobject]@{ Dependencies = @($metadata.Dependencies[0], [pscustomobject]@{ GUID='second.api'; MinimumVersion='2.0.0' }) }
+Assert-PluginDependencyMetadata ($source + '[BepInDependency("second.api", "2.0.0")]') $multiple 'MultipleDependencies'
 $presence = [pscustomobject]@{ Dependencies = @([pscustomobject]@{ GUID = 'presence.only' }) }
 Assert-PluginDependencyMetadata '[BepInDependency("presence.only")]' $presence 'PresenceOnly'
 $failures = 0

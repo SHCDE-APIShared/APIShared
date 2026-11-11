@@ -13,6 +13,10 @@ namespace ThirdPartyMod
         private static readonly GameplayModeGate Gate = new GameplayModeGate(Profile);
         private static Action<string> log;
 
+        // Only for a confirmed restart of the current mission. Wrap its complete
+        // preparation, so settings owners see the replacement before cleanup.
+        internal static void Restart(Action prepareAndLoad) => MissionRestart.Run(ExamplePlugin.Guid, prepareAndLoad);
+
         internal static void Register(ModApiClient api, Action<string> logger)
         {
             log = logger;

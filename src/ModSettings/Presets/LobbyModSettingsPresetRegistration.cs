@@ -104,7 +104,7 @@ namespace APIShared.ModSettings
                 }
             }
         }
-        /// <summary>Registers the plugin-owned settings model and XAML page on the Unity thread. Uses plugin metadata for GUID/version/storage; validates settings before publishing and retains event handlers. This overload leaves scroll diagnostics disabled.</summary>
+        /// <summary>Registers the plugin-owned settings model and XAML page on the Unity thread. Uses plugin metadata for GUID/version and Documents for personal storage; validates settings before publishing and retains event handlers. This overload leaves scroll diagnostics disabled.</summary>
         public static void Register(
             BaseUnityPlugin plugin,
             ManualLogSource log,
@@ -121,7 +121,7 @@ namespace APIShared.ModSettings
                 true);
         }
 
-        /// <summary>Registers the plugin-owned settings model and XAML page on the Unity thread. Uses plugin metadata for GUID/version/storage; validates settings before publishing and retains event handlers. This overload leaves scroll diagnostics disabled.</summary>
+        /// <summary>Registers the plugin-owned settings model and XAML page on the Unity thread. Uses plugin metadata for GUID/version and Documents for personal storage; validates settings before publishing and retains event handlers. This overload leaves scroll diagnostics disabled.</summary>
         public static void Register(
             BaseUnityPlugin plugin,
             ManualLogSource log,
@@ -151,13 +151,15 @@ namespace APIShared.ModSettings
                 throw new ArgumentNullException(nameof(viewModel));
 
 #if !API_SHARED_PRESET_TESTS
+            LobbySettingsReceiveRuntime.RequireAvailable();
             if (GameAssetManagerAPI.Instance.GetModifiedFilePath(
                 xamlSourceFile,
                 out string absoluteXamlSourceFile))
             {
                 // The catalog is read from XAML and is therefore available before Noesis has
                 // materialized an unselected tab's controls. This avoids touching native layout.
-                ModSettingsSearch.RegisterSource(viewModel, absoluteXamlSourceFile, log, modName);
+                ModSettingsSearchCatalog.RegisterSource(viewModel, absoluteXamlSourceFile, log, modName,
+                    viewModel.System_ApplyModSettingsSearchTarget);
             }
 #endif
             viewModel.PreparePresets(
@@ -181,11 +183,11 @@ namespace APIShared.ModSettings
                 // subsequent writes under the preset controller's ownership.
                 try
                 {
-                    new LobbyModSettingsStorage(plugin.Info.Location, modName).Load(viewModel);
+                    viewModel.LoadInitialPresetSettings();
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(log,
+                    NativeApiLog.Error(log,
                         $"[{modName}] Initial lobby-settings load failed; keeping ViewModel defaults: {exception}");
                 }
                 GameXAMLManagerAPI.Instance.RegisterLobbyModSettings(
@@ -215,7 +217,7 @@ namespace APIShared.ModSettings
             if (registeredView == null)
             {
                 viewModel.DeactivatePerPlayerLobbySettings();
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Presets were not activated because lobby-settings registration failed.");
                 return;

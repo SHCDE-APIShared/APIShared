@@ -18,6 +18,9 @@ namespace APIShared
         internal const string GatehouseAutomation = "Gatehouse.Automation";
         internal const string AivBuildStep = "Diagnostics.AivBuildStep";
         internal const string MarketPrices = "Economy.MarketPrices";
+        internal const string HealthInitialization = "Health.TypeInitialization";
+        internal const string PlagueHeight = "Projectiles.PlagueHeight";
+        internal const string AiMarketSell = "Economy.AiMarketSell";
         internal const string AssassinPath = "Pathfinding.AssassinPath";
         internal const string AssassinAttack = "Pathfinding.AssassinAttack";
         internal const string AssassinRetarget = "Pathfinding.AssassinRetargetEntry";
@@ -25,6 +28,64 @@ namespace APIShared
         internal const string GateComparisons = "GateRouting.Comparisons";
         internal const string GateDescent = "GateRouting.Descent";
         internal const string BuildingRepair = "Buildings.RepairQuote";
+        internal const string SynchronizedSave = "Savegames.SynchronizedSaveContext";
+        internal const string VisibleMapRender = "Presentation.VisibleMapRender";
+        internal const string PlayerViewIdentitySite = "Players.ViewIdentity";
+        internal const string PlayerViewNetwork = "Players.ViewNetworkIdentity";
+        internal const string PlayerControlInput = "Players.ControlInput";
+        internal const string MapperCamera = "Presentation.MapperSelectionCamera";
+
+        internal static NativeSiteSpan[] MapperCameraSpans() => new[] {
+            Exclusive(Presentation.MapperCameraNative.Rva, Presentation.MapperCameraNative.DisplacedLength),
+            Observe(Presentation.MapperCameraNative.Rva + Presentation.MapperCameraNative.DisplacedLength,
+                Presentation.MapperCameraNative.Window.Length - Presentation.MapperCameraNative.DisplacedLength),
+            Observe(Presentation.MapperCameraNative.CallerRva, Presentation.MapperCameraNative.Caller.Length)
+        };
+
+        // Indirect/10 entry owned by the shared observer broker; consumers register observers, not detours.
+        internal static NativeSiteSpan[] VisibleMapRenderSpans() => new[] {
+            Exclusive(Presentation.VisibleMapRenderEvents.Rva, Presentation.VisibleMapRenderEvents.Entry.Length)
+        };
+
+        internal static NativeSiteSpan[] SynchronizedSaveSpans() => new[] {
+            Exclusive(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva, ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength),
+            Observe(ScriptExtenderFixes.SynchronizedSaveRuntime.Rva + ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength,
+                ScriptExtenderFixes.SynchronizedSaveRuntime.Entry.Length - ScriptExtenderFixes.SynchronizedSaveRuntime.DisplacedLength)
+        };
+
+        internal static NativeSiteSpan[] PlayerViewIdentitySpans() => new[] {
+            Exclusive(PlayerControl.PlayerViewSaveScope.Rva, PlayerControl.PlayerViewSaveScope.DisplacedLength),
+            Observe(PlayerControl.PlayerViewSaveScope.Rva + PlayerControl.PlayerViewSaveScope.DisplacedLength,
+                PlayerControl.PlayerViewSaveScope.Entry.Length - PlayerControl.PlayerViewSaveScope.DisplacedLength)
+        };
+
+        internal static NativeSiteSpan[] PlayerViewNetworkSpans()
+        {
+            var spans = new List<NativeSiteSpan>();
+            foreach (var site in PlayerControl.PlayerViewNetworkNative.Sites)
+            {
+                int rva = PlayerControl.PlayerViewNetworkNative.Rva(site);
+                int displaced = PlayerControl.PlayerViewNetworkBridge.DisplacedLength(site);
+                spans.Add(Exclusive(rva, displaced));
+                spans.Add(Observe(rva + displaced,
+                    PlayerControl.PlayerViewNetworkBridge.WindowLength(site) - displaced));
+            }
+            return spans.ToArray();
+        }
+
+        // Both spectator-input boundaries; each continuation instruction is decoded and must stay intact.
+        internal static NativeSiteSpan[] PlayerControlInputSpans()
+        {
+            var spans = new List<NativeSiteSpan>();
+            foreach (var site in new[] { PlayerControl.ControlInputSite.RunTick, PlayerControl.ControlInputSite.Dispatcher })
+            {
+                int rva = site == PlayerControl.ControlInputSite.RunTick ? PlayerControl.ControlInputNative.RunTickRva : PlayerControl.ControlInputNative.DispatcherRva;
+                int displaced = PlayerControl.ControlInputBridge.DisplacedLength(site);
+                spans.Add(Exclusive(rva, displaced));
+                spans.Add(Observe(rva + displaced, PlayerControl.ControlInputBridge.WindowLength(site) - displaced));
+            }
+            return spans.ToArray();
+        }
 
         // AIV detour: the backend's displacement is not fixed here, so the claim covers the
         // instruction-aligned prologue any patch of up to 14 bytes displaces (2+1+1+1+2+2+2+2+4).
@@ -69,6 +130,23 @@ namespace APIShared
 
         internal static NativeSiteSpan[] AivBuildStepSpans() =>
             new[] { Exclusive(AivBuildStepService.FunctionRva, AivPrologueLength) };
+
+        internal static NativeSiteSpan[] PlagueHeightSpans() => new[] {
+            Exclusive(PlagueHeightAssembly.Sites[0], 32), Exclusive(PlagueHeightAssembly.Sites[1], 26),
+            Exclusive(PlagueHeightAssembly.Sites[2], 26), Exclusive(PlagueHeightAssembly.Sites[3], 26)
+        };
+
+        internal static NativeSiteSpan[] AiMarketSellSpans() => new[]
+        {
+            Exclusive(0x3F1F3, 15), Observe(0x3F202, 5),
+            Exclusive(0x29723, 15), Observe(0x29732, 5), Observe(0x2978B, 21)
+        };
+
+        internal static NativeSiteSpan[] HealthInitializationSpans() => new[]
+        {
+            Exclusive(Health.HealthNativeObserver.Rva, 10),
+            Observe(Health.HealthNativeObserver.Rva + 10, Health.HealthNativeObserver.Entry.Length - 10)
+        };
 
         internal static NativeSiteSpan[] MarketPriceSpans() => new[]
         {
@@ -145,13 +223,36 @@ namespace APIShared
             Group(GatehouseAutomation, GatehouseAutomationSpans()),
             Group(AivBuildStep, AivBuildStepSpans()),
             Group(MarketPrices, MarketPriceSpans()),
+            Group(WorkerProductionBonusNativeDefinition.SiteGroup, WorkerProductionBonusNativeRuntime.Spans()),
+            Group(WorkerProductionOutputNativeDefinition.SiteGroup, WorkerProductionOutputNativeRuntime.Spans()),
+            Group(WorkerProductionStateNativeRuntime.SiteGroup, WorkerProductionStateNativeRuntime.Spans()),
+            Group(WeaponProductionTransferNativeRuntime.SiteGroup, WeaponProductionTransferNativeRuntime.Spans()),
+            Group(WorkerProductionCriticalSaveRuntime.SiteGroup, WorkerProductionCriticalSaveRuntime.Spans()),
+            Group(HealthInitialization, HealthInitializationSpans()),
+            Group(PlagueHeight, PlagueHeightSpans()),
+            Group(AiMarketSell, AiMarketSellSpans()),
+            Group(AllyTransfersNative.SiteName, AllyTransfersNative.Spans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),
             Group(GateMovement, GateMovementSpans()),
             Group(GateComparisons, GateComparisonSpans()),
             Group(GateDescent, GateDescentSpans()),
-            Group(BuildingRepair, BuildingRepairSpans())
+            Group(BuildingRepair, BuildingRepairSpans()),
+            Group(Wildlife.HunterNativeSites.SiteGroup, Wildlife.HunterNativeSites.Spans()),
+            Group(Wildlife.HunterOwnerGates.SiteGroup, Wildlife.HunterOwnerGates.Spans()),
+            Group(Wildlife.HerdRuntime.RouteSiteGroup, Wildlife.HerdRuntime.RouteSpans()),
+            Group(Wildlife.HerdRuntime.FlightSiteGroup, Wildlife.HerdRuntime.FlightSpans()),
+            Group(SynchronizedSave, SynchronizedSaveSpans()),
+            Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
+            Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
+            Group(MapperCamera, MapperCameraSpans()),
+            Group(PlayerControlInput, PlayerControlInputSpans()),
+            Group(VisibleMapRender, VisibleMapRenderSpans()),
+            Group("Units.AiMilitary.Calls", Units.AiMilitary.Native.AiMilitaryNativeBindings.CallOnlySpans()),
+            Group(Units.AiMilitary.Native.AiMilitaryNativeObservers.SiteName, Units.AiMilitary.Native.AiMilitaryNativeObservers.Spans()),
+            Group(Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.SiteName, Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.Spans()),
+            Group(Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.SiteName, Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.Spans())
         };
 
         // Claims a group for APIShared before installation. Throws the service's own failure type

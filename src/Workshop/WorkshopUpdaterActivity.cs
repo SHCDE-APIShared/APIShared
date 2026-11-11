@@ -52,8 +52,8 @@ namespace APIShared.Workshop
                     } catch { return false; }
                 });
                 if (!result.Active) return result;
-                string directory = WorkshopPaths.Inside(state, "Transactions/" + result.Transaction);
-                if (!File.Exists(WorkshopPaths.Inside(directory, "ready.flag")) ||
+                string directory = WorkshopInstallation.FindTransaction(game, result.Transaction);
+                if (directory == null || !File.Exists(WorkshopPaths.Inside(directory, "ready.flag")) ||
                     File.ReadAllText(WorkshopPaths.Inside(directory, "ready.flag")) != result.OperationsHash ||
                     WorkshopInventory.Hash(WorkshopPaths.Inside(directory, "operations.tsv")) != result.OperationsHash || WorkshopRecovery.Finished(directory))
                     return new WorkshopUpdaterActivity { Busy = true };

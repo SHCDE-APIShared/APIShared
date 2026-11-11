@@ -1,0 +1,367 @@
+using APIShared.ModSettings;
+using MessagePack;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using SHCDESE.API;
+using SHCDESE.API.Components.ModManager;
+using SHCDESE.API.Components.Network;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+namespace LobbyModSettingsPresetTests
+{
+    public partial class LobbyPresetControllerTests
+    {
+        [TestMethod]
+        public void DefaultsAndWorkingSnapshotsDeferSearchUntilTheWholeApplicationCompletes()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.Target.HostAmount = 99;
+            host.Target.LocalAmount = 42;
+            int refreshes = 0;
+            bool allDeferred = true;
+            Action refresh = () => refreshes++;
+            host.Target.Changed = name => {
+                controller.AfterPropertyChanged(name);
+                allDeferred &= ModSettingsSearchUpdateScope.TryDefer(host.SettingsTarget, refresh);
+            };
+            int writes = controller.TestWriteCount;
+            controller.ApplyDefaultsAsWorkingCopy();
+            Assert.IsTrue(allDeferred, "Every reflected setter must stay inside the search update scope.");
+            Assert.AreEqual(1, refreshes);
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(5, host.Target.LocalAmount);
+            Assert.AreEqual(writes + 1, controller.TestWriteCount, "Search batching must not change persistence.");
+            controller.ApplyWorkingSnapshot(Values(31, 32, 43));
+            Assert.AreEqual(2, refreshes);
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(43, host.Target.LocalAmount);
+        }
+        public sealed class OptionalSettings
+        {
+            [PresetLocal] public string Name { get; set; }
+            [PresetLocal] public int? Count { get; set; }
+            [SyncHostOnly] public int Amount { get; set; } = 17;
+        }
+
+        [TestMethod]
+        public void OmittedNullDefaultsDoNotBlockOtherSnapshotValues()
+        {
+            var settings = new OptionalSettings();
+            var controller = Start(new Host { SettingsTargetOverride = settings });
+            controller.ApplyWorkingSnapshot(new Dictionary<string, byte[]> {
+                [nameof(OptionalSettings.Amount)] = MessagePackSerializer.Serialize(31)
+            });
+            Assert.AreEqual(31, settings.Amount);
+            Assert.IsNull(settings.Name);
+            Assert.IsNull(settings.Count);
+            var restarted = new OptionalSettings();
+            Start(new Host { SettingsTargetOverride = restarted });
+            Assert.AreEqual(31, restarted.Amount);
+        }
+
+        [TestMethod]
+        public void SerializedNullDefaultsRetainTheExistingOmissionSemantics()
+        {
+            var settings = new OptionalSettings();
+            var controller = Start(new Host { SettingsTargetOverride = settings });
+            controller.SetDefaultValue<string>(nameof(OptionalSettings.Name), null);
+            controller.SetDefaultValue<int?>(nameof(OptionalSettings.Count), null);
+            settings.Name = "Keep current optional value";
+            settings.Count = 7;
+            controller.ApplyDefaultsAsWorkingCopy();
+            Assert.AreEqual("Keep current optional value", settings.Name);
+            Assert.AreEqual(7, settings.Count);
+            Assert.AreEqual(17, settings.Amount);
+        }
+
+        private static Dictionary<string, byte[]> Values(int first, int second, int local) =>
+            new Dictionary<string, byte[]> {
+                [nameof(Settings.HostAmount)] = MessagePackSerializer.Serialize(first),
+                [nameof(Settings.SecondHostAmount)] = MessagePackSerializer.Serialize(second),
+                [nameof(Settings.LocalAmount)] = MessagePackSerializer.Serialize(local)
+            };
+
+        [TestMethod]
+        public void RestoreCompletesWhenFirstNotificationChangesTheLiveRole()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.HasMissionContext = host.MissionPresetEditable = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Trail", true);
+            host.Publications.Clear();
+            var origins = new List<LobbyModSettingsChangeOrigin>();
+            host.Target.Changed = name => {
+                origins.Add(GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin);
+                host.IsLocalHost = false;
+                controller.AfterPropertyChanged(name);
+            };
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(19, host.Target.SecondHostAmount);
+            Assert.AreEqual(5, host.Target.LocalAmount);
+            Assert.IsTrue(origins.Count >= 2 && origins.All(origin => origin == LobbyModSettingsChangeOrigin.InitialLoad));
+            Assert.IsFalse(host.Publications.Any(name => name == nameof(Settings.HostAmount) || name == nameof(Settings.SecondHostAmount)));
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
+        }
+
+        [TestMethod]
+        public void ClientKeepsHostValuesUntilItsLobbyHasActuallyEnded()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = false;
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Trail", false);
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            Assert.AreEqual(91, host.Target.HostAmount);
+            Assert.AreEqual(92, host.Target.SecondHostAmount);
+            Assert.AreEqual(5, host.Target.LocalAmount);
+            controller.RestorePersonalHostIfPending();
+            Assert.AreEqual(91, host.Target.HostAmount);
+            host.CanRestorePersonalHostSettings = true;
+            controller.RestorePersonalHostIfPending();
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(19, host.Target.SecondHostAmount);
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
+        }
+
+        public sealed class IndependentHostSettings
+        {
+            [SyncHostOnly] public int Amount { get; set; } = 17;
+            [SyncHostOnly, MissionIndependent] public int PersonalHost { get; set; } = 23;
+        }
+
+        [TestMethod]
+        public void FormerClientRestoresMissionIndependentHostValuesBeforePersisting()
+        {
+            var settings = new IndependentHostSettings();
+            var host = new Host { SettingsTargetOverride = settings };
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = false;
+            settings.PersonalHost = 77; // Received from the remote host by the authorized sync setter.
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(new Dictionary<string, byte[]> {
+                [nameof(IndependentHostSettings.Amount)] = MessagePackSerializer.Serialize(91) }, "Trail", false);
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            host.IsLocalHost = host.CanRestorePersonalHostSettings = true;
+            controller.RestorePersonalHostIfPending();
+            Assert.AreEqual(17, settings.Amount);
+            Assert.AreEqual(23, settings.PersonalHost, "A foreign host's mission-independent value survived the return to local host.");
+            controller.PersistCurrentPersonalValues();
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath), "A foreign host value was persisted as this peer's own.");
+        }
+
+        [TestMethod]
+        public void SetterFailureRetainsMissionMetadataAndCleanupCanBeRetried()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Authored Trail", false);
+            host.Target.FailSecondHostSetter = true;
+            host.Publications.Clear();
+            host.HasMissionContext = false;
+            Assert.ThrowsExactly<System.Reflection.TargetInvocationException>(() => controller.ExitMissionPreset());
+            host.HasMissionContext = true;
+            Assert.AreEqual("Authored Trail", controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+            Assert.AreEqual(92, MessagePackSerializer.Deserialize<int>(controller.CreateCurrentMissionSnapshot()[nameof(Settings.SecondHostAmount)]));
+            Assert.AreEqual(0, host.Publications.Count);
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
+            host.Target.FailSecondHostSetter = false;
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            Assert.AreEqual(19, host.Target.SecondHostAmount);
+            Assert.IsFalse(controller.IsApplyingSnapshot);
+        }
+
+        [TestMethod]
+        public void RestartStatusDoesNotAccumulateContextPrefixes()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            const string status = "Map · Based on: My choice (modified)";
+            for (int round = 0; round < 4; round++)
+            {
+                controller.RestorePreparationLabel(round == 0 ? status : controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+                Assert.AreEqual(status, controller.GetStatusText("Based on", "modified", "Personal", "Bundled", "External"));
+            }
+            // A legacy journal of an edited context without a source preset has only "<context> (modified)".
+            controller.RestorePreparationLabel("Map (modified)");
+            Assert.AreEqual("Map (geändert)", controller.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+        }
+
+        [TestMethod]
+        public void RestartStatusIsCapturedRawAndRenderedInTheCurrentLanguage()
+        {
+            var host = new Host { MissionPresetEditable = true };
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            host.Target.HostAmount = 55;
+            Assert.IsTrue(controller.TryCaptureMissionStatus(out string label, out string preset, out bool modified));
+            Assert.AreEqual(("Map", "", true), (label, preset, modified));
+
+            // Restart: the session re-enters the same context, then restores the captured state.
+            var restartedHost = new Host { MissionPresetEditable = true };
+            var restarted = Start(restartedHost);
+            restartedHost.HasMissionContext = true;
+            restarted.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            restarted.RestoreMissionStatus(label, preset, modified);
+            Assert.AreEqual("Map (geändert)", restarted.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+            restartedHost.Target.HostAmount = 56;
+            Assert.AreEqual("Map (geändert)", restarted.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+
+            // A source loaded into the working copy stays attributed; an unavailable preset keeps its name.
+            restarted.RestoreMissionStatus("Trail", "missing-preset", false);
+            Assert.AreEqual("Map · Basierend auf: Trail", restarted.GetStatusText("Basierend auf", "geändert", "P", "B", "E"));
+        }
+
+        [TestMethod]
+        public void ExitSupportLogDescribesTheLeavingDraftBeforeRestoringPersonalMetadata()
+        {
+            using var log = new BepInEx.Logging.ManualLogSource("Draft support fixture");
+            var messages = new List<string>();
+            log.LogEvent += (_, e) => messages.Add(e.Data.ToString());
+            var host = new Host();
+            var controller = Start(host, log);
+            host.HasMissionContext = true;
+            host.MissionPresetEditable = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Map", true);
+            host.Target.HostAmount = 99;
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            string exit = messages.Single(m => m.Contains("action=exit"));
+            Assert.IsTrue(exit.Contains("leavingSourceLabel=Map") && exit.Contains("leavingModified=True") &&
+                exit.Contains("personalModified=False"), "Exit conflated edited mission values with restored personal metadata.");
+            Assert.AreEqual(17, host.Target.HostAmount);
+        }
+
+        [TestMethod]
+        public void RejectedValueFallsBackToItsDefaultWithoutBlockingOtherSettings()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            int notifications = host.Notifications;
+            host.Target.RejectSecondHostValue = 77;
+            controller.ApplyWorkingSnapshot(Values(31, 77, 33));
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(19, host.Target.SecondHostAmount, "The code default replaces the rejected value.");
+            Assert.AreEqual(33, host.Target.LocalAmount, "Settings after the rejected one are still applied.");
+            Assert.AreEqual(notifications + 1, host.Notifications);
+            Assert.AreEqual(0, host.SelectedPreset);
+            Assert.AreEqual(19, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.SecondHostAmount)]),
+                "The working copy records the value the setting actually holds.");
+        }
+
+        [TestMethod]
+        public void SetterRejectingEvenItsDefaultNoLongerBlocksTheSnapshot()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.Target.FailSecondHostSetter = true;
+            controller.ApplyWorkingSnapshot(Values(31, 32, 33));
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(19, host.Target.SecondHostAmount);
+            Assert.AreEqual(33, host.Target.LocalAmount);
+            Assert.IsFalse(controller.IsApplyingSnapshot);
+            Assert.AreEqual(32, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.SecondHostAmount)]),
+                "A value that could not be applied stays requested for the next load.");
+        }
+
+        [TestMethod]
+        public void PermanentSetterFailureLeavesTheMissionAfterBoundedRetries()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Stuck Trail", false);
+            host.Target.FailSecondHostSetter = true;
+            host.Publications.Clear();
+            for (int attempt = 1; attempt < LobbyPresetController.MaximumRestoreAttempts; attempt++)
+            {
+                host.HasMissionContext = false;
+                Assert.ThrowsExactly<System.Reflection.TargetInvocationException>(() => controller.ExitMissionPreset());
+                host.HasMissionContext = true;
+                Assert.IsTrue(host.IsMissionPresetSelected, "A retryable failure keeps the mission.");
+            }
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            Assert.AreEqual(0, host.SelectedPreset);
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(5, host.Target.LocalAmount);
+            Assert.AreEqual(92, host.Target.SecondHostAmount, "The failing setting keeps its current value.");
+            Assert.IsTrue(host.Publications.Count > 0);
+            Assert.IsFalse(controller.IsApplyingSnapshot);
+        }
+
+        [TestMethod]
+        public void SnapshotPublishesOnlyAfterAllValuesAndRestoresOuterOriginOnFailure()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.Target.Changed = name => {
+                Assert.AreEqual(LobbyModSettingsChangeOrigin.InitialLoad, GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin);
+                controller.AfterPropertyChanged(name);
+            };
+            controller.ApplyWorkingSnapshot(Values(31, 32, 33));
+            Assert.AreEqual(31, host.Target.HostAmount);
+            Assert.AreEqual(32, host.Target.SecondHostAmount);
+            Assert.AreEqual(33, host.Target.LocalAmount);
+            SetOrigin(LobbyModSettingsChangeOrigin.IncomingNetwork);
+            Assert.ThrowsExactly<InvalidOperationException>(() => LobbySettingsRestoreScope.Execute(() => {
+                Assert.AreEqual(LobbyModSettingsChangeOrigin.InitialLoad, GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin);
+                LobbySettingsRestoreScope.Execute(() => { });
+                throw new InvalidOperationException("scope failure");
+            }));
+            Assert.AreEqual(LobbyModSettingsChangeOrigin.IncomingNetwork, GameXAMLManagerAPI.Instance.CurrentLobbyModSettingsChangeOrigin);
+        }
+
+        [TestMethod]
+        public void CallbackFailureAfterSelectionCommitKeepsMissionReachableForCleanup()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            byte[] personal = File.ReadAllBytes(SettingsPath);
+            host.HasMissionContext = true;
+            controller.EnterMissionPreset(Values(91, 92, 93), "Retry Trail", false);
+            host.Publications.Clear();
+            host.SnapshotApplied = () => { throw new InvalidOperationException("Callback failure"); };
+            host.HasMissionContext = false;
+            Assert.ThrowsExactly<InvalidOperationException>(() => controller.ExitMissionPreset());
+            host.HasMissionContext = true;
+            Assert.IsTrue(host.IsMissionPresetSelected);
+            Assert.AreEqual(92, MessagePackSerializer.Deserialize<int>(controller.CreateCurrentMissionSnapshot()[nameof(Settings.SecondHostAmount)]));
+            Assert.AreEqual(0, host.Publications.Count);
+            CollectionAssert.AreEqual(personal, File.ReadAllBytes(SettingsPath));
+            host.SnapshotApplied = null;
+            host.HasMissionContext = false;
+            controller.ExitMissionPreset();
+            Assert.AreEqual(0, host.SelectedPreset);
+            Assert.AreEqual(19, host.Target.SecondHostAmount);
+        }
+
+        [TestMethod]
+        public void ApplyingAClientWorkingCopyCannotReplaceItsOwnedHostPreset()
+        {
+            var host = new Host();
+            var controller = Start(host);
+            host.IsLocalHost = false;
+            controller.ApplyWorkingSnapshot(Values(91, 92, 43));
+            Assert.AreEqual(17, host.Target.HostAmount);
+            Assert.AreEqual(19, MessagePackSerializer.Deserialize<int>(Read()[nameof(Settings.SecondHostAmount)]));
+            Assert.AreEqual(43, host.Target.LocalAmount);
+        }
+    }
+}

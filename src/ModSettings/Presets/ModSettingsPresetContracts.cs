@@ -24,6 +24,21 @@ namespace APIShared.ModSettings
         void System_SetExplicitMissionSettings(bool hasExplicitSettings);
     }
 
+    /// <summary>Optional endpoint contract for settings whose stored form changed between versions of the mod.
+    /// A pure rename is declared with <see cref="ModSettingRenamedFromAttribute"/> instead.</summary>
+    /// <remarks>A save keeps the host settings and Trail author rules as the mod version that wrote it stored them.
+    /// Before APIShared applies such a saved mission snapshot it asks the endpoint for the form its current setters
+    /// keep, applies that result and verifies the applied host values against it. Without this contract a setter that
+    /// converts a retired property cannot be told apart from a setter that ignored its value, and the load is refused.
+    /// Called on the Unity thread while a save load is prepared, before any setter runs. The implementation must not
+    /// change settings or retain the argument; it returns a dictionary (the same or a new one) that still contains
+    /// every host property of the input. Returning null or throwing refuses that load.</remarks>
+    public interface IModSettingsSnapshotMigration
+    {
+        /// <summary>Returns the saved mission snapshot in the form the current setters keep.</summary>
+        Dictionary<string, byte[]> System_MigrateMissionSnapshot(Dictionary<string, byte[]> snapshot);
+    }
+
     /// <summary>Extended endpoint for replacing an editable mission working copy without touching its source.</summary>
     public interface IModSettingsWorkingCopyEndpoint : IModSettingsPresetEndpoint
     {
@@ -106,6 +121,8 @@ namespace APIShared.ModSettings
         public string DisplayName { get; internal set; } = string.Empty;
         /// <summary>Whether changes to this setting require startup application instead of live application.</summary>
         public bool RequiresRestart { get; internal set; }
+        /// <summary>Whether mission sources must preserve the current personal value, independently of network ownership.</summary>
+        public bool MissionIndependent { get; internal set; }
         /// <summary>Host, per-player or local ownership used for preset filtering and application.</summary>
         public PresetSettingScope Scope { get; internal set; }
     }
@@ -152,7 +169,7 @@ namespace APIShared.ModSettings
         /// <summary>Selected setting keys and their value-resolution rules; values are validated against the target schema.</summary>
         public IReadOnlyDictionary<string, PublishedPresetSetting> Settings { get; internal set; } =
             new Dictionary<string, PublishedPresetSetting>(StringComparer.Ordinal);
-        /// <summary>Path of the discovered preset file, used for diagnostics and personal overwrite operations.</summary>
+        /// <summary>Path of the discovered preset file, used for diagnostics and deletion. Personal saves always target Documents, including when this source is an old plugin-local file.</summary>
         public string SourcePath { get; internal set; } = string.Empty;
 
         /// <summary>True only for personal presets; bundled and external sources remain read-only.</summary>

@@ -10,6 +10,23 @@ namespace APISharedTests
     [TestCategory("MissionLifecycle")]
     public sealed class MissionLifecycleTests
     {
+        [TestMethod]
+        public void NativeAdmissionAbortUnwindsTheWholeStartAndDoesNotHideUnrelatedExceptions()
+        {
+            int originalCalls = 0, postLoadCalls = 0;
+            int result = MissionLifecycleService.InvokeNativeAdmission<int>(() => {
+                originalCalls++;
+                Action nativeLoad = () => throw new MissionLifecycleService.NativeAdmissionAbort("changed file");
+                nativeLoad();
+                postLoadCalls++; return 1;
+            }, out bool normal);
+            Assert.IsFalse(normal); Assert.AreEqual(0, result);
+            Assert.AreEqual(1, originalCalls); Assert.AreEqual(0, postLoadCalls);
+            Assert.AreEqual(7, MissionLifecycleService.InvokeNativeAdmission(() => 7, out normal));
+            Assert.IsTrue(normal);
+            Assert.ThrowsExactly<InvalidOperationException>(() => MissionLifecycleService.InvokeNativeAdmission<int>(
+                () => throw new InvalidOperationException("original failed"), out _));
+        }
         private static MissionContext Seed(MissionStartKind kind) => new MissionContext(0, kind, default,
             kind == MissionStartKind.EditorCreated ? null : "same.map", "same map", false, 160, 1, 1);
 
@@ -114,6 +131,63 @@ namespace APISharedTests
             reentrant.Ready(reentrantId, Seed(MissionStartKind.NewGame));
             Assert.IsTrue(order.SequenceEqual(new[] { "first:Start", "second:Start", "first:End", "second:End" }),
                 "reentrant End overtook Start for another observer");
+        }
+
+        [TestMethod]
+        public void RestartOutsideReadyGameplayKeepsVanillaInsteadOfThrowing()
+        {
+            var state = new MissionLifecycleState(_ => { });
+            var gameplay = Seed(MissionStartKind.LoadedSave);
+            long session = state.Begin(gameplay);
+            state.Ready(session, gameplay);
+            MissionContext current = state.Current;
+            Assert.IsTrue(MissionLifecycleService.IsLifecycleRestart(false, current, true));
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(true, current, true), "running attempt");
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(false, current, false), "foreign thread");
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(false, null, true), "no session");
+            var editorState = new MissionLifecycleState(_ => { });
+            var editor = Seed(MissionStartKind.EditorLoaded);
+            long editorSession = editorState.Begin(editor);
+            editorState.Ready(editorSession, editor);
+            Assert.IsFalse(MissionLifecycleService.IsLifecycleRestart(false, editorState.Current, true), "editor");
+
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Lifecycle,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId, current, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Stale,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId + 1, current, true));
+            // "Yes" without a tracked gameplay mission must still restart through Vanilla.
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(null, current, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId, null, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(editorState.Current.SessionId, editorState.Current, true));
+            Assert.AreEqual(MissionLifecycleService.ConfirmedRestart.Vanilla,
+                MissionLifecycleService.DecideConfirmedRestart(current.SessionId, current, false));
+        }
+
+        [TestMethod]
+        public void ReplacementCarriesImmutableRestartOwnershipBeforeCleanup()
+        {
+            var events = new List<MissionLifecycleNotification>();
+            var state = new MissionLifecycleState(_ => { });
+            state.Register("settings", "ownership", events.Add);
+            var original = Seed(MissionStartKind.LoadedSave);
+            long source = state.Begin(original);
+            state.Ready(source, original);
+            var restart = new MissionContext(0, MissionStartKind.NewGame, default,
+                "same.map", "same map", true).AsRestartOf(source);
+            long destination = state.Begin(restart);
+            var end = events.Last();
+            Assert.AreEqual(MissionEndReason.Replaced, end.EndReason);
+            Assert.AreEqual(source, end.ReplacementContext.RestartedFromSessionId);
+            Assert.AreEqual(destination, end.ReplacementContext.SessionId);
+            Assert.IsFalse(end.ReplacementContext.IsSave);
+            state.Ready(destination, restart);
+            Assert.AreEqual(source, state.Current.RestartedFromSessionId);
+            state.End(MissionEndReason.SceneChanged);
+            Assert.IsNull(events.Last().ReplacementContext);
+            Assert.AreEqual(destination, end.ReplacementContext.SessionId, "retained notification changed after completion");
         }
 
         [TestMethod]
