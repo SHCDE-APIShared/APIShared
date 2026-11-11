@@ -48,6 +48,7 @@ namespace APIShared
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
             Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
+            Audio.UnitVoiceRuntime.InitializeManaged(RuntimeLogger);
             ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
             ModSettings.PersonalSettingsWriteRuntime.Initialize(RuntimeLogger);
@@ -125,6 +126,8 @@ namespace APIShared
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("plague heights", () => PlagueHeightService.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
+                    context, RuntimeLogger, runtime.NativeOwnership, hash)),
+                new NativeInitializationStep("unit speech context", () => Audio.UnitVoiceNativeRuntime.Initialize(
                     context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("enemy building proximity", () => Buildings.EnemyProximityPolicies.Initialize(context, hash, RuntimeLogger)),

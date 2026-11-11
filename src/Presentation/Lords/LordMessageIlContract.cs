@@ -17,6 +17,7 @@ namespace APIShared.Presentation
             internal VariableDefinition Index;
             internal Instruction[] Text;
             internal Instruction Speech, Video;
+            internal bool SharedSpeech;
         }
         internal static void Validate(MethodInfo method)
         {
@@ -40,7 +41,21 @@ namespace APIShared.Presentation
             foreach (var instruction in body)
             {
                 if (instruction.OpCode != OpCodes.Call && instruction.OpCode != OpCodes.Callvirt) continue;
-                if (!(instruction.Operand is MethodReference method) || !method.HasThis || method.ReturnType.MetadataType != MetadataType.Void) continue;
+                if (!(instruction.Operand is MethodReference method) || method.ReturnType.MetadataType != MetadataType.Void) continue;
+                if (!method.HasThis && method.DeclaringType.FullName == "APIShared.Audio.AudioSpeechRecordAdapter" && method.Name == "Play")
+                {
+                    if (result.Speech != null || method.Parameters.Count != 8 || method.Parameters[0].ParameterType.FullName != "SFXManager" ||
+                        method.Parameters[1].ParameterType.MetadataType != MetadataType.Int32 ||
+                        method.Parameters[2].ParameterType.MetadataType != MetadataType.String ||
+                        method.Parameters[3].ParameterType.MetadataType != MetadataType.Single ||
+                        method.Parameters[4].ParameterType.MetadataType != MetadataType.Boolean ||
+                        method.Parameters[5].ParameterType.MetadataType != MetadataType.Boolean ||
+                        method.Parameters[6].ParameterType.MetadataType != MetadataType.Int32 ||
+                        method.Parameters[7].ParameterType.FullName != typeof(EngineInterface.PlayState).FullName.Replace('+', '/')) throw Invalid("shared speech signature/count");
+                    result.Speech = instruction; result.SharedSpeech = true;
+                    continue;
+                }
+                if (!method.HasThis) continue;
                 if (method.DeclaringType.FullName == "OnScreenText" && method.Name == "addOSTEntry")
                 {
                     if (method.Parameters.Count != 6 || method.Parameters[0].ParameterType.FullName != "Enums/eOnScreenText" ||
@@ -79,7 +94,7 @@ namespace APIShared.Presentation
         {
             Sites sites = Find(il); // All validation precedes the first instruction edit.
             foreach (var text in sites.Text) Replace(il, text, sites.Index, "Text");
-            Replace(il, sites.Speech, sites.Index, "Speech");
+            if (!sites.SharedSpeech) Replace(il, sites.Speech, sites.Index, "Speech");
             Replace(il, sites.Video, sites.Index, "Video");
         }
         private static void Replace(ILContext il, Instruction call, VariableDefinition index, string helper)

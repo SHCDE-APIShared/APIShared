@@ -1425,6 +1425,17 @@ For a cue that depends on one unit (for example a converted unit's kill sound), 
 acting unit's game ID and GlobalId, the killed victim for melee kill cues, and
 `TryReplaceSound`. See [exact-unit cue replacement](AUDIO.md#exact-unit-cue-replacement).
 
+### Unit speech replacement
+
+Use the separate `APIShared.Audio.UnitVoiceEvents` for troop/civilian voices,
+recruitment and special actions. Register on any thread, retain the process-owned
+handle and prepare private mod/map resources outside callbacks. Pre/Post run on
+Unity. Source/player/bank/situation selections filter each registration; request
+gain remains separate from game speech-volume controls. Inspect availability
+and nullable source evidence before applying a policy. See the authoritative
+[unit-voice guide](AUDIO.md#unit-voices) and
+[consumer example](../examples/ThirdPartyMod/UnitVoiceExample.cs).
+
 ## General in-game tooltip extensions
 
 Use `APIShared.Presentation.TooltipPresentation.TryRegisterText` for literal strings,

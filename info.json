@@ -14,7 +14,9 @@
       "Version": "0.47.0",
       "Changes": [
         "Add owner-bound Lord message presentation events with independent voice, video and text replacement, using existing Vanilla messages or private mod resources.",
-        "Keep native message queueing and gameplay random state unchanged; bind replacement subtitles to the actual displayed message and retain original components unless explicitly replaced."
+        "Keep native message queueing and gameplay random state unchanged; bind replacement subtitles to the actual displayed message and retain original components unless explicitly replaced.",
+        "Development addition: add general Unit Voices rules for attributed troop orders, recruitment, siege and special actions, and civilian comments, with Vanilla cue replacement, prepared private mod/map recordings, suppression and per-request volume factors.",
+        "Coordinate Unit Voices and Lord message audio at their shared playback site while preserving the existing SFX API; keep consumer-specific skin and faction rules outside APIShared."
       ]
     },
     {

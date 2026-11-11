@@ -817,6 +817,17 @@ See [public audio contracts](AUDIO.md#public-audio-contracts).
 clip references. `SoundClipHandle` is distinct from an effect ID; preload before
 using `TryReplaceClip`. See [clip contracts](AUDIO.md#preloaded-custom-clips).
 
+### Unit voices
+
+The development unit-voice API is separate from SFX: `UnitVoiceEvents` publishes
+Unity Pre/Post for attributed troop/civilian speech, recruitment and special
+actions. `UnitVoiceCatalog`, `UnitVoiceSelection` and `UnitVoiceResources` provide
+discovery, source/player/situation filters and prepared private mod/map voices.
+Rules compose request gain or suppress presentation. Emission identity and
+playback-time locale/mission evidence remain distinct; no live unit ID is invented.
+See [unit-voice contracts and limits](AUDIO.md#unit-voices) and the
+[compiled example](../examples/ThirdPartyMod/UnitVoiceExample.cs).
+
 ### Native source events
 
 Not in packages up to 0.9.1; check the package you require. `APIShared.Audio.SoundSourceEvents`

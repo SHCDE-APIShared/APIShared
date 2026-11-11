@@ -190,6 +190,133 @@ APIShared.Audio.SoundTarget | public override string ToString()
 APIShared.Audio.SoundTargetKind | public enum APIShared.Audio.SoundTargetKind : int
 APIShared.Audio.SoundTargetKind | CustomClip = 1
 APIShared.Audio.SoundTargetKind | VanillaEffect = 0
+APIShared.Audio.UnitVoiceBankDescriptor | public sealed class APIShared.Audio.UnitVoiceBankDescriptor
+APIShared.Audio.UnitVoiceBankDescriptor | public System.Collections.Generic.IReadOnlyList<APIShared.Audio.UnitVoiceCue> Cues { get; }
+APIShared.Audio.UnitVoiceBankDescriptor | public string Key { get; }
+APIShared.Audio.UnitVoiceCatalog | public static class APIShared.Audio.UnitVoiceCatalog
+APIShared.Audio.UnitVoiceCatalog | public static System.Collections.Generic.IReadOnlyList<APIShared.Audio.UnitVoiceBankDescriptor> VoiceBanks { get; }
+APIShared.Audio.UnitVoiceCatalog | public static System.Collections.Generic.IReadOnlyList<APIShared.Audio.UnitVoiceCue> Cues { get; }
+APIShared.Audio.UnitVoiceCatalog | public static System.Collections.Generic.IReadOnlyList<APIShared.Audio.UnitVoiceSourceDescriptor> Sources { get; }
+APIShared.Audio.UnitVoiceCatalog | public static System.Collections.Generic.IReadOnlyList<string> SourceKeys { get; }
+APIShared.Audio.UnitVoiceCatalog | public static bool TryGetCue(string key, out APIShared.Audio.UnitVoiceCue cue)
+APIShared.Audio.UnitVoiceContext | public sealed class APIShared.Audio.UnitVoiceContext
+APIShared.Audio.UnitVoiceContext | public APIShared.Audio.UnitVoiceSource Source { get; }
+APIShared.Audio.UnitVoiceContext | public APIShared.MissionContext MissionContext { get; }
+APIShared.Audio.UnitVoiceContext | public bool IgnorePauseState { get; }
+APIShared.Audio.UnitVoiceContext | public bool IgnoreSpeechMuting { get; }
+APIShared.Audio.UnitVoiceContext | public float OriginalVolume { get; }
+APIShared.Audio.UnitVoiceContext | public int Channel { get; }
+APIShared.Audio.UnitVoiceContext | public long InvocationId { get; }
+APIShared.Audio.UnitVoiceContext | public string OriginalPath { get; }
+APIShared.Audio.UnitVoiceContext | public string SpeechAssetBranch { get; }
+APIShared.Audio.UnitVoiceContext | public string UiLocale { get; }
+APIShared.Audio.UnitVoiceCue | public sealed class APIShared.Audio.UnitVoiceCue
+APIShared.Audio.UnitVoiceCue | public APIShared.Audio.UnitVoiceEvidence Evidence { get; }
+APIShared.Audio.UnitVoiceCue | public APIShared.Audio.UnitVoiceSituation Situation { get; }
+APIShared.Audio.UnitVoiceCue | public string FileName { get; }
+APIShared.Audio.UnitVoiceCue | public string Key { get; }
+APIShared.Audio.UnitVoiceCue | public string VoiceBankKey { get; }
+APIShared.Audio.UnitVoiceEvents | public static class APIShared.Audio.UnitVoiceEvents
+APIShared.Audio.UnitVoiceEvents | public static bool Available { get; }
+APIShared.Audio.UnitVoiceEvents | public static bool IsSourceAvailable(string sourceKey)
+APIShared.Audio.UnitVoiceEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Audio.UnitVoiceSelection sources, System.Action<APIShared.Audio.UnitVoicePreEventArgs> pre, System.Action<APIShared.Audio.UnitVoicePostEventArgs> post, out APIShared.Audio.UnitVoiceRegistration registration, out string reason, int order = 0)
+APIShared.Audio.UnitVoiceEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Audio.UnitVoicePreEventArgs> pre, System.Action<APIShared.Audio.UnitVoicePostEventArgs> post, out APIShared.Audio.UnitVoiceRegistration registration, out string reason, int order = 0)
+APIShared.Audio.UnitVoiceEvents | public static long CallbackFailures { get; }
+APIShared.Audio.UnitVoiceEvents | public static string Diagnostic { get; }
+APIShared.Audio.UnitVoiceEvents | public static string GetSourceDiagnostic(string sourceKey)
+APIShared.Audio.UnitVoiceEvidence | public enum APIShared.Audio.UnitVoiceEvidence : int
+APIShared.Audio.UnitVoiceEvidence | InGameConfirmed = 3
+APIShared.Audio.UnitVoiceEvidence | Inferred = 1
+APIShared.Audio.UnitVoiceEvidence | NativeAudited = 2
+APIShared.Audio.UnitVoiceEvidence | Unknown = 0
+APIShared.Audio.UnitVoicePostEventArgs | public sealed class APIShared.Audio.UnitVoicePostEventArgs
+APIShared.Audio.UnitVoicePostEventArgs | public APIShared.Audio.UnitVoiceContext Context { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public APIShared.Audio.UnitVoiceTarget Target { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public bool WasSubmitted { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public bool WasSuppressed { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public float VolumeFactor { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public object State { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public string Diagnostic { get; }
+APIShared.Audio.UnitVoicePostEventArgs | public string FallbackReason { get; }
+APIShared.Audio.UnitVoicePreEventArgs | public sealed class APIShared.Audio.UnitVoicePreEventArgs : APIShared.Events.InterceptionPreEventArgs
+APIShared.Audio.UnitVoicePreEventArgs | public APIShared.Audio.UnitVoiceContext Context { get; }
+APIShared.Audio.UnitVoicePreEventArgs | public APIShared.Audio.UnitVoiceTarget Target { get; }
+APIShared.Audio.UnitVoicePreEventArgs | public bool TryReplaceResource(APIShared.Audio.UnitVoiceResourceHandle resource)
+APIShared.Audio.UnitVoicePreEventArgs | public bool TryReplaceVanillaCue(APIShared.Audio.UnitVoiceCue cue)
+APIShared.Audio.UnitVoicePreEventArgs | public float VolumeFactor { get; }
+APIShared.Audio.UnitVoicePreEventArgs | public void MultiplyVolume(float value)
+APIShared.Audio.UnitVoicePreEventArgs | public void UseOriginal()
+APIShared.Audio.UnitVoiceRegistration | public sealed class APIShared.Audio.UnitVoiceRegistration
+APIShared.Audio.UnitVoiceRegistration | public APIShared.Audio.UnitVoiceSelection Sources { get; }
+APIShared.Audio.UnitVoiceRegistration | public bool Enabled { get; }
+APIShared.Audio.UnitVoiceRegistration | public void SetEnabled(bool value)
+APIShared.Audio.UnitVoiceResourceHandle | public sealed class APIShared.Audio.UnitVoiceResourceHandle
+APIShared.Audio.UnitVoiceResourceHandle | public APIShared.Audio.UnitVoiceResourceState State { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public bool IsReady { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public bool MapScoped { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public double DurationSeconds { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public float BaseVolume { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public int Channels { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public int Frequency { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public int SamplesPerChannel { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public long DecodedByteCount { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public string Diagnostic { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public string OwnerGuid { get; }
+APIShared.Audio.UnitVoiceResourceHandle | public string RegistrationId { get; }
+APIShared.Audio.UnitVoiceResourceState | public enum APIShared.Audio.UnitVoiceResourceState : int
+APIShared.Audio.UnitVoiceResourceState | Failed = 2
+APIShared.Audio.UnitVoiceResourceState | Invalidated = 3
+APIShared.Audio.UnitVoiceResourceState | Pending = 0
+APIShared.Audio.UnitVoiceResourceState | Ready = 1
+APIShared.Audio.UnitVoiceResources | public static class APIShared.Audio.UnitVoiceResources
+APIShared.Audio.UnitVoiceResources | public static bool IsReady { get; }
+APIShared.Audio.UnitVoiceResources | public static bool TryPrepareMapResource(string ownerGuid, string registrationId, string archivePath, System.Action<APIShared.Audio.UnitVoiceResourceHandle> completed, out APIShared.Audio.UnitVoiceResourceHandle handle, out string reason, float baseVolume = 1f)
+APIShared.Audio.UnitVoiceResources | public static bool TryPrepareModResource(string ownerGuid, string registrationId, string relativePath, System.Action<APIShared.Audio.UnitVoiceResourceHandle> completed, out APIShared.Audio.UnitVoiceResourceHandle handle, out string reason, float baseVolume = 1f)
+APIShared.Audio.UnitVoiceResources | public static long CallbackFailures { get; }
+APIShared.Audio.UnitVoiceResources | public static string Diagnostic { get; }
+APIShared.Audio.UnitVoiceSelection | public sealed class APIShared.Audio.UnitVoiceSelection
+APIShared.Audio.UnitVoiceSelection | public System.Collections.Generic.IReadOnlyList<string> SourceKeys { get; }
+APIShared.Audio.UnitVoiceSelection | public bool Matches(APIShared.Audio.UnitVoiceSource source)
+APIShared.Audio.UnitVoiceSelection | public static APIShared.Audio.UnitVoiceSelection All { get; }
+APIShared.Audio.UnitVoiceSelection | public static bool TryCreate(out APIShared.Audio.UnitVoiceSelection selection, out string reason, System.Collections.Generic.IEnumerable<string> sourceKeys = null, System.Collections.Generic.IEnumerable<string> cueKeys = null, System.Collections.Generic.IEnumerable<string> voiceBankKeys = null, System.Collections.Generic.IEnumerable<APIShared.Audio.UnitVoiceSituation> situations = null, System.Collections.Generic.IEnumerable<int> requestingPlayerIds = null, System.Collections.Generic.IEnumerable<int> ownerPlayerIds = null, System.Collections.Generic.IEnumerable<int> requestedUnitTypes = null)
+APIShared.Audio.UnitVoiceSituation | public enum APIShared.Audio.UnitVoiceSituation : int
+APIShared.Audio.UnitVoiceSituation | AttackMelee = 7
+APIShared.Audio.UnitVoiceSituation | AttackStrong = 5
+APIShared.Audio.UnitVoiceSituation | AttackWeak = 6
+APIShared.Audio.UnitVoiceSituation | CivilianComment = 14
+APIShared.Audio.UnitVoiceSituation | DigMoat = 8
+APIShared.Audio.UnitVoiceSituation | Disband = 9
+APIShared.Audio.UnitVoiceSituation | EngineerAction = 13
+APIShared.Audio.UnitVoiceSituation | Heal = 11
+APIShared.Audio.UnitVoiceSituation | Move = 2
+APIShared.Audio.UnitVoiceSituation | MoveDistant = 4
+APIShared.Audio.UnitVoiceSituation | MoveUnreachable = 3
+APIShared.Audio.UnitVoiceSituation | Recruitment = 10
+APIShared.Audio.UnitVoiceSituation | Sap = 12
+APIShared.Audio.UnitVoiceSituation | Selection = 1
+APIShared.Audio.UnitVoiceSituation | Unknown = 0
+APIShared.Audio.UnitVoiceSource | public struct APIShared.Audio.UnitVoiceSource
+APIShared.Audio.UnitVoiceSource | public APIShared.Audio.UnitVoiceEvidence Evidence { get; }
+APIShared.Audio.UnitVoiceSource | public APIShared.Audio.UnitVoiceSituation Situation { get; }
+APIShared.Audio.UnitVoiceSource | public int? OwnerPlayerId { get; }
+APIShared.Audio.UnitVoiceSource | public int? RequestedUnitType { get; }
+APIShared.Audio.UnitVoiceSource | public int? RequestingPlayerId { get; }
+APIShared.Audio.UnitVoiceSource | public long SessionId { get; }
+APIShared.Audio.UnitVoiceSource | public string OriginalCueKey { get; }
+APIShared.Audio.UnitVoiceSource | public string SourceKey { get; }
+APIShared.Audio.UnitVoiceSource | public string VoiceBankKey { get; }
+APIShared.Audio.UnitVoiceSourceDescriptor | public sealed class APIShared.Audio.UnitVoiceSourceDescriptor
+APIShared.Audio.UnitVoiceSourceDescriptor | public APIShared.Audio.UnitVoiceEvidence Evidence { get; }
+APIShared.Audio.UnitVoiceSourceDescriptor | public string Description { get; }
+APIShared.Audio.UnitVoiceSourceDescriptor | public string Key { get; }
+APIShared.Audio.UnitVoiceTarget | public sealed class APIShared.Audio.UnitVoiceTarget
+APIShared.Audio.UnitVoiceTarget | public APIShared.Audio.UnitVoiceCue Cue { get; }
+APIShared.Audio.UnitVoiceTarget | public APIShared.Audio.UnitVoiceResourceHandle Resource { get; }
+APIShared.Audio.UnitVoiceTarget | public APIShared.Audio.UnitVoiceTargetKind Kind { get; }
+APIShared.Audio.UnitVoiceTargetKind | public enum APIShared.Audio.UnitVoiceTargetKind : int
+APIShared.Audio.UnitVoiceTargetKind | Original = 0
+APIShared.Audio.UnitVoiceTargetKind | Resource = 2
+APIShared.Audio.UnitVoiceTargetKind | Vanilla = 1
 APIShared.Automation.AutomationClient | public sealed class APIShared.Automation.AutomationClient
 APIShared.Automation.AutomationClient | public APIShared.Automation.AutomationRun Start(System.Guid runId, System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationStep> steps, BepInEx.Logging.ManualLogSource logger, System.Action<APIShared.Automation.AutomationResult> completed = null, bool quitWhenDone = false)
 APIShared.Automation.AutomationResult | public sealed class APIShared.Automation.AutomationResult

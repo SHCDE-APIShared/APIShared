@@ -162,6 +162,12 @@ namespace APIShared.Presentation
             self.playSpeech(channel, selected == null || selected.Audio.Kind == LordMessageSourceKind.Original ? path : selected.Audio.Path,
                 volume, ignoreMuting, ignorePause);
         }
+        internal static bool TryForwardSpeech(SFXManager self, int channel, string path, float volume, bool ignoreMuting, bool ignorePause, int index)
+        {
+            if (frame?.AtAudio(index) == null) return false;
+            Speech(self, channel, path, volume, ignoreMuting, ignorePause, index);
+            return true;
+        }
         internal static void Video(SFXManager self, string path, bool loop, bool waitForSpeech, int index)
         {
             var current = frame;

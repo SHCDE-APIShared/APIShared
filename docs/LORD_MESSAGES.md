@@ -74,6 +74,12 @@ See the [compiled consumer example](../examples/ThirdPartyMod/LordMessageExample
 
 ## Coverage and compatibility
 
+Troop orders, recruitment and civilian comments belong to the separate
+[Unit Voices API](AUDIO.md#unit-voices). Lord-message and unit-voice presentation
+cooperate at the shared speech-record site: a recognised complete Lord message
+keeps its grouped audio/video/text handling and does not enter unit-voice rules.
+The existing SFX API continues to handle combat sounds and other effects.
+
 The service recognises complete Lord message groups emitted by Vanilla:
 record 20 (text header), 18 (speech), 22 (controls), then 21 (video), including
 the audited optional music/ambient transitions or stop-old-video records before

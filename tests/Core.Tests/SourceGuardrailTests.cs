@@ -70,6 +70,48 @@ public sealed class SourceGuardrailTests
             void RollbackUnpublished() { GUARD arbitraryName?.Dispose(); }
         }
         """;
+    const string UnitVoicePublication = """
+        class NativeDetour { public void Enable() {} public void Dispose() {} }
+        static class UnitVoiceNativeRuntime {
+            private sealed class Entry { internal bool Published; internal NativeDetour Hook; }
+            private static readonly List<Entry> roots = new();
+            private static int attempted, ready;
+            internal static void Initialize() {
+                if (Interlocked.Exchange(ref attempted, 1) != 0) return;
+                var entry = new Entry(); roots.Add(entry);
+                Publish(entry);
+                Volatile.Write(ref ready, 1);
+            }
+            private static void Publish(Entry entry) { entry.Published = true; entry.Hook.Enable(); }
+            private static void RetireUnpublished(Entry entry, object ownership) { if (entry.Published) return; entry.Hook?.Dispose(); }
+        }
+        """;
+    [TestMethod]
+    public void UnitVoiceStartupPublicationAndCandidateCleanupAreStructurallyGuarded()
+    {
+        Model(UnitVoicePublication).CheckHooks();
+        Model(UnitVoicePublication.Replace("Publish(", "InstallCandidate(").Replace("Published", "PublicationAttempted")
+            .Replace("Entry entry", "Entry candidate").Replace("entry.", "candidate.")
+            .Replace("if (candidate.PublicationAttempted)", "if ((candidate.PublicationAttempted))")).CheckHooks();
+    }
+
+    [TestMethod]
+    [DataRow("entry.Published = true; entry.Hook.Enable();", "entry.Hook.Enable(); entry.Published = true;")]
+    [DataRow("entry.Published = true; entry.Hook.Enable();", "entry.Published = true; entry.Hook.Enable(); entry.Published = false;")]
+    [DataRow("if (entry.Published) return;", "")]
+    [DataRow("Volatile.Write(ref ready, 1);", "Volatile.Write(ref ready, 1); Publish(entry);")]
+    [DataRow("Publish(entry);", "System.Action later = () => Publish(entry);")]
+    [DataRow("Publish(entry);", "System.Action<Entry> later = Publish;")]
+    [DataRow("roots.Add(entry);", "roots.Add(entry); roots.Clear();")]
+    [DataRow("roots.Add(entry);", "roots.Add(entry); Volatile.Write(ref attempted, 0);")]
+    [DataRow("roots.Add(entry);", "roots.Add(entry); attempted = 0;")]
+    [DataRow("if (entry.Published) return;", "if (entry.Published) { if (false) return; }")]
+    [DataRow("internal static void Initialize()", "internal static void OnDestroy() { Publish(null); } internal static void Initialize()")]
+    public void UnitVoicePublicationRejectsLateDeferredResetOrUnguardedPaths(string before, string after)
+    {
+        Assert.IsTrue(UnitVoicePublication.Contains(before), "Fixture mutation must change the source.");
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model(UnitVoicePublication.Replace(before, after)).CheckHooks());
+    }
     [TestMethod]
     public void AudioCountsFormattingAndNeighborMethodsAreNotContracts()
     {

@@ -1695,3 +1695,207 @@ queue/lifecycle chain, buffer transport, header flags, signed text selectors,
 allowed intervening records and media flags. The consumer continues the original
 managed path without changing the records when the protocol or any individual
 group is unsupported. No speculative group protocol is inferred from old RVAs.
+
+## Unit voices
+
+This section owns the binary update contract for `Audio/UnitVoices`. General
+consumer behavior, resources and callback contracts belong in `docs/AUDIO.md`.
+The values below describe the audited binary, not a promise about future games.
+
+Reference SHA-256:
+
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`
+
+Audit observation: 2026-11-11. Source: the canonical installed `CrusaderDE.dll`,
+the current semantic baseline selected through `CURRENT.json`, its complete
+decompiler export and raw Ghidra xrefs. The corresponding Script Extender source
+identity in the baseline is commit
+`4014ca67c96974a5e6d697665baf5351cbfebde6`, tree
+`372b43a9e9d614075c3b827d3df2a2346ec356fa`.
+
+### Native interception and ABI
+
+Every target uses the existing RedBird NativeX64 Absolute backend with the
+audited minimum backend version and actual prepared/published hook validation.
+Callbacks, delegates, bridges, trampolines and guard storage remain rooted until
+process exit. Per-source activation modifies private data bytes, never code.
+
+| Source | Entry RVA | Displaced bytes | Function bytes | First continuation |
+|---|---:|---:|---:|---:|
+| `Troop.Dispatcher` | `0x3BC0` | 16 | 1244 | `0x3BD0` |
+| `Engineer.SpecialActions` | `0x3770` | 14 | 300 | `0x377E` |
+| `Civilian.Selection` | `0x97DA0` | 15 | 426 | `0x97DAF` |
+| `Recruitment.European` | `0xD5B40` | 15 | 671 | `0xD5B4F` |
+| `Recruitment.Bedouin` | `0xD5DE0` | 15 | 585 | `0xD5DEF` |
+| `Recruitment.Arabian` | `0xD6290` | 15 | 649 | `0xD629F` |
+| `Recruitment.Support` | `0xD6030` | 15 | 594 | `0xD603F` |
+| `Recruitment.Tunneler` | `0xD6830` | 15 | 365 | `0xD683F` |
+| Common speech output | `0xEDF0` | 14 | 179 | `0xEDFE` |
+
+`UnitVoiceNativeContract.Targets` contains the complete original byte sequence
+for each span. Whole-function disassembly and the hash-bound xref export contain
+no direct incoming call or jump into any open displaced interval. Calls and data
+references to the entry itself are permitted. Runtime requires original and live
+entry bytes to match before preparing the corresponding hook. An occupied source
+entry disables only that source; common identity, layout or output failure
+disables native capture as a whole.
+
+All nine audited functions return `void` and have at most four integer/pointer
+arguments. A shared Win64 four-register delegate forwards RCX/RDX/R8/R9 unchanged;
+extra arguments are ignored by the lower-arity original functions. No floating
+point parameters or fifth stack arguments exist in these signatures. Source
+callbacks save and restore a primitive thread-local capture frame around exactly
+one original invocation. Native code does not invoke public mod predicates.
+
+The dormant guard uses RAX as scratch and tail-jumps to the original trampoline.
+The active branch tail-jumps to the rooted callback. The audited entries do not
+consume incoming RAX or flags before replacing them. The engineer prologue
+contains `cmp edx,39; ja 0x389B`; its relocated branch must preserve that absolute
+target and both stack outcomes. Dispatcher and civilian prologues contain
+RIP-relative reads; validation checks the relocated addresses. The output
+prologue ends with `cmp dword ptr [rcx+0x28],0`, whose flags are consumed later;
+the original instruction is replayed in the trampoline.
+
+The current implementation deliberately fails closed for an unknown native hash.
+Entry matching alone cannot recover the shared globals, native voice-table
+layouts, selected-civilian identity or the transport copy contract. There is no
+semantic data-layout fallback for these dependencies. A new hash requires a
+feature audit and an updated contract, not changing the accepted hash to silence
+a check. Existing SFX audio remains independent.
+
+### Native source meaning
+
+`0x3BC0` receives the requested unit type and situation. The requested type is
+different from the selected voice bank: siege devices can use engineer voices,
+and Monk selects Monk or Temple Guard according to religion. The dispatcher also
+routes engineer actions to `0x3770` and Bedouin healer/sapper/demolisher actions to
+`0x38A0`. The surrounding dispatcher scope survives those calls.
+
+The direct dispatcher callers are `0x11C3F0`, `0x11C490`, `0x11C530`,
+`0x11C580`, `0x11C5D0`, `0x11C620`, `0x11CA70`, `0x11CC30`, `0x11D190`,
+`0x143400`, `0x191250`, `0x1918A0`, and `0x195E30`. These cover selection,
+movement, attack, moat excavation, disband and special acknowledgements. The
+native table positions used for public action interpretation are 0,6,9,10,11,
+17,21,25,41; position42 normalizes to21 on the ordinary path. Attack-group names
+remain inferred rather than claiming in-game confirmation.
+
+`0x3770` is additionally called directly by `0x8C5F0`, `0x90CD0`, `0x11C650`,
+`0x191250`, `0x1918A0`, and `0x199B70`. Direct special actions do not reliably
+identify one requested unit type, so that nullable field remains unknown. A nested
+healthy engineer scope retains the outer requested type. If the engineer source
+is unavailable, its special-table assets cannot be relabelled as a healthy outer
+dispatcher source.
+
+Recruitment scopes capture the originally requested type, while known success
+assets classify the actual acknowledgement. Their original functions retain all
+resource/capacity checks and cooldowns. Error calls from those same functions
+use Genie or adviser assets and are excluded by the unit cue catalog. The
+confirmation may reuse a previously stored type for its voice; the requested
+type and actual voice-bank fields intentionally remain separate.
+
+`0x97C70` calls the civilian selection routine `0x97DA0`. Its selected unit ID
+comes from RVA `0x67E839C` and is passed unchanged as a one-based ID to the captured
+`GameUnitManagerAPI` through `UnitAccess`. The unit's type and actual owner are
+read while the existing engine monitor is held. The selected comments are chosen
+by `0x18CE60` and `0x1940C0`, based on work and settlement state. Male/female
+Peasant voice banks do not imply a Peasant unit type. Native early gates exclude
+Lords/Ladies and several non-speaking types; the API does not create voices for
+them or interpret combat grunts as speech.
+
+The requester is the current native view at RVA `0x88E3D70`. It is not promoted
+to an independently verified owner for dispatcher or recruitment scopes. Only
+the civilian selected-unit path supplies a direct owner snapshot. No live unit
+pointer, ID or claimed identity crosses to Unity. Player IDs are one-based and
+unknown values remain nullable.
+
+The unit manager and validated engine-monitor object are captured at startup.
+The callback requires `Monitor.IsEntered` on that same monitor; it never acquires
+a competing engine lock or constructs a lazy manager. The installed SDK fields
+are public and validated at runtime: type `+0x8A`, owner `+0x92`, global ID
+`+0x94`, with record stride `0x490`.
+
+### Voice tables and managed routes
+
+The catalog is generated from the audited native tables, independently of the
+user's language-folder inventory:
+
+| Table | Reference RVA | Contract |
+|---|---:|---|
+| Ordinary banks | `0x2AD298` | 42 situation rows, stride `0x150`, 27 pointer columns |
+| Ordinary counts | `0x2AD290` | Variant counts at each `0x150` row |
+| Ordinary counters | `0x2AD370` | Per-bank counters inside each row |
+| Arabic engineer ordinary bank | `0x2B0EB0` | 42 pointers |
+| Engineer special actions | `0x2B09B0` | 40 rows, stride32; count, European/Arabic pointers, counter |
+| General table unit subset | `0x2B1000` | Only indices65–76, strings at stride1000 |
+| Male civilian comments | `0x2D7E50` | 126 slots at stride32, including intentional Null slots |
+| Female civilian comments | `0x2D8E50` | Same layout |
+
+The general-table unit subset is `Healer_Heal1–4`, `Sapper_Sap1–4`, and
+`Demolisher_Sap1–4`. The remaining general table and arbitrary calls to generic
+speech helpers are adviser/dialogue paths outside this API.
+
+The observation contains 919 distinct non-Null native asset names. That count is
+a dated measurement, not a public constant. Original managed routing is generated
+separately from the actual `SFXManager` speech arrays in their initialization
+order. In this observation, 29 native intent names have no managed speech-folder
+entry. Their folder remains null; custom playback and Vanilla cue targets do not
+guess a route or turn original silence into audio. Native intent observers can
+still see an attributed attempted request.
+
+### Shared filename transport and original behavior
+
+Sound manager base: RVA `0x88E72D0`. Its speech filename starts at `+0x41A6`,
+global RVA `0x88EB476`, with 128 transport bytes.
+
+The four native writer paths are `0xEDF0`, `0xEF20`, `0xF070`, and `0xF0F0`.
+The latter three are unrelated speech/message paths and are not hooked here.
+`0x19D960` copies 128 bytes to the returned play-state structure at `+0x600` and
+then clears all 128 source bytes. `EngineInterface.CopyPlayStateStruct` reads up
+to NUL, bounded by 128 bytes. `0x1A4270` appends record kind18 containing channel
+and volume, but no independent filename or source identity. Every record 18 of one
+`PlayState` uses that state's single final `speechFileName`.
+
+The API therefore preserves Vanilla's last-writer coalescing. It does not replay
+earlier per-request files that Vanilla overwrote. Internal ASCII tokens contain
+the catalog ordinal and an emission sequence, fit the existing speech buffer,
+and are introduced only at the common output argument. Generator counters,
+original filename comparisons and busy-channel checks have already run.
+
+EDF0 can reject before copying: negative manager state`+0x28` while channel 3 is
+busy, or native mode 4. A new pending snapshot is published only after the actual
+native filename equals its token. A rejected candidate leaves the older pending
+snapshot intact. Untagged EF20/F070/F0F0 overwrites cannot inherit the snapshot,
+even if they reuse an identical original filename.
+
+The copy hook restores every valid internal token to an original filename before
+the `PlayState` is published and attaches the matching immutable source via a
+`ConditionalWeakTable`. The token's ordinal still restores the original if the
+snapshot was lost. Multiple record 18 calls can share this binding; consumption
+does not remove it. End/disable transitions stop capture but retain resolution
+for already emitted tokens. Public invocation IDs are created per managed record,
+separately from the internal emission sequence.
+
+### Update and acceptance checklist
+
+1. Verify the canonical DLL hash and baseline provenance. Re-audit every changed
+   generator, alternative route, writer, copy and terminal playback path.
+2. Derive each source function and span anew, checking incoming branches,
+   original instruction boundaries, RIP operands, conditional targets and actual
+   backend displacement. Never accept a new enum value or layout based on a name.
+3. Rebuild catalog metadata from native tables; independently compare every
+   managed folder against the real `SFXManager` constructor arrays. Preserve Null
+   and unsupported-route behavior.
+4. Check local Extender/Fixes source and live entry bytes for overlap. Preserve
+   per-source failure isolation and the mandatory common pipeline boundary.
+5. Run the catalog and native tests: all real prologue preparations, relocation
+   checks, dormant/active guard execution, engineer conditional outcomes, original
+   call counts, independent source rejection, token restoration, foreign writers
+   and shared-state coalescing.
+6. Complete actual game/editor and, separately, matching host/client acceptance:
+   ordinary and special orders, recruitment, civilian comments, viewpoint changes,
+   save/load, pause and speech-volume groups. Offline copied code does not establish
+   audibility, Unity timing, actual startup-cleanup survival or multiplayer results.
+
+The copied-prologue tests never execute the unrelocated game-body references.
+Guard execution uses safe private native fixtures; the real engineer entry is
+executed only with both continuations replaced by private stack-correct endpoints.
