@@ -65,6 +65,8 @@ namespace APIShared
         public const string PlagueHeight = "plague-height";
         /// <summary>Capability for complete building repair costs and repair HUD tooltips.</summary>
         public const string BuildingRepair = "building-repair";
+        /// <summary>Capability for rows, buttons or text in the selected building's panel.</summary>
+        public const string BuildingPanelExtensions = "building-panel-extensions";
         /// <summary>Capability for importing planned AI castles and custom Lord configurations at Coop Trail starts.</summary>
         public const string CoopAiStartImport = "coop-ai-start-import";
         /// <summary>Diagnostic of the read-only native enemy-unit proximity category predicate.</summary>

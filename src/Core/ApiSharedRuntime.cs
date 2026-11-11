@@ -26,6 +26,8 @@ namespace APIShared
         private UnitHudPresentationService unitHudPresentation;
         private HudExtrasButtonsService hudExtrasButtons;
         private NativeCapabilityDiagnostic hudExtrasDiagnostic; // Set only when its member check failed.
+        private BuildingPanelExtensionsService buildingPanelExtensions;
+        private NativeCapabilityDiagnostic buildingPanelExtensionsDiagnostic; // Set only when its member check failed.
         private AivBuildStepService aivBuildStep;
         private LobbyStateService lobbyState;
         private PlayerDefeatService playerDefeat;

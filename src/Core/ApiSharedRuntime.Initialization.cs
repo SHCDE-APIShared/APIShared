@@ -59,6 +59,9 @@ namespace APIShared
                         NativeApiLog.Error(logger, "Side-HUD frame service unavailable: " + error);
                     }
                 }
+                // Dormant until its first registration installs the refresh hooks.
+                if (buildingPanelExtensions == null && buildingPanelExtensionsDiagnostic == null)
+                    BuildingPanelExtensionsService.TryCreate(logger, out buildingPanelExtensions, out buildingPanelExtensionsDiagnostic);
                 if (missionLifecycleDiagnostic.State == NativeCapabilityState.Pending)
                     MissionLifecycleService.TryCreate(logger, out missionLifecycle, out missionLifecycleDiagnostic);
                 if (missionPlayStateReadinessDiagnostic.State == NativeCapabilityState.Pending)

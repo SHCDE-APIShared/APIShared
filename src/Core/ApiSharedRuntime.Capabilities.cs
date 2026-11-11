@@ -96,6 +96,29 @@ namespace APIShared
             }
         }
 
+        internal bool TryGetBuildingPanelExtensions(string ownerGuid, out IBuildingPanelExtensionsCapability capability,
+            out NativeCapabilityDiagnostic diagnostic)
+        {
+            capability = null;
+            if (string.IsNullOrWhiteSpace(ownerGuid))
+            {
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions, NativeCapabilityState.ValidationFailed,
+                    string.Empty, "A nonempty owner GUID is required."); return false;
+            }
+            lock (sync)
+            {
+                if (buildingPanelExtensions == null)
+                {
+                    diagnostic = buildingPanelExtensionsDiagnostic ?? new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions,
+                        NativeCapabilityState.Pending, string.Empty, "Managed presentation is not initialized.");
+                    return false;
+                }
+                diagnostic = new NativeCapabilityDiagnostic(NativeCapabilityIds.BuildingPanelExtensions, NativeCapabilityState.Available,
+                    string.Empty, "Building panel extensions are available; refresh hooks install with the first registration.");
+                capability = buildingPanelExtensions.Bind(ownerGuid); return true;
+            }
+        }
+
         internal bool TryGetHudExtrasButtons(string ownerGuid, out IHudExtrasButtonsCapability capability, out NativeCapabilityDiagnostic diagnostic)
         {
             capability = null;

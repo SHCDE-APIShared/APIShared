@@ -91,6 +91,7 @@ namespace APIShared
                 [NativeCapabilityIds.HudExtrasButtons] = HudExtrasButtonsService.MemberContract,
                 [NativeCapabilityIds.BuildingRepair] = BuildingRepairService.MemberContract,
                 [NativeCapabilityIds.UnitHudPresentation] = UnitHudPresentationService.MemberContract,
+                [NativeCapabilityIds.BuildingPanelExtensions] = BuildingPanelExtensionsService.MemberContract,
                 [NativeCapabilityIds.CoopAiStartImport] = CoopAiStartImportService.MemberContract,
             };
 

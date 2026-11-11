@@ -38,6 +38,7 @@
     <Compile Include="AllyGoodsExample.cs"/>
     <Compile Include="HealthExample.cs"/>
     <Compile Include="ExamplePlugin.cs" /><Compile Include="InterceptionExample.cs" /><Compile Include="MissionExample.cs" /><Compile Include="ExampleSettings.cs" /><Compile Include="HudExample.cs" /><Compile Include="CustomizedLaunchExample.cs" /><Compile Include="RouteSearchExample.cs" /><Compile Include="NetworkingExample.cs" />
+    <Compile Include="BuildingPanelExample.cs" />
     <Compile Include="WorkshopExample.cs" />
     <Compile Include="SoundExample.cs" />
     <Compile Include="UnitVoiceExample.cs" />

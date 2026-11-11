@@ -115,6 +115,12 @@ namespace APIShared.Presentation
             if (index < 0 || index >= sites.Length) { reason = "Unknown presentation operation."; return false; }
             return sites[index].Events.TryRegister(ownerGuid, registrationId, pre, post, out reason, order, isActive: isActive);
         }
+        // Internal Post for an APIShared service that refreshes UI after Vanilla's in-game GUI checks
+        // (BuildingPanelExtensionsService). Installs the GuiChecks hook if needed and runs after the original
+        // and all public Post observers, on every call, without event args, so it allocates nothing.
+        // One subscriber; the callback must not throw. Not called when the original throws.
+        internal static void SetGuiChecksPost(Action<FatControler> post) =>
+            sites[(int)PresentationOperation.GuiChecks].SetGuiPost(post);
         /// <summary>Total isolated callback errors at this named site; zero for an unknown operation.</summary>
         public static long GetCallbackFailures(PresentationOperation operation)
         { int index = (int)operation; return index >= 0 && index < sites.Length ? sites[index].Events.CallbackFailures : 0; }
@@ -177,6 +183,12 @@ namespace APIShared.Presentation
             private readonly Action<MainViewModel, object> viewOriginal;
             private readonly Action<HUD_Main, object> hudOriginal;
             private readonly Action<FatControler, object> guiOriginal;
+            private Action<FatControler> guiPost;
+            internal void SetGuiPost(Action<FatControler> post)
+            {
+                Install();
+                System.Threading.Volatile.Write(ref guiPost, post);
+            }
             internal Site(PresentationOperation operation, Type type, string method)
             { this.operation = operation; this.type = type; this.method = method;
                 Events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>(Install);
@@ -207,8 +219,9 @@ namespace APIShared.Presentation
                 Execute(Events, new PresentationPreEventArgs(operation, self, null), self, hudOriginal);
             private void DispatchGui(FatControler self)
             {
-                if (!Events.CanNotify) { guiHook.Original(self); return; }
-                DispatchObservedGui(self);
+                if (!Events.CanNotify) guiHook.Original(self);
+                else DispatchObservedGui(self);
+                System.Threading.Volatile.Read(ref guiPost)?.Invoke(self);
             }
             private void DispatchObservedGui(FatControler self) =>
                 Execute(Events, new PresentationPreEventArgs(operation, self, null), self, guiOriginal);
