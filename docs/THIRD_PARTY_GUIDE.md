@@ -1018,6 +1018,47 @@ Successful Pre vetoes remain sticky; notification order is ascending order follo
 by ordinal owner GUID and ID. Failed Pre changes are rolled back. State is private
 to each registration, and registrations added during a call start on the next call.
 
+### Market UI actions
+
+The market and shared extended-features actions use the same registration and
+Pre/Post contract. Consumers need an APIShared release that exports these members;
+the original brokers' 0.6.0 minimum does not include these additions.
+
+| Operation | Managed method on `CrusaderDE.MainViewModel` |
+| --- | --- |
+| `MarketSelectGoods` | `ButtonNewTradeGoodsType(object)` |
+| `MarketCycleGoods` | `ButtonCycleTradeGoodsType(object)` |
+| `MarketBuySell` | `ButtonBuySell(object)` |
+| `MarketChangeTradeType` | `ButtonNewTradeType(object)` |
+| `ExtendedFeaturesAction` | `ButtonExtendedFeaturesFunction(object)` |
+
+Every method returns `void`. `Instance` and `ViewModel` refer to the exact receiver;
+`OriginalParameter` preserves its original object, including null, without parsing
+or conversion. `Parameter` supplies the final object to Vanilla or the selected
+replacement. Interpret button strings and current panel state in the consumer.
+`ExtendedFeaturesAction` observes the whole shared extended-features method,
+including calls outside the market. Consumers must establish market context themselves.
+Keep receiver and panel references invocation-local.
+
+Register once during Unity startup. Registration installs only that requested
+managed site, owned by APIShared for the process lifetime. With no notification
+demand, the hook passes through to its original without creating event arguments.
+No market settings, stock model, IDs or price/native hooks are installed by these
+operations. The consumer owns activation, navigation and deterministic multiplayer
+commands; managed completion does not prove that a trade was accepted.
+
+For an owned action, assign `Replacement` in Pre instead of performing it during
+the callback. It receives the final parameter after all Pre callbacks; a sticky
+veto suppresses it and Vanilla. Failed callbacks roll back argument changes, and
+last successful replacement assignment wins. Post receives the registration's own
+State after normal completion, veto, or an original/replacement exception. Use
+`WasReplaced` and `CompletionException` when cleaning up; `OriginalCompleted` is
+false for a replacement. Exceptions from the original or replacement propagate
+after Post and do not retry Vanilla. Nested notification calls retain original
+passthrough. See the [compiled replacement example](../examples/ThirdPartyMod/InterceptionExample.cs).
+
+### Validating final command inputs
+
 Use `GameActionEvents.TryRegisterWithFinalValidation` when a policy must verify
 that the final payload still matches the original request after other mods' Pre
 callbacks. The validator receives read-only original and final arguments and the

@@ -679,10 +679,13 @@ concrete, including assigning 1000 itself. Reservations must use final Post valu
 and retain the consumer's observed-unit reconciliation.
 
 [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) owns named
-GUI-check, building-rollover, recruitment/troop-panel hover and siege-ammo button
-sites: `GuiChecks`, `BuildingRollover`, `RecruitmentEnter`, `RecruitmentLeave`,
-`TroopPanelEnter`, `TroopPanelLeave` and `RechargeSiegeAmmo`. GUI checks also run
-while paused. Pre can replace a button parameter or veto
+GUI-check, building-rollover, recruitment/troop-panel hover, siege-ammo, market
+button and shared extended-features sites. The original operations are `GuiChecks`, `BuildingRollover`,
+`RecruitmentEnter`, `RecruitmentLeave`, `TroopPanelEnter`, `TroopPanelLeave` and
+`RechargeSiegeAmmo`. Appended operations are `MarketSelectGoods`,
+`MarketCycleGoods`, `MarketBuySell`, `MarketChangeTradeType` and
+`ExtendedFeaturesAction`; see the [method and parameter contracts](THIRD_PARTY_GUIDE.md#market-ui-actions).
+GUI checks also run while paused. Pre can replace a button parameter or veto
 the complete managed call. Post reports normal completion, veto or original
 exception; the original exception is rethrown after callbacks. Use
 `OriginalCompleted` before augmenting Vanilla writes and State for cleanup even when

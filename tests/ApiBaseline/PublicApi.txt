@@ -2776,7 +2776,12 @@ APIShared.Presentation.PresentationEvents | public static bool TryRegister(APISh
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)
 APIShared.Presentation.PresentationOperation | public enum APIShared.Presentation.PresentationOperation : int
 APIShared.Presentation.PresentationOperation | BuildingRollover = 1
+APIShared.Presentation.PresentationOperation | ExtendedFeaturesAction = 11
 APIShared.Presentation.PresentationOperation | GuiChecks = 0
+APIShared.Presentation.PresentationOperation | MarketBuySell = 9
+APIShared.Presentation.PresentationOperation | MarketChangeTradeType = 10
+APIShared.Presentation.PresentationOperation | MarketCycleGoods = 8
+APIShared.Presentation.PresentationOperation | MarketSelectGoods = 7
 APIShared.Presentation.PresentationOperation | RechargeSiegeAmmo = 6
 APIShared.Presentation.PresentationOperation | RecruitmentEnter = 2
 APIShared.Presentation.PresentationOperation | RecruitmentLeave = 3
