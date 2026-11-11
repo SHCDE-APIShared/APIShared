@@ -75,6 +75,15 @@ an admitted managed engine call with one ordered callback snapshot. The pair
 also surrounds calls that return zero or throw. For time-based rules use the
 native tick API above. See the [engine-run contract](THIRD_PARTY_GUIDE.md#managed-engine-run-boundaries).
 
+## Managed IL patches that cannot break other patches
+
+`APIShared.Patching.SafeIlHook.TryInstall` installs a MonoMod IL hook whose
+manipulator never throws: a failed edit is rolled back and reported, and every
+other IL hook and Harmony patch of the method keeps working. `SafeIlHook.Wrap`
+guards a hook you create yourself, `SafeIlHook.TryEdit` an independent part of a
+manipulator, and `APIShared.Patching.SafeTranspiler.Run` a Harmony transpiler.
+See [Safe managed IL patches](THIRD_PARTY_GUIDE.md#safe-managed-il-patches).
+
 ## In-game test automation
 
 | Entry point | Contract |

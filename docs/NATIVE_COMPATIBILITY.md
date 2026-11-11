@@ -41,6 +41,13 @@ initialization under the engine lock. The user-authorized extension of 2026-10-2
 retains the allocation, native entry, displaced code and return. It permits no
 general repatching, later retry or teardown undo.
 
+Managed IL hooks and Harmony transpilers of APIShared run through
+`SafeIlHook` and `SafeTranspiler`. MonoMod reruns every manipulator of a method
+on each patch change of that method, so one throwing manipulator would remove
+all IL edits and Harmony patches of it. The guards roll back a failed edit,
+report it, and keep every other patch. A guard's first application that fails
+removes only that unpublished candidate.
+
 Published hooks remain installed for the process lifetime. Activation changes are
 logical gates; inactive callbacks preserve the original behavior. Installation
 rollback is limited to a prepared candidate before the first patch activation attempt.

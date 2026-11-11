@@ -186,6 +186,39 @@ and replacement rules. An accepted overlap is not a compatibility guarantee. Mod
 overlap rules, when to use which, and limits: [Native sites](NATIVE_SITES.md); workflow:
 [compiled example](../examples/ThirdPartyMod/NativeSiteExample.cs).
 
+## Safe managed IL patches
+
+MonoMod rebuilds a method from its original IL whenever any IL hook or Harmony
+patch of it changes, and runs every applied manipulator and transpiler again. A
+manipulator that throws there drops every IL edit and Harmony patch of that
+method, including other mods' patches, and keeps failing every later change
+because it stays applied. Edits that expect the IL of a game version or of
+other hooks are exactly the ones that can throw after an update.
+
+- **IL hooks:** install with `SafeIlHook.TryInstall(ownerGuid, id, method,
+  manipulator, log, out hook, out reason)`. It validates the edit on a copy
+  (including code generation and JIT), applies it permanently, and on every later
+  rebuild catches any exception and restores the body it received. Nothing is
+  installed when it returns false. `IsApplied`, `Diagnostic` and the `Rebuilt`
+  event report the latest rebuild. A presentation feature may follow them; keep
+  gameplay or multiplayer-relevant readiness fixed after installation, so a
+  later rollback never flips it mid-mission. The `id` is passed to MonoMod unchanged.
+- **Own installers:** `SafeIlHook.Wrap(...)` returns the guard and its
+  non-throwing `Manipulator` for an `ILHook` you create (with `ManualApply`);
+  validate with your raw manipulator, which may throw.
+- **Independent parts:** `SafeIlHook.TryEdit(il, edit, out error)` rolls back
+  one part of a manipulator and keeps the rest.
+- **Harmony transpilers:** return
+  `SafeTranspiler.Run(ownerGuid, id, instructions, transform, log, outcome)`.
+  The edit runs on copies and is fully evaluated; on an exception the original
+  instructions are returned. Validate the original IL before patching, for
+  example with `PatchProcessor.GetOriginalInstructions`, so an unsupported game
+  version fails the installation instead of leaving the method unchanged.
+
+Find all sites before the first edit. These helpers cannot repair IL that is
+accepted but later rejected by code generation, nor another mod's throwing
+manipulator.
+
 ## APIShared interface language
 
 APIShared's own UI uses `Locales/<locale>.txt`, not consumer/modpack resources.

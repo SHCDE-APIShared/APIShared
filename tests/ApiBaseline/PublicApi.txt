@@ -204,6 +204,7 @@ APIShared.Audio.UnitVoiceContext | public APIShared.Audio.UnitVoiceSource Source
 APIShared.Audio.UnitVoiceContext | public APIShared.MissionContext MissionContext { get; }
 APIShared.Audio.UnitVoiceContext | public bool IgnorePauseState { get; }
 APIShared.Audio.UnitVoiceContext | public bool IgnoreSpeechMuting { get; }
+APIShared.Audio.UnitVoiceContext | public bool OriginalIsSilent { get; }
 APIShared.Audio.UnitVoiceContext | public float OriginalVolume { get; }
 APIShared.Audio.UnitVoiceContext | public int Channel { get; }
 APIShared.Audio.UnitVoiceContext | public long InvocationId { get; }
@@ -2390,6 +2391,21 @@ APIShared.ObserverCommandRequest | public int ObserverPlayerId { get; }
 APIShared.ObserverCommandRequest | public int StructureId { get; }
 APIShared.ObserverCommandRequest | public int Value2 { get; }
 APIShared.ObserverCommandRequest | public int ViewedPlayerId { get; }
+APIShared.Patching.SafeIlHook | public sealed class APIShared.Patching.SafeIlHook
+APIShared.Patching.SafeIlHook | public MonoMod.Cil.ILContext.Manipulator Manipulator { get; }
+APIShared.Patching.SafeIlHook | public System.Reflection.MethodBase Target { get; }
+APIShared.Patching.SafeIlHook | public bool IsApplied { get; }
+APIShared.Patching.SafeIlHook | public event System.Action<APIShared.Patching.SafeIlHook> Rebuilt
+APIShared.Patching.SafeIlHook | public long Failures { get; }
+APIShared.Patching.SafeIlHook | public long Runs { get; }
+APIShared.Patching.SafeIlHook | public static APIShared.Patching.SafeIlHook Wrap(string ownerGuid, string id, System.Reflection.MethodBase target, MonoMod.Cil.ILContext.Manipulator manipulator, BepInEx.Logging.ManualLogSource log)
+APIShared.Patching.SafeIlHook | public static bool TryEdit(MonoMod.Cil.ILContext il, MonoMod.Cil.ILContext.Manipulator edit, out System.Exception error)
+APIShared.Patching.SafeIlHook | public static bool TryInstall(string ownerGuid, string id, System.Reflection.MethodBase target, MonoMod.Cil.ILContext.Manipulator manipulator, BepInEx.Logging.ManualLogSource log, out APIShared.Patching.SafeIlHook hook, out string reason)
+APIShared.Patching.SafeIlHook | public string Diagnostic { get; }
+APIShared.Patching.SafeIlHook | public string Id { get; }
+APIShared.Patching.SafeIlHook | public string OwnerGuid { get; }
+APIShared.Patching.SafeTranspiler | public static class APIShared.Patching.SafeTranspiler
+APIShared.Patching.SafeTranspiler | public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> Run(string ownerGuid, string id, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions, System.Func<System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>> transform, BepInEx.Logging.ManualLogSource log, System.Action<bool> outcome = null)
 APIShared.Pathfinding.RouteEngineFeatures | public enum APIShared.Pathfinding.RouteEngineFeatures : int
 APIShared.Pathfinding.RouteEngineFeatures | None = 0
 APIShared.Pathfinding.RouteEngineFeatures | ReplanPolicies = 2

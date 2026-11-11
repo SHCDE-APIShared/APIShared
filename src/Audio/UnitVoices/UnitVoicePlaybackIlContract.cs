@@ -103,7 +103,9 @@ namespace APIShared.Audio
                 catch (Exception error) { reason = error.Message; }
             }
             SoundIlContract.Apply(il);
-            if (site != null) Apply(il, site);
+            // The speech edit is independent: its failure keeps the sound edits of this run.
+            if (site != null && !Patching.SafeIlHook.TryEdit(il, value => Apply(value, site), out Exception speechError))
+            { reason = speechError.Message; site = null; }
             return site != null;
         }
         private static InvalidOperationException Invalid(string reason) => new InvalidOperationException("Unit voice GameMap IL contract changed: " + reason);
