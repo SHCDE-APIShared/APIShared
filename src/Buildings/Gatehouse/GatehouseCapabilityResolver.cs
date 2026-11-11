@@ -224,17 +224,15 @@ namespace APIShared
             service = null;
             try
             {
-                if (target.VanillaDistanceBlockBytes == null || target.CenteredDistanceBlockBytes == null ||
-                    target.VanillaDistanceBlockBytes.Length != target.CenteredDistanceBlockBytes.Length)
-                    throw new NativeResolutionException(NativeCapabilityState.ValidationFailed, "The gatehouse distance patch catalog is incomplete or has mismatched block lengths.");
+                if (target.VanillaDistanceBlockBytes?.Length != GatehousePermanentRuntimeState.DistanceDisplacedBytes)
+                    throw new NativeResolutionException(NativeCapabilityState.ValidationFailed, "The gatehouse distance block does not match the audited hook span.");
                 RequireInsideFunction(target, target.DistanceBlockRva, target.VanillaDistanceBlockBytes.Length, "gatehouse distance block");
                 RequireSameSection(functionSection, target.DistanceBlockRva, target.VanillaDistanceBlockBytes.Length, "gatehouse distance block");
                 RequireBytes(memory, target.DistanceBlockRva, target.VanillaDistanceBlockBytes, "gatehouse distance block");
 
                 var memoryTarget = new GatehouseDistanceOriginTarget(
                     moduleBase + target.DistanceBlockRva,
-                    target.VanillaDistanceBlockBytes,
-                    target.CenteredDistanceBlockBytes);
+                    target.VanillaDistanceBlockBytes);
                 service = new GatehouseDistanceOriginService(
                     binaryHash, memoryTarget, runtimeState, ownership, mutationSync, log);
                 diagnostic = AvailableDiagnostic(NativeCapabilityIds.GatehouseDistanceOrigin, binaryHash, target);

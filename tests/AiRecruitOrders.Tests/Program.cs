@@ -244,9 +244,6 @@ internal static unsafe class Program
         Check(ledger.TryGetCurrent(3, Group, out order, out _) && order.Kind == AiOrderKind.Idle, "native movement completion ends move");
         ledger.ObserveStrategic(3, Group, 0x3F7, 1);
         Check(!ledger.TryGetCurrent(3, Group, out _, out _), "no strategic lifecycle proof fails closed");
-        ledger.EnterGroupDispatch(Group); ledger.EnterGroupDispatch(Group); ledger.ExitGroupDispatch(Group);
-        Check(ledger.IsInGroupDispatch(Group), "nested dispatch suppresses independent-route invalidation until outer exit");
-        ledger.ExitGroupDispatch(Group); Check(!ledger.IsInGroupDispatch(Group), "dispatch scope balances");
         ledger.ObserveAccepted(3, Group, new AiCurrentOrder(AiOrderKind.Hold, 30, 30), 1);
         ledger.Invalidate(Group); Check(!ledger.TryGetCurrent(3, Group, out _, out _), "explicit supersede invalidates hold");
         var savedOrder = new AiCurrentOrder(AiOrderKind.Hold, 30, 40, 9, 123, 456, 1010, -7, 2);
@@ -266,5 +263,9 @@ internal static unsafe class Program
         ledger.ObserveAccepted(4, Group, new AiCurrentOrder(AiOrderKind.AttackTile, 20, 30), 1);
         ledger.Restore(ledger.Capture(), 5);
         Check(ledger.TryGetCurrent(5, Group, out order, out _) && order.Kind == AiOrderKind.AttackTile, "persisted attack-tile kind10 remains supported");
+        // The Extender's TribeMoveType.Fast is -255; a captured order must stay loadable.
+        ledger.ObserveAccepted(5, Group, new AiCurrentOrder(AiOrderKind.Hold, 20, 30, moveType: -255), 1);
+        ledger.Restore(ledger.Capture(), 6);
+        Check(ledger.TryGetCurrent(6, Group, out order, out _) && order.MoveType == -255, "a negative raw move type survives the save roundtrip");
     }
 }

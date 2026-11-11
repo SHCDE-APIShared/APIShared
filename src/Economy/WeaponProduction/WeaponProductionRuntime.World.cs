@@ -25,11 +25,20 @@ namespace APIShared.Economy
                 RetireLostActors, out _, int.MinValue);
         }
 
+        // After a Vanilla desync repair the host keeps the row of a lost worker until the next retire
+        // pass, while the clients already hold the cleared row from the transfer. Vanilla compares
+        // checksums only on map ticks divisible by 200 (0xD1AD0), after this tick callback has run, so
+        // the difference is never compared as long as every such tick is a retire tick.
+        private const int RetireIntervalTicks = 8, VanillaChecksumIntervalTicks = 200;
+        // Does not compile when the retire interval stops dividing Vanilla's checksum interval.
+        private const byte RetireIntervalDividesChecksumInterval =
+            VanillaChecksumIntervalTicks % RetireIntervalTicks == 0 ? 0 : 256;
+
         private static void RetireLostActors(int tick)
         {
             // The Extender has kill events for individual damage sources but no
             // universal worker retirement notification. Only visit custom rows.
-            if (!HasHudDemand || (tick & 7) != 0 || (buildings.Count == 0 && workers.Count == 0)) return;
+            if (!HasHudDemand || tick % RetireIntervalTicks != 0 || (buildings.Count == 0 && workers.Count == 0)) return;
             foreach (var pair in workers)
                 if (!IsBatchActorCurrent(pair.Value)) retiredWorkerIds.Add(pair.Key);
             foreach (int id in retiredWorkerIds)

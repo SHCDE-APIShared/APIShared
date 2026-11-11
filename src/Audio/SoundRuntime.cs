@@ -71,13 +71,25 @@ namespace APIShared.Audio
                 var method = typeof(GameMap).GetMethod("processTestMap", new[] { typeof(short[]), typeof(int), typeof(EngineInterface.PlayState), typeof(byte[]) });
                 if (method == null || !method.IsPublic) throw new InvalidOperationException("Public processTestMap signature changed.");
                 SoundIlContract.Validate(method);
-                playbackHook = new ILHook(method, SoundIlContract.Apply, new ILHookConfig { ManualApply = true, ID = "APIShared.Audio" });
+                // Each service validates independently before publication. Lord-message IL also
+                // recognizes the shared speech adapter, so neither broker steals the other's site.
+                bool voices = UnitVoiceRuntime.ValidatePlayback(method, logger);
+                playbackHook = new ILHook(method, il => {
+                    voices = UnitVoicePlaybackIlContract.ApplyCombined(il, voices, out string reason);
+                    if (reason != null) UnitVoiceRuntime.SetPlaybackFailure(reason);
+                }, new ILHookConfig { ManualApply = true, ID = "APIShared.Audio" });
                 playbackHook.Apply();
                 if (!playbackHook.IsApplied) throw new InvalidOperationException("Audio IL publication incomplete.");
                 Volatile.Write(ref playbackStatus, "Ready");
+                UnitVoiceRuntime.SetPlaybackReady(voices);
                 Info(logger, "AUDIO_PLAYBACK_READY: permanent GameMap sound events installed.");
             }
-            catch (Exception ex) { Volatile.Write(ref playbackStatus, "Unavailable: " + ex.Message); Error(logger, "Audio playback interception unavailable: " + ex); }
+            catch (Exception ex)
+            {
+                Volatile.Write(ref playbackStatus, "Unavailable: " + ex.Message);
+                UnitVoiceRuntime.SetPlaybackFailure(ex.Message);
+                Error(logger, "Audio playback interception unavailable: " + ex);
+            }
         }
         internal static void InitializeNative(CrusaderLibraryLoadContext context, ManualLogSource logger, NativeOwnershipRegistry ownership, string nativeHash)
         {

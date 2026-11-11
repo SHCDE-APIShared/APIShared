@@ -6,6 +6,8 @@ Audio. Consumer settings remain outside APIShared.
 - [Public contracts](#public-audio-contracts): registration, context and custom clips.
 - [Native source events](#native-source-events): exact-unit attribution and sound replacement before the native record.
 - [Source selections](#source-selections): limit a registration to the catalog sources it needs.
+- [Unit voices](#unit-voices): attributed troop/civilian speech, replacement resources and request gain.
+- [Lord messages](LORD_MESSAGES.md): a separate presentation API for message audio, video and subtitles.
 - [Integration](#situational-sound-rules): initialization and live controls.
 - [Consumer policies](#consumer-filters-repeat-limits-and-other-sound-policies): filters, repeat limits and examples.
 - [Internal implementation](#internal-implementation): permanent hooks and clip lifetime.
@@ -209,6 +211,194 @@ While no enabled registration selects a source, its wrapper calls stay native:
 no managed transition, no unit lookup and no record marking. Select as narrowly as
 your rule allows; a mod that needs only the Arabian draw selects
 `ArabianIdleSwordDraw` (`Unit75.Source04`).
+
+## Unit voices
+
+Use `UnitVoiceEvents` for unit speech. For actual Lord dialogue, use
+[`LordMessageEvents`](LORD_MESSAGES.md), which coordinates audio, video and text
+as one message presentation. Both APIs share the managed speech-record site;
+a recognised Lord message is handled by its message broker rather than unit-voice
+rules. Neither API changes the existing combat/effect SFX contract.
+
+`APIShared.Audio.UnitVoiceEvents` is the separate broker for **unit speech**.
+The SFX APIs above do not intercept these voices. This is a development addition;
+require an APIShared package exposing these contracts and declare its minimum
+version consistently in the plugin and manifest. A previous package's SFX support
+does not imply unit-voice support.
+
+### Registration and playback rules
+
+`UnitVoiceEvents.TryRegister(ownerGuid, registrationId, pre, post, out registration,
+out reason, order: 0)` accepts registration on any thread,
+including before runtime initialization. At least one callback is required.
+Check `Available` and `Diagnostic` for actual runtime readiness; successful
+registration alone does not mean native attribution or playback is available.
+Source families fail independently: `IsSourceAvailable(key)` and
+`GetSourceDiagnostic(key)` report the status of each `UnitVoiceCatalog.SourceKeys`
+entry. A ready shared pipeline does not imply every generator family is ready.
+The additional overload takes `selection` as the third argument, before Pre/Post;
+the unrestricted overload selects `UnitVoiceSelection.All`.
+Registration and executable hooks persist until process exit. `SetEnabled` changes
+logical activation, including from another thread, without removing hooks.
+
+Pre and Post execute synchronously on Unity, outside registry locks, ordered by
+numeric order, ordinal owner GUID and registration ID, without replay. One
+invocation freezes its eligible observers, so disabling a rule in Pre does not
+remove its matching Post. Recursive playback from Pre/Post bypasses this broker.
+Do not perform I/O, decode resources, block or start gameplay from callbacks.
+
+Pre initially selects `Target.Kind == Original` and `VolumeFactor == 1`:
+
+- `TryReplaceVanillaCue(cue)` selects a `UnitVoiceCatalog` cue with a known Vanilla
+  speech route. Catalogued native intents which have no managed route are not
+  accepted as replacement targets.
+- `TryReplaceResource(handle)` selects ready, prepared samples. Null, unavailable
+  or overflowing selections return false without changing the current target.
+- `UseOriginal()` deliberately resets a preceding replacement to the original
+  request, preserving the current gain, sticky suppression and private State.
+- `MultiplyVolume(factor)` composes finite nonnegative gain. Zero still submits
+  a silent request; values above one are allowed. Negative, nonfinite or
+  overflowing products throw.
+- `SkipOriginalFunction = true` suppresses only this presentation call; a
+  successful veto is sticky across later callbacks.
+- `State` is private to this registration's matching Post.
+
+Last valid ordered target wins. A throwing Pre rolls back that callback's target,
+gain, veto and private State; other registrations continue. Arguments freeze
+after Pre. Callback failures are isolated and counted by `CallbackFailures`.
+Exceptions from the playback implementation propagate and have no Post.
+
+Post exposes the final target and gain, `WasSuppressed`, `WasSubmitted`, and any
+`FallbackReason`/`Diagnostic`. Submission means the playback pipeline accepted
+the request, not decoder success or audible hardware output. A resource that
+cannot be used before submission returns to the original path; the Post target
+reflects that fallback. A missing original managed speech route remains Vanilla
+silence, rather than activating a formerly silent native intent.
+
+### Source context and selections
+
+`UnitVoiceContext.Source` is an immutable **emission-time** snapshot:
+
+| Field | Meaning |
+| --- | --- |
+| `SourceKey` | Audited generator family, independent of its selected file. |
+| `RequestingPlayerId` | One-based native requesting/view player only where established. |
+| `OwnerPlayerId` | One-based actual owner only where independently established; civilian owners can differ from the view player. |
+| `RequestedUnitType` | Original SHCDESE `eChimps` value when known, otherwise null. A siege device using Engineer speech is still a device request. |
+| `VoiceBankKey` / `OriginalCueKey` | Bank and file actually selected by Vanilla. |
+| `Situation` / `Evidence` | Source-specific action interpretation and its confidence. |
+| `SessionId` | Process-local originating mission generation. |
+
+No unit ID or native pointer is promised. Unknown facts remain nullable; do not
+reconstruct them from a basename, late selection or current player. A cue's own
+`Situation` classifies a file, whereas the source describes its use: recruitment,
+for example, may reuse an ordinary selection file. `NativeAudited` does not mean
+`InGameConfirmed`.
+
+`UnitVoiceContext` also retains original path, channel, volume and muting/pause
+arguments. `UiLocale`, `SpeechAssetBranch` and typed `MissionContext` describe
+**playback time**, independently of the source generation. The speech branch is
+`EnglishSpeech` or `LocalizedSpeech`; neither the UI locale nor a resource path
+proves the language actually spoken. A live consumer query in Pre, such as
+`LordSkins.TryGetForPlayer`, likewise observes playback time.
+
+Use `UnitVoiceCatalog.Sources` for immutable source descriptions/evidence and
+`VoiceBanks` for immutable groups with complete cue collections. `SourceKeys`,
+`Cues` and `TryGetCue` remain available for direct key discovery. The
+catalog contains observed native intents, including files with no original
+managed playback route; a catalog entry is not an audibility guarantee.
+
+`UnitVoiceSelection.TryCreate(out selection, out reason, sourceKeys: ...,
+cueKeys: ..., voiceBankKeys: ..., situations: ..., requestingPlayerIds: ...,
+ownerPlayerIds: ..., requestedUnitTypes: ...)` copies the supplied collections.
+Different dimensions are **ANDed**; values within one dimension are **ORed**.
+Null dimensions are unrestricted, explicitly empty dimensions are rejected, and
+an unknown nullable source value cannot match a restricted dimension. Keys use
+ordinal matching. Omitting every dimension returns `UnitVoiceSelection.All`.
+This differs from the union semantics of SFX `SoundSourceSelection`.
+
+Each registration's selection filters its own Pre/Post invocation. Another mod
+selecting a source does not cause an unmatched registration to receive it.
+The registration's `Sources` and the selection's `SourceKeys` are immutable.
+Native capture uses aggregate enabled demand; it executes no mod predicate.
+
+### Prepared replacement resources
+
+Prepare outside callbacks, after APIShared initialization and after the relevant
+Extender resource index is ready:
+
+```csharp
+UnitVoiceResources.TryPrepareModResource(ownerGuid, "voice", "Voices/voice.wav",
+    completed, out handle, out reason, baseVolume: 1f);
+UnitVoiceResources.TryPrepareMapResource(ownerGuid, "map-voice", "Voices/voice.ogg",
+    completed, out mapHandle, out reason, baseVolume: 1f);
+```
+
+These methods are callable from any thread; preparation and completion are
+deferred on Unity. Success means queued, not decoded. Inspect `IsReady` and
+`Diagnostic`, or the completion callback. WAV must match the Extender decoder's
+PCM16, 44100 Hz mono/stereo format; OGG uses Vorbis. Private mod resources are
+owner-qualified; map resources read the current archive without mod fallback.
+Stable handles are distinct from SFX IDs, play-list IDs and Unity `AudioClip`s.
+
+Mod handles retain immutable decoded samples until process exit. Map handles
+invalidate immediately on end/initialization boundaries and never retarget to
+a later map. Prepare them after the desired mission has started; a later
+generation may register the same owner/ID and receives a new handle. Completion
+callback exceptions are isolated through `UnitVoiceResources.CallbackFailures`.
+
+Playback creates a fresh clip from the prepared samples and multiplies the
+request factor by `BaseVolume`. It performs no file access or decoding in
+Pre/Post. Every target retains the speech channel and pause/muting arguments.
+Original requests and Vanilla donors pass through the existing SFXManager;
+the selected file determines the speech category and its game-volume control.
+Prepared resource replacements preserve the original request's unit/civilian
+category. Game and master volume controls remain downstream in every case.
+The factor scales each OneShot rather than the shared AudioSource volume, so
+later slider changes continue to affect playing audio. Own fresh clips follow
+the existing Speech release paths; foreign clips are not additionally destroyed.
+
+The [compiled consumer example](../examples/ThirdPartyMod/UnitVoiceExample.cs)
+shows player/situation filtering, gain, a Vanilla donor, private mod preparation,
+map preparation and logical activation. It applies no unit-specific policy and
+does not register itself automatically.
+
+### Coverage, implementation and acceptance limits
+
+The attributed sources cover ordinary troop selection/orders, Engineer and siege
+special actions, successful recruitment, Bedouin heal/sap actions, and selected
+civilian comments. Unattributed speech, adviser and Genie warnings, Lord
+dialogue, music and combat SFX remain outside this broker. Lords and units with
+no Vanilla speech call do not gain synthetic events.
+
+Vanilla chooses variants and suppresses repeated/busy requests before capture.
+Its shared speech buffer keeps only the last filename for one `PlayState`;
+every speech record in that state still uses that file and attribution snapshot.
+APIShared does not reconstruct or play discarded earlier filenames. A private
+token carries the snapshot to the exact copied `PlayState`, where the original
+filename is restored. Unrelated native writers cannot inherit a stale sidecar,
+and disabling a rule does not invalidate already transported tokens.
+
+Native capture performs only audited, lock-guarded source reads and transport;
+public rules execute later on Unity. Permanent copy/record/request adapters
+cooperate with Lord-message presentation at the shared speech site. Request-local
+ExecutionContext frames carry gain across the actual async Speech loader;
+ordinary and nested requests establish neutral child frames and cannot inherit
+another request's factor. Unsupported source hooks disable only the affected
+generator families. Failure of a mandatory native-output, managed IL or async-flow
+contract leaves unit-voice interception unavailable, with Vanilla continuing unchanged.
+
+Focused CLI tests exercise filtering, rollback, gain validation, recursion,
+resource generations, transport/coalescing and copied IL behavior. Their current
+execution status belongs to the build/test report; source presence alone is not
+passing evidence. These checks do not establish real Mono/game acceptance,
+audibility, live slider behavior, editor/save-load behavior or actual host/client
+coexistence. Keep those acceptance results separate from compiled contract tests.
+
+See [contracts](../src/Audio/UnitVoices/UnitVoiceContracts.cs),
+[rules](../src/Audio/UnitVoices/UnitVoiceEvents.cs),
+[source filters](../src/Audio/UnitVoices/UnitVoiceSelection.cs) and
+[resources](../src/Audio/UnitVoices/UnitVoiceResources.cs).
 
 ## Situational sound rules
 

@@ -65,7 +65,8 @@ load phase; it is not a second public APIShared service runtime.
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
 | Networking | Owner-bound Chore channels, control-plane messages and presentation dispatch |
 | Units, Pathfinding, Diagnostics | Command interception, recruitment policies, unit settlement, queries and advanced integrations |
-| Audio | Native-record sound presentation, audited source contexts and shared rule events |
+| Audio | SFX and unit-voice presentation, audited source contexts, prepared voice resources and shared rule events |
+| Presentation | Shared UI presentation and grouped Lord-message audio, video and text replacement |
 | Economy | Shared market/production rules, exact output compilation, admission and validated native ownership |
 | Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
 

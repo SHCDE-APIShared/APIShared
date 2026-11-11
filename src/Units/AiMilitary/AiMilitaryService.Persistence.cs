@@ -145,7 +145,9 @@ namespace APIShared.Units.AiMilitary
                         }
                         finally { permittedUnit = previous; }
                     }
-                    else if (!editor && GamePlayerManagerAPI.Instance.IsAIPlayer(entry.Player) &&
+                    // A rejected map declaration stays protected without a private group
+                    // (CompleteNativeLoad, Finish); only an actual group claim can be inconsistent.
+                    else if (!editor && entry.Private.Id != 0 && GamePlayerManagerAPI.Instance.IsAIPlayer(entry.Player) &&
                         (!backend.IsCurrent(entry.Private) || !backend.HasMember(entry.Private, entry.Unit.UnitId) ||
                             unit->r_TribeId != entry.Private.Id || unit->r_AITribeRole != AiMilitaryNativeBackend.UnmanagedRole))
                     {
@@ -182,6 +184,8 @@ namespace APIShared.Units.AiMilitary
                     var current = new Tracked(old.Owner, old.Unit, unit->r_ControllableForPlayerId, unit->r_UnitChimp,
                         old.Assignment, false, true, null) { Pending = true, Protected = old.Protected };
                     tracked[old.Unit.UnitId] = current;
+                    // Queued until the work pump applies it; TryGetState must not report it as untracked.
+                    current.Last = Result(current, AiMilitaryAssignmentStatus.Queued, AiMilitaryReason.None, string.Empty);
                     if (!GamePlayerManagerAPI.Instance.IsAIPlayer(current.Player))
                     {
                         current.Protected = false; current.Pending = false;

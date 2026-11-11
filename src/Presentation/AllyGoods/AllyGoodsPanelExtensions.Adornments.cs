@@ -51,38 +51,7 @@ namespace APIShared.Presentation
                 if (root == null || !ReferenceEquals(host.Parent, root)) return;
                 ResolveGoodsAnchors(root); adornmentsResolved = true; adornmentsDirty = true;
             }
-            if (adornmentsDirty)
-            {
-                // Factories may register other providers or request refresh: process this immutable snapshot,
-                // retaining the dirty flag for the next publication in that case.
-                adornmentsDirty = false;
-                var entries = adornmentRegistry.Entries;
-                foreach (var anchor in goodsAnchors)
-                {
-                    int slot = 0;
-                    foreach (var entry in entries)
-                    {
-                        var element = adornmentCache.GetOrCreate(entry, anchor.Good,
-                            () => CreateAdornment(entry, anchor, context),
-                            error => Report("adornment-factory:" + entry.Owner + "/" + entry.Id + "/" + anchor.Good, error));
-                        if (element == null) continue;
-                        if (element.Parent != null && !ReferenceEquals(element.Parent, anchor.Slots))
-                        {
-                            Report("adornment-parent:" + entry.Owner + "/" + entry.Id + "/" + anchor.Good,
-                                new InvalidOperationException("An adornment control was attached by another UI owner."));
-                            continue;
-                        }
-                        // Refresh does not detach/reload an unchanged successful control.
-                        if (slot >= anchor.Slots.Children.Count || !ReferenceEquals(anchor.Slots.Children[slot], element))
-                        {
-                            if (ReferenceEquals(element.Parent, anchor.Slots)) anchor.Slots.Children.Remove(element);
-                            anchor.Slots.Children.Insert(slot, element);
-                        }
-                        slot++;
-                    }
-                    while (anchor.Slots.Children.Count > slot) anchor.Slots.Children.RemoveAt(anchor.Slots.Children.Count - 1);
-                }
-            }
+            if (adornmentsDirty) RebuildAdornments(context);
             foreach (var anchor in goodsAnchors)
             {
                 try { PositionAdornment(anchor); }
@@ -91,6 +60,41 @@ namespace APIShared.Presentation
                     anchor.Slots.Visibility = Visibility.Collapsed;
                     Report("adornment-layout:" + anchor.Good, error);
                 }
+            }
+        }
+
+        // Separate method: the factory lambdas capture the context, and inside UpdateAdornments the
+        // compiler would allocate that closure at method entry, ahead of its per-GUI-check early returns.
+        private static void RebuildAdornments(AllyGoodsPanelContext context)
+        {
+            // Factories may register other providers or request refresh: process this immutable snapshot,
+            // retaining the dirty flag for the next publication in that case.
+            adornmentsDirty = false;
+            var entries = adornmentRegistry.Entries;
+            foreach (var anchor in goodsAnchors)
+            {
+                int slot = 0;
+                foreach (var entry in entries)
+                {
+                    var element = adornmentCache.GetOrCreate(entry, anchor.Good,
+                        () => CreateAdornment(entry, anchor, context),
+                        error => Report("adornment-factory:" + entry.Owner + "/" + entry.Id + "/" + anchor.Good, error));
+                    if (element == null) continue;
+                    if (element.Parent != null && !ReferenceEquals(element.Parent, anchor.Slots))
+                    {
+                        Report("adornment-parent:" + entry.Owner + "/" + entry.Id + "/" + anchor.Good,
+                            new InvalidOperationException("An adornment control was attached by another UI owner."));
+                        continue;
+                    }
+                    // Refresh does not detach/reload an unchanged successful control.
+                    if (slot >= anchor.Slots.Children.Count || !ReferenceEquals(anchor.Slots.Children[slot], element))
+                    {
+                        if (ReferenceEquals(element.Parent, anchor.Slots)) anchor.Slots.Children.Remove(element);
+                        anchor.Slots.Children.Insert(slot, element);
+                    }
+                    slot++;
+                }
+                while (anchor.Slots.Children.Count > slot) anchor.Slots.Children.RemoveAt(anchor.Slots.Children.Count - 1);
             }
         }
 

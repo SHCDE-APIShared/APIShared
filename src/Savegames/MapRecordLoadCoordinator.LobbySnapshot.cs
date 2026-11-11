@@ -23,6 +23,8 @@ namespace APIShared
             internal readonly string Map, Settings, Aiv, MaxPlayers, GameType, ModFingerprint, Fingerprint;
             internal readonly int? Crc;
             internal readonly int AiPlayers, TrailId, Mission;
+            // Customized launch origin of this peer: kind, trail and mission; all zero without one.
+            internal readonly int OriginKind, OriginTrail, OriginMission;
             internal readonly byte[] Digests;
             internal readonly bool Trail, OrderSwapped;
             internal readonly KeyValuePair<ulong, int>[] Slots;
@@ -44,6 +46,13 @@ namespace APIShared
                 TrailId = Trail ? lobby.coopTrailID : 0;
                 Mission = Trail ? lobby.coopSelectedMission : 0;
                 OrderSwapped = Trail && lobby.coopOrderSwapped;
+                // Every peer classifies the mission from its own launch-origin provider. Peers that
+                // disagree there would run different gameplay rules, so the origin is part of the
+                // agreement and a difference blocks the start like any other Coop difference.
+                var origin = GameModes.CustomizedLaunchOrigins.Capture();
+                OriginKind = origin.IsInvalid ? -1 : origin.Origin;
+                OriginTrail = OriginKind > 0 ? origin.TrailId : 0;
+                OriginMission = OriginKind > 0 ? origin.MissionId : 0;
                 Slots = LobbyReadinessSupport.ObservedHumans(lobby).Select(id => new KeyValuePair<ulong, int>(id, lobby.getThisPlayerFromSteamID(id))).ToArray();
                 Mods = SavegameModSettings.CaptureHostSettingsForReadiness();
                 ModFingerprint = SavegameLoadAgreement.Fingerprint(Mods);
@@ -62,6 +71,9 @@ namespace APIShared
                     writer.Write(AiPlayers); writer.Write(Aiv);
                     WriteDigest(2, memory, sha);
                     writer.Write(Trail); writer.Write(TrailId); writer.Write(Mission); writer.Write(OrderSwapped);
+                    // Written only for a customized launch: an ordinary lobby keeps the digest of
+                    // builds that did not compare the origin.
+                    if (OriginKind != 0) { writer.Write(OriginKind); writer.Write(OriginTrail); writer.Write(OriginMission); }
                     WriteDigest(3, memory, sha);
                     writer.Write(Slots.Length);
                     foreach (var slot in Slots) { writer.Write(slot.Key); writer.Write(slot.Value); }
@@ -90,7 +102,7 @@ namespace APIShared
             }
 
             internal string Summary() => $"map={Map}, crc={Crc}, vanillaSettings={Digest(System.Text.Encoding.UTF8.GetBytes(Settings))}, " +
-                $"ai={AiPlayers}, aiv={Aiv}, maxPlayers={MaxPlayers}, gameType={GameType}, trail={Trail}/{TrailId}/{Mission}/{OrderSwapped}, " +
+                $"ai={AiPlayers}, aiv={Aiv}, maxPlayers={MaxPlayers}, gameType={GameType}, trail={Trail}/{TrailId}/{Mission}/{OrderSwapped}, customizedOrigin={OriginKind}/{OriginTrail}/{OriginMission}, " +
                 $"slots={string.Join(",", Slots.Select(slot => slot.Key + ":" + slot.Value))}, modSettings={ModFingerprint}, fingerprint={Fingerprint}";
 
             internal List<string> DescribeChanges(LobbySnapshot current, List<string> detail = null)

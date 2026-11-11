@@ -572,6 +572,40 @@ the runtime check remains necessary for those loading paths and manual installs.
 The dialog uses the save archive, packet protocol, local personal presets and
 host-load agreement of the savegame service. No ExtendedData installation is required for this UI.
 
+## Renamed and converted settings
+
+Saves, Trail author rules, Map and Trail mission settings, the personal settings file and
+preset files store settings by property name, in the form of the mod version that wrote them. Declare a change so
+that this stored data keeps working.
+
+A renamed property names its former stored names, newest first:
+
+```csharp
+[SyncHostOnly, ModSettingRenamedFrom("GoldReward", "Reward")]
+public int KillRewardGold { get; set; }
+```
+
+APIShared then moves a value found under a former name to the current property wherever
+it reads stored settings of that class by name: saved host settings and author rules in a
+save, the Player and fixed settings of a Map or Trail mission document, the personal
+settings file and every bundled, external or personal preset. Stored
+data that already contains the current name keeps that value. The former name disappears
+from the data, and the next write uses the current name only. A former name that is still
+a property of the class, or that two properties claim, is ignored and logged once as
+`MOD_SETTING_RENAME_IGNORED`. The stored value must still deserialize as the property type.
+
+A change of meaning or type needs code. Implement `IModSettingsSnapshotMigration` on the
+settings class: before a save is loaded, APIShared passes the prepared snapshot (after the
+renames) to `System_MigrateMissionSnapshot`, applies the returned snapshot and verifies the
+applied host values against it. Without that step a setter that converts a retired property
+looks like a setter that ignored its value, and the load is refused with "Host setter did
+not apply the prepared value". The converter must not change settings.
+
+A mod that stores settings of such a class in its own format calls
+`ModSettingsMigration.MigrateStoredSnapshot(settings, stored)` on the raw stored values,
+before merging them with defaults. Renames cannot be applied to a merged snapshot, because
+it no longer tells a stored value from a default.
+
 ## Locking an individual setting during a mission
 
 Requires APIShared 0.25.0 or later.

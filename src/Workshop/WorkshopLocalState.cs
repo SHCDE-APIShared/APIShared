@@ -48,7 +48,9 @@ namespace APIShared.Workshop
 
         internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status, bool offersEnabled)
         {
-            if (!item.IsSubscribed && item.Receipt != null) return WorkshopAction.Remove;
+            // The catalog describes an unsubscribed installation by its receipt version only;
+            // it attaches the receipt object to subscribed items alone.
+            if (!item.IsSubscribed && item.InstalledVersion != null) return WorkshopAction.Remove;
             if (offersEnabled && item.CanInstall && item.Package != null && item.Receipt != null &&
                 status == WorkshopLocalStatus.Verified &&
                 WorkshopPackageCodec.Version(item.Package.Version) > WorkshopPackageCodec.Version(item.Receipt.Version))

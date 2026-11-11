@@ -131,6 +131,8 @@ namespace APIShared.Economy
             }
         }
 
+        // Managed reference of the mix the native checksum stub performs. Production never calls it;
+        // the native tests compare the stub's result against it, so it is not dead code.
         internal static uint MixChecksum(uint checksum, in WorkerProductionStateRow row)
         {
             if (row.IsEmpty) return checksum;

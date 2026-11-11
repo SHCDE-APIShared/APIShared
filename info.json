@@ -3,13 +3,39 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.44.0",
+  "Version": "0.47.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.47.0",
+      "Changes": [
+        "Add owner-bound Lord message presentation events with independent voice, video and text replacement, using existing Vanilla messages or private mod resources.",
+        "Keep native message queueing and gameplay random state unchanged; bind replacement subtitles to the actual displayed message and retain original components unless explicitly replaced.",
+        "Development addition: add general Unit Voices rules for attributed troop orders, recruitment, siege and special actions, and civilian comments, with Vanilla cue replacement, prepared private mod/map recordings, suppression and per-request volume factors.",
+        "Coordinate Unit Voices and Lord message audio at their shared playback site while preserving the existing SFX API; keep consumer-specific skin and faction rules outside APIShared."
+      ]
+    },
+    {
+      "Version": "0.46.0",
+      "Changes": [
+        "Measure centered gatehouse closing distances from the actual footprint, so enemies approaching from opposite sides are treated equally.",
+        "Add a square footprint center helper and a read-only check for candidates outside the active gatehouse closing range."
+      ]
+    },
+    {
+      "Version": "0.45.0",
+      "Changes": [
+        "Decide the mission mode in every case instead of locking gameplay mods: a loaded save uses the mode stored in it, a restart keeps the mode of its mission, and Customize evidence that does not fit the start is ignored and logged as an error.",
+        "Saves that an earlier version marked as conflicting load normally again.",
+        "Mods can declare renamed settings and convert changed ones, so saves, Trail author rules, personal settings and presets written by an older version of a mod keep working.",
+        "Compare the Customize origin between all players before a multiplayer start. A rejected multiplayer start no longer freezes the lobby and is no longer retried every frame.",
+        "Fix saves that could not be loaded after certain AI army assignments or fast group moves, the startup removal of unsubscribed Workshop packages, and missions that were stopped although no mod changed production."
+      ]
+    },
     {
       "Version": "0.44.0",
       "Changes": [

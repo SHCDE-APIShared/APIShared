@@ -117,7 +117,12 @@ namespace APIShared
         {
             byte[] bytes = MessagePackSerializer.Serialize(record);
             if (bytes.Length <= MaximumBytes) return bytes;
-            record.LockedByConflict = true; // A reduced payload must never admit an unverifiable startup configuration.
+            // A reduced payload must never admit an unverifiable startup configuration. Current readers
+            // ignore the flag (it is kept for older builds); the record itself therefore loses its
+            // customization permission, which keeps a Trail on its strict baseline.
+            record.LockedByConflict = true;
+            record.Variant = (int)GameModeLaunchVariant.Standard;
+            record.TrailCustomizeAllowed = false;
             foreach (string modId in record.Mods.Keys.OrderByDescending(value => value, StringComparer.Ordinal).ToArray())
             {
                 Dictionary<string, byte[]> properties = record.Mods[modId];

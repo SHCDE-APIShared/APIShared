@@ -15,17 +15,15 @@ namespace APIShared.GameModes
     internal readonly struct SavedModeEvidence
     {
         internal SavedModeEvidence(bool hasSaved, GameModeKind kind,
-            GameModeLaunchVariant variant, bool locked)
+            GameModeLaunchVariant variant)
         {
             HasSaved = hasSaved;
             Kind = kind;
             Variant = variant;
-            Locked = locked;
         }
 
         internal bool HasSaved { get; }
         internal GameModeKind Kind { get; }
         internal GameModeLaunchVariant Variant { get; }
-        internal bool Locked { get; }
     }
 }

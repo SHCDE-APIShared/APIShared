@@ -24,21 +24,14 @@ namespace APIShared
 
     internal sealed class GatehouseDistanceOriginTarget
     {
-        public GatehouseDistanceOriginTarget(long block, byte[] vanillaBytes, byte[] centeredBytes)
+        public GatehouseDistanceOriginTarget(long block, byte[] vanillaBytes)
         {
-            if (vanillaBytes == null || centeredBytes == null || vanillaBytes.Length == 0 ||
-                vanillaBytes.Length != centeredBytes.Length)
-                throw new ArgumentException("Gatehouse distance blocks must be non-empty and have equal lengths.");
+            if (vanillaBytes == null || vanillaBytes.Length == 0)
+                throw new ArgumentException("The Vanilla gatehouse distance block must be non-empty.", nameof(vanillaBytes));
 
-            Block = block;
-            VanillaBytes = (byte[])vanillaBytes.Clone();
-            CenteredBytes = (byte[])centeredBytes.Clone();
             Intervals = new[] { new NativeInterval(block, checked(block + vanillaBytes.Length)) };
         }
 
-        public long Block { get; }
-        public byte[] VanillaBytes { get; }
-        public byte[] CenteredBytes { get; }
         public IReadOnlyList<NativeInterval> Intervals { get; }
     }
 
@@ -145,19 +138,6 @@ namespace APIShared
 
         private NativeCapabilityDiagnostic Diagnostic(NativeCapabilityState state, string reason) =>
             new NativeCapabilityDiagnostic(NativeCapabilityIds.GatehouseDistanceOrigin, state, binaryHash, reason);
-
-        internal static int ComputeCenteredDistanceNative(
-            int beginX,
-            int beginY,
-            int endX,
-            int endY,
-            int unitX,
-            int unitY)
-        {
-            int dx = Math.Abs(checked((beginX + endX) * 4 - unitX));
-            int dy = Math.Abs(checked((beginY + endY) * 4 - unitY));
-            return Math.Max(dx, dy);
-        }
 
         private sealed class OwnerCapability : IGatehouseDistanceOriginCapability
         {

@@ -17,7 +17,9 @@ namespace APIShared
         [Key(2)] public int Variant { get; set; }
         /// <summary>Persistent host properties keyed by plugin GUID and property name.</summary>
         [Key(3)] public Dictionary<string, Dictionary<string, byte[]>> Mods { get; set; }
-        /// <summary>Whether the mission was locked by conflicting launch evidence when saved.</summary>
+        /// <summary>Legacy wire field, no longer read. Earlier builds persisted a launch-evidence conflict here,
+        /// which locked the save for every later load. It is now written only for a size-reduced record,
+        /// so that those earlier builds keep such a record locked.</summary>
         [Key(4)] public bool LockedByConflict { get; set; }
         /// <summary>Trail author rules keyed by plugin GUID and host property.</summary>
         [Key(5)] public Dictionary<string, Dictionary<string, TrailCreatorRule>> CreatorRules { get; set; }

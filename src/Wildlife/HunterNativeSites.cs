@@ -102,6 +102,9 @@ namespace APIShared.Wildlife
 
         // The unit id of the Hunter query currently running on this (simulation) thread, and whether it
         // runs for the simulation. Valid only inside that query, e.g. in OnUnitHunterQueryTarget.
+        // One process-wide slot is enough: the presentation caller (idle speech, 0x1941B4) is reached
+        // only from DLL_RunTick, like the Hunter updates, so every query runs on the engine thread and
+        // none can nest inside another.
         internal static bool TryGetCurrentQuery(out int queryingUnitId, out bool isSimulation)
         {
             queryingUnitId = Marshal.ReadInt32(querySlot);

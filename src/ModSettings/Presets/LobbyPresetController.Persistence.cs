@@ -27,6 +27,7 @@ namespace APIShared.ModSettings
             initialSettingsLoaded = true;
             if (persistedProperties.Length == 0 || dynamicProvider != null) return;
             if (!storage.TryRead(out Dictionary<string, byte[]> initial)) return;
+            initial = ModSettingsMigration.ApplyRenames(settingsType, initial);
             bool previousApplying = applying;
             applying = true;
             try
@@ -295,7 +296,9 @@ namespace APIShared.ModSettings
             if (!payload.TryGetValue(key, out byte[] bytes))
                 return null;
 
-            return MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(bytes);
+            // Stored snapshots keep the property names of the mod version that wrote them.
+            return ModSettingsMigration.ApplyRenames(settingsType,
+                MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(bytes));
         }
 
     }

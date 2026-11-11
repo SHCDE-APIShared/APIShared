@@ -46,6 +46,7 @@
 - [Mapper selection camera](#mapper-selection-camera)
 - [Lord statistic columns](#lord-statistic-columns)
 - [Packaged Lord presentation](#packaged-lord-presentation)
+- [Lord message replacement](#lord-message-replacement)
 
 ## Example package requirements
 
@@ -666,7 +667,7 @@ For a same-mission restart, wrap the complete preparation and loading action in
 gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
 restart already use this boundary; opening or cancelling confirmation does not.
 Nested calls share one attempt. Other launches must use their normal entry points.
-Restart authorization retains the source's Customize provenance and conflict locks,
+Restart authorization retains the source's Customize provenance,
 including saves restored without ExtendedData; network and native facts are captured
 again. An incompatible native family cannot inherit the source's gameplay permission.
 
@@ -685,7 +686,7 @@ notifications and must perform their usual cleanup. See the
 
 Read `MissionLifecycleNotification.Context.Mode` for the event being handled. Use `GameModeHelper.Capture()` for a current snapshot where appropriate. Capture itself applies no permissions. Construct `GameplayModActivationProfile` with your own GUID, allowed contexts and `allowRealMultiplayer`, then call `GameplayModModePolicy.IsAllowed`. You can instead implement your own policy directly from the snapshot.
 
-The built-in optional evaluator rejects unknown or conflicting origins. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
+The built-in optional evaluator rejects unknown modes. APIShared's own captures never leave an origin conflicting: unusable provider evidence is ignored, the mode is decided from the game's own data and the decision is logged. Its existing contexts do not offer a tutorial permission. These defaults do not prevent a third-party mod from making its own informed policy decision without the evaluator. APIShared contains no author-specific GUID or feature-permission tables; consumers own those decisions.
 
 
 For a cached runtime decision, retain a `GameplayModeGate(profile)` in your static
@@ -1424,6 +1425,17 @@ For a cue that depends on one unit (for example a converted unit's kill sound), 
 acting unit's game ID and GlobalId, the killed victim for melee kill cues, and
 `TryReplaceSound`. See [exact-unit cue replacement](AUDIO.md#exact-unit-cue-replacement).
 
+### Unit speech replacement
+
+Use the separate `APIShared.Audio.UnitVoiceEvents` for troop/civilian voices,
+recruitment and special actions. Register on any thread, retain the process-owned
+handle and prepare private mod/map resources outside callbacks. Pre/Post run on
+Unity. Source/player/bank/situation selections filter each registration; request
+gain remains separate from game speech-volume controls. Inspect availability
+and nullable source evidence before applying a policy. See the authoritative
+[unit-voice guide](AUDIO.md#unit-voices) and
+[consumer example](../examples/ThirdPartyMod/UnitVoiceExample.cs).
+
 ## General in-game tooltip extensions
 
 Use `APIShared.Presentation.TooltipPresentation.TryRegisterText` for literal strings,
@@ -1798,6 +1810,18 @@ Enabling takes exclusive sizing ownership from the Extender scaler; disabling re
 setting. A null reference retains the existing 23/30/45 resolution presets for existing consumers.
 The caller owns the dark/gold, white wrapped-text template and closes its popups when its HUD ends.
 
+## Lord message replacement
+
+Requires APIShared 0.47.0 or later. Register `LordMessageEvents` on Unity after
+readiness, retain the registration and use `SetEnabled` for activation. Each of
+audio, video and text can remain unchanged or select its own typed replacement.
+Use `VanillaLordMessages.TryGet` for an existing Lord/category reference; private
+mod resources and already-localized text do not require a global asset override.
+The service changes actual presentation after native queueing and retains the
+existing `PackagedLordPresentation` contract. See [Lord message replacement](LORD_MESSAGES.md)
+for identity, ordering, callback rollback, resource preparation, coverage and
+submission limits, and the [consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
+
 ## Packaged Lord presentation
 
 Requires APIShared 0.20.0 or later.
@@ -1900,3 +1924,21 @@ Read and spawn Vanilla's animal herds with `Herds`, and register `HerdRouteEvent
 from simulation data and synchronized settings only; set calm marks and spawn herds inside a
 `SimulationTickEvents` callback. The [herd guide](HERDS.md) covers threads, the editor and the
 limits.
+
+## Gatehouse geometry and closing range
+
+`APIShared.Buildings.BuildingGeometry.TryGetSquareFootprintCenter` accepts the
+minimum tile coordinates and side length of a square footprint. It returns the
+center in native world coordinates, with eight units per tile. Tile boundaries
+lie at multiples of eight and tile centers are four units farther along each
+axis. An odd side length puts the result at the center of the middle tile. An
+even side length puts it on the boundary between the middle tiles. This
+calculation does not require a live map.
+
+Within a synchronous gatehouse query, use
+`APIShared.Buildings.GatehouseClosingRules.IsDefinitelyOutsideRange` with the
+live gate and unit records. The method uses the current native distance origin
+and the larger of the human and AI thresholds. True allows a consumer to skip
+additional checks. False requires the usual evaluation, including when the
+native rule could not be validated. Keep the rule stable during the query and
+use the timing and origin capabilities to make configuration changes outside it.

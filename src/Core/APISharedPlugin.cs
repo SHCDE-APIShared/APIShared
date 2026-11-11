@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.44.0";
+        public const string PluginVersion = "0.47.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -28,6 +28,8 @@ namespace APIShared
         {
             Internal.DebugLogHelper.InitializeDiagnostics(Config, Logger);
             ModSettings.ModSettingsApplication.InitializeJournalStorage(RuntimeLogger);
+            var migrationLog = RuntimeLogger;
+            ModSettings.ModSettingsMigration.ReportProblem = text => NativeApiLog.Error(migrationLog, text);
             Localization.GameLocale.Initialize();
             var localizationLog = RuntimeLogger;
             Localization.UiText.Configure(Localization.GameLocale.Current,
@@ -46,11 +48,13 @@ namespace APIShared
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
             Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
+            Audio.UnitVoiceRuntime.InitializeManaged(RuntimeLogger);
             ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
             ModSettings.PersonalSettingsWriteRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordScriptDiagnosticsRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordMediaRegistrationRuntime.Initialize(RuntimeLogger);
+            Presentation.LordMessageRuntime.Initialize(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.
             CrusaderLibrary.Instance.LibraryLoaded += OnLibraryLoaded;
@@ -88,6 +92,8 @@ namespace APIShared
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("Vanilla Lord message references", () => Presentation.VanillaLordMessages.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("Lord message presentation protocol", () => Presentation.LordMessageRuntime.InitializeNative(hash)),
                 new NativeInitializationStep("worker production world safety", () => Economy.WorkerProductionWorldSafety.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("worker production yield context", () => Economy.WorkerProductionYieldContext.InitializeManaged(RuntimeLogger)),
                 new NativeInitializationStep("native Chore issuer context and submission", () =>
@@ -120,6 +126,8 @@ namespace APIShared
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("plague heights", () => PlagueHeightService.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
+                    context, RuntimeLogger, runtime.NativeOwnership, hash)),
+                new NativeInitializationStep("unit speech context", () => Audio.UnitVoiceNativeRuntime.Initialize(
                     context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("enemy building proximity", () => Buildings.EnemyProximityPolicies.Initialize(context, hash, RuntimeLogger)),

@@ -6,6 +6,7 @@
     <Reference Include="MessagePack.Annotations"><HintPath>$(ExtenderDir)/MessagePack.Annotations.dll</HintPath></Reference>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.cs" Link="Production/MapRecordLoadCoordinator.cs"/>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.LobbySnapshot.cs" Link="Production/MapRecordLoadCoordinator.LobbySnapshot.cs"/>
+    <Compile Include="../../src/GameModes/CustomizedLaunchOrigins.cs" Link="Production/CustomizedLaunchOrigins.cs"/>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.PeerObservations.cs" Link="Production/MapRecordLoadCoordinator.PeerObservations.cs"/>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.BlockDiagnostics.cs" Link="Production/MapRecordLoadCoordinator.BlockDiagnostics.cs"/>
     <Compile Include="../../src/Lobby/LobbySelectedMapHeader.cs" Link="Production/LobbySelectedMapHeader.cs"/>

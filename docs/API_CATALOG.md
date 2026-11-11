@@ -154,6 +154,11 @@ properties without changing host authority. `GetMissionHostProperties` filters t
 from mission authoring. Complete configuration backends with personal values implement
 `IModSettingsPersonalPersistenceBackend`; see [personal-value contracts](MOD_SETTINGS.md#personal-values-and-mission-independent-host-settings).
 
+`[ModSettingRenamedFrom]` keeps stored values of a renamed setting (saves, Trail author
+rules, Map/Trail mission settings, personal settings, presets). `IModSettingsSnapshotMigration` converts saved values
+whose meaning changed, and `ModSettingsMigration.MigrateStoredSnapshot` applies both to a
+mod's own stored format; see [renamed and converted settings](MOD_SETTINGS.md#renamed-and-converted-settings).
+
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
 Internal snapshot application suppresses intermediate transport/storage, isolates
@@ -220,6 +225,8 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `TryGetBriefingGoldPresentation` | Ordered adjustments after Vanilla briefing calculation; startup member check | Presentation publisher; stage/owner/ID ordering; invalid results preserve last safe value; process lifetime |
 | `TryGetGatehouseTiming` | Typed timing/distance settings | Native validation required; exclusive owner; permanent hook and logical state; automation via `IGatehouseAutomationCapability` |
 | `TryGetGatehouseDistanceOrigin` | Vanilla begin coordinate or complete-bounds center | Native validation required; exclusive owner; permanent runtime state |
+| [`BuildingGeometry`](../src/Buildings/BuildingGeometry.cs) | Center of a square footprint in eighths of a tile | Pure coordinate calculation, any thread |
+| [`GatehouseClosingRules`](../src/Buildings/Gatehouse/GatehouseClosingRules.cs) | Exclude candidates beyond both active closing distances | Read-only, use live records in the synchronous gatehouse query |
 | `TryGetBuildingRepair` | Repair quote and repair-tooltip presentation; startup member check | Acquired on demand after native initialization; respect each operation's contract; UI on Unity thread |
 | `TryGetAivBuildStep` | Before/after observation around one unchanged Vanilla call | Native caller thread; deterministic begin order and reverse completion; owner-local IDs; process lifetime |
 | `APIShared.GameModes` | Mode snapshots, caller-defined contexts and optional permissions | No automatic permission enforcement; use the relevant mission snapshot; explicit multiplayer policy |
@@ -624,12 +631,23 @@ delegate is harmless; replacing it throws. Providers run synchronously on the
 mission capture thread outside the registry lock and should return coherent,
 read-only evidence. Providers added during capture participate in the next capture.
 No replay, implicit dispatch or disposal is involved. Callback failures, invalid
-trail evidence and multiple active providers mark the origin as conflicting.
-Registration order never chooses a winning active provider. Return `None` while
+trail evidence, multiple active providers and evidence that does not fit the start
+the game reports are rejected as a whole: the launch is then classified from the
+game's own data alone, which is the same on every multiplayer peer, and the decision
+is logged as `GAME_MODE_ORIGIN_REJECTED`. No mod is locked and no snapshot is left
+conflicting. Registration order never chooses a winning active provider. Return `None` while
 inactive; set `SupportsBuiltInOrigins` only if your mod tracks built-in trails too.
 The contract uses existing game trail families and ID ranges; it supplies evidence,
 not another mod's permission policy. See the optional
 [customized launch example](../examples/ThirdPartyMod/CustomizedLaunchExample.cs).
+
+Provider evidence classifies new launches only. A restored save takes its mode and
+Customize state from the record APIShared wrote into that save; provider state at
+that moment still describes the previous mission and is not consulted. A restart
+treats its ready source session as that record. Native data overrides the record
+only when it names a definite other mode, and then without Customize. Clear a
+pending origin whenever the launch it announced does not start, otherwise the next
+plain start inherits it.
 
 ## Managed actions and HUD interception
 
@@ -799,6 +817,17 @@ See [public audio contracts](AUDIO.md#public-audio-contracts).
 clip references. `SoundClipHandle` is distinct from an effect ID; preload before
 using `TryReplaceClip`. See [clip contracts](AUDIO.md#preloaded-custom-clips).
 
+### Unit voices
+
+The development unit-voice API is separate from SFX: `UnitVoiceEvents` publishes
+Unity Pre/Post for attributed troop/civilian speech, recruitment and special
+actions. `UnitVoiceCatalog`, `UnitVoiceSelection` and `UnitVoiceResources` provide
+discovery, source/player/situation filters and prepared private mod/map voices.
+Rules compose request gain or suppress presentation. Emission identity and
+playback-time locale/mission evidence remain distinct; no live unit ID is invented.
+See [unit-voice contracts and limits](AUDIO.md#unit-voices) and the
+[compiled example](../examples/ThirdPartyMod/UnitVoiceExample.cs).
+
 ### Native source events
 
 Not in packages up to 0.9.1; check the package you require. `APIShared.Audio.SoundSourceEvents`
@@ -895,6 +924,16 @@ See the [integration guide](THIRD_PARTY_GUIDE.md#lord-statistic-columns) and
 The opt-in [`SharedToolTipSizing`](../src/ModSettings/UI/SharedToolTipSizing.cs) also accepts
 `ReferenceElement` and `ReferenceFontSize`: opened popups match the source HUD's pixel scale.
 Consumers without a reference retain the established resolution presets.
+
+## Lord message replacement
+
+Requires APIShared 0.47.0 or later. `APIShared.Presentation.LordMessageEvents`
+provides owner-bound Pre/Post presentation rules for actual Lord messages. Audio,
+video and text can independently retain the original, reference a Vanilla Lord
+message or use private mod media / consumer-localized text. `VanillaLordMessages`
+resolves original message references without enqueueing a message or using gameplay RNG.
+See the [contract and coverage](LORD_MESSAGES.md) and
+[consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
 
 ## Packaged Lord presentation
 

@@ -7,6 +7,20 @@ namespace APIShared
 {
     internal sealed partial class ApiSharedRuntime
     {
+        internal bool TryReadGatehouseClosingRange(out GatehouseDistanceOrigin origin, out int maximumNativeDistance)
+        {
+            var timing = System.Threading.Volatile.Read(ref gatehouse);
+            if (timing == null || System.Threading.Volatile.Read(ref gatehouseDistanceOrigin) == null)
+            {
+                origin = default;
+                maximumNativeDistance = 0;
+                return false;
+            }
+
+            timing.ReadClosingRange(out origin, out maximumNativeDistance);
+            return true;
+        }
+
         public bool TryGetGatehouseDistanceOrigin(
             string ownerGuid,
             out IGatehouseDistanceOriginCapability capability,

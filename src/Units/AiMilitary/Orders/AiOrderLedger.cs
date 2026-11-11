@@ -11,19 +11,10 @@ namespace APIShared.Units.AiMilitary.Orders
     {
         private readonly AiMilitaryNativeBackend backend;
         private readonly Dictionary<AiNativeGroup, AiCurrentOrder> orders = new Dictionary<AiNativeGroup, AiCurrentOrder>();
-        private readonly Dictionary<AiNativeGroup, int> dispatches = new Dictionary<AiNativeGroup, int>();
         private long generation;
         internal AiOrderLedger(AiMilitaryNativeBackend backend) { this.backend = backend ?? throw new ArgumentNullException(nameof(backend)); }
-        internal void Clear(long worldGeneration) { generation = worldGeneration; orders.Clear(); dispatches.Clear(); }
+        internal void Clear(long worldGeneration) { generation = worldGeneration; orders.Clear(); }
         internal void Invalidate(AiNativeGroup group) { orders.Remove(group); }
-        internal void EnterGroupDispatch(AiNativeGroup group)
-        { dispatches.TryGetValue(group, out int depth); dispatches[group] = depth + 1; }
-        internal void ExitGroupDispatch(AiNativeGroup group)
-        {
-            if (!dispatches.TryGetValue(group, out int depth)) throw new InvalidOperationException("Unbalanced AI group dispatch.");
-            if (depth == 1) dispatches.Remove(group); else dispatches[group] = depth - 1;
-        }
-        internal bool IsInGroupDispatch(AiNativeGroup group) => dispatches.ContainsKey(group);
         internal void ObserveMove(long worldGeneration, AiNativeGroup group, int x, int y,
             short patrol, bool newOrder, int moveType, long rawOriginalResult)
         {
@@ -124,8 +115,10 @@ namespace APIShared.Units.AiMilitary.Orders
                     if (id <= 0 || id >= 4500 || global == 0 || owner < 1 || owner > 8 ||
                         kind <= (int)AiOrderKind.Unknown || kind > (int)AiOrderKind.AttackTile || (uint)x >= 800 || (uint)y >= 800 ||
                         command < 0 || command > ushort.MaxValue || target < 0 || target > ushort.MaxValue ||
-                        action < 0 || action > ushort.MaxValue || moveType < 0 || moveType > ushort.MaxValue)
+                        action < 0 || action > ushort.MaxValue)
                         throw new InvalidDataException("Invalid AI order identity or domain value.");
+                    // moveType is the caller's raw informational value and has no closed domain:
+                    // ObserveMove stores it unvalidated, and the Extender's TribeMoveType.Fast is -255.
                     var group = new AiNativeGroup(id, global, owner);
                     if (parsed.ContainsKey(group)) throw new InvalidDataException("Duplicate AI order identity.");
                     parsed.Add(group, new AiCurrentOrder((AiOrderKind)kind, x, y, command, target, targetGlobal, action, extra, moveType));

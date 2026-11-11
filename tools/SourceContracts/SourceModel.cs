@@ -355,8 +355,105 @@ internal sealed class SourceModel
         }
         return false;
     }
+    // Named initialization owner, with semantic call-target checks rather than a file-wide
+    // exception. The allowed span is derived from the actual guarded publication/disposal
+    // calls; the PowerShell consumer uses these exact locations as its limited allowance.
+    internal HashSet<InvocationExpressionSyntax> UnitVoiceHookAllowances()
+    {
+        static bool Returns(StatementSyntax statement) => statement is ReturnStatementSyntax ||
+            statement is BlockSyntax block && block.Statements.Count == 1 && block.Statements[0] is ReturnStatementSyntax;
+        var allowed = new HashSet<InvocationExpressionSyntax>();
+        var parts = Parts("UnitVoiceNativeRuntime").ToArray();
+        if (parts.Length == 0) return allowed;
+        var methods = parts.SelectMany(p => p.Members).OfType<MethodDeclarationSyntax>().ToArray();
+        var initialize = methods.SingleOrDefault(m => m.Identifier.ValueText == "Initialize");
+        Require(initialize?.Body != null, "Unit voice publication lost its named initializer.");
+        var publishers = methods.Where(m => Calls(m).Any(c => Name(c) == "Enable" && HookReceiver(c))).ToArray();
+        Require(publishers.Length == 1, "Unit voice hooks require one audited publication helper.");
+        var publisher = publishers[0];
+        Require(publisher.Modifiers.Any(SyntaxKind.PrivateKeyword) && publisher.Modifiers.Any(SyntaxKind.StaticKeyword) &&
+            publisher.ParameterList.Parameters.Count == 1 && publisher.Body != null,
+            "Unit voice publication must remain a private static entry helper.");
+        string parameter = publisher.ParameterList.Parameters[0].Identifier.ValueText;
+        var enables = Calls(publisher).Where(c => Name(c) == "Enable" && HookReceiver(c)).ToArray();
+        Require(enables.Length == 1, "A unit voice entry must have one publication attempt.");
+        var enable = enables[0];
+        var barriers = Immediate(publisher).OfType<AssignmentExpressionSyntax>().Where(a =>
+            a.Left is MemberAccessExpressionSyntax member && Text(member.Expression) == parameter &&
+            a.Right.IsKind(SyntaxKind.TrueLiteralExpression) && a.SpanStart < enable.SpanStart &&
+            a.Parent is ExpressionStatementSyntax statement && statement.Parent == publisher.Body).ToArray();
+        Require(barriers.Length == 1, "Unit voice entry publication barrier must precede Enable, including its failure path.");
+        var barrier = barriers[0];
+        string memberName = ((MemberAccessExpressionSyntax)barrier.Left).Name.Identifier.ValueText;
+        var entryType = parts.SelectMany(p => p.Members).OfType<TypeDeclarationSyntax>().SingleOrDefault(t =>
+            t.Identifier.ValueText == Text(publisher.ParameterList.Parameters[0].Type!));
+        Require(entryType != null && entryType.Modifiers.Any(SyntaxKind.PrivateKeyword), "Unit voice entry ownership must remain private.");
+        Require(entryType.Members.OfType<FieldDeclarationSyntax>().Any(f =>
+            !f.Modifiers.Any(SyntaxKind.StaticKeyword) && f.Declaration.Type is PredefinedTypeSyntax type && type.Keyword.IsKind(SyntaxKind.BoolKeyword) &&
+            f.Declaration.Variables.Any(v => v.Identifier.ValueText == memberName)), "Unit voice publication state must be an instance Boolean field.");
+        Require(publisher.Body.Statements.FirstOrDefault() == barrier.Parent,
+            "Unit voice publication cannot branch or call before publishing its barrier.");
+
+        var once = initialize.Body.Statements.OfType<IfStatementSyntax>().FirstOrDefault(statement =>
+            Unwrap(statement.Condition) is BinaryExpressionSyntax condition && condition.IsKind(SyntaxKind.NotEqualsExpression) && Text(condition.Right) == "0" &&
+            Unwrap(condition.Left) is InvocationExpressionSyntax call && IsCall(call, "Interlocked", "Exchange") &&
+            call.ArgumentList.Arguments.Count == 2 && Text(call.ArgumentList.Arguments[1].Expression) == "1" &&
+            Returns(statement.Statement));
+        Require(once != null && initialize.Body.Statements.FirstOrDefault() == once, "Unit voice initialization must be attempted once before doing any work.");
+        var onceCall = (InvocationExpressionSyntax)Unwrap(((BinaryExpressionSyntax)Unwrap(once.Condition)).Left);
+        string attempted = Text(onceCall.ArgumentList.Arguments[0].Expression);
+        foreach (var assignment in parts.SelectMany(p => p.DescendantNodes()).OfType<AssignmentExpressionSyntax>())
+        {
+            Require(Text(assignment.Left) != attempted, "Unit voice initialization attempt state can be reset.");
+            if (assignment.Left is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == memberName)
+                Require(ReferenceEquals(assignment, barrier), "Unit voice entry publication state can be reset or bypassed.");
+        }
+        var ready = Calls(initialize).Where(call => IsCall(call, "Volatile", "Write") && call.ArgumentList.Arguments.Count == 2 &&
+            Text(call.ArgumentList.Arguments[1].Expression) == "1").ToArray();
+        Require(ready.Length == 1, "Unit voice readiness must have one initialization publication.");
+        var callers = Roots.SelectMany(Calls).Where(call => Target(call) == publisher).ToArray();
+        Require(callers.Length > 0 && callers.All(call => call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() == initialize &&
+            !call.Ancestors().Any(n => n is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax) &&
+            call.SpanStart > once.SpanStart && call.SpanStart < ready[0].SpanStart),
+            "Unit voice Enable acquired a deferred/later caller or follows readiness.");
+        foreach (var reference in parts.SelectMany(p => p.DescendantNodes()).OfType<IdentifierNameSyntax>().Where(n => n.Identifier.ValueText == publisher.Identifier.ValueText))
+            Require(reference.Parent is InvocationExpressionSyntax direct && direct.Expression == reference ||
+                reference.Parent is MemberAccessExpressionSyntax access && access.Parent is InvocationExpressionSyntax memberCall && memberCall.Expression == access,
+                "Unit voice publisher escaped as a method group.");
+        var roots = parts.SelectMany(p => p.Members).OfType<FieldDeclarationSyntax>().Where(f =>
+            f.Modifiers.Any(SyntaxKind.StaticKeyword) && f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) &&
+            f.Declaration.Type is GenericNameSyntax generic && generic.TypeArgumentList.Arguments.Any(t => Text(t) == entryType.Identifier.ValueText))
+            .SelectMany(f => f.Declaration.Variables).Select(v => v.Identifier.ValueText).ToHashSet();
+        Require(roots.Count > 0, "Published unit voice entries lost their process root.");
+        foreach (var call in parts.SelectMany(Calls))
+        {
+            if ((Name(call) is "Clear" or "Remove" or "RemoveAt" or "RemoveAll" or "RemoveRange") && call.Expression is MemberAccessExpressionSyntax access)
+                Require(!roots.Contains(Text(access.Expression)), "Published unit voice roots can be removed.");
+            if (call.ArgumentList.Arguments.Any(a => a.RefKindKeyword.IsKind(SyntaxKind.RefKeyword) && Text(a.Expression) == attempted))
+                Require(ReferenceEquals(call, onceCall) || IsCall(call, "Volatile", "Read"), "Unit voice attempted state has a later writer.");
+        }
+        allowed.Add(enable);
+        foreach (var call in parts.SelectMany(Calls).Where(c => Name(c) == "Dispose" && HookReceiver(c)))
+        {
+            var method = call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+            Require(method?.Body != null && method.Modifiers.Any(SyntaxKind.PrivateKeyword),
+                "Unit voice candidate disposal escaped its private guard.");
+            var candidates = method.ParameterList.Parameters.Where(p => Text(p.Type!) == entryType.Identifier.ValueText).ToArray();
+            Require(candidates.Length == 1, "Unit voice candidate disposal must guard one owned entry.");
+            string candidate = candidates[0].Identifier.ValueText;
+            Require(method.Body.Statements.FirstOrDefault() is IfStatementSyntax guard &&
+                Unwrap(guard.Condition) is MemberAccessExpressionSyntax published && Text(published.Expression) == candidate &&
+                published.Name.Identifier.ValueText == memberName && Returns(guard.Statement) &&
+                guard.SpanStart < call.SpanStart,
+                "Published unit voice entry can be disposed after a successful or throwing Enable.");
+            allowed.Add(call);
+        }
+        Require(!methods.Any(m => Lifecycle.Contains(m.Identifier.ValueText)), "Unit voice process hooks acquired lifecycle teardown.");
+        return allowed;
+    }
     internal void CheckHooks()
     {
+        var unitVoiceAllowances = UnitVoiceHookAllowances();
         var audioMethods = Parts("SoundRuntime").SelectMany(t => t.Members).OfType<MethodDeclarationSyntax>().ToArray();
         var audioFlags = Parts("SoundRuntime").SelectMany(t => t.Members).OfType<FieldDeclarationSyntax>()
             .Where(f => f.Declaration.Type is PredefinedTypeSyntax p && p.Keyword.IsKind(SyntaxKind.BoolKeyword))
@@ -377,7 +474,7 @@ internal sealed class SourceModel
                 Require(name is not ("Dispose" or "Undo" or "Apply" or "Disable" or "Enable"), "Bootstrap hook mutation after constructor publication: " + call.GetLocation().GetLineSpan());
             if (call.Expression is MemberAccessExpressionSyntax access && access.Expression is MemberAccessExpressionSyntax handle &&
                 handle.Name.Identifier.ValueText == "Hook")
-                Require(name is not ("Enable" or "Disable"), "Published handle acquired an executable toggle: " + call.GetLocation().GetLineSpan());
+                Require(name is not ("Enable" or "Disable") || unitVoiceAllowances.Contains(call), "Published handle acquired an executable toggle: " + call.GetLocation().GetLineSpan());
             // Marshal.Write* also writes ordinary owned data (gatehouse state, buffers).
             // Its mere presence is not evidence of an executable-memory mutation.
             if (name is "VirtualProtect" or "FlushInstructionCache" || IsCall(call, "CodePatch", "Write"))
@@ -397,7 +494,7 @@ internal sealed class SourceModel
             // Preserve that pre-existing guardrail scope; a catch is NOT runtime safety evidence.
             // Their partial-publication behavior is recorded as an audit limitation.
             bool legacyCandidateCatch = call.Ancestors().OfType<CatchClauseSyntax>().Any() &&
-                owner is not ("SoundRuntime" or "NativeHookPublicationState" or "ScriptExtenderFixesRuntime" or "WorkshopCleanupRuntime" or "DependencyBootstrapPatcher");
+                owner is not ("SoundRuntime" or "NativeHookPublicationState" or "ScriptExtenderFixesRuntime" or "WorkshopCleanupRuntime" or "DependencyBootstrapPatcher" or "UnitVoiceNativeRuntime");
             bool guardedRollback = owner == "NativeHookPublicationState" && method?.Body?.Statements.OfType<IfStatementSyntax>().Any(i =>
                 Text(Unwrap(i.Condition)) == "HasStarted" && i.Statement.DescendantNodesAndSelf().OfType<ReturnStatementSyntax>().Any() && i.SpanStart < call.SpanStart) == true ||
                 owner == "SoundRuntime" && barrier != null && method?.Body?.Statements.OfType<IfStatementSyntax>().Any(i =>
@@ -405,7 +502,7 @@ internal sealed class SourceModel
             bool guardedCaller = owner == "ScriptExtenderFixesRuntime" && method != null && Roots.SelectMany(Calls).Where(c => Target(c) == method).Any(c =>
                 c.Ancestors().OfType<IfStatementSyntax>().Any(i => i.Condition is BinaryExpressionSyntax b && b.IsKind(SyntaxKind.EqualsExpression) &&
                     Text(b.Right) == "0" && i.Statement.Span.Contains(c.Span)));
-            Require(guardedRollback || guardedCaller || legacyCandidateCatch,
+            Require(guardedRollback || guardedCaller || legacyCandidateCatch || unitVoiceAllowances.Contains(call),
                 "Hook teardown outside guarded candidate rollback: " + call.GetLocation().GetLineSpan());
             // Guard checks here are syntactic. Backend behavior tests prove that publication
             // attempts cannot be undone, including a throwing first Enable.

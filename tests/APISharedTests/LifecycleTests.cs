@@ -92,7 +92,7 @@ namespace APISharedTests
         {
             var type = typeof(APIShared.SavegameModSettings);
             var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
-            var fields = new[] { "loaded", "legacyChoice", "chosenCurrent", "restoreFailed",
+            var fields = new[] { "loaded", "legacyChoice", "chosenCurrent",
                 "activeCreatorRules", "activeTrailCustomizeAllowed" };
             var saved = new object[fields.Length];
             for (int i = 0; i < fields.Length; i++) saved[i] = type.GetField(fields[i], flags).GetValue(null);
@@ -110,8 +110,8 @@ namespace APISharedTests
                     new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, byte[]>>());
                 type.GetField("legacyChoice", flags).SetValue(null, false);
                 type.GetMethod("BeginLoad", flags).Invoke(null, new object[] { path, false });
-                bool restored = APIShared.SavegameModSettings.TryGetRestoredMode(out var kind, out _, out bool locked);
-                Assert(!restored && kind == APIShared.GameModes.GameModeKind.Unknown && !locked,
+                bool restored = APIShared.SavegameModSettings.TryGetRestoredMode(out var kind, out _);
+                Assert(!restored && kind == APIShared.GameModes.GameModeKind.Unknown,
                     "Unreadable save record blocked the load or locked its settings instead of loading as legacy.");
             }
             finally

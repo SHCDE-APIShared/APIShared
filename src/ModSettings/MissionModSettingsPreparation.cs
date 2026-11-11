@@ -62,6 +62,7 @@ namespace APIShared.ModSettings
         public static void ValidateEntry(IModSettingsPresetEndpoint endpoint, MissionModSettingsEntry entry)
         {
             if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
+            entry = WithCurrentNames(endpoint, entry);
             if (entry?.Overrides == null) return;
             var properties = Properties(endpoint);
             foreach (var setting in entry.Overrides)
@@ -79,6 +80,7 @@ namespace APIShared.ModSettings
             if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
             var result = CopySnapshot(endpoint.System_CreateModDefaultSnapshot());
             if (entry == null) return result;
+            entry = WithCurrentNames(endpoint, entry);
             var properties = Properties(endpoint);
             var player = endpoint.System_CreatePlayerMissionPresetSnapshot()
                 ?? throw new InvalidDataException("The endpoint returned a null player snapshot.");
@@ -92,6 +94,36 @@ namespace APIShared.ModSettings
                         result[property.Name] = MessagePackSerializer.Serialize(property.PropertyType,
                             ModSettingsPresetJson.ConvertValue(setting.Value, property.PropertyType));
             return result;
+        }
+
+        // A mission document keeps the setting names of the mod version its author used. Returns the entry
+        // with declared former names moved to the current properties, or the same instance when nothing
+        // moves; the argument is never modified. A stored current name outranks its former names.
+        internal static MissionModSettingsEntry WithCurrentNames(object endpoint, MissionModSettingsEntry entry)
+        {
+            if (entry == null || endpoint == null) return entry;
+            ModSettingsMigration.RenameSet renames = ModSettingsMigration.RenamesOf(endpoint.GetType());
+            if (renames.Ordered.Length == 0) return entry;
+            string[] player = entry.PlayerSettings ?? Array.Empty<string>();
+            Dictionary<string, object> overrides = entry.Overrides;
+            var present = new HashSet<string>(player, StringComparer.Ordinal);
+            if (overrides != null) foreach (string name in overrides.Keys) present.Add(name);
+            if (!renames.Ordered.Any(rename => present.Contains(rename.Key))) return entry;
+            var newPlayer = player.Where(name => !renames.ByFormerName.ContainsKey(name)).ToList();
+            var newOverrides = new Dictionary<string, object>(StringComparer.Ordinal);
+            if (overrides != null)
+                foreach (var setting in overrides)
+                    if (!renames.ByFormerName.ContainsKey(setting.Key)) newOverrides[setting.Key] = setting.Value;
+            foreach (var rename in renames.Ordered)
+            {
+                if (!present.Contains(rename.Key)) continue;
+                // Already stored under the current name, or a newer former name has supplied it.
+                if (!present.Add(rename.Value)) continue;
+                if (overrides != null && overrides.TryGetValue(rename.Key, out object value)) newOverrides[rename.Value] = value;
+                else newPlayer.Add(rename.Value);
+            }
+            newPlayer.Sort(StringComparer.Ordinal);
+            return new MissionModSettingsEntry { PlayerSettings = newPlayer.ToArray(), Overrides = newOverrides };
         }
 
         private static Dictionary<string, PropertyInfo> Properties(object endpoint) =>

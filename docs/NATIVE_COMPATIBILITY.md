@@ -83,11 +83,13 @@ these checks (length probe, expected stub, installed jump and padding) and their
 claim/prepare/publish/rollback steps through `Core/Internal/Native/NativeInlineStub` and
 `NativeInlineStubGroup`; each owner keeps its own check order and diagnostics.
 
-The gatehouse centered-distance replacement loads both unit coordinates before
-using `cdq`, because `cdq` overwrites EDX and would otherwise destroy the live record
-offset. Timing and automation share coordinated ranges; changes must preserve their
-non-overlap and the original inactive paths. Existing backend tests execute productive
-stubs on isolated buffers, never on another running game's executable pages.
+The gatehouse centered-distance replacement uses the signed begin tile and
+the audited square grid size. Each axis uses begin * 8 + size * 4 in unit world
+coordinates, where tile centers are at tile * 8 + 4. The engine selects the access coordinates
+independently, and they can move around the footprint. The stub loads both unit
+coordinates before the first `cdq` overwrites the unit offset. Timing and
+automation share coordinated ranges. Backend tests execute the production stubs
+with the audited native layout and verify their Vanilla paths.
 
 Market queries validate each complete 31-byte function before installation. Only
 the audited image and NativeX64 Indirect schema are accepted: six patch bytes

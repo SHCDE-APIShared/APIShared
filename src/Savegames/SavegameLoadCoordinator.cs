@@ -38,6 +38,9 @@ namespace APIShared
         private static bool attemptHost;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
+        // The map coordinator's lobby-refresh observer hides the start value of a rejected attempt.
+        internal static bool IsRejectedStartLobby(Platform_Multiplayer.MPLobby lobby) =>
+            lobby != null && ReferenceEquals(lobby, rejectedNativeLobby);
         // This peer's digests of the declared simulation records in its own copy of the selected save.
         private static IReadOnlyList<SavegameRecordDigest> localRecords;
         private static readonly BoundedTokenSet retired = new BoundedTokenSet();

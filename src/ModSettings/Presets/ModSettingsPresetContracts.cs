@@ -24,6 +24,21 @@ namespace APIShared.ModSettings
         void System_SetExplicitMissionSettings(bool hasExplicitSettings);
     }
 
+    /// <summary>Optional endpoint contract for settings whose stored form changed between versions of the mod.
+    /// A pure rename is declared with <see cref="ModSettingRenamedFromAttribute"/> instead.</summary>
+    /// <remarks>A save keeps the host settings and Trail author rules as the mod version that wrote it stored them.
+    /// Before APIShared applies such a saved mission snapshot it asks the endpoint for the form its current setters
+    /// keep, applies that result and verifies the applied host values against it. Without this contract a setter that
+    /// converts a retired property cannot be told apart from a setter that ignored its value, and the load is refused.
+    /// Called on the Unity thread while a save load is prepared, before any setter runs. The implementation must not
+    /// change settings or retain the argument; it returns a dictionary (the same or a new one) that still contains
+    /// every host property of the input. Returning null or throwing refuses that load.</remarks>
+    public interface IModSettingsSnapshotMigration
+    {
+        /// <summary>Returns the saved mission snapshot in the form the current setters keep.</summary>
+        Dictionary<string, byte[]> System_MigrateMissionSnapshot(Dictionary<string, byte[]> snapshot);
+    }
+
     /// <summary>Extended endpoint for replacing an editable mission working copy without touching its source.</summary>
     public interface IModSettingsWorkingCopyEndpoint : IModSettingsPresetEndpoint
     {

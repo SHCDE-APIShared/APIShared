@@ -23,6 +23,7 @@ namespace APIShared.ModSettings
             var properties = ModSettingsApplication.GetMissionHostProperties(endpoint).ToDictionary(property => property.Name, StringComparer.Ordinal);
             var result = properties.Keys.ToDictionary(name => name, _ => new TrailCreatorRule { Mode = 0 }, StringComparer.Ordinal);
             if (entry == null) return result;
+            entry = MissionModSettingsPreparation.WithCurrentNames(endpoint, entry);
             foreach (string name in entry.PlayerSettings ?? Array.Empty<string>())
                 if (properties.ContainsKey(name)) result[name] = new TrailCreatorRule { Mode = 1 };
             if (entry.Overrides != null)

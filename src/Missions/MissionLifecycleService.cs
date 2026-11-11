@@ -126,6 +126,8 @@ namespace APIShared
                 foreach (var hook in candidate.hooks) hook.Apply();
                 candidate.Subscribe();
                 published = service = candidate;
+                // Mode captures run inside this service's checkpoints; their decisions use its log.
+                GameModeHelper.ReportModeDecision = text => candidate.Safe(() => NativeApiLog.Error(log, text));
                 diagnostic = Status(NativeCapabilityState.Available, "Process-wide mission lifecycle installed.");
                 candidate.Safe(() => NativeApiLog.Debug(log, "Process-wide mission lifecycle installed."));
                 return true;
@@ -195,7 +197,11 @@ namespace APIShared
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
             multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), (self, setup, map, coop, mission) =>
             {
-                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true)) return;
+                // Vanilla's lobby Update marks itself as loading and hides its panels right after this
+                // call returns, even when nothing started. Like a rejected StartSave, a rejected map
+                // start therefore unwinds that frame; the coordinator withdraws the host's start value.
+                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true))
+                    throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
                 Run(new Operation { Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
                     Multiplayer = true, File = map?.filePath }, () => multiplayerNew(self, setup, map, coop, mission));
             });
@@ -337,6 +343,7 @@ namespace APIShared
                 SavegameModSettings.FinishLoad();
             waiting = null;
             bool normal = false;
+            GameModeHelper.BeginModeDecisions();
             Safe(() => op.Id = state.Begin(Capture(op)));
             try
             {
@@ -353,11 +360,7 @@ namespace APIShared
                     !op.NativeFailed && op.ManagedSucceeded)
                 {
                     try { SavegameModSettings.ApplyLoadedSettings(Capture(op)); }
-                    catch (Exception error)
-                    {
-                        SavegameModSettings.MarkRestoreFailed();
-                        Report(error);
-                    }
+                    catch (Exception error) { SavegameModSettings.ReportRestoreFailure(error); }
                 }
                 Safe(() =>
                 {
@@ -415,7 +418,7 @@ namespace APIShared
                 () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
                 () => state.Ready(op.Id, Capture(op)),
                 () => { SavegameModSettings.FinishLoad(); MapRecordLoadCoordinator.FinishLoad(); },
-                error => { SavegameModSettings.MarkRestoreFailed(); Report(error); }));
+                SavegameModSettings.ReportRestoreFailure));
 
         internal static void CompleteDeferredRestore(Action restore, Action ready,
             Action cleanup, Action<Exception> reportRestoreError)

@@ -10,8 +10,8 @@ using APIShared.Savegames;
 // actual packet formatter/agreement are linked unchanged; no game or hook is loaded.
 internal static class Boundary
 {
-    internal static Delegate MapHook, SaveHook;
-    internal static int MapStarts, SaveStarts, Captures, Popups;
+    internal static Delegate MapHook, SaveHook, RefreshHook;
+    internal static int MapStarts, SaveStarts, Captures, Popups, StartWithdrawals;
     internal static bool MainThread = true, Prepare = true, SendOk = true, SaveVeto;
     internal static ulong Local = 2001, Host = 2001;
     internal static string Settings = "host-settings", Path;
@@ -26,6 +26,14 @@ internal static class Boundary
     internal static readonly Queue<Action> Presented = new Queue<Action>();
     internal static void MapOriginal(Platform_Multiplayer self) { MapStarts++; }
     internal static void SaveOriginal(Platform_Multiplayer self, string name) { SaveStarts++; }
+    // Vanilla re-reads the published start value from Steam on every refresh.
+    internal static string PublishedStart;
+    // One process-lived provider, as a consumer mod registers it; default means no customized launch.
+    internal static APIShared.GameModes.CustomizedLaunchOrigin Origin;
+    static Boundary() { APIShared.GameModes.CustomizedLaunchOrigins.Register("fixture.origin", () => Origin); }
+    internal static bool RefreshOriginal(Platform_Multiplayer self, ref EngineInterface.MultiplayerSetupData setup,
+        ref bool refreshTeams, ref bool settingsChanged, bool coop)
+    { if (self.activeLobby != null) self.activeLobby.startGame = PublishedStart; return false; }
     internal static void Receive<T>(T packet, ulong sender) where T : class => Receivers[typeof(T)](packet, sender);
 }
 namespace BepInEx.Logging { public sealed class ManualLogSource { } }
@@ -35,20 +43,29 @@ namespace Steamworks
 {
     public struct CSteamID { public ulong m_SteamID; public CSteamID(ulong value) { m_SteamID = value; } }
     internal static class SteamUser { internal static CSteamID GetSteamID() => new CSteamID(Boundary.Local); }
-    internal static class SteamMatchmaking { internal static CSteamID GetLobbyOwner(CSteamID lobby) => new CSteamID(Boundary.Host); }
+    internal static class SteamMatchmaking
+    {
+        internal static CSteamID GetLobbyOwner(CSteamID lobby) => new CSteamID(Boundary.Host);
+        internal static bool SetLobbyData(CSteamID lobby, string key, string value)
+        { if (key == "start" && value.Length == 0) Boundary.StartWithdrawals++; return true; }
+    }
     internal static class SteamFriends { internal static string GetFriendPersonaName(CSteamID id) => "peer-" + id.m_SteamID; }
 }
+public static class EngineInterface { public sealed class MultiplayerSetupData { } }
 public sealed class Platform_Multiplayer
 {
     public static Platform_Multiplayer Instance;
     public MPLobby activeLobby;
     public void HostStartGame() { }
     public void HostLoadGame(string name) { }
+    public bool RefreshLobbyList(ref EngineInterface.MultiplayerSetupData setup, ref bool refreshTeams,
+        ref bool settingsChanged, bool coopgame = false) => false;
     public sealed class MPLobby
     {
         public Steamworks.CSteamID id;
         public bool isHost, coopTrailGame, coopOrderSwapped;
         public int coopTrailID, coopSelectedMission;
+        public string startGame;
         public string mapFileName = "readiness.map", crc = "17", settings = "native-settings", maxPlayers = "8", AIPlayers = "0", gameTypeCoop = "0", Aiv = "aiv";
         public readonly List<MPLobbyMember> members = new List<MPLobbyMember>();
         public string AIVDataChecksum() => Aiv;
@@ -81,9 +98,16 @@ namespace MonoMod.RuntimeDetour
     {
         private readonly MethodInfo target;
         internal Hook(MethodInfo target, Delegate callback, HookConfig config)
-        { this.target = target; if (target.Name == "HostStartGame") Boundary.MapHook = callback; else Boundary.SaveHook = callback; }
+        {
+            this.target = target;
+            if (target.Name == "HostStartGame") Boundary.MapHook = callback;
+            else if (target.Name == "RefreshLobbyList") Boundary.RefreshHook = callback;
+            else Boundary.SaveHook = callback;
+        }
         internal T GenerateTrampoline<T>() => (T)(object)Delegate.CreateDelegate(typeof(T), typeof(Boundary).GetMethod(
-            target.Name == "HostStartGame" ? nameof(Boundary.MapOriginal) : nameof(Boundary.SaveOriginal), BindingFlags.Static | BindingFlags.NonPublic));
+            target.Name == "HostStartGame" ? nameof(Boundary.MapOriginal) :
+            target.Name == "RefreshLobbyList" ? nameof(Boundary.RefreshOriginal) : nameof(Boundary.SaveOriginal),
+            BindingFlags.Static | BindingFlags.NonPublic));
         internal void Apply() { }
         public void Dispose() { }
     }

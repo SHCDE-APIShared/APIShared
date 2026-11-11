@@ -107,6 +107,9 @@ namespace APIShared.Economy
         private static IEnumerable<ulong> SavedDenominators()
         {
             if(selectedPath!=null && !restored)return Volatile.Read(ref selectedDenominators);
+            // Without the engine gate no world is ever admitted (Initializing returns), so no row exists;
+            // capturing would lock a null monitor and report a bogus saved-denominator issue.
+            if(WorkerProductionWorldSafety.EngineGate==null)return Array.Empty<ulong>();
             return WorkerProductionStateStore.CaptureDenominators();
         }
         private static ulong SavedCommonDenominator()

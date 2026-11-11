@@ -114,6 +114,18 @@ internal static partial class Program
         Check(registry.Status.ResolvedFixedBonusPercent==20 && tutorialBundle.Contains(new GameModeSnapshot(GameModeKind.Tutorial),registry.CurrentPrepared),
             "Tutorial remains a bundle member for unconditional owners while optional policies deny it.");
 
+        var conflictRegistry=new WorkerProductionModifierRegistry(()=>true,()=>"",_=> { });
+        var conflicting=new GameModeSnapshot(GameModeKind.CustomGame,conflicting:true);
+        conflictRegistry.Prepare(conflicting);
+        Check(conflictRegistry.GetLaunchBundle().Contains(conflicting,conflictRegistry.CurrentPrepared),
+            "A conflicting origin without mode-gated demand keeps the committed Vanilla arithmetic.");
+        conflictRegistry.TryRegister("gated.owner","id",out var gated,out _);
+        gated.SetProfile(new WorkerProductionProfile(fixedBonusPercent:ValueModifierContribution.FixedValue(0),activation:profile));
+        conflictRegistry.Prepare(conflicting);
+        Check(conflictRegistry.Status.ResolvedFixedBonusPercent==50 &&
+            !conflictRegistry.GetLaunchBundle().Contains(conflicting,conflictRegistry.CurrentPrepared),
+            "A conflicting origin never selects a member whose mode-gated owner it denies.");
+
         var common=new WorkerProductionModifierRegistry(()=>true,()=>"",_=> { });
         common.TryRegister("a.owner","factor",out var factor,out _);
         factor.SetProfile(new WorkerProductionProfile(fixedBonusPercent:ValueModifierContribution.Factor(2)));

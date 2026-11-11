@@ -130,7 +130,8 @@ namespace APIShared.Presentation
                 if (!ReferenceEquals(lastPublished, next) && !notifying)
                 {
                     lastPublished = next; notifying = true;
-                    try { foreach (var observer in observers) Invoke(observer, next); }
+                    // A subscription replay may already have delivered this exact state to a new observer.
+                    try { foreach (var observer in observers) if (!ReferenceEquals(observer.Delivered, next)) Invoke(observer, next); }
                     finally { notifying = false; }
                 }
                 if (host == null)
@@ -151,6 +152,7 @@ namespace APIShared.Presentation
         }
         private static void Invoke(Observer observer, AllyGoodsPanelContext context)
         {
+            observer.Delivered = context;
             try { observer.Callback(context); }
             catch (Exception error) { Report("observer:" + observer.Owner + "/" + observer.Id, error); }
         }
@@ -277,6 +279,7 @@ namespace APIShared.Presentation
         {
             internal readonly string Owner, Id; internal readonly int Order;
             internal readonly Action<AllyGoodsPanelContext> Callback;
+            internal AllyGoodsPanelContext Delivered; // Last state this observer received (Unity thread only).
             internal Observer(string owner, string id, int order, Action<AllyGoodsPanelContext> callback)
             { Owner = owner; Id = id; Order = order; Callback = callback; }
             internal static readonly Func<Observer, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
