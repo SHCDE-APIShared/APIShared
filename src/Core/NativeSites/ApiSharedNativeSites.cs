@@ -232,6 +232,7 @@ namespace APIShared
             Group(PlagueHeight, PlagueHeightSpans()),
             Group(AiMarketSell, AiMarketSellSpans()),
             Group(AllyTransfersNative.SiteName, AllyTransfersNative.Spans()),
+            Group(NativeStorageNativeRuntime.SiteName, NativeStorageNativeRuntime.Spans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),

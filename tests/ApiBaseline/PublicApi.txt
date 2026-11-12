@@ -624,6 +624,29 @@ APIShared.Economy.MarketPricePreEventArgs | public int Amount { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int Good { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int PlayerId { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int ReplacementTotal { get; set; }
+APIShared.Economy.NativeStorageClient | public sealed class APIShared.Economy.NativeStorageClient
+APIShared.Economy.NativeStorageClient | public bool IsCurrentWorldReady { get; }
+APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryRegisterGood(string goodId, APIShared.Economy.NativeStoragePool pool, out APIShared.Economy.NativeStoredGood good, out string reason)
+APIShared.Economy.NativeStoragePool | public enum APIShared.Economy.NativeStoragePool : int
+APIShared.Economy.NativeStoragePool | Armory = 1
+APIShared.Economy.NativeStoragePool | Granary = 2
+APIShared.Economy.NativeStorageSnapshot | public struct APIShared.Economy.NativeStorageSnapshot
+APIShared.Economy.NativeStorageSnapshot | public APIShared.Economy.NativeStoragePool Pool { get; }
+APIShared.Economy.NativeStorageSnapshot | public int Available { get; }
+APIShared.Economy.NativeStorageSnapshot | public int BuildingId { get; }
+APIShared.Economy.NativeStorageSnapshot | public int Capacity { get; }
+APIShared.Economy.NativeStorageSnapshot | public int NativeQuantity { get; }
+APIShared.Economy.NativeStorageSnapshot | public int PlayerId { get; }
+APIShared.Economy.NativeStorageSnapshot | public int VirtualQuantity { get; }
+APIShared.Economy.NativeStorageSnapshot | public uint GlobalId { get; }
+APIShared.Economy.NativeStoredGood | public sealed class APIShared.Economy.NativeStoredGood
+APIShared.Economy.NativeStoredGood | public APIShared.Economy.NativeStoragePool Pool { get; }
+APIShared.Economy.NativeStoredGood | public bool TryExchange(APIShared.Economy.NativeStorageSnapshot storage, long operationSequence, int quantityDelta, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetLastSequence(out long sequence, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetStock(int playerId, out APIShared.Goods.GoodsBalance balance, out string reason)
+APIShared.Economy.NativeStoredGood | public string GoodId { get; }
+APIShared.Economy.NativeStoredGood | public string OwnerGuid { get; }
 APIShared.Economy.PopularityModifierValues | public struct APIShared.Economy.PopularityModifierValues
 APIShared.Economy.PopularityModifierValues | public .ctor(APIShared.Modifiers.ValueModifierContribution human, APIShared.Modifiers.ValueModifierContribution ai)
 APIShared.Economy.PopularityModifierValues | public APIShared.Modifiers.ValueModifierContribution AI { get; }
@@ -1415,6 +1438,7 @@ APIShared.MissionStartKind | NewGame = 0
 APIShared.ModApiClient | public sealed class APIShared.ModApiClient
 APIShared.ModApiClient | public APIShared.Automation.AutomationClient Automation { get; }
 APIShared.ModApiClient | public APIShared.Economy.GoodsWalletClient GoodsWallet { get; }
+APIShared.ModApiClient | public APIShared.Economy.NativeStorageClient NativeStorage { get; }
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }

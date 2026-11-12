@@ -6,6 +6,11 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+`Economy/Storage` owns registered virtual stock in exact native Armory/Granary
+pools: its private Content ledger, physical allocations, shared capacity cohort
+and matching archive pair share one lifetime. Consumers retain recipes, hauling,
+visuals and authorization. See [native storage](docs/NATIVE_STORAGE.md).
+
 The Content assembly also owns the caller-instantiated virtual-goods ledger in
 `APIShared.Goods`: bounded balances, atomic changes, replay receipts, reservations
 and canonical snapshots. Consumers share one instance per authoritative mission

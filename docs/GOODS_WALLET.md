@@ -62,11 +62,11 @@ Asynchronous forced thread termination, unprotected foreign memory access and
 process/native-memory faults are outside
 it. No compensating refund or retry is guessed after an unknown native outcome.
 
-The wallet does not call `AddPlayerGold`: the Extender helper uses unchecked
-addition plus zero clamping. The adapter validates the supported native image,
-the 22,588-byte packed resource view, signed gold at offset 0x50C and the checked
-one-based resource pointer. No wallet hook or competing native interception is
-installed. Unsupported layouts fail this service independently.
+The wallet validates the supported native image, packed resource layout and exact
+one-based resource pointer. It installs no hook; unsupported layouts fail this
+service independently. See the [native update contract](../UpdateToNewDLL.md#native-goods-wallet)
+for the field/pointer qualifications and the reason native gold helpers are not
+used for checked transactions.
 
 ## Persistence and world lifetime
 
