@@ -5,6 +5,8 @@
     <Compile Include="../../src/Economy/Storage/NativeStorageState.cs" Link="Production/NativeStorageState.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Snapshot.cs" Link="Production/NativeStorageState.Snapshot.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Cargo.cs" Link="Production/NativeStorageState.Cargo.cs" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageBatch.cs" Link="Production/NativeStorageBatch.cs" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.Batch.cs" Link="Production/NativeStorageState.Batch.cs" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />

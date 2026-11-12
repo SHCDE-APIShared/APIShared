@@ -70,6 +70,75 @@ equivalent ordered decisions on every peer.
 
 See the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+### Atomic multi-store exchanges
+
+Use `api.NativeStorage.TryExchangeBatch` when a purchase or sale must succeed
+across several stores together. Supply `NativeStorageChange` values containing
+the exact registered good, original storage snapshot and signed quantity delta,
+plus one aggregate signed gold delta. A 100-unit purchase can deposit 50 in each
+of two Armories and charge once. Looping individual exchanges cannot provide that
+all-or-none result. The consumer selects stores, distributes the lot, sets prices
+and authorizes the common player; the framework supplies no market command engine.
+
+```csharp
+// Already authorized and holding the actual engine monitor; both observations are current.
+var changes = new[] {
+    new NativeStorageChange(armor, firstArmory, 50),
+    new NativeStorageChange(armor, secondArmory, 50)
+};
+api.NativeStorage.TryExchangeBatch(operationSequence, changes, goldDelta: -100,
+    out var status, out reason);
+```
+
+A batch accepts **1–64 physical changes**, with at most **32 nonzero aggregated
+good/player totals**, all belonging to the submitting client's owner, one player
+and one exact native world. Distinct goods and supported pools can share a batch.
+Duplicate exact good/store rows, zero row deltas, foreign/unregistered/dormant
+handles, conflicting identities for one slot and mixed players/worlds reject.
+An individual good may have a zero net total across stores when another account
+changes; an **entirely net-zero batch, including a pure-gold request, rejects**.
+
+Every store must supply its own withdrawals. Capacity is checked against the final
+combined native and virtual occupancy, including other owners and goods, without
+publishing an intermediate row. Neutral or decreasing virtual occupancy can drain
+or rearrange valid claims during foreign native overfill; virtual claims alone
+still cannot exceed the fixed pool limit. One failed row, capacity check or payment
+refuses the requested whole lot. A zero gold delta performs no wallet lookup or
+gold write, so existing debt does not block a free stock operation.
+
+Use the same caller-held engine monitor and authoritative context as single-store
+exchanges. Real multiplayer still requires a native-tick or authenticated-Chore
+mutation boundary and equivalent commands/catalogs on every peer. Frozen saves,
+native add-goods Pre/Original/Post chains, overlapping prepared storage/cargo
+commits, blocked restoration and unsupported worlds refuse the operation. The
+batch supplies no new command transport or mutation authority.
+
+Sequences share the owner's existing storage stream, including automatic loss
+maintenance. Read `TryGetLastSequence` at execution and use the next positive
+sequence while retaining the protected boundary; the read reserves nothing.
+Refuse exhaustion at `Int64.MaxValue` rather than wrapping. A retained batch receipt
+is checked before reconciliation or live store/wallet lookup on an already-bound
+world. Identical retries return
+`AlreadyApplied` even after a store vanished, without repeating payment or restoring
+later lost stock. Keep the original changes, snapshots, sequence and aggregate
+gold; input order is immaterial, while a changed valid distribution or price
+conflicts, including changes to an individually net-zero good. A prior load's
+snapshots remain invalid.
+
+The journal retains **at most 1,024 operations globally**, rather than every owner's
+latest receipt forever. Evicted sequences return `ExpiredOperation` and never
+execute or assert success. An earlier tick or command may already have evicted a
+receipt. New-operation loss reconciliation can independently remove lost stock and
+consume sequences even if the requested batch later refuses. Do not silently
+allocate another sequence for an expired retry.
+
+The [existing commit limits](#public-limits) apply: allocations, checks and warm-up
+finish before the optional one raw gold store and prebuilt private publication.
+No consumer callbacks or native helpers run within that commit. Native weapon,
+recruitment and horse purchases still require their own qualified native-success
+and payment boundary. See the [public batch declarations](../src/Economy/Storage/NativeStorageBatch.Contracts.cs)
+and [compiled opt-in helper](../examples/ThirdPartyMod/NativeStorageExample.cs).
+
 ### Read one good in one store
 
 After `TryObserve`, call the exact registered handle's
@@ -300,6 +369,15 @@ The [pure state/codec](../src/Economy/Storage/NativeStorageState.cs) uses the
 Content library's trusted internal prepared commit. Only prebuilt publication
 follows the native gold store. Native hot paths read an immutable marked-building
 index; empty demand follows the complete original path.
+
+Batch operations reuse that prepared exchange and publication. A kind-5/version-1
+intent stores a 34-byte versioned SHA-256 fingerprint of the canonical complete
+physical changes and gold intent. It fits the existing opaque Content schema-2
+receipt field; readers preserve it without interpreting its new kind. Store
+schemas, outer reader requirements and existing single-store kind-2 intent bytes
+remain unchanged. Older assemblies do not export the new batch method, so
+consumers must declare a release containing that API. The new method adds no save
+policy or native hook.
 
 The [native owner](../src/Economy/Storage/NativeStorageNativeRuntime.cs) coordinates
 Armory admission/free count, Granary free count, the existing Granary finder

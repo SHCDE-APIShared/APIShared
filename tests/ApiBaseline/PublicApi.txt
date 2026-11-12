@@ -632,11 +632,17 @@ APIShared.Economy.NativeCargoSnapshot | public int Remaining { get; }
 APIShared.Economy.NativeCargoSnapshot | public long CreationSequence { get; }
 APIShared.Economy.NativeCargoSnapshot | public string GoodId { get; }
 APIShared.Economy.NativeCargoSnapshot | public string OwnerGuid { get; }
+APIShared.Economy.NativeStorageChange | public struct APIShared.Economy.NativeStorageChange
+APIShared.Economy.NativeStorageChange | public .ctor(APIShared.Economy.NativeStoredGood good, APIShared.Economy.NativeStorageSnapshot storage, int quantityDelta)
+APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStorageSnapshot Storage { get; }
+APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageChange | public int QuantityDelta { get; }
 APIShared.Economy.NativeStorageClient | public sealed class APIShared.Economy.NativeStorageClient
 APIShared.Economy.NativeStorageClient | public bool IsCurrentWorldReady { get; }
 APIShared.Economy.NativeStorageClient | public bool TryCreateCargo(long creationSequence, APIShared.Economy.NativeStoredGood good, int playerId, int quantity, out APIShared.Economy.NativeCargoSnapshot cargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryDepositCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, APIShared.Economy.NativeStorageSnapshot destination, int quantity, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryDiscardCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryExchangeBatch(long operationSequence, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageChange> changes, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryGetCargo(long creationSequence, out APIShared.Economy.NativeCargoSnapshot cargo, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryGetLastCargoSequence(out long sequence, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)

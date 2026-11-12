@@ -14,6 +14,11 @@ For a per-building display, observe the exact store and call the registered good
 the [protected read workflow](NATIVE_STORAGE.md#read-one-good-in-one-store), which
 grants no mutation authority.
 
+For one all-or-none market lot spanning stores, submit `NativeStorageChange` values
+through `TryExchangeBatch` in the same authoritative engine boundary. Follow the
+[batch limits, sequence and retry workflow](NATIVE_STORAGE.md#atomic-multi-store-exchanges)
+and the [compiled storage helpers](../examples/ThirdPartyMod/NativeStorageExample.cs).
+
 ## External production cargo
 
 Use the existing `NativeStorageClient` cargo methods when an external producer

@@ -38,5 +38,26 @@ namespace ThirdPartyMod
             // with this returned storage plus the original sequence, quantity and total price.
             return armor.TryExchange(storage, sequence, quantity, -(int)price, out status, out reason);
         }
+
+        // Opt-in initial purchase, after consumer authorization. Hold the actual engine monitor
+        // throughout; read armor.TryGetLastSequence, reject Int64.MaxValue and use last + 1
+        // immediately before this call. That read reserves no operation number.
+        // Real multiplayer also needs the existing native-tick/authenticated-Chore boundary.
+        internal static bool BuyHundredAcrossTwoArmories(ModApiClient client, NativeStoredGood armor,
+            int firstBuildingId, int secondBuildingId, long sequence, int unitPrice,
+            out NativeStorageChange[] originalChanges, out GoodsTransactionStatus status, out string reason)
+        {
+            originalChanges = null; status = GoodsTransactionStatus.InvalidRequest;
+            long price = 100L * unitPrice;
+            if (armor == null || armor.Pool != NativeStoragePool.Armory || firstBuildingId == secondBuildingId ||
+                unitPrice < 0 || price > int.MaxValue)
+            { reason = "The purchase needs two distinct Armories, an Armory good and a bounded nonnegative price."; return false; }
+            if (!client.NativeStorage.TryObserve(firstBuildingId, out var first, out reason) ||
+                !client.NativeStorage.TryObserve(secondBuildingId, out var second, out reason)) return false;
+            originalChanges = new[] { new NativeStorageChange(armor, first, 50), new NativeStorageChange(armor, second, 50) };
+            // For an in-world retry call TryExchangeBatch directly with these ORIGINAL changes,
+            // the same sequence and aggregate price. Do not reobserve stores or allocate a new ID.
+            return client.NativeStorage.TryExchangeBatch(sequence, originalChanges, -(int)price, out status, out reason);
+        }
     }
 }

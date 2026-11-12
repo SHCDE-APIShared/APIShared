@@ -9,6 +9,9 @@ recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STO
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 `NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
 store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
+`NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
+changes and one common player's gold, with at most 32 nonzero good/player totals;
+see [batch limits and replay](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
 
 ## External production cargo
 
