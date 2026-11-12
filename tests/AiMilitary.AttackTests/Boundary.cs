@@ -74,10 +74,11 @@ namespace APIShared.Units.AiMilitary.Native
 }
 namespace SHCDESE.API
 {
-    internal sealed unsafe class GameBuildingManagerAPI
+    public sealed unsafe class GameBuildingManagerAPI
     {
         internal static readonly GameBuildingManagerAPI Instance = new GameBuildingManagerAPI();
         internal GameBuilding* Building;
+        public bool IsValidId(int id) => id == 1;
         public bool TryGetBuildingById(int id, out GameBuilding* building) { building = Building; return id == 1 && building != null; }
     }
 }

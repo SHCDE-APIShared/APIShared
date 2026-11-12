@@ -360,6 +360,15 @@ APIShared.BriefingGoldContext | public int CurrentGold { get; }
 APIShared.BriefingGoldContext | public int EffectiveVanillaGold { get; }
 APIShared.BriefingGoldContext | public int SlotIndex { get; }
 APIShared.BriefingGoldContext | public int VanillaDisplayedGold { get; }
+APIShared.BuildingAccess | public static class APIShared.BuildingAccess
+APIShared.BuildingAccess | public static bool TryGetById(SHCDESE.API.GameBuildingManagerAPI manager, int buildingId, out SHCDESE.Interop.GameBuilding* building, out APIShared.BuildingLookupFailure failure)
+APIShared.BuildingAccess | public static bool TryGetById(int buildingId, out SHCDESE.Interop.GameBuilding* building, out APIShared.BuildingLookupFailure failure)
+APIShared.BuildingLookupFailure | public enum APIShared.BuildingLookupFailure : int
+APIShared.BuildingLookupFailure | InvalidId = 1
+APIShared.BuildingLookupFailure | ManagerUnavailable = 2
+APIShared.BuildingLookupFailure | None = 0
+APIShared.BuildingLookupFailure | OutOfRange = 3
+APIShared.BuildingLookupFailure | Unavailable = 4
 APIShared.BuildingRepairQuote | public sealed class APIShared.BuildingRepairQuote
 APIShared.BuildingRepairQuote | public .ctor(int buildingId, int buildingGlobalId, int panel, bool canRepair, int currentHealth, int maxHealth, int wood, int stone, int iron, int pitch, int gold, int availableWood, int availableStone, int availableIron, int availablePitch, int availableGold)
 APIShared.BuildingRepairQuote | public bool CanRepair { get; }
@@ -1229,6 +1238,8 @@ APIShared.IUnitHudPresentationCapability | public bool TryRegisterInteraction(st
 APIShared.IUnitHudPresentationCapability | public bool TryRegisterRecruitment(string categoryId, APIShared.UnitHudRecruitmentHandler handler, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IUnitHudPresentationCapability | public bool TryRemoveUnitFromControlGroups(int unitId, out int removedCount, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IUnitHudPresentationCapability | public void RequestRefresh()
+APIShared.IndexBounds | public static class APIShared.IndexBounds
+APIShared.IndexBounds | public static bool IsValidIndex(int index, int length)
 APIShared.Lobby.LobbyChatMessage | public sealed class APIShared.Lobby.LobbyChatMessage
 APIShared.Lobby.LobbyChatMessage | public bool IsSystemMessage { get; }
 APIShared.Lobby.LobbyChatMessage | public string Message { get; }
@@ -2648,7 +2659,11 @@ APIShared.Presentation.IngameMenuActionState | public string Tooltip { get; }
 APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
 APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.IngameMenuRowState GetRowState(APIShared.Presentation.IngameMenuRow row)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegisterContent(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Func<APIShared.Presentation.IngameMenuContentContext, Noesis.Control> createContent, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
+APIShared.Presentation.IngameMenuContentContext | public sealed class APIShared.Presentation.IngameMenuContentContext
+APIShared.Presentation.IngameMenuContentContext | public Noesis.FrameworkElement Menu { get; }
+APIShared.Presentation.IngameMenuContentContext | public bool TryExecute(System.Action action)
 APIShared.Presentation.IngameMenuRow | public enum APIShared.Presentation.IngameMenuRow : int
 APIShared.Presentation.IngameMenuRow | ExitStronghold = 7
 APIShared.Presentation.IngameMenuRow | Help = 4

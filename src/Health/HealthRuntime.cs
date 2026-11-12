@@ -293,7 +293,7 @@ namespace APIShared.Health
         private static bool TryBuilding(int id,out GameBuilding* building)
         {
             building=null; var manager=GameBuildingManagerAPI.Instance;
-            return id > 0 && id <= manager.GetBuildingsAsSpan().Length && manager.TryGetBuildingById(id,out building) && building != null;
+            return id > 0 && id <= manager.GetBuildingsAsSpan().Length && BuildingAccess.TryGetById(manager, id,out building, out _) && building != null;
         }
 
         private static byte[] Save(SaveContext context)

@@ -631,6 +631,33 @@ returns `UnitLookupFailure` for this purpose and does not log rejected lookups.
 Generic observation hooks remain shared; they do not create payloads without
 interested consumers. Registering an observer is explicit demand for observation.
 
+## Checked entity access and index bounds
+
+`BuildingAccess` and `IndexBounds` require APIShared 0.49.0 or later.
+
+Use `BuildingAccess.TryGetById(buildingId, out GameBuilding* building, out var failure)`
+for an immediate building view, or pass a previously captured `GameBuildingManagerAPI`
+as the first argument. Building IDs are one-based. Nonpositive IDs return
+`InvalidId` before even accessing the lazy manager. A missing manager returns
+`ManagerUnavailable`; an ID beyond its current capacity returns `OutOfRange` before
+the SDK lookup. A failed lookup or null pointer returns `Unavailable`. Every failure
+clears the output pointer; success reports `None` and passes the ID unchanged.
+
+These helpers do not log rejected IDs. The consumer owns diagnostics and decides
+whether a missing ID is expected. They neither filter `NeedsInit`/dead records nor
+validate identity or owner. Use the existing game-thread/simulation synchronization
+contract and consume pointers immediately; do not retain them across simulation
+work or mission changes. Revalidate global identity, owner and life state before
+acting. `UnitAccess.TryGetById` retains its existing equivalent unit-ID contract.
+
+For a zero-based span index use `IndexBounds.IsValidIndex(index, span.Length)`.
+It returns true exactly for `index >= 0 && index < length`; empty or negative lengths
+admit no index. Unlike a game ID, index 0 can be valid. The function allocates nothing,
+accesses no game state and performs no ID-to-index conversion. Keep specialized
+rules for reserved slots, projectile layouts, packed native storage and identity.
+Do not narrow wider integer types merely to call this `int` helper. Ordinary
+already-bounded iteration does not need an additional check per element.
+
 ## Player views and control
 
 Original-spectator views, eliminated-participant views, observer command exceptions and
@@ -1722,6 +1749,29 @@ if (!IngameMenuActions.TryRegister(MyGuid, "inspect", GetMenuState, OpenInspecto
 // Call from an actual settings/session/state-change event, never a timer or frame.
 menuAction?.Invalidate();
 ```
+
+`IngameMenuActions.TryRegisterContent(ownerGuid, id, state, createContent, options,
+out registration, out reason, order)` uses the same permanent registration,
+placement/conflict and invalidation contracts for an inline `Noesis.Control` instead
+of a generated button. Register on Unity. The factory receives an
+`IngameMenuContentContext`: its `Menu` resolves resources for that view, and
+`TryExecute(Action)` synchronously revalidates the current menu, visible/enabled
+state and effective main/additional-page placement before executing a control action.
+Use it for every committed edit; retain your own mission/authority checks. It does
+not dispatch or replay work. A stale view or failed callback returns false.
+
+Return a fresh unattached control for each menu view. The factory runs once when
+first visible in that view; a factory failure hides only that registration until a
+new view is created, revealing preceding slot claims. The broker preserves both
+the control and its attachment on ordinary invalidations when placement is unchanged,
+so text drafts and keyboard focus survive. Actual layout/page moves can change
+focus; the same control moves to the additional page rather than being duplicated.
+A replacement menu receives a new control and invalidates old execution contexts.
+The consumer owns children, binding and keyboard behavior. The broker owns root
+width, margin, enabled state and the optional `state.Tooltip`, scaled from the root
+control's `FontSize`. `state.Text` labels diagnostics/occupancy rather than replacing
+content. Existing button APIs, Vanilla objects and commands are unchanged.
+See `RegisterInlineEditor` in the [menu example](../examples/ThirdPartyMod/IngameMenuExample.cs).
 
 Rows have stable `IngameMenuRow` names independent of mode-specific visibility.
 Each has Left and Right; Vanilla is the Right fallback. A single visible button

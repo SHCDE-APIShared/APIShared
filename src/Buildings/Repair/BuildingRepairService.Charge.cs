@@ -35,7 +35,7 @@ namespace APIShared
                     GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
                     if (buildings == null || players == null || args.BuildingId <= 0 ||
                         !players.TryGetPlayerResourcesById(args.PlayerId, out GamePlayerResources* resources) ||
-                        !buildings.TryGetBuildingById(args.BuildingId, out GameBuilding* building) || building == null ||
+                        !BuildingAccess.TryGetById(buildings, args.BuildingId, out GameBuilding* building, out _) || building == null ||
                         building->r_PlayerIdOwner != args.PlayerId ||
                         unchecked((int)building->r_GlobalId) != args.BuildingGlobalId ||
                         building->r_AliveState != AliveState.IsAlive || building->r_MaxHealth == 0 ||
@@ -97,7 +97,7 @@ namespace APIShared
             try
             {
                 GameBuildingManagerAPI buildings = GameBuildingManagerAPI.Instance;
-                if (!buildings.TryGetBuildingById(args.BuildingId, out GameBuilding* building) || building == null ||
+                if (!BuildingAccess.TryGetById(buildings, args.BuildingId, out GameBuilding* building, out _) || building == null ||
                     unchecked((int)building->r_GlobalId) != pending.GlobalId ||
                     pending.PreviousHealth >= building->r_MaxHealth ||
                     building->r_CurrentHealth != building->r_MaxHealth) return;

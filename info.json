@@ -3,13 +3,25 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.48.0",
+  "Version": "0.50.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.50.0",
+      "Changes": [
+        "Add owner-bound custom controls in ESC menu slots, preserving focus, placement checks and scaled tooltips alongside existing button actions."
+      ]
+    },
+    {
+      "Version": "0.49.0",
+      "Changes": [
+        "Add checked, silent BuildingAccess lookups with explicit failure reasons and a pure IndexBounds helper for zero-based span indices. Existing UnitAccess and entity identity/life-state contracts remain unchanged."
+      ]
+    },
     {
       "Version": "0.48.0",
       "Changes": [
