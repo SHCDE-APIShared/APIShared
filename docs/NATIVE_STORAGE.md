@@ -96,10 +96,135 @@ silently writing an empty successful replacement. Unknown occupancy must not be
 treated as free capacity.
 
 Normal managed saves hold the engine monitor across native serialization and the
-synchronous Extender mod-capture callback. This service captures both entries in
-that boundary and rechecks the world before writing. Direct DLL save callers
-bypassing that wrapper, filesystem failures and joint file-commit acknowledgments
-are outside this guarantee. Save-byte agreement is not later command transport.
+synchronous Extender mod-capture callback. Manual storage captures both entries in
+that boundary and rechecks the world before writing. Registered custom workshop
+outputs and external cargo use the existing critical writer to freeze and verify
+their dependent state before replacing the destination. Cargo-only worlds do not
+need an invented production sidecar. Unreadable passive records may now refuse a
+save when unknown cargo cannot be safely checkpointed; the
+[compatibility contract](#material-save-policy-compatibility-change)
+describes this material behavior change and the retained readable-schema-1 policy.
+Direct DLL callers bypassing the common writer and process/native failures remain
+outside these guarantees. Save-byte agreement is not later command transport.
+
+## External production cargo
+
+The same `NativeStorageClient` can own an external producer's undelivered quantity.
+`TryCreateCargo` creates a lot, `TryGetCargo` reacquires it, `TryDepositCargo` moves
+quantity into physical storage, and `TryDiscardCargo` records explicit loss.
+The lot fixes registered good, producing player, issued quantity and owner-local
+creation sequence. Creation changes no stored stock or gold; remaining quantity
+only decreases. See the [public declarations](../src/Economy/Storage/NativeStorageCargo.Contracts.cs)
+and [compiled example](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
+Every cargo method, including reads, requires the caller-held real engine monitor,
+a confirmed **single-player/editor world**, and the qualified critical save owner.
+Real multiplayer refuses. Calls also refuse within native add-goods Pre/Original/
+Post chains, frozen critical saves, blocked restoration or a replaced world.
+Register the exact owner-matching good at initialized Unity startup before the
+first world. GUIDs provide cooperative namespace isolation, not sender
+authentication; callers must use their own GUID. Declare a minimum APIShared
+release containing these new contracts. Storage availability alone does not imply
+that an older assembly exports cargo methods.
+
+### Creation, custody and arrival
+
+The consumer verifies real production and authorizes player 1–8 before creation.
+A framework receipt does not prove that a native boat, worker or building produced
+anything. `TryGetLastCargoSequence` reads this owner's separate cargo creation
+high-watermark and reserves no number. Allocate a new positive `Int64` sequence
+and execute in one protected order. Acceptance closes lower gaps; failure does not
+advance it. Storage commands, automatic native deliveries and storage-loss
+reconciliation use the existing storage stream, so they cannot consume cargo
+creation keys.
+
+An identical retained creation retry uses the original sequence, good, player and
+issued quantity and returns `AlreadyApplied` with **current** remaining quantity.
+It never refills a partly delivered lot. Changed identity conflicts; an expired
+creation ID cannot issue more cargo. Keep the engine monitor through storing the
+returned creation key in the consumer's existing actor/voyage save state.
+
+Framework remaining quantity is authoritative. Save custody and creation keys,
+and transfer the same key from boat to carrier. Do not keep another authoritative
+integer `Cargo` or another inventory for the lot. UI quantities are observations
+of `NativeCargoSnapshot.Remaining`.
+
+The consumer proves carrier custody, actual arrival and player authorization.
+After that proof, `TryObserve` supplies an exact destination. Deposit requires the
+lot's pool and producing player and takes the requested positive whole quantity
+or refuses it. It atomically decreases cargo and increases physical stock, using
+the same native-plus-virtual pool limits. It does not read/write gold, debit an
+external native cargo field, move actors or make an unrelated consumer save update
+atomic. Keep related custody updates inside the consumer's existing protected save
+boundary. Granary storage does not make a good edible or add ration consumption.
+
+### Checkpoints and bounded retries
+
+`Remaining` is a compare-and-decrement checkpoint. Copies cannot duplicate its
+quantity. Keep the **original cargo snapshot, original destination snapshot and
+quantity** for an in-world deposit retry. Use the returned snapshot after success.
+The latest successful deposit/discard receipt is retained per lot:
+
+| Request | Outcome |
+| --- | --- |
+| Current checkpoint, valid new operation | `Applied`; returns new remaining quantity |
+| Exact latest retry | `AlreadyApplied`; no second cargo or stock effect |
+| Valid changed intent at that latest checkpoint | `Conflict` |
+| Older, unretained checkpoint | `ExpiredOperation`; no effect or success claim |
+
+A retained delivery retry can succeed after its destination vanished; new deposits
+still require live binding and room. Re-observing the building does not reconstruct
+an old intent. Once a later operation succeeds, an earlier checkpoint is outside
+the latest-only promise. Never convert an expired retry into a new creation.
+
+`TryDiscardCargo` loses all undelivered quantity at its checkpoint without refunding
+deposited stock. Retain that checkpoint for retries. GC, `Dispose`, timeouts, actor
+death and voyage cancellation do not implicitly discard anything; the consumer
+chooses that policy. Destruction/capture of a destination reconciles its stored
+stock as a loss and does not refill previously delivered cargo.
+
+There are at most 1,024 active plus terminal lots across the world. Active quantity
+is never evicted. Creation at a full table evicts only a terminal record, choosing
+lowest creation sequence then ordinal owner; all-active tables return `LimitReached`.
+Owner high-watermarks persist after eviction/load. Each retained lot keeps its
+latest receipt, not unlimited arrival history. Issued quantities are positive
+`Int32`, remaining stays within issued quantity, and sequence exhaustion fails
+closed. Existing good/physical-row/save-entry limits remain in effect.
+
+### Cargo lifetime and saves
+
+Every opaque cargo and destination snapshot from **before a load is invalid
+afterward**, even if the same creation key exists. Reacquire with
+`TryGetCargo(savedSequence)` and observe a new destination in the restored world.
+A missing/expired key does not authorize recreating a cached quantity or assuming
+delivery succeeded. The consumer still reconciles its actor's saved custody.
+
+The existing `ledger`/`stores` pair remains schema 1 with reader minimum 1 when no
+cargo history exists. Successful creation switches stores and record to schema 2,
+minimum reader 2, permanently for that world's history even after lots drain or
+are discarded. Older readers report `TooNew` and retain original bytes. A
+cargo-bearing pair inside a reader-1 envelope is rejected before staged assignment.
+
+The critical writer freezes physical and cargo state plus version, refuses
+reentrant mutations, verifies capture/status/native I/O/archive bytes, then replaces
+the destination. Cargo-only worlds need no invented worker/workshop record.
+Matching staged cargo receives this protection even before a first query/tick
+activates it. Saved absent-owner goods/lots remain retained and dormant.
+
+### Material save-policy compatibility change
+
+Unknown/`TooNew`/unreadable passive storage records, or missing entries in an
+existing record, may now require
+a checked checkpoint and refuse saving when matching state cannot be validated.
+Earlier manual-storage behavior could follow the raw native save path. Consumers
+may therefore observe save failure where the prior implementation reported raw
+success; unknown cargo must not be overwritten as an empty successful owner.
+
+A readable stores magic and schema-1 header, even with malformed body, retains
+the prior blocked-storage/raw-save policy. That positive legacy evidence does not
+make malformed storage usable. Genuine `NoRecord`/out-of-scope results retain the existing empty-state initialization.
+Normal readable no-cargo schema-1 bytes/behavior stay exact. This is a material behavior change despite additive public signatures;
+assess it separately from a passing API compatibility baseline.
 
 ## Public limits
 
@@ -122,7 +247,9 @@ this storage backend does not itself supply a lossless worker queue or rewrite
 Vanilla's failed-admission behavior. Registered custom workshop outputs use the
 [qualified shared producer boundary](WEAPON_PRODUCTION.md#produce-a-registered-custom-good),
 which commits cargo and physical stock together. Other producer integrations still
-need their own verified completion/arrival policy.
+need their own verified completion/arrival policy; the
+[external cargo adapter](#external-production-cargo) supplies bounded quantity and storage
+commits for that integration without inventing the evidence.
 
 Existing private Medium capacity detours overlap these helpers. Live-byte and
 ownership checks fail closed on that conflict. Migrate the consumer onto the
@@ -164,3 +291,10 @@ stack/home space, volatile GPR/SIMD restoration and final comparison flags.
 Simulated publication failures and these isolated checks do not establish live
 native installation, renderer behavior, actual hauling, or multiplayer gameplay
 acceptance. Those checks remain distinct from build and CI results.
+
+External cargo fixtures additionally execute creation/checkpoint/eviction and
+schema-2 restoration, owner/world/context failure, frozen versions, passive-load
+classification and cargo-only appended archive/atomic-replacement paths. They do
+not demonstrate a live external producer, carrier arrival, consumer actor-save
+reconciliation or multiplayer repair. External cargo adds no native hook or
+producer-supplied transaction callback.

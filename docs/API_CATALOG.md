@@ -8,6 +8,18 @@ gold/stock exchanges and joint ledger/allocation persistence. No native goods ID
 recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+## External production cargo
+
+`NativeStorageClient.TryCreateCargo`, `TryGetCargo`, `TryDepositCargo` and
+`TryDiscardCargo` keep framework-owned undelivered lots beside the existing
+physical storage state. Creation keys have a separate bounded replay stream;
+delivery atomically decreases a cargo checkpoint and adds physical stock.
+SP/editor only, caller-held engine monitor, verified external production/custody/
+arrival and a qualified critical save owner are required. See
+[contracts, retries and save compatibility](NATIVE_STORAGE.md#external-production-cargo), including the
+material passive-record save-policy change, and the
+[compiled example](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
 ## Custom goods inventory
 
 `APIShared.Goods.CustomGoodsInventory` in the game-independent Content assembly
@@ -309,6 +321,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Feature | Public contracts / entry | Behavior / hook owner | Example |
 |---|---|---|---|
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
+| External production cargo | [Cargo snapshots and methods](../src/Economy/Storage/NativeStorageCargo.Contracts.cs) | [Closed cargo engine](../src/Economy/Storage/NativeStorageCargoEngine.cs), [world state](../src/Economy/Storage/NativeStorageState.Cargo.cs), [prepared load](../src/Economy/Storage/NativeStoragePreparedLoad.cs) | [Cargo and custody](../examples/ThirdPartyMod/ExternalCargoExample.cs) |
 | Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | — |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |

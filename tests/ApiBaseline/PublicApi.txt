@@ -624,8 +624,21 @@ APIShared.Economy.MarketPricePreEventArgs | public int Amount { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int Good { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int PlayerId { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int ReplacementTotal { get; set; }
+APIShared.Economy.NativeCargoSnapshot | public struct APIShared.Economy.NativeCargoSnapshot
+APIShared.Economy.NativeCargoSnapshot | public APIShared.Economy.NativeStoragePool Pool { get; }
+APIShared.Economy.NativeCargoSnapshot | public int IssuedQuantity { get; }
+APIShared.Economy.NativeCargoSnapshot | public int PlayerId { get; }
+APIShared.Economy.NativeCargoSnapshot | public int Remaining { get; }
+APIShared.Economy.NativeCargoSnapshot | public long CreationSequence { get; }
+APIShared.Economy.NativeCargoSnapshot | public string GoodId { get; }
+APIShared.Economy.NativeCargoSnapshot | public string OwnerGuid { get; }
 APIShared.Economy.NativeStorageClient | public sealed class APIShared.Economy.NativeStorageClient
 APIShared.Economy.NativeStorageClient | public bool IsCurrentWorldReady { get; }
+APIShared.Economy.NativeStorageClient | public bool TryCreateCargo(long creationSequence, APIShared.Economy.NativeStoredGood good, int playerId, int quantity, out APIShared.Economy.NativeCargoSnapshot cargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryDepositCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, APIShared.Economy.NativeStorageSnapshot destination, int quantity, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryDiscardCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryGetCargo(long creationSequence, out APIShared.Economy.NativeCargoSnapshot cargo, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryGetLastCargoSequence(out long sequence, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryRegisterGood(string goodId, APIShared.Economy.NativeStoragePool pool, out APIShared.Economy.NativeStoredGood good, out string reason)
 APIShared.Economy.NativeStoragePool | public enum APIShared.Economy.NativeStoragePool : int

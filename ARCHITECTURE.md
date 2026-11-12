@@ -8,8 +8,10 @@ GUID without installing hooks or reserving a capability.
 
 `Economy/Storage` owns registered virtual stock in exact native Armory/Granary
 pools: its private Content ledger, physical allocations, shared capacity cohort
-and matching archive pair share one lifetime. Consumers retain recipes, hauling,
-visuals and authorization. See [native storage](docs/NATIVE_STORAGE.md).
+and matching archive pair share one lifetime. Bounded external cargo extends that
+same world-owned state and checkpoint, with its own creation replay stream;
+consumers retain production evidence, custody, hauling, visuals and authorization.
+See [native storage and external cargo](docs/NATIVE_STORAGE.md).
 
 `Economy/WeaponProduction` retains native recipe/batch/transport ownership and can
 bind a registered custom Armory output. Its optional early delivery cohorts use a

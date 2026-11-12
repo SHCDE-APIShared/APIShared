@@ -8,6 +8,11 @@ reservation bookkeeping required by separate goods such as armor or Fish. It
 does not assign native `eGoods` values. Reference Content with `Private=false`
 from a runtime consumer; offline tools can reference Content independently.
 
+For external production that must later occupy real Armory/Granary space, use
+the runtime's [external cargo adapter](NATIVE_STORAGE.md#external-production-cargo). It owns undelivered
+quantity and physical stock together; consumers save custody keys rather than
+creating another authoritative ledger for those lots.
+
 Create one inventory for an authoritative mission and share that same instance
 with participants. `ForOwner(pluginGuid)` binds a cooperative namespace. Register
 each stable local good ID and its per-player capacity before restoring saved
