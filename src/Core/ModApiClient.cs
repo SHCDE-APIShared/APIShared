@@ -48,6 +48,13 @@ namespace APIShared
         public bool TryGetMissionLifecycle(out IMissionLifecycleCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetMissionLifecycle(OwnerGuid, out capability, out diagnostic);
 
+        /// <summary>Acquires protected, point-in-time native-world observations after API publication.
+        /// Cold acquisition validates and retains the actual game engine monitor; failure is isolated in
+        /// diagnostic. No hooks are installed. See <see cref="NativeWorldReadClient"/> for required locking,
+        /// managed readiness and the distinction between read evidence and mutation/lifetime authority.</summary>
+        public bool TryGetNativeWorldReads(out NativeWorldReadClient client, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetNativeWorldReads(OwnerGuid, out client, out diagnostic);
+
         /// <summary>Acquires first-current-mission PlayState observation, independent of managed Start and loading duration.
         /// Register on Unity and retain the capability; its Current receipt is invalidated at mission end/replacement.</summary>
         public bool TryGetMissionPlayStateReadiness(out IMissionPlayStateReadinessCapability capability, out NativeCapabilityDiagnostic diagnostic) =>

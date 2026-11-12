@@ -48,6 +48,7 @@ See the [compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
 
 - [Example package requirements](#example-package-requirements)
 - [Initialization and ownership](#initialization-and-ownership)
+- [Protected native-world observations](#protected-native-world-observations)
 - [Namespaces and packaging](#namespaces-and-packaging)
 - [Extending APIShared](#extending-apishared)
 - [Declaring native hook sites](#declaring-native-hook-sites)
@@ -257,6 +258,21 @@ that differs from the key takes precedence. Empty/key results or translation
 exceptions fall back to APIShared's selected catalog. APIShared does not replace
 Vanilla text or text supplied by consumers. Technical diagnostics, protocol values
 and mod identities are not translated.
+
+## Protected native-world observations
+
+Acquire `ModApiClient.TryGetNativeWorldReads` after API publication when a read
+needs the existing mission owner's coherent loaded-world and managed-ready
+metadata. Call under the acquired client's exact engine monitor. The overload
+taking a retained snapshot checks opaque world identity and returns fresh mode
+facts; old snapshots remain historical values. Queued lifecycle events and a
+cached mode decision cannot substitute for this read.
+
+This is point-in-time observation, including known multiplayer, with no mutation,
+transport, native pointer lifetime or synchronous before-reset authority. Follow
+the [mission observation guide](MISSION_LIFECYCLE.md) for acquisition, readiness,
+refresh, failure and native ownership limits, and the
+[compiled example](../examples/ThirdPartyMod/MissionExample.cs).
 
 ## Native simulation ticks
 

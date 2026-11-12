@@ -1489,6 +1489,7 @@ APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudEx
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionPlayStateReadiness(out APIShared.IMissionPlayStateReadinessCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetNativeWorldReads(out APIShared.NativeWorldReadClient client, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeightPolicy(out APIShared.PlagueHeightPolicy policy, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -2383,6 +2384,14 @@ APIShared.NativeSites.NativeSiteSpan | public int Length { get; }
 APIShared.NativeSites.NativeSiteSpan | public int Rva { get; }
 APIShared.NativeSites.NativeSiteSpan | public override string ToString()
 APIShared.NativeSites.NativeSiteSpan | public string ExpectedOriginalSha256 { get; }
+APIShared.NativeWorldReadClient | public sealed class APIShared.NativeWorldReadClient
+APIShared.NativeWorldReadClient | public bool TryReadCurrent(APIShared.NativeWorldReadSnapshot expectedWorld, out APIShared.NativeWorldReadSnapshot current, out string reason)
+APIShared.NativeWorldReadClient | public bool TryReadCurrent(out APIShared.NativeWorldReadSnapshot current, out string reason)
+APIShared.NativeWorldReadClient | public object SyncRoot { get; }
+APIShared.NativeWorldReadSnapshot | public struct APIShared.NativeWorldReadSnapshot
+APIShared.NativeWorldReadSnapshot | public APIShared.GameModes.GameModeSnapshot Mode { get; }
+APIShared.NativeWorldReadSnapshot | public APIShared.MissionContext Mission { get; }
+APIShared.NativeWorldReadSnapshot | public long WorldId { get; }
 APIShared.Networking.AuthenticatedChoreChannel<T> | public sealed class APIShared.Networking.AuthenticatedChoreChannel<T> where T : class
 APIShared.Networking.AuthenticatedChoreChannel<T> | public APIShared.Networking.NetworkSendResult Send(T packet)
 APIShared.Networking.AuthenticatedChoreChannel<T> | public bool IsAvailable { get; }
