@@ -3,6 +3,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>APIShared.Content</AssemblyName>
     <RootNamespace>APIShared</RootNamespace>
+    <DefineConstants>$(DefineConstants);API_SHARED_CONTENT</DefineConstants>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>1591</WarningsAsErrors>

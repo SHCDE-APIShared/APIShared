@@ -1,3 +1,4 @@
+using ContentJson = APIShared.ContentInternal.DependencyFreeJson;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -20,7 +21,7 @@ namespace APIShared.ModSettings
         {
             if (json == null || Encoding.UTF8.GetByteCount(json) > MaximumBytes)
                 throw new InvalidDataException("Mod settings exceed 8 MiB or are missing.");
-            object rootObject = APIShared.Internal.DependencyFreeJson.Parse(json);
+            object rootObject = ContentJson.Parse(json);
             if (!(rootObject is Dictionary<string, object> root))
                 throw new InvalidDataException("Trail mod-settings JSON root must be an object.");
             return ParseDocument(root);
@@ -184,7 +185,7 @@ namespace APIShared.ModSettings
                 }
             }
 
-            return CheckSerializedSize(APIShared.Internal.DependencyFreeJson.Serialize(new OrderedDictionary(StringComparer.Ordinal)
+            return CheckSerializedSize(ContentJson.Serialize(new OrderedDictionary(StringComparer.Ordinal)
             {
                 { "schemaVersion", 3 },
                 { "mods", mods }
