@@ -755,6 +755,14 @@ hooks use only the installed NativeX64 Indirect backend, with ten displaced byte
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
 
+## Exact troop identities
+
+`ModApiClient.UnitIdentities` registers owner-local variants on existing native
+carriers and marks exact slot/UInt32 GlobalId instances, including native-confirmed
+pending peasants. Live simulation reads, immutable presentation/member snapshots,
+world retirement and one versioned simulation save record are shared. See
+[identity ownership, authority and persistence](UNIT_IDENTITIES.md).
+
 ## Unit settlement events
 
 Not in packages up to 0.9.1; check the package you require. [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs)

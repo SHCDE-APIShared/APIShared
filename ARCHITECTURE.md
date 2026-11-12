@@ -159,6 +159,7 @@ src/
     UI/                         search and tooltip presentation
     Internal/                   JSON parser and atomic file replacement
   Units/
+    Identity/                   exact owner-local troop variants, immutable views and versioned identity persistence
     Selection/                  unit access, local and marked unit selection
     AiMilitary/                 AI military placement, orders, quota and engineering provenance
     Commands/                   managed GameAction Pre/Accepted/Post contracts
