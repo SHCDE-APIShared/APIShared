@@ -17,7 +17,8 @@ namespace APIShared.Economy
         private static readonly IntPtr native = Allocate();
         private static ManualLogSource log;
         private static object engineGate;
-        private static WorkerProductionRunGate runBoundary;
+        private static readonly WorkerProductionRunPublication runPublication =
+            new WorkerProductionRunPublication(CreateRunBoundary, MarkedUnitSelectionAPI.ProductionRunOriginal);
         private static long session;
         private static string reason;
         private static int notificationQueued;
@@ -25,7 +26,7 @@ namespace APIShared.Economy
         internal static event Action<string> Faulted;
         internal static IntPtr NativeFaultAddress => native;
         internal static object EngineGate => Volatile.Read(ref engineGate);
-        internal static WorkerProductionRunGate RunBoundary => Volatile.Read(ref runBoundary);
+        internal static WorkerProductionRunGate RunBoundary => runPublication.Current;
         internal static long Generation => Volatile.Read(ref *(long*)((byte*)native + GenerationOffset));
         internal static bool Enabled => Volatile.Read(ref *(int*)((byte*)native + GuardEnabledOffset)) != 0;
         internal static bool IsFaulted => Volatile.Read(ref *(int*)native) != 0;
@@ -55,11 +56,42 @@ namespace APIShared.Economy
             object gate = EngineMonitor.Current;
             if (gate == null || !MarkedUnitSelectionAPI.HasRunBoundary)
                 throw new InvalidOperationException("Production safety needs the validated shared engine run boundary.");
-            var boundary = new WorkerProductionRunGate(gate, () => Generation, () => Enabled,
-                () => IsFaulted, () => IsAdmitted, MarkedUnitSelectionAPI.ProductionRunOriginal, ObserveNativeFault);
-            log = logger;
-            Volatile.Write(ref runBoundary, boundary);
+            // Factory succeeds before logger publication; the existing pointer/engine
+            // publication order and independent production flags remain unchanged.
+            runPublication.Initialize(gate, () => log = logger);
             Volatile.Write(ref engineGate, gate);
+        }
+
+        private static WorkerProductionRunGate CreateRunBoundary(object gate) =>
+            new WorkerProductionRunGate(gate, () => Generation, () => Enabled,
+                () => IsFaulted, () => IsAdmitted, MarkedUnitSelectionAPI.ProductionRunOriginal,
+                ObserveNativeFault, ReadCurrentEngineMonitor, ReadPublishedRunBoundary);
+
+        private static object ReadCurrentEngineMonitor() => EngineMonitor.Current;
+        private static WorkerProductionRunGate ReadPublishedRunBoundary() => RunBoundary;
+
+        // Called only by the existing Marked OnRun's null branch. The publication
+        // owner counts the COMPLETE cached original chain through finally, with
+        // no callbacks under its cold publication lock and no per-run allocation.
+        internal static int RunWithoutBoundary(bool mpFrameSkip) => runPublication.RunFallback(mpFrameSkip);
+
+        // Trusted lifecycle integration only. Explicit binding closes/drains old
+        // null fallbacks; acquisition never silently binds. This is NativeRun/preDLL
+        // exclusion, not a world/native-memory/MP permission or simulation pause.
+        internal static bool TryBindNativeRunSuspension(int millisecondsTimeout, out string reason)
+        {
+            if (!MarkedUnitSelectionAPI.HasRunBoundary)
+            { reason = "The shared managed run hook is unavailable."; return false; }
+            return runPublication.TryBind(millisecondsTimeout, EngineMonitor.Current, out reason);
+        }
+
+        internal static bool TryAcquireNativeRunSuspension(int millisecondsTimeout,
+            out WorkerProductionRunGate.NativeRunSuspension suspension, out string reason)
+        {
+            suspension = null;
+            if (!MarkedUnitSelectionAPI.HasRunBoundary)
+            { reason = "The shared managed run hook is unavailable."; return false; }
+            return runPublication.TryAcquire(millisecondsTimeout, EngineMonitor.Current, out suspension, out reason);
         }
 
         internal static void Admit(long sessionId, bool enableGuard)

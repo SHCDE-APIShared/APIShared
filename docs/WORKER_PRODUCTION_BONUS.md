@@ -306,6 +306,70 @@ These guards also protect already produced batches after disabling an owner or
 changing to 50/mode 0. Guard publication is permanent and logically activated;
 partial installation cannot enable negative production or incomplete safeguards.
 
+### Internal NativeRun exclusion
+
+The existing [managed run owner](../src/Units/Selection/MarkedUnitSelectionAPI.cs)
+and [production gate](../src/Economy/WorkerProductionRunGate.cs) contain an internal
+foundation for trusted APIShared integrations. No public client or production
+suspension caller is attached by this change. `EngineRunEvents` remains passive.
+This does not admit a native writer, supply a world/MP capability or coordinate
+global native-stat ownership.
+
+Explicit binding closes the earlier null-boundary entry gap and drains each
+already admitted complete Original, including its begin/end observers and managed
+tail. Admission counts are released in `finally`. No Original, gate run or engine
+wait executes under the private publication monitor. Calls that captured null
+before closure route through the current gate afterwards. Normal nonnull calls
+take no publication monitor. Unbound null calls add two short bookkeeping lock
+sections even if initialization remains unavailable; this accounts for possible
+later demand rather than assuming startup has no runs.
+
+Binding is process-lived and does not itself suspend execution. Unbound Initialize
+keeps its prior replacement behavior; a closing attempt reserves its current gate,
+and a bound publication retains that gate across initialization. A changed actual
+engine monitor fails binding/initialization. Reflection or foreign replacement
+while held is unsupported; the managed field is not claimed to be readonly.
+
+Binding and acquisition are synchronous trusted-owner operations with finite,
+nonnegative synchronization budgets. Zero means no contended wait; a budget is not
+an interruptible hard deadline, cancellation token or automatic hold expiration.
+Entry while owning the engine monitor or from a complete null-fallback callback
+chain is rejected rather than draining itself. A first bind failure before its
+gate mark restores old null admission. A late mark can retain closed, not-ready
+publication until a successful retry. Acquisition never binds implicitly.
+
+Successful acquisition finishes after earlier covered runs leave the actual
+engine monitor, then returns an independent hold without retaining that monitor.
+All overlapping holds must release their own debt. Dispose is one-shot, may run
+on another thread, and never resets production generation, admission or faults.
+Queued calls crossing a suspension epoch can return zero without Original,
+observer callbacks or replay even after the last hold releases. Stale earlier
+gate captures cannot bypass a later bound publication. Fault observation retains
+priority over hold rejection; admitted calls retain Original arguments, existing
+result/fault/epoch suppression semantics, exception identity and observer pairing.
+
+The scope is the covered managed `EngineInterface.run`/preDLL chain before buffer
+reservation. Director counters/currentTicks, Timer/multiplayer processing, reset
+paths, delayed work and foreign/raw native calls continue. A hold is not a global
+simulation pause, native-world lifetime lease or permission to mutate/restore
+native records. The separate mission lifecycle and writer ownership contracts
+still apply.
+
+The 2026-11-12 integration on `7413360` compiled the real production and test
+projects against installed dependencies and passed all 41 selected managed/API
+cases, 417 Core cases and 24 Content cases, with no skips. The earlier 30-case
+V2 qualification is a separate historical result. A missing compiler-time
+SourceLink-map capture was resolved by matching the exact map against the emitted
+PDB; the original failed audit remains recorded and no prehash was invented.
+After 2,000 warm calls, each tested enabled, dormant, held-gate and complete-null
+fallback path allocated zero current-thread bytes over 20,000 calls. Separate
+20,000-call timing observations were recorded without a comparative speedup or
+FPS claim. Compiled-IL tests inspect direct allocation/closure/reflection opcodes;
+they do not prove transitive allocation or Mono behavior. The SDK-dependent
+initializer and physical hook were compiled/source-reviewed, not invoked by those
+fixtures. Game/MP/installation and any future writer integration remain separate
+acceptance work.
+
 ## Zero output, transport and persistence
 
 There are two independent fraction domains. Vanilla retains its signed Int16

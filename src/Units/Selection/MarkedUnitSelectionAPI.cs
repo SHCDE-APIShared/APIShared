@@ -193,7 +193,7 @@ namespace APIShared
         private static int OnRun(bool mpFrameSkip)
         {
             Economy.WorkerProductionRunGate boundary = Economy.WorkerProductionWorldSafety.RunBoundary;
-            return boundary == null ? RunOriginal(mpFrameSkip) : boundary.Run(mpFrameSkip);
+            return boundary == null ? Economy.WorkerProductionWorldSafety.RunWithoutBoundary(mpFrameSkip) : boundary.Run(mpFrameSkip);
         }
 
         private static readonly Func<bool, int> RunWithConsumers = RunWithSelectionAndReadbacks;

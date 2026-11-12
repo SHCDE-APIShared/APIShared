@@ -278,6 +278,23 @@ Readiness, validation and isolated callback error reporting remain service dutie
 
 ## Publication
 
+### Managed native-run exclusion
+
+The existing managed run hook in `MarkedUnitSelectionAPI` remains the sole owner.
+`Economy/WorkerProductionRunGate` admits the complete cached Original before
+Vanilla can borrow a buffer. Its internal `WorkerProductionRunPublication` helper
+accounts only for earlier null-boundary fallbacks, then closes and drains that gap
+when a trusted shared owner explicitly binds NativeRun suspension. Normal nonnull
+calls continue directly through the published gate; there is no second hook or
+all-run tracking service.
+
+Binding is opt-in and process-lived. Independent holds change their own epoch and
+count without restoring production generation, admission or faults. Initialization
+retains a bound publication and rejects a changed engine monitor. With no binding,
+the previous replacement and forwarding policy remains. The implementation is an
+internal foundation; no public client or production suspension caller is attached.
+See the [scope and lifetime contract](docs/WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion).
+
 Before managed publication, Awake attempts the optional
 [Fixes wheat-sale correction](docs/FIXES_COMPATIBILITY.md) synchronously. This
 one-time startup operation has no LibraryLoaded/tick retry or teardown path.
