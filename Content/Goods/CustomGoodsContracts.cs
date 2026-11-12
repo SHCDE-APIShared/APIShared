@@ -120,7 +120,7 @@ namespace APIShared.Goods
     /// <summary>Cooperative owner binding for one inventory. This is namespace isolation, not
     /// a security boundary: callers must use their own stable GUID. Thread-safe; methods serialize
     /// on the inventory and run on the caller's thread without callbacks or thread dispatch.</summary>
-    public sealed class CustomGoodsClient
+    public sealed partial class CustomGoodsClient
     {
         private readonly CustomGoodsInventory inventory;
         internal CustomGoodsClient(CustomGoodsInventory inventory, string owner)

@@ -132,6 +132,7 @@ src/
   Automation/                   opt-in in-process test automation
   Audio/                        shared playback events, context capture and binary contracts
   Economy/                      market, ally-transfer, popularity and worker-production native owners
+    GoodsWallet/                direct native gold and callback-free prepared virtual-stock publication
     WeaponProduction/           weapon workshop recipes, selection, batches and HUD
   Wildlife/                     herd runtime and huntable-prey registrations
   Missions/                     mission contracts, state and event relay

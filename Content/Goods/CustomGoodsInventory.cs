@@ -19,6 +19,7 @@ namespace APIShared.Goods
             new SortedDictionary<CustomGoodId, int>(GoodComparer.Instance);
         private State state = new State();
         private object epoch = new object();
+        private bool nativeLeaseActive;
 
         /// <summary>Creates an empty inventory. Catalog bound: 1–128 goods, journal bound:
         /// 1–1024 retained operations (active holds and recent terminal receipts). Terminal receipts
@@ -44,13 +45,14 @@ namespace APIShared.Goods
         /// Invalidates every prior reservation handle. The caller invokes this at mission boundaries;
         /// a new inventory is preferable when changing the catalog. Not an automatic unload hook.</summary>
         public void Reset()
-        { lock (sync) { var next = new State(); var nextEpoch = new object(); state = next; epoch = nextEpoch; } }
+        { lock (sync) { if (nativeLeaseActive) throw new InvalidOperationException("A native exchange is being prepared."); var next = new State(); var nextEpoch = new object(); state = next; epoch = nextEpoch; } }
 
         internal bool Register(CustomGoodId key, int capacity, out CustomGoodId good, out string reason)
         {
             good = default;
             lock (sync)
             {
+                if (nativeLeaseActive) { reason = "A native exchange is being prepared."; return false; }
                 if (capacity < 0) { reason = "Capacity must be nonnegative."; return false; }
                 if (catalog.TryGetValue(key, out int prior))
                 {
@@ -93,12 +95,13 @@ namespace APIShared.Goods
             for (int i = 0; i < count; i++) owned[i] = changes[i];
             lock (sync)
             {
+                if (nativeLeaseActive) return GoodsTransactionStatus.Conflict;
                 GoodsTransactionStatus result = Normalize(owner, owned, reserve, out GoodsChange[] normalized);
                 if (result != GoodsTransactionStatus.Applied) return result;
                 var key = new Operation(owner, operation);
                 if (state.Journal.TryGetValue(key, out Receipt prior))
                 {
-                    if (prior.Reservation != reserve || !Same(prior.Changes, normalized)) return GoodsTransactionStatus.Conflict;
+                    if (prior.Intent != null || prior.Reservation != reserve || !Same(prior.Changes, normalized)) return GoodsTransactionStatus.Conflict;
                     if (reserve) handle = new GoodsReservation(this, epoch, owner, operation);
                     return Retry(prior.Status);
                 }
@@ -138,6 +141,7 @@ namespace APIShared.Goods
         {
             lock (sync)
             {
+                if (nativeLeaseActive) return GoodsTransactionStatus.Conflict;
                 if (!ReferenceEquals(epoch, handle.Epoch)) return GoodsTransactionStatus.StaleReservation;
                 var key = new Operation(handle.Owner, handle.Operation);
                 if (!state.Journal.TryGetValue(key, out Receipt prior) || !prior.Reservation)
@@ -228,16 +232,18 @@ namespace APIShared.Goods
             internal readonly bool Reservation;
             internal readonly GoodsTransactionStatus Status;
             internal readonly GoodsChange[] Changes;
-            internal Receipt(bool reservation, GoodsTransactionStatus status, GoodsChange[] changes)
-            { Reservation = reservation; Status = status; Changes = changes; }
+            internal readonly byte[] Intent;
+            internal Receipt(bool reservation, GoodsTransactionStatus status, GoodsChange[] changes, byte[] intent = null)
+            { Reservation = reservation; Status = status; Changes = changes; Intent = intent; }
         }
         private sealed class State
         {
+            internal bool NativeFormat;
             internal readonly Dictionary<Account, Stock> Stock;
             internal readonly Dictionary<Operation, Receipt> Journal;
             internal readonly Dictionary<string, long> Watermarks;
             internal State() { Stock = new Dictionary<Account, Stock>(); Journal = new Dictionary<Operation, Receipt>(); Watermarks = new Dictionary<string, long>(StringComparer.Ordinal); }
-            internal State(State source) { Stock = new Dictionary<Account, Stock>(source.Stock); Journal = new Dictionary<Operation, Receipt>(source.Journal); Watermarks = new Dictionary<string, long>(source.Watermarks, StringComparer.Ordinal); }
+            internal State(State source) { NativeFormat = source.NativeFormat; Stock = new Dictionary<Account, Stock>(source.Stock); Journal = new Dictionary<Operation, Receipt>(source.Journal); Watermarks = new Dictionary<string, long>(source.Watermarks, StringComparer.Ordinal); }
         }
         private sealed class GoodComparer : IComparer<CustomGoodId>
         {

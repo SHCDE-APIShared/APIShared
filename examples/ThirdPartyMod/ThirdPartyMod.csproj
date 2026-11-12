@@ -47,6 +47,7 @@
     <Compile Include="PathfindingReplacementExample.cs" />
     <Compile Include="SaveDataExample.cs" />
     <Compile Include="CustomGoodsExample.cs" />
+    <Compile Include="GoodsWalletExample.cs" />
     <Compile Include="ModDataExample.cs" />
     <Compile Include="WeaponProductionExample.cs" />
   </ItemGroup>

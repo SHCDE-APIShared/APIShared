@@ -1180,6 +1180,13 @@ GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, Trib
 
 The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
 
+## Native-wallet virtual-good transactions
+
+Use `ModApiClient.GoodsWallet` with an owner-matching `CustomGoodsClient` for a
+checked direct-gold and virtual-stock exchange. Price, control authorization,
+engine context and save/peer coordination remain consumer responsibilities. See
+[wallet usage, atomicity and persistence](GOODS_WALLET.md).
+
 ## Reacting to created and recruited units
 
 Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it
