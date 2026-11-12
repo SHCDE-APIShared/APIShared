@@ -6,6 +6,12 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+The Content assembly also owns the caller-instantiated virtual-goods ledger in
+`APIShared.Goods`: bounded balances, atomic changes, replay receipts, reservations
+and canonical snapshots. Consumers share one instance per authoritative mission
+and retain native transactions, lifecycle, save registration and network policy.
+It adds no runtime hook or global catalog; see [custom goods](docs/CUSTOM_GOODS.md).
+
 `Content/APIShared.Content.csproj` targets .NET Standard 2.0 and has no game,
 Extender, Unity or BepInEx dependencies. It owns the GUID-separated JSON namespace
 reader in `APIShared.ModData` and schema-3 mission-settings documents/codecs in

@@ -1,5 +1,13 @@
 # Third-party integration guide
 
+## Virtual custom goods
+
+For goods outside the native `eGoods` table, use the caller-owned Content
+[`CustomGoodsInventory`](CUSTOM_GOODS.md) for bounded stock, atomic changes,
+retry receipts and reservations. Share one authoritative mission instance; the
+consumer retains native integration, engine locking, lifecycle and peer authority.
+See the [compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 **Contents**
 
 - [Example package requirements](#example-package-requirements)
