@@ -70,6 +70,38 @@ equivalent ordered decisions on every peer.
 
 See the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+### Read one good in one store
+
+After `TryObserve`, call the exact registered handle's
+`NativeStoredGood.TryGetQuantity(store, out quantity, out reason)` to read that
+good's committed physical allocation. `store.VirtualQuantity` is the combined
+occupancy of all virtual goods and owners, so it cannot answer this per-good query.
+True with zero is a valid empty allocation, including a freshly observed captured
+or reused store. False returns zero and a reason and means the quantity is unknown
+or unavailable, rather than a confirmed empty store.
+
+```csharp
+// The caller already holds the real engine monitor; this helper issues no command.
+if (api.NativeStorage.TryObserve(buildingId, out var store, out reason)
+        && armor.TryGetQuantity(store, out int quantity, out reason))
+{
+    // quantity is this good's confirmed allocation, including a valid zero.
+}
+```
+
+The query revalidates current world, live slot, unsigned Global ID, owner and pool.
+Wrong-pool, stale, unregistered/dormant, blocked or pending observations fail. All
+pre-load snapshots must be reacquired in the restored world. Matching staged
+restoration may activate on the first protected read; an already-bound quantity
+read does not reconcile losses or consume operation sequences.
+
+The caller-held engine monitor and confirmed known world are required for reads,
+including in multiplayer. A protected quantity read needs no native-tick or
+authenticated-Chore mutation scope. It grants no player authorization or write
+authority; exchanges retain their existing authoritative simulation requirements.
+The [compiled helper](../examples/ThirdPartyMod/NativeStorageExample.cs) is opt-in
+and must be called from an existing protected boundary.
+
 ### Lifetime, losses and saves
 
 The complete ledger and physical allocations belong to one exact native world.

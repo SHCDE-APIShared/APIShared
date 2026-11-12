@@ -657,6 +657,7 @@ APIShared.Economy.NativeStoredGood | public sealed class APIShared.Economy.Nativ
 APIShared.Economy.NativeStoredGood | public APIShared.Economy.NativeStoragePool Pool { get; }
 APIShared.Economy.NativeStoredGood | public bool TryExchange(APIShared.Economy.NativeStorageSnapshot storage, long operationSequence, int quantityDelta, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStoredGood | public bool TryGetLastSequence(out long sequence, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetQuantity(APIShared.Economy.NativeStorageSnapshot storage, out int quantity, out string reason)
 APIShared.Economy.NativeStoredGood | public bool TryGetStock(int playerId, out APIShared.Goods.GoodsBalance balance, out string reason)
 APIShared.Economy.NativeStoredGood | public string GoodId { get; }
 APIShared.Economy.NativeStoredGood | public string OwnerGuid { get; }
@@ -718,8 +719,13 @@ APIShared.Economy.WeaponProduction | public static class APIShared.Economy.Weapo
 APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
 APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)
 APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buildingId, uint globalId, out APIShared.Economy.WeaponProductionSelection selection)
+APIShared.Economy.WeaponProduction | public static bool TryGetWorkerBatch(int unitId, uint globalId, out APIShared.Economy.WeaponProductionWorkerBatch batch)
 APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
 APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
+APIShared.Economy.WeaponProductionBatchPhase | public enum APIShared.Economy.WeaponProductionBatchPhase : int
+APIShared.Economy.WeaponProductionBatchPhase | Cargo = 2
+APIShared.Economy.WeaponProductionBatchPhase | LocalProduct = 1
+APIShared.Economy.WeaponProductionBatchPhase | Manufacturing = 0
 APIShared.Economy.WeaponProductionOption | public sealed class APIShared.Economy.WeaponProductionOption
 APIShared.Economy.WeaponProductionOption | public APIShared.Economy.NativeStoredGood StoredOutput { get; }
 APIShared.Economy.WeaponProductionOption | public APIShared.Economy.WeaponProductionOptionId Id { get; }
@@ -764,6 +770,13 @@ APIShared.Economy.WeaponProductionRegistrationStatus | Pending = 0
 APIShared.Economy.WeaponProductionSelection | public sealed class APIShared.Economy.WeaponProductionSelection
 APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Current { get; }
 APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Next { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public struct APIShared.Economy.WeaponProductionWorkerBatch
+APIShared.Economy.WeaponProductionWorkerBatch | public APIShared.Economy.WeaponProductionBatchPhase Phase { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public APIShared.Economy.WeaponProductionOption Option { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public int HomeBuildingId { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public int UnitId { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public uint HomeBuildingGlobalId { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public uint UnitGlobalId { get; }
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public sealed class APIShared.Economy.WorkerProductionBonusOverrideRegistration
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string OwnerGuid { get; }
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string RegistrationId { get; }

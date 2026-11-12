@@ -7,6 +7,8 @@ Armory/Granary pools, with exact building identity, coordinated capacity, atomic
 gold/stock exchanges and joint ledger/allocation persistence. No native goods ID,
 recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
+`NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
+store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
 
 ## External production cargo
 
@@ -1031,6 +1033,9 @@ It supplies the building HUD, Shift selection, synchronized execution and saved
 production state. `WithStoredOutput` binds an owner-matching registered Armory good
 for offline/editor production, with atomic native cargo/custom-stock delivery and
 verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+`TryGetWorkerBatch` provides an immutable protected observation of an existing
+additional-recipe worker's latched option, phase and exact worker/home identities;
+see [workflow and lifetime limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch).
 
 ## Huntable prey
 

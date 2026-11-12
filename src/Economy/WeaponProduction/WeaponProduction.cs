@@ -184,6 +184,23 @@ namespace APIShared.Economy
         public static bool TryGetSelection(int buildingId, uint globalId, out WeaponProductionSelection selection) =>
             WeaponProductionRuntime.TryGetSelection(buildingId, globalId, out selection);
 
+        /// <summary>Reads an existing framework-latched additional-recipe batch for an exact worker identity.</summary>
+        /// <remarks>Call while already holding the actual engine monitor, in a confirmed, admitted native world.
+        /// This read installs no hooks, latches no recipe and changes neither selection nor cargo. The worker must
+        /// still be alive (or paused with no death marker), retain its exact live workshop link and role, and share
+        /// the workshop's current owner. A destroyed or replaced home makes the read unavailable, including during
+        /// delivery. Vanilla-only workers have no supported batch observation and return false; do not infer a
+        /// batch from their native template. Unknown, loading, faulted or retired worlds also return false.
+        /// An unusual second native-world replacement within the same production mission remains unavailable
+        /// until a new mission begins. A successful snapshot is detached historical evidence, not a native view
+        /// or a write capability; read again before using it as current presentation state.</remarks>
+        /// <param name="unitId">One-based unit slot, 1 through 9999.</param>
+        /// <param name="globalId">The exact nonzero unsigned native unit Global ID.</param>
+        /// <param name="batch">An immutable observation on success; the default value on failure.</param>
+        /// <returns>True only for a tracked additional recipe and currently matching worker and home.</returns>
+        public static bool TryGetWorkerBatch(int unitId, uint globalId, out WeaponProductionWorkerBatch batch) =>
+            WeaponProductionRuntime.TryGetWorkerBatch(unitId, globalId, out batch);
+
         /// <summary>Submit on Unity as the real local participant. A group request resolves own live workshops of that type at execution.</summary>
         public static NetworkSendResult RequestSelection(int buildingId, uint globalId, WeaponProductionOptionId optionId,
             bool allOfType = false) => WeaponProductionRuntime.RequestSelection(buildingId, globalId, optionId, allOfType);

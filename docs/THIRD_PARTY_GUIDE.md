@@ -9,6 +9,11 @@ The service owns physical rows, its private ledger and matching save entries.
 Recipes, hauling, art, player authorization and command transport remain consumer
 responsibilities. Existing overlapping private capacity detours must be migrated.
 
+For a per-building display, observe the exact store and call the registered good's
+`TryGetQuantity`; combined virtual occupancy is not that good's quantity. Follow
+the [protected read workflow](NATIVE_STORAGE.md#read-one-good-in-one-store), which
+grants no mutation authority.
+
 ## External production cargo
 
 Use the existing `NativeStorageClient` cargo methods when an external producer
@@ -1956,6 +1961,12 @@ to reuse the existing native workshop/template pipeline. The shared producer own
 coordinates physical custom credit, native cargo debit and the critical save pair.
 Registration ownership, Armory-only routing, current offline/editor admission and
 native accounting limits are in the [workshop guide](WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
+
+For carry art or diagnostics, use `TryGetWorkerBatch` from an existing held-engine
+boundary to read the tracked worker's latched option and phase. It supplies no
+quantity or native-only inference. Follow the [identity, home and world lifetime
+limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch) and the opt-in
+[compiled helper](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
 
 ## Huntable prey
 

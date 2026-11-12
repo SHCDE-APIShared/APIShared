@@ -160,6 +160,51 @@ For AI workshops, call `TrySetAiNextOption` from the same deterministic simulati
 callback on every peer. Supply the same AI-owned building identity and admitted
 option. The consumer decides when the AI should change recipes.
 
+## Observe a worker's latched batch
+
+For carry art or diagnostics, call `WeaponProduction.TryGetWorkerBatch(unitId,
+globalId, out batch)` while **already holding the actual engine monitor** in an
+existing protected readback or simulation callback. Supply the one-based unit slot
+and its exact unsigned Global ID. The read installs no hooks and changes no recipe,
+selection or cargo. It returns a small immutable `WeaponProductionWorkerBatch`
+value containing worker identity, home workshop identity, the admitted latched
+`Option` and recorded `Phase`. Selecting the next recipe does not reinterpret it.
+
+`Manufacturing`, `LocalProduct` and `Cargo` describe the existing framework batch
+owner's phases. They do not identify native AI/animation states or prove a cargo
+quantity, delivery destination, historical owner or manufacturing progress. Use
+the exact recipe identity or `Option.StoredOutput` for consumer presentation
+policy; do not guess those missing facts from the next selection or native template.
+
+```csharp
+// Already inside a protected engine boundary; presentation policy belongs to the mod.
+if (WeaponProduction.TryGetWorkerBatch(unitId, globalId, out var batch)
+        && batch.Phase == WeaponProductionBatchPhase.Cargo)
+{
+    var recipeId = batch.Option.Id;
+    var customOutput = batch.Option.StoredOutput;
+    // Select your presentation from this latched recipe; no cargo quantity is inferred.
+}
+```
+
+Only an existing tracked **additional recipe** is supported. Vanilla-only or
+untracked workers return false. The query validates the exact live worker and
+home, workshop type, worker role, production link and matching current owner. A
+paused worker with no native death marker is supported. A dead, destroyed,
+recycled or unlinked home makes the read unavailable even while cargo remains;
+this does not promise carrying-after-home-destruction compatibility.
+
+A known, admitted, nonfaulted native world is required. Its observation receipt
+binds once at the first successful outer native-load completion. Metadata refresh
+keeps that receipt, but an unusual later native-world replacement within the same
+production mission makes reads fail until a new production mission begins. This
+prevents retained batch rows from being presented as a replacement world's state.
+False returns the default value, whose fields are not a valid observation; keep
+the consumer's ordinary presentation fallback. Retained successful values are
+historical evidence: reacquire after loading or before treating them as current.
+APIShared supplies no art policy or per-unit presentation polling service. See the
+[compiled protected helper](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
+
 ## Multiplayer and saved worlds
 
 Use matching gameplay definitions on all peers. Ingredient cost, output base

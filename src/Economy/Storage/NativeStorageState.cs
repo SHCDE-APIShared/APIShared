@@ -104,6 +104,17 @@ namespace APIShared.Economy
             return position >= 0 ? rows[position].Quantity : 0;
         }
 
+        // Observation uses the existing exact row key. It never edits another building's
+        // claims, the player ledger, owner sequences or the immutable publication tables.
+        internal bool TryGetQuantity(CustomGoodId good, NativeStorageProbe building, out int quantity, out string reason)
+        {
+            quantity = 0;
+            if (!catalog.TryGetValue(good, out CatalogEntry registration) || !registration.Active)
+            { reason = "The output good is not currently registered."; return false; }
+            if (!building.IsLive || building.Kind != registration.Kind)
+            { reason = "The live storage is not the registered good's pool."; return false; }
+            quantity = GetQuantity(good, building); reason = string.Empty; return true;
+        }
         // Only a marked exact identity contributes. The published 4000-slot table is immutable,
         // so dormant/unmarked calls need no dictionary, callback, allocation or native lookup.
         internal int GetOccupied(int slot, uint globalId, int player, StoragePool kind)

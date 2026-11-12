@@ -11,6 +11,17 @@ namespace ThirdPartyMod
         internal static bool Register(ModApiClient client, out NativeStoredGood armor, out string reason) =>
             client.NativeStorage.TryRegisterGood("medium-armor", NativeStoragePool.Armory, out armor, out reason);
 
+        // Opt-in observation while already holding the actual engine monitor in a known world.
+        // Protected multiplayer reads need no mutation scope. This grants no purchase permission.
+        internal static bool TryReadQuantity(ModApiClient client, NativeStoredGood armor, int buildingId,
+            out int quantity, out string reason)
+        {
+            quantity = 0;
+            if (armor == null) { reason = "The registered good is unavailable."; return false; }
+            return client.NativeStorage.TryObserve(buildingId, out var storage, out reason) &&
+                armor.TryGetQuantity(storage, out quantity, out reason);
+        }
+
         // The consumer has authenticated/authorized the player and is already inside a native
         // tick or authenticated Chore boundary holding the engine monitor. This is not a GUI command.
         internal static bool Buy(ModApiClient client, NativeStoredGood armor, int buildingId, long sequence,

@@ -251,7 +251,7 @@ namespace APIShared.Economy
             frozenWeaponCatalog = context.Mode.Kind == GameModeKind.Unknown || context.Mode.IsMapEditor || context.Mode.AllowsCustomGameMods
                 ? WeaponProductionRuntime.PrepareCatalog()
                 : WeaponProductionCatalog.Empty;
-            WeaponProductionRuntime.BeginWorld(frozenWeaponCatalog);
+            WeaponProductionRuntime.BeginWorld(frozenWeaponCatalog, session);
             frozenHuntingCatalog = context.Mode.Kind == GameModeKind.Unknown || context.Mode.IsMapEditor || context.Mode.AllowsCustomGameMods
                 ? Wildlife.HuntablePreyRuntime.PrepareCatalog()
                 : Wildlife.HuntablePreyCatalogBuilder.VanillaOnly;

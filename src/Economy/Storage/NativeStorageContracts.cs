@@ -57,6 +57,17 @@ namespace APIShared.Economy
         /// The private inventory is never exposed for writes that could bypass physical storage.</summary>
         public bool TryGetStock(int playerId, out GoodsBalance balance, out string reason) =>
             NativeStorageRuntime.Instance.TryGetStock(Key, playerId, out balance, out reason);
+        /// <summary>Reads only this good's committed quantity in the exact observed storage.
+        /// Requires the caller-held real engine monitor and a confirmed known current world;
+        /// protected multiplayer reads need no native-tick/authenticated-Chore mutation scope.
+        /// Revalidates live slot, unsigned GlobalId, owner, pool and world. Matching staged
+        /// restoration may activate; an already-bound query does not reconcile losses or advance
+        /// command sequences. A fresh reused/captured store may validly contain zero of this good.
+        /// Returns true with zero for a valid empty allocation. Returns false, zero and reason
+        /// for an unregistered/dormant output, stale identity/world, wrong pool, blocked/pending
+        /// load or unavailable native read. This grants no native pointer or mutation authority.</summary>
+        public bool TryGetQuantity(NativeStorageSnapshot storage, out int quantity, out string reason) =>
+            NativeStorageRuntime.Instance.TryGetQuantity(this, storage, out quantity, out reason);
         /// <summary>Reads this owner's last accepted positive sequence for the current world.
         /// Requires the engine monitor. Automatic storage-loss reconciliation also consumes owner
         /// sequences; allocate and execute new commands in one authoritative simulation order.</summary>

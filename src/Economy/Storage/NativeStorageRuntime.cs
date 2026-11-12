@@ -195,6 +195,41 @@ namespace APIShared.Economy
             reason = string.Empty; return true;
         }
 
+        internal bool TryGetQuantity(NativeStoredGood good, NativeStorageSnapshot expected, out int quantity, out string reason)
+        {
+            quantity = 0;
+            // Registration handles are immutable/process-lived; the shared lookup reads their
+            // published array and does not race the Unity startup dictionary.
+            if (!IsRegistrationReady(good)) { reason = "The exact registered output handle is unavailable."; return false; }
+            try
+            {
+                if (!EnsureWorld(out object world, out reason)) return false;
+                if (!ReferenceEquals(expected.World, world)) { reason = "The storage observation belongs to another native world."; return false; }
+                NativeStorageNativeRuntime.TryRead(expected.BuildingId, out NativeStorageProbe current);
+                if (!TryReadQuantity(state, good.Key, world, blocked, expected, current, out quantity, out reason)) return false;
+                if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld) || blocked)
+                { quantity = 0; reason = "The native world changed during quantity observation."; return false; }
+                return true;
+            }
+            catch (Exception error)
+            { quantity = 0; reason = "Storage quantity observation failed: " + error.Message; return false; }
+        }
+
+        // The production binding supplies a protected current native probe after EnsureWorld.
+        // Kept value-only so lifetime/identity rejection can be tested without executing game code.
+        internal static bool TryReadQuantity(NativeStorageState owner, CustomGoodId good, object world, bool blockedRecord,
+            NativeStorageSnapshot expected, NativeStorageProbe current, out int quantity, out string reason)
+        {
+            quantity = 0;
+            if (owner == null || world == null || blockedRecord)
+            { reason = "The matching storage state is pending, blocked or unavailable."; return false; }
+            if (!ReferenceEquals(expected.World, world)) { reason = "The storage observation belongs to another native world."; return false; }
+            NativeStorageProbe prior = expected.Probe;
+            if (!prior.IsLive || !current.IsLive || prior.Slot != current.Slot || prior.GlobalId != current.GlobalId ||
+                prior.PlayerId != current.PlayerId || prior.Kind != current.Kind)
+            { reason = "The observed storage was destroyed, reused, captured or retyped."; return false; }
+            return owner.TryGetQuantity(good, current, out quantity, out reason);
+        }
         internal bool TryGetSequence(string owner, out long sequence, out string reason)
         {
             sequence = 0;
