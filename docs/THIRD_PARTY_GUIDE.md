@@ -1932,6 +1932,14 @@ native ingredient. The [weapon workshop guide](WEAPON_PRODUCTION.md) covers the
 registration example, ingredient limits, Shift selection, AI, and requirements
 for multiplayer and saved games.
 
+### Workshop output in shared custom storage
+
+Bind a registered `NativeStoredGood` using `WeaponProductionOptionDefinition.WithStoredOutput`
+to reuse the existing native workshop/template pipeline. The shared producer owner
+coordinates physical custom credit, native cargo debit and the critical save pair.
+Registration ownership, Armory-only routing, current offline/editor admission and
+native accounting limits are in the [workshop guide](WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
+
 ## Huntable prey
 
 Register further unit types for Vanilla Hunters with `HuntablePrey.TryRegister`

@@ -708,6 +708,7 @@ APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buil
 APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
 APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
 APIShared.Economy.WeaponProductionOption | public sealed class APIShared.Economy.WeaponProductionOption
+APIShared.Economy.WeaponProductionOption | public APIShared.Economy.NativeStoredGood StoredOutput { get; }
 APIShared.Economy.WeaponProductionOption | public APIShared.Economy.WeaponProductionOptionId Id { get; }
 APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods OutputGood { get; }
 APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods TemplateGood { get; }
@@ -719,7 +720,9 @@ APIShared.Economy.WeaponProductionOption | public int? WorkTicks { get; }
 APIShared.Economy.WeaponProductionOption | public string DisplayName { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public sealed class APIShared.Economy.WeaponProductionOptionDefinition
 APIShared.Economy.WeaponProductionOptionDefinition | public .ctor(SHCDESE.Interop.eStructs buildingType, SHCDESE.Interop.eGoods templateGood, SHCDESE.Interop.eGoods outputGood, string displayName, int? baseAmount = null, int? workTicks = null, int priority = 0)
+APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.NativeStoredGood StoredOutput { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.WeaponProductionOptionDefinition WithIngredientAmount(int? ingredientAmount)
+APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.WeaponProductionOptionDefinition WithStoredOutput(APIShared.Economy.NativeStoredGood output)
 APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods OutputGood { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods TemplateGood { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eStructs BuildingType { get; }

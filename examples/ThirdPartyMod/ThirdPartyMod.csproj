@@ -49,6 +49,7 @@
     <Compile Include="CustomGoodsExample.cs" />
     <Compile Include="GoodsWalletExample.cs" />
     <Compile Include="NativeStorageExample.cs" />
+    <Compile Include="CustomWorkshopExample.cs" />
     <Compile Include="ModDataExample.cs" />
     <Compile Include="WeaponProductionExample.cs" />
   </ItemGroup>

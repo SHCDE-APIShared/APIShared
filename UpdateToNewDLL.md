@@ -4,6 +4,7 @@
 
 - [Native goods wallet](#native-goods-wallet)
 - [Native pooled storage](#native-pooled-storage)
+- [Stored workshop delivery](#stored-workshop-delivery)
 - [Shared health initialization](#shared-health-initialization)
 - [Authenticated Chore context and submission](#authenticated-chore-context-and-submission)
 - [Spectator input control boundaries](#spectator-input-control-boundaries)
@@ -192,6 +193,80 @@ See [ally transfer native behavior](docs/ALLY_TRANSFERS.md#native-update-evidenc
 the existing native capacity/allocator relationships and partial-effect contract.
 The static audit does not replace emitter, native branch, coexistence, lifecycle,
 launch or game acceptance checks.
+
+## Stored workshop delivery
+
+Owner: `WeaponProductionNativeRuntime.StoredDeliveryAdapter`, an optional cohort
+inside the existing shared workshop owner. Reference native SHA-256 remains
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Public registration, accounting and persistence are in the
+[workshop guide](docs/WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
+Failure of this optional cohort does not remove existing native recipe support.
+No second worker-entry or B6100 detour is installed.
+
+The native workers ignore AddGood's return and can execute success bookkeeping
+after refusal. Their original failed-capacity/replacement branches can discard
+carried stock. A late product-ID filter is therefore insufficient for custom
+acceptance or retry. The optional gate runs before the original arrival checks:
+
+| Workshop | Complete-instruction gate | Native continuation | Accepted cargo footer | Refused epilogue |
+| --- | --- | --- | --- | --- |
+| Fletcher | `12DC6D+15` | `12DC7C` | `12DEB6` | `12E3DB` |
+| Poleturner | `13B654+14` | `13B662` | `13B894` | `13BDAA` |
+| Blacksmith | `13C7DC+14` | `13C7EA` | `13CA2E` | `13CF02` |
+| Armourer | `13D97E+16` | `13D98E` | `13DB8C` | `13E085` |
+| Tanner | `13EEAF+16` | `13EEBF` | `13F0BC` | `13E6C2` |
+
+All five pinned worker bodies and the full captured static cross-reference index
+were checked; no direct incoming edge targets an aperture interior. This static
+result does not qualify arbitrary foreign patches. Validate live gate/continuation
+and epilogue bytes, generated relocation, ownership and the existing Complete
+cohort before publication. Armourer/Tanner prefixes include RIP-relative manager
+addresses. Preserve the captured physical worker ID through the managed callback;
+do not reconstruct a footer from a later mutable CurrentUnit global.
+
+The three outcomes are Native, Accepted and Refused. Native restores the exact
+original prefix/path, including native AddGood and accounting. Accepted atomically
+publishes physical stock +1 and signed cargo -1, then skips native AddGood,
+weapons-produced, weapon achievements, stock cue and SE dropoff observers. Footer
+register repairs retain each role's ID/offset/managers and zero/one/three constants;
+Tanner's EBP=3 and preserved R15 are significant. Positive cargo keeps its batch;
+zero cargo reaches the existing Complete owner. Preserve GPRs, XMM0–5, flags,
+Windows x64 home space and exact stack balance around the callback.
+
+A native attempt transfers one item, not the complete carried count. Search asks
+for enough Armory capacity for remaining cargo. A refused custom attempt cannot
+fall into Vanilla's destructive delivery-replacement path. A protected retarget
+attempt can instead select the original search state (Fletcher 6, others 7), reset
+the timer and return normally. Search validates the candidate and movement before
+publishing its new destination; native hazard/death diversions remain native.
+This supplies no eventual-delivery guarantee and refunds no manufactured input.
+
+Native manager-relative worker base is `image+67E8400+slot*490`; the SDK record
+adds a `65C` bias. Required packed `GameUnit` fields are cargo at `384` (signed
+low Int16 only; preserve adjacent word `386`), destination slot `332` (UInt16),
+destination global identity `9C` (UInt32, exposed as split words by the current
+SDK), AI state `2BC` and timer `2C4` (Int16). Requalify primitive storage locations
+and meanings rather than relying on renamed placeholder SDK fields.
+
+All five native finders select Armories. A Granary-bound custom workshop output
+must be rejected until destination selection has a separately qualified owner.
+The new custom Tanner capability requires the original adjacent route call;
+changed ImprovedHunters routing disables that optional capability, preserving
+legacy/native Tanner compatibility rather than guessing the carried product.
+
+The existing critical production save owner freezes the workshop and pooled
+storage pair before native serialization, rejects reentrant mutations, verifies
+actual archive bytes/write status and commits only a complete temporary file.
+Native-only digest/wire/payload/envelope encodings stay unchanged. Custom workshop
+records require reader 2; the shared internal capture writer selects only a schema
+within its registration's supported range and refuses relabeling migrated unknown
+entries as an older schema. Real multiplayer custom output remains unavailable
+until private storage and native carrier repair are jointly qualified.
+
+Synthetic fixture/installed-reference checks qualify bounded managed publication,
+original bytes and emitted ABI paths. Live hook coexistence, Mono transitions,
+actual producer movement, native save/load and gameplay acceptance remain distinct.
 
 ## Shared health initialization
 

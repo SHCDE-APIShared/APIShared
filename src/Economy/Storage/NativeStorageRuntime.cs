@@ -12,13 +12,15 @@ namespace APIShared.Economy
     // Single owner for physical virtual rows, their private ledger and matching archive entries.
     // All mutations/capture serialize through the actual engine monitor. Native callbacks only
     // read exact published claims; cold restoration runs at a protected matching-world boundary.
-    internal sealed unsafe class NativeStorageRuntime
+    internal sealed unsafe partial class NativeStorageRuntime
     {
         internal static readonly NativeStorageRuntime Instance = new NativeStorageRuntime();
         private readonly Dictionary<CustomGoodId, NativeStoredGood> registered = new Dictionary<CustomGoodId, NativeStoredGood>();
+        private NativeStoredGood[] registeredHandles = Array.Empty<NativeStoredGood>();
         private readonly List<NativeStorageGoodRegistration> definitions = new List<NativeStorageGoodRegistration>();
         private readonly Func<int, NativeStorageProbe> readProbe;
         private readonly NativeStorageExchangeEngine exchanges;
+        private readonly NativeStorageDeliveryEngine deliveries;
         private object engine, boundWorld;
         private NativeStorageState state;
         private NativeStorageState staged;
@@ -28,7 +30,10 @@ namespace APIShared.Economy
         private string failure;
 
         private NativeStorageRuntime()
-        { readProbe = ReadProbe; exchanges = new NativeStorageExchangeEngine(GoodsWalletNative.Instance); }
+        {
+            readProbe = ReadProbe; exchanges = new NativeStorageExchangeEngine(GoodsWalletNative.Instance);
+            deliveries = new NativeStorageDeliveryEngine(GoodsWalletNative.Instance);
+        }
         internal bool IsCurrentWorldReady
         {
             get
@@ -60,9 +65,14 @@ namespace APIShared.Economy
                 { reason = "A world started during storage registration."; return false; }
                 // Allocate both process-owned handles before publishing their registration.
                 var handle = new NativeStoredGood(key, kind);
+                var published = registeredHandles;
+                var nextHandles = new NativeStoredGood[published.Length + 1];
+                Array.Copy(published, nextHandles, published.Length);
+                nextHandles[published.Length] = handle;
                 definitions.Add(new NativeStorageGoodRegistration(key, kind));
                 try { registered.Add(key, handle); }
                 catch { definitions.RemoveAt(definitions.Count - 1); throw; }
+                Volatile.Write(ref registeredHandles, nextHandles);
                 good = handle; reason = string.Empty; return true;
             }
         }
@@ -81,7 +91,7 @@ namespace APIShared.Economy
                 var archive = new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, "APIShared.NativeStorage.v1", 1, 1,
                     new[] { "ledger", "stores" }, Capture, Loaded)
                 { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = true, Prepared = Prepare };
-                if (!VersionedSaveData.TryRegister(archive, out _, out reason)) throw new InvalidOperationException(reason);
+                if (!VersionedSaveData.TryRegister(archive, out saveHandle, out reason)) throw new InvalidOperationException(reason);
                 if (!SimulationTickEvents.TryRegister(APISharedPlugin.PluginGuid, "native-storage/reconcile", Tick, out reason, -1000))
                     throw new InvalidOperationException(reason);
                 NativeStorageNativeRuntime.UpdateDemand(false);
@@ -188,6 +198,7 @@ namespace APIShared.Economy
         internal bool TryGetSequence(string owner, out long sequence, out string reason)
         {
             sequence = 0;
+            if (productionSave != null) { reason = "A production save checkpoint is frozen."; return false; }
             if (!Context(true, out _, out reason) || !EnsureWorld(out _, out reason) || !Reconcile(out reason)) return false;
             sequence = state.GetLastSequence(owner); reason = string.Empty; return true;
         }
@@ -204,6 +215,7 @@ namespace APIShared.Economy
             out GoodsTransactionStatus status, out string reason)
         {
             status = GoodsTransactionStatus.InvalidRequest;
+            if (productionSave != null) { reason = "A production save checkpoint is frozen."; return false; }
             if (NativeStorageNativeRuntime.B6100Depth != 0)
             { reason = "Storage exchanges cannot change capacity inside a native add-goods Pre/Original/Post chain."; return false; }
             if (!Context(true, out object world, out reason) || !EnsureWorld(out world, out reason)) return false;
@@ -217,6 +229,7 @@ namespace APIShared.Economy
 
         private bool Reconcile(out string reason)
         {
+            if (productionSave != null) { reason = "A production save checkpoint is frozen."; return false; }
             object world = boundWorld;
             if (!state.Reconcile(readProbe, out NativeStorageState next, out reason)) return Block(reason);
             if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld)) { reason = "The native world changed during reconciliation."; return false; }
@@ -227,6 +240,7 @@ namespace APIShared.Economy
 
         private void Tick(int ignored)
         {
+            if (productionSave != null) return;
             if (!ready || engine == null || !Monitor.IsEntered(engine) || !GoodsWalletNative.Instance.HasAuthorityContext) return;
             if (!EnsureWorld(out _, out _)) return;
             if (state.HasRows) Reconcile(out _);
@@ -237,6 +251,11 @@ namespace APIShared.Economy
             if (!ready) return false;
             lock (engine)
             {
+                if (productionSave != null)
+                {
+                    if (!productionSave.Matches(state, MissionLifecycleService.NativeWorld) || blocked) return false;
+                    productionSave.Write(writer); return true;
+                }
                 if (!EnsureWorld(out object world, out _)) return false;
                 if (GoodsWalletNative.Instance.HasAuthorityContext && !Reconcile(out _)) return false;
                 state.Capture(out byte[] ledger, out byte[] stores);

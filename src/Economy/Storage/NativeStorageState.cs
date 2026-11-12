@@ -48,6 +48,7 @@ namespace APIShared.Economy
         internal static int PoolCapacity(StoragePool kind) => kind == StoragePool.Armory ? 50 : kind == StoragePool.Granary ? 250 : 0;
         internal bool HasRows => published.Rows.Length != 0;
         internal int RowCount => published.Rows.Length;
+        internal object PublicationIdentity => published;
 
         internal NativeStorageGoodRegistration[] GetRegistrations(bool activeOnly = true)
         {
@@ -114,6 +115,16 @@ namespace APIShared.Economy
 
         internal GoodsTransactionStatus PrepareExchange(CustomGoodId good, long ownerSequence, NativeStorageProbe building,
             int quantityDelta, int goldDelta, out PreparedExchange prepared, out string reason)
+            => PreparePhysicalChange(good, ownerSequence, building, quantityDelta, ExchangeIntent(building, goldDelta), out prepared, out reason);
+
+        // A trusted native producer supplies its closed, versioned actor intent. No consumer
+        // callback, arbitrary ledger or external replay handle participates in this boundary.
+        internal GoodsTransactionStatus PrepareDelivery(CustomGoodId good, long ownerSequence, NativeStorageProbe building,
+            byte[] canonicalIntent, out PreparedExchange prepared, out string reason)
+            => PreparePhysicalChange(good, ownerSequence, building, 1, canonicalIntent, out prepared, out reason);
+
+        private GoodsTransactionStatus PreparePhysicalChange(CustomGoodId good, long ownerSequence, NativeStorageProbe building,
+            int quantityDelta, byte[] canonicalIntent, out PreparedExchange prepared, out string reason)
         {
             prepared = null; reason = string.Empty;
             if (activePlan != null) return Reject(GoodsTransactionStatus.InvalidRequest, "An exchange is already prepared.", out reason);
@@ -125,8 +136,7 @@ namespace APIShared.Economy
             // The ledger decides retained retry/conflict/expiry before live affordability and
             // binding. A completed exchange remains a retry after its original building vanished.
             var changes = new[] { new GoodsChange(good, building.PlayerId, quantityDelta) };
-            byte[] intent = ExchangeIntent(building, goldDelta);
-            GoodsTransactionStatus status = ledger.ForOwner(good.OwnerGuid).PrepareNative(ownerSequence, changes, intent,
+            GoodsTransactionStatus status = ledger.ForOwner(good.OwnerGuid).PrepareNative(ownerSequence, changes, canonicalIntent,
                 out CustomGoodsInventory.PreparedGoodsCommit lease);
             if (status != GoodsTransactionStatus.Applied)
             {

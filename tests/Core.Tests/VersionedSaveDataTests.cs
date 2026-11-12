@@ -110,6 +110,145 @@ public class VersionedSaveDataTests
     }
 
     [TestMethod]
+    public void CaptureCanSelectAnOlderSchemaWithoutChangingLaterCaptureDefaults()
+    {
+        var extender = new FakeExtender();
+        var state = new Dictionary<string, byte[]> { ["value"] = new byte[] { 7 } };
+        int recordVersion = 1, minimumReader = 1;
+        bool selectVersion = true;
+        var mod = extender.Register("Mod.Data", 2, 1, new[] { "value" }, writer =>
+        {
+            if (selectVersion) writer.UseVersion(recordVersion, minimumReader);
+            writer.Write("value", state["value"]);
+            return true;
+        });
+
+        byte[] legacy = extender.Save(mod);
+        CollectionAssert.AreEqual(SaveWith(1, 1, new[] { "value" }, state), legacy,
+            "An explicitly selected old schema retains the complete old record bytes, including its checksum.");
+        extender.LoadSave(legacy, mod);
+        Assert.AreEqual(1, mod.Loads.Last().RecordVersion);
+        Assert.AreEqual(1, mod.Loads.Last().MinimumReaderVersion);
+
+        recordVersion = minimumReader = 2;
+        byte[] changedMeaning = extender.Save(mod);
+        CollectionAssert.AreEqual(SaveWith(2, 2, new[] { "value" }, state), changedMeaning);
+        selectVersion = false;
+        CollectionAssert.AreEqual(SaveWith(2, 1, new[] { "value" }, state), extender.Save(mod),
+            "Every capture starts from the registration metadata, independently of earlier choices.");
+    }
+
+    [TestMethod]
+    public void InvalidCaptureVersionsFailWithoutReturningAReplacementRecord()
+    {
+        foreach (var versions in new[] { (0, 1), (-1, 1), (3, 1), (1, 0), (1, -1), (1, 2), (2, 3) })
+        {
+            var extender = new FakeExtender();
+            VersionedSaveWriter retained = null;
+            var mod = extender.Register("Mod.Data", 2, 1, new[] { "value" }, writer =>
+            {
+                retained = writer;
+                writer.Write("value", new byte[] { 9 });
+                writer.UseVersion(versions.Item1, versions.Item2);
+                return true;
+            });
+            Assert.IsNull(extender.Save(mod), "Invalid metadata must not replace the Extender's existing entry.");
+            Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
+            Assert.AreEqual(1L, extender.Registry.CallbackFailures);
+            Assert.ThrowsExactly<InvalidOperationException>(() => retained.UseVersion(1, 1));
+        }
+
+        var floor = new FakeExtender();
+        var floorMod = floor.Register("Mod.Floor", 3, 2, new[] { "value" }, writer =>
+        {
+            writer.UseVersion(2, 1);
+            return true;
+        });
+        Assert.IsNull(floor.Save(floorMod), "A capture cannot lower the registration's minimum reader floor.");
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, floorMod.Handle.LastWriteStatus);
+    }
+
+    [TestMethod]
+    public void SelectedMinimumReaderMakesOldReadersKeepTheRecordWithoutCapture()
+    {
+        var newer = new FakeExtender();
+        var mod = newer.Register("Mod.Data", 2, 1, new[] { "value" }, writer =>
+        {
+            writer.UseVersion(2, 2);
+            writer.Write("value", new byte[] { 7 });
+            return true;
+        });
+        byte[] record = newer.Save(mod);
+        var older = new FakeExtender();
+        int captures = 0;
+        var oldMod = older.Register("Mod.Data", 1, 1, new[] { "value" }, _ => { captures++; return true; });
+        older.LoadSave(record, oldMod);
+        Assert.AreEqual(VersionedSaveLoadStatus.TooNew, oldMod.Loads.Single().Status);
+        Assert.AreEqual(2, oldMod.Loads.Single().RecordVersion);
+        Assert.AreEqual(2, oldMod.Loads.Single().MinimumReaderVersion);
+        Assert.IsTrue(oldMod.Handle.KeepsLoadedRecord);
+        CollectionAssert.AreEqual(record, older.Save(oldMod));
+        Assert.AreEqual(VersionedSaveWriteStatus.KeptLoadedRecord, oldMod.Handle.LastWriteStatus);
+        Assert.AreEqual(0, captures);
+    }
+
+    [TestMethod]
+    public void OlderCaptureSchemaRefusesUnknownEntriesAlreadyMigratedByTheRegistry()
+    {
+        byte[] version1 = SaveWith(1, 1, new[] { "value", "future" },
+            new() { ["value"] = new byte[] { 7 }, ["future"] = new byte[] { 10 } });
+        var extender = new FakeExtender();
+        bool downgrade = true;
+        Action duringCapture = null;
+        var registration = extender.Registration("Mod.Data", 2, 1, new[] { "value" }, writer =>
+        {
+            duringCapture?.Invoke();
+            if (downgrade) writer.UseVersion(1, 1);
+            writer.Write("value", new byte[] { 7 });
+            return true;
+        });
+        registration.AddMigration(1, entries =>
+        {
+            if (entries.TryGet("future", out byte[] value)) entries.Set("future", new byte[] { (byte)(value[0] + 1) });
+        });
+        var mod = extender.Register(registration);
+        extender.LoadSave(version1, mod);
+        Assert.AreEqual(1, mod.Loads.Last().KeptEntryCount);
+        Assert.IsNull(extender.Save(mod), "Returning no replacement lets the Extender retain its existing record.");
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
+
+        downgrade = false;
+        byte[] version2 = extender.Save(mod);
+        var reader = new FakeExtender();
+        int migrations = 0;
+        var readerRegistration = reader.Registration("Mod.Data", 2, 1, new[] { "value", "future" }, Writes(new()));
+        readerRegistration.AddMigration(1, entries =>
+        {
+            migrations++;
+            entries.TryGet("future", out byte[] value);
+            entries.Set("future", new byte[] { (byte)(value[0] + 1) });
+        });
+        var readerMod = reader.Register(readerRegistration);
+        reader.LoadSave(version2, readerMod);
+        Assert.AreEqual(0, migrations, "The retained entry is already at schema 2 and must not migrate twice.");
+        CollectionAssert.AreEqual(new byte[] { 11 }, readerMod.Loads.Single().Entries["future"]);
+
+        byte[] knownOnly = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 7 } });
+        extender.LoadSave(knownOnly, mod);
+        Assert.AreEqual(0, mod.Loads.Last().KeptEntryCount);
+        downgrade = true;
+        CollectionAssert.AreEqual(knownOnly, extender.Save(mod), "Only the latest loaded unknown entries block a downgrade.");
+        duringCapture = () =>
+        {
+            duringCapture = null;
+            extender.LoadSave(version1, mod);
+        };
+        Assert.IsNull(extender.Save(mod), "A load completed inside capture must not bypass the unknown-entry guard.");
+        Assert.AreEqual(1, mod.Loads.Last().KeptEntryCount);
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
+    }
+
+    [TestMethod]
     public void UnknownEntriesSurviveAnOlderVersionAndReturnUnchanged()
     {
         var newer = new FakeExtender();
@@ -463,6 +602,7 @@ public class VersionedSaveDataTests
         var lateMod = late.Register("Mod.Late", 1, 1, known, w => { retained = w; return true; });
         late.Save(lateMod);
         Assert.ThrowsExactly<InvalidOperationException>(() => retained.Write("a", new byte[0]));
+        Assert.ThrowsExactly<InvalidOperationException>(() => retained.UseVersion(1, 1));
     }
 
     [TestMethod]

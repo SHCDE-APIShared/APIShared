@@ -1015,7 +1015,9 @@ template with an existing weapon or armour good and can set an output base
 amount, manufacturing duration and quantity of the workshop's native ingredient.
 APIShared reserves the original recipes within the four choices per workshop type.
 It supplies the building HUD, Shift selection, synchronized execution and saved
-production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+production state. `WithStoredOutput` binds an owner-matching registered Armory good
+for offline/editor production, with atomic native cargo/custom-stock delivery and
+verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
 
 ## Huntable prey
 

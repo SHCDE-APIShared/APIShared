@@ -29,6 +29,8 @@ internal static partial class Program
     [DllImport("kernel32", SetLastError = true)] private static extern IntPtr VirtualAlloc(IntPtr p, UIntPtr n, uint allocation, uint protection);
     [DllImport("kernel32", SetLastError = true)] private static extern bool VirtualFree(IntPtr p, UIntPtr n, uint mode);
     [DllImport("kernel32")] private static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32")] private static extern uint GetErrorMode();
+    [DllImport("kernel32")] private static extern uint SetErrorMode(uint mode);
     [DllImport("kernel32", SetLastError = true)] private static extern bool FlushInstructionCache(IntPtr process, IntPtr address, UIntPtr size);
 
     private static void Check(bool condition, string message)
@@ -39,10 +41,19 @@ internal static partial class Program
 
     private static int Main(string[] args)
     {
+        uint previousErrorMode = 0;
+        bool restoreErrorMode = false;
+        int exitCode = 1;
         try
         {
             if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
                 throw new PlatformNotSupportedException("Windows x64 native execution is required.");
+            // Suppress critical-error, native-fault and legacy OpenFile dialogs only
+            // in this owned fixture process, before any private executable mapping.
+            previousErrorMode = GetErrorMode();
+            SetErrorMode(previousErrorMode | 0x8003U);
+            restoreErrorMode = true;
+            Check(GetErrorMode() == (previousErrorMode | 0x8003U), "Private native fault dialogs are disabled.");
             if (args.Length != 1) throw new ArgumentException("Supply the canonical installed CrusaderDE.dll path.");
             native = File.ReadAllBytes(args[0]);
             Check(Convert.ToHexString(SHA256.HashData(native)) == NativeHash, "Audited native identity mismatch.");
@@ -62,20 +73,35 @@ internal static partial class Program
                 TestHunterOwnerGates();
                 TestHerdFlightGates();
                 TestWeaponProductionAdapters();
+                TestWeaponStoredDelivery();
             }
             finally { VirtualFree(image, UIntPtr.Zero, 0x8000); }
             Console.WriteLine($"PASS: {checks} worker-production native assertions. Private native execution; actual game, save/restart and host/client acceptance remain separate.");
-            return 0;
+            exitCode = 0;
         }
         catch (Exception failure)
         {
             Console.Error.WriteLine(failure);
-            return 1;
+            exitCode = 1;
         }
+        finally
+        {
+            if (restoreErrorMode)
+            {
+                SetErrorMode(previousErrorMode);
+                if (GetErrorMode() != previousErrorMode)
+                {
+                    Console.Error.WriteLine("Private native fixture could not restore its process error mode.");
+                    exitCode = 1;
+                }
+            }
+        }
+        return exitCode;
     }
 
     private static void MapPrivateImage()
     {
+        Check((GetErrorMode() & 0x8003U) == 0x8003U, "Process fault-dialog suppression is active before executable allocation.");
         int pe = BitConverter.ToInt32(native, 0x3C);
         imageSize = BitConverter.ToInt32(native, pe + 24 + 56);
         // Near fixture pages are outside the PE image but in the same reserved allocation.
