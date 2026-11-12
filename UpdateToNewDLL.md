@@ -1838,9 +1838,19 @@ The observation contains 919 distinct non-Null native asset names. That count is
 a dated measurement, not a public constant. Original managed routing is generated
 separately from the actual `SFXManager` speech arrays in their initialization
 order. In this observation, 29 native intent names have no managed speech-folder
-entry. Their folder remains null; custom playback and Vanilla cue targets do not
-guess a route or turn original silence into audio. Native intent observers can
-still see an attributed attempted request.
+entry. Their folder remains null and Vanilla stays silent for them
+(`UnitVoiceContext.OriginalIsSilent`). An explicit replacement is played: a Vanilla
+cue through its own route, a resource through the folder of the original's voice
+bank. Native intent observers can still see an attributed attempted request.
+
+Recheck for another image: the civilian guard skips the managed callback when the
+selected civilian (`0x67E839C`) is zero or equals the previous selection
+(`0x2D9E58`); `0x97DA0` compares them at `0x97E09`, stores at `0x97E11` and reaches
+its only speech output (`0x3B20`) only when they differ. The Script Extender
+also edits `EngineInterface.CopyPlayStateStruct` and the speech loader's
+`<LoadClip>` `MoveNext` with IL hooks. Our edits there run through `SafeIlHook`;
+after an Extender update, confirm that the copy hook and all five speech edits
+still report `IsApplied`.
 
 ### Shared filename transport and original behavior
 

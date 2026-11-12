@@ -75,6 +75,15 @@ an admitted managed engine call with one ordered callback snapshot. The pair
 also surrounds calls that return zero or throw. For time-based rules use the
 native tick API above. See the [engine-run contract](THIRD_PARTY_GUIDE.md#managed-engine-run-boundaries).
 
+## Managed IL patches that cannot break other patches
+
+`APIShared.Patching.SafeIlHook.TryInstall` installs a MonoMod IL hook whose
+manipulator never throws: a failed edit is rolled back and reported, and every
+other IL hook and Harmony patch of the method keeps working. `SafeIlHook.Wrap`
+guards a hook you create yourself, `SafeIlHook.TryEdit` an independent part of a
+manipulator, and `APIShared.Patching.SafeTranspiler.Run` a Harmony transpiler.
+See [Safe managed IL patches](THIRD_PARTY_GUIDE.md#safe-managed-il-patches).
+
 ## In-game test automation
 
 | Entry point | Contract |
@@ -236,7 +245,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
 | `ModApiClient.Ui` | Owner-bound deferred Unity posts and coalesced before-render refresh demand | Managed initialization; pause-capable, thread-safe request/delay/cancel/continuous handles; [contract](THIRD_PARTY_GUIDE.md#deferred-unity-work-and-refresh-demand) |
 | `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
-| `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, explicit takeovers, cached occupancy, optional consumer-defined tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
+| `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, inline custom controls (`TryRegisterContent`), explicit takeovers, cached occupancy, optional consumer-defined tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
 | `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
@@ -485,6 +494,16 @@ of the player's living, registered Lord on the Unity main thread.
 `LordSkins.TryGetFromMaterial` classifies a captured unit material on any thread.
 See the [contract](../src/Players/LordSkins.cs) and the
 [integration guide](THIRD_PARTY_GUIDE.md#identifying-a-lord-skin).
+
+## Checked building access and zero-based indices
+
+`BuildingAccess.TryGetById` resolves one-based building IDs using the current or an
+already captured Script Extender manager. It rejects invalid IDs before lookup,
+returns a null pointer on every failure, and reports `BuildingLookupFailure`
+without logging. Identity, owner, life state and the game-thread contract remain
+with the caller. `IndexBounds.IsValidIndex(index, length)` is a pure zero-based
+range check; index 0 is valid when length is positive. It does not convert game IDs
+or replace specialized storage bounds. See [checked access usage](THIRD_PARTY_GUIDE.md#checked-entity-access-and-index-bounds).
 
 ## Player views and control
 

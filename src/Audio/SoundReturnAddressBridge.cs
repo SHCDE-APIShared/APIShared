@@ -136,7 +136,8 @@ namespace APIShared.Audio
         }
         internal static Decoder Open(IntPtr entry)
         {
-            var bytes = new byte[128]; Marshal.Copy(entry, bytes, 0, bytes.Length);
+            // Stays inside the stub's memory region; a short read decodes as invalid and fails the check.
+            var bytes = Internal.NativeCodeReader.ReadBounded(entry, 128);
             var decoder = Decoder.Create(64, new ByteArrayCodeReader(bytes));
             decoder.IP = unchecked((ulong)entry.ToInt64());
             return decoder;

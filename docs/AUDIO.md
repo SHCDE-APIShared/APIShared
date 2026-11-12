@@ -221,10 +221,9 @@ a recognised Lord message is handled by its message broker rather than unit-voic
 rules. Neither API changes the existing combat/effect SFX contract.
 
 `APIShared.Audio.UnitVoiceEvents` is the separate broker for **unit speech**.
-The SFX APIs above do not intercept these voices. This is a development addition;
-require an APIShared package exposing these contracts and declare its minimum
-version consistently in the plugin and manifest. A previous package's SFX support
-does not imply unit-voice support.
+The SFX APIs above do not intercept these voices. Unit voices require APIShared
+0.47.0 or newer; declare that minimum version consistently in the plugin and
+manifest. A previous package's SFX support does not imply unit-voice support.
 
 ### Registration and playback rules
 
@@ -272,8 +271,15 @@ Post exposes the final target and gain, `WasSuppressed`, `WasSubmitted`, and any
 `FallbackReason`/`Diagnostic`. Submission means the playback pipeline accepted
 the request, not decoder success or audible hardware output. A resource that
 cannot be used before submission returns to the original path; the Post target
-reflects that fallback. A missing original managed speech route remains Vanilla
-silence, rather than activating a formerly silent native intent.
+reflects that fallback.
+
+Some native intents have no route in the game's speech lists, so Vanilla plays
+nothing for them (for example several Arabian engineer siege lines).
+`UnitVoiceContext.OriginalIsSilent` reports this. Without a replacement they stay
+silent. A Vanilla or resource replacement is played; a resource then uses the
+speech folder of the original's voice bank. A rule that replaces a whole bank
+therefore also gives these intents a voice; check `OriginalIsSilent` to keep
+Vanilla's silence.
 
 ### Source context and selections
 
@@ -288,6 +294,11 @@ silence, rather than activating a formerly silent native intent.
 | `VoiceBankKey` / `OriginalCueKey` | Bank and file actually selected by Vanilla. |
 | `Situation` / `Evidence` | Source-specific action interpretation and its confidence. |
 | `SessionId` | Process-local originating mission generation. |
+
+The spearman column and the pikeman column of the troop table both point to
+`spear_ladder1-3.wav` for pushing an enemy ladder off a wall. Only the spearman
+handler requests that situation, so these files always belong to the spearman
+bank; Vanilla has no pikeman ladder speech to replace.
 
 No unit ID or native pointer is promised. Unknown facts remain nullable; do not
 reconstruct them from a basename, late selection or current player. A cue's own
@@ -340,6 +351,12 @@ deferred on Unity. Success means queued, not decoded. Inspect `IsReady` and
 PCM16, 44100 Hz mono/stereo format; OGG uses Vorbis. Private mod resources are
 owner-qualified; map resources read the current archive without mod fallback.
 Stable handles are distinct from SFX IDs, play-list IDs and Unity `AudioClip`s.
+
+A failed preparation does not block its owner and ID: prepare it again once the
+file is fixed. Pending and ready registrations of the same owner and ID are
+rejected. Map resources can be prepared from the consumer's own mission-start
+observer; the lifecycle marks the mission as started before any Start observer
+runs.
 
 Mod handles retain immutable decoded samples until process exit. Map handles
 invalidate immediately on end/initialization boundaries and never retarget to
