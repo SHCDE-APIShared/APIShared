@@ -28,11 +28,39 @@ namespace APIShared
             assembler.mov(r10d, __dword_ptr[r11]);
             assembler.test(r10d, site >= 2 ? 3 : 2);
             assembler.je(vanilla);
-            // Weighted reconstruction already used this broad skip. Search remains gate-specific.
+            // Existing weighted consumers keep the broad endpoint skip. The optional stockpile
+            // correction runs at the second endpoint, where both tile IDs are available.
             if (site >= 2)
             {
+                Label gateEndpoint = assembler.CreateLabel("gateEndpoint");
                 assembler.test(r10d, 1);
-                assembler.jne(accept);
+                assembler.je(gateEndpoint);
+                if (site == 3)
+                {
+                    Label neighborWall = assembler.CreateLabel("neighborWall");
+                    assembler.test(r10d, 4);
+                    assembler.je(accept);
+                    // R8 is the current tile; RCX is the neighbor derived at E19DE..E19ED.
+                    // R9 contains only the masked IsWall bit, so read complete flags from the grid.
+                    assembler.cmp(r8, AssassinPathAPI.TileCount);
+                    assembler.jae(reject);
+                    assembler.cmp(rcx, AssassinPathAPI.TileCount);
+                    assembler.jae(reject);
+                    assembler.mov(r11, module + AssassinPathAPI.TileFlagsRva);
+                    assembler.mov(eax, __dword_ptr[r11 + r8 * 4]);
+                    assembler.test(eax, (int)TilePropertyFlag.IsWall);
+                    assembler.je(neighborWall);
+                    assembler.test(eax, (int)TilePropertyFlag.GoodsyardRelated);
+                    assembler.je(accept);
+                    assembler.Label(ref neighborWall);
+                    assembler.mov(eax, __dword_ptr[r11 + rcx * 4]);
+                    assembler.test(eax, (int)TilePropertyFlag.IsWall);
+                    assembler.je(reject);
+                    assembler.test(eax, (int)TilePropertyFlag.GoodsyardRelated);
+                    assembler.jne(reject);
+                }
+                assembler.jmp(accept);
+                assembler.Label(ref gateEndpoint);
             }
             // Native start/neighbor tile registers, audited independently at each site.
             assembler.mov(r10, site == 1 ? r13 : site == 3 ? rcx : r8);

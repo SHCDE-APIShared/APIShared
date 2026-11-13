@@ -1,7 +1,10 @@
 param()
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$fixture=Join-Path $root ('.local/maintenance-tests/'+[guid]::NewGuid().ToString('N'))
+. (Join-Path $PSScriptRoot 'WorkshopTestFixture.Common.ps1')
+$fixture=New-WorkshopTestFixture $root 'maintenance'
+$fixtureError=$null
+try {
 $utf8=[Text.UTF8Encoding]::new($false)
 function Write-Text([string]$Path,[string]$Value){[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path));[IO.File]::WriteAllText($Path,$Value,$utf8)}
 function Hash([string]$Path){$s=[IO.File]::OpenRead($Path);$h=[Security.Cryptography.SHA256]::Create();try{[BitConverter]::ToString($h.ComputeHash($s)).Replace('-','').ToLowerInvariant()}finally{$h.Dispose();$s.Dispose()}}
@@ -189,4 +192,8 @@ foreach($operation in @('first install','next update')){
 }
 if(@([IO.Directory]::EnumerateFileSystemEntries($transactions)).Count){throw 'Short-path update wrote to the legacy directory.'}
 Write-Host 'PASS: a deep Windows game root uses the short path for first install and update with an empty legacy root.'
-Write-Host "Maintenance fixture evidence retained: $fixture"
+Write-Host "Maintenance fixture completed: $fixture"
+
+} catch {$fixtureError=$_;throw} finally {
+    Complete-WorkshopTestFixture $root 'maintenance' $fixture (-not $fixtureError) ([string]$fixtureError)
+}

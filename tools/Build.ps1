@@ -77,7 +77,9 @@ try {
     $results = Join-Path $root '.local/test-results'
     foreach ($project in @('Content.Tests/Content.Tests.csproj','PopularityDisplay.Tests/PopularityDisplay.Tests.csproj','Core.Tests/Core.Tests.csproj','APISharedTests/APISharedTests.csproj','LobbyModSettingsPresetTests/LobbyModSettingsPresetTests.csproj')) {
         Invoke-ApiBuildStep $context $project -Cacheable:($project -ne 'APISharedTests/APISharedTests.csproj') -Action {
-            Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
+            # Keep one current result per suite instead of another timestamped history.
+            $resultName=[IO.Path]::GetFileNameWithoutExtension($project)+'.trx'
+            Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', ('trx;LogFileName='+$resultName), '--results-directory', $results)
         }
     }
     foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests','AiMilitary.NativeTests','WorkerProductionBonus.NativeTests')) {
