@@ -299,7 +299,6 @@ namespace APIShared.GateRouting.Native
             Label originalLoad = assembler.CreateLabel();
             Label noContext = assembler.CreateLabel();
             Label unfiltered = assembler.CreateLabel();
-            Label unchanged = assembler.CreateLabel();
 
             assembler.push(rax);
             assembler.push(r10);
@@ -329,13 +328,14 @@ namespace APIShared.GateRouting.Native
             assembler.AddInstruction(original[0]);
             assembler.test(rax, rax);
             assembler.je(unfiltered);
-            assembler.push(r11);
-            assembler.and(r11b, __byte_ptr[rax]);
-            assembler.cmp(r11b, __byte_ptr[rsp]);
-            assembler.je(unchanged);
+            // RAX is saved and its mask pointer is dead after this read. Keep the
+            // producer's upper R11 bits; MOV preserves the equality flags for JE.
+            assembler.mov(al, __byte_ptr[rax]);
+            assembler.and(al, r11b);
+            assembler.cmp(al, r11b);
+            assembler.mov(r11b, al);
+            assembler.je(unfiltered);
             assembler.inc(__qword_ptr[r10 + SlotTouchedOffset]);
-            assembler.Label(ref unchanged);
-            assembler.add(rsp, 8);
             assembler.Label(ref unfiltered);
             assembler.pop(r10);
             assembler.pop(rax);
