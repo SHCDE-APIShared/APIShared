@@ -73,10 +73,14 @@ namespace APIShared.Economy
             MatchesWorkerRole(batch.Option.BuildingType, unit->r_UnitChimp) &&
             (UnitAccess.IsReallyAlive(unit) || unit->r_AliveState == AliveState.Paused && unit->r_IsKilledByProjectile == 0);
 
-        internal static void BeginWorld(WeaponProductionCatalog catalog)
+        internal static void BeginWorld(WeaponProductionCatalog catalog) => BeginWorld(catalog, 0);
+
+        internal static void BeginWorld(WeaponProductionCatalog catalog, long session)
         {
             EndWorld();
             frozen = catalog;
+            workerObservationWorld.Begin(session);
+            PublishStoredOutputOptions(catalog);
             if (catalog.HasOptions) Marshal.WriteByte(TransferDemandAddress, 1);
         }
 
@@ -93,10 +97,12 @@ namespace APIShared.Economy
 
         internal static void EndWorld()
         {
+            workerObservationWorld.End();
             Volatile.Write(ref active, WeaponProductionCatalog.Empty);
             WeaponProductionNativeRuntime.SetDemand(false);
             WeaponProductionNativeRuntime.ClearBuildingDemand();
             frozen = WeaponProductionCatalog.Empty;
+            ClearStoredOutputOptions();
             ClearWire();
             ResetSaveLoad();
             buildings.Clear();

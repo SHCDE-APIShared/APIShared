@@ -145,6 +145,8 @@ namespace APIShared
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
+                new NativeInitializationStep("native storage context", () => Economy.NativeStorageNativeRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("native custom-goods wallet", () => Economy.GoodsWalletNative.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),
                 // Closes on the first mission; inline stubs installed on a consumer's first registration need it.

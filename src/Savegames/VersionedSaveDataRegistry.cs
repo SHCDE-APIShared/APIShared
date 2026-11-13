@@ -362,7 +362,8 @@ namespace APIShared.Savegames
                 slot.Handle.SetLastWrite(loaded != null ? VersionedSaveWriteStatus.KeptLoadedRecord : VersionedSaveWriteStatus.NotWritten);
                 return loaded == null ? null : (byte[])loaded.Clone();
             }
-            var writer = new VersionedSaveWriter(slot.Known, context.IsSaveFile, context.IsMapEditorSave, context.FilePath);
+            var writer = new VersionedSaveWriter(slot.Known, context.IsSaveFile, context.IsMapEditorSave, context.FilePath,
+                slot.Current, slot.MinimumReader);
             bool write;
             try { write = slot.Capture(writer); }
             catch (Exception ex)
@@ -377,10 +378,24 @@ namespace APIShared.Savegames
                 slot.Handle.SetLastWrite(VersionedSaveWriteStatus.NotWritten);
                 return null;
             }
+            if (writer.RecordVersion < slot.Current)
+            {
+                bool hasUnknown = unknown != null && unknown.Count != 0;
+                lock (sync) hasUnknown |= slot.Unknown != null && slot.Unknown.Count != 0;
+                // Migrations run before unknown entries are partitioned. Relabeling them as an older
+                // schema could make a later reader migrate them twice. Include a load completed by
+                // a reentrant capture as well as the unknown snapshot this save would merge.
+                if (hasUnknown)
+                {
+                    Fail("Versioned save data capture cannot select an older schema while retaining unknown entries for " + slot.Identifier + ".");
+                    slot.Handle.SetLastWrite(VersionedSaveWriteStatus.CaptureFailed);
+                    return null;
+                }
+            }
             SortedDictionary<string, byte[]> record = writer.Written;
             if (unknown != null)
                 foreach (KeyValuePair<string, byte[]> entry in unknown) record[entry.Key] = entry.Value; // Never a known name.
-            byte[] bytes = VersionedSaveRecordCodec.Encode(slot.Current, slot.MinimumReader, record);
+            byte[] bytes = VersionedSaveRecordCodec.Encode(writer.RecordVersion, writer.MinimumReaderVersion, record);
             if (bytes == null)
             {
                 Error("Versioned save data " + slot.Identifier + " exceeds " + VersionedSaveRecordCodec.MaximumEntries +

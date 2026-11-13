@@ -1,4 +1,4 @@
-using APIShared.Internal;
+using ContentJson = APIShared.ContentInternal.DependencyFreeJson;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,7 +16,7 @@ namespace APIShared.Lords
         /// <summary>Parses an object without deserializing through a version-specific LordInfo type.</summary>
         public static LordMetadataDocument Parse(string json)
         {
-            var value = DependencyFreeJson.Parse(json) as Dictionary<string, object>;
+            var value = ContentJson.Parse(json) as Dictionary<string, object>;
             if (value == null) throw new InvalidDataException("lordmeta.json must contain an object.");
             return new LordMetadataDocument(json, value);
         }
@@ -74,7 +74,7 @@ namespace APIShared.Lords
         {
             var messages = Get("Messages") as Dictionary<string, object>;
             object clips;
-            return messages != null && messages.TryGetValue(category, out clips) ? DependencyFreeJson.Serialize(clips) : "[]";
+            return messages != null && messages.TryGetValue(category, out clips) ? ContentJson.Serialize(clips) : "[]";
         }
         private object Get(string field) { object value; return root.TryGetValue(field, out value) ? value : null; }
         private static string Text(Dictionary<string, object> values, string locale)
