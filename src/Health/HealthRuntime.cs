@@ -30,13 +30,17 @@ namespace APIShared.Health
         private static byte[] archiveBytes;
         private static object archiveSource;
         private static bool prepared, scanned, fullBasis, legacyLords, malformed;
+        private static bool trackingHistory;
         private static uint generation;
         private static int available;
         private static string unavailable = "APIShared health initialization has not completed.";
         private static int reportedFailures;
         internal static bool IsAvailable => Volatile.Read(ref available) != 0;
         internal static string UnavailableReason => IsAvailable ? string.Empty : Volatile.Read(ref unavailable);
-        internal static bool IsObserving => IsAvailable && mission != null && HealthModifiers.HasDemand;
+        // Once a mission owns original bases, disabling policies must not leave its archive
+        // stale. The native observer reads only this cached flag, never the archive itself.
+        internal static bool IsObserving => IsAvailable && mission != null &&
+            (Volatile.Read(ref trackingHistory) || HealthModifiers.HasDemand);
 
         internal static void Initialize(CrusaderLibraryLoadContext context,string hash,ManualLogSource log)
         {
@@ -67,7 +71,12 @@ namespace APIShared.Health
         private static void OnStart(MissionLifecycleNotification notification)
         {
             if (notification.IsReplay) return;
-            lock (Sync) { Reset(); mission=notification.Context; }
+            lock (Sync)
+            {
+                Reset(); mission=notification.Context;
+                Volatile.Write(ref trackingHistory,mission.IsSave && archiveBytes != null &&
+                    ReferenceEquals(archiveSource,GameMapArchiveManagerAPI.Instance.GetMapArchive()));
+            }
         }
         private static void OnEnd(MissionLifecycleNotification notification) { lock (Sync) Reset(); }
         private static void OnInitialization(MissionLifecycleNotification notification)
@@ -77,6 +86,7 @@ namespace APIShared.Health
         private static void Reset()
         {
             mission=null; prepared=false; scanned=false; fullBasis=false; legacyLords=false; malformed=false;
+            Volatile.Write(ref trackingHistory,false);
             generation=0; Records.Clear(); Units.Clear(); Buildings.Clear(); Applied.Clear(); Completed.Clear();
         }
         private static void BufferArchive(byte[] bytes,LoadContext context)
@@ -87,6 +97,7 @@ namespace APIShared.Health
         {
             if (prepared || mission == null) return;
             prepared=true; fullBasis=!mission.IsSave;
+            Volatile.Write(ref trackingHistory,true);
             if (!mission.IsSave) { archiveBytes=null; archiveSource=null; return; }
             byte[] bytes=ReferenceEquals(archiveSource,GameMapArchiveManagerAPI.Instance.GetMapArchive()) ? archiveBytes : null;
             archiveBytes=null; archiveSource=null;
@@ -144,7 +155,7 @@ namespace APIShared.Health
         {
             lock (Sync)
             {
-                if (mission == null || !HealthModifiers.HasDemand || !UnitAccess.TryGetById(id,out GameUnit* unit,out _) || unit->r_GlobalId == 0) return;
+                if (!IsObserving || !UnitAccess.TryGetById(id,out GameUnit* unit,out _) || unit->r_GlobalId == 0) return;
                 // Import saved generations before assigning a fresh one. Otherwise an early
                 // same-type initialization could collide with a still-buffered saved record.
                 Prepare(); if (malformed) return;
@@ -181,12 +192,19 @@ namespace APIShared.Health
 
         private static void Tick(int tick)
         {
-            if (!IsAvailable || mission == null || !HealthModifiers.HasDemand) return;
+            if (!IsAvailable || mission == null) return;
+            bool applyPolicies=HealthModifiers.HasDemand;
+            if (!Volatile.Read(ref trackingHistory) && !applyPolicies) return;
             lock (Sync)
             {
                 if (mission == null) return;
                 Prepare(); if (malformed) return; ScanOnce();
-                Process(Units,ApplyUnit); Process(Buildings,ApplyBuilding);
+                // One demand sample selects both paths. Provenance-only processing cannot
+                // turn into an HP write if a handle changes while work is being completed.
+                if (applyPolicies)
+                { Process(Units,ApplyUnit); Process(Buildings,ApplyBuilding); }
+                else
+                { Process(Units,CaptureUnitOnly); Process(Buildings,CaptureBuildingOnly); }
             }
         }
         private static void Process(Dictionary<int,Pending> queue,Func<Pending,bool> apply)
@@ -229,18 +247,28 @@ namespace APIShared.Health
                 record.Kind == HealthObjectKind.Unit ? (eChimps)record.Type : default(eChimps),
                 record.Kind == HealthObjectKind.Building ? (eStructs)record.Type : default(eStructs),record.Basis,
                 mission.IsSave && reason == HealthInitializationReason.MissionStart ? HealthInitializationReason.SaveLoaded : reason);
-        private static bool ApplyUnit(Pending pending)
+        private static bool ApplyUnit(Pending pending) => ProcessUnit(pending,true);
+        private static bool CaptureUnitOnly(Pending pending) => ProcessUnit(pending,false);
+        private static bool ProcessUnit(Pending pending,bool applyPolicies)
         {
             long key=HealthRecord.KeyFor(HealthObjectKind.Unit,pending.Id);
             if (!UnitAccess.TryGetById(pending.Id,out GameUnit* unit,out _) || unit->r_GlobalId != pending.Global || (int)unit->r_UnitChimp != pending.Type) return true;
             if (unit->r_AliveState == AliveState.NeedsInit) return false;
             if (!UnitAccess.IsReallyAlive(unit) || unit->r_CurrentHealth == 0 || unit->r_MaxHealth == 0 || Applied.Contains(key)) return true;
             HealthRecord record=Capture(HealthObjectKind.Unit,pending,unit->r_MaxHealth); if (record == null) return true;
+            if (!applyPolicies)
+            {
+                record.AppliedMaximum=unit->r_MaxHealth; record.ProxyMaximum=0;
+                Applied.Add(key); return true;
+            }
             uint maximum=HealthModifiers.Evaluate(Context(record,unit->r_ControllableForPlayerId,pending.Reason),HealthArithmetic.UnitMaximum,out bool contributed);
             if (!contributed)
             {
                 // A neutral/excluded subject is captured for save-load compatibility, never rewritten.
-                record.AppliedMaximum=unit->r_MaxHealth; Applied.Add(key); return true;
+                // A saved proxy target belongs to a previously applied policy. None must
+                // not let that target rewrite a later deployed proxy independently.
+                record.AppliedMaximum=unit->r_MaxHealth; record.ProxyMaximum=0;
+                Applied.Add(key); return true;
             }
             if (unit->r_UnitChimp == eChimps.CHIMP_TYPE_SIEGE_TOWER)
             {
@@ -260,7 +288,9 @@ namespace APIShared.Health
             unit->r_CurrentHealthPercentage=percent; unit->r_HealthBarBlocks=(uint)(percent/10);
             record.AppliedMaximum=maximum; Applied.Add(key); return true;
         }
-        private static bool ApplyBuilding(Pending pending)
+        private static bool ApplyBuilding(Pending pending) => ProcessBuilding(pending,true);
+        private static bool CaptureBuildingOnly(Pending pending) => ProcessBuilding(pending,false);
+        private static bool ProcessBuilding(Pending pending,bool applyPolicies)
         {
             long key=HealthRecord.KeyFor(HealthObjectKind.Building,pending.Id);
             if (!TryBuilding(pending.Id,out GameBuilding* building) || building->r_GlobalId != pending.Global || (int)building->r_BuildingType != pending.Type) return true;
@@ -277,11 +307,16 @@ namespace APIShared.Health
                 long unitKey=HealthRecord.KeyFor(HealthObjectKind.Unit,unitId);
                 if (!Records.TryGetValue(unitKey,out var paired) || paired.GlobalId != tower->r_GlobalId || !Applied.Contains(unitKey))
                     return Units.ContainsKey(unitId) ? false : true;
+                // Keep waiting for the unit's completed generation above, even when dormant.
+                // Otherwise activation before NeedsInit finishes could strand this proxy.
+                if (!applyPolicies) { Applied.Add(key); return true; }
                 if (paired.ProxyMaximum == 0) return true;
                 uint value=HealthArithmetic.ScaleCurrent((uint)building->r_CurrentHealth,building->r_MaxHealth,paired.ProxyMaximum);
                 building->r_MaxHealth=(ushort)paired.ProxyMaximum; building->r_CurrentHealth=(short)value; Applied.Add(key); return true;
             }
             HealthRecord record=Capture(HealthObjectKind.Building,pending,building->r_MaxHealth); if (record == null) return true;
+            if (!applyPolicies)
+            { record.AppliedMaximum=building->r_MaxHealth; Applied.Add(key); return true; }
             uint maximum=HealthModifiers.Evaluate(Context(record,building->r_PlayerIdOwner,pending.Reason),BuildingLimit(building->r_BuildingType),out bool contributed);
             if (!contributed) { record.AppliedMaximum=building->r_MaxHealth; Applied.Add(key); return true; }
             uint current=HealthArithmetic.ScaleCurrent((uint)building->r_CurrentHealth,building->r_MaxHealth,maximum);
@@ -301,8 +336,12 @@ namespace APIShared.Health
             if (!IsAvailable || !context.IsSaveFile || context.IsMapEditorSave) return null;
             lock (Sync)
             {
-                if (mission == null || !HealthModifiers.HasDemand) return null;
+                if (!IsObserving) return null;
                 Prepare(); if (malformed) return null; ScanOnce();
+                // An early dormant resave must commit completed fresh generations too.
+                // Never use the applying wrappers from the save callback.
+                if (!HealthModifiers.HasDemand)
+                { Process(Units,CaptureUnitOnly); Process(Buildings,CaptureBuildingOnly); }
                 // Saving captures pending completed bases but NEVER mutates native HP.
                 foreach (var item in Units)
                     if (UnitAccess.TryGetById(item.Key,out GameUnit* unit,out _) && unit->r_GlobalId == item.Value.Global &&

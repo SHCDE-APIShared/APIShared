@@ -168,6 +168,13 @@ rules, Map/Trail mission settings, personal settings, presets). `IModSettingsSna
 whose meaning changed, and `ModSettingsMigration.MigrateStoredSnapshot` applies both to a
 mod's own stored format; see [renamed and converted settings](MOD_SETTINGS.md#renamed-and-converted-settings).
 
+`ModSettingsMigration.RegisterModMove` adds declarative cross-mod ownership moves to
+that pipeline. Typed moved settings, auxiliary copied settings and fixed destination
+defaults preserve old mission values and author modes without enabling unrelated new
+features. Explicit destination entries win; Player follows the new owner. Save loading
+uses it automatically; Map/Trail sources call `MigrateMissionDocument` before validation
+and caching. See [owner moves](MOD_SETTINGS.md#moving-mission-settings-between-mods).
+
 `MissionModSettingsSession` applies and cleans up temporary contexts with explicit
 playable/preview/authoring/materialized policies and lifecycle-confirmed adoption.
 Internal snapshot application suppresses intermediate transport/storage, isolates
