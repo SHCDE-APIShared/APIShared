@@ -73,6 +73,23 @@ namespace APISharedTests
             Assert.IsTrue(unaffected.IsReady);
         }
 
+        // A failed preparation must not block its owner-ID: a missing or broken file can be fixed and prepared again.
+        [TestMethod]
+        public void AFailedRegistrationCanBePreparedAgainButAPendingOrReadyOneCannot()
+        {
+            var store = new UnitVoiceResourceStore();
+            Assert.IsTrue(store.TryPrepare("owner", "voice", "a.wav", false, 1f,
+                () => throw new InvalidDataException("broken"), action => action(), null, out var failed, out _));
+            Assert.AreEqual(UnitVoiceResourceState.Failed, failed.State);
+            Assert.IsTrue(store.TryPrepare("owner", "voice", "a.wav", false, 1f, Samples, action => action(), null, out var retried, out string reason), reason);
+            Assert.IsTrue(retried.IsReady);
+            Assert.AreEqual(UnitVoiceResourceState.Failed, failed.State, "The old handle keeps its own failure.");
+            Assert.IsFalse(store.TryPrepare("owner", "voice", "a.wav", false, 1f, Samples, action => action(), null, out _, out _), "Ready blocks.");
+            Assert.IsTrue(store.TryPrepare("owner", "queued", "a.wav", false, 1f, Samples, action => { }, null, out var pending, out _));
+            Assert.AreEqual(UnitVoiceResourceState.Pending, pending.State);
+            Assert.IsFalse(store.TryPrepare("owner", "queued", "a.wav", false, 1f, Samples, action => action(), null, out _, out _), "Pending blocks.");
+        }
+
         [TestMethod]
         public void AFailedOldQueueCannotRemoveTheNextMapsRegistration()
         {

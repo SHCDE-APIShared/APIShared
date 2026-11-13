@@ -93,17 +93,6 @@ namespace APIShared.Audio
             // original filename, even when this session has ended before Unity consumes it.
         }
 
-        internal static NativeSiteSpan[] Spans()
-        {
-            var values = new NativeSiteSpan[UnitVoiceNativeContract.Targets.Length];
-            for (int i = 0; i < values.Length; i++)
-            {
-                var target = UnitVoiceNativeContract.Targets[i];
-                values[i] = new NativeSiteSpan(target.Rva, target.Prologue.Length, NativeSiteMode.Exclusive);
-            }
-            return values;
-        }
-
         internal static void Initialize(CrusaderLibraryLoadContext context, ManualLogSource logger, NativeOwnershipRegistry ownership, string hash)
         {
             if (Interlocked.Exchange(ref attempted, 1) != 0) return;
@@ -180,7 +169,12 @@ namespace APIShared.Audio
                 reason => new InvalidOperationException(reason));
             entry.Claimed = true;
             entry.Callback = (a, b, c, d) => Invoke(entry, a, b, c, d);
-            entry.Bridge = new UnitVoiceNativeGuardBridge(entry.Callback, entry.Gate);
+            // The civilian comment runs every engine tick while a worker panel is open, but speaks only for a new
+            // selection. Skipping the managed callback for an unchanged or empty selection is exact.
+            entry.Bridge = target.Kind == 2
+                ? new UnitVoiceNativeGuardBridge(entry.Callback, entry.Gate,
+                    moduleBase + (uint)UnitVoiceNativeContract.SelectedCivilianRva, moduleBase + (uint)UnitVoiceNativeContract.PreviousCivilianRva)
+                : new UnitVoiceNativeGuardBridge(entry.Callback, entry.Gate);
             var request = new DetourRequest<NativeCall> {
                 Name = "APIShared.UnitVoices." + target.Key, TargetAddress = moduleBase + (uint)target.Rva,
                 Callback = entry.Callback, IntermediaryFactory = entry.Bridge
@@ -252,7 +246,7 @@ namespace APIShared.Audio
             if (target.Kind == 0)
             {
                 int requested = unchecked((int)b);
-                next.RequestedType = requested >= 0 && requested < (int)eChimps.CHIMP_NUM_TYPES ? (int?)requested : null;
+                next.RequestedType = requested > (int)eChimps.CHIMP_TYPE_NULL && requested < (int)eChimps.CHIMP_NUM_TYPES ? (int?)requested : null;
                 next.Situation = Situation(unchecked((int)c));
             }
             else if (target.Kind == 1)
@@ -279,7 +273,7 @@ namespace APIShared.Audio
             else if (target.Kind == 3)
             {
                 int requested = unchecked((int)a);
-                next.RequestedType = requested >= 0 && requested < (int)eChimps.CHIMP_NUM_TYPES ? (int?)requested : null;
+                next.RequestedType = requested > (int)eChimps.CHIMP_TYPE_NULL && requested < (int)eChimps.CHIMP_NUM_TYPES ? (int?)requested : null;
                 next.Situation = UnitVoiceSituation.Recruitment;
             }
             return next;
@@ -412,9 +406,13 @@ namespace APIShared.Audio
     // RAX is scratch: every audited entry writes it before reading it; incoming flags are not read.
     internal sealed class UnitVoiceNativeGuardBridge : IDetourIntermediaryFactory
     {
-        private readonly ulong callback, demand;
-        internal UnitVoiceNativeGuardBridge(Delegate callback, IntPtr demand)
-        { this.callback = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(callback).ToInt64()); this.demand = unchecked((ulong)demand.ToInt64()); }
+        private readonly ulong callback, demand, selected, previous;
+        internal UnitVoiceNativeGuardBridge(Delegate callback, IntPtr demand, ulong selected = 0, ulong previous = 0)
+        {
+            this.callback = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(callback).ToInt64()); this.demand = unchecked((ulong)demand.ToInt64());
+            if ((selected == 0) != (previous == 0)) throw new ArgumentException("Selection guard needs both addresses.");
+            this.selected = selected; this.previous = previous;
+        }
         public DetourIntermediaryStubs Create(in DetourIntermediaryContext context)
         {
             if (context.Architecture != DetourArchitecture.X64 || context.TrampolineAddress == IntPtr.Zero)
@@ -422,14 +420,40 @@ namespace APIShared.Audio
             ulong trampoline = unchecked((ulong)context.TrampolineAddress.ToInt64());
             var function = ExecutableFunction.Create(asm => {
                 var active = SoundBridgeCode.EmitGuard(asm, demand, trampoline);
-                asm.Label(ref active); asm.mov(rax, callback); asm.jmp(rax);
+                asm.Label(ref active);
+                if (selected != 0)
+                {
+                    // RAX, R11 and the flags are free at the Win64 entry (R11 is volatile and no argument).
+                    var call = asm.CreateLabel(); var original = asm.CreateLabel();
+                    asm.mov(rax, selected); asm.mov(r11d, __dword_ptr[rax]); asm.test(r11d, r11d); asm.je(original);
+                    asm.mov(rax, previous); asm.cmp(r11d, __dword_ptr[rax]); asm.jne(call);
+                    asm.Label(ref original); asm.mov(rax, trampoline); asm.jmp(rax);
+                    asm.Label(ref call);
+                }
+                asm.mov(rax, callback); asm.jmp(rax);
             });
             return new DetourIntermediaryStubs(function.EntryPoint, context.TrampolineAddress, function);
         }
         internal void Validate(NativeDetour<UnitVoiceNativeRuntime.NativeCall> hook)
         {
             var decoder = SoundBridgeCode.Open(hook.HookEntryPointAddress);
-            SoundBridgeCode.ValidateGuard(decoder, demand, unchecked((ulong)hook.TrampolineAddress.ToInt64()));
+            ulong trampoline = unchecked((ulong)hook.TrampolineAddress.ToInt64());
+            SoundBridgeCode.ValidateGuard(decoder, demand, trampoline);
+            if (selected != 0)
+            {
+                var a = decoder.Decode(); var b = decoder.Decode(); var c = decoder.Decode(); var d = decoder.Decode();
+                var e = decoder.Decode(); var f = decoder.Decode(); var g = decoder.Decode(); var h = decoder.Decode(); var i = decoder.Decode();
+                if (a.Mnemonic != Mnemonic.Mov || a.Op0Register != Register.RAX || a.Immediate64 != selected ||
+                    b.Mnemonic != Mnemonic.Mov || b.Op0Register != Register.R11D || b.MemoryBase != Register.RAX || b.MemoryDisplacement64 != 0 ||
+                    c.Mnemonic != Mnemonic.Test || c.Op0Register != Register.R11D || c.Op1Register != Register.R11D ||
+                    d.Mnemonic != Mnemonic.Je || d.NearBranchTarget != h.IP ||
+                    e.Mnemonic != Mnemonic.Mov || e.Op0Register != Register.RAX || e.Immediate64 != previous ||
+                    f.Mnemonic != Mnemonic.Cmp || f.Op0Register != Register.R11D || f.MemoryBase != Register.RAX || f.MemoryDisplacement64 != 0 ||
+                    g.Mnemonic != Mnemonic.Jne || g.NearBranchTarget != i.NextIP ||
+                    h.Mnemonic != Mnemonic.Mov || h.Op0Register != Register.RAX || h.Immediate64 != trampoline ||
+                    i.Mnemonic != Mnemonic.Jmp || i.Op0Register != Register.RAX)
+                    throw new InvalidOperationException("Unit voice selection guard changed.");
+            }
             var move = decoder.Decode(); var jump = decoder.Decode();
             if (move.Mnemonic != Mnemonic.Mov || move.Op0Register != Register.RAX || move.Immediate64 != callback ||
                 jump.Mnemonic != Mnemonic.Jmp || jump.Op0Register != Register.RAX)

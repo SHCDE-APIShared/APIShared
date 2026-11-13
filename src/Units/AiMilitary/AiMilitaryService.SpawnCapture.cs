@@ -55,7 +55,7 @@ namespace APIShared.Units.AiMilitary
                 }
                 AiMilitaryEngineeringRuntime.OnUnitCreated(identity, unit->r_UnitChimp);
                 SpawnScope current = capture;
-                if (current == null || current.Generation != generation || current.Player != unit->r_ControllableForPlayerId ||
+                if (current == null || !current.IsCapturing || current.Generation != generation || current.Player != unit->r_ControllableForPlayerId ||
                     current.Type != unit->r_UnitChimp) return;
                 current.Created.Add(identity);
             }
@@ -65,7 +65,7 @@ namespace APIShared.Units.AiMilitary
         private long FilterCapturedCreateReturn(long raw, long result)
         {
             SpawnScope scope = capture;
-            if (scope == null) return result;
+            if (scope == null || !scope.IsCapturing) return result;
             if (scope.Generation != generation) return result; // A nested new-world load owns a newer ambient receipt.
             if (raw <= 0 || raw >= UnitIdLimit || !UnitAccess.TryGetById((int)raw, out GameUnit* unit, out _))
             {
@@ -95,6 +95,9 @@ namespace APIShared.Units.AiMilitary
             private readonly IDisposable mutation;
             internal readonly List<AiUnitRef> Created = new List<AiUnitRef>();
             private bool complete, disposed;
+            // Complete can invoke consumer callbacks synchronously. Their new placements do not
+            // belong to the original invocation; retain the scope stack and original-unit guards until Dispose.
+            internal bool IsCapturing => !complete && !disposed;
             internal SpawnScope(AiMilitaryService service, string owner, int player, eChimps type, AiMilitaryAssignment assignment,
                 bool editor, bool apply, Action<AiMilitaryAssignmentResult> completed, SpawnScope previous)
             { this.service = service; this.owner = owner; Player = player; Type = type; this.assignment = assignment;

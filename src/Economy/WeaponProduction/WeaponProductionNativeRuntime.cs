@@ -175,7 +175,7 @@ namespace APIShared.Economy
             if (!TryGetWorker(role, unitId, out worker)) return false;
             int home = worker->r_LinkedProductionBuildingId;
             return home > 0 && home <= WeaponProductionNativeDefinition.MaxBuildingId &&
-                GameBuildingManagerAPI.Instance.TryGetBuildingById(home, out building) && building != null &&
+                BuildingAccess.TryGetById(GameBuildingManagerAPI.Instance, home, out building, out _) && building != null &&
                 building->r_AliveState == AliveState.IsAlive && building->r_BuildingType == role.Building &&
                 building->r_PlayerIdOwner == worker->r_ControllableForPlayerId && building->r_GlobalId != 0 &&
                 building->r_GlobalId == worker->r_LinkedProductionBuildingGlobalId;

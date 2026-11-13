@@ -15,10 +15,11 @@ namespace APIShared.Presentation
             });
         internal static readonly Func<LordMessageMutation, object, LordMessagePostEventArgs> PostFactory =
             (args, state) => new LordMessagePostEventArgs(args, state);
-        /// <summary>Whether the managed presentation contracts and permanent hooks are ready.
+        /// <summary>Whether Lord messages can be replaced now: the managed presentation hooks are installed, their
+        /// IL edit is part of the current GameMap body, and the native message protocol of this game binary is audited.
         /// Vanilla reference availability is reported separately by VanillaLordMessages.</summary>
-        public static bool Available => LordMessageRuntime.Status == "Ready";
-        /// <summary>Managed initialization diagnostic. Unsupported groups continue unchanged.</summary>
+        public static bool Available => LordMessageRuntime.IsReady;
+        /// <summary>"Ready", or the first missing part of <see cref="Available"/>. Unsupported groups continue unchanged.</summary>
         public static string Diagnostic => LordMessageRuntime.Status;
         /// <summary>Isolated callback failures. A throwing Pre rolls back only its own changes and State.</summary>
         public static long CallbackFailures => Registry.CallbackFailures;

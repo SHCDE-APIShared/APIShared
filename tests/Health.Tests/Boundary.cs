@@ -32,6 +32,7 @@ namespace SHCDESE.API
     {
         public static readonly GameBuildingManagerAPI Instance=new GameBuildingManagerAPI();
         public Span<GameBuilding> GetBuildingsAsSpan()=>World.Buildings;
+        public bool IsValidId(int id) => id > 0 && id <= World.Buildings.Length;
         public bool TryGetBuildingById(int id,out GameBuilding* result) { result=id>0&&id<=World.Buildings.Length ? World.BuildingPointer+id-1:null;return result!=null; }
         public int GetDefaultHealth(eStructs type)=>type==eStructs.STRUCT_SIEGE_TOWER ? World.ProxyBasis:1000;
         public int GetWoodCost(eStructs type)=>World.Wood;

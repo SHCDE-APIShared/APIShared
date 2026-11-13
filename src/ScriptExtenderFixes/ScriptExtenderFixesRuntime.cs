@@ -119,10 +119,21 @@ namespace APIShared.ScriptExtenderFixes
                     .Concat(new[] { ImGuiShutdownProbe.Target }));
                 compilerCandidate.Hook.Apply();
                 ImGuiShutdownProbe.Verify(compilerCandidate, ImGuiShutdownProbe.Target, candidates);
+                // Validated above with the raw edits and the audited compiler; MonoMod runs the guarded
+                // manipulators, so a later rebuild of a UU-ImGUI method cannot break other patches of it.
+                var guards = new List<Patching.SafeIlHook>();
                 foreach (var edit in edits)
-                    candidates.Add(new ILHook(edit.Item1, edit.Item2,
-                        new ILHookConfig { ManualApply = true, ID = "APIShared.ScriptExtenderFixes.ImGuiShutdown." + edit.Item1.Name }));
+                {
+                    string id = "APIShared.ScriptExtenderFixes.ImGuiShutdown." + edit.Item1.Name;
+                    var guard = Patching.SafeIlHook.Wrap(APISharedPlugin.PluginGuid, id, edit.Item1, edit.Item2, logger);
+                    guards.Add(guard);
+                    candidates.Add(new ILHook(edit.Item1, guard.Manipulator, new ILHookConfig { ManualApply = true, ID = id }));
+                }
                 foreach (var candidate in candidates) if (!candidate.IsApplied) candidate.Apply();
+                // All eight edits belong together. A rolled-back edit keeps the fix inactive (active stays 0),
+                // so every guard follows the original Extender behavior.
+                foreach (var guard in guards)
+                    if (!guard.IsApplied) throw new InvalidOperationException(guard.Id + " was not applied: " + guard.Diagnostic);
                 hooks = candidates.ToArray();
                 compiler = compilerCandidate;
                 UnityEngine.Application.quitting += OnQuitting;

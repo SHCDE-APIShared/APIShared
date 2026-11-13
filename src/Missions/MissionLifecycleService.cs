@@ -49,6 +49,9 @@ namespace APIShared
             "gameLocalPlayerID", BindingFlags.Instance | BindingFlags.NonPublic);
         internal static GameModeSnapshot Snapshot => published?.state.Context?.Mode ?? default;
         internal static bool HasContext => published?.state.Context != null;
+        // Set before the Start notification is published and cleared before End, so every Start
+        // observer sees it regardless of observer order.
+        internal static bool HasStartedMission => published?.state.Current != null;
         internal static MissionContext ActiveContext => published?.state.Context;
         internal static MissionLifecycleState.NativeClockState NativeClock => published?.state.NativeClock;
         // Identity of the currently loaded native world; null between invalidation and the next successful load.

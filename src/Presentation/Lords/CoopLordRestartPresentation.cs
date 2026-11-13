@@ -14,19 +14,16 @@ namespace APIShared.Presentation
     // The same RestartMPInfo object consequently supplies both persistent and immediate presentation.
     internal static class CoopLordRestartPresentation
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         internal static void Install()
         {
             if (hook != null) return;
             MethodInfo target = typeof(Platform_Multiplayer).GetMethod("StartGame", new[] {
                 typeof(EngineInterface.MultiplayerSetupData), typeof(FileHeader), typeof(int), typeof(int) });
-            ILHook candidate = null;
-            try
-            {
-                candidate = new ILHook(target, Patch, new ILHookConfig { ManualApply = true, ID = "APIShared.CoopLordRestartPresentation" });
-                candidate.Apply(); hook = candidate;
-            }
-            catch { candidate?.Dispose(); throw; }
+            if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.CoopLordRestartPresentation", target, Patch, null,
+                out var installed, out string failure))
+                throw new InvalidOperationException("Coop Lord restart presentation unavailable: " + failure);
+            hook = installed;
         }
         internal static void Patch(ILContext il)
         {
