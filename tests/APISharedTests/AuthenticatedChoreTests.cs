@@ -121,7 +121,7 @@ namespace APISharedTests
             const short packetId = 42;
             var packet = new object();
             var native = new NativeChoreExecution(2, 200000001, 100, 0x1000, 1);
-            bool hasNative = false, changeDuringValidation = false;
+            bool hasNative = false, changeDuringValidation = false, authorized = true;
             int captures = 0, enabledCalls = 0, validations = 0, authorizations = 0, executions = 0, reports = 0;
             CaptureAuthenticatedChore capture = (short id, out NativeChoreExecution value) => {
                 Assert.AreEqual(packetId, id); captures++; value = native; return hasNative;
@@ -131,9 +131,13 @@ namespace APISharedTests
             Func<AuthenticatedChoreMessage<object>, bool> authorize = message => {
                 Assert.AreEqual(2, message.SenderPlayerId); authorizations++;
                 if (changeDuringValidation) native = new NativeChoreExecution(3, 300000001, 100, 0x1000, 2);
-                return true;
+                return authorized;
             };
-            Action<AuthenticatedChoreMessage<object>> execute = message => executions++;
+            Action<AuthenticatedChoreMessage<object>> execute = message =>
+            {
+                Assert.IsTrue(APIShared.Simulation.SimulationMutationScope.IsAuthenticatedChore);
+                executions++;
+            };
             Action<string, Exception> report = (reason, error) => reports++;
             Action<SHCDESE.EventAPI.Network.ReceiveCustomPacketEventArgs<object>> receive = args =>
                 AuthenticatedChoreDelivery<object>.Receive(args, packetId, capture, enabled, validate, authorize, execute, report);
@@ -153,10 +157,18 @@ namespace APISharedTests
             Assert.AreEqual(1, captures); Assert.AreEqual(0, enabledCalls);
             receive(new SHCDESE.EventAPI.Network.ReceiveCustomPacketEventArgs<object>(SHCDESE.EventAPI.EventHookPhase.Post, packetId, packet));
             Assert.AreEqual(3, captures); Assert.AreEqual(1, executions);
+            Assert.IsFalse(APIShared.Simulation.SimulationMutationScope.IsAuthenticatedChore);
             changeDuringValidation = true;
             receive(new SHCDESE.EventAPI.Network.ReceiveCustomPacketEventArgs<object>(SHCDESE.EventAPI.EventHookPhase.Post, packetId, packet));
             Assert.AreEqual(5, captures); Assert.AreEqual(2, enabledCalls); Assert.AreEqual(2, validations);
             Assert.AreEqual(2, authorizations); Assert.AreEqual(1, executions); Assert.AreEqual(4, reports);
+            native = new NativeChoreExecution(2, 200000001, 100, 0x1000, 1);
+            changeDuringValidation = false;
+            authorized = false;
+            receive(new SHCDESE.EventAPI.Network.ReceiveCustomPacketEventArgs<object>(
+                SHCDESE.EventAPI.EventHookPhase.Post, packetId, packet));
+            Assert.AreEqual(3, authorizations);
+            Assert.AreEqual(1, executions);
         }
 
         [TestMethod]

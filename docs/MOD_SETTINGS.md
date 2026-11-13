@@ -55,7 +55,12 @@ Requires APIShared 0.21.0 or later.
 
 `[PresetLocal]` and `[SyncPerPlayer]` are always personal. Mission entry, source
 reset, materialization, save loading, restart and exit never restore older values
-for them. Accepted edits are saved immediately in the existing personal store;
+for them. Accepted edits update the working settings immediately. The personal
+`settings.msgpack` is written once edits pause for about half a second, and in any
+case before mission settings are entered, at launch or restart preparation, at an
+explicit preset save, at each mission start and end and at game exit; a failed write
+is retried at the next of these points. Only a crash within that pause can lose the
+last edit. A personal persistence backend still receives each edit immediately;
 per-player synchronization still uses its existing authority and convergence rules.
 A read-only mission locks only mission-dependent Host settings. Preset loading and
 source reset retain their existing read-only mission gates.
@@ -475,6 +480,33 @@ writes to the plugin directory. The shorter layout reduces installation-path dep
 it does not provide general long-path support for the game or its preset providers.
 Documents resolution and persistence need validation in the actual Proton prefix.
 
+Restart preparations use a separate installation-owned file at
+`SHCDE/APIShared/Inst/<installation-id>/RestartPreparation.json` below the same
+resolved Documents folder. The ID is the first 16 lowercase hexadecimal characters
+of SHA-256 over the absolute configuration directory, with trailing separators
+removed, `/` changed to `\`, and invariant uppercase applied. A durable migration
+receipt verifies the complete normalized identity, so the short ID cannot silently
+select another installation's preparation. Changing plugin folders or APIShared
+versions does not change this identity; moving the configuration directory does.
+
+The old `BepInEx/config/APIShared/RestartPreparation.json` is imported once when no
+new file or completed migration receipt exists. Migration atomically publishes and
+verifies the original bytes before removing the unchanged old file. Invalid journal
+content remains available at the new location for the existing validation and
+explicit discard flow; it is not converted into defaults. Failed publication retains
+the old file for retry. A failed old-file cleanup is reported and does not restore
+legacy reads. The receipt survives consuming or discarding the journal, preventing
+stale old preparations from reappearing. Journal format, content fingerprints and
+mission ownership checks are unchanged; older APIShared versions do not read the
+new location and no parallel legacy copy is maintained.
+
+Unresolved journal storage remains visible in the restart-preparation UI with an
+error description; the visibility getter does not turn the error into permission
+to launch or modify data. Explicit discard can reset an oversized journal while
+preserving an oversized Documents original in a separate file, or retaining an
+oversized legacy source unchanged. This recovery does not bypass installation
+identity, receipt validation, access errors or failed migration publication.
+
 ### External settings and application backends
 
 Settings adapters can override `DynamicSettingsProvider` with an
@@ -539,6 +571,94 @@ files. It does not discover unopened Workshop archives or prove a working UI;
 the runtime check remains necessary for those loading paths and manual installs.
 The dialog uses the save archive, packet protocol, local personal presets and
 host-load agreement of the savegame service. No ExtendedData installation is required for this UI.
+
+## Renamed and converted settings
+
+Saves, Trail author rules, Map and Trail mission settings, the personal settings file and
+preset files store settings by property name, in the form of the mod version that wrote them. Declare a change so
+that this stored data keeps working.
+
+A renamed property names its former stored names, newest first:
+
+```csharp
+[SyncHostOnly, ModSettingRenamedFrom("GoldReward", "Reward")]
+public int KillRewardGold { get; set; }
+```
+
+APIShared then moves a value found under a former name to the current property wherever
+it reads stored settings of that class by name: saved host settings and author rules in a
+save, the Player and fixed settings of a Map or Trail mission document, the personal
+settings file and every bundled, external or personal preset. Stored
+data that already contains the current name keeps that value. The former name disappears
+from the data, and the next write uses the current name only. A former name that is still
+a property of the class, or that two properties claim, is ignored and logged once as
+`MOD_SETTING_RENAME_IGNORED`. The stored value must still deserialize as the property type.
+
+A change of meaning or type needs code. Implement `IModSettingsSnapshotMigration` on the
+settings class: before a save is loaded, APIShared passes the prepared snapshot (after the
+renames) to `System_MigrateMissionSnapshot`, applies the returned snapshot and verifies the
+applied host values against it. Without that step a setter that converts a retired property
+looks like a setter that ignored its value, and the load is refused with "Host setter did
+not apply the prepared value". The converter must not change settings.
+
+A mod that stores settings of such a class in its own format calls
+`ModSettingsMigration.MigrateStoredSnapshot(settings, stored)` on the raw stored values,
+before merging them with defaults. Renames cannot be applied to a merged snapshot, because
+it no longer tells a stored value from a default.
+The helper gives a converter its own dictionary and byte buffers, preserving the input
+comparer and null values. In-place conversion and a rejected conversion leave the raw
+stored data unchanged; the converter's returned dictionary is used as-is. Without a
+converter, an unchanged snapshot can be returned directly, so the result is not a
+general-purpose deep copy of the input.
+
+## Moving mission settings between mods
+
+APIShared 0.51.0 extends the existing migration pipeline with explicit owner moves.
+The destination mod registers `ModSettingsMigration.RegisterModMove(ownerGuid,
+registrationId, definition)` during initialization, before any mission preparation.
+`ModSettingsModMove` names the source and destination GUIDs, typed `ModSettingMove`
+entries, optional copied auxiliary settings and fixed scalar destination defaults.
+The registering owner must equal the destination. Registration is process-lived;
+identical owner/id declarations are idempotent. Conflicts, ambiguous claims and cycles
+throw without publishing the new declaration. Deterministically ordered chains are
+supported; one declaration owns each destination.
+
+A moved property in stored values or author rules is positive evidence of the old
+configuration. Rules retained while their owner is uninstalled still migrate even
+without stored values. A source GUID or a copied activation setting alone is
+insufficient. Mission values retain their validated wire representation, including
+enum names and JSON doubles for float settings. An explicit destination in
+saved values or author rules wins as a whole, including a disabled or empty entry.
+Moved properties leave the detached effective source even when an explicit target
+wins; copied settings remain there. This canonical cleanup prevents an empty target
+which a later codec/pruning pass omits from resurrecting obsolete source values.
+Defaults are applied before actual source values and rules. Fixed author values stay
+fixed; Player rules resolve against the destination owner's current personal/host
+settings. This is an intentional ownership change, not a historical-source alias.
+No personal settings file is imported by this API.
+
+Save preparation applies owner moves after wire validation but before matching
+participants, then applies the existing property renames and snapshot conversions.
+Required conversion errors refuse preparation; they do not select current settings
+as an invalid-record fallback. Choosing current settings still uses current values,
+subject to the existing author rules. A strict Trail resets saved values before
+applying author rules, so a newly introduced destination feature which must stay off
+needs a fixed false destination default, not only a saved false value.
+
+Map/Trail consumers call `ModSettingsMigration.MigrateMissionDocument(document)`
+before provider validation, pruning or caching author/reset sources. It returns a
+detached schema-3 document; it never rewrites the source file. `MissionModSettingsSession`
+also applies the migration before provider matching. Its existing supplied-document
+update contract remains in effect. Consumers must keep the migrated author document,
+not substitute a snapshot of materialized live values. On subsequent ordinary writes,
+the canonical destination entries are saved. Wire formats and unrelated missing-mod
+disabled behavior are unchanged.
+
+For example, when moving a group of boolean settings, mark the group's actual
+properties as moved, copy its shared old `EnableMod` only as an auxiliary setting,
+and provide false defaults for unrelated new destination features. Do not mark the
+master switch as the sole trigger: a modern save intentionally created without the
+destination mod can legitimately contain that same source master switch.
 
 ## Locking an individual setting during a mission
 

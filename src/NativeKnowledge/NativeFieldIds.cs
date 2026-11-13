@@ -179,6 +179,10 @@ namespace APIShared.NativeKnowledge
         public const string F000091 = "nkf-000091";
         /// <summary>GameUnit storage, currently described as NearestEnemyDistanceRaw; see catalog evidence.</summary>
         public const string F000092 = "nkf-000092";
+        /// <summary>GameBuilding storage for the latched weapon-production goods ID.</summary>
+        public const string F000093 = "nkf-000093";
+        /// <summary>GameBuilding storage for the requested next weapon-production goods ID.</summary>
+        public const string F000094 = "nkf-000094";
     }
 
     /// <summary>Record family identities; views must begin at the documented origin.</summary>

@@ -33,7 +33,8 @@ namespace APISharedTests
             {
                 foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                 {
-                    if (!IsAuditedGateNativeType(type, method, null))
+                    if (!IsAuditedGateNativeType(type, method, null) &&
+                        !IsAuditedAiObservationPointer(type, method.Name, method.ReturnType))
                         AssertSafePublicType(method.ReturnType, $"{type.FullName}.{method.Name} return type");
                     foreach (ParameterInfo parameter in method.GetParameters())
                     {
@@ -44,6 +45,17 @@ namespace APISharedTests
                             parameter.ParameterType.GetElementType().IsPointer &&
                             parameter.ParameterType.GetElementType().GetElementType() == typeof(SHCDESE.Interop.GameUnit))
                             continue;
+                        if (type == typeof(BuildingAccess) && method.Name == "TryGetById" &&
+                            method.IsStatic && method.ReturnType == typeof(bool) && parameter.Name == "building" &&
+                            parameter.IsOut && parameter.ParameterType == typeof(SHCDESE.Interop.GameBuilding).MakePointerType().MakeByRefType())
+                        {
+                            Type[] signature = method.GetParameters().Select(item => item.ParameterType).ToArray();
+                            Type output = typeof(SHCDESE.Interop.GameBuilding).MakePointerType().MakeByRefType();
+                            Type reason = typeof(BuildingLookupFailure).MakeByRefType();
+                            if (signature.SequenceEqual(new[] { typeof(int), output, reason }) ||
+                                signature.SequenceEqual(new[] { typeof(SHCDESE.API.GameBuildingManagerAPI), typeof(int), output, reason }))
+                                continue;
+                        }
                         if (type == typeof(UnitAccess) && method.Name == "IsReallyAlive" &&
                             method.ReturnType == typeof(bool) && method.GetParameters().Length == 1 &&
                             parameter.Name == "unit" &&
@@ -65,10 +77,22 @@ namespace APISharedTests
                         foreach (ParameterInfo parameter in constructor.GetParameters())
                             AssertSafePublicType(parameter.ParameterType, $"{type.FullName} constructor parameter {parameter.Name}");
                 foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                    AssertSafePublicType(property.PropertyType, $"{type.FullName}.{property.Name} property type");
+                    if (!IsAuditedAiObservationPointer(type, property.Name, property.PropertyType))
+                        AssertSafePublicType(property.PropertyType, $"{type.FullName}.{property.Name} property type");
                 foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
                     AssertSafePublicType(field.FieldType, $"{type.FullName}.{field.Name} field type");
             }
+        }
+        private static bool IsAuditedAiObservationPointer(Type owner, string member, Type actual)
+        {
+            // These two immutable native observations deliberately expose only the invocation's
+            // manager for immediate diagnostic copying. They expose no invocation/ownership API.
+            // Exact member/type exceptions retain the general native-pointer prohibition.
+            if ((owner != typeof(APIShared.Units.AiMilitary.AiGlobalTaskObservation) &&
+                owner != typeof(APIShared.Units.AiMilitary.AiStrategicOrderObservation)) ||
+                (member != "NativeManager" && member != "get_NativeManager")) return false;
+            Assert(actual == typeof(IntPtr), "audited immediate AI observation manager pointer");
+            return true;
         }
         // Explicitly audited advanced native API. No namespace-wide pointer exemption.
         private static bool IsAuditedGateNativeType(Type owner, MethodInfo method, ParameterInfo parameter)
@@ -209,7 +233,7 @@ namespace APISharedTests
         {
             byte[] image = CreatePeImage(0x4000, true);
             var runtime = new ApiSharedRuntime();
-            int early = 0, later = 0, failedCallbacks = 0;
+            int early = 0, later = 0, failedCallbacks = 0, earlySeenByServiceAfterPublication = -1;
             runtime.WhenReady(_ => early++);
             runtime.RunNativeInitialization(null,
                 new NativeInitializationStep("repair tooltip binding",
@@ -219,10 +243,14 @@ namespace APISharedTests
                     _ => { failedCallbacks++; throw new InvalidOperationException("failure handler"); }),
                 new NativeInitializationStep("later step", () => later++),
                 new NativeInitializationStep("native API publication",
-                    () => runtime.Initialize(ModuleBase, image, "UNKNOWN", new FakeMemory(), null, null, false)));
+                    () => runtime.Initialize(ModuleBase, image, "UNKNOWN", new FakeMemory(), null, null, false)),
+                new NativeInitializationStep("service initialized after publication",
+                    () => earlySeenByServiceAfterPublication = early));
             Assert(later == 1 && failedCallbacks == 1, "a failed step skipped a later independent step");
             Assert(runtime.State == NativeApiState.Ready && early == 1,
                 "a failed step before publication left WhenReady pending");
+            Assert(earlySeenByServiceAfterPublication == 0,
+                "WhenReady ran before a later initialization step; consumers could not register with that service");
             Assert(!runtime.TryGetBuildingRepair("owner", out _, out NativeCapabilityDiagnostic repair) &&
                 repair.State == NativeCapabilityState.Faulted && repair.Reason.Contains("repair tooltip binding") &&
                 repair.Reason.Contains("binding failed"), "the failed step's capability did not report Faulted with its reason");

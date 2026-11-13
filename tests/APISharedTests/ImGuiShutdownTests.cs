@@ -50,7 +50,9 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void LoadedNativeMustBeTheBundledPartnerWithoutAFixedFingerprint()
+        [DataRow(4)]
+        [DataRow(131089)] // Includes two 64 KiB blocks and a partial tail with the mismatch.
+        public void LoadedNativeMustBeTheBundledPartnerWithoutAFixedFingerprint(int length)
         {
             string directory = Path.Combine(Path.GetTempPath(), "APIShared-ImGuiPair-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
@@ -58,10 +60,15 @@ namespace APISharedTests
             {
                 string bundled = Path.Combine(directory, "bundled.dll"), same = Path.Combine(directory, "same.dll"),
                     changed = Path.Combine(directory, "changed.dll"), shorter = Path.Combine(directory, "shorter.dll");
-                File.WriteAllBytes(bundled, new byte[] { 1, 2, 3, 4 });
-                File.WriteAllBytes(same, new byte[] { 1, 2, 3, 4 });
-                File.WriteAllBytes(changed, new byte[] { 1, 2, 3, 5 });
-                File.WriteAllBytes(shorter, new byte[] { 1, 2, 3 });
+                var content = new byte[length];
+                content[0] = 1;
+                content[length - 1] = 4;
+                File.WriteAllBytes(bundled, content);
+                File.WriteAllBytes(same, content);
+                content[length - 1] = 5;
+                File.WriteAllBytes(changed, content);
+                Array.Resize(ref content, length - 1);
+                File.WriteAllBytes(shorter, content);
                 Assert.IsTrue(ScriptExtenderFixesRuntime.SameContent(bundled, same));
                 Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, changed));
                 Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, shorter));

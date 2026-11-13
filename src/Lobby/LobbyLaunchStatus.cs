@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -8,80 +9,11 @@ using APIShared.Internal;
 using APIShared.Localization;
 using BepInEx.Logging;
 using CrusaderDE;
+using SHCDESE.API;
+using Steamworks;
 
 namespace APIShared.Lobby
 {
-    /// <summary>How a lobby launch status item is announced.</summary>
-    public enum LobbyLaunchStatusKind
-    {
-        /// <summary>A condition that currently prevents Ready/Start; announced immediately.</summary>
-        Blocking = 0,
-        /// <summary>An expected transitional state, such as a joining player loading the selected mission.
-        /// Announced as a neutral wait hint; reported as blocking only if it persists.</summary>
-        Loading = 1,
-        /// <summary>An obvious open-ended wait, such as a lobby without its second player. Never announced;
-        /// while present it suppresses the "ready" announcement.</summary>
-        Waiting = 2,
-    }
-
-    /// <summary>Who sees an entry reported while the local player is a lobby member rather than the host.</summary>
-    /// <remarks>The host always announces its entries to the whole lobby.</remarks>
-    public enum LobbyLaunchStatusScope
-    {
-        /// <summary>Shown only in the local lobby chat. Use it for states the host already reports for every player.</summary>
-        Local = 0,
-        /// <summary>Sent to the whole lobby. Use it for local conditions the host cannot detect, such as a missing file.</summary>
-        Lobby = 1,
-    }
-
-    /// <summary>The lobby command a consumer rejected; APIShared supplies the localized label.</summary>
-    public enum LobbyLaunchOperation
-    {
-        /// <summary>The Ready or ReadyLock command of a lobby member.</summary>
-        Ready = 0,
-        /// <summary>A start command, such as the host's Play or Coop start.</summary>
-        Start = 1,
-    }
-
-    /// <summary>One immutable, player-facing launch status entry.</summary>
-    public sealed class LobbyLaunchStatusItem
-    {
-        /// <summary>Creates a <see cref="LobbyLaunchStatusScope.Local"/> entry. <paramref name="text"/> is shown in lobby
-        /// chat in the sender's language; <paramref name="detail"/> is written only to the local log.</summary>
-        public LobbyLaunchStatusItem(string text, LobbyLaunchStatusKind kind = LobbyLaunchStatusKind.Blocking, string detail = null)
-            : this(text, kind, detail, LobbyLaunchStatusScope.Local) { }
-
-        /// <summary>Creates an entry with an explicit audience; <paramref name="scope"/> applies to lobby members.</summary>
-        public LobbyLaunchStatusItem(string text, LobbyLaunchStatusKind kind, string detail, LobbyLaunchStatusScope scope)
-        {
-            Text = (text ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
-            Kind = kind;
-            Detail = detail ?? string.Empty;
-            Scope = scope;
-        }
-        /// <summary>Localized text; its ordinal value identifies the entry for deduplication.</summary>
-        public string Text { get; }
-        /// <summary>Announcement class of this entry.</summary>
-        public LobbyLaunchStatusKind Kind { get; }
-        /// <summary>Technical log detail; never sent to other players.</summary>
-        public string Detail { get; }
-        /// <summary>Audience of the entry while the local player is a lobby member; ignored on the host.</summary>
-        public LobbyLaunchStatusScope Scope { get; }
-    }
-
-    /// <summary>Lobby passed to providers during one refresh.</summary>
-    public sealed class LobbyLaunchStatusQuery
-    {
-        internal LobbyLaunchStatusQuery(ulong lobbyId, bool isHost, FRONT_Multiplayer lobby)
-        { LobbyId = lobbyId; IsHost = isHost; Lobby = lobby; }
-        /// <summary>Steam identifier of the active lobby.</summary>
-        public ulong LobbyId { get; }
-        /// <summary>Whether the local player hosts the lobby.</summary>
-        public bool IsHost { get; }
-        /// <summary>Vanilla lobby view; read it only during the provider call.</summary>
-        public FRONT_Multiplayer Lobby { get; }
-    }
-
     /// <summary>Shared, deduplicated lobby chat announcements explaining why a multiplayer lobby cannot start yet.</summary>
     /// <remarks>
     /// Consumers keep their own launch checks and enforcement; this service only explains them. Providers are
@@ -114,6 +46,8 @@ namespace APIShared.Lobby
         private static readonly LobbyLaunchAnnouncementState LocalOnly = new LobbyLaunchAnnouncementState();
         private static readonly LobbyLaunchReceivedLines Received = new LobbyLaunchReceivedLines();
         private static readonly object TimerGate = new object();
+        private static readonly Lazy<ManualLogSource> EarlyAttemptLog =
+            new Lazy<ManualLogSource>(() => Logger.CreateLogSource("APIShared.LobbyLaunch"));
         private static ManualLogSource log;
         private static Timer dueTimer;
         private static int refreshQueued;
@@ -147,7 +81,8 @@ namespace APIShared.Lobby
         public static void ReportAttempt(string ownerGuid, LobbyLaunchOperation operation, LobbyLaunchStatusItem item)
         {
             if (item == null || item.Text.Length == 0) return;
-            Report(true, "LOBBY_LAUNCH_BLOCKED owner=" + ownerGuid + ", operation=" + operation + ": " + item.Text, item.Detail);
+            WriteAttemptError(log, "LOBBY_LAUNCH_BLOCKED owner=" + ownerGuid + ", operation=" + operation + ": " + item.Text,
+                item.Detail);
             if (!IsAvailable) return;
             // Lobby and chat state belong to the Unity thread; other callers are marshalled without blocking.
             if (!UnityMainThreadDispatch.IsMainThread)
@@ -156,6 +91,64 @@ namespace APIShared.Lobby
                 return;
             }
             AnnounceAttempt(operation, item);
+        }
+
+        // Coordinators own timing, attempt identity and repeat suppression. UI delivery
+        // is scoped to the same lobby, including after a queued main-thread handoff.
+        internal static void ReportPreparationWaiting(ManualLogSource fallback, string text, string detail, ulong lobbyId,
+            bool broadcast, bool showLocal)
+        {
+            NativeApiLog.Info(log ?? fallback, PreparationLogLine("LOBBY_LAUNCH_LOADING", lobbyId, text) +
+                (string.IsNullOrEmpty(detail) ? string.Empty : "; " + detail));
+            AnnouncePreparation(text, lobbyId, broadcast, showLocal, LobbyLaunchAnnouncementKind.Loading);
+        }
+
+        internal static void ReportPreparationBlocked(ManualLogSource fallback, string text, string detail, ulong lobbyId,
+            bool broadcast, bool showLocal)
+        {
+            WriteAttemptError(log ?? fallback, PreparationLogLine("LOBBY_LAUNCH_BLOCKED", lobbyId, text), detail);
+            AnnouncePreparation(text, lobbyId, broadcast, showLocal, LobbyLaunchAnnouncementKind.Blocked);
+        }
+
+        private static string PreparationLogLine(string kind, ulong lobbyId, string text) =>
+            kind + " operation=Start, lobby=" + lobbyId + ": " + text;
+
+        private static void AnnouncePreparation(string text, ulong lobbyId, bool broadcast, bool showLocal,
+            LobbyLaunchAnnouncementKind kind)
+        {
+            if (!IsAvailable || lobbyId == 0 || (!broadcast && !showLocal)) return;
+            if (UnityMainThreadDispatch.IsMainThread) AnnouncePreparationCore(text, lobbyId, broadcast, kind);
+            else UnityMainThreadDispatch.TryEnqueue(() => AnnouncePreparationCore(text, lobbyId, broadcast, kind));
+        }
+
+        private static void AnnouncePreparationCore(string text, ulong expectedLobby, bool broadcast, LobbyLaunchAnnouncementKind kind)
+        {
+            try
+            {
+                if (!TryGetLobby(out ulong lobbyId, out bool isHost, out var view) || lobbyId != expectedLobby) return;
+                var item = new LobbyLaunchStatusItem(text);
+                if (item.Text.Length == 0) return;
+                string reason = kind == LobbyLaunchAnnouncementKind.Blocked
+                    ? item.Text + " " + UiText.Get("LobbyLaunch.TryAgain") : item.Text;
+                var lines = LobbyLaunchChat.Format(Prefix(kind) + " (" +
+                    OperationText(LobbyLaunchOperation.Start) + ")", new[] { reason });
+                DateTime now = DateTime.UtcNow;
+                if (broadcast && isHost) SendExplicit(lobbyId, lines, now);
+                else ShowLocal(view, lines, now, deduplicate: false);
+            }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_ATTEMPT_FAILED: " + error, null); }
+        }
+
+        internal static void WriteAttemptError(ManualLogSource target, string text, string detail)
+        {
+            // An explicit rejection is one event per attempt. RuntimeHealth throttles repeating background faults.
+            try
+            {
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                string line = string.IsNullOrEmpty(detail) ? text : text + "; " + detail;
+                (DebugLogHelper.UnwrapServiceLog(target) ?? EarlyAttemptLog.Value).LogError("[" + timestamp + "] " + line.Replace('\r', ' ').Replace('\n', ' '));
+            }
+            catch { /* Reporting must not interrupt the rejection. */ }
         }
 
         private static void AnnounceAttempt(LobbyLaunchOperation operation, LobbyLaunchStatusItem item)
@@ -168,8 +161,8 @@ namespace APIShared.Lobby
                     Broadcast.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
                     LocalOnly.MarkAnnounced(Scope(lobbyId, isHost), item.Text);
                     // A rejected click is always answered, even if another player has just sent the same line.
-                    Send(LobbyLaunchChat.Format(Prefix(LobbyLaunchAnnouncementKind.Blocked) + " (" + OperationText(operation) + ")",
-                        new[] { item.Text }), now, deduplicate: false);
+                    SendExplicit(lobbyId, LobbyLaunchChat.Format(Prefix(LobbyLaunchAnnouncementKind.Blocked) + " (" + OperationText(operation) + ")",
+                        new[] { item.Text }), now);
                 }
             }
             catch (Exception error) { Report(false, "LOBBY_LAUNCH_ATTEMPT_FAILED: " + error, null); }
@@ -268,13 +261,13 @@ namespace APIShared.Lobby
             }
         }
 
-        private static void ShowLocal(FRONT_Multiplayer view, IEnumerable<string> lines, DateTime now)
+        private static void ShowLocal(FRONT_Multiplayer view, IEnumerable<string> lines, DateTime now, bool deduplicate = true)
         {
             try
             {
                 foreach (string line in lines)
                 {
-                    if (Received.Contains(line, now)) continue;
+                    if (deduplicate && Received.Contains(line, now)) continue;
                     if (LobbyChatPresentation.TryShowLocal(view, line)) RevealCoopChat();
                     else Report(false, "LOBBY_LAUNCH_LOCAL_UNAVAILABLE: " + line, null);
                 }
@@ -314,7 +307,37 @@ namespace APIShared.Lobby
             }
         }
 
-        private static void Send(IEnumerable<string> messages, DateTime now, bool deduplicate = true)
+        private static void SendExplicit(ulong lobbyId, IEnumerable<string> messages, DateTime now) =>
+            LobbyLaunchChat.SendOrShowLocal(messages, message => TrySendExplicit(lobbyId, message, now),
+                message =>
+                {
+                    if (TryGetLobby(out ulong current, out _, out var view) && current == lobbyId)
+                        ShowLocal(view, new[] { message }, now, deduplicate: false);
+                });
+
+        private static bool TrySendExplicit(ulong lobbyId, string message, DateTime now)
+        {
+            if (!TryGetLobby(out ulong current, out _, out _) || current != lobbyId) return false;
+            // Keep Extender's outbound notification. The Vanilla wrapper discards Steam's
+            // result, so explicit system hints call the same Steam method directly.
+            try { GameNetworkAPI.Instance.HandleSendLobbyChatMessage(message); }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_SEND_OBSERVER_FAILED: " + error, null); }
+            if (!TryGetLobby(out current, out _, out _) || current != lobbyId) return false;
+            try
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(message);
+                if (SteamMatchmaking.SendLobbyChatMsg(new CSteamID(lobbyId), bytes, bytes.Length))
+                {
+                    Received.ExpectEcho(message, now);
+                    return true;
+                }
+                Report(false, "LOBBY_LAUNCH_SEND_FAILED: Steam rejected the lobby system message.", null);
+            }
+            catch (Exception error) { Report(false, "LOBBY_LAUNCH_SEND_FAILED: " + error, null); }
+            return false;
+        }
+
+        private static bool Send(IEnumerable<string> messages, DateTime now, bool deduplicate = true)
         {
             try
             {
@@ -325,12 +348,14 @@ namespace APIShared.Lobby
                     Received.ExpectEcho(message, now);
                     Platform_Multiplayer.Instance.SendLobbyChatMessage(message);
                 }
+                return true;
             }
             catch (Exception error)
             {
                 // A later refresh announces the current state again instead of assuming delivery.
                 Broadcast.Reset();
                 Report(false, "LOBBY_LAUNCH_SEND_FAILED: " + error, null);
+                return false;
             }
         }
 
@@ -364,192 +389,6 @@ namespace APIShared.Lobby
                 string part = (parts.Count == 1 ? "" : "[" + (index + 1) + "/" + parts.Count + "] ") + parts[index];
                 if (error) NativeApiLog.Error(log, part); else NativeApiLog.Warning(log, part);
             }
-        }
-    }
-
-    internal enum LobbyLaunchAnnouncementKind { Loading, Blocked, Ready }
-
-    internal sealed class LobbyLaunchAnnouncement
-    {
-        internal LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind kind, string[] texts) { Kind = kind; Texts = texts; }
-        internal LobbyLaunchAnnouncementKind Kind { get; }
-        internal string[] Texts { get; }
-    }
-
-    // Pure state; all time is supplied by the caller. Not thread-safe: the service uses it on the Unity thread only.
-    internal sealed class LobbyLaunchAnnouncementState
-    {
-        internal static readonly TimeSpan LoadingEscalation = TimeSpan.FromSeconds(20);
-        internal static readonly TimeSpan LoadingGrace = TimeSpan.FromSeconds(1.5);
-        internal static readonly TimeSpan ReadyDelay = TimeSpan.FromSeconds(1.5);
-        private string scope = string.Empty;
-        private readonly Dictionary<string, DateTime> loadingSince = new Dictionary<string, DateTime>(StringComparer.Ordinal);
-        private readonly HashSet<string> announcedBlocking = new HashSet<string>(StringComparer.Ordinal);
-        // Loading phase: hintSent = wait hint announced; phaseCommunicated = hint sent or a loading text the players
-        // already saw as a rejected command, so the phase's end is worth a "ready".
-        private bool readyPending, hintSent, phaseCommunicated;
-        private DateTime? loadingPhaseSince, emptySince;
-
-        internal void Reset()
-        {
-            scope = string.Empty; loadingSince.Clear(); announcedBlocking.Clear();
-            readyPending = hintSent = phaseCommunicated = false; loadingPhaseSince = emptySince = null;
-        }
-
-        // A rejected command was announced: later refreshes do not repeat its text. It does not arm "ready" by
-        // itself; only provider entries describe a state that can end.
-        internal void MarkAnnounced(string currentScope, string text)
-        {
-            EnterScope(currentScope);
-            announcedBlocking.Add(text);
-        }
-
-        internal IReadOnlyList<LobbyLaunchAnnouncement> Observe(string currentScope, IEnumerable<LobbyLaunchStatusItem> items,
-            DateTime now, bool announceReady, out DateTime? nextDue)
-        {
-            EnterScope(currentScope);
-            var loading = new List<string>();
-            var blocking = new List<string>();
-            bool waiting = false;
-            foreach (LobbyLaunchStatusItem item in items ?? Enumerable.Empty<LobbyLaunchStatusItem>())
-            {
-                if (item == null || item.Text.Length == 0) continue;
-                if (item.Kind == LobbyLaunchStatusKind.Waiting) { waiting = true; continue; }
-                List<string> target = item.Kind == LobbyLaunchStatusKind.Loading ? loading : blocking;
-                if (!target.Contains(item.Text, StringComparer.Ordinal)) target.Add(item.Text);
-            }
-            // An entry reported as blocking by any owner is not also shown as loading.
-            loading.RemoveAll(text => blocking.Contains(text, StringComparer.Ordinal));
-
-            foreach (string stale in loadingSince.Keys.Where(text => !loading.Contains(text, StringComparer.Ordinal)).ToArray())
-                loadingSince.Remove(stale);
-            foreach (string text in loading)
-                if (!loadingSince.ContainsKey(text)) loadingSince[text] = now;
-            // Escalated loading entries are announced as blocking and tracked like blocking entries.
-            var due = loading.Where(text => now - loadingSince[text] >= LoadingEscalation).ToList();
-            var currentBlocking = blocking.Concat(due).ToList();
-            var result = new List<LobbyLaunchAnnouncement>();
-            var pendingLoading = loading.Except(due, StringComparer.Ordinal).ToArray();
-            if (loading.Count == 0) { loadingPhaseSince = null; hintSent = phaseCommunicated = false; }
-            else if (!loadingPhaseSince.HasValue) loadingPhaseSince = now;
-            if (loading.Any(text => announcedBlocking.Contains(text))) phaseCommunicated = true;
-            // One wait hint per loading phase, only once it has lasted LoadingGrace: short synchronizations stay
-            // silent, and texts that change while players load are not repeated. A reason the players have just seen
-            // as a rejected command is not repeated as a wait hint either.
-            if (pendingLoading.Length != 0 && !hintSent && now - loadingPhaseSince.Value >= LoadingGrace)
-            {
-                hintSent = phaseCommunicated = true;
-                string[] hint = pendingLoading.Where(text => !announcedBlocking.Contains(text)).ToArray();
-                if (hint.Length != 0) result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Loading, hint));
-            }
-            announcedBlocking.IntersectWith(currentBlocking);
-            if (currentBlocking.Any(text => !announcedBlocking.Contains(text)))
-                result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Blocked, currentBlocking.ToArray()));
-            announcedBlocking.UnionWith(currentBlocking);
-
-            // Only a communicated state earns a "ready": blocking entries (always announced) and loading phases whose
-            // hint was sent or whose reason the players saw as a rejected command. A silent short synchronization and
-            // a rejected command alone (no provider entry) never arm it.
-            bool reported = loading.Count != 0 || blocking.Count != 0;
-            if (announceReady && (currentBlocking.Count != 0 || loading.Count != 0 && phaseCommunicated)) readyPending = true;
-            if (reported || waiting || !readyPending) emptySince = null;
-            else
-            {
-                // A single empty refresh, e.g. right after a rejected click, must not claim readiness.
-                if (!emptySince.HasValue) emptySince = now;
-                if (now - emptySince.Value >= ReadyDelay)
-                {
-                    readyPending = false; emptySince = null;
-                    result.Add(new LobbyLaunchAnnouncement(LobbyLaunchAnnouncementKind.Ready, Array.Empty<string>()));
-                }
-            }
-
-            nextDue = emptySince.HasValue ? emptySince.Value + ReadyDelay : (DateTime?)null;
-            if (pendingLoading.Length != 0 && !hintSent)
-            {
-                DateTime hintDue = loadingPhaseSince.Value + LoadingGrace;
-                if (!nextDue.HasValue || hintDue < nextDue.Value) nextDue = hintDue;
-            }
-            foreach (string text in pendingLoading)
-            {
-                DateTime candidate = loadingSince[text] + LoadingEscalation;
-                if (!nextDue.HasValue || candidate < nextDue.Value) nextDue = candidate;
-            }
-            return result;
-        }
-
-        private void EnterScope(string currentScope)
-        {
-            if (string.Equals(scope, currentScope ?? string.Empty, StringComparison.Ordinal)) return;
-            Reset();
-            scope = currentScope ?? string.Empty;
-        }
-    }
-
-    // Announcement lines recently received from other players. Unity thread only.
-    internal sealed class LobbyLaunchReceivedLines
-    {
-        internal static readonly TimeSpan Window = TimeSpan.FromSeconds(5);
-        private const int Capacity = 64;
-        private readonly Dictionary<string, DateTime> received = new Dictionary<string, DateTime>(StringComparer.Ordinal);
-        private readonly Dictionary<string, DateTime> echoes = new Dictionary<string, DateTime>(StringComparer.Ordinal);
-
-        internal void Clear() { received.Clear(); echoes.Clear(); }
-
-        // Steam delivers a sent lobby line back to its sender; that echo must not suppress the sender's own retry.
-        internal void ExpectEcho(string line, DateTime now) => Put(echoes, line, now);
-
-        internal void Note(string line, DateTime now)
-        {
-            if (echoes.TryGetValue(line, out DateTime sent) && now - sent < Window) { echoes.Remove(line); return; }
-            Put(received, line, now);
-        }
-
-        internal bool Contains(string line, DateTime now) => received.TryGetValue(line, out DateTime at) && now - at < Window;
-
-        private static void Put(Dictionary<string, DateTime> lines, string line, DateTime now)
-        {
-            if (lines.Count >= Capacity)
-                foreach (string old in lines.Where(entry => now - entry.Value >= Window).Select(entry => entry.Key).ToArray())
-                    lines.Remove(old);
-            if (lines.Count >= Capacity) lines.Clear();
-            lines[line] = now;
-        }
-    }
-
-    internal static class LobbyLaunchChat
-    {
-        internal const int MaximumMessageLength = 280;
-
-        // Numbered parts keep every text; a part never ends inside a surrogate pair.
-        internal static string[] Format(string prefix, IEnumerable<string> texts)
-        {
-            string body = prefix + ": " + string.Join("; ", texts.Where(text => !string.IsNullOrWhiteSpace(text))
-                .Distinct(StringComparer.Ordinal));
-            const int numbering = 10; // "[99/99] "
-            List<string> parts = Split(body, MaximumMessageLength - LobbyLaunchStatus.Marker.Length - numbering);
-            return parts.Select((part, index) => LobbyLaunchStatus.Marker +
-                (parts.Count == 1 ? string.Empty : "[" + (index + 1) + "/" + parts.Count + "] ") + part).ToArray();
-        }
-
-        internal static List<string> Split(string text, int limit)
-        {
-            var parts = new List<string>();
-            int offset = 0;
-            while (offset < text.Length)
-            {
-                int length = Math.Min(limit, text.Length - offset);
-                if (offset + length < text.Length)
-                {
-                    // Prefer the last space in the final third of the part.
-                    int space = text.LastIndexOf(' ', offset + length - 1, length);
-                    if (space > offset + limit * 2 / 3) length = space - offset + 1;
-                    else if (char.IsHighSurrogate(text[offset + length - 1])) length--;
-                }
-                parts.Add(text.Substring(offset, length).Trim());
-                offset += length;
-            }
-            return parts;
         }
     }
 }

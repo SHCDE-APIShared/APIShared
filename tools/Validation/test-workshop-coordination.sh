@@ -38,7 +38,7 @@ for case_name in backup apply receipt restore; do
     if [[ $case_name == restore ]]; then
         mkdir -p -- "$old/Backup"; cp -- "$target" "$old/Backup/0"; printf updated > "$target"
         printf 'applying\nbegin\t0\ndone\t0\n' > "$old/journal.log"
-        transaction="$state/Transactions/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; mkdir -p -- "$transaction"
+        transaction="$game/_APIShared/T/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; mkdir -p -- "$transaction"
         printf 'APISHARED-WORKSHOP-RECOVERY-1\nstop\n%s\t%s\t%s\n' "$id" "$(hash_file "$old/operations.tsv")" "$(hash_file "$old/journal.log")" > "$transaction/operations.tsv"
     fi
     cp -- "$root/Workshop/workshop-updater.sh" "$root/Workshop/workshop-maintenance.sh" "$scripts/"

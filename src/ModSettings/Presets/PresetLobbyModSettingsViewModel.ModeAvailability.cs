@@ -58,10 +58,16 @@ namespace APIShared.ModSettings
 
         private void RaiseModeNoticeProperties()
         {
-            base.OnPropertyChanged(nameof(System_ModeNoticeVisibility));
-            base.OnPropertyChanged(nameof(System_ModeNoticeText));
-            base.OnPropertyChanged(nameof(System_ConsumerModeNoticeVisibility));
-            base.OnPropertyChanged(nameof(System_ConsumerModeNoticeText));
+            derivedAccessOutputScope++;
+            try
+            {
+                RaiseDerivedAccessOutput(nameof(System_ModeNoticeVisibility));
+                RaiseDerivedAccessOutput(nameof(System_ModeNoticeText));
+                RaiseDerivedAccessOutput(nameof(System_ConsumerModeNoticeVisibility));
+                RaiseDerivedAccessOutput(nameof(System_ConsumerModeNoticeText));
+            }
+            finally { derivedAccessOutputScope--; }
+            RefreshAfterDerivedAccessOutputs();
         }
     }
 }

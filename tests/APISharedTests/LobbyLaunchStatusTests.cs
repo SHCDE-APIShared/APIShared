@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using APIShared.Internal;
 using APIShared.Lobby;
+using BepInEx.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace APISharedTests
@@ -13,6 +15,45 @@ namespace APISharedTests
         private static readonly DateTime Start = new DateTime(2026, 10, 26, 17, 31, 13, DateTimeKind.Utc);
         private static LobbyLaunchStatusItem Loading(string text) => new LobbyLaunchStatusItem(text, LobbyLaunchStatusKind.Loading);
         private static LobbyLaunchStatusItem Blocking(string text) => new LobbyLaunchStatusItem(text);
+
+        [TestMethod]
+        public void ConsecutiveIdenticalLaunchRejectionsEachLogAnError()
+        {
+            using (var source = new ManualLogSource("launch-attempt-fixture"))
+            {
+                var lines = new List<string>();
+                source.LogEvent += (_, args) =>
+                {
+                    Assert.AreEqual(LogLevel.Error, args.Level);
+                    lines.Add(args.Data.ToString());
+                };
+                // The game passes a service proxy that normally routes errors through RuntimeHealth.
+                var runtimeLogger = DebugLogHelper.ForExternalCode(source);
+                Assert.AreNotSame(source, runtimeLogger);
+                LobbyLaunchStatus.WriteAttemptError(runtimeLogger, "blocked", "phase=test");
+                LobbyLaunchStatus.WriteAttemptError(runtimeLogger, "blocked", "phase=test");
+                Assert.AreEqual(2, lines.Count);
+                Assert.IsTrue(lines.All(line => Regex.IsMatch(line,
+                    @"^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\] blocked; phase=test$")));
+            }
+        }
+
+        [TestMethod]
+        public void ExplicitChatRendersOnlyThePartsSteamRejectedLocally()
+        {
+            string[] parts = LobbyLaunchChat.Format("Start blocked", new[] { new string('x', 400) });
+            Assert.AreEqual(2, parts.Length);
+            var tried = new List<string>();
+            var local = new List<string>();
+            LobbyLaunchChat.SendOrShowLocal(parts, text =>
+            {
+                tried.Add(text);
+                return tried.Count == 1;
+            }, local.Add);
+            CollectionAssert.AreEqual(parts, tried);
+            CollectionAssert.AreEqual(new[] { parts[1] }, local);
+            Assert.IsTrue(local.All(LobbyLaunchStatus.IsAnnouncement));
+        }
 
         // Host perspective: the host is the only participant that announces "ready".
         private static IReadOnlyList<LobbyLaunchAnnouncement> Observe(LobbyLaunchAnnouncementState state, double seconds,

@@ -259,7 +259,11 @@ namespace APIShared.ScriptExtenderFixes
             else current.Deliver(publisher, observer, value);
         }
 
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        // Harmony reruns this on every patch change of the Extender method; a failure keeps the original IL.
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
+            Patching.SafeTranspiler.Run(APISharedPlugin.PluginGuid, "APIShared.InterpolateEventReuse", instructions, TranspileReuse, logger);
+
+        private static IEnumerable<CodeInstruction> TranspileReuse(IEnumerable<CodeInstruction> instructions)
         {
             ConstructorInfo constructor = Constructor();
             MethodInfo rent = AccessTools.Method(typeof(InterpolateEventReuseRuntime), nameof(Rent));
@@ -329,10 +333,6 @@ namespace APIShared.ScriptExtenderFixes
             finally { current?.Release(); }
         }
 
-        private static void Write(string message)
-        {
-            try { logger?.LogInfo("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + Prefix + message); }
-            catch { /* Logging must not interrupt rendering. */ }
-        }
+        private static void Write(string message) => NativeApiLog.Info(logger, Prefix + message);
     }
 }

@@ -180,7 +180,7 @@ namespace APIShared.ModSettings
             private bool ShouldLog => diagnosticsEnabled && log != null && DebugLogHelper.IsDebugEnabled();
 
             private void Log(string message) =>
-                DebugLogHelper.LogDebug(log, $"[{modName} ModSettingsScrollDiagnostic] {message}");
+                NativeApiLog.Debug(log, $"[{modName} ModSettingsScrollDiagnostic] {message}");
 
             private static string Describe(object value) =>
                 value == null ? "null" : value.GetType().FullName;

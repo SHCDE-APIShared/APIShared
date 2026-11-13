@@ -29,7 +29,7 @@ namespace APIShared.Savegames
         internal const int MaximumEntries = 16384;              // SavegameModSettings.cs:38
         internal const int MaximumEntryBytes = 1024 * 1024;     // SavegameModSettings.cs:39
         internal const int MaximumRecordBytes = 8 * 1024 * 1024; // SavegameModSettings.cs:34
-        internal const int MaximumNameLength = 256;             // SavegameModSettings.cs:506, :519
+        internal const int MaximumNameLength = 256;             // SavegameModSettings.Records.cs:86, :89
         internal const int EnvelopeVersion = 1;
         internal const int HeaderSize = 32;
         private const int CrcOffset = 28;

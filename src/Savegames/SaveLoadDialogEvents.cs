@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -8,6 +7,9 @@ using CrusaderDE;
 using Noesis;
 using SHCDESE.API;
 using APIShared.Events;
+using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
+using System.Reflection;
 
 namespace APIShared.Savegames
 {
@@ -26,11 +28,14 @@ namespace APIShared.Savegames
         private static readonly ManagedInterceptionHook<ExecuteDialog> ExecuteHook = new ManagedInterceptionHook<ExecuteDialog>();
         private static readonly object Sync = new object();
         private static SaveLoadDialogRequest.Entry[] registrations = Array.Empty<SaveLoadDialogRequest.Entry>();
+        private static readonly Func<SaveLoadDialogRequest.Entry, RegistrationKey> RegistrationKeyOf =
+            entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         private static Session current;
         private static long generation;
         private static ManualLogSource log;
         private static SavegameLoadOptions options;
         private static bool initialized;
+        private static Patching.SafeIlHook criticalSaveGuard;
         private static readonly SaveLoadDialogDispatch Dispatch = new SaveLoadDialogDispatch(Report);
         private sealed class Session
         {
@@ -58,10 +63,10 @@ namespace APIShared.Savegames
                 throw new ArgumentException("Owner GUID, registration ID and callbacks are required.");
             lock (Sync)
             {
-                if (registrations.Any(e => e.Owner == ownerGuid && e.Id == registrationId))
+                if (OrderedRegistrations.Contains(registrations, RegistrationKeyOf, ownerGuid, registrationId))
                     throw new InvalidOperationException("Duplicate load/save requester registration.");
-                registrations = registrations.Concat(new[] { new SaveLoadDialogRequest.Entry(callbacks) { Owner = ownerGuid, Id = registrationId, Order = order } })
-                    .OrderBy(e => e.Order).ThenBy(e => e.Owner, StringComparer.Ordinal).ThenBy(e => e.Id, StringComparer.Ordinal).ToArray();
+                registrations = OrderedRegistrations.WithAdded(registrations,
+                    new SaveLoadDialogRequest.Entry(callbacks) { Owner = ownerGuid, Id = registrationId, Order = order }, RegistrationKeyOf);
             }
         }
 
@@ -94,6 +99,18 @@ namespace APIShared.Savegames
         internal static bool IsSaveLoad(Enums.RequesterTypes type) =>
             type == Enums.RequesterTypes.LoadSinglePlayerGame || type == Enums.RequesterTypes.LoadSinglePlayerCoopGame ||
             type == Enums.RequesterTypes.LoadMultiplayerGame || type == Enums.RequesterTypes.LoadMultiplayerCoopGame;
+
+        // The requester remains owned here; production adds an outcome check immediately
+        // after its callback, before Vanilla commits remembered names. Installed once.
+        internal static void InstallCriticalSaveGuard(ILContext.Manipulator transform)
+        {
+            if (criticalSaveGuard != null) return;
+            if (!initialized) throw new InvalidOperationException("The shared requester owner is unavailable.");
+            MethodInfo method = typeof(HUD_LoadSaveRequester).GetMethod("RunOKAction", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.SaveLoadDialog.CriticalSaveOutcome", method, transform, log,
+                out criticalSaveGuard, out string failure))
+                throw new InvalidOperationException("Critical save outcome guard unavailable: " + failure);
+        }
 
         private static void Open(Enums.RequesterTypes type, Action<string, FileHeader> confirm, Action cancel, int count, bool skirmish, bool trails)
             => Dispatch.Open(() => OpenCore(type, confirm, cancel, count, skirmish, trails),
@@ -171,6 +188,7 @@ namespace APIShared.Savegames
         {
             if (!ReferenceEquals(current, session) || session.Request.IsClosed) return;
             bool accepted;
+            long saveOutcome = Economy.WorkerProductionCriticalSaveRuntime.OutcomeToken;
             try
             {
                 accepted = session.Request.Confirm(name, header, () =>
@@ -178,7 +196,8 @@ namespace APIShared.Savegames
                 if (!session.IsSaveLoad) return true;
                 bool? choice = string.Equals(session.DecisionPath, header?.filePath, StringComparison.OrdinalIgnoreCase) ? session.Decision : null;
                 return SavegameModSettings.PrepareAutomaticLoadWithRestartCheck(header?.filePath, choice);
-                }, () => original?.Invoke(name, header), () => { if (session.IsSaveLoad && ReferenceEquals(current, session)) SavegameModSettings.CancelLoadChoice(); });
+                }, () => original?.Invoke(name, header), () => { if (session.IsSaveLoad && ReferenceEquals(current, session)) SavegameModSettings.CancelLoadChoice(); },
+                    () => !Economy.WorkerProductionCriticalSaveRuntime.FailedSince(saveOutcome));
             }
             catch { End(session, SaveLoadDialogOutcome.Failed, true); throw; }
             if (accepted || session.Request.IsClosed) End(session, SaveLoadDialogOutcome.Confirmed, false);
@@ -191,7 +210,8 @@ namespace APIShared.Savegames
                 bool mp = !session.Trails && (session.Skirmish || session.Type == Enums.RequesterTypes.LoadMultiplayerGame || session.Type == Enums.RequesterTypes.LoadMultiplayerCoopGame);
                 model.Show_HUD_LoadSaveRequesterMP = mp;
                 model.Show_HUD_LoadSaveRequester = !session.Trails && !mp;
-                HUD_ConfirmationPopup.ShowConfirmationOKMessage(APIShared.Localization.UiText.Get("Savegames.OperationNotReady"), null, APIShared.Localization.UiText.Get("Savegames.SettingsTitle"), false);
+                if (!Economy.WorkerProductionCriticalSaveRuntime.FailedSince(saveOutcome))
+                    HUD_ConfirmationPopup.ShowConfirmationOKMessage(APIShared.Localization.UiText.Get("Savegames.OperationNotReady"), null, APIShared.Localization.UiText.Get("Savegames.SettingsTitle"), false);
             }
         }
 

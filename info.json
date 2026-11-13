@@ -3,13 +3,178 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.27.0",
+  "Version": "0.51.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.51.0",
+      "Changes": [
+        "Add declarative mission-setting moves between mod GUIDs for savegames and Map/Trail author rules. Explicit destination settings win; Player rules follow the new owner, while declared defaults can keep unrelated new features disabled.",
+        "Keep original health baselines current when modifier application is disabled, and discard obsolete siege-tower proxy targets for newly processed generations.",
+        "Preserve original IL metadata when a safe transpiler fails, and protect raw setting dictionaries and buffers from in-place migration converters.",
+        "Close AI spawn capture before completion callbacks so callback-created units cannot corrupt the original capture list.",
+        "Keep successful quick and unchecked branch builds as retained outputs without marking them as fully verified SDK packages."
+      ]
+    },
+    {
+      "Version": "0.50.0",
+      "Changes": [
+        "Add owner-bound custom controls in ESC menu slots, preserving focus, placement checks and scaled tooltips alongside existing button actions."
+      ]
+    },
+    {
+      "Version": "0.49.0",
+      "Changes": [
+        "Add checked, silent BuildingAccess lookups with explicit failure reasons and a pure IndexBounds helper for zero-based span indices. Existing UnitAccess and entity identity/life-state contracts remain unchanged."
+      ]
+    },
+    {
+      "Version": "0.48.0",
+      "Changes": [
+        "Add SafeIlHook and SafeTranspiler for managed game patches. A patch that no longer fits after a game or mod update is rolled back and reported, and the other mods' patches of the same game method keep working. All APIShared IL patches use them."
+      ]
+    },
+    {
+      "Version": "0.47.0",
+      "Changes": [
+        "Add owner-bound Lord message presentation events with independent voice, video and text replacement, using existing Vanilla messages or private mod resources.",
+        "Keep native message queueing and gameplay random state unchanged; bind replacement subtitles to the actual displayed message and retain original components unless explicitly replaced.",
+        "Development addition: add general Unit Voices rules for attributed troop orders, recruitment, siege and special actions, and civilian comments, with Vanilla cue replacement, prepared private mod/map recordings, suppression and per-request volume factors.",
+        "Coordinate Unit Voices and Lord message audio at their shared playback site while preserving the existing SFX API; keep consumer-specific skin and faction rules outside APIShared.",
+        "Unit Voices: a replacement for a voice line that the game never plays (for example several Arabian engineer siege lines) is now played; UnitVoiceContext.OriginalIsSilent marks such lines. A voice file whose preparation failed can be prepared again.",
+        "Lord messages keep Vanilla and text replacement available if the Script Extender changes its private mod-asset helpers."
+      ]
+    },
+    {
+      "Version": "0.46.0",
+      "Changes": [
+        "Measure centered gatehouse closing distances from the actual footprint, so enemies approaching from opposite sides are treated equally.",
+        "Add a square footprint center helper and a read-only check for candidates outside the active gatehouse closing range."
+      ]
+    },
+    {
+      "Version": "0.45.0",
+      "Changes": [
+        "Decide the mission mode in every case instead of locking gameplay mods: a loaded save uses the mode stored in it, a restart keeps the mode of its mission, and Customize evidence that does not fit the start is ignored and logged as an error.",
+        "Saves that an earlier version marked as conflicting load normally again.",
+        "Mods can declare renamed settings and convert changed ones, so saves, Trail author rules, personal settings and presets written by an older version of a mod keep working.",
+        "Compare the Customize origin between all players before a multiplayer start. A rejected multiplayer start no longer freezes the lobby and is no longer retried every frame.",
+        "Fix saves that could not be loaded after certain AI army assignments or fast group moves, the startup removal of unsubscribed Workshop packages, and missions that were stopped although no mod changed production."
+      ]
+    },
+    {
+      "Version": "0.44.0",
+      "Changes": [
+        "Add a shared observer for local troop-command releases with final map coordinates and cursor targets."
+      ]
+    },
+    {
+      "Version": "0.43.0",
+      "Changes": [
+        "Share the native unit-pair exclusion check between mods with immutable, mission-scoped attack target rules."
+      ]
+    },
+    {
+      "Version": "0.42.0",
+      "Changes": [
+        "Add passive begin and completion callbacks for the managed save entry point."
+      ]
+    },
+    {
+      "Version": "0.41.0",
+      "Changes": [
+        "Expose paired observations around an admitted managed engine run through the existing shared wrapper.",
+        "Add a shared ally-panel button API so mods can coordinate goods and order clicks.",
+        "Add an optional final GameAction validator that can reject a command after other handlers have finished editing its arguments."
+      ]
+    },
+    {
+      "Version": "0.40.0",
+      "Changes": [
+        "Mods can now set or multiply the production bonus for each non-neutral fear level. They can also reduce output. The neutral level still contributes zero, and the separate fixed production bonus continues to apply where eligible.",
+        "Worker production profiles report the resolved fear bonus for each level. Shared start checks reject unsafe combinations and check agreement between multiplayer peers."
+      ]
+    },
+    {
+      "Version": "0.38.0",
+      "Changes": [
+        "Add the Wildlife hunting service: HuntablePrey lets mods make further animal types huntable, with an optional base meat amount, Hunters taking such animals of their own player and corpse removal when butchering starts; the catalog of a mission is frozen at its start and checked in multiplayer.",
+        "Add HunterTargetPolicies and HunterMeatYieldEvents so mods can admit or refuse Hunter targets and set the meat a Hunter gets per animal.",
+        "Add Herds, HerdRouteEvents and HerdFlightRules so mods can read and spawn animal herds, shorten or redirect their routes and keep deer and goat herds calm.",
+        "Fix the Hunter unit id that the Script Extender reports in OnUnitHunterQueryTarget and OnHunterPickUpMeat."
+      ]
+    },
+    {
+      "Version": "0.37.0",
+      "Changes": [
+        "Add SideHudVisibility.TryGetState so mod overlays can distinguish Hide HUD from other reasons the Vanilla side HUD is hidden."
+      ]
+    },
+    {
+      "Version": "0.36.0",
+      "Changes": [
+        "Expose the current skin of a player's living Lord and classification of captured Lord materials."
+      ]
+    },
+    {
+      "Version": "0.35.0",
+      "Changes": [
+        "Add RouteEngineInfo so rule mods can see whether a route engine applies their rules, and TroopActionHud.ForeignPanelActivating so regular panel menus can close when another mod shows its own troop panel."
+      ]
+    },
+    {
+      "Version": "0.34.0",
+      "Changes": [
+        "Add shared WorkerProductionModifiers profiles for exact Human/AI output-base factors and staged fixed production bonuses; retain the legacy bonus override API.",
+        "Expose immutable desired-owner snapshots, exact resolved amounts and structured validation results for consumer settings and diagnostics.",
+        "Coordinate production protection, fractional save data, unit transfers, atomic critical saves and authenticated multiplayer admission through common APIShared owners."
+      ]
+    },
+    {
+      "Version": "0.33.0",
+      "Changes": [
+        "Add owner-bound first-PlayState readiness for the current mission, with Unity-thread events and replay. Delayed loading, multiplayer startup and pause never expire the wait; existing mission Start semantics stay unchanged."
+      ]
+    },
+    {
+      "Version": "0.32.0",
+      "Changes": [
+        "Add independent owner-bound adornments on Vanilla ally-goods icons; retain commands, bindings and successful controls across selection changes and refreshes."
+      ]
+    },
+    {
+      "Version": "0.31.0",
+      "Changes": [
+        "Add typed Vanilla troop-action buttons with adaptive overflow, an expandable Vanilla-style grid and a persisted local auto-close checkbox; retain legacy host layout and the independent action strip."
+      ]
+    },
+    {
+      "Version": "0.30.0",
+      "Changes": [
+        "Add owner-bound AI military spawn capture, semantic role admission and protected unmanaged troops, with native current-order initialization and regular/additional recruitment accounting.",
+        "Persist editor map declarations, actual saved army state and cumulative engineering provenance, with early load protection and multiplayer map-record readiness.",
+        "Share strategic/task observations and effective Original receipts across consumers without competing native hooks; retain existing save callback timing with opt-in early preparation."
+      ]
+    },
+    {
+      "Version": "0.29.0",
+      "Changes": [
+        "Add cooperative sections and immutable selection observations for the Vanilla ally goods dialog, preserving independent mod controls and quantity commands.",
+        "Add synchronous bounded ally gifts, physical storage queries and native transfer observations with explicit veto and measured balance changes."
+      ]
+    },
+    {
+      "Version": "0.28.0",
+      "Changes": [
+        "Add ordered BeforeFixedValue and opt-in AfterFixedValue numeric contributions for shared health, market base prices, popularity, fear popularity and AI sale policies while preserving existing API meanings and final safety rules.",
+        "Coordinate initialization-only unit and building maximum HP from saved original bases, including same-slot type transitions, legacy Lord import and jointly bounded siege towers; keep maxima frozen after initialization.",
+        "Compose native market lot prices across transaction and display paths, preserve legacy total-price vetoes and direct foreign fixed values, and retain bounded save ownership without multiplier compounding."
+      ]
+    },
     {
       "Version": "0.27.0",
       "Changes": [

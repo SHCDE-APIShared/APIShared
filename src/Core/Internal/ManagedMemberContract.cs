@@ -84,6 +84,7 @@ namespace APIShared
             new Dictionary<string, Func<ManagedMemberContract>>(StringComparer.Ordinal)
             {
                 [NativeCapabilityIds.MissionLifecycle] = MissionLifecycleService.MemberContract,
+                [NativeCapabilityIds.MissionPlayStateReadiness] = MissionPlayStateReadinessService.MemberContract,
                 [NativeCapabilityIds.LobbyState] = LobbyStateService.MemberContract,
                 [NativeCapabilityIds.PlayerDefeat] = PlayerDefeatService.MemberContract,
                 [NativeCapabilityIds.BriefingGoldPresentation] = BriefingGoldPresentationService.MemberContract,

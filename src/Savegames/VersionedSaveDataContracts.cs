@@ -290,6 +290,12 @@ namespace APIShared.Savegames
         public VersionedSaveCapture Capture { get; }
         /// <summary>Load callback.</summary>
         public Action<VersionedSaveLoad> Loaded { get; }
+        /// <summary>Optional early load observation after the archive is completely read, before native
+        /// world initialization. Opting in moves this registration's migration to that phase; Loaded
+        /// still runs exactly once at Post using the cached outcome. No native world may be inspected
+        /// here: it is still the previous world. Store immutable candidates for a later restore point.
+        /// Runs synchronously on the archive caller with exception isolation and no replay.</summary>
+        public Action<VersionedSaveLoad> Prepared { get; set; }
         /// <summary>Files read and written; <see cref="VersionedSaveScope.SaveGames"/> by default.</summary>
         public VersionedSaveScope Scope { get; set; } = VersionedSaveScope.SaveGames;
         /// <summary>Optional converter for pre-existing data stored under the same identifier.</summary>

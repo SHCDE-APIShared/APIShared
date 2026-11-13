@@ -201,17 +201,24 @@ namespace APISharedTests
             for (int i = 0; i < 1000; i++) build(contextA, 1, 2, 3, 4, 100, 1);
             // Stopwatch.GetTimestamp, not a Stopwatch instance: the measured window allocates nothing itself.
             // The fastest of seven rounds is reported, because one round is noisy on a loaded machine.
-            long fastest = long.MaxValue, before = GC.GetAllocatedBytesForCurrentThread();
+            // Allocation is judged the same way: a per-call allocation shows in every round (100000 calls,
+            // at least 2.4 MB), while the .NET Framework runtime occasionally allocates a few KB on this
+            // thread outside Build (seen without any GC and only depending on what the suite loaded).
+            long fastest = long.MaxValue, fewestBytes = long.MaxValue, totalBytes = 0;
             for (int round = 0; round < 7; round++)
             {
+                long before = GC.GetAllocatedBytesForCurrentThread();
                 long start = System.Diagnostics.Stopwatch.GetTimestamp();
                 for (int i = 0; i < 100000; i++) build(contextA, 1, 2, 3, 4, 100, 1);
                 fastest = Math.Min(fastest, System.Diagnostics.Stopwatch.GetTimestamp() - start);
+                long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+                fewestBytes = Math.Min(fewestBytes, bytes);
+                totalBytes += bytes;
             }
-            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
             TestContext?.WriteLine("ASSASSIN_BUILD_BENCH ns per Build with a Vanilla-running handler: " +
-                (fastest * 1e9 / System.Diagnostics.Stopwatch.Frequency / 100000).ToString("F1"));
-            Assert.AreEqual(0L, bytes, "The per-thread frame must not allocate per call.");
+                (fastest * 1e9 / System.Diagnostics.Stopwatch.Frequency / 100000).ToString("F1") +
+                "; bytes over all rounds: " + totalBytes);
+            Assert.AreEqual(0L, fewestBytes, "The per-thread frame must not allocate per call.");
         }
 
         public TestContext TestContext { get; set; }

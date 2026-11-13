@@ -181,7 +181,10 @@ namespace APIShared
             {
                 if (!OwnerActive(owner) || (!categoryView.Any(x => x.Owner == owner) && !imageView.Any(x => x.Owner == owner) &&
                     !actionButtons.Any(x => x.Owner == owner && x.Visible))) return;
-                foreach (var item in actionButtons.Where(x => x.Owner == owner)) item.Version++;
+                bool contentChanged = false;
+                foreach (var item in actionButtons.Where(x => x.Owner == owner)) { item.Version++; contentChanged = true; }
+                // Renderers compare the snapshot's version; a cached snapshot would hide the new one.
+                if (contentChanged) actionButtonSnapshot = null;
                 refreshRequested = true;
                 pendingPresentation = true;
                 UpdateFrameDemand();

@@ -41,6 +41,13 @@ initialization under the engine lock. The user-authorized extension of 2026-10-2
 retains the allocation, native entry, displaced code and return. It permits no
 general repatching, later retry or teardown undo.
 
+Managed IL hooks and Harmony transpilers of APIShared run through
+`SafeIlHook` and `SafeTranspiler`. MonoMod reruns every manipulator of a method
+on each patch change of that method, so one throwing manipulator would remove
+all IL edits and Harmony patches of it. The guards roll back a failed edit,
+report it, and keep every other patch. A guard's first application that fails
+removes only that unpublished candidate.
+
 Published hooks remain installed for the process lifetime. Activation changes are
 logical gates; inactive callbacks preserve the original behavior. Installation
 rollback is limited to a prepared candidate before the first patch activation attempt.
@@ -78,13 +85,18 @@ contract. Validate the real backend, complete displaced range, incoming branches
 continuation and ABI before publishing. Context register masks must preserve live
 registers; SIMD state and flags need separate verification. Do not assume a context
 wrapper preserves the original flags. Keep assembler labels valid and decode emitted
-stubs, not only their intended pseudo-code.
+stubs, not only their intended pseudo-code. APIShared's purely native inline stubs share
+these checks (length probe, expected stub, installed jump and padding) and their
+claim/prepare/publish/rollback steps through `Core/Internal/Native/NativeInlineStub` and
+`NativeInlineStubGroup`; each owner keeps its own check order and diagnostics.
 
-The gatehouse centered-distance replacement loads both unit coordinates before
-using `cdq`, because `cdq` overwrites EDX and would otherwise destroy the live record
-offset. Timing and automation share coordinated ranges; changes must preserve their
-non-overlap and the original inactive paths. Existing backend tests execute productive
-stubs on isolated buffers, never on another running game's executable pages.
+The gatehouse centered-distance replacement uses the signed begin tile and
+the audited square grid size. Each axis uses begin * 8 + size * 4 in unit world
+coordinates, where tile centers are at tile * 8 + 4. The engine selects the access coordinates
+independently, and they can move around the footprint. The stub loads both unit
+coordinates before the first `cdq` overwrites the unit offset. Timing and
+automation share coordinated ranges. Backend tests execute the production stubs
+with the audited native layout and verify their Vanilla paths.
 
 Market queries validate each complete 31-byte function before installation. Only
 the audited image and NativeX64 Indirect schema are accepted: six patch bytes

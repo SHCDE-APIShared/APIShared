@@ -1,4 +1,6 @@
+using APIShared.Patching;
 using BepInEx.Logging;
+using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using RedBird.Abstractions.Hooks;
 using RedBird.Backends.NativeX64;
@@ -43,7 +45,7 @@ namespace APIShared.Audio
         internal const int MaxRecords = 14700000 / 21;
 
         private static SoundRuntime processContext;
-        private static ILHook playbackHook;
+        private static SafeIlHook playbackHook;
         private static ManualLogSource processLog;
         private static int managedAttempted, nativeAttempted, playbackConfirmed;
         private static string playbackStatus = "Pending", contextStatus = "Pending", killStatus = "Pending";
@@ -71,13 +73,41 @@ namespace APIShared.Audio
                 var method = typeof(GameMap).GetMethod("processTestMap", new[] { typeof(short[]), typeof(int), typeof(EngineInterface.PlayState), typeof(byte[]) });
                 if (method == null || !method.IsPublic) throw new InvalidOperationException("Public processTestMap signature changed.");
                 SoundIlContract.Validate(method);
-                playbackHook = new ILHook(method, SoundIlContract.Apply, new ILHookConfig { ManualApply = true, ID = "APIShared.Audio" });
-                playbackHook.Apply();
-                if (!playbackHook.IsApplied) throw new InvalidOperationException("Audio IL publication incomplete.");
-                Volatile.Write(ref playbackStatus, "Ready");
+                // Each service validates independently before publication. Lord-message IL also
+                // recognizes the shared speech adapter, so neither broker steals the other's site.
+                bool voicesSupported = UnitVoiceRuntime.ValidatePlayback(method, logger);
+                // Every rebuild of processTestMap runs this edit again on fresh IL. Each run decides
+                // the speech part anew, so no earlier run's outcome is carried into a later one.
+                int voicesApplied = 0;
+                string voiceFailure = null;
+                ILContext.Manipulator edit = il =>
+                {
+                    bool voices = UnitVoicePlaybackIlContract.ApplyCombined(il, voicesSupported, out string reason);
+                    Volatile.Write(ref voiceFailure, reason);
+                    Volatile.Write(ref voicesApplied, voices ? 1 : 0);
+                };
+                if (!SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.Audio", method, edit, logger, out playbackHook, out string installFailure))
+                    throw new InvalidOperationException(installFailure);
+                playbackHook.Rebuilt += hook => PublishPlayback(hook.IsApplied && Volatile.Read(ref voicesApplied) != 0,
+                    hook.IsApplied, hook.IsApplied ? Volatile.Read(ref voiceFailure) : hook.Diagnostic);
+                PublishPlayback(playbackHook.IsApplied && Volatile.Read(ref voicesApplied) != 0, playbackHook.IsApplied,
+                    playbackHook.IsApplied ? Volatile.Read(ref voiceFailure) : playbackHook.Diagnostic);
                 Info(logger, "AUDIO_PLAYBACK_READY: permanent GameMap sound events installed.");
             }
-            catch (Exception ex) { Volatile.Write(ref playbackStatus, "Unavailable: " + ex.Message); Error(logger, "Audio playback interception unavailable: " + ex); }
+            catch (Exception ex)
+            {
+                Volatile.Write(ref playbackStatus, "Unavailable: " + ex.Message);
+                UnitVoiceRuntime.SetPlaybackFailure(ex.Message);
+                Error(logger, "Audio playback interception unavailable: " + ex);
+            }
+        }
+        private static void PublishPlayback(bool voices, bool sounds, string voiceFailure)
+        {
+            Volatile.Write(ref playbackStatus, sounds ? "Ready" : "Unavailable: " + voiceFailure);
+            if (voices) UnitVoiceRuntime.SetPlaybackReady(true);
+            // No new reason: the speech part was rejected at validation, which already reported why.
+            else if (voiceFailure == null) UnitVoiceRuntime.SetPlaybackReady(false);
+            else UnitVoiceRuntime.SetPlaybackFailure(voiceFailure);
         }
         internal static void InitializeNative(CrusaderLibraryLoadContext context, ManualLogSource logger, NativeOwnershipRegistry ownership, string nativeHash)
         {
@@ -217,9 +247,8 @@ namespace APIShared.Audio
         {
             if (NativeContract.MeleeFrameRva < 0 || NativeContract.MeleeDamageEndRva > image.Length)
                 throw new InvalidOperationException("Melee damage routine is outside the loaded module.");
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-                if (BitConverter.ToString(sha.ComputeHash(image.Slice(NativeContract.MeleeFrameRva, NativeContract.MeleeFrameLength).ToArray())).Replace("-", "") != NativeContract.MeleeFrameHash)
-                    throw new InvalidOperationException("Melee damage frame setup changed or is patched (0x199124..0x1991D9).");
+            if (Sha256Hex.Of(image.Slice(NativeContract.MeleeFrameRva, NativeContract.MeleeFrameLength).ToArray()) != NativeContract.MeleeFrameHash)
+                throw new InvalidOperationException("Melee damage frame setup changed or is patched (0x199124..0x1991D9).");
             foreach (var kill in SoundSources.Kills)
             {
                 int call = kill.ReturnRva - 5;

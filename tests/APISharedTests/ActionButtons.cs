@@ -68,6 +68,12 @@ namespace APISharedTests
             buttons.TryRegisterActionButton(new UnitHudActionButtonDefinition("late", new TestActionCommand(), "Late", _ => null), out _, out _);
             MsAssert.AreEqual(1, States(beforeRegistration).Length);
             MsAssert.AreEqual(2, States(Snapshot()).Length);
+
+            object beforeRefresh = Snapshot();
+            ((IUnitHudPresentationCapability)binding).RequestRefresh();
+            object refreshed = Snapshot();
+            MsAssert.AreNotSame(beforeRefresh, refreshed, "RequestRefresh must publish the raised content version.");
+            MsAssert.AreEqual(2, Field(States(refreshed).GetValue(0), "Version"));
         }
 
         [TestMethod]

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
     <Compile Include="../../src/Workshop/Proton/WinePathInterop.cs" Link="Production/Proton/WinePathInterop.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonPaths.cs" Link="Production/Proton/ProtonPaths.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonProcess.cs" Link="Production/Proton/ProtonProcess.cs" />
@@ -9,10 +10,10 @@
     <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
     <Compile Include="../../src/Statistics/LordStatisticColumns.cs" Link="Production/LordStatisticColumns.cs" />
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
-    <Compile Include="../../src/Presentation/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
     <Compile Include="../../src/Localization/UiText.cs" Link="Localization/UiText.cs" />
     <EmbeddedResource Include="../../Locales/en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
@@ -31,11 +32,13 @@
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs" />
     <Compile Include="../../src/Pathfinding/GateRoutes/GateAccessRules.cs" Link="Production/GateAccessRules.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteTileRules.cs" Link="Production/RouteTileRules.cs" />
+    <Compile Include="../../src/Pathfinding/Routes/RouteEngineInfo.cs" Link="Production/RouteEngineInfo.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipContracts.cs" Link="Production/BuildingTooltipContracts.cs" />
     <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipSelection.cs" Link="Production/BuildingTooltipSelection.cs" />
-    <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipRegistry.cs" Link="Production/BuildingTooltipRegistry.cs" />
+    <Compile Include="../../src/Presentation/BuildingTooltip/BuildingTooltipLines.cs" Link="Production/BuildingTooltipLines.cs" />
     <Compile Include="../../src/Workshop/WorkshopInventory.cs" Link="Production/WorkshopInventory.cs" />
     <Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" />
+    <Compile Include="../../src/Workshop/WorkshopLocalState.cs" Link="Production/WorkshopLocalState.cs" />
     <Compile Include="../../src/Workshop/WorkshopApplyCoordinator.cs" Link="Production/WorkshopApplyCoordinator.cs" />
     <Compile Include="../../src/Workshop/WorkshopDeletionManifest.cs" Link="Production/WorkshopDeletionManifest.cs" />
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Production/WorkshopContracts.cs" />
@@ -63,12 +66,15 @@
     <Compile Include="../../src/Networking/PacketReceivePolicy.cs" Link="Production/PacketReceivePolicy.cs" />
 
     <Compile Include="../../src/Core/Events/InterceptionEvent.cs" Link="Production/InterceptionEvent.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
+    <Compile Include="../../src/Core/Internal/Logging/FailureThrottle.cs" Link="Production/FailureThrottle.cs" />
     <Compile Include="../../src/Units/Recruitment/RecruitmentRequestPolicy.cs" Link="Production/RecruitmentRequestPolicy.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonLayout.cs" Link="Production/HudExtrasButtonLayout.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonContracts.cs" Link="Production/HudExtrasButtonContracts.cs" />
     <Compile Include="../../src/Presentation/HudExtras/HudExtrasButtonsService.cs" Link="Production/HudExtrasButtonsService.cs" />
     <Compile Include="../../src/Presentation/UnitHud/UnitHudHoverTextPresenter.cs" Link="Production/UnitHudHoverTextPresenter.cs" />
     <Compile Include="../../src/Presentation/UnitHud/UnitHudActionButtonLayout.cs" Link="Production/UnitHudActionButtonLayout.cs" />
+    <Compile Include="../../src/Presentation/TroopActions/TroopActionPagingPolicy.cs" Link="Production/TroopActionPagingPolicy.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchContracts.cs" Link="Production/RouteSearchContracts.cs" />
     <Compile Include="../../src/Pathfinding/Routes/RouteSearchEvents.cs" Link="Production/RouteSearchEvents.cs" />
     <Compile Include="../../src/GameModes/CustomizedLaunchOrigins.cs" Link="Production/CustomizedLaunchOrigins.cs" />
@@ -77,14 +83,20 @@
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
-    <Compile Include="../../src/Units/UnitAccess.cs" Link="Production/UnitAccess.cs" />
+    <Compile Include="../../src/Units/Selection/UnitAccess.cs" Link="Production/UnitAccess.cs" />
+    <Compile Include="../../src/Buildings/BuildingAccess.cs" Link="Production/BuildingAccess.cs" />
+    <Compile Include="../../src/Core/Collections/IndexBounds.cs" Link="Production/IndexBounds.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledContracts.cs" Link="Production/UnitSettledContracts.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledTracker.cs" Link="Production/UnitSettledTracker.cs" />
     <Compile Include="../../src/ModSettings/Internal/DependencyFreeJson.cs" Link="Production/DependencyFreeJson.cs" />
     <Compile Include="../../src/ModSettings/Internal/AtomicFileReplacement.cs" Link="Production/AtomicFileReplacement.cs" />
     <Compile Include="../../src/ModSettings/Presets/PresetAtomicFilePublisher.cs" Link="Production/PresetAtomicFilePublisher.cs" />
-    <Compile Include="../../src/Core/Internal/Native/UniquePatternSearch.cs" Link="Production/UniquePatternSearch.cs" />
+    <Compile Include="../../src/Core/Internal/Native/CompiledBytePattern.cs" Link="Production/CompiledBytePattern.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.cs" Link="Production/NativeOwnershipRegistry.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.Reservations.cs" Link="Production/NativeOwnershipRegistry.Reservations.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.Sites.cs" Link="Production/NativeOwnershipRegistry.Sites.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeOwnershipRegistry.Report.cs" Link="Production/NativeOwnershipRegistry.Report.cs" />
+    <Compile Include="../../src/Core/Internal/Sha256Hex.cs" Link="Production/Sha256Hex.cs" />
     <Compile Include="../../src/Core/NativeSites/NativeSiteContracts.cs" Link="Production/NativeSiteContracts.cs" />
     <Compile Include="../ApiBaseline/ApiSignatures.cs" Link="ApiBaseline/ApiSignatures.cs" />
   </ItemGroup>

@@ -1,20 +1,20 @@
 # Feldkatalog: Kennungen, Bedeutung und Belegsicherheit
 
-**Dokumentationsstand: 22.10.2026.** Diese Übersicht beschreibt den in APIShared übernommenen C#-Katalog. Sie bestätigt keine neuen Feldbedeutungen und ändert keine Zugriffsfreigaben.
+**Dokumentationsstand: 07.11.2026.** Die Übersicht beschreibt den C#-Katalog einschließlich der beiden ergänzten Felder für die Waffenproduktion. Die Erstdokumentation und ursprünglichen Belege stammen vom 22.10.2026.
 
 ## Orientierung
 
 | Inhalt | Umfang |
 |---|---:|
-| Erfasste Feldidentitäten | 88 |
-| Bestätigte bevorzugte Bedeutungen (`Confirmed`) | 20 |
+| Erfasste Feldidentitäten | 90 |
+| Bestätigte bevorzugte Bedeutungen (`Confirmed`) | 22 |
 | Wahrscheinliche Bedeutungen (`Probable`) | 29 |
 | Kandidaten / Quellhinweise (`Candidate`) | 39 |
-| Speichervertrag zum Lesen freigegeben | 18 |
-| Davon standardmäßig lesbar | 16 |
+| Speichervertrag zum Lesen freigegeben | 20 |
+| Davon standardmäßig lesbar | 18 |
 | Davon nur mit ausdrücklich zugelassener unsicherer Bedeutung | 2 |
 
-Dazu kommt beim Todesmarker eine ausdrücklich **widerlegte historische Deutung**. Sie ist eine zusätzliche Bedeutung desselben Feldes und deshalb kein 89. Feldeintrag. Kennungslücken sind keine fehlenden Tabellenzeilen: Die neutralen IDs stammen aus dem bestehenden Erfassungsregister und werden hier nicht neu nummeriert.
+Zum Todesmarker gehört eine ausdrücklich **widerlegte historische Deutung**, die dieselbe Feldidentität beschreibt. Die neutralen IDs folgen dem bestehenden Erfassungsregister, einschließlich seiner Kennungslücken.
 
 ### Was bedeutet „sicher“?
 
@@ -33,7 +33,7 @@ Dazu kommt beim Todesmarker eine ausdrücklich **widerlegte historische Deutung*
 | **Nur mit Opt-in** | Speichervertrag ist freigegeben, die Bedeutung bleibt wahrscheinlich. Der einzelne Aufruf muss `AllowUncertainMeaning` angeben. |
 | **Gesperrt** | Keine vollständige Lesefreigabe im Katalog. Auch ein Opt-in hebt diese Sperre nicht auf. Typ-/Offsetangaben sind hier Wissensdaten, keine Zugriffsgarantie. |
 
-„Standard“ bedeutet weiterhin: richtige Struktur, vollständige gültige Byteansicht, zum tatsächlichen Image passender Hash und korrekter Aufrufthread. Die Prüfung des Readers macht einen ungültigen nativen Pointer nicht sicher. Die Übernahme nach APIShared wurde auf Wunsch noch nicht gebaut; ein eigener Spiel-/Multiplayer-Abnahmenachweis steht aus.
+„Standard“ setzt die richtige Struktur, eine vollständige gültige Byteansicht, einen zum tatsächlichen Image passenden Hash und den korrekten Aufrufthread voraus. Der Aufrufer verantwortet die Gültigkeit des nativen Pointers.
 
 ### Warum die Kennung wichtiger als der Name ist
 
@@ -84,7 +84,7 @@ Wichtige Stolperstellen: Der Spieler-Raidlisten-Ursprung wurde um `0x5C` korrigi
 ## Felder nach Struktur
 
 - [GameUnit](#gameunit) — 27 Einträge.
-- [GameBuilding](#gamebuilding) — 19 Einträge.
+- [GameBuilding](#gamebuilding) — 21 Einträge.
 - [GamePlayerResources](#gameplayerresources) — 8 Einträge.
 - [GameTribe](#gametribe) — 33 Einträge.
 - [GameUnitManager](#gameunitmanager) — 1 Eintrag.
@@ -450,6 +450,8 @@ Wichtige Stolperstellen: Der Spieler-Raidlisten-Ursprung wurde um `0x5C` korrigi
 | [nkf-000089](#nkf-000089) | `r_GateState` — Upstream: Torzustand als Byte | Niedrig / Kandidat | Gesperrt |
 | [nkf-000005](#nkf-000005) | `SharedBuildingLinkWord` — Verknüpfungswert mehrteiliger Gebäude | Mittel / wahrscheinlich | Nur mit Opt-in |
 | [nkf-000006](#nkf-000006) | `r_UsedInSiegeAttemptId` — Upstream: Verwendung bei Belagerungsversuch | Niedrig / Kandidat | Gesperrt |
+| [nkf-000093](#nkf-000093) | `BuildingProductionCurrentGood` — Übernommene Ware des Arbeitszyklus | Hoch / bestätigt | Standard |
+| [nkf-000094](#nkf-000094) | `BuildingProductionNextGood` — Gewählte Ware für den nächsten Arbeitszyklus | Hoch / bestätigt | Standard |
 | [nkf-000064](#nkf-000064) | `OnFireCounter` — Vermuteter Brandzähler | Mittel / wahrscheinlich | Gesperrt |
 | [nkf-000065](#nkf-000065) | `OutpostProfileMask` — Außenposten: Profilmaske | Mittel / wahrscheinlich | Gesperrt |
 | [nkf-000066](#nkf-000066) | `OutpostActiveTribeId` — Außenposten: aktuelle Gruppen-Spiel-ID | Mittel / wahrscheinlich | Gesperrt |
@@ -533,6 +535,26 @@ Wichtige Stolperstellen: Der Spieler-Raidlisten-Ursprung wurde um `0x5C` korrigi
 - **Suchnamen / Aliasse:** `GameBuilding.r_UsedInSiegeAttemptId`, `r_UsedInSiegeAttemptId`.
 - **Belege:** [E007](#e007), [E008](#e008), [E009](#e009).
 - **Script-Extender-Quelle:** [GameBuilding.cs, Zeile 220](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/4014ca67c96974a5e6d697665baf5351cbfebde6/src/SHCDESE.BepInEx/Interop/GameBuilding.cs#L220) (erfasster Commit).
+
+<a id="nkf-000093"></a>
+#### nkf-000093 — BuildingProductionCurrentGood
+
+Der Bogenmacher, Drechsler und Schmied übernehmen die gewählte Waren-ID beim nativen Zustandsübergang in dieses Feld. Produktion und Lieferung verwenden den übernommenen Wert. Für Gerberei und Rüstungsschmiede gelten eigene feste Vanilla-Waren.
+
+- `GameBuilding + 0x28E`, `Int16`. Der native Manager verwendet die Verschiebung `0x2EA` nach dem Slotindex. C#-Kennung `NativeFieldIds.F000093`.
+- Bestätigte Bedeutung und freigegebener Rohlesezugriff für den geprüften Native-Hash.
+- Suchaliasse `GameBuilding.r_NextProducedGoodId` und `r_NextProducedGoodId` benennen dieselben Speicherbytes.
+- Belege [E106](#e106) und [E107](#e107).
+
+<a id="nkf-000094"></a>
+#### nkf-000094 — BuildingProductionNextGood
+
+Der Vanilla-Umschaltbefehl setzt hier die gewünschte Waren-ID, sowohl für ein einzelnes Gebäude als auch für die Auswahl per Shift. Die Werkstatt übernimmt den Wert beim nächsten nativen Zustandsübergang.
+
+- `GameBuilding + 0x290`, `Int16`. Der native Manager verwendet die Verschiebung `0x2EC` nach dem Slotindex. C#-Kennung `NativeFieldIds.F000094`.
+- Bestätigte Bedeutung und freigegebener Rohlesezugriff für den geprüften Native-Hash.
+- Suchaliasse `GameBuilding.r_ProducedGoodId` und `r_ProducedGoodId` benennen dieselben Speicherbytes.
+- Belege [E106](#e106) und [E108](#e108).
 
 <a id="nkf-000064"></a>
 #### nkf-000064 — OnFireCounter
@@ -2167,6 +2189,25 @@ Jeder Beleg nennt seine konkrete Art, Quelle und Zeilen. Die vollständigen Date
 - **Quellkennung:** `baseline/sem/FBCB9319/knowledge/SE_2_14_1_ENGAGE_RANGE.md`.
 - **Datei-SHA-256:** `33AD033DAA57D0BF183DDDEF1081161CF80CCAF543C6C0B63360C2C8931F7BA9`.
 - **Aussagekraft:** Begrenzter nativer Offset-/Kontextnachweis; vollständige skalare Zugriffsfreigabe bleibt offen.
+
+<a id="e106"></a>
+### E106 — Nativer Fach-Audit
+
+- Quellkennung `baseline/sem/FBCB9319/knowledge/WEAPON_WORKSHOP_FIELDS.md`, Zeilen **6–34**.
+- Datei-SHA-256 `D50AAD202DFF9170251AC127957C3D77873B728EA92B54404D00AF9600A43EEE`.
+- Der Audit prüft native Schreiber, Leser, Speicherbreite und den Ursprung des `GameBuilding`-Zeigers.
+
+<a id="e107"></a>
+### E107 — Extender-Deklaration der laufenden Ware
+
+- Quellkennung `extender/src/SHCDESE.BepInEx/Interop/GameBuilding.cs`, Zeile **203**. [Erfasster Quellstand](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/4014ca67c96974a5e6d697665baf5351cbfebde6/src/SHCDESE.BepInEx/Interop/GameBuilding.cs#L203).
+- Datei-SHA-256 `2EADBC2EE4D8A42914B526969430FA88C4E93875B983C6188C9C1C37CF00C3D4`.
+
+<a id="e108"></a>
+### E108 — Extender-Deklaration der nächsten Ware
+
+- Quellkennung `extender/src/SHCDESE.BepInEx/Interop/GameBuilding.cs`, Zeile **204**. [Erfasster Quellstand](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/4014ca67c96974a5e6d697665baf5351cbfebde6/src/SHCDESE.BepInEx/Interop/GameBuilding.cs#L204).
+- Datei-SHA-256 `2EADBC2EE4D8A42914B526969430FA88C4E93875B983C6188C9C1C37CF00C3D4`.
 
 ## Pflege dieser Übersicht
 

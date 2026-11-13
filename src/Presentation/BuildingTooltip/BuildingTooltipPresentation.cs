@@ -111,7 +111,7 @@ namespace APIShared.Presentation
             {
                 if (lines.Length == 0 && Lines.Count == 0) return;
                 if (layoutDirty) UpdateWidth();
-                if (BuildingTooltipRegistry.Same(Lines, lines)) return;
+                if (BuildingTooltipLines.Same(Lines, lines)) return;
                 Lines = Array.AsReadOnly(lines);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Lines)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Visibility)));

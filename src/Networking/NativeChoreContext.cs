@@ -36,11 +36,13 @@ namespace APIShared.Networking
         }
         internal static bool IsReady => Volatile.Read(ref moduleEnd) != 0;
 
-        internal static bool TryCaptureRaw(out NativeChoreExecution execution)
+        internal static bool TryCaptureRaw(out NativeChoreExecution execution) => TryCaptureRaw(106, out execution);
+
+        internal static bool TryCaptureRaw(byte opcode, out NativeChoreExecution execution)
         {
             execution = default;
             if (!TryGetManager(out long manager)) return false;
-            return TryRead(manager, ReadInt, ReadByte, out execution);
+            return TryRead(manager, ReadInt, ReadByte, out execution, opcode);
         }
 
         internal static bool TryGetManager(out long manager)
@@ -102,14 +104,14 @@ namespace APIShared.Networking
         // Delegates are only a native-memory test boundary. Offsets follow the
         // hash-bound queue/execute/transfer-field audit, not packet-provided data.
         internal static bool TryRead(long manager, Func<IntPtr, int> readInt, Func<IntPtr, byte> readByte,
-            out NativeChoreExecution execution)
+            out NativeChoreExecution execution, byte opcode = 106)
         {
             execution = default;
             if (readInt(new IntPtr(manager + 0x84CCC)) != 0) return false;
             int slot = readInt(new IntPtr(manager + 0x84CC8));
             if (slot < 0 || slot >= 500) return false;
             long entry = manager + 0xB0BF8 + slot * 0x500L;
-            if (readByte(new IntPtr(entry + 8)) != 106) return false;
+            if (readByte(new IntPtr(entry + 8)) != opcode) return false;
             int rawSender = readInt(new IntPtr(entry + 4));
             int sender = readInt(new IntPtr(manager + 0x36FA4C));
             int commandId = readInt(new IntPtr(entry + 12));
@@ -119,7 +121,7 @@ namespace APIShared.Networking
             // A disagreement here is a changed/foreign context, not another remap.
             if (rawSender < 1 || rawSender > 8 || sender != rawSender || commandId < 0 || scheduled < 0) return false;
             if (readInt(new IntPtr(manager + 0x84CCC)) != 0 || readInt(new IntPtr(manager + 0x84CC8)) != slot ||
-                readByte(new IntPtr(entry + 8)) != 106 || readInt(new IntPtr(entry + 4)) != rawSender ||
+                readByte(new IntPtr(entry + 8)) != opcode || readInt(new IntPtr(entry + 4)) != rawSender ||
                 readInt(new IntPtr(entry)) != scheduled || readInt(new IntPtr(entry + 12)) != commandId ||
                 readInt(new IntPtr(manager + 0x36FA4C)) != sender) return false;
             execution = new NativeChoreExecution(sender, commandId, scheduled, manager, slot);

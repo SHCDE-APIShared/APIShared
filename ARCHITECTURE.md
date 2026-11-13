@@ -65,8 +65,9 @@ load phase; it is not a second public APIShared service runtime.
 | ModSettings, Savegames | Settings UI integration, presets, convergence and persistence |
 | Networking | Owner-bound Chore channels, control-plane messages and presentation dispatch |
 | Units, Pathfinding, Diagnostics | Command interception, recruitment policies, unit settlement, queries and advanced integrations |
-| Audio | Native-record sound presentation, audited source contexts and shared rule events |
-| Economy | Shared native market price query events and validated hook ownership |
+| Audio | SFX and unit-voice presentation, audited source contexts, prepared voice resources and shared rule events |
+| Presentation | Shared UI presentation and grouped Lord-message audio, video and text replacement |
+| Economy | Shared market/production rules, exact output compilation, admission and validated native ownership |
 | Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
 
 Participant inspection uses the existing lobby registrations and
@@ -101,8 +102,8 @@ Static interception brokers use `APIShared.Commands`, `APIShared.Presentation`,
 The unit-settled observation broker uses `APIShared.Units`; simulation ticks, the mission
 clock and the Peace Time reader use `APIShared.Simulation`; Lord metadata in the Content
 assembly uses `APIShared.Lords`.
-The formations command engine, work-target policy and MoatMove orchestration
-belong to BugfixesAndQoL and its addon. APIShared supplies the targeted public
+The formations command engine, work-target policy and route core orchestration
+belong to the Pathfinding mod. APIShared supplies the targeted public
 route-search preference events used by that publisher and third-party observers.
 
 ## Finding and extending a feature
@@ -114,13 +115,19 @@ product area. General native mechanisms live in `Core/Internal/Native`.
 ```text
 src/
   Core/                         entry point, initialization, capability ownership
-  NativeKnowledge/              stable field catalog, evidence and hash-bound raw readers
     Events/                     shared interception registry and managed hook infrastructure
-    Internal/Native/            pattern resolution, memory, native reservations
+    Internal/Logging/           shared log formatting, failure throttling and runtime health
+    Internal/Native/            pattern resolution, memory, native reservations, inline-stub checks and installation
+    NativeSites/                public native-site registry and APIShared's own site groups
+  NativeKnowledge/              stable field catalog, evidence and hash-bound raw readers
+  Compatibility/                binary-validated corrections for optional mods (Fixes wheat sale)
   ScriptExtenderFixes/           audited Extender/dependency corrections and permanent managed hooks
   ScriptExtenderReplacements/    explicit public replacements and their migration documentation
+  Automation/                   opt-in in-process test automation
   Audio/                        shared playback events, context capture and binary contracts
-  Economy/                      native market query contracts and validated owner
+  Economy/                      market, ally-transfer, popularity and worker-production native owners
+    WeaponProduction/           weapon workshop recipes, selection, batches and HUD
+  Wildlife/                     herd runtime and huntable-prey registrations
   Missions/                     mission contracts, state and event relay
   Networking/                   owner-bound Chore, authenticated Chore and control-plane channels
   Simulation/                   native map ticks, mission clock and Peace Time reader
@@ -134,6 +141,12 @@ src/
     EnemyProximity/             enemy-unit proximity policies, registry and read-only native query
   Presentation/
     Events/                     named HUD Pre/Post publishers
+    UiWork/                     owner-bound deferred Unity work and coalesced refreshes
+    AllyGoods/                  ally goods-panel selection, extensions and adornments
+    IngameMenu/                 in-game menu rows, actions and tooltips
+    MapperCamera/               mapper camera bridge and selection-camera events
+    VisibleMap/                 visible map render bounds and events
+    TroopActions/               troop-action HUD owner, buttons, layout and paging
     BuildingTooltip/            compatible building-text adapter and selection
     Tooltips/                   general tooltip contributions and shared rendering
     UnitHud/                    HUD contracts and implementation parts
@@ -146,6 +159,8 @@ src/
     UI/                         search and tooltip presentation
     Internal/                   JSON parser and atomic file replacement
   Units/
+    Selection/                  unit access, local and marked unit selection
+    AiMilitary/                 AI military placement, orders, quota and engineering provenance
     Commands/                   managed GameAction Pre/Accepted/Post contracts
     Recruitment/                request arithmetic and shared material-display IL policy
     Settled/                    unit-settled contracts, settle tracker and SE subscription owner
@@ -184,6 +199,18 @@ Economy/AiMarketSellPolicies separately owns final reserve and pre-booking quant
 spans. Ordered optional adjusters compose before OR-combined native safety. The
 shared service has no default gameplay policy; consumers own synchronized settings.
 See [AI market sell policies](docs/AI_MARKET_SELL.md).
+
+`Economy/WorkerProductionModifiers` prepares base amounts, fixed percentages and
+per-level fear contributions together for mission admission. The native production
+owner consumes the prepared rules, and the shared save and multiplayer owners
+coordinate the state required by those rules.
+See [worker production modifiers](docs/WORKER_PRODUCTION_BONUS.md).
+
+`Economy/WeaponProduction` owns the mission recipe catalogue, workshop selection
+and batch state. It uses shared worker-production admission and world restoration
+to keep workshop choices consistent across peers and saves. Consumer mods own
+recipe definitions, localized names and AI decisions. See
+[weapon workshop recipes](docs/WEAPON_PRODUCTION.md).
 
 Customized launch owners register typed snapshot providers in `CustomizedLaunchOrigins`.
 The registry combines evidence without naming or reflecting over consumer assemblies.
@@ -319,6 +346,11 @@ belong to the participant, and the existing applying guard prevents reentrant pa
 `LobbyPresetStorage` owns binary file I/O, atomic replacement and corrupt-data
 backups. `PresetAtomicFilePublisher` owns bounded publication retries and destination
 replacement independently of lobby convergence; its tests run without the game.
+`PersonalSettingsWriteQueue` bundles the file writes of single edits; the working state
+changes at once. `PersonalSettingsWriteRuntime` flushes pending writes on the Unity thread
+after a quiet period (shared UI frame work, demand only while a write is pending), at
+mission lifecycle notifications and at `Application.quitting`; launch preparation, mission
+entry and explicit preset saves flush their own controller.
 The controller composes the existing envelope and determines which values
 may be saved; storage receives the completed payload. Tests can exercise this protocol
 through a plain settings host without constructing a Noesis page or subclassing the ViewModel.

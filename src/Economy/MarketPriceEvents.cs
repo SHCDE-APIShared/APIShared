@@ -77,15 +77,18 @@ namespace APIShared.Economy
         internal static int Dispatch(MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount,
             MarketPriceNativeRuntime.PriceCall original)
         {
-            if (!Registry.CanNotify) return original(manager, playerId, good, amount);
-            return DispatchObserved(Registry, direction, manager, playerId, good, amount, original);
+            if (!Registry.CanNotify) return MarketPriceModifiers.InvokeOriginal(direction, manager, playerId, good, amount, original);
+            return DispatchObserved(Registry, direction, manager, playerId, good, amount, original, true);
         }
         // Production observed path; contract tests pass their own registry.
         internal static int DispatchObserved(InterceptionEvent<MarketPricePreEventArgs, MarketPricePostEventArgs> registry,
-            MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount, MarketPriceNativeRuntime.PriceCall original)
+            MarketPriceDirection direction, IntPtr manager, int playerId, int good, int amount, MarketPriceNativeRuntime.PriceCall original,
+            bool coordinateBasePrice = false)
         {
             var invocation = registry.Begin(new MarketPricePreEventArgs(direction, manager, playerId, good, amount));
-            int result = invocation.Pre.SkipOriginalFunction ? invocation.Pre.ReplacementTotal : original(manager, playerId, good, amount);
+            int result = invocation.Pre.SkipOriginalFunction ? invocation.Pre.ReplacementTotal :
+                coordinateBasePrice ? MarketPriceModifiers.InvokeOriginal(direction, manager, playerId, good, amount, original) :
+                original(manager, playerId, good, amount);
             if (invocation.HasPostObservers)
                 invocation.Complete(new Completion(invocation.Pre, result), PostFactory);
             return result;

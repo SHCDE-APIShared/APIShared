@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 
 namespace APIShared.Workshop
 {
@@ -109,7 +108,7 @@ namespace APIShared.Workshop
         internal static string Hash(string path)
         {
             using (var stream = File.OpenRead(path))
-            using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+                return Sha256Hex.Of(stream).ToLowerInvariant();
         }
 
         internal static bool IsContainedWithoutLinks(string root, string path)

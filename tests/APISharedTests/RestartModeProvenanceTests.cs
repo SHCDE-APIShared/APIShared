@@ -31,8 +31,9 @@ namespace APISharedTests
                 Assert.AreEqual(7, restart.CustomizedTrailId);
                 Assert.AreEqual(8, restart.CustomizedMissionId);
                 Assert.AreEqual(2, restart.CustomizedOriginKind);
-                Assert.AreEqual(locked, restart.HasConflictingCustomizedOrigin);
-                Assert.AreEqual(!locked, restart.AllowsCustomGameMods);
+                // A conflict on the source snapshot is never carried on: a restart decides its mode.
+                Assert.IsFalse(restart.HasConflictingCustomizedOrigin);
+                Assert.IsTrue(restart.AllowsCustomGameMods);
                 Assert.AreEqual(2, restart.GameMembers);
                 Assert.AreEqual(multiplayer, restart.IsRealMultiplayer);
                 Assert.IsFalse(restart.MultiplayerSave, "A restart is a new game, not another save load.");
@@ -60,26 +61,28 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void MissingNativeEvidenceCannotInheritAnOpenCustomGameGate()
+        public void MissingNativeEvidenceInheritsTheSourceSessionMode()
         {
+            // A restart is the same mission again; without native data its source session decides.
             var source = Mode(GameModeKind.CustomGame, GameModeLaunchVariant.Standard);
             var unknown = Mode(GameModeKind.Unknown, GameModeLaunchVariant.Standard).WithRestartProvenance(source);
-            Assert.AreEqual(GameModeKind.Unknown, unknown.Kind);
-            Assert.IsTrue(unknown.HasConflictingCustomizedOrigin);
-            Assert.IsFalse(unknown.AllowsCustomGameMods);
+            Assert.AreEqual(GameModeKind.CustomGame, unknown.Kind);
+            Assert.IsFalse(unknown.HasConflictingCustomizedOrigin);
+            Assert.IsTrue(unknown.AllowsCustomGameMods);
         }
 
         [TestMethod]
-        public void NativeConflictAndDifferentModeCannotAcquireRestartPermission()
+        public void RestartDecidesItsModeAndADifferentNativeModeGetsNoCustomization()
         {
             var source = Mode(GameModeKind.CustomTrail, GameModeLaunchVariant.Customized);
-            var conflicting = Mode(GameModeKind.CustomTrail, GameModeLaunchVariant.Standard, locked: true).WithRestartProvenance(source);
-            Assert.IsTrue(conflicting.HasConflictingCustomizedOrigin);
-            Assert.IsFalse(conflicting.AllowsCustomGameMods);
+            var flagged = Mode(GameModeKind.CustomTrail, GameModeLaunchVariant.Standard, locked: true).WithRestartProvenance(source);
+            Assert.IsFalse(flagged.HasConflictingCustomizedOrigin);
+            Assert.AreEqual(GameModeLaunchVariant.Customized, flagged.LaunchVariant);
+            Assert.IsTrue(flagged.AllowsCustomGameMods);
             var different = Mode(GameModeKind.Campaign, GameModeLaunchVariant.Standard).WithRestartProvenance(source);
             Assert.AreEqual(GameModeKind.Campaign, different.Kind);
             Assert.AreEqual(GameModeLaunchVariant.Standard, different.LaunchVariant);
-            Assert.IsTrue(different.HasConflictingCustomizedOrigin);
+            Assert.IsFalse(different.HasConflictingCustomizedOrigin);
             Assert.IsFalse(different.AllowsRegularGameplayMods);
         }
     }

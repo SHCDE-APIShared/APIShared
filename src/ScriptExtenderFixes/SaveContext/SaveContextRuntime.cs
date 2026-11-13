@@ -20,14 +20,14 @@ namespace APIShared.ScriptExtenderFixes
     internal static class SaveContextRuntime
     {
         [ThreadStatic] private static int synchronizedSaveDepth;
-        private static readonly List<ILHook> hooks = new List<ILHook>();
+        private static readonly List<Patching.SafeIlHook> hooks = new List<Patching.SafeIlHook>();
         private static int attempted;
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool ManagedReady { get; private set; }
 
         internal static void InitializeManaged(ManualLogSource log)
         {
             if (Interlocked.Exchange(ref attempted, 1) != 0) return;
-            var candidates = new List<ILHook>();
             string stage = "validate-methods";
             try
             {
@@ -45,20 +45,20 @@ namespace APIShared.ScriptExtenderFixes
                         context.Invoke(edit.Item2);
                         definition.Generate();
                     }
-                stage = "prepare-hooks";
-                foreach (var edit in edits)
-                    candidates.Add(new ILHook(edit.Item1, edit.Item2, new ILHookConfig {
-                        ManualApply = true, ID = "APIShared.ScriptExtenderFixes.SaveContext." + edit.Item1.Name }));
-                // Root before Apply: even a failed/partial publication must never be undone.
-                hooks.AddRange(candidates);
+                // Published hooks are never undone; a failed installation leaves nothing behind.
                 stage = "publish-hooks";
-                foreach (var hook in candidates) hook.Apply();
+                foreach (var edit in edits)
+                {
+                    if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.ScriptExtenderFixes.SaveContext." + edit.Item1.Name,
+                        edit.Item1, edit.Item2, log, out var hook, out string failure))
+                        throw new InvalidOperationException(failure);
+                    lock (hooks) hooks.Add(hook);
+                }
                 ManagedReady = true;
                 NativeApiLog.Info(log, "SE_SAVE_CONTEXT: managed save factory and map/save load flags corrected; process lifetime.");
             }
             catch (Exception error)
             {
-                if (stage != "publish-hooks") foreach (var candidate in candidates) candidate.Dispose();
                 NativeApiLog.Error(log, "SE_SAVE_CONTEXT: correction unavailable; stage=" + stage +
                     ",extender=" + typeof(GameMapArchiveManagerAPI).Assembly.FullName +
                     "; synchronized saves may omit save-only records; error=" + error);
@@ -87,12 +87,13 @@ namespace APIShared.ScriptExtenderFixes
 
         internal static void CorrectLoadFlag(ILContext il, bool editorCapable)
         {
+            Instruction[] archiveReads = il.Body.Instructions.Where(i => i.Operand is MethodReference m &&
+                m.Name == "LoadMapArchive" && m.DeclaringType.FullName == typeof(GameMapArchiveManagerAPI).FullName).ToArray();
             Instruction[] stores = il.Body.Instructions.Where(i => i.OpCode == OpCodes.Stfld &&
                 i.Operand is FieldReference field && field.DeclaringType.FullName == typeof(GameMapArchiveManagerAPI).FullName &&
                 field.Name == "_currentFileIsSaveFile" && field.FieldType.FullName == "System.Boolean").ToArray();
             if (stores.Length != 1 || stores[0].Previous?.OpCode != (editorCapable ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0) ||
-                !il.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "LoadMapArchive" &&
-                    m.DeclaringType.FullName == typeof(GameMapArchiveManagerAPI).FullName))
+                archiveReads.Length != 1)
                 throw new InvalidOperationException("Archive load classification contract differs: " + il.Method.FullName);
             var cursor = new ILCursor(il);
             cursor.Goto(stores[0], MoveType.Before);
@@ -100,6 +101,14 @@ namespace APIShared.ScriptExtenderFixes
             cursor.Emit(OpCodes.Ldarg_0);
             if (editorCapable) cursor.EmitDelegate<Func<LoadSaveGameEventArgs, bool>>(e => !e.LoadingEditorMap);
             else cursor.EmitDelegate<Func<MapLoadEventArgs, bool>>(e => e.bMultiplayerSave != 0);
+            cursor = new ILCursor(il);
+            cursor.Emit(OpCodes.Ldarg_0);
+            if (editorCapable) cursor.EmitDelegate<Action<LoadSaveGameEventArgs>>(Savegames.VersionedSaveDataRuntime.BeginArchive);
+            else cursor.EmitDelegate<Action<MapLoadEventArgs>>(Savegames.VersionedSaveDataRuntime.BeginArchive);
+            cursor.Goto(archiveReads[0], MoveType.After);
+            cursor.Emit(OpCodes.Ldarg_0);
+            if (editorCapable) cursor.EmitDelegate<Action<LoadSaveGameEventArgs>>(Savegames.VersionedSaveDataRuntime.CompleteArchive);
+            else cursor.EmitDelegate<Action<MapLoadEventArgs>>(Savegames.VersionedSaveDataRuntime.CompleteArchive);
         }
 
         internal static SaveContext NormalizeSave(SaveContext context) => synchronizedSaveDepth == 0 ? context :

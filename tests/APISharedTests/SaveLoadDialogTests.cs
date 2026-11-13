@@ -12,6 +12,24 @@ namespace APISharedTests
     public class SaveLoadDialogTests
     {
         [TestMethod]
+        public void CriticalSaveFailureKeepsSameRequestOpenAndRetriesWithoutSuccessNotification()
+        {
+            var calls = new List<string>(); bool success = false;
+            var request = Create(new SaveLoadDialogCallbacks {
+                Prepare = _ => calls.Add("prepare"), AttemptFinished = _ => calls.Add("cleanup"),
+                Closed = (_, outcome) => calls.Add("closed:" + outcome)
+            });
+            Assert.IsFalse(request.Confirm("save", null, () => true, () => calls.Add("save"),
+                () => calls.Add("rollback"), () => success));
+            Assert.IsFalse(request.IsClosed);
+            CollectionAssert.AreEqual(new[] { "prepare", "save", "cleanup", "rollback" }, calls);
+            calls.Clear(); success = true;
+            Assert.IsTrue(request.Confirm("save", null, () => true, () => calls.Add("save"),
+                () => calls.Add("rollback"), () => success));
+            CollectionAssert.AreEqual(new[] { "prepare", "save", "cleanup", "closed:Confirmed" }, calls);
+        }
+
+        [TestMethod]
         public void ClosingDuringPreparationCleansUpBeforeClosedObservers()
         {
             var calls = new List<string>();

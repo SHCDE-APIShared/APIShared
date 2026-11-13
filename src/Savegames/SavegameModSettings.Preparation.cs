@@ -62,8 +62,6 @@ namespace APIShared
             if (multiplayer) throw new InvalidOperationException("Multiplayer save settings have not been prepared.");
             var participants = FindParticipants();
             var values = legacyChoice || useChosenCurrent && IsCurrentChoiceAllowed(loaded) ? chosenCurrent : loaded?.Mods;
-            bool locked = loaded?.LockedByConflict == true;
-            if (locked) values = null;
             // This is local save restoration, not a client edit or network receive.
             // The installed internal scope is signature-checked; callback errors
             // are rethrown because the Extender otherwise logs and swallows them.
@@ -71,7 +69,7 @@ namespace APIShared
             {
                 foreach (var entry in participants)
                     EnterPreparedPreset(entry.Key, entry.Value.Endpoint, ResolveStartupSnapshot(entry.Key,
-                        entry.Value, loaded, values, chosenCurrent, locked));
+                        entry.Value, loaded, values, chosenCurrent));
             });
             preparedPath = chosenPath;
             preparedRecord = loaded;
@@ -114,14 +112,16 @@ namespace APIShared
             }
         }
 
-        internal static string CaptureHostFingerprint()
+        internal static string CaptureHostFingerprint() => SavegameLoadAgreement.Fingerprint(CaptureHostSettingsForReadiness());
+
+        internal static Dictionary<string, Dictionary<string, byte[]>> CaptureHostSettingsForReadiness()
         {
             var participants = FindParticipants();
             var values = CaptureCompatibleHostSettings(participants);
             if (values.Count != participants.Count || participants.Any(p =>
                 !values.TryGetValue(p.Key, out var properties) || properties.Count != p.Value.Properties.Length))
                 throw new InvalidDataException("Incomplete host settings snapshot.");
-            return SavegameLoadAgreement.Fingerprint(values);
+            return values;
         }
 
         internal static void AcceptPreparedClient(string path, SavegameModSettingsRecord record)
@@ -132,7 +132,7 @@ namespace APIShared
                 // The fingerprint was checked after authenticated host sync.
                 // Capture all host values plus this client's own personal values.
                 var snapshot = ResolveStartupSnapshot(entry.Key, entry.Value, null,
-                    CaptureCompatibleHostSettings(), null, false);
+                    CaptureCompatibleHostSettings(), null);
                 EnterPreparedPreset(entry.Key, entry.Value.Endpoint, snapshot);
             }
             preparedPath = Normalize(path);

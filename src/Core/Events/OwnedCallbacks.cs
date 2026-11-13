@@ -3,7 +3,7 @@ using System.Threading;
 
 namespace APIShared.Events
 {
-    // Copy-on-write owner-bound registrations, ordered by order, ordinal owner GUID and ordinal ID;
+    // Copy-on-write owner-bound registrations in RegistrationKey order;
     // callbacks execute outside the registration lock.
     internal sealed class OwnedCallbacks<T> where T : Delegate
     {
@@ -13,6 +13,7 @@ namespace APIShared.Events
             internal readonly T Callback;
             internal readonly int Order;
             internal Entry(string owner, string id, T callback, int order) { Owner = owner; Id = id; Callback = callback; Order = order; }
+            internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
         private readonly object sync = new object();
         private Entry[] entries = Array.Empty<Entry>();
@@ -23,18 +24,9 @@ namespace APIShared.Events
             { diagnostic = "Owner GUID, registration ID and callback are required."; return false; }
             lock (sync)
             {
-                foreach (Entry entry in entries)
-                    if (entry.Owner == owner && entry.Id == id)
-                    { diagnostic = "This owner already registered that ID."; return false; }
-                var next = new Entry[entries.Length + 1];
-                Array.Copy(entries, next, entries.Length);
-                next[next.Length - 1] = new Entry(owner, id, callback, order);
-                Array.Sort(next, (a, b) => {
-                    int result = a.Order.CompareTo(b.Order);
-                    if (result == 0) result = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return result == 0 ? StringComparer.Ordinal.Compare(a.Id, b.Id) : result;
-                });
-                Volatile.Write(ref entries, next);
+                if (OrderedRegistrations.Contains(entries, Entry.Key, owner, id))
+                { diagnostic = "This owner already registered that ID."; return false; }
+                Volatile.Write(ref entries, OrderedRegistrations.WithAdded(entries, new Entry(owner, id, callback, order), Entry.Key));
             }
             diagnostic = string.Empty;
             return true;

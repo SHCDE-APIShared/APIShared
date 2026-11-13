@@ -11,16 +11,17 @@ namespace ThirdPartyMod
 
         internal static void Register(Action<string> log)
         {
-            if (!GameActionEvents.TryRegister(ExamplePlugin.Guid, "RecruitmentCeiling", args => {
+            if (!GameActionEvents.TryRegisterWithFinalValidation(ExamplePlugin.Guid, "RecruitmentCeiling", args => {
                 int maximum = MaximumConcreteRequest;
                 if (maximum <= 0 || args.SkipOriginalFunction || args.Command != Enums.GameActionCommand.MakeTroop) return;
                 // This demonstrates a ceiling on the sent request, not an affordability calculation.
                 if (args.StructureId > maximum) args.StructureId = maximum;
+                args.State = maximum;
             }, args => {
                 // Only this registration receives its own Pre State. Post does not confirm unit creation.
                 if (args.Command == Enums.GameActionCommand.MakeTroop && args.WasSkipped)
                     log("Recruitment request vetoed by a participant.");
-            }, out string reason)) log(reason);
+            }, args => !(args.State is int maximum) || args.StructureId <= maximum, out string reason)) log(reason);
 
             if (!PresentationEvents.TryRegister(PresentationOperation.RecruitmentEnter, ExamplePlugin.Guid,
                 "RecruitmentTooltip", null, args => {

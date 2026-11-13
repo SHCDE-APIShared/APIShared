@@ -22,7 +22,7 @@ namespace APIShared.ModSettings
 
         internal static IDisposable Begin(object model)
         {
-            if (batches == null) batches = new System.Collections.Generic.Dictionary<object, Batch>(new IdentityComparer());
+            if (batches == null) batches = new System.Collections.Generic.Dictionary<object, Batch>(ReferenceEqualityComparer.Instance);
             if (!batches.TryGetValue(model, out Batch batch)) batches.Add(model, batch = new Batch());
             batch.Depth++;
             return new Lease(model, batch);
@@ -57,159 +57,7 @@ namespace APIShared.ModSettings
                 if (current.Refreshes != null) foreach (Action refresh in current.Refreshes) refresh();
             }
         }
-        private sealed class IdentityComparer : System.Collections.Generic.IEqualityComparer<object>
-        {
-            public new bool Equals(object left, object right) => ReferenceEquals(left, right);
-            public int GetHashCode(object value) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
-        }
     }
-
-    /// <summary>Pure matching policy shared by runtime filtering and isolated tests.</summary>
-    public static class ModSettingsSearchMatcher
-    {
-        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case (culture-invariant) and diacritics.</summary>
-        public static bool IsMatch(
-            string filterText,
-            bool includeToolTips,
-            string exactKey,
-            string key,
-            string title,
-            string toolTip)
-        {
-            return IsMatch(
-                filterText,
-                includeToolTips,
-                exactKey,
-                key,
-                title,
-                toolTip,
-                string.Empty,
-                string.Empty);
-        }
-
-        /// <summary>Matches an exact ordinal setting/section key when supplied, otherwise all free-text terms in titles and optionally tooltips. Empty filters match all; text matching folds case (culture-invariant) and diacritics.</summary>
-        public static bool IsMatch(
-            string filterText,
-            bool includeToolTips,
-            string exactKey,
-            string key,
-            string title,
-            string toolTip,
-            string sectionKey,
-            string sectionTitle)
-        {
-            string exact = Normalize(exactKey);
-            if (exact.Length > 0)
-            {
-                return string.Equals(Normalize(key), exact, StringComparison.Ordinal) ||
-                    string.Equals(Normalize(sectionKey), exact, StringComparison.Ordinal);
-            }
-
-            string filter = Normalize(filterText);
-            if (filter.Length == 0)
-                return true;
-
-            string visibleText = JoinSearchText(title, sectionTitle);
-            if (ContainsAllTerms(visibleText, filter))
-                return true;
-            return includeToolTips && ContainsAllTerms(JoinSearchText(visibleText, toolTip), filter);
-        }
-
-        /// <summary>Tests all free-text terms against a section title using the same case/diacritic folding as entry matching.</summary>
-        public static bool IsSectionTitleMatch(string filterText, string sectionTitle) =>
-            ContainsAllTerms(sectionTitle, Normalize(filterText));
-
-        /// <summary>Trims search text and maps null to empty; does not itself perform case/diacritic folding.</summary>
-        public static string Normalize(string value) => (value ?? string.Empty).Trim();
-
-        private static bool ContainsAllTerms(string value, string filter)
-        {
-            if (filter.Length == 0)
-                return true;
-            string haystack = Fold(value);
-            string needle = Fold(filter);
-            if (haystack.Contains(needle))
-                return true;
-            return needle.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                .All(term => haystack.Contains(term));
-        }
-
-        private static string JoinSearchText(params string[] values) =>
-            string.Join(" ", (values ?? Array.Empty<string>()).Where(value => !string.IsNullOrWhiteSpace(value)));
-
-        private static string Fold(string value)
-        {
-            string decomposed = ModSettingsSearchText.RepairNormalizationInput(Normalize(value)).Normalize(NormalizationForm.FormD);
-            var result = new StringBuilder(decomposed.Length);
-            foreach (char character in decomposed)
-            {
-                if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
-                    result.Append(char.ToLowerInvariant(character));
-            }
-            return result.ToString().Normalize(NormalizationForm.FormC);
-        }
-    }
-    // Kept with the pure matcher so the legacy preset harness tests production text handling too.
-    internal static class ModSettingsSearchText
-    {
-        internal static string RepairNormalizationInput(string value)
-        {
-            StringBuilder repaired = null;
-            for (int index = 0; index < value.Length; index++)
-            {
-                char character = value[index];
-                if (char.IsHighSurrogate(character) && index + 1 < value.Length && char.IsLowSurrogate(value[index + 1]))
-                {
-                    int scalar = char.ConvertToUtf32(character, value[index + 1]);
-                    if ((scalar & 0xFFFF) >= 0xFFFE)
-                    {
-                        if (repaired == null) repaired = new StringBuilder(value.Length).Append(value, 0, index);
-                        repaired.Append('\uFFFD');
-                    }
-                    else if (repaired != null) repaired.Append(character).Append(value[index + 1]);
-                    index++;
-                    continue;
-                }
-                // CLR normalization rejects Unicode noncharacters on supported runtime variants.
-                // Repair comparison input only; never rewrite displayed text or exact keys.
-                if (char.IsSurrogate(character) || character >= '\uFFFE' ||
-                    (character >= '\uFDD0' && character <= '\uFDEF'))
-                {
-                    if (repaired == null) repaired = new StringBuilder(value.Length).Append(value, 0, index);
-                    repaired.Append('\uFFFD');
-                }
-                else if (repaired != null) repaired.Append(character);
-            }
-            return repaired == null ? value : repaired.ToString();
-        }
-
-        internal static string FirstSentence(string text)
-        {
-            string normalized = (text ?? string.Empty).Trim();
-            int end = normalized.IndexOfAny(new[] { '.', '!', '?', '\r', '\n' });
-            if (end >= 0) normalized = normalized.Substring(0, end + 1);
-            if (normalized.Length <= 120) return normalized;
-            int length = 117;
-            if (char.IsHighSurrogate(normalized[length - 1]) && char.IsLowSurrogate(normalized[length])) length--;
-            return normalized.Substring(0, length) + "...";
-        }
-
-        internal static uint StableHash(string value)
-        {
-            unchecked
-            {
-                uint hash = 2166136261;
-                foreach (char character in value ?? string.Empty)
-                {
-                    hash ^= character;
-                    hash *= 16777619;
-                }
-                return hash;
-            }
-        }
-
-    }
-
 }
 
 #if !API_SHARED_PRESET_TESTS
@@ -576,7 +424,7 @@ namespace APIShared.ModSettings
                             sectionKey,
                             sectionTitle,
                             false));
-                        identities.Add(title + "\u001f" + toolTip);
+                        identities.Add(ModSettingsSearchText.Identity(title, toolTip));
                     }
                 }
                 else if (IsInteractive(element))
@@ -585,16 +433,11 @@ namespace APIShared.ModSettings
                     title = FindAutomaticTitle(element, structuralParents);
                     if (title.Length == 0 && toolTip.Length > 0)
                         title = FirstSentence(toolTip);
-                    string identity = title + "\u001f" + toolTip;
+                    string identity = ModSettingsSearchText.Identity(title, toolTip);
                     if (title.Length > 0 && toolTip.Length > 0 && identities.Add(identity))
                     {
                         key = BuildAutomaticKey(element, title, toolTip);
-                        int suffix = 2;
-                        string uniqueKey = key;
-                        while (!keys.Add(uniqueKey))
-                            uniqueKey = key + ":" + suffix++;
-
-                        entries.Add(new ModSettingsSearchEntry(uniqueKey, title, toolTip));
+                        entries.Add(new ModSettingsSearchEntry(ModSettingsSearchText.ReserveUniqueKey(keys, key), title, toolTip));
                     }
                 }
             }
@@ -641,12 +484,8 @@ namespace APIShared.ModSettings
         private static string BuildAutomaticKey(FrameworkElement element, string title, string toolTip)
         {
             Binding binding = BindingOperations.GetBinding(element, ToolTipService.ToolTipProperty);
-            string bindingPath = binding?.Path?.Path ?? string.Empty;
-            string seed = bindingPath.Length > 0 ? bindingPath + ":" + title : title + ":" + toolTip;
-            return "auto:" + StableHash(seed).ToString("x8", CultureInfo.InvariantCulture);
+            return ModSettingsSearchText.AutomaticKey(binding?.Path?.Path ?? string.Empty, title, toolTip);
         }
-
-        internal static uint StableHash(string value) => ModSettingsSearchText.StableHash(value);
 
         private static string FindAutomaticTitle(
             FrameworkElement element,
@@ -722,70 +561,5 @@ namespace APIShared.ModSettings
             return ReadContentText(toolTip);
         }
     }
-
-    /// <summary>One-way XAML converter for setting/section search visibility using the shared matching policy.</summary>
-    public sealed class ModSettingsSearchVisibilityConverter : IMultiValueConverter
-    {
-        /// <summary>Returns Visible or Collapsed from the search bindings; incomplete input (fewer than six values) is Collapsed. Bind filter, tooltip inclusion, exact key, then entry key/title/tooltip and optional section key/title.</summary>
-        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
-            => ConvertCore(values, 0);
-
-        internal static object ConvertCore(object[] values, int offset)
-        {
-            string filterText = ReadString(values, offset);
-            bool includeToolTips = values != null && values.Length > offset + 1 && values[offset + 1] is bool value && value;
-            string exactKey = ReadString(values, offset + 2);
-            if (values == null || values.Length < offset + 6)
-                return Visibility.Collapsed;
-            for (int index = offset + 3; index + 2 < values.Length; index += 5)
-            {
-                if (ModSettingsSearchMatcher.IsMatch(
-                    filterText,
-                    includeToolTips,
-                    exactKey,
-                    ReadString(values, index),
-                    ReadString(values, index + 1),
-                    ReadString(values, index + 2),
-                    ReadString(values, index + 3),
-                    ReadString(values, index + 4)))
-                {
-                    return Visibility.Visible;
-                }
-            }
-            return Visibility.Collapsed;
-        }
-
-        /// <summary>Reverse conversion is unsupported and throws NotSupportedException.</summary>
-        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
-            throw new NotSupportedException();
-
-        private static string ReadString(object[] values, int index) =>
-            values != null && index < values.Length && values[index] != null
-                ? values[index].ToString()
-                : string.Empty;
-    }
-
-    /// <summary>Status-aware local visibility converter. Prefix the existing converter inputs with root model, state filter and state revision; the original converter and tuple layout remain compatible.</summary>
-    public sealed class ModSettingsSearchStateVisibilityConverter : IMultiValueConverter
-    {
-        /// <summary>Combines the original text filter with current checkbox/slider state. Section rows remain visible only when a child setting matches both constraints.</summary>
-        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (values == null || values.Length < 9) return Visibility.Collapsed;
-            ModSettingsSearchStateFilter filter = values[1] is ModSettingsSearchStateFilter selected ? selected : ModSettingsSearchStateFilter.All;
-            if (filter == ModSettingsSearchStateFilter.All)
-                return ModSettingsSearchVisibilityConverter.ConvertCore(values, 3);
-            object model = values[0];
-            for (int index = 6; index + 2 < values.Length; index += 5)
-            {
-                if (ModSettingsSearchCatalog.MatchesPresentation(model, values[index]?.ToString(), values[3]?.ToString(),
-                    values[4] is bool tips && tips, values[5]?.ToString(), filter)) return Visibility.Visible;
-            }
-            return Visibility.Collapsed;
-        }
-        /// <summary>Reverse conversion is unsupported.</summary>
-        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
-    }
-
 }
 #endif

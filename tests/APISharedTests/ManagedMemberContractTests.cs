@@ -13,11 +13,12 @@ namespace APISharedTests
     [DoNotParallelize]
     public sealed class ManagedMemberContractTests
     {
-        // Capability ID, the type whose code (with its nested types and the UnitAccess methods it calls)
+        // Capability ID, the type whose code (with its nested types and the checked-access helper methods it calls)
         // the contract must cover, and the method that creates the capability.
         private static readonly (string Id, string Type, string Creator)[] Capabilities =
         {
             (NativeCapabilityIds.MissionLifecycle, "APIShared.MissionLifecycleService", "TryCreate"),
+            (NativeCapabilityIds.MissionPlayStateReadiness, "APIShared.MissionPlayStateReadinessService", "TryCreate"),
             (NativeCapabilityIds.LobbyState, "APIShared.LobbyStateService", "TryCreate"),
             (NativeCapabilityIds.PlayerDefeat, "APIShared.PlayerDefeatService", "TryCreate"),
             (NativeCapabilityIds.BriefingGoldPresentation, "APIShared.BriefingGoldPresentationService", "TryCreate"),
@@ -26,7 +27,7 @@ namespace APISharedTests
             (NativeCapabilityIds.UnitHudPresentation, "APIShared.UnitHudPresentationService", "TryCreate"),
             (NativeCapabilityIds.CoopAiStartImport, "APIShared.CoopAiStartImportService", "TryCreate"),
         };
-        private static readonly string[] Helpers = { "APIShared.UnitAccess" };
+        private static readonly string[] Helpers = { "APIShared.UnitAccess", "APIShared.BuildingAccess" };
 
         [TestMethod]
         public void EveryContractResolvesAndListsExactlyTheCompiledMembers()

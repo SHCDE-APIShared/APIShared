@@ -50,8 +50,7 @@ namespace APIShared.ScriptExtenderFixes
             }
             catch (Exception ex)
             {
-                failures++;
-                if ((failures & (failures - 1)) == 0) error("SE_POPULARITY_DISPLAY_FAILED count=" + failures + "; " + ex);
+                if (FailureThrottle.ShouldReport(ref failures)) error("SE_POPULARITY_DISPLAY_FAILED count=" + failures + "; " + ex);
             }
         }
         internal static PopularityReport Capture(EngineInterface.PlayState s) => new PopularityReport {

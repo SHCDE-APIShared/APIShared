@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using APIShared.Events;
 
 namespace APIShared.Presentation
 {
@@ -60,11 +61,7 @@ namespace APIShared.Presentation
                     { reason = "This owner already registered that ID."; return false; }
                 var added = new Entry(this, owner, id, callback, order);
                 entries.Add(added);
-                entries.Sort((a, b) => {
-                    int comparison = a.Order.CompareTo(b.Order);
-                    if (comparison == 0) comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
+                entries.Sort((a, b) => RegistrationKey.Compare(Entry.Key(a), Entry.Key(b)));
                 registration = added;
             }
             reason = string.Empty; return true;
@@ -120,8 +117,7 @@ namespace APIShared.Presentation
                 try { entry.Callback(); }
                 catch (Exception error)
                 {
-                    long failures = ++entry.Failures;
-                    if ((failures & (failures - 1)) == 0)
+                    if (FailureThrottle.ShouldReport(ref entry.Failures))
                         try { report?.Invoke(entry.Owner + "/" + entry.Id, error); } catch { }
                 }
             }
@@ -144,6 +140,7 @@ namespace APIShared.Presentation
             internal long Deadline = long.MaxValue, Failures;
             internal Entry(UiWorkScheduler scheduler, string owner, string id, Action callback, int order)
             { this.scheduler = scheduler; Owner = owner; Id = id; Callback = callback; Order = order; }
+            internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
             public void Request() => SetDeadline(Immediate);
             public void RequestAfter(TimeSpan delay)
             {

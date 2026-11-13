@@ -187,7 +187,7 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(log,
+                    NativeApiLog.Error(log,
                         $"[{modName}] Initial lobby-settings load failed; keeping ViewModel defaults: {exception}");
                 }
                 GameXAMLManagerAPI.Instance.RegisterLobbyModSettings(
@@ -217,7 +217,7 @@ namespace APIShared.ModSettings
             if (registeredView == null)
             {
                 viewModel.DeactivatePerPlayerLobbySettings();
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Presets were not activated because lobby-settings registration failed.");
                 return;

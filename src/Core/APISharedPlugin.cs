@@ -3,7 +3,6 @@ using SHCDESE.API;
 using SHCDESE.API.LowLevel;
 using System;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace APIShared
 {
@@ -20,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.27.0";
+        public const string PluginVersion = "0.51.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -28,10 +27,13 @@ namespace APIShared
         private void Awake()
         {
             Internal.DebugLogHelper.InitializeDiagnostics(Config, Logger);
+            ModSettings.ModSettingsApplication.InitializeJournalStorage(RuntimeLogger);
+            var migrationLog = RuntimeLogger;
+            ModSettings.ModSettingsMigration.ReportProblem = text => NativeApiLog.Error(migrationLog, text);
             Localization.GameLocale.Initialize();
             var localizationLog = RuntimeLogger;
             Localization.UiText.Configure(Localization.GameLocale.Current,
-                message => Internal.DebugLogHelper.LogWarning(localizationLog, "APIShared localization: " + message));
+                message => NativeApiLog.Warning(localizationLog, "APIShared localization: " + message));
             Compatibility.FixesWheatStartup.Initialize(RuntimeLogger);
             Workshop.WorkshopCleanupRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.ScriptExtenderFixesRuntime.Initialize(Config, RuntimeLogger);
@@ -46,10 +48,13 @@ namespace APIShared
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
             Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
+            Audio.UnitVoiceRuntime.InitializeManaged(RuntimeLogger);
             ModSettings.LobbySettingsReceiveRuntime.Initialize(RuntimeLogger);
             ModSettings.ModSettingsStartLogRuntime.Initialize(RuntimeLogger);
+            ModSettings.PersonalSettingsWriteRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordScriptDiagnosticsRuntime.Initialize(RuntimeLogger);
             ScriptExtenderFixes.LordMediaRegistrationRuntime.Initialize(RuntimeLogger);
+            Presentation.LordMessageRuntime.Initialize(RuntimeLogger);
             // The Script Extender event roots this plugin's native initialization after BepInEx
             // destroys its short-lived manager object. Native process state is never torn down here.
             CrusaderLibrary.Instance.LibraryLoaded += OnLibraryLoaded;
@@ -76,15 +81,21 @@ namespace APIShared
                 new NativeInitializationStep("repair tooltip binding", () => GameXAMLManagerAPI.Instance.RegisterBinding(
                     "APISharedRepairExtrasHost", runtime.RepairTooltip), runtime.FaultBuildingRepair),
                 new NativeInitializationStep("building tooltip bindings", Presentation.BuildingTooltipPresentation.Bind),
+                new NativeInitializationStep("APIShared Mod Options", () => Workshop.WorkshopOptionsViewModel.Register(this)),
                 new NativeInitializationStep("Extender archive contexts", () => ScriptExtenderFixes.SaveContextRuntime.InitializeManaged(RuntimeLogger)),
                 new NativeInitializationStep("Extender move failure context", () => ScriptExtenderFixes.MoveCommandFailureRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("map record readiness", () => MapRecordLoadCoordinator.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame load dialog", () => Savegames.SaveLoadDialogEvents.Initialize(Config, RuntimeLogger)),
                 new NativeInitializationStep("multiplayer map lookup", () => Maps.MultiplayerMapLookup.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("lobby system messages", () => Lobby.LobbyChatPresentation.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("Vanilla Lord message references", () => Presentation.VanillaLordMessages.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("Lord message presentation protocol", () => Presentation.LordMessageRuntime.InitializeNative(hash)),
+                new NativeInitializationStep("worker production world safety", () => Economy.WorkerProductionWorldSafety.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("worker production yield context", () => Economy.WorkerProductionYieldContext.InitializeManaged(RuntimeLogger)),
                 new NativeInitializationStep("native Chore issuer context and submission", () =>
                     Networking.NativeChoreRuntime.InitializeSubmission(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("shared player-view identity", () =>
@@ -98,23 +109,33 @@ namespace APIShared
                 new NativeInitializationStep("synchronized save context", () => ScriptExtenderFixes.SynchronizedSaveRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
                     context.ModuleHandle, context.Memory.Length, hash, RuntimeLogger)),
+                new NativeInitializationStep("group-move exclusion mark", () => Commands.GroupMoveExclusion.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin path", () => AssassinPathAPI.Initialize(
                     context.ModuleHandle, context.Memory, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("Assassin attack control", () => AssassinAttackControlAPI.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("visible map rendering", () => Presentation.VisibleMapRenderEvents.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("mapper selection camera", () => Presentation.MapperSelectionCameraEvents.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production bonus", () => Economy.WorkerProductionBonusNativeRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production output roles", () => Economy.WorkerProductionOutputNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("market prices", () => Economy.MarketPriceNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
+                new NativeInitializationStep("ally goods transfers", () => Economy.AllyTransfersNative.Initialize(
+                    context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("plague heights", () => PlagueHeightService.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("audio unit context", () => Audio.SoundRuntime.InitializeNative(
                     context, RuntimeLogger, runtime.NativeOwnership, hash)),
+                new NativeInitializationStep("unit speech context", () => Audio.UnitVoiceNativeRuntime.Initialize(
+                    context, RuntimeLogger, runtime.NativeOwnership, hash)),
                 new NativeInitializationStep("rounded fear popularity", () => Economy.FearPopularityRuntime.Initialize(hash, RuntimeLogger)),
-                // Prepare shared queries before WhenReady can publish consumer registrations.
                 new NativeInitializationStep("enemy building proximity", () => Buildings.EnemyProximityPolicies.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native peace-time state", () => Simulation.PeaceTimeState.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("attack target rules", () => Units.AttackTargetRuleNative.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("military AI assignment", () =>
+                    Units.AiMilitary.AiMilitaryService.Instance.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production state", () => Economy.WorkerProductionStateRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native API publication", () => runtime.Initialize(
                     context.ModuleHandle.ToInt64(),
                     context.Memory,
@@ -124,6 +145,18 @@ namespace APIShared
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
+                new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),
+                // Closes on the first mission; inline stubs installed on a consumer's first registration need it.
+                new NativeInitializationStep("native inline patch window", () => NativeInlinePatchWindow.Initialize(RuntimeLogger)),
+                // Native records at the Hunter query entry and corpse arrival, then the Extender Hunter event id
+                // correction (subscribes before every consumer), then huntable prey, all before the production
+                // admission owner, which freezes and activates the huntable-prey catalog.
+                new NativeInitializationStep("hunter native sites", () => Wildlife.HunterNativeSites.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("hunter event ids", () => ScriptExtenderFixes.HunterEventIdentityRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("huntable prey", () => Wildlife.HuntablePreyRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("herds", () => Wildlife.HerdRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.
@@ -144,8 +177,7 @@ namespace APIShared
                 "x86_64",
                 "CrusaderDE.dll");
             using (FileStream stream = File.OpenRead(path))
-            using (SHA256 sha = SHA256.Create())
-                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
+                return Sha256Hex.Of(stream);
         }
     }
 }

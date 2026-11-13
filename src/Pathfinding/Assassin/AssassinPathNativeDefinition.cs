@@ -40,14 +40,14 @@ namespace APIShared
             for (int direction = 0; direction < 8; direction++)
                 if (memory[DirectionMasksRva + direction] != 1 << direction)
                     throw new InvalidOperationException("Unexpected Assassin direction mask table.");
-            ResolveExact(memory, image, 0xD9C40, BuilderPattern, log);
+            ResolveExact(memory, image, BuilderRva, BuilderPattern, log);
             for (int index = 0; index < Sites.Length; index++)
             {
                 ResolveExact(memory, image, Sites[index], Patterns[index], log);
                 ValidateSpan(memory, module, Sites[index], Lengths[index], 14);
             }
-            ValidateSpan(memory, module, 0xD9C40, 10, 6); // Indirect-only NativeX64 backend.
-            ValidateIncoming(memory, module, 0xD9C40, 990);
+            ValidateSpan(memory, module, BuilderRva, BuilderDisplacedLength, 6); // Indirect-only NativeX64 backend.
+            ValidateIncoming(memory, module, BuilderRva, 990);
             ValidateIncoming(memory, module, 0xE1640, 1512);
         }
 
@@ -97,8 +97,8 @@ namespace APIShared
                 if (instruction.Code == Code.INVALID) throw new InvalidOperationException("Invalid Assassin containing function.");
                 if (instruction.FlowControl != FlowControl.ConditionalBranch &&
                     instruction.FlowControl != FlowControl.UnconditionalBranch && instruction.FlowControl != FlowControl.Call) continue;
-                var starts = new List<int>(Sites) { 0xD9C40 };
-                var lengths = new List<int>(Lengths) { 10 };
+                var starts = new List<int>(Sites) { BuilderRva };
+                var lengths = new List<int>(Lengths) { BuilderDisplacedLength };
                 for (int index = 0; index < starts.Count; index++)
                 {
                     ulong start = module + (uint)starts[index], end = start + (uint)lengths[index];
@@ -113,7 +113,7 @@ namespace APIShared
         {
             var native = hook as NativeDetour<AssassinPathBuilder>;
             if (native == null || !native.IsInstalled || native.Scheme != DetourScheme.Indirect ||
-                native.DisplacedByteCount != 10 || native.TargetAddress != module + 0xD9C40 || native.PointerSlot == IntPtr.Zero)
+                native.DisplacedByteCount != BuilderDisplacedLength || native.TargetAddress != module + BuilderRva || native.PointerSlot == IntPtr.Zero)
                 throw new InvalidOperationException("Shared Assassin NativeX64 contract mismatch.");
             IntPtr target = new IntPtr(unchecked((long)native.TargetAddress));
             if (Marshal.ReadByte(target) != 0xFF || Marshal.ReadByte(target, 1) != 0x25 ||

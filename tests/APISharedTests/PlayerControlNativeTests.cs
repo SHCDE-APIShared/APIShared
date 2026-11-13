@@ -276,6 +276,35 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void SharedProductionWriterRunsInsideIdentityScopeAndPreservesDormantAbiAndFailures()
+        {
+            // This fixture publishes no live native cohort. The production entry must
+            // transparently call the supplied native boundary until its IO cohort is ready.
+            Assert.IsFalse(APIShared.Economy.WorkerProductionCriticalSaveRuntime.IsAvailable);
+            var f = new ViewFixture(); f.Acquire(); f.View = 6; int calls = 0;
+            var manager = new IntPtr(0x1234); var sections = new IntPtr(0x5678);
+            const ulong NativeResult = 0xFEDCBA9876543210;
+            PlayerViewSaveScope.WriterCall native = (actualManager, actualSections, map) => {
+                calls++;
+                Assert.IsTrue(System.Threading.Monitor.IsEntered(f.Gate));
+                Assert.IsTrue(f.Core.IsScopeActive); Assert.AreEqual(2, f.View);
+                Assert.AreEqual(manager, actualManager); Assert.AreEqual(sections, actualSections); Assert.AreEqual((byte)1, map);
+                return NativeResult;
+            };
+            long token = APIShared.Economy.WorkerProductionCriticalSaveRuntime.OutcomeToken;
+            Assert.AreEqual(NativeResult, PlayerViewSaveScope.RunWriter(f.Core, manager, sections, 1, native, f.Runtime));
+            Assert.AreEqual(token, APIShared.Economy.WorkerProductionCriticalSaveRuntime.OutcomeToken,
+                "An unpublished IO cohort cannot start a production save transaction.");
+            Assert.AreEqual(1, calls); Assert.AreEqual(6, f.View); Assert.IsFalse(f.Core.IsScopeActive);
+            Assert.AreEqual(0UL, PlayerViewSaveScope.RunWriter(f.Core, manager, sections, 1,
+                (m, s, map) => { calls++; throw new IOException("raw writer failed"); }, f.Runtime));
+            Assert.AreEqual(2, calls); Assert.AreEqual(6, f.View); Assert.IsFalse(f.Core.IsScopeActive);
+            f.World = 2;
+            Assert.AreEqual(0UL, PlayerViewSaveScope.RunWriter(f.Core, manager, sections, 1, native, f.Runtime));
+            Assert.AreEqual(2, calls, "A stale participant identity rejects before production or the raw writer is entered.");
+        }
+
+        [TestMethod]
         public void ActualSaveWriterBackendDisplacesTenBytesAndPreservesArgumentsAndOriginalResult()
         {
             using (var target = ExecutableFunction.Create(a => {

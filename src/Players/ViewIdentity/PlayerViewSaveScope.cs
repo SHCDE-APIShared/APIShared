@@ -26,14 +26,16 @@ namespace APIShared.PlayerControl
         private static readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private static readonly Func<WriterArguments, ulong> writeOriginal = WriteOriginal;
         private static DetourHandle<WriterCall> handle;
+        private static WriterCall cachedWriterCall;
         private static PlayerViewIdentity identity;
 
         private readonly struct WriterArguments
         {
             internal readonly IntPtr Manager, Sections;
             internal readonly byte MapSave;
-            internal WriterArguments(IntPtr manager, IntPtr sections, byte mapSave)
-            { Manager = manager; Sections = sections; MapSave = mapSave; }
+            internal readonly WriterCall Original;
+            internal WriterArguments(IntPtr manager, IntPtr sections, byte mapSave, WriterCall original)
+            { Manager = manager; Sections = sections; MapSave = mapSave; Original = original; }
         }
 
         internal static bool IsReady => publication.IsReady;
@@ -79,7 +81,7 @@ namespace APIShared.PlayerControl
                 if (!result.IsCompleteSuccess || !candidate.Success)
                     throw new InvalidOperationException("PLAYER_CONTROL_SAVE: writer hook could not prepare.");
                 ValidatePrepared(candidate.Hook, target);
-                handle = candidate; identity = guard;
+                handle = candidate; cachedWriterCall = candidate.Original; identity = guard;
                 NativeHookPublication.Enable(pending, result, publication, handle,
                     () => NativeSites.NativeIndirectEntry.Validate(candidate.Hook, target, Entry));
                 NativeApiLog.Info(log, "PLAYER_CONTROL_SAVE: method=reference-rva, rva=0x52B0, " +
@@ -88,7 +90,7 @@ namespace APIShared.PlayerControl
             catch
             {
                 publication.RollbackUnpublished(pending, () => {
-                    handle = null; identity = null;
+                    handle = null; cachedWriterCall = null; identity = null;
                     ApiSharedNativeSites.Release(sites, ApiSharedNativeSites.PlayerViewIdentitySite);
                 });
                 throw;
@@ -98,15 +100,25 @@ namespace APIShared.PlayerControl
         internal static void ValidatePrepared(IDetour<WriterCall> hook, IntPtr target)
             => NativeSites.NativeIndirectEntry.Validate(hook, target, Entry, false);
 
-        private static ulong WriteOriginal(WriterArguments args) => handle.Original(args.Manager, args.Sections, args.MapSave);
+        // The existing sole52B0 owner enters production only after acquiring the same
+        // engine monitor and restoring the participant identity. Cache the exact ulong
+        // native ABI delegate once; no per-save delegate allocation or competing detour.
+        private static ulong WriteOriginal(WriterArguments args) => Economy.WorkerProductionCriticalSaveRuntime.RunWriter(
+            args.Manager, args.Sections, args.MapSave, args.Original);
 
         private static ulong OnWriter(IntPtr manager, IntPtr sections, byte mapSave)
         {
             var guard = identity;
             if (!publication.IsReady || guard == null)
                 return handle.Original(manager, sections, mapSave);
-            return RunProtectedWriter(guard, new WriterArguments(manager, sections, mapSave), writeOriginal);
+            return RunWriter(guard, manager, sections, mapSave, cachedWriterCall);
         }
+
+        // Tests substitute only the raw native writer, retaining the actual identity ->
+        // production -> native ordering and the outer nonthrowing ABI boundary.
+        internal static ulong RunWriter(PlayerViewIdentity guard, IntPtr manager, IntPtr sections, byte mapSave,
+            WriterCall original, PlayerViewIdentityRuntime runtime = null) =>
+            RunProtectedWriter(guard, new WriterArguments(manager, sections, mapSave, original), writeOriginal, runtime);
 
         // The native error boundary is also exercised with a throwing world
         // adapter. If a post-write check throws, the file has already been written;

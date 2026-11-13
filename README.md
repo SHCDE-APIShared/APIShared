@@ -37,5 +37,13 @@ Saved mission restrictions and fixed creator rules remain in force. See
 - [Release history](info.json).
 - [Documentation for mod authors](docs/THIRD_PARTY_GUIDE.md), [API catalog](docs/API_CATALOG.md)
   and [contributing](CONTRIBUTING.md).
+- [Shared worker-production rules](docs/WORKER_PRODUCTION_BONUS.md) for mod authors
+  cover base output, fixed bonuses and how each fear level affects worker output.
+- [Weapon workshop recipes](docs/WEAPON_PRODUCTION.md) for mod authors.
+- [Audio interfaces](docs/AUDIO.md) for mod authors cover sound effects and
+  [unit voices](docs/AUDIO.md#unit-voices), including custom recordings and
+  coordinated replacement, suppression and volume rules.
+- [Lord message presentation](docs/LORD_MESSAGES.md) lets mod authors replace
+  a message's voice, video and subtitles independently of unit-voice rules.
 
 License: MIT.

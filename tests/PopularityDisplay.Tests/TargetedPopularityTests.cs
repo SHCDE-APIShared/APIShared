@@ -34,6 +34,9 @@ public sealed class TargetedPopularityTests
             later.SetContributions(null);
             Assert.AreEqual(-175,PopularitySelection.Resolve(777,PopularitySelection.ForKind(2),(int)source));
             var selected=PopularitySelection.ForKind(1);
+            // Warm up first: tiered compilation of the loop allocates on this thread and otherwise
+            // lands inside the measured window on some runs.
+            for(int i=0;i<100000;i++)PopularitySelection.Resolve(777,selected,(int)source);
             long before=GC.GetAllocatedBytesForCurrentThread();
             for(int i=0;i<100000;i++)PopularitySelection.Resolve(777,selected,(int)source);
             Assert.AreEqual(before,GC.GetAllocatedBytesForCurrentThread());

@@ -10,7 +10,8 @@ namespace APIShared.Presentation
 {
     /// <summary>
     /// Single owner of Vanilla's troop-action HUD setup (<c>HUD_Troops.SetuptroopActionsUI(bool)</c>) for
-    /// independently installed mods that add buttons to the troop panel. Mods place a host element named
+    /// independently installed mods that add buttons to the troop panel. Typed registrations use the
+    /// same action field with circular pages; legacy mods place a host element named
     /// <see cref="HostNamePrefix"/>... in the troop panel XAML whose DataContext exposes the documented
     /// layout properties; this service refreshes every registered mod and then lays out all hosts once.
     /// </summary>
@@ -23,7 +24,7 @@ namespace APIShared.Presentation
     /// <c>SerpTroopAction_&lt;priority&gt;_&lt;id&gt;</c> is parsed. At most two free slots (bottom right,
     /// bottom middle) are assigned; duplicate IDs stay hidden. Everything runs on the Unity thread.
     /// </remarks>
-    public static class TroopActionHud
+    public static partial class TroopActionHud
     {
         /// <summary>Required element-name prefix of a shared troop-action host.</summary>
         public const string HostNamePrefix = TroopActionHudLayoutPolicy.HostNamePrefix;
@@ -66,20 +67,12 @@ namespace APIShared.Presentation
             { reason = "Owner, ID and refresher are required."; return false; }
             lock (sync)
             {
-                foreach (Registration entry in registrations)
-                    if (entry.Owner == ownerGuid && entry.Id == registrationId)
-                    { reason = "This owner already registered that ID."; return false; }
+                if (OrderedRegistrations.Contains(registrations, Registration.Key, ownerGuid, registrationId))
+                { reason = "This owner already registered that ID."; return false; }
                 if (setupHook == null && !TryInstall(out reason))
                     return false;
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(ownerGuid, registrationId, refreshVisibility);
-                Array.Sort(next, (a, b) =>
-                {
-                    int comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
-                Volatile.Write(ref registrations, next);
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(ownerGuid, registrationId, refreshVisibility), Registration.Key));
             }
             reason = string.Empty;
             // A direct editor launch can build the HUD before BepInEx installs this hook.
@@ -106,6 +99,28 @@ namespace APIShared.Presentation
         /// a null panel is ignored.</remarks>
         public static void Reflow(HUD_Troops troopPanel) =>
             TroopActionHudLayout.Reflow(troopPanel, Volatile.Read(ref logger));
+
+        /// <summary>A mod is about to show its own troop panel in place of the regular troop actions.</summary>
+        /// <remarks>Unity thread. Close menus and popups that belong to the regular panel. A failing handler
+        /// is isolated and counted in <see cref="CallbackFailures"/>.</remarks>
+        public static event Action ForeignPanelActivating;
+
+        /// <summary>Raises <see cref="ForeignPanelActivating"/>; called by the mod that shows its own panel.</summary>
+        /// <remarks>Unity thread.</remarks>
+        public static void NotifyForeignPanelActivating()
+        {
+            Action handlers = ForeignPanelActivating;
+            if (handlers == null) return;
+            foreach (Action handler in handlers.GetInvocationList())
+            {
+                try { handler(); }
+                catch (Exception error)
+                {
+                    if (FailureThrottle.ShouldReport(ref failures))
+                        InterceptionDiagnostics.Report("troop action foreign panel handler", error);
+                }
+            }
+        }
 
         /// <summary>Total isolated refresher exceptions.</summary>
         public static long CallbackFailures => Interlocked.Read(ref failures);
@@ -163,8 +178,7 @@ namespace APIShared.Presentation
             try { registration.Refresh(panel); }
             catch (Exception ex)
             {
-                long count = Interlocked.Increment(ref failures);
-                if ((count & (count - 1)) == 0)
+                if (FailureThrottle.ShouldReport(ref failures))
                     InterceptionDiagnostics.Report(registration.Owner + "/" + registration.Id + " troop action refresh", ex);
             }
         }
@@ -184,6 +198,7 @@ namespace APIShared.Presentation
             internal readonly Action<HUD_Troops> Refresh;
             internal Registration(string owner, string id, Action<HUD_Troops> refresh)
             { Owner = owner; Id = id; Refresh = refresh; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id);
         }
     }
 }

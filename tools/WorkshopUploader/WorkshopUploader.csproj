@@ -30,6 +30,7 @@
     <Compile Include="../../src/Workshop/WorkshopBootstrapValidation.cs" Link="Shared/WorkshopBootstrapValidation.cs" />
     <Compile Include="../../src/Workshop/WorkshopMapArchive.cs" Link="Shared/WorkshopMapArchive.cs" />
     <Compile Include="../../src/Workshop/WorkshopMapPackage.cs" Link="Shared/WorkshopMapPackage.cs" />
+    <Compile Include="../../src/Core/Internal/Sha256Hex.cs" Link="Shared/Sha256Hex.cs" />
     <Compile Include="../../src/Workshop/WorkshopSteamUpload.cs" Link="Shared/WorkshopSteamUpload.cs" />
     <Compile Include="../../src/Workshop/WorkshopPublisherContext.cs" Link="Shared/WorkshopPublisherContext.cs" />
     <Compile Include="../../src/ModSettings/Internal/DependencyFreeJson.cs" Link="Shared/DependencyFreeJson.cs" />

@@ -68,18 +68,10 @@ namespace APIShared.Audio
             var handle = new SoundRegistration(sources);
             lock (sync)
             {
-                foreach (Registration entry in registrations)
-                    if (entry.Owner == ownerGuid && entry.Id == registrationId)
-                    { reason = "This owner already registered that ID."; return false; }
-                var next = new Registration[registrations.Length + 1];
-                Array.Copy(registrations, next, registrations.Length);
-                next[next.Length - 1] = new Registration(ownerGuid, registrationId, pre, order, handle);
-                Array.Sort(next, (a, b) => {
-                    int comparison = a.Order.CompareTo(b.Order);
-                    if (comparison == 0) comparison = StringComparer.Ordinal.Compare(a.Owner, b.Owner);
-                    return comparison != 0 ? comparison : StringComparer.Ordinal.Compare(a.Id, b.Id);
-                });
-                Volatile.Write(ref registrations, next);
+                if (OrderedRegistrations.Contains(registrations, Registration.Key, ownerGuid, registrationId))
+                { reason = "This owner already registered that ID."; return false; }
+                Volatile.Write(ref registrations, OrderedRegistrations.WithAdded(
+                    registrations, new Registration(ownerGuid, registrationId, pre, order, handle), Registration.Key));
             }
             Demand.Attach(handle);
             registration = handle; reason = string.Empty; return true;
@@ -108,8 +100,7 @@ namespace APIShared.Audio
                     {
                         args.Restore(before);
                         Interlocked.Increment(ref failures);
-                        long count = Interlocked.Increment(ref entry.Failures);
-                        if ((count & (count - 1)) == 0)
+                        if (FailureThrottle.ShouldReport(ref entry.Failures))
                             try { InterceptionDiagnostics.Report(entry.Owner + "/" + entry.Id + " SoundSource", ex); } catch { }
                     }
                 }
@@ -126,6 +117,7 @@ namespace APIShared.Audio
             internal readonly SoundRegistration Handle;
             internal Registration(string owner, string id, SoundSourceHandler pre, int order, SoundRegistration handle)
             { Owner = owner; Id = id; Pre = pre; Order = order; Handle = handle; }
+            internal static readonly Func<Registration, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
     }
 }

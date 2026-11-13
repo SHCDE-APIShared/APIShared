@@ -13,7 +13,7 @@ namespace APIShared.Statistics
         private static int errors;
         private static readonly StatisticRegistry registry = new StatisticRegistry(() => UnityMainThreadDispatch.IsMainThread, Report);
         private static void Report(string source, Exception error)
-        { if (++errors <= 12) log.LogWarning("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + source + ": " + error); }
+        { if (++errors <= 12) NativeApiLog.Warning(log, source + ": " + error); }
         /// <summary>Registers a unique owner/local-ID pair. False leaves the existing registration untouched;
         /// reason diagnoses invalid input, a duplicate or incorrect thread/initialization.</summary>
         public static bool TryRegister(string ownerGuid, LordStatisticColumnDefinition definition,

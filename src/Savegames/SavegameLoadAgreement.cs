@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 
 namespace APIShared
 {
@@ -67,8 +66,7 @@ namespace APIShared
                     }
                 }
                 writer.Flush();
-                using (var sha = SHA256.Create())
-                    return BitConverter.ToString(sha.ComputeHash(stream.ToArray())).Replace("-", "");
+                return Sha256Hex.Of(stream.ToArray());
             }
         }
     }

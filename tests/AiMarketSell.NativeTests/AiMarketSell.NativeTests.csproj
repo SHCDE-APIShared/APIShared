@@ -5,6 +5,7 @@
     
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
     <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
     <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>
@@ -12,6 +13,8 @@
     <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)/SHCDESE.dll</HintPath></Reference>
     <Reference Include="Microsoft.Extensions.Logging.Abstractions"><HintPath>$(ExtenderDir)/Microsoft.Extensions.Logging.Abstractions.dll</HintPath></Reference>
     <Compile Include="../../src/Economy/AiMarketSellAssembly.cs" Link="Production/AiMarketSellAssembly.cs" />
+    <Compile Include="../../src/Core/Internal/Native/NativeInlineStub.cs" Link="Production/NativeInlineStub.cs" />
     <Compile Include="../../src/Economy/AiMarketSellPolicies.cs" Link="Production/AiMarketSellPolicies.cs" />
+    <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
   </ItemGroup>
 </Project>

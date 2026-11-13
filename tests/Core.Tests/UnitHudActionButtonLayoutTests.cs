@@ -1,4 +1,5 @@
 using APIShared;
+using APIShared.Presentation;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Core.Tests
@@ -7,10 +8,115 @@ namespace Core.Tests
     public class UnitHudActionButtonLayoutTests
     {
         [TestMethod]
+        [DataRow(0, 0)]
+        [DataRow(0, 2)]
+        [DataRow(1, 1)]
+        [DataRow(1, 2)]
+        [DataRow(2, 2)]
+        public void VanillaActionSlotsDoNotReserveNavigationUntilNeeded(int count, int slots)
+        {
+            var decision = TroopActionPagingPolicy.Decide(count, slots, 5);
+            Assert.AreEqual(count, decision.DirectCount);
+            Assert.AreEqual(1, decision.PageCount);
+            Assert.IsFalse(decision.HasNavigation);
+            Assert.IsFalse(decision.UsesFallbackAnchor);
+            Assert.AreEqual(0, decision.GetSlice(0).Start);
+            Assert.AreEqual(count, decision.GetSlice(0).Count);
+        }
+
+        [TestMethod]
+        public void SixArcherActionsKeepOneDirectAndFiveOnTheSecondPage()
+        {
+            var decision = TroopActionPagingPolicy.Decide(6, 2, 5);
+            Assert.AreEqual(1, decision.DirectCount);
+            Assert.AreEqual(2, decision.PageCount);
+            Assert.AreEqual(1, decision.GetSlice(1).Start);
+            Assert.AreEqual(5, decision.GetSlice(1).Count);
+            Assert.IsTrue(decision.HasNavigation);
+            Assert.IsFalse(decision.UsesFallbackAnchor);
+
+            var afterHidingAnAction = TroopActionPagingPolicy.Decide(2, 2, 5);
+            Assert.AreEqual(2, afterHidingAnAction.DirectCount);
+            Assert.IsFalse(afterHidingAnAction.HasNavigation, "Releasing overflow must restore direct access.");
+            Assert.AreEqual(0, afterHidingAnAction.ClampPage(1));
+        }
+
+        [TestMethod]
+        public void OneRemainingSlotBecomesNavigationAndZeroSlotsUseTheExternalAnchor()
+        {
+            var oneSlot = TroopActionPagingPolicy.Decide(2, 1, 5);
+            Assert.AreEqual(0, oneSlot.DirectCount);
+            Assert.AreEqual(2, oneSlot.GetSlice(1).Count);
+            Assert.IsTrue(oneSlot.HasNavigation);
+            Assert.IsFalse(oneSlot.UsesFallbackAnchor);
+
+            var noSlots = TroopActionPagingPolicy.Decide(7, 0, 6);
+            Assert.AreEqual(0, noSlots.DirectCount);
+            Assert.AreEqual(3, noSlots.PageCount);
+            Assert.AreEqual(0, noSlots.GetSlice(1).Start);
+            Assert.AreEqual(6, noSlots.GetSlice(1).Count);
+            Assert.AreEqual(6, noSlots.GetSlice(2).Start);
+            Assert.AreEqual(1, noSlots.GetSlice(2).Count);
+            Assert.IsTrue(noSlots.HasNavigation);
+            Assert.IsTrue(noSlots.UsesFallbackAnchor, "Occupied Vanilla slots must never make registered actions unreachable.");
+        }
+
+        [TestMethod]
+        public void RingNavigationTraversesBothEndsAndClampsAfterActionsDisappear()
+        {
+            var mixed = TroopActionPagingPolicy.Decide(8, 2, 5);
+            Assert.AreEqual(3, mixed.PageCount);
+            Assert.AreEqual(2, mixed.Move(0, -1));
+            Assert.AreEqual(0, mixed.Move(2, 1));
+            Assert.AreEqual(1, mixed.Move(2, -1));
+            Assert.AreEqual(0, mixed.Move(1, -1));
+            Assert.AreEqual(1, mixed.Move(0, 1));
+            Assert.AreEqual(2, mixed.Move(1, 1));
+            Assert.AreEqual(2, mixed.GetSlice(2).Count);
+            Assert.AreEqual(6, mixed.GetSlice(2).Start);
+
+            var reduced = TroopActionPagingPolicy.Decide(3, 2, 5);
+            Assert.AreEqual(1, reduced.ClampPage(2));
+            Assert.AreEqual(0, reduced.ClampPage(-1));
+            Assert.AreEqual(2, reduced.GetSlice(2).Count);
+        }
+
+        [TestMethod]
+        public void ForeignReservationsReduceLaterPageCapacityWithoutSkippingActions()
+        {
+            var reserved = TroopActionPagingPolicy.Decide(9, 1, 3);
+            Assert.AreEqual(4, reserved.PageCount);
+            var indexes = Enumerable.Range(0, reserved.PageCount)
+                .SelectMany(page => Enumerable.Range(reserved.GetSlice(page).Start, reserved.GetSlice(page).Count)).ToArray();
+            CollectionAssert.AreEqual(Enumerable.Range(0, 9).ToArray(), indexes,
+                "Every registered action must appear once even when foreign buttons reserve slots.");
+        }
+
+        [TestMethod]
+        public void InvalidCapacitiesCannotInventGridSlotsOrUnreachableNavigation()
+        {
+            var empty = TroopActionPagingPolicy.Decide(-1, -1, -1);
+            Assert.AreEqual(0, empty.DirectCount);
+            Assert.AreEqual(1, empty.PageCount);
+            Assert.IsFalse(empty.HasNavigation);
+            Assert.AreEqual(0, empty.Move(20, -1));
+            var bounded = TroopActionPagingPolicy.Decide(20, 100, 100);
+            Assert.AreEqual(5, bounded.DirectCount, "A grid has six fields, including navigation when needed.");
+            Assert.AreEqual(6, bounded.GetSlice(1).Count);
+            var foreignOnly = TroopActionPagingPolicy.Decide(2, 0, 0);
+            Assert.AreEqual(1, foreignOnly.PageCount);
+            Assert.IsFalse(foreignOnly.HasNavigation, "Navigation cannot promise an inaccessible page.");
+            Assert.AreEqual(0, foreignOnly.GetSlice(0).Count);
+        }
+
+        [TestMethod]
         public void TemplateProvidesAnOpaqueIconAndHitSurfaceAboveVanillaClickShields()
         {
             var patch = System.Xml.Linq.XDocument.Load(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Fixtures", "HUD_Troops.xaml"));
-            var style = patch.Descendants().Single(e => e.Name.LocalName == "Style" && (string)e.Attribute("TargetType") == "{x:Type Button}");
+            System.Xml.Linq.XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var style = patch.Descendants().Single(e => e.Name.LocalName == "Style" &&
+                (string)e.Attribute(xaml + "Key") == "APISharedTroopActionButtonStyle" &&
+                (string)e.Attribute("TargetType") == "{x:Type Button}");
             var template = style.Descendants().Single(e => e.Name.LocalName == "ControlTemplate");
             var hitSurface = template.Elements().First();
             Assert.AreEqual("Border", hitSurface.Name.LocalName);

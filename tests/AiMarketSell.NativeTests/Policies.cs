@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using APIShared.Economy;
+using APIShared.Modifiers;
 using Iced.Intel;
 
 namespace APIShared.Economy
@@ -54,6 +55,21 @@ internal static partial class Program
         Check(closed, "retained public context frozen after dispatch");
         Check(registry.Quantity(0,14,3,9) == 9 && registry.Quantity(1,15,3,9) == 9, "invalid context never notified");
         early.SetEnabled(false); bad.SetEnabled(false); late.SetEnabled(false);
+        registry.TryRegister("typed", "before", 0, out var before, out _,
+            c => c.Contribute(ValueModifierContribution.Factor(2)), c => c.Contribute(ValueModifierContribution.Factor(2)), 10);
+        registry.TryRegister("typed", "fixed", 0, out var fixedValue, out _, c => c.Reserve = 3, c => c.Amount = 3, 20);
+        registry.TryRegister("typed", "after", 0, out var after, out _,
+            c => c.Contribute(ValueModifierContribution.Factor(1.5m, ValueModifierStage.AfterFixedValue)),
+            c => c.Contribute(ValueModifierContribution.Factor(1.5m, ValueModifierStage.AfterFixedValue)), 30);
+        registry.TryRegister("typed", "throw", 0, out var typedBad, out _,
+            c => { c.Contribute(ValueModifierContribution.FixedValue(999)); throw new Exception(); },
+            c => { c.Contribute(ValueModifierContribution.FixedValue(999)); throw new Exception(); }, 40);
+        before.SetEnabled(true); fixedValue.SetEnabled(true); after.SetEnabled(true); typedBad.SetEnabled(true);
+        Check(registry.Reserve(1,14,3,10) == 5 && registry.Quantity(1,14,3,10) == 5 && typedBad.CallbackErrorCount == 2,
+            "typed factors surround legacy fixed values, round once and roll back failed typed callbacks");
+        fixedValue.SetEnabled(false);
+        Check(registry.Reserve(1,14,3,10) == 30 && registry.Quantity(1,14,3,10) == 30, "without a fixed winner both stages multiply original");
+        before.SetEnabled(false); after.SetEnabled(false); typedBad.SetEnabled(false);
         long allocated = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 10000; i++) registry.Quantity(1,14,3,9);
         Check(GC.GetAllocatedBytesForCurrentThread() == allocated, "dormant broker allocates nothing");

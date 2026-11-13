@@ -29,9 +29,6 @@ namespace APIShared
     /// </remarks>
     public static class UnitHudSpriteColours
     {
-        private const int FirstPlayerId = 1;
-        private const int LastPlayerId = 8;
-
         /// <summary>
         /// Leases the unit HUD sprite colours for <paramref name="ownerGuid"/> and draws them in the colour of player
         /// <paramref name="playerId"/> (one-based native slot 1..8). The current holder may call again to change the player.
@@ -46,7 +43,7 @@ namespace APIShared
                 reason = "A nonempty owner GUID is required.";
                 return false;
             }
-            if (playerId < FirstPlayerId || playerId > LastPlayerId)
+            if (!PlayerSlots.IsValidPlayerId(playerId))
             {
                 reason = $"Player ID {playerId} is outside 1..8.";
                 return false;

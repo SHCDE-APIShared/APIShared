@@ -2,6 +2,7 @@
 # Host-side Proton updater. LF intentionally; requires bash, flock and GNU coreutils.
 set -euo pipefail
 game=${1:?game root required}; transaction=${2:?transaction or --maintain required}; expected=${3:-}; recover=${4:-}; supersedes_hash=${5:-}
+source_manifest=${6:-}; source_manifest_hash=${7:-}
 [[ $game == /* && ( $transaction == /* || $transaction == --maintain || $transaction == --status ) ]] || { echo 'Host absolute paths are required.' >&2; exit 1; }
 [[ -z ${SCDEModManagerLaunchId:-} ]] || { echo 'Externally managed installation.' >&2; exit 1; }
 unlinked() {
@@ -20,6 +21,16 @@ inside() {
     printf '%s' "$root/$relative"
 }
 hash() { if [[ -f $1 ]]; then sha256sum -- "$1" | cut -d ' ' -f1; else printf missing; fi; }
+assert_confirmed_source() {
+    [[ $recover == --manual ]] || return 0
+    [[ $source_manifest == /*/apishared-workshop.json && $source_manifest_hash =~ ^[a-f0-9]{64}$ ]] ||
+        { record 'failure Invalid confirmed Workshop manifest reference'; return 1; }
+    unlinked "$source_manifest" || return 1
+    [[ $(hash "$source_manifest") == "$source_manifest_hash" ]] ||
+        { record 'failure Steam download changed; confirm a new Workshop installation preview'; return 1; }
+    [[ ! -d "$(inside "$game" _SE/.staging)" ]] ||
+        { record 'failure Script Extender staging takes precedence'; return 1; }
+}
 process_start() {
     local stat_line; local -a values
     IFS= read -r stat_line < "/proc/$1/stat" || return 1
@@ -30,15 +41,46 @@ unlinked "$game"
 game=$(realpath -e -- "$game")
 if [[ $transaction != --maintain && $transaction != --status ]]; then unlinked "$transaction"; transaction=$(realpath -e -- "$transaction"); fi
 state=$(inside "$game" _APIShared/Workshop)
+legacy_root=$(inside "$state" Transactions)
+short_root=$(inside "$game" _APIShared/T)
+for root in "$legacy_root" "$short_root"; do
+    [[ ! -e $root || -d $root ]] || { echo "Not a transaction directory: $root" >&2; exit 1; }
+done
+# Recovery references and activity records still identify transactions by ID.
+# No root takes precedence if that ID exists in both places.
+transaction_directory() {
+    local id=$1 root candidate found=''
+    [[ $id =~ ^[a-f0-9]{32}$ ]] || return 1
+    for root in "$legacy_root" "$short_root"; do
+        candidate=$(inside "$root" "$id") || return 1
+        [[ -e $candidate ]] || continue
+        [[ -d $candidate && -z $found ]] || { echo "Ambiguous or invalid transaction ID: $id" >&2; return 1; }
+        found=$candidate
+    done
+    printf '%s' "$found"
+}
+check_duplicate_transactions() {
+    local directory id
+    local -A ids=()
+    for directory in "$legacy_root"/* "$short_root"/*; do
+        id=${directory##*/}; id=${id,,}
+        [[ $id =~ ^[a-f0-9]{32}$ && ( -e $directory || -L $directory ) ]] || continue
+        if [[ -n ${ids[$id]:-} ]]; then
+            echo "Duplicate transaction ID: $id" >&2; return 1
+        fi
+        ids[$id]=1
+    done
+}
+lock_path=$(inside "$state" apply.lock)
 if [[ $transaction == --status ]]; then
-    if [[ ! -f $state/apply.lock ]]; then printf 'idle\n'; exit 0; fi
-    unlinked "$state/apply.lock"; exec 9<"$state/apply.lock"
+    if [[ ! -f $lock_path ]]; then printf 'idle\n'; exit 0; fi
+    exec 9<"$lock_path"
     if flock -n 9; then printf 'idle\n'; exit 0; fi
     record_text=$(head -c 512 -- "$state/apply.lock"); record_text=${record_text%$'\r'}
     IFS=$'\t' read -r -a activity <<< "$record_text"
     if [[ ${#activity[@]} == 8 && ${activity[0]} == APISHARED-WORKSHOP-ACTIVE-1 && ${activity[1]} == linux && ${activity[2]} =~ ^[1-9][0-9]*$ && ${activity[3]} =~ ^[0-9]+$ && ( ${activity[4]} == install || ${activity[4]} == recover ) && ${activity[5]} =~ ^(waiting|backup|apply|restore|paused)$ && ${activity[6]} =~ ^[a-f0-9]{32}$ && ${activity[7]} =~ ^[a-f0-9]{64}$ ]]; then
-        if [[ $(process_start "${activity[2]}" 2>/dev/null) == "${activity[3]}" ]]; then
-            active_dir=$(inside "$state/Transactions" "${activity[6]}")
+        if [[ $(process_start "${activity[2]}" 2>/dev/null) == "${activity[3]}" ]] && check_duplicate_transactions &&
+           active_dir=$(transaction_directory "${activity[6]}") && [[ -n $active_dir ]]; then
             ready_path=$(inside "$active_dir" ready.flag); operation_path=$(inside "$active_dir" operations.tsv); history_path=$(inside "$active_dir" journal.log)
             terminal=0
             if [[ -f $history_path ]]; then
@@ -56,9 +98,16 @@ if [[ $transaction == --status ]]; then
     fi
     printf 'busy\n'; exit 0
 fi
-if [[ $transaction == --maintain && ! -d $state/Transactions ]]; then printf 'Workshop maintenance: removed=0; freedBytes=0; deferred=0\n'; exit 0; fi
-[[ $transaction == --maintain || ( $(dirname -- "$transaction") == "$state/Transactions" && $(basename -- "$transaction") =~ ^[a-f0-9]{32}$ ) ]] || exit 1
-exec 9<>"$state/apply.lock"; flock -n 9 || { echo 'Another updater is active.' >&2; exit 1; }
+if [[ $transaction == --maintain && ! -d $legacy_root && ! -d $short_root && ! -e $state/cleanup.pending.tsv && ! -L $state/cleanup.pending.tsv ]]; then
+    printf 'Workshop maintenance: removed=0; freedBytes=0; deferred=0\n'; exit 0
+fi
+if [[ $transaction != --maintain ]]; then
+    [[ ${transaction%/*} == "$legacy_root" || ${transaction%/*} == "$short_root" ]] && [[ ${transaction##*/} =~ ^[a-f0-9]{32}$ ]] || exit 1
+fi
+mkdir -p -- "$state"
+unlinked "$lock_path"; exec 9<>"$lock_path"; flock -n 9 || { echo 'Another updater is active.' >&2; exit 1; }
+check_duplicate_transactions
+if [[ $transaction != --maintain ]]; then [[ $(transaction_directory "${transaction##*/}") == "$transaction" ]] || exit 1; fi
 activity_mode=maintenance; activity_phase=waiting; owner_start=$(process_start $$); pause_spent=0; keep_interrupted=0
 publish_activity() {
     activity_phase=$1
@@ -121,14 +170,18 @@ reference() {
     [[ -z ${extra:-} && $ref_id =~ ^[a-f0-9]{32}$ && $ref_ops =~ ^[a-f0-9]{64}$ && $ref_journal =~ ^[a-f0-9]{64}$ ]] || return 1
 }
 assert_reference() {
-    local dir
-    dir=$(inside "$state/Transactions" "$ref_id") || return 1
-    [[ $(hash "$(inside "$dir" operations.tsv)") == "$ref_ops" && $(hash "$(inside "$dir" journal.log)") == "$ref_journal" ]]
+    local operations_path journal_path
+    ref_directory=$(transaction_directory "$ref_id") || return 1
+    [[ -n $ref_directory ]] || return 1
+    operations_path=$(inside "$ref_directory" operations.tsv) || return 1
+    journal_path=$(inside "$ref_directory" journal.log) || return 1
+    [[ $(hash "$operations_path") == "$ref_ops" && $(hash "$journal_path") == "$ref_journal" ]]
 }
 superseded() {
     local original=$1 candidate line
-    for candidate in "$state"/Transactions/*; do
+    for candidate in "$legacy_root"/* "$short_root"/*; do
         [[ -d $candidate ]] || continue
+        unlinked "$candidate/journal.log" || return 1
         journal_has "$candidate" committed || continue
         [[ -f $candidate/supersedes.tsv ]] || continue
         unlinked "$candidate/supersedes.tsv" || return 1
@@ -220,11 +273,11 @@ running() {
     done
     return 1
 }
-# An automatic handoff (--restart) starts from the running game. If the detector
+# A handoff from the game (--restart or --manual) requires a running process. If the detector
 # cannot see that game now, a later "not running" proves nothing: refuse before
 # readiness, so the game stays open. Manual recovery runs with the game closed.
 require_visible_game() {
-    [[ $recover != --restart ]] || running || { record 'failure Calling game is not visible to the Linux process detector; no handoff'; exit 1; }
+    [[ $recover != --restart && $recover != --manual ]] || running || { record 'failure Calling game is not visible to the Linux process detector; no handoff'; exit 1; }
 }
 restart_game() {
     # A desktop launcher can fail or wait for its client. Do not hold apply.lock
@@ -258,7 +311,7 @@ if [[ $protocol == APISHARED-WORKSHOP-RECOVERY-1 ]]; then
     declare -A recovery_targets=()
     for ((j=2;j<${#lines[@]};j++)); do
         reference "${lines[$j]}"; assert_reference
-        dir=$(inside "$state/Transactions" "$ref_id"); journal_has "$dir" applying
+        dir=$ref_directory; journal_has "$dir" applying
         if finished "$dir"; then record 'failure Recovery target is no longer interrupted'; exit 1; fi
         read_old "$dir"
         for target in "${old_targets[@]}"; do [[ -z ${recovery_targets[${target,,}]:-} ]]; recovery_targets[${target,,}]=1; done
@@ -273,7 +326,7 @@ if [[ $protocol == APISHARED-WORKSHOP-RECOVERY-1 ]]; then
     [[ ! -f $cancel && ! -d "$(inside "$game" _SE/.staging)" ]]
     restore_dirs=(); restore_targets=(); restore_before=(); restore_current=(); restore_ordinals=()
     step='recovery final validation and interrupted-file backup'
-    for ((j=2;j<${#lines[@]};j++)); do reference "${lines[$j]}"; assert_reference; restore_preflight "$(inside "$state/Transactions" "$ref_id")"; done
+    for ((j=2;j<${#lines[@]};j++)); do reference "${lines[$j]}"; assert_reference; restore_preflight "$ref_directory"; done
     for ((i=0;i<${#restore_targets[@]};i++)); do
         wait_game_exit
         [[ ${restore_current[$i]} != missing && ${restore_current[$i]} != "${restore_before[$i]}" ]] || continue
@@ -318,7 +371,7 @@ if [[ -f $transaction/supersedes.tsv ]]; then
     [[ $(cat -- "$(inside "$transaction" supersedes.sha256)") == "$supersedes_hash" ]] || exit 1
     while IFS= read -r line; do
         reference "$line"; assert_reference || exit 1
-        dir=$(inside "$state/Transactions" "$ref_id"); read_old "$dir" || exit 1
+        dir=$ref_directory; read_old "$dir" || exit 1
         for ((i=0;i<${#old_targets[@]};i++)); do
             covered=0
             for target in "${targets[@]}"; do
@@ -330,7 +383,7 @@ if [[ -f $transaction/supersedes.tsv ]]; then
         replacing[$dir]=1
     done < "$transaction/supersedes.tsv"
 else [[ -z $supersedes_hash ]] || exit 1; fi
-for other in "$state"/Transactions/*/journal.log; do
+for other in "$legacy_root"/*/journal.log "$short_root"/*/journal.log; do
     [[ -f $other && $other != "$journal" ]] || continue; unlinked "$other"
     dir=$(dirname -- "$other")
     if journal_has "$dir" applying && ! finished "$dir" && [[ -z ${replacing[$dir]:-} ]] && ! superseded "$dir"; then
@@ -341,12 +394,14 @@ for other in "$state"/Transactions/*/journal.log; do
 done
 if [[ ${#begun[@]} -gt 0 && $recover != --recover ]]; then record 'failure Interrupted transaction; use --recover'; exit 1; fi
 require_visible_game
+assert_confirmed_source
 printf '%s' "$expected" > "$(inside "$transaction" ready.flag)"
 publish_activity waiting
 if [[ $recover == --recover ]]; then cancel=$(inside "$transaction" recovery-cancel.flag); else cancel=$(inside "$transaction" cancel.flag); fi
 wait_game_exit
 [[ ! -f $cancel ]] || { record 'failure Handoff cancelled'; exit 1; }
 [[ ! -d "$(inside "$game" _SE/.staging)" ]] || { record 'failure Script Extender staging takes precedence'; exit 1; }
+assert_confirmed_source
 rollback() {
     publish_activity restore
     step='rollback preflight and restore'
@@ -368,6 +423,7 @@ for ((index=0; index<${#targets[@]}; index++)); do
     target=$(inside "$game" "${targets[$index]}"); [[ ! -d $target && $(hash "$target") == "${befores[$index]}" ]] || { record "failure Target changed: ${targets[$index]}"; exit 1; }
     if [[ ${befores[$index]} != missing ]]; then backup=$(inside "$transaction" "Backup/$index"); mkdir -p -- "$(dirname -- "$backup")"; cp -- "$target" "$backup"; [[ $(hash "$backup") == "${befores[$index]}" ]] || exit 1; sync -f "$backup"; fi
 done
+assert_confirmed_source
 record applying
 publish_activity apply
 step='installation writes and receipt commit'

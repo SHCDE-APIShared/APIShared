@@ -26,6 +26,8 @@ namespace APIShared
         public Workshop.WorkshopClient Workshop { get; }
         /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
         public Presentation.UiWorkClient Ui { get; }
+        /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>
+        public Automation.AutomationClient Automation => new Automation.AutomationClient(this);
         /// <summary>Global publication state, independent of individual capability availability.</summary>
         public NativeApiState State => api.State;
 
@@ -39,6 +41,17 @@ namespace APIShared
         /// <summary>Acquires mission initialization/start/end observations and current context for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IMissionLifecycleCapability"/> for operation/thread contracts.</summary>
         public bool TryGetMissionLifecycle(out IMissionLifecycleCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetMissionLifecycle(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires first-current-mission PlayState observation, independent of managed Start and loading duration.
+        /// Register on Unity and retain the capability; its Current receipt is invalidated at mission end/replacement.</summary>
+        public bool TryGetMissionPlayStateReadiness(out IMissionPlayStateReadinessCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetMissionPlayStateReadiness(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires semantic military AI admission, protected placement and map declarations.
+        /// Acquisition enables native group-order observation for this process; no unit is changed.
+        /// Completion callbacks use their committing thread and never implicitly dispatch UI work.</summary>
+        public bool TryGetAiMilitary(out Units.AiMilitary.IAiMilitaryCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
+            Units.AiMilitary.AiMilitaryService.TryGet(OwnerGuid, out capability, out diagnostic);
 
         /// <summary>Acquires exclusive gatehouse distance-origin configuration for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IGatehouseDistanceOriginCapability"/> for operation/thread contracts.</summary>
         public bool TryGetGatehouseDistanceOrigin(out IGatehouseDistanceOriginCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
