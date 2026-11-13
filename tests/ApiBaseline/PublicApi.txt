@@ -668,6 +668,24 @@ APIShared.Economy.PopularitySource | TaxPopModifierSmallDonation = 17
 APIShared.Economy.PopularitySource | TaxPopModifierUnaffordableDonation = 27
 APIShared.Economy.PopularitySource | TaxPopModifierUnknownMode = 28
 APIShared.Economy.PopularitySource | TaxPopModifierUsurious = 23
+APIShared.Economy.ProductionGoodsReceipt | public sealed class APIShared.Economy.ProductionGoodsReceipt
+APIShared.Economy.ProductionGoodsReceipt | public SHCDESE.Interop.eChimps ProductionRole { get; }
+APIShared.Economy.ProductionGoodsReceipt | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.ProductionGoodsReceipt | public int Amount { get; }
+APIShared.Economy.ProductionGoodsReceipt | public int PlayerId { get; }
+APIShared.Economy.ProductionGoodsReceipt | public int StorageBuildingId { get; }
+APIShared.Economy.ProductionGoodsReceipt | public int TransportUnitId { get; }
+APIShared.Economy.ProductionGoodsReceipt | public uint StorageBuildingGlobalId { get; }
+APIShared.Economy.ProductionGoodsReceipt | public uint TransportUnitGlobalId { get; }
+APIShared.Economy.ProductionGoodsReceived | public static class APIShared.Economy.ProductionGoodsReceived
+APIShared.Economy.ProductionGoodsReceived | public static bool IsAvailable { get; }
+APIShared.Economy.ProductionGoodsReceived | public static bool TryGetNativeDeliveryAdapter(out ulong address, out string diagnostic)
+APIShared.Economy.ProductionGoodsReceived | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Economy.ProductionGoodsReceipt> observer, out APIShared.Economy.ProductionGoodsReceivedRegistration registration, out string diagnostic, int order = 0, System.Action<long, APIShared.GameModes.GameModeSnapshot> onMissionAdmitted = null, System.Action<long> onMissionEnded = null)
+APIShared.Economy.ProductionGoodsReceived | public static string Diagnostic { get; }
+APIShared.Economy.ProductionGoodsReceived | public static void ConfirmExternalTannerAdapter()
+APIShared.Economy.ProductionGoodsReceivedRegistration | public sealed class APIShared.Economy.ProductionGoodsReceivedRegistration
+APIShared.Economy.ProductionGoodsReceivedRegistration | public void SetEnabled(bool enabled)
+APIShared.Economy.ProductionGoodsReceivedRegistration | public void SetRequiredForMission(bool required, APIShared.GameModes.GameplayModActivationProfile? activation = null)
 APIShared.Economy.WeaponProduction | public static class APIShared.Economy.WeaponProduction
 APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
 APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)

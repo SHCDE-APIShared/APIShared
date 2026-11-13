@@ -148,6 +148,18 @@ public sealed class SourceGuardrailTests
     }
 
     [TestMethod]
+    public void PreparedReceiptCodeAllowsOnlyConstructionWritesAndUnpublishedFree()
+    {
+        // The new boundary remains exact: unrelated writers and later mutations fail.
+        Model("class ProductionGoodsReceivedNativeCode { bool published; ProductionGoodsReceivedNativeCode() { Marshal.Copy(bytes,0,address,size); VirtualProtect(p,n,x,out old); FlushInstructionCache(p,n,x); } void Rollback() { if (published) throw new Exception(); VirtualFree(p,n,x); } }").CheckHooks();
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class ProductionGoodsReceivedNativeCode { void Later() { VirtualProtect(p,n,x,out old); } }").CheckHooks());
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class ProductionGoodsReceivedNativeCode { void Later() { Marshal.Copy(bytes,0,address,size); } }").CheckHooks());
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class ProductionGoodsReceivedNativeCode { void Later() { FlushInstructionCache(p,n,x); } }").CheckHooks());
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class ProductionGoodsReceivedNativeCode { void Later() { VirtualFree(p,n,x); } }").CheckHooks());
+        Assert.ThrowsExactly<InvalidOperationException>(() => Model("class UnrelatedReceiptCode { UnrelatedReceiptCode() { VirtualProtect(p,n,x,out old); } }").CheckHooks());
+    }
+
+    [TestMethod]
     public void LifecycleChecksDeclarationsRatherThanCommentsOrFileNeighbors()
     {
         Model("class Service { void Update() {} } class Plugin : BaseUnityPlugin { void Awake() { Log(\"Update() StartCoroutine()\"); } }").CheckLifecycle();

@@ -1990,6 +1990,11 @@ Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the share
 
 For actual-output base quantities, fixed percentages and [per-level fear contributions](WORKER_PRODUCTION_BONUS.md#fear-levels), use the [worker production service](WORKER_PRODUCTION_BONUS.md). Register a process-held desired profile, inspect and present its typed status, and let shared mission admission activate the resolved rules. The channels use staged factors or fixed values. The legacy absolute-percentage facade remains supported. Consumer mods own settings and localization. APIShared owns mode-profile evaluation, exact saved credits, zero-output completion, transport and rendering.
 
+For bonuses based on goods actually delivered, register a process-held observer with
+`ProductionGoodsReceived.TryRegister`, then logically enable its handle only at
+your synchronized mission boundaries. Check `IsAvailable` and surface its
+`Diagnostic` when the configured feature requires it. See the [receipt contract](WORKER_PRODUCTION_BONUS.md#received-production-goods).
+
 ## Weapon workshop options
 
 Register additional recipes with `WeaponProduction.TryRegister` during Unity
