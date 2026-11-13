@@ -19,7 +19,7 @@ namespace APIShared.Presentation
             this.available = available;
             viewport.SizeChanged += OnViewportChanged;
         }
-        internal void Attach(ToolTip tip, Button button)
+        internal void Attach(ToolTip tip, Control button)
         {
             if (!attached || popups.ContainsKey(tip)) return;
             popups.Add(tip, new Popup(this, tip, button));
@@ -51,9 +51,9 @@ namespace APIShared.Presentation
         {
             private readonly IngameMenuTooltips owner;
             private readonly ToolTip tip;
-            private readonly Button button;
+            private readonly Control button;
             private readonly bool previousScaler;
-            internal Popup(IngameMenuTooltips owner, ToolTip tip, Button button)
+            internal Popup(IngameMenuTooltips owner, ToolTip tip, Control button)
             {
                 this.owner = owner; this.tip = tip; this.button = button;
                 previousScaler = SHCDESE.UI.ToolTipResolutionScale.GetEnabled(tip);
@@ -83,7 +83,9 @@ namespace APIShared.Presentation
                 if (!tip.IsLoaded || !tip.IsVisible || !button.IsLoaded) return;
                 SHCDESE.UI.ToolTipResolutionScale.SetEnabled(tip, false);
                 if (!PopupPixelScale.TryGet(button, tip, out float x, out float y, out float menuX)) return;
-                float labelFont = (button.Template?.FindName("CenterText", button) as TextBlock)?.FontSize ?? button.FontSize;
+                float labelFont = button is Button action
+                    ? (action.Template?.FindName("CenterText", action) as TextBlock)?.FontSize ?? action.FontSize
+                    : button.FontSize;
                 float font = labelFont * y;
                 float menuWidth = 420;
                 if (owner.viewport.ActualWidth > 0)

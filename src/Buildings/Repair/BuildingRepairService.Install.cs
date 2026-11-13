@@ -59,6 +59,7 @@ namespace APIShared
             .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetGoldCost", typeof(int), typeof(global::SHCDESE.Interop.eStructs))
             .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetIronIngotCost", typeof(int), typeof(global::SHCDESE.Interop.eStructs))
             .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "GetRawPitchCost", typeof(int), typeof(global::SHCDESE.Interop.eStructs))
+            .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "IsValidId", typeof(bool), typeof(int))
             .Method(typeof(global::SHCDESE.API.GameBuildingManagerAPI), "TryGetBuildingById", typeof(bool), typeof(int), typeof(global::SHCDESE.Interop.GameBuilding*).MakeByRefType())
             .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "AddPlayerGold", typeof(bool), typeof(int), typeof(int))
             .Method(typeof(global::SHCDESE.API.GamePlayerManagerAPI), "get_Instance", typeof(global::SHCDESE.API.GamePlayerManagerAPI))

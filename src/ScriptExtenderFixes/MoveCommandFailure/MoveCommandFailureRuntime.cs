@@ -17,7 +17,7 @@ namespace APIShared.ScriptExtenderFixes
     // level is SE's choice for this ordinary outcome.
     internal static class MoveCommandFailureRuntime
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         internal static void Initialize(ManualLogSource log)
         {
             if (hook != null) return;
@@ -33,9 +33,11 @@ namespace APIShared.ScriptExtenderFixes
                     il.ReferenceBag = RuntimeILReferenceBag.Instance;
                     il.Invoke(Transform); definition.Generate();
                 }
-                hook = new ILHook(method, Transform, new ILHookConfig { ManualApply = true,
-                    ID = "APIShared.ScriptExtenderFixes.MoveFailureContext" });
-                hook.Apply(); // Root before publication, never undo a published candidate.
+                // Never undo a published hook; a failed installation leaves nothing behind.
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.ScriptExtenderFixes.MoveFailureContext", method, Transform, log,
+                    out var installed, out string failure))
+                    throw new InvalidOperationException(failure);
+                hook = installed;
             }
             catch (Exception error)
             {

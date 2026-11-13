@@ -15,7 +15,7 @@ namespace APIShared.ScriptExtenderFixes
 {
     internal static class LobbyMismatchRuntime
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         private static ManualLogSource logger;
         private static int attempted;
 
@@ -23,20 +23,18 @@ namespace APIShared.ScriptExtenderFixes
         {
             if (Interlocked.Exchange(ref attempted, 1) != 0) return;
             logger = log;
-            ILHook candidate = null;
             try
             {
                 var target = typeof(GameNetworkAPI).GetMethod("RejectLobby", BindingFlags.NonPublic | BindingFlags.Static);
                 LobbyMismatchIl.ValidateTarget(target);
-                candidate = new ILHook(target, il => LobbyMismatchIl.ReplacePopup(il, ShowPopup),
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.ScriptExtenderFixes.LobbyMismatch" });
-                candidate.Apply();
-                hook = candidate; // Process lifetime; never tied to the early Unity component's teardown.
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.ScriptExtenderFixes.LobbyMismatch", target,
+                    il => LobbyMismatchIl.ReplacePopup(il, ShowPopup), logger, out var installed, out string failure))
+                    throw new InvalidOperationException(failure);
+                hook = installed; // Process lifetime; never tied to the early Unity component's teardown.
                 NativeApiLog.Info(logger, "SE_LOBBY_MISMATCH: detailed rejection popup installed; SE join decisions are retained.");
             }
             catch (Exception error)
             {
-                if (hook == null) candidate?.Dispose(); // Only an unpublished installation candidate.
                 NativeApiLog.Warning(logger, "SE_LOBBY_MISMATCH: not installed; original SE behavior retained. " + error);
             }
         }

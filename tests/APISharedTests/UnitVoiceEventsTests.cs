@@ -24,6 +24,18 @@ namespace APISharedTests
                 Cue.VoiceBankKey, Cue.Key, situation, UnitVoiceEvidence.NativeAudited, 7, source),
                 "fx\\speech\\" + Cue.FileName, 11, 1, 100f, false, true, "de-DE", "EnglishSpeech",
                 new MissionContext(99, MissionStartKind.EditorCreated, default, null, "test", false));
+        // Vanilla drops intents whose file has no managed speech route; the context reports that silence.
+        [TestMethod]
+        public void TheContextReportsWhetherVanillaWouldBeSilent()
+        {
+            Assert.IsFalse(Context().OriginalIsSilent);
+            var silent = UnitVoiceCatalog.Cues.First(cue => UnitVoiceCatalog.SpeechFolder(cue) == null);
+            var context = new UnitVoiceContext(new UnitVoiceSource(1, 1, (int)eChimps.CHIMP_TYPE_KNIGHT, silent.VoiceBankKey, silent.Key,
+                UnitVoiceSituation.AttackStrong, UnitVoiceEvidence.Inferred, 7, "Troop.Dispatcher"), "fx\\speech\\" + silent.FileName, 12, 1, 100f);
+            Assert.IsTrue(context.OriginalIsSilent);
+            Assert.AreEqual("troops", UnitVoiceCatalog.BankSpeechFolder(silent), "A replacement plays through its bank's folder.");
+        }
+
         private UnitVoiceRegistration Register(InterceptionEvent<UnitVoicePreEventArgs, UnitVoicePostEventArgs> registry,
             string owner, Action<UnitVoicePreEventArgs> pre, Action<UnitVoicePostEventArgs> post,
             int order = 0, UnitVoiceSelection sources = null, string id = "rule")
