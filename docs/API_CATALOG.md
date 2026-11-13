@@ -1008,6 +1008,8 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 
 `APIShared.Economy.WorkerProductionModifiers` composes exact human/AI output bases, signed fixed percentages and signed production percentages per fear level. Desired profiles support factors and fixed values, and prepared status exposes the resolved fear contribution for each level. Its process-held `WorkerProductionBonusOverrides` compatibility facade retains absolute fixed-percentage registration. APIShared owns zero-output completion, Ox transport, display and persisted credits. `APIShared.Lobby.LobbyLaunchGuards` supplies shared Ready/Start and prepared multiplayer-save admission. See the [worker production contract](WORKER_PRODUCTION_BONUS.md).
 
+`APIShared.Economy.ProductionGoodsReceived` observes confirmed production deliveries into final player storage. It reports the effective good and actual received quantity, including output modifiers, with storage and carrier identities. Start goods, trades, refunds, ingredients and failed additions are excluded. See [production receipts](WORKER_PRODUCTION_BONUS.md#received-production-goods).
+
 ## Weapon workshop options
 
 `APIShared.Economy.WeaponProduction` registers additional recipes for fletchers,

@@ -18,6 +18,7 @@ internal static partial class Program
         IntPtr state = Marshal.AllocHGlobal(slots + 16);
         IntPtr callbacks = state + slots + 4;
         IntPtr calls = callbacks + 4;
+        IntPtr receipts = calls + 4;
         ulong enabled = unchecked((ulong)(state + slots).ToInt64());
         ulong demand = unchecked((ulong)state.ToInt64());
         try
@@ -88,15 +89,19 @@ internal static partial class Program
                     jump.AddUnrestrictedJmp(unchecked((ulong)call.Address.ToInt64()));
                     Copy(site.CallTarget, WorkerProductionBonusNativeAssembly.Assemble(jump, Address(site.CallTarget)));
                 }
+                using var receipt = new Code(a => {
+                    a.mov(rax, unchecked((ulong)receipts.ToInt64())); a.inc(__dword_ptr[rax]);
+                    a.AddUnrestrictedJmp(Address(WeaponProductionNativeDefinition.AddGoodRva));
+                });
                 try
                 {
                     using var harness = new MachineHarness(a => WeaponProductionNativeAssembly.Generate(a, original, Address(back),
-                        site, imageBase, enabled, demand, callback), exits);
+                        site, imageBase, enabled, demand, callback, operation == WeaponProductionNativeOperation.Deposit ? unchecked((ulong)receipt.Address.ToInt64()) : 0), exits);
                     foreach (var (gate, slot, cargo) in new[] { (0, 1, 0), (1, 0, 0), (1, 1, 0), (1, 1, 1) })
                     {
                         Marshal.WriteInt32(state + slots, gate);
                         Marshal.WriteByte(state, buildingId, (byte)slot);
-                        Marshal.WriteInt32(calls, 0); Marshal.WriteInt32(callbacks, 0);
+                        Marshal.WriteInt32(calls, 0); Marshal.WriteInt32(callbacks, 0); Marshal.WriteInt32(receipts, 0);
                         harness.ResetInput();
                         harness.Set(1, (ulong)buildingId * 0x32C);
                         harness.Set(2, 1);
@@ -113,6 +118,7 @@ internal static partial class Program
                         bool active = gate != 0 && slot != 0 && (operation != WeaponProductionNativeOperation.Complete || cargo == 0);
                         Check(Marshal.ReadInt32(callbacks) == (active ? 1 : 0), "Only a demanded workshop reaches the callback.");
                         Check(Marshal.ReadInt32(calls) == (oldCall == null ? 0 : 1), "Original native call executes exactly once.");
+                        Check(Marshal.ReadInt32(receipts) == (operation == WeaponProductionNativeOperation.Deposit ? 1 : 0), "Receipt adapter observes final deposit with recipe demand either off or on.");
                         Check(harness.Marker == (operation == WeaponProductionNativeOperation.Complete && cargo != 0 ? 2 : 1),
                             "Weapon production preserves the native continuation.");
                         switch (operation)

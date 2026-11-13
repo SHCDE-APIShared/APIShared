@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.51.0";
+        public const string PluginVersion = "0.52.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -146,6 +146,7 @@ namespace APIShared
                     installAivBuildStep: true)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("production goods receipts", () => Economy.ProductionGoodsReceived.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),
                 // Closes on the first mission; inline stubs installed on a consumer's first registration need it.
                 new NativeInitializationStep("native inline patch window", () => NativeInlinePatchWindow.Initialize(RuntimeLogger)),
