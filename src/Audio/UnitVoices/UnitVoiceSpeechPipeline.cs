@@ -187,7 +187,7 @@ namespace APIShared.Audio
         internal delegate Task<AudioClip> LoadPath(MyAudioManager manager, string path);
         private static LoadStart originalStart;
         private static LoadPath originalPath;
-        private static readonly List<ILHook> hooks = new List<ILHook>();
+        private static readonly List<Patching.SafeIlHook> hooks = new List<Patching.SafeIlHook>();
         private static readonly UnitVoiceClipLeases<AudioClip, AudioSource, MyAudioManager> owned =
             new UnitVoiceClipLeases<AudioClip, AudioSource, MyAudioManager>(source => source == null || !source.isPlaying,
                 ReleaseOwnedClip, source => source == null);
@@ -195,10 +195,10 @@ namespace APIShared.Audio
         private static readonly Action<AudioSource> StopOwnedSource = source => { if (source != null) source.Stop(); };
         private static long cleanupFailures;
         private static string status = "Pending";
-        private static int attempted;
+        private static int attempted, ready, installed;
         private static ManualLogSource log;
         internal static string Status => Volatile.Read(ref status);
-        internal static bool IsReady => Status == "Ready";
+        internal static bool IsReady => Volatile.Read(ref ready) != 0;
 
         internal static void Initialize(ManualLogSource logger)
         {
@@ -215,21 +215,36 @@ namespace APIShared.Audio
                 Publish(methods.Monitor, il => { UnitVoiceSpeechIlContract.ApplyMonitorSweep(il, methods); UnitVoiceSpeechIlContract.ApplyReleases(il, 3); }, "Monitor");
                 Publish(methods.StopAll, il => { UnitVoiceSpeechIlContract.ApplyStops(il, 3); UnitVoiceSpeechIlContract.ApplyReleases(il, 3); UnitVoiceSpeechIlContract.ApplyStopAllCleanup(il); }, "StopAll");
                 Publish(methods.StopSpeech, il => { UnitVoiceSpeechIlContract.ApplyStops(il, 1); UnitVoiceSpeechIlContract.ApplyReleases(il, 1); }, "StopSpeech");
-                Volatile.Write(ref status, "Ready");
+                Volatile.Write(ref installed, 1);
+                Republish();
                 NativeApiLog.Info(log, "UNIT_VOICE_SPEECH_READY: permanent accepted-load, async playback and owned-clip lifetime adapters.");
             }
             catch (Exception error)
             {
+                Volatile.Write(ref ready, 0);
                 Volatile.Write(ref status, "Unavailable: " + error.Message);
                 NativeApiLog.Error(log, "UNIT_VOICE_SPEECH_UNAVAILABLE: " + error);
             }
         }
+        // The five edits work only together: a playback adapter without its release edits would leak
+        // owned clips. Every installed hook stays rooted; a rebuild that drops one edit pauses the whole
+        // pipeline until a later rebuild restores it.
         private static void Publish(MethodInfo method, MonoMod.Cil.ILContext.Manipulator apply, string id)
         {
-            var hook = new ILHook(method, apply, new ILHookConfig { ManualApply = true, ID = "APIShared.UnitVoiceSpeech." + id });
-            // Publish the permanent root before Apply. Even a failed partially applied hook is never disposed.
-            hooks.Add(hook); hook.Apply();
-            if (!hook.IsApplied) throw new InvalidOperationException("Voice IL publication incomplete: " + id);
+            if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.UnitVoiceSpeech." + id, method, apply, log,
+                out var hook, out string reason))
+                throw new InvalidOperationException("Voice IL publication incomplete: " + id + ": " + reason);
+            lock (hooks) hooks.Add(hook);
+            hook.Rebuilt += _ => Republish();
+        }
+        private static void Republish()
+        {
+            if (Volatile.Read(ref installed) == 0) return;
+            string missing = null;
+            lock (hooks) foreach (var hook in hooks) if (!hook.IsApplied) { missing = hook.Id + ": " + hook.Diagnostic; break; }
+            Volatile.Write(ref status, missing == null ? "Ready" : "Unavailable: " + missing);
+            Volatile.Write(ref ready, missing == null ? 1 : 0);
+            UnitVoiceNativeRuntime.RefreshDemand(); // Native capture follows the pipeline's readiness.
         }
         internal static UnitVoiceSpeechSubmission Forward(SFXManager manager, int channel, string fullpath, float volume,
             bool ignoreSpeechMuting, bool ignorePauseState, float factor)

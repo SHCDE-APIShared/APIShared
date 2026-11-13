@@ -259,7 +259,11 @@ namespace APIShared.ScriptExtenderFixes
             else current.Deliver(publisher, observer, value);
         }
 
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        // Harmony reruns this on every patch change of the Extender method; a failure keeps the original IL.
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
+            Patching.SafeTranspiler.Run(APISharedPlugin.PluginGuid, "APIShared.InterpolateEventReuse", instructions, TranspileReuse, logger);
+
+        private static IEnumerable<CodeInstruction> TranspileReuse(IEnumerable<CodeInstruction> instructions)
         {
             ConstructorInfo constructor = Constructor();
             MethodInfo rent = AccessTools.Method(typeof(InterpolateEventReuseRuntime), nameof(Rent));

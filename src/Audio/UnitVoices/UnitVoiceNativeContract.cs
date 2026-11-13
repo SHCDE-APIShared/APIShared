@@ -20,6 +20,9 @@ namespace APIShared.Audio
     {
         internal const string Hash = "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2";
         internal const int NativePlayerRva = 0x88E3D70, SelectedCivilianRva = 0x67E839C;
+        // 0x97DA0 compares the selected civilian with this previous ID (cmp at 0x97E09, store at 0x97E11)
+        // and reaches its only speech output (0x3B20) only when they differ.
+        internal const int PreviousCivilianRva = 0x2D9E58;
         internal const int SoundManagerRva = 0x88E72D0, SpeechPathOffset = 0x41A6;
         internal static readonly UnitVoiceNativeTarget[] Targets = {
             new UnitVoiceNativeTarget("Troop.Dispatcher", 0x3BC0, 0, 1244, "40535556574883EC78488B05D8473300"),
@@ -43,7 +46,8 @@ namespace APIShared.Audio
         {
             if (!string.Equals(hash, Hash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Unit voice context requires the audited native binary identity.");
-            if (original.Length < SoundManagerRva + SpeechPathOffset + 128 || original.Length < SelectedCivilianRva + 4 || original.Length < NativePlayerRva + 4)
+            if (original.Length < SoundManagerRva + SpeechPathOffset + 128 || original.Length < SelectedCivilianRva + 4 ||
+                original.Length < NativePlayerRva + 4 || original.Length < PreviousCivilianRva + 4)
                 throw new InvalidOperationException("Unit voice native globals are outside the image.");
         }
 
@@ -63,7 +67,8 @@ namespace APIShared.Audio
                 hook.TargetAddress != address || hook.PointerSlot != IntPtr.Zero || hook.TrampolineAddress == IntPtr.Zero || hook.HookEntryPointAddress == IntPtr.Zero ||
                 hook.OriginalEntryPointAddress != hook.TrampolineAddress)
                 throw new InvalidOperationException("Unit voice NativeX64 Absolute identity changed: " + target.Key);
-            var bytes = new byte[128]; Marshal.Copy(hook.TrampolineAddress, bytes, 0, bytes.Length);
+            // Stays inside the trampoline's memory region; a short read decodes as invalid and fails the check.
+            var bytes = Internal.NativeCodeReader.ReadBounded(hook.TrampolineAddress, 128);
             var relocated = Decoder.Create(64, new ByteArrayCodeReader(bytes)); relocated.IP = unchecked((ulong)hook.TrampolineAddress.ToInt64());
             var original = Decoder.Create(64, new ByteArrayCodeReader(target.Prologue)); original.IP = address;
             while (original.IP < address + (uint)target.Prologue.Length)

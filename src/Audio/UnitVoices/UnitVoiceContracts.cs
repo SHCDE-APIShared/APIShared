@@ -132,6 +132,7 @@ namespace APIShared.Audio
             Source = source; OriginalPath = originalPath; InvocationId = invocationId; Channel = channel;
             OriginalVolume = originalVolume; IgnoreSpeechMuting = ignoreSpeechMuting; IgnorePauseState = ignorePauseState;
             UiLocale = uiLocale; SpeechAssetBranch = speechAssetBranch; MissionContext = missionContext;
+            OriginalIsSilent = UnitVoiceCatalog.TryGetCue(source.OriginalCueKey, out UnitVoiceCue cue) && UnitVoiceCatalog.SpeechFolder(cue) == null;
         }
         /// <summary>Audited immutable emission snapshot.</summary>
         public UnitVoiceSource Source { get; }
@@ -153,6 +154,10 @@ namespace APIShared.Audio
         public string SpeechAssetBranch { get; }
         /// <summary>Current immutable mission/editor context captured at playback, or null when unavailable. Source.SessionId still describes emission.</summary>
         public MissionContext MissionContext { get; }
+        /// <summary>True when Vanilla plays nothing for this request because the game's speech lists have no route for
+        /// the original file, for example several Arabian engineer siege lines. A Vanilla or resource replacement is
+        /// still played; leave the target unchanged to keep the original silence.</summary>
+        public bool OriginalIsSilent { get; }
     }
 
     /// <summary>Namespace of the selected unit speech target.</summary>

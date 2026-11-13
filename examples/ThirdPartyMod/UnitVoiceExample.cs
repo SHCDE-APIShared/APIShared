@@ -18,7 +18,8 @@ namespace ThirdPartyMod
             UnitVoiceResources.TryPrepareModResource(ownerGuid, "selection-voice", "Voices/selection.wav",
                 value => modVoice = value, out modVoice, out reason);
 
-        // Call from this mod's IMissionLifecycleCapability OnStart, after the desired map archive exists.
+        // Call from this mod's IMissionLifecycleCapability OnStart. The mission counts as started for every
+        // Start observer, so the order of the observers does not matter.
         // End/initialization invalidates this handle. A later session gets a new handle with the same owner/ID.
         internal static bool PrepareCurrentMapVoice(string ownerGuid, out string reason) =>
             UnitVoiceResources.TryPrepareMapResource(ownerGuid, "map-selection-voice", "Voices/map-selection.ogg",
