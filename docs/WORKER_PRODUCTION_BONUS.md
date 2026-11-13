@@ -174,6 +174,74 @@ a `RejectedLocalLaunchCode`, so a consumer can show one localized dialog for eac
 actual rejected attempt. These presentation notifications do not alter prepared
 arithmetic or call UI from APIShared.
 
+## Received production goods
+
+`ProductionGoodsReceived` (APIShared 0.52.0) is a post-only event for proven
+production credits into the stockpile, granary or armoury. Register once with
+`TryRegister(ownerGuid, registrationId, callback, out handle, out diagnostic)`.
+The process-held handle starts disabled; `SetEnabled` changes logical demand.
+There is no replay or cancellation. Callbacks run synchronously on the simulation
+caller, outside registration locks, ordered by priority, ordinal owner GUID and
+registration ID. Exceptions are isolated. Consumers own mode permissions,
+synchronized activation and any gameplay rewards; the event is not a network
+transport. Dispatch UI work separately.
+
+For gameplay rewards, supply `onMissionAdmitted` and `onMissionEnded` when
+registering. Admission receives the session ID and authoritative mode under the
+shared engine gate, before its first advancing run. Snapshot prepared settings
+and enable demand there. Retirement closes the run gate before notifying the
+same session. Managed `MissionStarted` may follow native simulation startup and
+must not arm or reset a reward consumer. Callbacks run once per admitted session;
+the required owner's admission exception blocks world release.
+
+Declare required support from synchronized desired settings with
+`handle.SetRequiredForMission(required, activationProfile)`, separately from live
+observer demand. The shared production admission gate checks that requirement
+against the actual mode before releasing any world, including local saves and
+the editor. Null activation permits all recognized modes. Consumers should also
+use lobby launch guards to show a localized rejection before loading begins.
+Check `IsAvailable` before admitting a feature which requires complete receipts.
+`Diagnostic` explains missing managed/native source support, including a failed
+ImprovedHunters Tanner integration. Observer registration alone does not prove
+availability. Unavailable capture leaves the existing original game paths intact.
+
+Each immutable `ProductionGoodsReceipt` contains `PlayerId`, `Good`, `Amount`,
+the storage building ID/GlobalId, the transport unit ID/GlobalId, and the economic
+`ProductionRole`. IDs are one-based. Stone deliveries identify the actual Ox or
+Quarry Grunt carrier while using the Quarry Grunt production role. These are
+historical identities, not retained pointers. `Amount` is the actual positive
+credit and already includes output-base factors, productivity and applicable
+production bonuses. Do not multiply it again when calculating a reward.
+
+Only final production-delivery call sites provide provenance. Start goods,
+purchases, gifts, refunds, local production buffers and ingredient transfers do
+not emit receipts. Neither raw Wood Logs nor intermediate Cow Hides or Refined
+Pitch are usable completed output here. Generic stockpile Post events, transport
+statistics and cargo decreases cannot establish receipt success. The native game
+can decrease cargo even when storage rejects the operation.
+
+APIShared captures the real carrier before foreign callbacks, claims the source
+at SE-wrapper entry, and observes effective arguments around the single Original
+invocation after mutable Pre. Successful native return, stable storage identity
+and an exact positive local credit must agree. Unrelated nested additions never
+inherit production provenance. Ambiguous readbacks emit no receipt. Publication
+occurs after the wrapper returns, or from its exceptional exit after an already
+proven mutation; no original call is retried. Dynamic weapon recipes and both
+ImprovedHunters Tanner routes report the final effective goods selection.
+
+For the existing external Tanner owner, `TryGetNativeDeliveryAdapter` returns a
+permanent native entry with the exact SE stockpile primitive ABI, documented on
+the method. It is only for audited final-delivery sites, never arbitrary goods
+creation. With no enabled observer it forwards entirely natively. ImprovedHunters
+uses it in both permanent routes and calls `ConfirmExternalTannerAdapter` only
+after successful stub publication. If that plugin is absent APIShared owns the
+ordinary Tanner source itself; the two owners never patch the same span.
+
+The event is additive and does not change existing modifier registrations,
+Extender events, production arithmetic or saved production formats. Native source,
+ABI and SE-wrapper fixtures do not replace live game and real multiplayer
+acceptance. See the receipt section in [native update contracts](../UpdateToNewDLL.md).
+
 ## Legacy fixed-bonus facade
 
 `WorkerProductionBonusOverrides` retains its public registration identities,

@@ -1534,7 +1534,7 @@ first huntable-prey registration with own-player prey (only before the first mis
 per-type table (set at mission activation, cleared at its end). Any other hash, snapshot or live byte
 difference (for example an older ImprovedHunters that patched the same spans), a changed continuation,
 a backend span other than 14 bytes, a stub that differs from the expected bytes, or an arrow gate block
-whose SHA-256 differs from `C3BCA2C9…AE225F` refuses the install; the registration is then Unsupported.
+whose SHA-256 differs from `C3BCA2C9â€¦AE225F` refuses the install; the registration is then Unsupported.
 
 - Query `0x18AFD8` `66 83 BB F6 FD FF FF 00 0F 85 F7 00 00 00` (`cmp word[rbx-0x20A],0; jne 0x18B0DD`),
   continuation `0F B7 83 EE FD FF FF` (the Script Extender's type hook starts there). RBX = candidate
@@ -1838,12 +1838,12 @@ user's language-folder inventory:
 | Ordinary counters | `0x2AD370` | Per-bank counters inside each row |
 | Arabic engineer ordinary bank | `0x2B0EB0` | 42 pointers |
 | Engineer special actions | `0x2B09B0` | 40 rows, stride32; count, European/Arabic pointers, counter |
-| General table unit subset | `0x2B1000` | Only indices65–76, strings at stride1000 |
+| General table unit subset | `0x2B1000` | Only indices65â€“76, strings at stride1000 |
 | Male civilian comments | `0x2D7E50` | 126 slots at stride32, including intentional Null slots |
 | Female civilian comments | `0x2D8E50` | Same layout |
 
-The general-table unit subset is `Healer_Heal1–4`, `Sapper_Sap1–4`, and
-`Demolisher_Sap1–4`. The remaining general table and arbitrary calls to generic
+The general-table unit subset is `Healer_Heal1â€“4`, `Sapper_Sap1â€“4`, and
+`Demolisher_Sap1â€“4`. The remaining general table and arbitrary calls to generic
 speech helpers are adviser/dialogue paths outside this API.
 
 The observation contains 919 distinct non-Null native asset names. That count is
@@ -1921,3 +1921,30 @@ separately from the internal emission sequence.
 The copied-prologue tests never execute the unrelocated game-body references.
 Guard execution uses safe private native fixtures; the real engineer entry is
 executed only with both continuations replaced by private stack-correct endpoints.
+
+## Actual production goods receipts (2026-11-13)
+
+Reference native SHA-256: `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`ProductionGoodsReceivedNativeDefinition` owns only final storage calls: Wood12CA01/16,
+Hunter130AF4/16, Pitch1338D5/16, Hops135998/16, Apple1368E4/22, Cattle137396/22,
+Iron14E011/16, Wheat134A35/16, Miller138272/16, Baker1393BC/16, Ox132E3A/22,
+QuarryGrunt1324F1/22, Brewer13A514/16, and standalone Tanner13EF38/16.
+Every block ends in the direct call to `B6100`; the preceding argument loads and
+normal continuation remain unchanged. Full owning-handler instruction packets and
+all native xrefs have no interior target. Source bytes and continuation instructions
+are pinned in the definition; unknown hashes fail closed because worker provenance,
+manager layouts and exact source classification have no independent fallback.
+The seven-argument native tail relay preserves the native result and stack ABI.
+Demand zero jumps directly to the existing live Extender entry, without a receipt
+managed callback. Demand one enters the shared receipt callback, whose managed
+Original adapter measures the effective tuple and actual original mutation.
+Weapon-workshop sources reuse the existing recipe Deposit owners after their
+filters even when recipe demand is disabled. Tanner's standalone span is skipped
+when ImprovedHunters is discovered; its permanently installed meat and Vanilla
+branches both call the shared relay and confirm publication. Failed external
+publication keeps receipt availability false rather than installing a competing hook.
+No source hooks are removed or rewritten after publication; logical demand controls
+observation. Native fixture tests execute both relay branches with all seven inputs
+and the full64-bit result, validate actual backend displacement and generated source
+bytes, and exercise recipe-independent delivery. These are private native fixtures;
+actual game/new/load/editor and real multiplayer acceptance remain separate.

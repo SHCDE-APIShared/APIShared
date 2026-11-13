@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.51.0",
+  "Version": "0.52.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.52.0",
+      "Changes": [
+        "Add confirmed production-delivery receipts with final goods, accepted quantities and carrier/storage identities; exclude ingredients, starting goods and unrelated additions.",
+        "Activate receipt consumers before native simulation resumes and enforce required support for local saves and editor worlds as well as lobby starts."
+      ]
+    },
     {
       "Version": "0.51.0",
       "Changes": [

@@ -265,6 +265,7 @@ namespace APIShared.Economy
             reason=null;
             if(mode.Kind==GameModeKind.Unknown)
             { if(requireKnown)reason="The loaded production mission mode is unknown.";return false; }
+            if(!ProductionGoodsReceived.ValidateAdmission(mode,out reason))return false;
             var status=WorkerProductionModifiers.Prepare(mode);var candidate=WorkerProductionModifiers.CurrentPrepared;
             if(!status.CanStart || candidate==null || !WorkerProductionModifiers.IsCandidateInBundle(frozenBundle,mode,candidate))
             { reason="The actual production rules do not match the prepared launch bundle.";return false; }
@@ -282,6 +283,7 @@ namespace APIShared.Economy
             if(!WorkerProductionModifiers.ActivatePrepared(candidate,out reason))return false;
             if (!WeaponProductionRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods, out reason)) return false;
             Wildlife.HuntablePreyRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods);
+            if(requireKnown&&!ProductionGoodsReceived.Admit(session,mode,out reason))return false;
             reason=null;
             if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 || candidate.HasFearChanges ||
                 WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
@@ -364,6 +366,7 @@ namespace APIShared.Economy
                 bool nextPrepared=selectedPath!=null && !restored &&
                     !string.Equals(selectedPath,frozenSelectionPath,StringComparison.OrdinalIgnoreCase);
                 WorkerProductionWorldSafety.Retire();
+                ProductionGoodsReceived.EndMission(session);
                 WeaponProductionRuntime.EndWorld();
                 Wildlife.HuntablePreyRuntime.EndWorld();
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.EndWorld(session);

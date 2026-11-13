@@ -18,6 +18,8 @@
     <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
     <Compile Include="../../src/Modifiers/ValueModifiers.cs" Link="Production/ValueModifiers.cs" />
     <Compile Include="../../src/GameModes/GameplayModModePolicy.cs" Link="Production/GameplayModModePolicy.cs" />
+    <Compile Include="../../src/Economy/ProductionGoodsReceivedNativeAssembly.cs" Link="Production/ProductionGoodsReceivedNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/ProductionGoodsReceivedNativeDefinition.cs" Link="Production/ProductionGoodsReceivedNativeDefinition.cs" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Economy/WorkerProductionBonusNativeDefinition.cs" Link="Production/WorkerProductionBonusNativeDefinition.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeInlineStub.cs" Link="Production/NativeInlineStub.cs" />
     <Compile Include="../../src/Economy/WorkerProductionBonusNativeAssembly.cs" Link="Production/WorkerProductionBonusNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
