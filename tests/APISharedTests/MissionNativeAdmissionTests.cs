@@ -486,6 +486,67 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void DifferentThreadCannotEnterOrContinueThePrimaryThreadsActiveNativeStage()
+        {
+            // The real admission class runs on two BCL threads. The counter stands
+            // only for forbidden work; no game, engine API or native call is made.
+            foreach (bool continueOpenStage in new[] { false, true })
+            {
+                int primaryThread = Thread.CurrentThread.ManagedThreadId;
+                int workerThread = 0, forbiddenCalls = 0, earlyCleanups = 0;
+                Exception workerFailure = null;
+                var owner = new OwnerProbe();
+                var admission = Attached(owner);
+                var outerFailure = Assert.ThrowsExactly<InvalidOperationException>(() => admission.Execute<int>(
+                    MissionNativeOuterEntry.EditorCreate, true, () => new object(), () => {
+                        Action checkWorker = () => {
+                            var worker = new Thread(() => {
+                                workerThread = Thread.CurrentThread.ManagedThreadId;
+                                try
+                                {
+                                    if (continueOpenStage)
+                                        admission.RequireContinuingInner();
+                                    else
+                                        using (admission.EnterInner(MissionNativeInnerEntry.EditorCreate)) { }
+                                    Interlocked.Increment(ref forbiddenCalls);
+                                }
+                                catch (Exception error) { workerFailure = error; }
+                            }) { IsBackground = true };
+                            worker.Start();
+                            Assert.IsTrue(worker.Join(2000), "The bounded BCL probe must finish before the primary attempt unwinds.");
+                            Assert.AreEqual(primaryThread, Thread.CurrentThread.ManagedThreadId);
+                            Assert.AreNotEqual(primaryThread, workerThread);
+                            Assert.AreEqual(primaryThread, owner.LastAttempt.ThreadId);
+                            Assert.IsTrue(workerFailure is MissionNativeAdmission.Abort,
+                                "An otherwise valid stage must refuse the actual different managed thread.");
+                            Assert.AreSame(owner.LastAttempt, ((MissionNativeAdmission.Abort)workerFailure).Attempt);
+                            Assert.IsTrue(owner.LastAttempt.Failed, "Catching the worker refusal must not reopen this attempt.");
+                            Assert.AreEqual(0, forbiddenCalls);
+                            // Transfer the caught object back to the primary thread; the
+                            // outer wrapper must preserve this exact attempt-bound cause.
+                            throw workerFailure;
+                        };
+                        using (admission.OpenOriginal())
+                        {
+                            if (continueOpenStage)
+                                using (admission.EnterInner(MissionNativeInnerEntry.EditorCreate)) checkWorker();
+                            else
+                                checkWorker();
+                        }
+                        return 17;
+                    }, () => earlyCleanups++));
+                Assert.AreSame(workerFailure, outerFailure.InnerException);
+                Assert.AreSame(owner.LastAttempt, BoundAbort(outerFailure).Attempt);
+                Assert.AreEqual(primaryThread, Thread.CurrentThread.ManagedThreadId);
+                Assert.AreEqual(primaryThread, owner.RetirementThread);
+                Assert.AreEqual(0, forbiddenCalls); Assert.AreEqual(0, earlyCleanups);
+                Assert.AreEqual(1, owner.Closes); Assert.AreEqual(1, owner.Retirements);
+                Assert.IsTrue(owner.LastAttempt.Failed && owner.LastAttempt.Closed);
+                Assert.IsFalse(owner.LastAttempt.InnerOpen || owner.LastAttempt.OriginalOpen);
+            }
+        }
+
+        [TestMethod]
         public void CompletedObserverEntryIsRefusedWithoutPoisoningTheCompletedResult()
         {
             var owner = new OwnerProbe();

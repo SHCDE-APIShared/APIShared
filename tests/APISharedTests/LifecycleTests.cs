@@ -271,6 +271,51 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void RealRequiredRunOnAnotherThreadRefusesBeforeAdmissionOrManagedState()
+        {
+            int primaryThread = System.Threading.Thread.CurrentThread.ManagedThreadId;
+            var service = CreateMissionProducer();
+            var state = MissionProducerState(service);
+            var context = ProducerContext();
+            long id = state.Begin(context); state.Ready(id, context);
+            var previous = state.Current;
+            var previousContext = state.Context;
+            int notifications = 0, originals = 0, workerThread = 0;
+            Assert(service.Bind("off-thread-fixture").TryRegisterObserver("observer", _ => notifications++,
+                _ => notifications++, _ => notifications++, out _), "The isolated managed observer was not registered.");
+            int before = notifications;
+            // Even a broken thread flag must stop at this pure probe rather than
+            // proceed to an engine lookup. The correct path never calls it.
+            var closeMarker = new System.ApplicationException("unexpected off-thread close");
+            var owner = new MissionProducerOwner { Demand = true, CloseFailure = closeMarker };
+            var admission = MissionProducerAdmission(service);
+            admission.Attach(owner);
+            object operation = NewMissionProducerOperation();
+            System.Exception caught = null;
+            var worker = new System.Threading.Thread(() => {
+                workerThread = System.Threading.Thread.CurrentThread.ManagedThreadId;
+                try { RunMissionProducer(service, operation, () => { originals++; return 1; }); }
+                catch (System.Exception error) { caught = error; }
+            }) { IsBackground = true };
+            worker.Start();
+            Assert(worker.Join(2000), "The bounded real-service BCL probe did not finish.");
+            Assert(System.Threading.Thread.CurrentThread.ManagedThreadId == primaryThread && workerThread != primaryThread,
+                "The service's owning thread and actual worker were not distinct.");
+            Assert(caught is System.InvalidOperationException rejected &&
+                rejected.InnerException is APIShared.MissionNativeAdmission.Abort,
+                "Actual Run did not preserve the admission refusal as its bound cause.");
+            var refusal = (APIShared.MissionNativeAdmission.Abort)caught.InnerException;
+            Assert(refusal.Attempt.ThreadId == workerThread && refusal.Attempt.Entry == APIShared.MissionNativeOuterEntry.Unsupported &&
+                refusal.Attempt.Closed && !refusal.Attempt.Retired &&
+                !refusal.Attempt.OriginalOpen && !refusal.Attempt.InnerOpen,
+                "The refusal was not bound to the closed, unretired worker attempt.");
+            Assert(owner.CloseCalls == 0 && owner.RetireCalls == 0 && originals == 0 &&
+                object.ReferenceEquals(state.Current, previous) && object.ReferenceEquals(state.Context, previousContext) &&
+                notifications == before && admission.LastCleanupFailure == null,
+                "Off-thread Run reached admission, managed initialization, Original or changed the existing mission.");
+        }
+
+        [TestMethod]
         public void RealUntrackedNativeWrapperRefusesBeforeItsCoreOrOriginal()
         {
             var service = CreateMissionProducer();
