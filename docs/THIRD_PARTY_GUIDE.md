@@ -1,5 +1,22 @@
 # Third-party integration guide
 
+## Native storage for virtual goods
+
+Use [`ModApiClient.NativeStorage`](NATIVE_STORAGE.md) when custom goods must occupy
+native Armory or Granary capacity and trade against real gold. Register before the
+first world; issue exchanges only in an authorized engine-protected boundary.
+The service owns physical rows, its private ledger and matching save entries.
+Recipes, hauling, art, player authorization and command transport remain consumer
+responsibilities. Existing overlapping private capacity detours must be migrated.
+
+## Virtual custom goods
+
+For goods outside the native `eGoods` table, use the caller-owned Content
+[`CustomGoodsInventory`](CUSTOM_GOODS.md) for bounded stock, atomic changes,
+retry receipts and reservations. Share one authoritative mission instance; the
+consumer retains native integration, engine locking, lifecycle and peer authority.
+See the [compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 **Contents**
 
 - [Example package requirements](#example-package-requirements)
@@ -1239,6 +1256,13 @@ GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, Trib
 
 The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
 
+## Native-wallet virtual-good transactions
+
+Use `ModApiClient.GoodsWallet` with an owner-matching `CustomGoodsClient` for a
+checked direct-gold and virtual-stock exchange. Price, control authorization,
+engine context and save/peer coordination remain consumer responsibilities. See
+[wallet usage, atomicity and persistence](GOODS_WALLET.md).
+
 ## Reacting to created and recruited units
 
 Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it
@@ -1997,6 +2021,14 @@ startup. Use `WithIngredientAmount` to set the cost per charge in the workshop's
 native ingredient. The [weapon workshop guide](WEAPON_PRODUCTION.md) covers the
 registration example, ingredient limits, Shift selection, AI, and requirements
 for multiplayer and saved games.
+
+### Workshop output in shared custom storage
+
+Bind a registered `NativeStoredGood` using `WeaponProductionOptionDefinition.WithStoredOutput`
+to reuse the existing native workshop/template pipeline. The shared producer owner
+coordinates physical custom credit, native cargo debit and the critical save pair.
+Registration ownership, Armory-only routing, current offline/editor admission and
+native accounting limits are in the [workshop guide](WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
 
 ## Huntable prey
 

@@ -2,6 +2,9 @@
 
 **Contents**
 
+- [Native goods wallet](#native-goods-wallet)
+- [Native pooled storage](#native-pooled-storage)
+- [Stored workshop delivery](#stored-workshop-delivery)
 - [Shared health initialization](#shared-health-initialization)
 - [Authenticated Chore context and submission](#authenticated-chore-context-and-submission)
 - [Spectator input control boundaries](#spectator-input-control-boundaries)
@@ -26,6 +29,244 @@
 - [Huntable prey reservation word](#huntable-prey-reservation-word)
 - [Hunter native sites](#hunter-native-sites)
 - [Hunter owner gates](#hunter-owner-gates)
+
+## Native goods wallet
+
+Owner: `Economy.GoodsWalletNative`; public behavior and lifetime are in the
+[wallet guide](docs/GOODS_WALLET.md). Supported native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+This adapter installs no native hook. It reads the Script Extender-resolved player
+manager and checks each one-based player's resource address against
+`manager + 0x1343FC + (player - 1) * 0x583C` before returning a gold cell.
+The packed `GamePlayerResources` stride is 22,588 bytes (`0x583C`); gold is a signed
+Int32 at `+0x50C`. Layout and pointer identity must be requalified after an update.
+Zero and negative values are valid reads, not pointer-failure sentinels.
+
+The supported SE `SetPlayerGold` helper performs a direct field store and adds no
+engine locking, multiplayer authority, accounting or statistics. Its
+`AddPlayerGold` helper uses unchecked addition and zero clamping, so it is not an
+atomic checked-payment primitive. The adapter instead revalidates the cell and
+world under the real engine monitor before its direct checked store and prebuilt
+Content publication. Recheck the engine-monitor ownership and native-world/Chore
+boundaries as well as these numeric offsets when updating either dependency.
+
+## Native pooled storage
+
+This document records the native instruction and layout contract used by
+[NativeStorageNativeDefinition](src/Economy/Storage/NativeStorageNativeDefinition.cs).
+It does not establish installed hook coexistence, producer delivery, save lifecycle
+or game acceptance. Native bytes were read and disassembled passively; no game or
+native function was executed for this audit.
+
+### Supported image and layout
+
+The sole audited `CrusaderDE.dll` SHA-256 is
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Unknown images must not acquire these bindings. A matching disk image is not proof
+that a live entry or inline span remains available.
+
+The official [SE v2.14.3 building declarations](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/v2.14.3/src/SHCDESE.BepInEx/Interop/GameBuilding.cs)
+describe a `0x32C`-byte building record. `GameBuildingManager.BuildingsArray` begins
+at manager `+0x5C`, with reserved slot zero. For a native slot `s`, the record is
+`manager + 0x5C + s*0x32C`. This is consistent with the native allocation memset
+and every audited field access; `+0x7C` is not the array base.
+
+| Meaning | GameBuilding offset | Manager-relative, before slot stride |
+| --- | --- | --- |
+| Alive state / building type | `0xD0` / `0xD2` | `0x12C` / `0x12E` |
+| Owner / global identity | `0xD6` / `0xD8` | `0x132` / `0x134` |
+| 25 native good counters | `0x120` through `0x180`, UInt32 | `0x17C` through `0x1DC` |
+| Primary aggregate stack | `0x184`, UInt32 | `0x1E0` |
+
+Armory type is `0xB`, Granary type `0x13`, and the accepted alive state is `2`.
+Valid public building IDs are 1 through 3999. A slot alone is not identity: check
+the current global ID, owner, alive state and supported type before using a claim.
+
+### Native roles
+
+All signatures below use the Windows x64 integer calling convention. Full
+function bytes or SHA-256 pins and exact displaced spans are in the definition.
+
+| Role | RVA / full length | Signature and result |
+| --- | --- | --- |
+| Armory candidate admission | `C6EA0`, 287 bytes | `int(manager,slot,unusedGood,owner,amount)`; returns the input slot or zero |
+| Armory free count | `C6FC0`, 239 bytes | `int(manager,slot)`; free pooled slots |
+| Granary free count | `BD470`, 32 bytes | `int(manager,slot,unusedGood,capacity)`; signed free count |
+| Native destination finder | `BF9F0`, 348 bytes | Its Granary branch recomputes native aggregate, checks space and reachability, then tries the next candidate |
+| Native aggregate recomputation | `C05B0`, 127 bytes | `int(manager,slot)`; writes derived native fields and returns the total in EAX |
+
+`C6EA0` validates Armory type, alive state and owner. It starts at 50 and subtracts
+all 25 native good counters, not just the requested good. Its fifth argument is at
+entry `RSP+0x28`. The goods argument is unused. A custom-occupancy refusal must
+return zero, allowing the original outer finder to continue without a replacement
+managed scan. `C6FC0` computes the same pooled free count and clamps it to zero;
+it validates type and alive state but has no owner parameter.
+
+`BD470` computes `max(0,capacity-currentStack)` with signed comparisons. It does
+not validate type, alive state, owner or identity. Native Granary callers normally
+pass 250. `C05B0` recomputes the aggregate from native goods 1 through 24. Thus the
+Granary's 250 slots are pooled across food types, rather than 250 of each type.
+The primary maximum-stack field is not a substitute for this capacity argument.
+
+### Granary finder aperture
+
+Granary worker selection in `BF9F0` does not call `BD470`. Adjusting only that free
+query can leave workers repeatedly choosing a store which is full due to custom
+occupancy. The audited Granary branch checks native type/alive/owner, then uses:
+
+| RVA | Complete instruction / role |
+| --- | --- |
+| `BFB05` | `MOV EDX,EBX`: candidate slot |
+| `BFB07` | `MOV RCX,RSI`: building manager |
+| `BFB0A` | `CALL C05B0`: native recomputation and its original writes |
+| `BFB0F` | `CMP EAX,250`: native capacity threshold |
+| `BFB14` | `JGE BFB27`: retain the original next-candidate branch |
+
+The inline aperture is `[BFB05,BFB14)`, exactly 15 bytes and four whole
+instructions. Its original bytes are `8BD3488BCEE8A10A00003DFA000000`. A relocated
+call must return into the emitted stub, not into overwritten `BFB0F`. Execute the
+native recomputation once, add custom occupancy to its returned EAX using safe
+saturation, replay the compare, and continue at `BFB14`. Preserve caller-live
+registers and native state. The reachability call at `BFB1E` and retry at `BFB27`
+remain unchanged. A global replacement of `C05B0` would affect unrelated callers
+and is outside this binding.
+
+The complete pinned finder was decoded. Its direct branches do not enter the
+aperture interior. The captured static cross-reference index contained 236,382
+entries and no incoming target in `(BFB05,BFB14)`; that index's SHA-256 was
+`1F642B432B26D255323D40C8E8CAC1706774727E639468D0847DE9D8E1D9D72D`.
+These are static audit results, not a claim about arbitrary foreign patches or
+dynamic hook coexistence. Validate the full finder fingerprint, aperture,
+continuation and current ownership before publication.
+
+The definition retains complete-instruction audit windows of 23, 19 and 17 bytes
+for the three entries. Production uses NativeX64 Indirect detours with shorter
+displaced spans: `C6EA0+6 -> C6EA6`, `C6FC0+10 -> C6FCA`, and
+`BD470+10 -> BD47A`. Validate the actual backend scheme, trampoline and untouched
+continuation against these production spans, not the longer audit windows.
+
+### Shared AddGood invocation
+
+The Script Extender already owns native `B6100`. Its
+[v2.14.3 managed wrapper](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/v2.14.3/src/SHCDESE.BepInEx/Detours/BulkBuildingDetours.cs)
+has the exact managed signature:
+
+```text
+Int64(NativePointer<GameBuildingManager>, Int32 slot, Int32 globalId,
+      eGoods good, Int32 amount, Int32 capacity, Int32 bAdd)
+```
+
+The first managed argument is a struct, not an interchangeable `IntPtr` in IL.
+The wrapper raises SE Pre, calls its single Original with final Pre values,
+raises Post with original entry inputs, and returns the opaque Int64 result.
+It consumes no Skip flag; its event's ReturnValue remains zero. Replace only the
+managed Original invocation after validating the loaded IL and existing native
+owner. Preserve the manager, all six final arguments, Pre/Post behavior,
+exception propagation and opaque return when forwarding. Intentional refusal
+returns `0L`. Do not install another native `B6100` entry detour.
+
+The `[B6100,B6219)` body is 281 bytes, SHA-256
+`AA634FA3A59866B105E7C577FEAB60B7662516592C757332F007299D6488A2D1`.
+It bounds only the selected good's new count by the supplied capacity. It does
+not enforce pooled Armory or Granary occupancy. A direct call can bypass the
+outer capacity finder, so reducing 50 by custom occupancy alone is insufficient
+when other native good types occupy slots. Admission must account for the other
+native goods and the selected counter without silently reducing the requested
+amount. Preserve legitimate draining/removal behavior for overfull stores.
+
+Capacity zero clears the selected native counter and returns failure before the
+native bAdd test. Refusing an addition must not call that destructive branch.
+With positive capacity, bAdd zero checks without stock writes; zero amount with
+bAdd one can still run native updates. Forward the exact original behavior when
+there is no relevant custom claim.
+
+### Scope and qualification
+
+This binding coordinates pooled space and native admission only. It creates no
+native goods IDs and supplies no stockpile policy, producer animation, cargo
+conversion, output score, achievement or production-success transaction. Native
+callers can ignore AddGood failure and execute their success bookkeeping anyway;
+admission does not establish lossless retry. Future producer work must coordinate
+the existing WeaponProduction-owned delivery sites independently.
+
+See [ally transfer native behavior](docs/ALLY_TRANSFERS.md#native-update-evidence-and-limitations) for
+the existing native capacity/allocator relationships and partial-effect contract.
+The static audit does not replace emitter, native branch, coexistence, lifecycle,
+launch or game acceptance checks.
+
+## Stored workshop delivery
+
+Owner: `WeaponProductionNativeRuntime.StoredDeliveryAdapter`, an optional cohort
+inside the existing shared workshop owner. Reference native SHA-256 remains
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Public registration, accounting and persistence are in the
+[workshop guide](docs/WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
+Failure of this optional cohort does not remove existing native recipe support.
+No second worker-entry or B6100 detour is installed.
+
+The native workers ignore AddGood's return and can execute success bookkeeping
+after refusal. Their original failed-capacity/replacement branches can discard
+carried stock. A late product-ID filter is therefore insufficient for custom
+acceptance or retry. The optional gate runs before the original arrival checks:
+
+| Workshop | Complete-instruction gate | Native continuation | Accepted cargo footer | Refused epilogue |
+| --- | --- | --- | --- | --- |
+| Fletcher | `12DC6D+15` | `12DC7C` | `12DEB6` | `12E3DB` |
+| Poleturner | `13B654+14` | `13B662` | `13B894` | `13BDAA` |
+| Blacksmith | `13C7DC+14` | `13C7EA` | `13CA2E` | `13CF02` |
+| Armourer | `13D97E+16` | `13D98E` | `13DB8C` | `13E085` |
+| Tanner | `13EEAF+16` | `13EEBF` | `13F0BC` | `13E6C2` |
+
+All five pinned worker bodies and the full captured static cross-reference index
+were checked; no direct incoming edge targets an aperture interior. This static
+result does not qualify arbitrary foreign patches. Validate live gate/continuation
+and epilogue bytes, generated relocation, ownership and the existing Complete
+cohort before publication. Armourer/Tanner prefixes include RIP-relative manager
+addresses. Preserve the captured physical worker ID through the managed callback;
+do not reconstruct a footer from a later mutable CurrentUnit global.
+
+The three outcomes are Native, Accepted and Refused. Native restores the exact
+original prefix/path, including native AddGood and accounting. Accepted atomically
+publishes physical stock +1 and signed cargo -1, then skips native AddGood,
+weapons-produced, weapon achievements, stock cue and SE dropoff observers. Footer
+register repairs retain each role's ID/offset/managers and zero/one/three constants;
+Tanner's EBP=3 and preserved R15 are significant. Positive cargo keeps its batch;
+zero cargo reaches the existing Complete owner. Preserve GPRs, XMM0–5, flags,
+Windows x64 home space and exact stack balance around the callback.
+
+A native attempt transfers one item, not the complete carried count. Search asks
+for enough Armory capacity for remaining cargo. A refused custom attempt cannot
+fall into Vanilla's destructive delivery-replacement path. A protected retarget
+attempt can instead select the original search state (Fletcher 6, others 7), reset
+the timer and return normally. Search validates the candidate and movement before
+publishing its new destination; native hazard/death diversions remain native.
+This supplies no eventual-delivery guarantee and refunds no manufactured input.
+
+Native manager-relative worker base is `image+67E8400+slot*490`; the SDK record
+adds a `65C` bias. Required packed `GameUnit` fields are cargo at `384` (signed
+low Int16 only; preserve adjacent word `386`), destination slot `332` (UInt16),
+destination global identity `9C` (UInt32, exposed as split words by the current
+SDK), AI state `2BC` and timer `2C4` (Int16). Requalify primitive storage locations
+and meanings rather than relying on renamed placeholder SDK fields.
+
+All five native finders select Armories. A Granary-bound custom workshop output
+must be rejected until destination selection has a separately qualified owner.
+The new custom Tanner capability requires the original adjacent route call;
+changed ImprovedHunters routing disables that optional capability, preserving
+legacy/native Tanner compatibility rather than guessing the carried product.
+
+The existing critical production save owner freezes the workshop and pooled
+storage pair before native serialization, rejects reentrant mutations, verifies
+actual archive bytes/write status and commits only a complete temporary file.
+Native-only digest/wire/payload/envelope encodings stay unchanged. Custom workshop
+records require reader 2; the shared internal capture writer selects only a schema
+within its registration's supported range and refuses relabeling migrated unknown
+entries as an older schema. Real multiplayer custom output remains unavailable
+until private storage and native carrier repair are jointly qualified.
+
+Synthetic fixture/installed-reference checks qualify bounded managed publication,
+original bytes and emitted ABI paths. Live hook coexistence, Mono transitions,
+actual producer movement, native save/load and gameplay acceptance remain distinct.
 
 ## Shared health initialization
 

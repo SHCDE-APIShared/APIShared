@@ -117,6 +117,7 @@ namespace APIShared.Economy
             byte[] oldPath = null;
             int selector = 0;
             bool swapped = false;
+            bool storageCheckpoint = WeaponProductionRuntime.HasStoredOutputDemand;
             saving = true;
             try
             {
@@ -126,6 +127,7 @@ namespace APIShared.Economy
                 byte[] payload = WorkerProductionStateRuntime.FreezeForSave();
                 if (payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
                 WeaponProductionRuntime.FreezeSave();
+                if (storageCheckpoint) NativeStorageRuntime.Instance.FreezeProductionSave();
                 selector = Marshal.ReadInt32(module + SelectorRva);
                 if (selector != 1) throw new InvalidDataException("The native save path selector differs from the audited save callers.");
                 var chars = new ReadOnlySpan<char>((void*)(module + PathSlotRva), PathCapacity);
@@ -151,6 +153,7 @@ namespace APIShared.Economy
                 if (result != 1 || lastFailed) throw new IOException("Native saving returned failure or attempted a nested save.");
                 WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
                 WeaponProductionRuntime.VerifySaveWritten(temporary);
+                if (storageCheckpoint) NativeStorageRuntime.Instance.VerifyProductionSaveWritten(temporary);
                 // MoveFileExW replacement commits only the verified complete file. Failed capture,
                 // omitted/stale archive records and append errors leave the old destination intact.
                 CommitSavedFile(temporary, destination, payload, in nativeIo);
@@ -167,6 +170,7 @@ namespace APIShared.Economy
                 }
                 WorkerProductionStateRuntime.EndSaveCapture();
                 WeaponProductionRuntime.EndSaveCapture();
+                if (storageCheckpoint) NativeStorageRuntime.Instance.EndProductionSave();
                 saving = false;
                 if (temporary != null)
                     try { if (File.Exists(temporary)) File.Delete(temporary); }

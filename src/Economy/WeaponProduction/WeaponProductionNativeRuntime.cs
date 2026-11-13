@@ -76,6 +76,7 @@ namespace APIShared.Economy
                                 NativeApiLog.Error(log, $"Weapon production {role.Building} unavailable: {error.Message}");
                             }
                             if (Adapters[i]?.Ready != true) continue;
+                            TryInitializeStoredDelivery(context, role, i);
                             var ingredients = WeaponProductionNativeDefinition.GetIngredientSites(role.Building);
                             if (ingredients.Length == 0) continue;
                             try
@@ -115,6 +116,7 @@ namespace APIShared.Economy
         internal static void SetDemand(bool demand)
         {
             foreach (Adapter adapter in Adapters) adapter?.SetDemand(demand);
+            SetStoredDeliveryDemand(demand && WeaponProductionRuntime.HasStoredOutputDemand);
             foreach (Adapter adapter in IngredientAdapters)
                 if (adapter != null)
                     adapter.SetDemand(demand && WeaponProductionRuntime.GetOptions(adapter.Building)
@@ -288,7 +290,7 @@ namespace APIShared.Economy
                     throw new InvalidOperationException($"The weapon production continuation at 0x{next:X} differs.");
             }
 
-            private void ValidatePrepared(bool installed)
+            internal void ValidatePrepared(bool installed)
             {
                 for (int i = 0; i < handles.Length; i++)
                 {

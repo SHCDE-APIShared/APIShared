@@ -6,6 +6,23 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+`Economy/Storage` owns registered virtual stock in exact native Armory/Granary
+pools: its private Content ledger, physical allocations, shared capacity cohort
+and matching archive pair share one lifetime. Consumers retain recipes, hauling,
+visuals and authorization. See [native storage](docs/NATIVE_STORAGE.md).
+
+`Economy/WeaponProduction` retains native recipe/batch/transport ownership and can
+bind a registered custom Armory output. Its optional early delivery cohorts use a
+trusted cargo/storage commit; the existing critical save writer freezes and verifies
+that related state together. Consumer recipes and presentation stay outside these
+mechanisms; see [workshop output contracts](docs/WEAPON_PRODUCTION.md).
+
+The Content assembly also owns the caller-instantiated virtual-goods ledger in
+`APIShared.Goods`: bounded balances, atomic changes, replay receipts, reservations
+and canonical snapshots. Consumers share one instance per authoritative mission
+and retain native transactions, lifecycle, save registration and network policy.
+It adds no runtime hook or global catalog; see [custom goods](docs/CUSTOM_GOODS.md).
+
 `Content/APIShared.Content.csproj` targets .NET Standard 2.0 and has no game,
 Extender, Unity or BepInEx dependencies. It owns the GUID-separated JSON namespace
 reader in `APIShared.ModData` and schema-3 mission-settings documents/codecs in
@@ -126,6 +143,7 @@ src/
   Automation/                   opt-in in-process test automation
   Audio/                        shared playback events, context capture and binary contracts
   Economy/                      market, ally-transfer, popularity and worker-production native owners
+    GoodsWallet/                direct native gold and callback-free prepared virtual-stock publication
     WeaponProduction/           weapon workshop recipes, selection, batches and HUD
   Wildlife/                     herd runtime and huntable-prey registrations
   Missions/                     mission contracts, state and event relay
