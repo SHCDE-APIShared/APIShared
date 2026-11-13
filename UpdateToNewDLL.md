@@ -757,6 +757,31 @@ Owner: `Pathfinding/Assassin/AssassinPathAPI` (site index 4 of
   neighbor/connection layouts and the D9C40 edge direction; execute the generated
   stub against the copied E1640 body (`AssassinReconstructionConnectionTests`).
 
+The weighted owner may additionally correct stockpile-only climb eligibility through
+`SetWeightedReconstructionEnabled(owner, enabled, ignoreGoodsyardWallFlag: true)`.
+The existing two-argument overload retains its prior behavior. Policy bit 4 is
+effective only together with weighted bit 1; direct-gatehouse bit 2 is independent.
+Only the existing endpoint stub at `0xE19F9/23` changes its optional branch.
+The ordinary connection stub at `0xE19C0` and endpoints `0xE19D8/18`,
+`0xD9F0C/16`, `0xD9F1C/15` retain their semantics.
+
+- At endpoint site 3, `r8` is the current tile and `rcx` is the neighbor derived
+  at `0xE19DE..0xE19ED`. `r9d` contains only IsWall (masked at `0xE178F`).
+  The stub preserves flags and `rax/r10/r11`, bounds-checks both tiles and reads
+  complete flags from existing grid `0x48F71B0` (uint per tile, 320800 entries).
+- The opt-in branch requires at least one endpoint with `IsWall` (`0x100`) and
+  without `GoodsyardRelated` (`0x2`), verified against installed Extender enums.
+  Stockpile connection tiles use `0x102`; those bits alone cannot establish a
+  climb, but a real wall at the other endpoint remains eligible. Both ordinary
+  connection checks precede this site. The original raw-wall test is replayed
+  after acceptance, and search/surface/building checks retain their own contracts.
+- This uses the existing hash-bound flag-grid layout and adds no data grid,
+  address resolver, callback or hook. Unknown native images retain the shared
+  Assassin initialization failure path.
+- Update checks: re-derive both endpoint tile registers and execute the generated
+  stub with ordinary walls, stockpile-only walls, mixed endpoints, policy
+  defaults/resets and independent gate bits.
+
 ## Registered native sites
 
 Every APIShared native site above and in the other services is registered in the

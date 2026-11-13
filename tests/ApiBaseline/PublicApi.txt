@@ -48,6 +48,7 @@ APIShared.AssassinPathAPI | public static string TemporaryWeightedRequestReason 
 APIShared.AssassinPathAPI | public static void RegisterWeightedBuilder(string ownerGuid, APIShared.AssassinPathBuilder handler)
 APIShared.AssassinPathAPI | public static void SetDirectGatehouseClimbing(string ownerGuid, bool enabled)
 APIShared.AssassinPathAPI | public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled)
+APIShared.AssassinPathAPI | public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled, bool ignoreGoodsyardWallFlag)
 APIShared.AssassinPathBuilder | public delegate int APIShared.AssassinPathBuilder(System.IntPtr context, int startX, int startY, int targetX, int targetY, int maximumNodes, int continuation)
 APIShared.AssassinRouteOutputFrame | public sealed class APIShared.AssassinRouteOutputFrame
 APIShared.AssassinRouteOutputFrame | public int Complete(int originalResult)

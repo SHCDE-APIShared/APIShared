@@ -112,10 +112,13 @@ namespace APISharedTests
                 Run(0, 3);
                 Assert(Marshal.ReadInt32(At(scratchRva)) == 4 && Marshal.ReadInt32(At(scratchRva + 4)) == 0,
                     "disabled policy keeps Vanilla's failure and its complete four-call repair");
+                Run(4, 3);
+                Assert(Marshal.ReadInt32(At(scratchRva)) == 4 && Marshal.ReadInt32(At(scratchRva + 4)) == 0,
+                    "stockpile correction without a reconstruction owner does not enable connections");
                 Run(1, 1);
                 Assert(Marshal.ReadInt32(At(scratchRva)) == 4 && Marshal.ReadInt32(At(scratchRva + 4)) == 0,
                     "mode 1 never reaches the Assassin site, even with the policy enabled");
-                foreach (int policy in new[] { 1, 2, 3 })
+                foreach (int policy in new[] { 1, 2, 3, 5, 6, 7 })
                 {
                     int length = Run(policy, 3);
                     Assert(Marshal.ReadInt32(At(scratchRva)) == 0 && Marshal.ReadInt32(At(scratchRva + 4)) == 1,

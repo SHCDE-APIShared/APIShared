@@ -33,6 +33,7 @@
 - [Reacting to created and recruited units](#reacting-to-created-and-recruited-units)
 - [AI military admission](AI_MILITARY.md)
 - [Assassin obstacle completion](#assassin-obstacle-completion)
+- [Weighted Assassin reconstruction](#weighted-assassin-reconstruction)
 - [Gate access contributions](#gate-access-contributions)
 - [Enemy-unit building proximity and Peace Time](#enemy-unit-building-proximity-and-peace-time)
 - [Plague standing-height policies](#plague-standing-height-policies)
@@ -1295,6 +1296,26 @@ a queued, settled and delivered unit 108 to 114 ns with four registrations. IL t
 check the compiled SE entry points and the tick guard for heap allocation. The
 fixtures use a fake slot reader, not Mono, the native unit array or consumer
 callbacks; they are not an FPS measurement.
+
+## Weighted Assassin reconstruction
+
+The owner registered through `AssassinPathAPI.RegisterWeightedBuilder` controls its
+process-wide reconstruction policy with `SetWeightedReconstructionEnabled`.
+The existing `(ownerGuid, enabled)` overload retains its building-endpoint
+relaxation and raw-IsWall test. The additive
+`(ownerGuid, enabled, ignoreGoodsyardWallFlag)` overload corrects stockpile
+eligibility with `ignoreGoodsyardWallFlag: true`.
+
+Only after ordinary native connection checks fail, at least one endpoint must
+have IsWall without GoodsyardRelated. A stockpile alone cannot authorize climbing
+onto another structure; an actual wall at the other endpoint remains sufficient.
+Ordinary movement through stockpiles and building entrances is unchanged. The
+weighted search must apply the same rule; the setting does not rewrite an already
+published unit route. Apply identical
+policy on every multiplayer peer. Disabling weighted reconstruction clears the
+correction; the existing two-argument call also restores its raw-IsWall default.
+Independent direct-gatehouse activation preserves this choice. Policy publication
+changes aligned data only; the process-owned native hooks remain installed.
 
 ## Assassin obstacle completion
 

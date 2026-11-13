@@ -356,6 +356,15 @@ Native selection can fail or select another vetoed obstacle; it does not guarant
 Obstacle completion does not expose consumer-defined alternative traversal search
 and requires no command-engine mod.
 
+The weighted-builder owner can call
+`AssassinPathAPI.SetWeightedReconstructionEnabled(ownerGuid, enabled, ignoreGoodsyardWallFlag)`
+with `ignoreGoodsyardWallFlag: true` to require a genuine wall at either endpoint
+of a nonordinary reconstruction fallback. Stockpile-related IsWall flags alone
+cannot authorize climbing; the search must apply the same rule. Ordinary
+connections remain available; the existing two-argument overload keeps its raw
+IsWall behavior. See
+[weighted reconstruction](THIRD_PARTY_GUIDE.md#weighted-assassin-reconstruction).
+
 ## Game-mode permissions and settings presentation
 
 The optional mode evaluator also has a consumer-owned [GameplayModeGate](../src/GameModes/GameplayModeGate.cs).
