@@ -16,6 +16,7 @@ namespace APIShared
             Network = new Networking.ModNetworkClient(ownerGuid);
             Workshop = new Workshop.WorkshopClient(ownerGuid);
             Ui = new Presentation.UiWorkClient(ownerGuid);
+            GoodsWallet = new Economy.GoodsWalletClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
@@ -26,6 +27,11 @@ namespace APIShared
         public Workshop.WorkshopClient Workshop { get; }
         /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
         public Presentation.UiWorkClient Ui { get; }
+        /// <summary>Owner-bound native pooled storage, separate virtual goods and coordinated gold exchanges.
+        /// Startup registration installs shared capacity owners; no work starts by obtaining this client.</summary>
+        public Economy.NativeStorageClient NativeStorage => new Economy.NativeStorageClient(OwnerGuid);
+        /// <summary>Owner-bound native-gold and virtual-goods exchanges; acquisition installs no hooks.</summary>
+        public Economy.GoodsWalletClient GoodsWallet { get; }
         /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>
         public Automation.AutomationClient Automation => new Automation.AutomationClient(this);
         /// <summary>Global publication state, independent of individual capability availability.</summary>
@@ -41,6 +47,13 @@ namespace APIShared
         /// <summary>Acquires mission initialization/start/end observations and current context for this owner. On failure inspect diagnostic; other capabilities remain independent. See <see cref="IMissionLifecycleCapability"/> for operation/thread contracts.</summary>
         public bool TryGetMissionLifecycle(out IMissionLifecycleCapability capability, out NativeCapabilityDiagnostic diagnostic) =>
             api.TryGetMissionLifecycle(OwnerGuid, out capability, out diagnostic);
+
+        /// <summary>Acquires protected, point-in-time native-world observations after API publication.
+        /// Cold acquisition validates and retains the actual game engine monitor; failure is isolated in
+        /// diagnostic. No hooks are installed. See <see cref="NativeWorldReadClient"/> for required locking,
+        /// managed readiness and the distinction between read evidence and mutation/lifetime authority.</summary>
+        public bool TryGetNativeWorldReads(out NativeWorldReadClient client, out NativeCapabilityDiagnostic diagnostic) =>
+            api.TryGetNativeWorldReads(OwnerGuid, out client, out diagnostic);
 
         /// <summary>Acquires first-current-mission PlayState observation, independent of managed Start and loading duration.
         /// Register on Unity and retain the capability; its Current receipt is invalidated at mission end/replacement.</summary>

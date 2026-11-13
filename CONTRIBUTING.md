@@ -119,6 +119,38 @@ InternalsVisibleTo consumers with the checked-in
 [API compatibility baseline](docs/API_COMPATIBILITY.md). CI checks only the
 game-independent subset; the guide explains the coverage split.
 
+### Runtime verification and performance standards
+
+Reusable services need explicit class ownership and public compatibility contracts.
+Keep mod policy in consumers and one shared owner per native interception site.
+Validate and allocate before mutation; preserve coherent native/managed state on
+refusal and save failure. Add tests for concrete failure and replay risks rather
+than internal naming or source wording.
+
+A runtime contribution records its exact source/dependency/native hashes and the
+checks actually executed. Use installed-reference and bounded synthetic native
+fixtures where they can verify layout, ABI, control flow and failure handling.
+Passing those fixtures or CI does not imply a real launch or gameplay acceptance.
+Before handing an installed candidate to a user for testing, run a bounded launch
+and every safely scriptable relevant scenario. Keep unverified live acceptance
+explicit when publishing a development draft. Visual and sound judgments remain
+human acceptance unless their automation was explicitly requested.
+
+Performance claims need comparable workloads and measured distributions or peaks.
+Measure allocation separately from execution time, distinguish tick interarrival
+from tick execution, and report frame rate only from an actual frame measurement.
+For stress tests, retain scenario seeds/settings, actual military/civilian/total
+entity counts and verified engine limits. A requested target is not evidence that
+that many units existed or performed their workload.
+
+Builds and unattended tests must have finite deadlines, bounded logs/storage,
+owned processes and fresh resource telemetry. Invalid or stale safety telemetry
+fails closed. Quiesce or stop owned work before desktop headroom becomes unsafe;
+pausing a process alone does not release its committed memory. Never terminate
+unrelated applications. Keep SDK/cache/environment overrides in child processes,
+preserve normal user settings and saves, and verify their restoration after live
+runs. Each result states its runtime/fixture limits and any remaining acceptance.
+
 ### Selecting build sources and installation
 
 Run the full build without installing its output:

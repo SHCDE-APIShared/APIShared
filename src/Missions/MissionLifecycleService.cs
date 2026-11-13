@@ -502,7 +502,13 @@ namespace APIShared
                 op.NativeSucceeded = result.errorCode == 1;
                 state.CompleteNativeLoad(op.Id, op.NativeSucceeded && !op.NativeFailed);
                 if (op.NativeSucceeded && !op.NativeFailed)
+                {
+                    // Isolate the call itself: even an optional observer's type initializer must
+                    // not suppress the existing NativeLoaded checkpoint or alter native admission.
+                    try { Economy.WeaponProductionRuntime.BindWorkerObservationWorld(op.Id, state.NativeClock?.World); }
+                    catch (Exception error) { Report(error); }
                     state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.NativeLoaded);
+                }
             });
             return result;
         }

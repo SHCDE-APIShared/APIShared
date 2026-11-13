@@ -579,6 +579,26 @@ APIShared.Economy.FearPopularityRegistration | public void SetLevelContributions
 APIShared.Economy.FearPopularityRegistration | public void SetLevelModifiers(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityModifierValues> contributions)
 APIShared.Economy.FearPopularityRegistration | public void SetMultiplier(decimal? multiplier)
 APIShared.Economy.FearPopularityRegistration | public void SetTargetedLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityOverrideValues> contributions)
+APIShared.Economy.GoodsWalletClient | public sealed class APIShared.Economy.GoodsWalletClient
+APIShared.Economy.GoodsWalletClient | public APIShared.Economy.GoodsWalletResult Exchange(APIShared.Goods.CustomGoodsClient goods, long operationSequence, System.Collections.Generic.IReadOnlyList<APIShared.Goods.GoodsChange> changes, int playerId, int goldDelta)
+APIShared.Economy.GoodsWalletClient | public bool IsAvailable { get; }
+APIShared.Economy.GoodsWalletClient | public bool TryReadGold(int playerId, out int gold, out string reason)
+APIShared.Economy.GoodsWalletResult | public sealed class APIShared.Economy.GoodsWalletResult
+APIShared.Economy.GoodsWalletResult | public APIShared.Economy.GoodsWalletStatus Status { get; }
+APIShared.Economy.GoodsWalletResult | public APIShared.Goods.GoodsTransactionStatus LedgerStatus { get; }
+APIShared.Economy.GoodsWalletResult | public int? GoldAfter { get; }
+APIShared.Economy.GoodsWalletResult | public int? GoldBefore { get; }
+APIShared.Economy.GoodsWalletResult | public string Reason { get; }
+APIShared.Economy.GoodsWalletStatus | public enum APIShared.Economy.GoodsWalletStatus : int
+APIShared.Economy.GoodsWalletStatus | AlreadyApplied = 1
+APIShared.Economy.GoodsWalletStatus | Applied = 0
+APIShared.Economy.GoodsWalletStatus | GoldOverflow = 7
+APIShared.Economy.GoodsWalletStatus | InsufficientGold = 6
+APIShared.Economy.GoodsWalletStatus | InvalidContext = 4
+APIShared.Economy.GoodsWalletStatus | InvalidRequest = 2
+APIShared.Economy.GoodsWalletStatus | LedgerRejected = 5
+APIShared.Economy.GoodsWalletStatus | Unavailable = 3
+APIShared.Economy.GoodsWalletStatus | WorldChanged = 8
 APIShared.Economy.MarketPriceDirection | public enum APIShared.Economy.MarketPriceDirection : int
 APIShared.Economy.MarketPriceDirection | Buy = 0
 APIShared.Economy.MarketPriceDirection | Sell = 1
@@ -614,6 +634,49 @@ APIShared.Economy.MarketPricePreEventArgs | public int Amount { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int Good { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int PlayerId { get; }
 APIShared.Economy.MarketPricePreEventArgs | public int ReplacementTotal { get; set; }
+APIShared.Economy.NativeCargoSnapshot | public struct APIShared.Economy.NativeCargoSnapshot
+APIShared.Economy.NativeCargoSnapshot | public APIShared.Economy.NativeStoragePool Pool { get; }
+APIShared.Economy.NativeCargoSnapshot | public int IssuedQuantity { get; }
+APIShared.Economy.NativeCargoSnapshot | public int PlayerId { get; }
+APIShared.Economy.NativeCargoSnapshot | public int Remaining { get; }
+APIShared.Economy.NativeCargoSnapshot | public long CreationSequence { get; }
+APIShared.Economy.NativeCargoSnapshot | public string GoodId { get; }
+APIShared.Economy.NativeCargoSnapshot | public string OwnerGuid { get; }
+APIShared.Economy.NativeStorageChange | public struct APIShared.Economy.NativeStorageChange
+APIShared.Economy.NativeStorageChange | public .ctor(APIShared.Economy.NativeStoredGood good, APIShared.Economy.NativeStorageSnapshot storage, int quantityDelta)
+APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStorageSnapshot Storage { get; }
+APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageChange | public int QuantityDelta { get; }
+APIShared.Economy.NativeStorageClient | public sealed class APIShared.Economy.NativeStorageClient
+APIShared.Economy.NativeStorageClient | public bool IsCurrentWorldReady { get; }
+APIShared.Economy.NativeStorageClient | public bool TryCreateCargo(long creationSequence, APIShared.Economy.NativeStoredGood good, int playerId, int quantity, out APIShared.Economy.NativeCargoSnapshot cargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryDepositCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, APIShared.Economy.NativeStorageSnapshot destination, int quantity, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryDiscardCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryExchangeBatch(long operationSequence, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageChange> changes, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryGetCargo(long creationSequence, out APIShared.Economy.NativeCargoSnapshot cargo, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryGetLastCargoSequence(out long sequence, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryRegisterGood(string goodId, APIShared.Economy.NativeStoragePool pool, out APIShared.Economy.NativeStoredGood good, out string reason)
+APIShared.Economy.NativeStoragePool | public enum APIShared.Economy.NativeStoragePool : int
+APIShared.Economy.NativeStoragePool | Armory = 1
+APIShared.Economy.NativeStoragePool | Granary = 2
+APIShared.Economy.NativeStorageSnapshot | public struct APIShared.Economy.NativeStorageSnapshot
+APIShared.Economy.NativeStorageSnapshot | public APIShared.Economy.NativeStoragePool Pool { get; }
+APIShared.Economy.NativeStorageSnapshot | public int Available { get; }
+APIShared.Economy.NativeStorageSnapshot | public int BuildingId { get; }
+APIShared.Economy.NativeStorageSnapshot | public int Capacity { get; }
+APIShared.Economy.NativeStorageSnapshot | public int NativeQuantity { get; }
+APIShared.Economy.NativeStorageSnapshot | public int PlayerId { get; }
+APIShared.Economy.NativeStorageSnapshot | public int VirtualQuantity { get; }
+APIShared.Economy.NativeStorageSnapshot | public uint GlobalId { get; }
+APIShared.Economy.NativeStoredGood | public sealed class APIShared.Economy.NativeStoredGood
+APIShared.Economy.NativeStoredGood | public APIShared.Economy.NativeStoragePool Pool { get; }
+APIShared.Economy.NativeStoredGood | public bool TryExchange(APIShared.Economy.NativeStorageSnapshot storage, long operationSequence, int quantityDelta, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetLastSequence(out long sequence, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetQuantity(APIShared.Economy.NativeStorageSnapshot storage, out int quantity, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetStock(int playerId, out APIShared.Goods.GoodsBalance balance, out string reason)
+APIShared.Economy.NativeStoredGood | public string GoodId { get; }
+APIShared.Economy.NativeStoredGood | public string OwnerGuid { get; }
 APIShared.Economy.PopularityModifierValues | public struct APIShared.Economy.PopularityModifierValues
 APIShared.Economy.PopularityModifierValues | public .ctor(APIShared.Modifiers.ValueModifierContribution human, APIShared.Modifiers.ValueModifierContribution ai)
 APIShared.Economy.PopularityModifierValues | public APIShared.Modifiers.ValueModifierContribution AI { get; }
@@ -672,9 +735,15 @@ APIShared.Economy.WeaponProduction | public static class APIShared.Economy.Weapo
 APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
 APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)
 APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buildingId, uint globalId, out APIShared.Economy.WeaponProductionSelection selection)
+APIShared.Economy.WeaponProduction | public static bool TryGetWorkerBatch(int unitId, uint globalId, out APIShared.Economy.WeaponProductionWorkerBatch batch)
 APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
 APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
+APIShared.Economy.WeaponProductionBatchPhase | public enum APIShared.Economy.WeaponProductionBatchPhase : int
+APIShared.Economy.WeaponProductionBatchPhase | Cargo = 2
+APIShared.Economy.WeaponProductionBatchPhase | LocalProduct = 1
+APIShared.Economy.WeaponProductionBatchPhase | Manufacturing = 0
 APIShared.Economy.WeaponProductionOption | public sealed class APIShared.Economy.WeaponProductionOption
+APIShared.Economy.WeaponProductionOption | public APIShared.Economy.NativeStoredGood StoredOutput { get; }
 APIShared.Economy.WeaponProductionOption | public APIShared.Economy.WeaponProductionOptionId Id { get; }
 APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods OutputGood { get; }
 APIShared.Economy.WeaponProductionOption | public SHCDESE.Interop.eGoods TemplateGood { get; }
@@ -686,7 +755,9 @@ APIShared.Economy.WeaponProductionOption | public int? WorkTicks { get; }
 APIShared.Economy.WeaponProductionOption | public string DisplayName { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public sealed class APIShared.Economy.WeaponProductionOptionDefinition
 APIShared.Economy.WeaponProductionOptionDefinition | public .ctor(SHCDESE.Interop.eStructs buildingType, SHCDESE.Interop.eGoods templateGood, SHCDESE.Interop.eGoods outputGood, string displayName, int? baseAmount = null, int? workTicks = null, int priority = 0)
+APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.NativeStoredGood StoredOutput { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.WeaponProductionOptionDefinition WithIngredientAmount(int? ingredientAmount)
+APIShared.Economy.WeaponProductionOptionDefinition | public APIShared.Economy.WeaponProductionOptionDefinition WithStoredOutput(APIShared.Economy.NativeStoredGood output)
 APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods OutputGood { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eGoods TemplateGood { get; }
 APIShared.Economy.WeaponProductionOptionDefinition | public SHCDESE.Interop.eStructs BuildingType { get; }
@@ -715,6 +786,13 @@ APIShared.Economy.WeaponProductionRegistrationStatus | Pending = 0
 APIShared.Economy.WeaponProductionSelection | public sealed class APIShared.Economy.WeaponProductionSelection
 APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Current { get; }
 APIShared.Economy.WeaponProductionSelection | public APIShared.Economy.WeaponProductionOption Next { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public struct APIShared.Economy.WeaponProductionWorkerBatch
+APIShared.Economy.WeaponProductionWorkerBatch | public APIShared.Economy.WeaponProductionBatchPhase Phase { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public APIShared.Economy.WeaponProductionOption Option { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public int HomeBuildingId { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public int UnitId { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public uint HomeBuildingGlobalId { get; }
+APIShared.Economy.WeaponProductionWorkerBatch | public uint UnitGlobalId { get; }
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public sealed class APIShared.Economy.WorkerProductionBonusOverrideRegistration
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string OwnerGuid { get; }
 APIShared.Economy.WorkerProductionBonusOverrideRegistration | public string RegistrationId { get; }
@@ -1406,6 +1484,8 @@ APIShared.MissionStartKind | LoadedSave = 1
 APIShared.MissionStartKind | NewGame = 0
 APIShared.ModApiClient | public sealed class APIShared.ModApiClient
 APIShared.ModApiClient | public APIShared.Automation.AutomationClient Automation { get; }
+APIShared.ModApiClient | public APIShared.Economy.GoodsWalletClient GoodsWallet { get; }
+APIShared.ModApiClient | public APIShared.Economy.NativeStorageClient NativeStorage { get; }
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
@@ -1421,6 +1501,7 @@ APIShared.ModApiClient | public bool TryGetHudExtrasButtons(out APIShared.IHudEx
 APIShared.ModApiClient | public bool TryGetLobbyState(out APIShared.ILobbyStateCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionLifecycle(out APIShared.IMissionLifecycleCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetMissionPlayStateReadiness(out APIShared.IMissionPlayStateReadinessCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
+APIShared.ModApiClient | public bool TryGetNativeWorldReads(out APIShared.NativeWorldReadClient client, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeight(out APIShared.IPlagueHeightCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlagueHeightPolicy(out APIShared.PlagueHeightPolicy policy, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetPlayerDefeat(out APIShared.IPlayerDefeatCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -2329,6 +2410,14 @@ APIShared.NativeSites.NativeSiteSpan | public int Length { get; }
 APIShared.NativeSites.NativeSiteSpan | public int Rva { get; }
 APIShared.NativeSites.NativeSiteSpan | public override string ToString()
 APIShared.NativeSites.NativeSiteSpan | public string ExpectedOriginalSha256 { get; }
+APIShared.NativeWorldReadClient | public sealed class APIShared.NativeWorldReadClient
+APIShared.NativeWorldReadClient | public bool TryReadCurrent(APIShared.NativeWorldReadSnapshot expectedWorld, out APIShared.NativeWorldReadSnapshot current, out string reason)
+APIShared.NativeWorldReadClient | public bool TryReadCurrent(out APIShared.NativeWorldReadSnapshot current, out string reason)
+APIShared.NativeWorldReadClient | public object SyncRoot { get; }
+APIShared.NativeWorldReadSnapshot | public struct APIShared.NativeWorldReadSnapshot
+APIShared.NativeWorldReadSnapshot | public APIShared.GameModes.GameModeSnapshot Mode { get; }
+APIShared.NativeWorldReadSnapshot | public APIShared.MissionContext Mission { get; }
+APIShared.NativeWorldReadSnapshot | public long WorldId { get; }
 APIShared.Networking.AuthenticatedChoreChannel<T> | public sealed class APIShared.Networking.AuthenticatedChoreChannel<T> where T : class
 APIShared.Networking.AuthenticatedChoreChannel<T> | public APIShared.Networking.NetworkSendResult Send(T packet)
 APIShared.Networking.AuthenticatedChoreChannel<T> | public bool IsAvailable { get; }

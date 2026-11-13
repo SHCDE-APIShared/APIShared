@@ -23,10 +23,12 @@ namespace APIShared.Economy
         private static bool failedPreparation, restoredSave;
         [ThreadStatic] private static byte[] frozenSave;
         [ThreadStatic] private static bool capturedSave;
+        [ThreadStatic] private static int frozenSaveVersion;
+        [ThreadStatic] private static bool frozenCaptureRequired;
 
         private static void InitializeSave()
         {
-            var registration = new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, SaveIdentifier, 1, 1,
+            var registration = new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, SaveIdentifier, 2, 1,
                 new[] { SaveEntry }, CaptureSave, _ => { })
             {
                 Scope = VersionedSaveScope.SaveGamesAndMaps,
@@ -54,7 +56,7 @@ namespace APIShared.Economy
             {
                 byte[] record = archive.TryReadBinaryFile("_SE_ModData_" + SaveIdentifier + ".msgpack", true);
                 if (record == null) return null;
-                var decoded = VersionedSaveRecordCodec.Decode(record, 1);
+                var decoded = VersionedSaveRecordCodec.Decode(record, 2);
                 if (decoded.Status != VersionedSaveRecordCodec.DecodeStatus.Valid)
                     throw new InvalidDataException("Weapon-workshop save record is invalid: " + decoded.Detail);
                 if (!decoded.Entries.TryGet(SaveEntry, out byte[] bytes)) return null;
@@ -133,6 +135,8 @@ namespace APIShared.Economy
         {
             frozenSave = null;
             capturedSave = false;
+            frozenSaveVersion = SaveReaderVersion(frozen);
+            frozenCaptureRequired = saveHandle != null || HasHudDemand;
             if (!HasHudDemand) return;
             var savedBuildings = buildings.OrderBy(pair => pair.Key)
                 .Where(pair => TryBuilding(pair.Key, pair.Value.GlobalId, out _) &&
@@ -173,21 +177,43 @@ namespace APIShared.Economy
 
         private static bool CaptureSave(VersionedSaveWriter writer)
         {
-            if (frozenSave == null) return true;
-            writer.Write(SaveEntry, frozenSave);
+            int version = frozenSaveVersion != 0 ? frozenSaveVersion : SaveReaderVersion(frozen);
+            writer.UseVersion(version, version);
+            if (frozenSave != null) writer.Write(SaveEntry, frozenSave);
             capturedSave = true;
             return true;
         }
 
         internal static void VerifySaveWritten(string path)
         {
-            if (frozenSave == null) return;
-            if (!capturedSave || saveHandle.LastWriteStatus != VersionedSaveWriteStatus.Written || saveHandle.KeepsLoadedRecord ||
-                !frozenSave.AsSpan().SequenceEqual(InspectSave(path)))
+            // An unrelated production modifier still saves when the optional workshop owner
+            // never registered and no workshop catalogue was activated. Otherwise an empty
+            // checkpoint is real state and must erase/verify any stale workshop entry.
+            if (!frozenCaptureRequired) return;
+            if (!capturedSave || saveHandle == null || saveHandle.LastWriteStatus != VersionedSaveWriteStatus.Written || saveHandle.KeepsLoadedRecord)
                 throw new InvalidDataException("The weapon-workshop save was not written from the current snapshot.");
+            if (string.IsNullOrEmpty(path) || !MapArchive.TryLoad(path, out MapArchive archive))
+                throw new InvalidDataException("The completed weapon-workshop archive cannot be read.");
+            using (archive)
+            {
+                byte[] record = archive.TryReadBinaryFile("_SE_ModData_" + SaveIdentifier + ".msgpack", true);
+                int version = frozenSaveVersion != 0 ? frozenSaveVersion : SaveReaderVersion(frozen);
+                if (!MatchesFrozenWorkshopRecord(record, frozenSave, version))
+                    throw new InvalidDataException("The weapon-workshop archive differs from the frozen snapshot.");
+            }
         }
 
-        internal static void EndSaveCapture() { frozenSave = null; capturedSave = false; }
+        internal static bool MatchesFrozenWorkshopRecord(byte[] record, byte[] expected, int version)
+        {
+            if (record == null) return false;
+            var decoded = VersionedSaveRecordCodec.Decode(record, 2);
+            if (decoded.Status != VersionedSaveRecordCodec.DecodeStatus.Valid || decoded.RecordVersion != version ||
+                decoded.MinimumReaderVersion != version) return false;
+            bool hasWorkshop = decoded.Entries.TryGet(SaveEntry, out byte[] payload);
+            return expected == null ? !hasWorkshop : hasWorkshop && payload.AsSpan().SequenceEqual(expected);
+        }
+
+        internal static void EndSaveCapture() { frozenSave = null; capturedSave = false; frozenSaveVersion = 0; frozenCaptureRequired = false; }
 
         private static bool TryUnitKind(int id, uint gid, out eChimps kind)
         {

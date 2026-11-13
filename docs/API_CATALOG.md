@@ -1,5 +1,40 @@
 # API catalog
 
+## Native pooled storage
+
+`ModApiClient.NativeStorage` registers owner-qualified virtual goods in native
+Armory/Granary pools, with exact building identity, coordinated capacity, atomic
+gold/stock exchanges and joint ledger/allocation persistence. No native goods ID,
+recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
+and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
+`NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
+store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
+`NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
+changes and one common player's gold, with at most 32 nonzero good/player totals;
+see [batch limits and replay](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+
+## External production cargo
+
+`NativeStorageClient.TryCreateCargo`, `TryGetCargo`, `TryDepositCargo` and
+`TryDiscardCargo` keep framework-owned undelivered lots beside the existing
+physical storage state. Creation keys have a separate bounded replay stream;
+delivery atomically decreases a cargo checkpoint and adds physical stock.
+SP/editor only, caller-held engine monitor, verified external production/custody/
+arrival and a qualified critical save owner are required. See
+[contracts, retries and save compatibility](NATIVE_STORAGE.md#external-production-cargo), including the
+material passive-record save-policy change, and the
+[compiled example](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
+## Custom goods inventory
+
+`APIShared.Goods.CustomGoodsInventory` in the game-independent Content assembly
+provides owner-qualified virtual goods, bounded player stock/capacities, atomic
+multi-good changes, sequenced retry protection and one-shot reservations.
+Caller-owned mission state has canonical snapshots for existing versioned saves.
+Native goods slots, wallets, physical storage and multiplayer transport require
+separate adapters. See [usage, persistence and limits](CUSTOM_GOODS.md) and the
+[compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 ## AI military admission
 
 `ModApiClient.TryGetAiMilitary` exposes semantic military roles, invocation-scoped
@@ -231,6 +266,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `ModApiClient.TryGetNativeWorldReads` | Coherent managed-ready metadata for the current native world; [read workflow and limits](MISSION_LIFECYCLE.md#acquire-protected-native-world-reads) | Caller holds the validated actual engine monitor; known-mode immutable value; retained world reads return fresh metadata; point-in-time observation grants no mutation or pointer lifetime authority |
 | `ModApiClient.TryGetMissionPlayStateReadiness` | First fresh PlayState after managed mission Start, without a loading/pause timeout; see [guide](THIRD_PARTY_GUIDE.md#current-mission-playstate-readiness) | Unity callbacks and ready replay; immutable session receipt; end/replacement invalidates Current; no HUD/identity/authority guarantee |
 | `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime. The same object implements `ICoopAiStartPreviewCapability` for start-button checks; plans may confirm fewer candidates than they list (`ConfirmedCandidateCount`) |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
@@ -307,7 +343,9 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Feature | Public contracts / entry | Behavior / hook owner | Example |
 |---|---|---|---|
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
+| External production cargo | [Cargo snapshots and methods](../src/Economy/Storage/NativeStorageCargo.Contracts.cs) | [Closed cargo engine](../src/Economy/Storage/NativeStorageCargoEngine.cs), [world state](../src/Economy/Storage/NativeStorageState.Cargo.cs), [prepared load](../src/Economy/Storage/NativeStoragePreparedLoad.cs) | [Cargo and custody](../examples/ThirdPartyMod/ExternalCargoExample.cs) |
 | Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
+| Protected native-world observations | [Read contracts](../src/Missions/NativeWorldReadContracts.cs), [guide](MISSION_LIFECYCLE.md) | [Reader](../src/Missions/NativeWorldReadReader.cs), existing mission owner | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | — |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatService.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |
@@ -781,6 +819,13 @@ hooks use only the installed NativeX64 Indirect backend, with ten displaced byte
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
 
+## Native gold and virtual goods
+
+`ModApiClient.GoodsWallet` exchanges a validated native-gold balance and prepared
+owner-bound virtual stock under the engine/inventory monitors. Exact replay intent,
+world generations and schema-1/schema-2 compatibility are documented in the
+[wallet guide](GOODS_WALLET.md).
+
 ## Unit settlement events
 
 Not in packages up to 0.9.1; check the package you require. [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs)
@@ -1016,7 +1061,12 @@ template with an existing weapon or armour good and can set an output base
 amount, manufacturing duration and quantity of the workshop's native ingredient.
 APIShared reserves the original recipes within the four choices per workshop type.
 It supplies the building HUD, Shift selection, synchronized execution and saved
-production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+production state. `WithStoredOutput` binds an owner-matching registered Armory good
+for offline/editor production, with atomic native cargo/custom-stock delivery and
+verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+`TryGetWorkerBatch` provides an immutable protected observation of an existing
+additional-recipe worker's latched option, phase and exact worker/home identities;
+see [workflow and lifetime limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch).
 
 ## Huntable prey
 
