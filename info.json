@@ -3,13 +3,23 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.50.0",
+  "Version": "0.51.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.51.0",
+      "Changes": [
+        "Add declarative mission-setting moves between mod GUIDs for savegames and Map/Trail author rules. Explicit destination settings win; Player rules follow the new owner, while declared defaults can keep unrelated new features disabled.",
+        "Keep original health baselines current when modifier application is disabled, and discard obsolete siege-tower proxy targets for newly processed generations.",
+        "Preserve original IL metadata when a safe transpiler fails, and protect raw setting dictionaries and buffers from in-place migration converters.",
+        "Close AI spawn capture before completion callbacks so callback-created units cannot corrupt the original capture list.",
+        "Keep successful quick and unchecked branch builds as retained outputs without marking them as fully verified SDK packages."
+      ]
+    },
     {
       "Version": "0.50.0",
       "Changes": [

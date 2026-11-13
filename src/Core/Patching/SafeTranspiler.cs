@@ -39,7 +39,7 @@ namespace APIShared.Patching
             {
                 // Copies keep the original objects untouched for the fallback. The copy constructor keeps
                 // labels and exception blocks; CodeInstruction.Clone() would drop them and break every branch.
-                result = transform(original.Select(instruction => new CodeInstruction(instruction)).ToList()).ToList();
+                result = transform(CopyInstructions(original)).ToList();
             }
             catch (Exception error)
             {
@@ -51,6 +51,40 @@ namespace APIShared.Patching
             }
             Notify(outcome, true, ownerGuid, id, log);
             return result;
+        }
+
+        private static List<CodeInstruction> CopyInstructions(List<CodeInstruction> original)
+        {
+            // Harmony's copy constructor shares switch arrays and mutable exception blocks.
+            // Preserve aliases within the edited graph, while detaching it from the fallback.
+            var metadata = new Dictionary<object, object>(MetadataIdentity.Instance);
+            var copies = new List<CodeInstruction>(original.Count);
+            foreach (var instruction in original)
+            {
+                var copy = new CodeInstruction(instruction);
+                if (instruction.operand is System.Reflection.Emit.Label[] targets)
+                {
+                    if (!metadata.TryGetValue(targets, out var cloned)) metadata.Add(targets, cloned = targets.Clone());
+                    copy.operand = cloned;
+                }
+                for (int i = 0; i < copy.blocks.Count; i++)
+                {
+                    var block = instruction.blocks[i];
+                    if (block == null) continue;
+                    if (!metadata.TryGetValue(block, out var cloned))
+                        metadata.Add(block, cloned = new ExceptionBlock(block.blockType, block.catchType) { catchType = block.catchType });
+                    copy.blocks[i] = (ExceptionBlock)cloned;
+                }
+                copies.Add(copy);
+            }
+            return copies;
+        }
+
+        private sealed class MetadataIdentity : IEqualityComparer<object>
+        {
+            internal static readonly MetadataIdentity Instance = new MetadataIdentity();
+            public new bool Equals(object left, object right) => ReferenceEquals(left, right);
+            public int GetHashCode(object value) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
         }
 
         private static void Notify(Action<bool> outcome, bool applied, string ownerGuid, string id, ManualLogSource log)

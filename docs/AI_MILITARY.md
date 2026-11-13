@@ -26,6 +26,9 @@ world-end rejection. Editor declarations report `Declared` synchronously instead
 Callbacks are exception-isolated and can run on the simulation caller. Dispatch
 presentation work to the UI thread. A callback may end the world; retain neither
 native pointers nor assumptions about the next callback's world.
+`Complete` closes capture before invoking callbacks: units created by a completion
+callback are ordinary placements unless that callback opens its own nested scope.
+The original captured units remain protected until the enclosing scope is disposed.
 
 `RequestAssignment` accepts a free existing unit or this consumer's protected unit.
 It refuses arbitrary already-managed troops and units claimed by another owner.
