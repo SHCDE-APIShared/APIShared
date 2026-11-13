@@ -159,13 +159,25 @@ namespace APIShared.Savegames
     public sealed class VersionedSaveWriter
     {
         private readonly VersionedSaveKnownEntries known;
+        private readonly int currentVersion, minimumReaderFloor;
         private readonly SortedDictionary<string, byte[]> written =
             new SortedDictionary<string, byte[]>(StringComparer.Ordinal);
         private bool closed;
 
         internal VersionedSaveWriter(VersionedSaveKnownEntries known, bool isSaveFile, bool isMapEditorSave, string filePath)
+            : this(known, isSaveFile, isMapEditorSave, filePath, 1, 1) { }
+
+        internal VersionedSaveWriter(VersionedSaveKnownEntries known, bool isSaveFile, bool isMapEditorSave, string filePath,
+            int currentVersion, int minimumReaderVersion)
         {
+            if (currentVersion < 1) throw new ArgumentOutOfRangeException(nameof(currentVersion));
+            if (minimumReaderVersion < 1 || minimumReaderVersion > currentVersion)
+                throw new ArgumentOutOfRangeException(nameof(minimumReaderVersion));
             this.known = known;
+            this.currentVersion = currentVersion;
+            minimumReaderFloor = minimumReaderVersion;
+            RecordVersion = currentVersion;
+            MinimumReaderVersion = minimumReaderVersion;
             IsSaveFile = isSaveFile;
             IsMapEditorSave = isMapEditorSave;
             FilePath = filePath;
@@ -204,8 +216,23 @@ namespace APIShared.Savegames
             written.Add(name, (byte[])data.Clone());
         }
 
+        // Internal captures may retain an older schema when the state still has its old meaning.
+        // A capture cannot promise readers older than the registration's compatibility floor.
+        internal void UseVersion(int recordVersion, int minimumReader)
+        {
+            if (closed) throw new InvalidOperationException("The save writer is only valid during capture.");
+            if (recordVersion < 1 || recordVersion > currentVersion)
+                throw new ArgumentOutOfRangeException(nameof(recordVersion));
+            if (minimumReader < minimumReaderFloor || minimumReader > recordVersion)
+                throw new ArgumentOutOfRangeException(nameof(minimumReader));
+            RecordVersion = recordVersion;
+            MinimumReaderVersion = minimumReader;
+        }
+
         internal void Close() => closed = true;
         internal SortedDictionary<string, byte[]> Written => written;
+        internal int RecordVersion { get; private set; }
+        internal int MinimumReaderVersion { get; private set; }
     }
 
     /// <summary>Immutable result of one archive load for one registration.</summary>

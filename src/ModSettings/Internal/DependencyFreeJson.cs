@@ -9,7 +9,13 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
+// Content links this codec but remains a separate assembly. Its internal namespace is
+// distinct so the trusted runtime friend grant cannot make two parser identities ambiguous.
+#if API_SHARED_CONTENT
+namespace APIShared.ContentInternal
+#else
 namespace APIShared.Internal
+#endif
 {
     // Shared JSON codec for Unity runtime projects that cannot safely load serializer assemblies.
     internal static class DependencyFreeJson

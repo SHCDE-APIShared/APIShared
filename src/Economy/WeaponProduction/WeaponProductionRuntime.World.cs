@@ -77,6 +77,7 @@ namespace APIShared.Economy
         {
             EndWorld();
             frozen = catalog;
+            PublishStoredOutputOptions(catalog);
             if (catalog.HasOptions) Marshal.WriteByte(TransferDemandAddress, 1);
         }
 
@@ -97,6 +98,7 @@ namespace APIShared.Economy
             WeaponProductionNativeRuntime.SetDemand(false);
             WeaponProductionNativeRuntime.ClearBuildingDemand();
             frozen = WeaponProductionCatalog.Empty;
+            ClearStoredOutputOptions();
             ClearWire();
             ResetSaveLoad();
             buildings.Clear();

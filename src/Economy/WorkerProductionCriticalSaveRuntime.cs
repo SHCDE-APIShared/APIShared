@@ -108,24 +108,37 @@ namespace APIShared.Economy
         // ulong native return ABI and never install another52B0 detour.
         internal static ulong RunWriter(IntPtr archive, IntPtr sections, byte map, PlayerViewSaveScope.WriterCall original)
         {
-            if (!IsAvailable) return original(archive, sections, map);
+            bool externalCargo = NativeStorageRuntime.Instance.HasExternalCargoSaveDemand;
+            if (!IsAvailable)
+            {
+                if (!externalCargo) return original(archive, sections, map);
+                sequence++; lastFailed = false;
+                return Failed("Cargo saving requires the available verified critical writer.");
+            }
+            var requirements = new WorkerProductionSaveRequirements(WorkerProductionStateRuntime.IsExtended,
+                WorkerProductionWorldSafety.IsFaulted, WeaponProductionRuntime.HasStoredOutputDemand, externalCargo);
             sequence++; lastFailed = false;
-            if (!WorkerProductionStateRuntime.IsExtended && !WorkerProductionWorldSafety.IsFaulted)
-                return original(archive, sections, map);
             if (saving) return Failed("Nested production save rejected; the previous save remains untouched.");
+            if (!requirements.Transaction) return original(archive, sections, map);
             string temporary = null;
             byte[] oldPath = null;
             int selector = 0;
             bool swapped = false;
+            byte[] payload = null;
             saving = true;
             try
             {
                 if (!System.Threading.Monitor.IsEntered(WorkerProductionWorldSafety.EngineGate))
                     throw new InvalidOperationException("Critical saving requires the actual engine monitor.");
                 // A fault is rejected before capture or ANY native file open/truncation.
-                byte[] payload = WorkerProductionStateRuntime.FreezeForSave();
-                if (payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
-                WeaponProductionRuntime.FreezeSave();
+                if (requirements.Faulted) throw new InvalidOperationException("The production world is faulted.");
+                if (requirements.Production)
+                {
+                    payload = WorkerProductionStateRuntime.FreezeForSave();
+                    if (payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
+                }
+                if (requirements.Workshops) WeaponProductionRuntime.FreezeSave();
+                if (requirements.Storage) NativeStorageRuntime.Instance.FreezeProductionSave();
                 selector = Marshal.ReadInt32(module + SelectorRva);
                 if (selector != 1) throw new InvalidDataException("The native save path selector differs from the audited save callers.");
                 var chars = new ReadOnlySpan<char>((void*)(module + PathSlotRva), PathCapacity);
@@ -149,11 +162,12 @@ namespace APIShared.Economy
                 try { result = original(archive, sections, map); }
                 finally { nativeIoActive = false; }
                 if (result != 1 || lastFailed) throw new IOException("Native saving returned failure or attempted a nested save.");
-                WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
-                WeaponProductionRuntime.VerifySaveWritten(temporary);
+                if (requirements.Production) WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
+                if (requirements.Workshops) WeaponProductionRuntime.VerifySaveWritten(temporary);
+                if (requirements.Storage) NativeStorageRuntime.Instance.VerifyProductionSaveWritten(temporary);
                 // MoveFileExW replacement commits only the verified complete file. Failed capture,
                 // omitted/stale archive records and append errors leave the old destination intact.
-                CommitSavedFile(temporary, destination, payload, in nativeIo);
+                CommitSavedFile(temporary, destination, payload, in nativeIo, requirements);
                 temporary = null;
                 return 1;
             }
@@ -165,8 +179,9 @@ namespace APIShared.Economy
                     Marshal.Copy(oldPath, 0, module + PathSlotRva, oldPath.Length);
                     Marshal.WriteInt32(module + SelectorRva, selector);
                 }
-                WorkerProductionStateRuntime.EndSaveCapture();
-                WeaponProductionRuntime.EndSaveCapture();
+                if (requirements.Production) WorkerProductionStateRuntime.EndSaveCapture();
+                if (requirements.Workshops) WeaponProductionRuntime.EndSaveCapture();
+                if (requirements.Storage) NativeStorageRuntime.Instance.EndProductionSave();
                 saving = false;
                 if (temporary != null)
                     try { if (File.Exists(temporary)) File.Delete(temporary); }
@@ -186,9 +201,22 @@ namespace APIShared.Economy
             return 0;
         }
         internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io)
+            => CommitSavedFile(temporary, destination, payload, in io, new WorkerProductionSaveRequirements(true, false, false, false));
+
+        // Cargo-only worlds intentionally have no extended worker-production sidecar. Storage
+        // verification has already checked its frozen pair; require a production payload only
+        // when that source participated in this transaction. Never synthesize an empty record.
+        internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
+            WorkerProductionSaveRequirements requirements)
         {
             if (!io.IsComplete) throw new IOException("A native save write was incomplete or the save file could not close successfully.");
-            VerifySavedPayload(temporary, payload);
+            if (!requirements.Transaction || requirements.Faulted) throw new InvalidDataException("No valid frozen save sources authorize file replacement.");
+            if (requirements.Production)
+            {
+                if (payload == null) throw new InvalidDataException("The required production checkpoint is missing.");
+                VerifySavedPayload(temporary, payload);
+            }
+            else if (payload != null) throw new InvalidDataException("An unexpected production payload cannot label a cargo-only checkpoint.");
             Internal.AtomicFileReplacement.Replace(temporary, destination);
         }
         internal static void VerifySavedPayload(string path, byte[] expected)
@@ -203,6 +231,20 @@ namespace APIShared.Economy
                     !decoded.Entries.TryGet(WorkerProductionStateRuntime.EntryName, out byte[] actual) || !actual.AsSpan().SequenceEqual(expected))
                     throw new InvalidDataException("The production record was not written from the current snapshot.");
             }
+        }
+    }
+
+    // Source selection is frozen at entry. External cargo, including passive unknown/staged
+    // records and terminal history, needs the same verified native file transaction even when
+    // the independent extended worker-production source is absent.
+    internal readonly struct WorkerProductionSaveRequirements
+    {
+        internal readonly bool Production, Workshops, Storage, Faulted;
+        internal bool Transaction => Production || Storage || Faulted;
+        internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo)
+        {
+            Production = extended; Workshops = extended || storedOutput;
+            Storage = storedOutput || externalCargo; Faulted = faulted;
         }
     }
 
