@@ -7,7 +7,10 @@ if($FailureRegressionOnly){$cases=@('precheckpoint-exit')}
 # executable path plus ".config" reaches MAX_PATH (260). With a 32-character run ID, a checkout path
 # of about 115 characters already killed the longer cases' games right after start, which then looked
 # like a premature write (#34). Keep the run ID short and fail clearly on a checkout still too deep.
-do{$fixture=Join-Path $root ('.local/coordination-tests/'+[guid]::NewGuid().ToString('N').Substring(0,8))}while([IO.Directory]::Exists($fixture))
+. (Join-Path $PSScriptRoot 'WorkshopTestFixture.Common.ps1')
+$fixture=New-WorkshopTestFixture $root 'coordination'
+$fixtureError=$null
+try {
 $longest=[IO.Path]::GetFullPath((Join-Path $fixture (($cases|Sort-Object Length -Descending)[0]+'/game/Stronghold Crusader Definitive Edition.exe')))
 if($longest.Length+'.config'.Length -ge 260){throw "Fixture game path has $($longest.Length) characters; a .NET Framework executable needs fewer than $(260-'.config'.Length). Use a shorter checkout path."}
 [void][IO.Directory]::CreateDirectory($fixture)
@@ -276,7 +279,11 @@ foreach($case in $cases){
     }
 }
 if($FailureRegressionOnly){
-    Write-Host "PASS: owned early-exit diagnostics and inherited-pipe cleanup regression. Evidence: $fixture"
+    Write-Host "PASS: owned early-exit diagnostics and inherited-pipe cleanup regression. Completed fixture: $fixture"
 }else{
-    Write-Host "PASS: real fixture game detection, exclusive writer/readable status, backup/apply/receipt/restore pauses, validation, timeout, process termination and post-commit safety. Evidence: $fixture"
+    Write-Host "PASS: real fixture game detection, exclusive writer/readable status, backup/apply/receipt/restore pauses, validation, timeout, process termination and post-commit safety. Completed fixture: $fixture"
+}
+
+} catch {$fixtureError=$_;throw} finally {
+    Complete-WorkshopTestFixture $root 'coordination' $fixture (-not $fixtureError) ([string]$fixtureError)
 }
