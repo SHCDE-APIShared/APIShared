@@ -134,6 +134,8 @@ namespace APIShared.Internal
             logger = log;
             ledger = new RuntimeHealthLedger(log.SourceName, (level, text) => Emit(logger, level, text));
         }
+        // APIShared's own plugin logger, for helpers whose caller passed no logger; null before startup.
+        internal static ManualLogSource ProcessLogger => logger;
         internal static void Failure(ManualLogSource fallback, string feature, bool error, string detail)
         {
             if (fallback == null) return;

@@ -18,7 +18,7 @@ namespace APIShared.Workshop
     // shutdown, deletion and deployment. Installed files are never changed here.
     internal static class WorkshopCleanupRuntime
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         private static ManualLogSource logger;
         private static bool reported;
 
@@ -31,7 +31,9 @@ namespace APIShared.Workshop
             {
                 MethodInfo method = ValidateExtender(typeof(MapArchive).Assembly);
                 stage = "install-staging-hook";
-                hook = new ILHook(method, Modify);
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.Workshop.Cleanup", method, Modify, logger, out var installed, out string failure))
+                    throw new InvalidOperationException(failure);
+                hook = installed;
                 logger.LogInfo("Workshop cleanup installed; process-lifetime staging callback, no plugin lifecycle scheduling.");
             }
             catch (Exception ex) { NativeApiLog.Warning(logger, DescribeRejection(typeof(MapArchive).Assembly, stage, ex)); }

@@ -209,6 +209,8 @@ Step logs include millisecond timestamps, durations and explicit skips. The loca
 records the mode; only `full` is accepted as a tested SDK for cache reuse or release.
 Reduced builds still retain machine paths for the next build. After updating the
 evidence format, an older proof needs one fresh full build.
+Successful branch builds with reduced checks retain their source and package for
+inspection, without becoming a reusable SDK or retiring an earlier full SDK.
 
 Successful independent checks can be reused after a later build failure. The local
 check cache matches source and documentation content, native/reference and tool

@@ -123,7 +123,7 @@ namespace APIShared.Units.AiMilitary.Native
             if (rowsBase == 0x2EB2CD0 || rowsBase == 0x2EAEE34)
             {
                 int id = *(short*)((byte*)Module + 0x4B6AA50 + taskTile * 2);
-                return id > 0 && GameBuildingManagerAPI.Instance.TryGetBuildingById(id, out GameBuilding* building) &&
+                return id > 0 && BuildingAccess.TryGetById(GameBuildingManagerAPI.Instance, id, out GameBuilding* building, out _) &&
                     building != null && building->r_AliveState == AliveState.IsAlive && building->r_PlayerIdOwner == target &&
                     taskGround <= approachHeight + 16 && approachHeight - 16 <= taskGround;
             }

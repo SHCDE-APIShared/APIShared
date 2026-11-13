@@ -13,6 +13,7 @@ internal static class Program
     private static int checks;
     private static decimal factor=1;
     private static bool exclude;
+    private static int policyCalls;
     private static HealthLegacyBasis[] legacy;
     private static HealthModifierHandle handle;
     private static void Check(bool value,string message) { checks++;if(!value)throw new Exception(message); }
@@ -23,11 +24,31 @@ internal static class Program
     private static void Reset() { World.Reset();factor=1;exclude=false;legacy=null;handle.SetEnabled(true); }
     private static byte[] Save()=>ModSaveDataAPI.Instance.Save(new SaveContext());
     private static void Load(byte[] bytes) { if(bytes!=null)ModSaveDataAPI.Instance.Load(bytes,new LoadContext());World.Start(true); }
+    private static HealthRecord SavedUnit(byte[] bytes,int id=1)
+    {
+        foreach(var record in HealthSaveState.Decode(bytes).Records)
+            if(record.Kind==HealthObjectKind.Unit && record.Id==id) return record;
+        throw new Exception("Missing saved unit " + id);
+    }
+    private static void SpawnBuilding(int id) => BuildingR3EventHooks.OnBuildingSpawn.Observable.Raise(
+        new BuildingSpawnEventArgs{Phase=EventHookPhase.Post,ReturnValue=id});
+    private static void Tower(bool withProxy=true)
+    {
+        World.Units[0]=Unit(240000,120000,eChimps.CHIMP_TYPE_SIEGE_TOWER);
+        World.Units[0].r_LinkedProductionBuildingId=1;World.Units[0].r_LinkedProductionBuildingGlobalId=101;
+        if(!withProxy) return;
+        DeployProxy();
+    }
+    private static void DeployProxy()
+    {
+        World.Buildings[0]=Building(1000,500,eStructs.STRUCT_SIEGE_TOWER);
+        World.Buildings[0].N00001757=1;World.Buildings[0].N000017CB=1;
+    }
     public static void Main()
     {
         World.Reset();HealthRuntime.Initialize(new SHCDESE.API.LowLevel.CrusaderLibraryLoadContext(),"fixture",null);
         Check(HealthModifiers.IsAvailable,"service available");
-        Check(HealthModifiers.TryRegister("test","health",c=>exclude?ValueModifierContribution.None:ValueModifierContribution.Factor(factor),out handle,out _),"register");
+        Check(HealthModifiers.TryRegister("test","health",c=>{policyCalls++;return exclude?ValueModifierContribution.None:ValueModifierContribution.Factor(factor);},out handle,out _),"register");
         Check(!handle.IsEnabled,"initially disabled");
         Check(!HealthModifiers.TryRegister("test","health",c=>ValueModifierContribution.None,out _,out _),"duplicate rejected");
         Check(HealthModifiers.TryRegisterLegacyBasisProvider("test","legacy",()=>legacy,out _),"migration register");
@@ -125,6 +146,90 @@ internal static class Program
         bytes=state.Encode();Check(HealthSaveState.Decode(bytes).Records[0].Basis==100,"archive roundtrip");
         var trailing=new byte[bytes.Length+1];Array.Copy(bytes,trailing,bytes.Length);bool rejected=false;try{HealthSaveState.Decode(trailing);}catch(InvalidOperationException){rejected=true;}Check(rejected,"archive trailing bytes rejected");
         state.Records.Add(state.Records[0]);rejected=false;try{state.Encode();}catch(InvalidOperationException){rejected=true;}Check(rejected,"duplicate archive IDs rejected");
+        DormantHistory();
+        DormantAndExcludedTowers();
         Console.WriteLine($"Health production-source fixture: {checks} checks passed.");
+    }
+
+    private static void DormantHistory()
+    {
+        Reset();factor=2;World.Units[0]=Unit(100);World.Start();World.Tick();byte[] original=Save();
+        World.Reset();handle.SetEnabled(false);World.Units[0]=Unit(100);Load(original);
+        Check(HealthRuntime.IsObserving,"loaded history keeps the native observer demanded while policies are disabled");
+        int calls=policyCalls;
+        World.Units[0]=Unit(80,40);HealthNativeObserver.Callback(1);byte[] dormant=Save();
+        Check(World.Units[0].r_MaxHealth==80&&World.Units[0].r_CurrentHealth==40&&policyCalls==calls,"early dormant save never applies or evaluates policies");
+        Check(SavedUnit(dormant).Basis==80&&SavedUnit(dormant).AppliedMaximum==80,"early dormant save retains the fresh same-identity generation");
+        handle.SetEnabled(true);World.Tick();
+        Check(World.Units[0].r_MaxHealth==80,"enabling does not retroactively apply a completed dormant generation");
+        World.Units[0]=Unit(70);HealthNativeObserver.Callback(1);World.Tick(2);
+        Check(World.Units[0].r_MaxHealth==140,"a subsequent active initialization still applies policies");
+        World.Reset();World.Units[0]=Unit(80,40);Load(dormant);World.Tick();
+        Check(World.Units[0].r_MaxHealth==160&&World.Units[0].r_CurrentHealth==80,"dormant resave reloads the fresh basis without compounding");
+
+        // A load normalizer is not a positively observed new initialization.
+        World.Reset();handle.SetEnabled(false);World.Units[0]=Unit(80,40);Load(original);World.Tick();dormant=Save();
+        Check(SavedUnit(dormant).Basis==100&&SavedUnit(dormant).AppliedMaximum==80,"dormant normalization preserves the verified original basis");
+        World.Buildings[0]=Building(350,175);SpawnBuilding(1);World.Tick(2);dormant=Save();
+        Check(World.Buildings[0].r_MaxHealth==350&&World.Buildings[0].r_CurrentHealth==175,"dormant spawned building HP stays unchanged");
+        World.Reset();handle.SetEnabled(true);World.Units[0]=Unit(80,40);World.Buildings[0]=Building(350,175);Load(dormant);World.Tick();
+        Check(World.Units[0].r_MaxHealth==200&&World.Buildings[0].r_MaxHealth==700,"dormant building and retained unit bases both survive resaving");
+
+        World.Reset();handle.SetEnabled(false);World.Units[0]=Unit(100);Load(original);World.Tick();
+        World.Units[0]=Unit(60,30,eChimps.CHIMP_TYPE_PEASANT,2);HealthNativeObserver.Callback(1);World.Tick(2);dormant=Save();
+        Check(SavedUnit(dormant).GlobalId==2&&SavedUnit(dormant).Basis==60,"dormant slot reuse replaces old global/type provenance");
+        World.Units[0].r_CurrentHealth=0;World.Tick(3);dormant=Save();
+        Check(World.Units[0].r_CurrentHealth==0&&HealthSaveState.Decode(dormant).Records.Count==0,"dormant dead units are neither revived nor archived as live");
+
+        Reset();handle.SetEnabled(false);World.Units[0]=Unit(100);World.Start();World.Tick();
+        Check(!HealthRuntime.IsObserving&&Save()==null,"new mission without demand or history remains dormant after a previous tracked mission");
+        World.Reset();World.Units[0]=Unit(100);Load(null);World.Tick();
+        Check(!HealthRuntime.IsObserving&&Save()==null,"legacy save without demand does not gain new eligibility");
+        handle.SetEnabled(true);factor=2;World.Tick(2);
+        Check(World.Units[0].r_MaxHealth==100&&!HealthSaveState.Decode(Save()).FullBasis,"later activation cannot invent a missing legacy basis");
+
+        Reset();factor=2;legacy=Array.Empty<HealthLegacyBasis>();World.Units[0]=Unit(100,100,eChimps.CHIMP_TYPE_LORD);Load(null);World.Tick();byte[] legacySave=Save();
+        World.Reset();handle.SetEnabled(false);World.Units[0]=Unit(100,100,eChimps.CHIMP_TYPE_LORD);Load(legacySave);World.Tick();
+        Check(HealthSaveState.Decode(Save()).Records.Count==0,"dormant legacy history does not invent an existing Lord basis");
+        World.Units[0]=Unit(80,80,eChimps.CHIMP_TYPE_LORD);HealthNativeObserver.Callback(1);
+        World.Units[1]=Unit(100,100,eChimps.CHIMP_TYPE_ARCHER,2);HealthNativeObserver.Callback(2);World.Tick(2);dormant=Save();
+        var legacyState=HealthSaveState.Decode(dormant);
+        Check(!legacyState.FullBasis&&legacyState.LegacyLords&&legacyState.Records.Count==1&&SavedUnit(dormant).Basis==80,"dormant legacy history captures only a positively observed new Lord generation");
+        World.Reset();handle.SetEnabled(true);World.Units[0]=Unit(80,80,eChimps.CHIMP_TYPE_LORD);World.Units[1]=Unit(100,100,eChimps.CHIMP_TYPE_ARCHER,2);Load(dormant);World.Tick();
+        Check(World.Units[0].r_MaxHealth==160&&World.Units[1].r_MaxHealth==100,"legacy restrictions survive a dormant resave");
+
+        Reset();handle.SetEnabled(false);World.Units[0]=Unit(100);Load(new byte[16]);World.Tick();
+        Check(World.Units[0].r_MaxHealth==100&&Save()==null&&World.Errors.Count>0,"malformed history stays fail closed with no active policy");
+        handle.SetEnabled(true);World.Tick(2);
+        Check(World.Units[0].r_MaxHealth==100&&Save()==null,"activation cannot reinterpret malformed history as fresh bases");
+    }
+
+    private static void DormantAndExcludedTowers()
+    {
+        Reset();factor=2;Tower(false);World.Start();World.Tick();byte[] original=Save();
+        Check(SavedUnit(original).ProxyBasis==1000&&SavedUnit(original).ProxyMaximum==2000,"tower history contains a frozen prospective proxy target");
+        Reset();exclude=true;Tower();Load(original);World.Tick();
+        Check(World.Units[0].r_MaxHealth==240000&&World.Buildings[0].r_MaxHealth==1000,"None does not reapply a saved target to an existing proxy");
+        Check(SavedUnit(Save()).ProxyBasis==1000&&SavedUnit(Save()).ProxyMaximum==0,"None preserves the proxy basis but retires the old applied target");
+        Reset();exclude=true;Tower(false);Load(original);World.Tick();DeployProxy();SpawnBuilding(1);World.Tick(2);
+        Check(World.Buildings[0].r_MaxHealth==1000,"None does not reapply a saved target to a later deployed proxy");
+
+        Reset();handle.SetEnabled(false);Tower();World.ProxyBasis=2000;Load(original);int calls=policyCalls;byte[] dormant=Save();
+        Check(World.Units[0].r_MaxHealth==240000&&World.Units[0].r_CurrentHealth==120000&&World.Buildings[0].r_MaxHealth==1000&&World.Buildings[0].r_CurrentHealth==500&&policyCalls==calls,"early dormant tower save leaves both linked objects untouched");
+        Check(SavedUnit(dormant).Basis==240000&&SavedUnit(dormant).ProxyBasis==1000&&SavedUnit(dormant).ProxyMaximum==0,"dormant tower keeps both original bases despite a changed type table");
+        handle.SetEnabled(true);World.Tick();
+        Check(World.Units[0].r_MaxHealth==240000&&World.Buildings[0].r_MaxHealth==1000,"enabling after a dormant tower save does not retroactively apply HP");
+        Reset();factor=2;Tower();Load(dormant);World.Tick();
+        Check(World.Units[0].r_MaxHealth==480000&&World.Buildings[0].r_MaxHealth==2000,"active reload computes a fresh paired target from dormant original bases");
+
+        Reset();factor=2;handle.SetEnabled(false);Tower();World.Units[0].r_AliveState=AliveState.NeedsInit;Load(original);World.Tick();Save();
+        Check(World.Buildings[0].r_MaxHealth==1000,"dormant proxy waits for its unfinished unit generation");
+        handle.SetEnabled(true);World.Units[0].r_AliveState=AliveState.IsAlive;World.Tick(2);
+        Check(World.Units[0].r_MaxHealth==480000&&World.Buildings[0].r_MaxHealth==2000,"activation before native initialization finishes still applies to both linked objects");
+
+        Reset();factor=2;Tower(false);World.Start();World.Tick();handle.SetEnabled(false);DeployProxy();SpawnBuilding(1);World.Tick(2);dormant=Save();
+        Check(World.Buildings[0].r_MaxHealth==1000&&SavedUnit(dormant).ProxyMaximum==2000,"dormant late proxy stays untouched without discarding its previously active unit target");
+        handle.SetEnabled(true);World.Tick(3);
+        Check(World.Buildings[0].r_MaxHealth==1000,"a completed dormant late proxy is not applied retroactively");
     }
 }

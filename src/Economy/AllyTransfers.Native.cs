@@ -31,7 +31,7 @@ namespace APIShared.Economy
         internal delegate int CapacityCall(IntPtr buildings, int recipient, int good);
         internal static readonly IAllyTransfersBackend EngineBackend = new Backend();
         private static readonly AllyTransfersEngine admission = new AllyTransfersEngine(EngineBackend, () => SimulationMutationScope.IsActive);
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         private static AllyTransfersSeBridge bridge;
         private static CapacityCall capacity;
         private static IntPtr module;
@@ -39,6 +39,7 @@ namespace APIShared.Economy
         private static ManualLogSource logger;
         private static Exception startupFailure;
         private static int initialized, ready, callFailures;
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool IsAvailable => Volatile.Read(ref ready) != 0 && Volatile.Read(ref startupFailure) == null;
         internal static NativeSiteSpan[] Spans() => new[] {
             new NativeSiteSpan(TransferRva, TransferBytes.Length, NativeSiteMode.CallOnly),
@@ -82,11 +83,13 @@ namespace APIShared.Economy
                 claimed = true;
                 capacity = (CapacityCall)Marshal.GetDelegateForFunctionPointer(module + CapacityRva, typeof(CapacityCall));
                 bridge = candidateBridge;
-                hook = new ILHook(method, il => AllyTransfersSeContract.Apply(il, Invoke, candidateBridge.EnterWrapper, candidateBridge.LeaveWrapper),
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.Economy.AllyTransfers.SEOriginal" });
-                applying = true; // Root before publication; never undo a published candidate.
-                hook.Apply();
-                if (!hook.IsApplied) throw new InvalidOperationException("The SE ally-transfer managed adapter did not apply.");
+                // A false result leaves nothing installed; the cleanup below may still release the claim.
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.Economy.AllyTransfers.SEOriginal", method,
+                    il => AllyTransfersSeContract.Apply(il, Invoke, candidateBridge.EnterWrapper, candidateBridge.LeaveWrapper), log,
+                    out var installed, out string failure))
+                    throw new InvalidOperationException("The SE ally-transfer managed adapter did not apply: " + failure);
+                hook = installed;
+                applying = true; // Published; never undo it.
                 Volatile.Write(ref ready, 1);
                 NativeApiLog.Info(log, "Ally transfers prepared: SE is native owner at 0xD7AD0; one validated managed Original.Invoke adapter; capacity reference-rva=0xC5AD0.");
             }
@@ -95,7 +98,7 @@ namespace APIShared.Economy
                 Volatile.Write(ref startupFailure, error);
                 if (!applying)
                 {
-                    hook?.Dispose(); hook = null; bridge = null; capacity = null;
+                    hook = null; bridge = null; capacity = null;
                     if (claimed) ApiSharedNativeSites.Release(sites, SiteName);
                 }
                 NativeApiLog.Error(log, "Ally transfers unavailable; the existing SE native gift owner is retained: " + error);
