@@ -1,7 +1,8 @@
-param([string]$ApiAssembly='')
+param([string]$ApiAssembly='', [switch]$FailureRegressionOnly)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$cases=@('manual-exit','manual-new-download','backup','first-write','receipt','restore','timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','killed','completed')
+$cases=@('precheckpoint-exit','manual-exit','manual-new-download','backup','first-write','receipt','restore','timeout','two-pauses','changed-target','changed-source','changed-backup','changed-operations','staging','killed','completed')
+if($FailureRegressionOnly){$cases=@('precheckpoint-exit')}
 # The fixture game is a .NET Framework executable, and its runtime exits with -1 at startup when the
 # executable path plus ".config" reaches MAX_PATH (260). With a 32-character run ID, a checkout path
 # of about 115 characters already killed the longer cases' games right after start, which then looked
@@ -19,8 +20,34 @@ function Hash([string]$Path){
     try{[BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose();$stream.Dispose()}
 }
 function Quote([string]$Value){if($Value.Contains('"') -or $Value.EndsWith('\')){throw 'Unsafe fixture argument'};'"'+$Value+'"'}
+# A terminated updater can leave pipe writers alive in its owned fixture child.
+# Never wait for pipe EOF while formatting an error before the release finally.
+function Read-CompletedDiagnostic($Task,[string]$Name){
+    if($null -eq $Task){return ('<'+$Name+' not started>')}
+    if(-not $Task.IsCompleted){return ('<'+$Name+' pending; owned fixture may still hold the pipe>')}
+    try{$text=[string]$Task.GetAwaiter().GetResult()}catch{$text='<'+$Name+' read failed: '+$_.Exception.GetBaseException().Message+'>'}
+    if($text.Length -gt 4096){return ($text.Substring(0,4096)+' <truncated>')}
+    return $text
+}
+function Updater-Diagnostics($OutputTask,$ErrorTask){
+    'stdout: '+(Read-CompletedDiagnostic $OutputTask 'stdout')+' stderr: '+(Read-CompletedDiagnostic $ErrorTask 'stderr')
+}
+function Wait-FixtureMain {
+    param([Diagnostics.Process]$Process,[string]$Marker)
+    $expected=$Process.Id.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $watch=[Diagnostics.Stopwatch]::StartNew()
+    while($true){
+        if($watch.ElapsedMilliseconds -ge 3000){throw 'Owned fixture Main readiness timed out after 3000 ms'}
+        if($Process.HasExited){throw 'Owned fixture game exited before its Main readiness marker'}
+        try{if([IO.File]::Exists($Marker) -and [IO.File]::ReadAllText($Marker) -ceq $expected){
+            if($watch.ElapsedMilliseconds -ge 3000){throw 'Owned fixture Main readiness timed out after 3000 ms'}
+            return
+        }}catch [IO.IOException]{}
+        Start-Sleep -Milliseconds 20
+    }
+}
 $stub=Join-Path $fixture 'FixtureGame.exe'
-Add-Type -TypeDefinition 'using System; using System.IO; using System.Threading; public static class WorkshopFixtureGame { public static void Main(string[] args) { while (!File.Exists(args[0])) Thread.Sleep(20); } }' -OutputAssembly $stub -OutputType ConsoleApplication
+Add-Type -TypeDefinition 'using System; using System.IO; using System.Threading; using System.Diagnostics; using System.Globalization; public static class WorkshopFixtureGame { public static void Main(string[] args) { if (args.Length != 2) throw new ArgumentException(); using (var self = Process.GetCurrentProcess()) File.WriteAllText(args[1], self.Id.ToString(CultureInfo.InvariantCulture)); while (!File.Exists(args[0])) Thread.Sleep(20); } }' -OutputAssembly $stub -OutputType ConsoleApplication
 
 # Only a private helper copy injects the checkpoint. The full production updater,
 # including its real process detector and pause/revalidation code, is unchanged.
@@ -37,13 +64,16 @@ function Start-FixtureGame {
     $stem='game.'+$script:fixtureGameSequence
     $pidPath=[IO.Path]::GetFullPath((Join-Path $GameRoot ($stem+'.pid')))
     $readyPath=[IO.Path]::GetFullPath((Join-Path $GameRoot ($stem+'.ready')))
-    if($pidPath.Length -ge 240 -or $readyPath.Length -ge 240){throw 'Fixture process marker path exceeds the 239-character limit; use a shorter checkout path'}
-    $info=[Diagnostics.ProcessStartInfo]::new($gameExecutable,('"'+(Join-Path $GameRoot 'fixture-game-exit.flag')+'"'))
+    $mainPath=[IO.Path]::GetFullPath((Join-Path $GameRoot ($stem+'.main-ready')))
+    if([IO.File]::Exists($mainPath)){throw 'Fresh fixture Main marker required'}
+    if($pidPath.Length -ge 240 -or $readyPath.Length -ge 240 -or $mainPath.Length -ge 240){throw 'Fixture process marker path exceeds the 239-character limit; use a shorter checkout path'}
+    $info=[Diagnostics.ProcessStartInfo]::new($gameExecutable,('"'+(Join-Path $GameRoot 'fixture-game-exit.flag')+'" "'+$mainPath+'"'))
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
     $process=[Diagnostics.Process]::Start($info)
     # A polling reader must never block publication of the next process identity.
     # Each start owns an immutable PID file; readiness is published after detection.
-    try{[IO.File]::WriteAllText($pidPath,$process.Id.ToString())}finally{$process.Dispose()}
+    try{[IO.File]::WriteAllText($pidPath,$process.Id.ToString());Wait-FixtureMain $process $mainPath}finally{$process.Dispose()}
+    if('__CASE__' -eq 'precheckpoint-exit'){throw 'Intentional fixture updater failure with an owned pipe writer still alive'}
     $watch=[Diagnostics.Stopwatch]::StartNew()
     while(-not (Game-Running)){if($watch.ElapsedMilliseconds -gt 3000){throw 'Fixture game was not detected'};Start-Sleep -Milliseconds 20}
     [IO.File]::WriteAllText($readyPath,'detected')
@@ -71,6 +101,8 @@ function Invoke-WorkshopMaintenance {
     & $script:originalMaintenance
 }
 '@
+# Reuse the same readiness body in the isolated updater helper; production files remain unchanged.
+$hook="function Wait-FixtureMain {`r`n"+${function:Wait-FixtureMain}.ToString()+"`r`n}`r`n"+$hook
 foreach($case in $cases){
     Write-Host "Checking Windows updater coordination: $case"
     $game=Join-Path $fixture ($case+'/game');$scripts=Join-Path $fixture ($case+'/scripts')
@@ -95,21 +127,22 @@ foreach($case in $cases){
     [void][IO.Directory]::CreateDirectory($game);$exe=Join-Path $game 'Stronghold Crusader Definitive Edition.exe';Copy-Item -LiteralPath $stub -Destination $exe
     $info=[Diagnostics.ProcessStartInfo]::new('powershell.exe',('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File '+(Quote (Join-Path $scripts 'workshop-updater.ps1'))+' -GameRoot '+(Quote $game)+' -Transaction '+(Quote $transaction)+' -OperationsHash '+(Hash (Join-Path $transaction 'operations.tsv'))))
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $updater=$null;$output=$null;$errors=$null;$firstIdentityLease=$null;$expectedFailure=$false;$caseFailed=$false
+    try{
     if($case -in @('manual-exit','manual-new-download')){
         $sourceManifest=[IO.Path]::GetFullPath((Join-Path $game 'steam-download/apishared-workshop.json'))
         Text $sourceManifest '{"Version":"1.0.0"}'
-        $fixtureGame=[Diagnostics.ProcessStartInfo]::new($exe,(Quote (Join-Path $game 'fixture-game-exit.flag')))
+        $mainMarker=Join-Path $game 'game.1.main-ready'
+        $fixtureGame=[Diagnostics.ProcessStartInfo]::new($exe,((Quote (Join-Path $game 'fixture-game-exit.flag'))+' '+(Quote $mainMarker)))
         $fixtureGame.UseShellExecute=$false;$fixtureGame.CreateNoWindow=$true;$fixtureGame.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
         $owned=[Diagnostics.Process]::Start($fixtureGame)
-        try{Text (Join-Path $game 'game.1.pid') $owned.Id.ToString()}finally{$owned.Dispose()}
+        try{Text (Join-Path $game 'game.1.pid') $owned.Id.ToString();Wait-FixtureMain $owned $mainMarker}finally{$owned.Dispose()}
         $info.Arguments+=' -RequireRunningGame -SourceManifest '+(Quote $sourceManifest)+' -SourceManifestHash '+(Hash $sourceManifest)
     }
     $updater=[Diagnostics.Process]::Start($info);$output=$updater.StandardOutput.ReadToEndAsync();$errors=$updater.StandardError.ReadToEndAsync()
-    $firstIdentityLease=$null
-    try{
         $watch=[Diagnostics.Stopwatch]::StartNew();$record=''
         do{
-            if($updater.HasExited){throw "Updater exited before checkpoint: $($output.Result) $($errors.Result)"}
+            if($updater.HasExited){throw "Updater exited before checkpoint: $(Updater-Diagnostics $output $errors)"}
             try{$stream=[IO.File]::Open((Join-Path $state 'apply.lock'),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite);$reader=[IO.StreamReader]::new($stream);try{$record=$reader.ReadToEnd()}finally{$reader.Dispose()}}catch [IO.IOException]{}
             if($record -match "`tpaused`t" -or ($case -eq 'completed' -and [IO.File]::Exists((Join-Path $game 'fixture-completed.flag')))){break}
             if($watch.ElapsedMilliseconds -gt 15000){throw "Checkpoint timed out: $case"};Start-Sleep -Milliseconds 20
@@ -144,7 +177,7 @@ foreach($case in $cases){
         if($case -eq 'two-pauses'){
             $watch=[Diagnostics.Stopwatch]::StartNew()
             while(-not [IO.File]::Exists((Join-Path $game 'game.2.ready')) -or [IO.File]::ReadAllText($target) -cne 'updated'){
-                if($updater.HasExited){throw "Second game restart was not reached: $($output.Result) $($errors.Result)"}
+                if($updater.HasExited){throw "Second game restart was not reached: $(Updater-Diagnostics $output $errors)"}
                 if($watch.ElapsedMilliseconds -gt 10000){throw 'Second game restart was not reached; updater is still running (see retained fixture journal).'}
                 Start-Sleep -Milliseconds 20
             }
@@ -166,7 +199,7 @@ foreach($case in $cases){
                 if($case -eq 'two-pauses' -and @($journal -match '^pause ').Count -ne 2){throw 'Shared-budget regression did not exercise both production pauses'}
             }
         }elseif($case -ne 'killed'){
-            if($updater.ExitCode -ne 0){throw "Updater failed: $($output.Result) $($errors.Result)"}
+            if($updater.ExitCode -ne 0){throw "Updater failed: $(Updater-Diagnostics $output $errors)"}
             $expected=if($case -eq 'restore'){'original'}else{'updated'}
             if([IO.File]::ReadAllText($target) -cne $expected){throw 'Resumed updater produced wrong payload'}
             if($case -ne 'restore' -and [IO.File]::ReadAllText($receipt) -cne 'receipt'){throw 'Resumed updater did not commit receipt'}
@@ -180,16 +213,70 @@ foreach($case in $cases){
         }
         $originalBackup=Join-Path $old 'Backup/0'
         if($case -ne 'changed-backup' -and [IO.File]::Exists($originalBackup) -and (Hash $originalBackup) -cne $before){throw 'Resuming changed the original rollback backup'}
+    }catch{
+        $caseFailed=$true
+        if($case -ne 'precheckpoint-exit'){throw}
+        if(-not $updater -or -not $updater.HasExited -or $_.Exception.Message -notlike 'Updater exited before checkpoint:*'){throw}
+        if($updater.ExitCode -eq 0){throw 'Expected early updater refusal did not report failure'}
+        if(-not [IO.File]::Exists((Join-Path $game 'game.1.main-ready'))){throw 'Failure regression did not enter the fake game Main'}
+        if($output.IsCompleted -and $errors.IsCompleted){throw 'Failure regression did not exercise pending inherited pipe EOF'}
+        $diagnosticWatch=[Diagnostics.Stopwatch]::StartNew()
+        $diagnostic=Updater-Diagnostics $output $errors
+        if($diagnosticWatch.ElapsedMilliseconds -ge 1000 -or $diagnostic -notmatch 'pending'){throw 'Pending diagnostics did not return within the fixture budget'}
+        if([IO.File]::ReadAllText($target) -cne 'original' -or [IO.File]::Exists($receipt)){throw 'Early updater failure changed a target or receipt'}
+        $expectedFailure=$true;$caseFailed=$false
     }finally{
-        if($firstIdentityLease){$firstIdentityLease.Dispose()}
-        Text (Join-Path $game 'fixture-game-exit.flag') 'exit'
-        if(-not $updater.HasExited){$updater.Kill();[void]$updater.WaitForExit(3000)};$updater.Dispose()
-        foreach($pidFile in [IO.Directory]::GetFiles($game,'game.*.pid')){
-            try{$owned=[Diagnostics.Process]::GetProcessById([int][IO.File]::ReadAllText($pidFile));try{if(-not $owned.WaitForExit(3000) -and [IO.Path]::GetFullPath($owned.MainModule.FileName) -ceq [IO.Path]::GetFullPath($exe)){$owned.Kill();[void]$owned.WaitForExit(3000)}}finally{$owned.Dispose()}}catch [ArgumentException]{}
-            # Process markers are transient coordination files, not test evidence.
-            [IO.File]::Delete($pidFile)
-            [IO.File]::Delete([IO.Path]::ChangeExtension($pidFile,'.ready'))
+        $cleanupFailed=$false
+        try{
+            Text (Join-Path $game 'fixture-game-exit.flag') 'exit'
+            if($firstIdentityLease){$firstIdentityLease.Dispose()}
+            if($updater -and -not $updater.HasExited){
+                $updater.Kill();if(-not $updater.WaitForExit(3000)){throw 'Owned updater did not terminate within cleanup budget'}
+            }
+            foreach($pidFile in [IO.Directory]::GetFiles($game,'game.*.pid')){
+                try{
+                    $owned=[Diagnostics.Process]::GetProcessById([int][IO.File]::ReadAllText($pidFile))
+                    try{
+                        if(-not $owned.WaitForExit(3000)){
+                            if([IO.Path]::GetFullPath($owned.MainModule.FileName) -cne [IO.Path]::GetFullPath($exe)){throw 'Fixture cleanup path changed; refusing to kill the process'}
+                            $owned.Kill();if(-not $owned.WaitForExit(3000)){throw 'Owned fixture game did not terminate within cleanup budget'}
+                        }
+                    }finally{$owned.Dispose()}
+                }catch [ArgumentException]{}
+                # Process markers are transient coordination files, not test evidence.
+                [IO.File]::Delete($pidFile)
+                [IO.File]::Delete([IO.Path]::ChangeExtension($pidFile,'.ready'))
+                [IO.File]::Delete([IO.Path]::ChangeExtension($pidFile,'.main-ready'))
+            }
+            if($case -eq 'precheckpoint-exit' -and $expectedFailure){
+                # Keep redirected readers open until the child is released. Faulted or
+                # canceled tasks are terminal too; GetResult must confirm actual EOF.
+                $drainWatch=[Diagnostics.Stopwatch]::StartNew()
+                while(-not $output.IsCompleted -or -not $errors.IsCompleted){
+                    if($drainWatch.ElapsedMilliseconds -ge 3000){throw 'Owned-process cleanup did not release inherited pipe EOF within 3000 ms'}
+                    Start-Sleep -Milliseconds 20
+                }
+                [void]$output.GetAwaiter().GetResult();[void]$errors.GetAwaiter().GetResult()
+            }
+        }catch{
+            $cleanupFailed=$true
+            if(-not $caseFailed){throw}
+            # Cleanup diagnostics must not replace the original fixture failure.
+            [Console]::Error.WriteLine('Additional fixture cleanup failure: '+$_.Exception.Message)
+        }finally{
+            if($updater){try{$updater.Dispose()}catch{
+                if(-not $caseFailed -and -not $cleanupFailed){throw}
+                [Console]::Error.WriteLine('Additional updater disposal failure: '+$_.Exception.Message)
+            }}
         }
     }
+    if($case -eq 'precheckpoint-exit'){
+        if(-not $expectedFailure){throw 'Expected early-exit regression was not observed'}
+        Write-Host 'PASS: early updater failure diagnostics returned before finally released the owned pipe writer'
+    }
 }
-Write-Host "PASS: real fixture game detection, exclusive writer/readable status, backup/apply/receipt/restore pauses, validation, timeout, process termination and post-commit safety. Evidence: $fixture"
+if($FailureRegressionOnly){
+    Write-Host "PASS: owned early-exit diagnostics and inherited-pipe cleanup regression. Evidence: $fixture"
+}else{
+    Write-Host "PASS: real fixture game detection, exclusive writer/readable status, backup/apply/receipt/restore pauses, validation, timeout, process termination and post-commit safety. Evidence: $fixture"
+}

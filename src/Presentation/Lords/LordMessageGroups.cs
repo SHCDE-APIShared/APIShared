@@ -19,6 +19,20 @@ namespace APIShared.Presentation
         internal const int Words = 21;
         // Native wrapper's text stride includes one nickname/reserved position after categories 1..33.
         internal const int TextStride = 34;
+        // Allocation-free precheck with the header condition of TryMatch. A negative count means the
+        // buffer ends at the first negative record kind, as in LordMessageRuntime.Begin.
+        internal static bool HasCandidateHeader(short[] records, int count)
+        {
+            if (records == null) return false;
+            int capacity = records.Length / Words, limit = count < 0 ? capacity : System.Math.Min(count, capacity);
+            for (int index = 0; index < limit; index++)
+            {
+                int at = index * Words;
+                if (count < 0 && records[at] < 0) break;
+                if (records[at] == 20 && records[at + 13] == 1 && records[at + 14] == 1) return true;
+            }
+            return false;
+        }
         internal static bool TryMatch(short[] records, int count, int header, out LordMessageGroup group)
         {
             group = default;

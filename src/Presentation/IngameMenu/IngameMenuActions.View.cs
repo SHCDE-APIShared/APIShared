@@ -26,6 +26,8 @@ namespace APIShared.Presentation
         private static readonly Button[] vanillaButtons = new Button[9];
         private static readonly Grid[] rows = new Grid[9];
         private static readonly Dictionary<IngameMenuRegistry.Entry, Button> buttons = new Dictionary<IngameMenuRegistry.Entry, Button>();
+        private static readonly Dictionary<IngameMenuRegistry.Entry, Control> contents = new Dictionary<IngameMenuRegistry.Entry, Control>();
+        private static readonly HashSet<IngameMenuRegistry.Entry> failedContents = new HashSet<IngameMenuRegistry.Entry>();
         private static readonly List<Grid> overflowRows = new List<Grid>();
 
         private static void ResolveView(HUD_IngameMenu menu)
@@ -54,7 +56,13 @@ namespace APIShared.Presentation
             if (backButton != null) UnobserveLabel(backButton);
             current = menu; layoutRoot = root; originalPanel = original;
             vanillaMenuHeight = (float)root.Height;
-            buttons.Clear(); overflowRows.Clear();
+            foreach (Control content in contents.Values)
+            {
+                content.Loaded -= OnContentLoaded; content.SizeChanged -= OnContentSizeChanged;
+                Detach(content);
+            }
+            foreach (var entry in registry.Entries) entry.ContentUnavailable = false;
+            buttons.Clear(); contents.Clear(); failedContents.Clear(); overflowRows.Clear();
             Array.Copy(originals, vanillaButtons, originals.Length);
             // Retain the original container and every foreign child in its existing order.
             mainPanel = originalPanel;
@@ -152,48 +160,137 @@ namespace APIShared.Presentation
             SetTip(button, entry.State.Tooltip);
             return button;
         }
-        private static void Detach(Button button)
-        { if (button.Parent is Panel parent) parent.Children.Remove(button); }
-        private static void Place(Grid row, Button button, int side, bool pair)
+        private static Control GetControl(IngameMenuRegistry.Entry entry)
         {
-            Detach(button);
-            button.Margin = new Thickness(0);
-            button.Width = pair ? 181.25f : 300f;
-            button.HorizontalAlignment = HorizontalAlignment.Center;
-            button.VerticalAlignment = VerticalAlignment.Top;
-            Grid.SetColumn(button, pair ? side * 2 : 0);
-            Grid.SetColumnSpan(button, pair ? 1 : 3);
-            row.Children.Add(button);
-            AdaptLabel(button);
+            if (entry.CreateContent == null) return GetButton(entry);
+            if (failedContents.Contains(entry)) return null;
+            if (!contents.TryGetValue(entry, out Control control))
+            {
+                try
+                {
+                    HUD_IngameMenu view = current;
+                    var context = new IngameMenuContentContext(view, action => TryExecuteContent(entry, view, action));
+                    control = entry.CreateContent(context);
+                    if (control == null || control.Parent != null || contents.ContainsValue(control) || buttons.ContainsValue(control as Button))
+                        throw new InvalidOperationException("Return a fresh unattached ESC control for each menu view.");
+                    contents.Add(entry, control);
+                    control.Loaded += OnContentLoaded;
+                    control.SizeChanged += OnContentSizeChanged;
+                }
+                catch (Exception error)
+                { entry.ContentUnavailable = true; failedContents.Add(entry); Report(entry, error); return null; }
+            }
+            control.IsEnabled = entry.State.Enabled;
+            SetTip(control, entry.State.Tooltip);
+            return control;
+        }
+        private static bool TryExecuteContent(IngameMenuRegistry.Entry entry, HUD_IngameMenu view, Action action)
+        {
+            try
+            {
+                RequireUnity();
+                if (refreshing || !MenuVisible() || !ReferenceEquals(view, current) ||
+                    !ReferenceEquals(view, observedMain.HUDIngameMenu) || !contents.TryGetValue(entry, out Control control) ||
+                    !control.IsVisible || !control.IsEnabled || control.Parent == null) return false;
+                bool page = additionalVisible;
+                registry.Evaluate(true, Report); // Validate commands without disturbing a focused editor or rebuilding layout.
+                if (!MenuVisible() || !ReferenceEquals(view, current) ||
+                    !ReferenceEquals(view, observedMain.HUDIngameMenu) || page != additionalVisible ||
+                    !control.IsVisible || !control.IsEnabled || control.Parent == null || !registry.CanExecute(entry, page) ||
+                    !IsContentPresented(entry, control, page)) return false;
+                action();
+                return true;
+            }
+            catch (Exception error) { Report(entry, error); return false; }
+        }
+        private static bool IsContentPresented(IngameMenuRegistry.Entry entry, Control control, bool additional)
+        {
+            var layout = registry.Resolve();
+            if (additional)
+            {
+                int index = layout.Overflow.IndexOf(entry);
+                return index >= 0 && index / 2 < overflowRows.Count && ReferenceEquals(control.Parent, overflowRows[index / 2]);
+            }
+            for (int i = 0; i < rows.Length; i++)
+                for (int side = 0; side < 2; side++)
+                    if (ReferenceEquals(layout.Slots[i, side], entry)) return ReferenceEquals(control.Parent, rows[i]);
+            return false;
+        }
+        private static void Detach(FrameworkElement element)
+        { if (element.Parent is Panel parent) parent.Children.Remove(element); }
+        private static void Place(Grid row, Control control, int side, bool pair)
+        {
+            // Preserve an unchanged parent: even detach/reattach of the same object loses keyboard focus in Noesis.
+            if (!ReferenceEquals(control.Parent, row))
+            { Detach(control); row.Children.Add(control); }
+            control.Margin = new Thickness(0);
+            control.Width = pair ? 181.25f : 300f;
+            control.HorizontalAlignment = HorizontalAlignment.Center;
+            control.VerticalAlignment = VerticalAlignment.Top;
+            Grid.SetColumn(control, pair ? side * 2 : 0);
+            Grid.SetColumnSpan(control, pair ? 1 : 3);
+            if (control is Button button) AdaptLabel(button);
         }
         private static void Render(IngameMenuRegistry.Layout layout)
         {
-            foreach (Button button in vanillaButtons) Detach(button);
-            foreach (Button button in buttons.Values) Detach(button);
-            foreach (Grid row in rows) { row.Children.Clear(); row.Visibility = Visibility.Collapsed; }
-            foreach (Grid row in overflowRows) row.Children.Clear();
-            additionalPanel.Children.Clear(); overflowRows.Clear();
+            // Materialize first so a broken consumer factory cannot abort other rows or leave an empty slot.
+            var elements = new Dictionary<IngameMenuRegistry.Entry, Control>();
+            foreach (var entry in registry.Entries)
+                if (IngameMenuRegistry.Visible(entry))
+                {
+                    Control element = GetControl(entry);
+                    if (element != null) elements.Add(entry, element);
+                }
+            layout = registry.Resolve(); // Failed content reveals the preceding valid claim, including Vanilla.
+            for (int i = 0; i < rows.Length; i++)
+                for (int side = 0; side < 2; side++)
+                {
+                    var entry = layout.Slots[i, side];
+                    if (entry == null) continue;
+                    if (entry.Vanilla) elements[entry] = GetControl(entry);
+                    else if (!elements.ContainsKey(entry)) layout.Slots[i, side] = null;
+                }
+            layout.Overflow.RemoveAll(entry => !entry.Vanilla && !elements.ContainsKey(entry));
+            foreach (var entry in layout.Overflow) if (entry.Vanilla) elements[entry] = GetControl(entry);
+            int overflowCount = (layout.Overflow.Count + 1) / 2;
+            while (overflowRows.Count < overflowCount)
+            { Grid row = Row(); overflowRows.Add(row); additionalPanel.Children.Add(row); }
+            var destinations = new Dictionary<Control, Grid>();
+            for (int i = 0; i < rows.Length; i++)
+                for (int side = 0; side < 2; side++)
+                    if (layout.Slots[i, side] != null) destinations[elements[layout.Slots[i, side]]] = rows[i];
+            for (int i = 0; i < layout.Overflow.Count; i++) destinations[elements[layout.Overflow[i]]] = overflowRows[i / 2];
+            // Remove only elements that actually move or disappear. In particular do not clear stable rows.
+            foreach (Button button in vanillaButtons)
+                if (!destinations.TryGetValue(button, out Grid row) || !ReferenceEquals(button.Parent, row)) Detach(button);
+            foreach (Button button in buttons.Values)
+                if (!destinations.TryGetValue(button, out Grid row) || !ReferenceEquals(button.Parent, row)) Detach(button);
+            foreach (Control content in contents.Values)
+                if (!destinations.TryGetValue(content, out Grid row) || !ReferenceEquals(content.Parent, row)) Detach(content);
+            while (overflowRows.Count > overflowCount)
+            { int index = overflowRows.Count - 1; additionalPanel.Children.Remove(overflowRows[index]); overflowRows.RemoveAt(index); }
             mainRowCount = 0;
             for (int i = 0; i < rows.Length; i++)
             {
                 var left = layout.Slots[i, 0]; var right = layout.Slots[i, 1];
                 bool pair = left != null && right != null;
-                if (left != null) Place(rows[i], GetButton(left), 0, pair);
-                if (right != null) Place(rows[i], GetButton(right), 1, pair);
-                if (left != null || right != null) { rows[i].Visibility = Visibility.Visible; mainRowCount++; }
+                if (left != null) Place(rows[i], elements[left], 0, pair);
+                if (right != null) Place(rows[i], elements[right], 1, pair);
+                bool visible = left != null || right != null;
+                rows[i].Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                if (visible) mainRowCount++;
             }
             for (int i = 0; i < layout.Overflow.Count; i += 2)
             {
-                Grid row = Row(); additionalPanel.Children.Add(row); overflowRows.Add(row);
                 bool pair = i + 1 < layout.Overflow.Count;
-                Place(row, GetButton(layout.Overflow[i]), 0, pair);
-                if (pair) Place(row, GetButton(layout.Overflow[i + 1]), 1, true);
+                Place(overflowRows[i / 2], elements[layout.Overflow[i]], 0, pair);
+                if (pair) Place(overflowRows[i / 2], elements[layout.Overflow[i + 1]], 1, true);
             }
             // Keep hidden originals attached to retain inherited bindings and subsequent Vanilla Init writes.
             for (int i = 0; i < vanillaButtons.Length; i++)
                 if (vanillaButtons[i].Parent == null) parking.Children.Add(vanillaButtons[i]);
-            foreach (Button button in buttons.Values)
-                if (button.Parent == null) SetTip(button, null);
+            foreach (Button button in buttons.Values) if (button.Parent == null) SetTip(button, null);
+            foreach (Control content in contents.Values) if (content.Parent == null) SetTip(content, null);
             string more = UiText.Get("IngameMenu.AdditionalActions"), back = UiText.Get("IngameMenu.Back");
             PropEx.SetTextCentre(additionalButton, more);
             PropEx.SetTextCentre(backButton, back);
@@ -203,7 +300,7 @@ namespace APIShared.Presentation
             if (layout.Overflow.Count == 0) ShowAdditional(false);
             UpdateViewport();
         }
-        private static void SetTip(Button button, string text)
+        private static void SetTip(Control button, string text)
         {
             // Only our own mod buttons enter this path. Never touch Vanilla/foreign popup objects,
             // including when the original button is displayed on the additional page.
@@ -236,12 +333,36 @@ namespace APIShared.Presentation
             UpdateViewport();
         }
         private static void OnViewportSizeChanged(object sender, SizeChangedEventArgs args) => UpdateViewport();
+        private static void OnContentLoaded(object sender, RoutedEventArgs args) => UpdateViewport();
+        private static void OnContentSizeChanged(object sender, SizeChangedEventArgs args) => UpdateViewport();
+        private static float ContentExtraHeight(Grid row)
+        {
+            float pitch = RowPitch;
+            foreach (Control content in contents.Values)
+            {
+                if (!ReferenceEquals(content.Parent, row)) continue;
+                float height = (float)content.Height;
+                if (float.IsNaN(height) || float.IsInfinity(height) || height <= 0) height = content.ActualHeight;
+                if (!float.IsNaN(height) && !float.IsInfinity(height) && height > 0)
+                    pitch = Math.Max(pitch, height + 10);
+            }
+            return pitch - RowPitch;
+        }
         private static void UpdateViewport()
         {
             if (layoutRoot == null || mainScroll == null) return;
             float desired = additionalVisible
                 ? Math.Max(vanillaMenuHeight, HeaderHeight + (overflowRows.Count + 1) * RowPitch + BottomSpace)
                 : vanillaMenuHeight + Math.Max(0, mainRowCount - vanillaRowCount) * RowPitch;
+            if (additionalVisible)
+            {
+                float bodyHeight = (overflowRows.Count + 1) * RowPitch;
+                foreach (Grid row in overflowRows) bodyHeight += ContentExtraHeight(row);
+                desired = Math.Max(vanillaMenuHeight, HeaderHeight + bodyHeight + BottomSpace);
+            }
+            else
+                foreach (Grid row in rows)
+                    if (row.Visibility == Visibility.Visible) desired += ContentExtraHeight(row);
             float available = desired;
             if (viewport != null && viewport.ActualHeight > 0)
             {

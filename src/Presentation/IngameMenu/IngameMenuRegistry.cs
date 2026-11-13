@@ -14,10 +14,11 @@ namespace APIShared.Presentation
             internal string Owner, Id;
             internal int Order;
             internal long Sequence;
-            internal bool Vanilla, Known, Dirty = true, FailureReported;
+            internal bool Vanilla, Known, Dirty = true, FailureReported, ContentUnavailable;
             internal IngameMenuActionOptions Options;
             internal Func<IngameMenuActionState> Provider;
             internal Action Execute;
+            internal Func<IngameMenuContentContext, Noesis.Control> CreateContent;
             internal IngameMenuActionState State;
             internal static readonly Func<Entry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
         }
@@ -94,7 +95,7 @@ namespace APIShared.Presentation
         internal void SetVanilla(IngameMenuRow row, IngameMenuActionState state)
         { vanilla[(int)row].State = state; vanilla[(int)row].Known = true; }
         internal Entry Vanilla(IngameMenuRow row) => vanilla[(int)row];
-        internal static bool Visible(Entry entry) => entry?.State?.Visible == true;
+        internal static bool Visible(Entry entry) => entry?.State?.Visible == true && !entry.ContentUnavailable;
         private static int Compare(Entry a, Entry b) => RegistrationKey.Compare(Entry.Key(a), Entry.Key(b));
         internal Layout Resolve()
         {
