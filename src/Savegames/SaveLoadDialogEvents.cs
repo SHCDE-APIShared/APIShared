@@ -35,7 +35,7 @@ namespace APIShared.Savegames
         private static ManualLogSource log;
         private static SavegameLoadOptions options;
         private static bool initialized;
-        private static ILHook criticalSaveGuard;
+        private static Patching.SafeIlHook criticalSaveGuard;
         private static readonly SaveLoadDialogDispatch Dispatch = new SaveLoadDialogDispatch(Report);
         private sealed class Session
         {
@@ -107,9 +107,9 @@ namespace APIShared.Savegames
             if (criticalSaveGuard != null) return;
             if (!initialized) throw new InvalidOperationException("The shared requester owner is unavailable.");
             MethodInfo method = typeof(HUD_LoadSaveRequester).GetMethod("RunOKAction", BindingFlags.NonPublic | BindingFlags.Instance);
-            var candidate = new ILHook(method, transform, new ILHookConfig { ManualApply = true, ID = "APIShared.SaveLoadDialog.CriticalSaveOutcome" });
-            criticalSaveGuard = candidate; // Root before permanent publication, including failure.
-            candidate.Apply();
+            if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.SaveLoadDialog.CriticalSaveOutcome", method, transform, log,
+                out criticalSaveGuard, out string failure))
+                throw new InvalidOperationException("Critical save outcome guard unavailable: " + failure);
         }
 
         private static void Open(Enums.RequesterTypes type, Action<string, FileHeader> confirm, Action cancel, int count, bool skirmish, bool trails)

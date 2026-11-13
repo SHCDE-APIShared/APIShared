@@ -76,6 +76,9 @@ namespace APIShared.ModSettings
             if (changing) throw new InvalidOperationException("Mission settings are changing.");
             if (!hasPreparedContext && active.Count != 0)
                 throw new InvalidOperationException("Retry incomplete mission cleanup before applying another context.");
+            // Owner moves precede provider matching and unknown-property pruning. Keep the
+            // established supplied-document update contract for authoring/reset callers.
+            document.Mods = ModSettingsMigration.MigrateMissionDocument(document).Mods;
             var endpoints = participants.ToArray();
             if (endpoints.Any(item => string.IsNullOrWhiteSpace(item.Key) || item.Value == null))
                 throw new ArgumentException("Participants require a GUID and endpoint.", nameof(participants));

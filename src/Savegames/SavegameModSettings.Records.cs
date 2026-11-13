@@ -36,8 +36,14 @@ namespace APIShared
                     ",entry=" + EntryName + ",source=current-host-settings,choice=forced-no-usable-record; " +
                     "saved host settings cannot be restored because the record is missing, unreadable or unsupported.");
             legacy = read != RecordReadState.Valid;
-            return record;
+            // Migration is outside ReadRecord's invalid-wire fallback: an invalid required
+            // transfer must refuse this load, not silently select current host settings.
+            return read == RecordReadState.Valid ? NormalizeRecordForLoad(record) : record;
         }
+
+        private static SavegameModSettingsRecord NormalizeRecordForLoad(SavegameModSettingsRecord record) =>
+            ModSettingsMigration.MigrateSavegameRecord(record,
+                useStoredValues: !(useChosenCurrent && IsCurrentChoiceAllowed(record)));
 
         private static RecordReadState ReadRecord(string path, out SavegameModSettingsRecord record)
         {

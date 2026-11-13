@@ -45,6 +45,17 @@ namespace APISharedTests
                             parameter.ParameterType.GetElementType().IsPointer &&
                             parameter.ParameterType.GetElementType().GetElementType() == typeof(SHCDESE.Interop.GameUnit))
                             continue;
+                        if (type == typeof(BuildingAccess) && method.Name == "TryGetById" &&
+                            method.IsStatic && method.ReturnType == typeof(bool) && parameter.Name == "building" &&
+                            parameter.IsOut && parameter.ParameterType == typeof(SHCDESE.Interop.GameBuilding).MakePointerType().MakeByRefType())
+                        {
+                            Type[] signature = method.GetParameters().Select(item => item.ParameterType).ToArray();
+                            Type output = typeof(SHCDESE.Interop.GameBuilding).MakePointerType().MakeByRefType();
+                            Type reason = typeof(BuildingLookupFailure).MakeByRefType();
+                            if (signature.SequenceEqual(new[] { typeof(int), output, reason }) ||
+                                signature.SequenceEqual(new[] { typeof(SHCDESE.API.GameBuildingManagerAPI), typeof(int), output, reason }))
+                                continue;
+                        }
                         if (type == typeof(UnitAccess) && method.Name == "IsReallyAlive" &&
                             method.ReturnType == typeof(bool) && method.GetParameters().Length == 1 &&
                             parameter.Name == "unit" &&
