@@ -32,7 +32,7 @@ namespace APIShared.Units.AiMilitary
                 orders.ObserveAccepted(generation, group, new AiCurrentOrder(AiOrderKind.AttackUnit,
                     command: command, targetId: arg1, targetGlobalId: unchecked((uint)arg2), extra: arg3), result);
             else if ((command == 9 || command == 36 || command == 38) && arg1 > 0 &&
-                GameBuildingManagerAPI.Instance.TryGetBuildingById(arg1, out GameBuilding* building) &&
+                BuildingAccess.TryGetById(GameBuildingManagerAPI.Instance, arg1, out GameBuilding* building, out _) &&
                 building->r_GlobalId == unchecked((uint)arg2) && building->r_AliveState == AliveState.IsAlive)
                 orders.ObserveAccepted(generation, group, new AiCurrentOrder(AiOrderKind.AttackBuilding,
                     command: command, targetId: arg1, targetGlobalId: unchecked((uint)arg2), extra: arg3), result);

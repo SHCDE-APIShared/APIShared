@@ -73,7 +73,6 @@ namespace APIShared.Audio
     {
         private static readonly UnitVoiceResourceStore store = new UnitVoiceResourceStore();
         private static int initialized;
-        private static int mapReady;
         private static string diagnostic = "Pending";
         /// <summary>Whether resource preparation and map-lifetime observation are initialized.</summary>
         public static bool IsReady => Volatile.Read(ref initialized) != 0;
@@ -86,16 +85,17 @@ namespace APIShared.Audio
         {
             if (IsReady) return;
             if (lifecycle == null) throw new ArgumentNullException(nameof(lifecycle));
-            if (!lifecycle.TryRegisterObserver("Audio.UnitVoiceResources", Started, Boundary, Initialization, out var reason))
+            if (!lifecycle.TryRegisterObserver("Audio.UnitVoiceResources", null, Boundary, Initialization, out var reason))
                 throw new InvalidOperationException(reason?.Reason ?? "Unit voice resource lifecycle unavailable.");
             Volatile.Write(ref diagnostic, "Ready");
             Volatile.Write(ref initialized, 1);
         }
-        private static void Started(MissionLifecycleNotification value) => Volatile.Write(ref mapReady, 1);
         private static void Initialization(MissionLifecycleNotification value)
         { if (value.IsBeforeInitialization) RetireMap(); }
         private static void Boundary(MissionLifecycleNotification value) => RetireMap();
-        private static void RetireMap() { Volatile.Write(ref mapReady, 0); store.InvalidateMapResources(); }
+        private static void RetireMap() => store.InvalidateMapResources();
+        // Startup failure of the managed voice integration: keep preparation unavailable with a reason.
+        internal static void Fail(string reason) { if (!IsReady) Volatile.Write(ref diagnostic, "Unavailable: " + reason); }
 
         /// <summary>Queues preparation of an indexed owner-private mod resource. A ready handle is process-scoped.</summary>
         /// <remarks>Any thread after APIShared initialization. Completion runs deferred on Unity, including
@@ -120,7 +120,8 @@ namespace APIShared.Audio
             if (!IsReady) { reason = Diagnostic; return false; }
             if (UnitVoiceEvents.InCallback) { reason = "Prepare voice resources outside UnitVoiceEvents callbacks."; return false; }
             int generation = store.Generation;
-            if (map && Volatile.Read(ref mapReady) == 0) { reason = "Prepare map voice resources after a successful mission start."; return false; }
+            // The lifecycle marks a started mission before any Start observer runs, so an owner may prepare from its own OnStart.
+            if (map && !MissionLifecycleService.HasStartedMission) { reason = "Prepare map voice resources after a successful mission start."; return false; }
             return store.TryPrepare(owner, id, path, map, gain, () => Decode(Read(owner, path, map)),
                 action => {
                     if (!UnityMainThreadDispatch.TryEnqueue(action)) throw new InvalidOperationException("Unity dispatch unavailable.");
@@ -145,7 +146,7 @@ namespace APIShared.Audio
                 int frames = temporary.samples, channels = temporary.channels, frequency = temporary.frequency;
                 var data = new float[checked(frames * channels)];
                 if (!temporary.GetData(data, 0)) throw new InvalidOperationException("Decoded voice samples are unavailable.");
-                return new UnitVoicePcmData(frames, channels, frequency, data);
+                return UnitVoicePcmData.Take(frames, channels, frequency, data);
             }
             finally { if (temporary != null) UnityEngine.Object.Destroy(temporary); }
         }
@@ -211,12 +212,16 @@ namespace APIShared.Audio
     {
         internal readonly int Frames, Channels, Frequency;
         private readonly float[] samples;
-        internal UnitVoicePcmData(int frames, int channels, int frequency, float[] values)
+        internal UnitVoicePcmData(int frames, int channels, int frequency, float[] values) : this(frames, channels, frequency, values, true) { }
+        // For a freshly decoded array that nothing else references: avoids a second full copy.
+        internal static UnitVoicePcmData Take(int frames, int channels, int frequency, float[] values) =>
+            new UnitVoicePcmData(frames, channels, frequency, values, false);
+        private UnitVoicePcmData(int frames, int channels, int frequency, float[] values, bool copy)
         {
             if (frames <= 0 || (channels != 1 && channels != 2) || frequency <= 0 || values == null || values.Length != checked(frames * channels))
                 throw new ArgumentException("Complete interleaved voice samples are required.");
             foreach (float sample in values) if (float.IsNaN(sample) || float.IsInfinity(sample)) throw new ArgumentException("Voice samples must be finite.");
-            Frames = frames; Channels = channels; Frequency = frequency; samples = (float[])values.Clone();
+            Frames = frames; Channels = channels; Frequency = frequency; samples = copy ? (float[])values.Clone() : values;
         }
         internal float[] CopySamples() => (float[])samples.Clone();
         internal bool WriteTo(AudioClip clip) => clip.SetData(samples, 0);
@@ -243,7 +248,9 @@ namespace APIShared.Audio
                 if (map && expectedGeneration.HasValue && expectedGeneration.Value != Generation)
                 { reason = "Map changed before voice preparation was registered."; return false; }
                 string key = owner + "\0" + id;
-                if (handles.TryGetValue(key, out var old) && (!map || !old.MapScoped || old.Generation == Generation))
+                // A failed preparation does not block its ID; pending and ready registrations do.
+                if (handles.TryGetValue(key, out var old) && old.State != UnitVoiceResourceState.Failed &&
+                    (!map || !old.MapScoped || old.Generation == Generation))
                 { reason = "This owner already registered that voice resource ID."; return false; }
                 value = new UnitVoiceResourceHandle(this, owner, id, map, Generation, gain);
                 handles[key] = value;
@@ -287,7 +294,11 @@ namespace APIShared.Audio
             lock (sync)
             {
                 Interlocked.Increment(ref generation);
-                foreach (var handle in handles.Values) if (handle.MapScoped) handle.Invalidate("Map generation ended.", true);
+                var ended = new List<string>();
+                foreach (var pair in handles)
+                    if (pair.Value.MapScoped) { pair.Value.Invalidate("Map generation ended.", true); ended.Add(pair.Key); }
+                // Owners keep their handles; the store no longer needs entries of an ended generation.
+                foreach (string key in ended) handles.Remove(key);
             }
         }
         internal static bool SafePath(string path)
