@@ -25,6 +25,7 @@ namespace Noesis
     }
     public partial class FrameworkElement
     {
+        public int Column, ColumnSpan = 1;
         public float ActualHeight;
         public float ActualWidth = 1280, ScreenScaleX = 1, ScreenScaleY = 1;
         public double MinHeight, MaxWidth = double.PositiveInfinity, MaxHeight = double.PositiveInfinity;
@@ -41,10 +42,10 @@ namespace Noesis
     public class Grid : Panel
     {
         public List<ColumnDefinition> ColumnDefinitions = new();
-        public static void SetColumn(Button element, int column) { element.Column = column; }
-        public static int GetColumn(Button element) => element.Column;
-        public static void SetColumnSpan(Button element, int span) { element.ColumnSpan = span; }
-        public static int GetColumnSpan(Button element) => element.ColumnSpan;
+        public static void SetColumn(FrameworkElement element, int column) { element.Column = column; }
+        public static int GetColumn(FrameworkElement element) => element.Column;
+        public static void SetColumnSpan(FrameworkElement element, int span) { element.ColumnSpan = span; }
+        public static int GetColumnSpan(FrameworkElement element) => element.ColumnSpan;
     }
     public class StackPanel : Panel { }
     public class ScrollViewer : FrameworkElement
@@ -64,8 +65,6 @@ namespace Noesis
     }
     public partial class Button
     {
-        public int Column, ColumnSpan = 1;
-        public float FontSize = 16;
         public ControlTemplate? Template;
         public event EventHandler<RoutedEventArgs>? MouseEnter;
         public void Enter() => MouseEnter?.Invoke(this, new RoutedEventArgs());
@@ -94,6 +93,9 @@ namespace Noesis
     public static partial class ToolTipService
     {
         public static object? GetToolTip(Button button) => button.ToolTip;
+        public static object? GetToolTip(Control control) => control.ToolTip;
+        public static void SetToolTip(Control control, object? tip) => control.ToolTip = tip;
+        public static void SetShowDuration(Control control, int duration) => control.Duration = duration;
     }
 }
 namespace SHCDESE.UI
@@ -144,13 +146,18 @@ namespace APIShared.Presentation
     {
         private static IngameMenuRegistry registry = new();
         private static CrusaderDE.MainViewModel? observedMain;
+        private static bool refreshing;
+        internal static int TestFailures;
+        internal static bool TestUnity = true;
+        private static void RequireUnity() { if (!TestUnity) throw new InvalidOperationException("Unity required"); }
+        private static void Report(IngameMenuRegistry.Entry? entry, Exception error) { TestFailures++; }
         private static bool MenuVisible() => observedMain?.Show_HUD_IngameMenu == true;
         private static bool Refresh(bool all)
         { CaptureVanilla(); registry.Evaluate(all, null); Render(registry.Resolve()); return true; }
         private static void Execute(IngameMenuRegistry.Entry entry, CrusaderDE.HUD_IngameMenu view, bool additional) { }
         internal static void TestAttach(CrusaderDE.HUD_IngameMenu menu, IngameMenuRegistry registrations)
         {
-            registry = registrations; observedMain = CrusaderDE.MainViewModel.Instance;
+            TestFailures = 0; TestUnity = true; registry = registrations; observedMain = CrusaderDE.MainViewModel.Instance;
             ResolveView(menu); ShowAdditional(false); Refresh(true);
         }
         internal static void TestRefresh() => Refresh(true);

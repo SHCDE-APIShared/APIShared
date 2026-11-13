@@ -445,7 +445,7 @@ namespace APIShared
                 // through both archive callbacks and a delayed client start. Local
                 // Coop uses this same confirmed load phase without real networking.
                 if (SavegameLoadCoordinator.IsLoadingMultiplayerSave) return;
-                loaded = record;
+                loaded = NormalizeRecordForLoad(record);
             }
         }
 

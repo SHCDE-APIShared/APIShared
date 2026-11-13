@@ -172,7 +172,7 @@ namespace APIShared.Economy
             int player = PlayerPerspectiveAPI.GetControlledPlayerId();
             if (player <= 0 || PlayerPerspectiveAPI.GetViewedPlayerId() != player) return false;
             var manager = GameBuildingManagerAPI.Instance;
-            if (manager == null || !manager.TryGetBuildingById(state.in_structure, out GameBuilding* building) || building == null ||
+            if (manager == null || !BuildingAccess.TryGetById(manager, state.in_structure, out GameBuilding* building, out _) || building == null ||
                 building->r_AliveState != AliveState.IsAlive || building->r_BuildingType != type ||
                 building->r_PlayerIdOwner != player || building->r_GlobalId == 0) return false;
             target = new Target(state.in_structure, building->r_GlobalId, type, state.production_no_resources != 0);

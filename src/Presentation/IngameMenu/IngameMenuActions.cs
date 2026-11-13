@@ -31,6 +31,30 @@ namespace APIShared.Presentation
             Action execute, IngameMenuActionOptions options, out IngameMenuActionRegistration registration,
             out string reason, int order = 0)
         {
+            return TryRegisterCore(ownerGuid, id, state, execute, null, options, out registration, out reason, order);
+        }
+
+        /// <summary>Registers an inline custom control with the same placement, conflict and lifetime rules as an action.</summary>
+        /// <remarks>Register on Unity during startup. The factory runs on Unity at first visible presentation once per
+        /// menu view; return a fresh, unattached Control. It owns its children, bindings and input handling. The broker
+        /// owns root width, margin, enabled state and the State tooltip (scaled from the root FontSize). State.Text is
+        /// diagnostic only. A failed factory is isolated for that view. Ordinary invalidation preserves the control
+        /// and its focus when placement is unchanged. Actual moves can change focus; a new view receives a new control.
+        /// Commands must use the supplied context's TryExecute and retain consumer mission/authority checks.
+        /// No disposal, implicit takeover, provider polling, or registration replay is added.</remarks>
+        public static bool TryRegisterContent(string ownerGuid, string id, Func<IngameMenuActionState> state,
+            Func<IngameMenuContentContext, Noesis.Control> createContent, IngameMenuActionOptions options,
+            out IngameMenuActionRegistration registration, out string reason, int order = 0)
+        {
+            if (createContent == null)
+            { registration = null; reason = "A content factory is required."; return false; }
+            return TryRegisterCore(ownerGuid, id, state, () => { }, createContent, options, out registration, out reason, order);
+        }
+
+        private static bool TryRegisterCore(string ownerGuid, string id, Func<IngameMenuActionState> state,
+            Action execute, Func<IngameMenuContentContext, Noesis.Control> createContent,
+            IngameMenuActionOptions options, out IngameMenuActionRegistration registration, out string reason, int order)
+        {
             registration = null;
             try
             {
@@ -42,6 +66,7 @@ namespace APIShared.Presentation
                     installed = true;
                 }
                 var entry = registry.Register(ownerGuid, id, state, execute, options, order);
+                entry.CreateContent = createContent;
                 registration = new IngameMenuActionRegistration(() => RequestInvalidation(null, entry));
                 reason = null;
             }

@@ -34,7 +34,7 @@ namespace SHCDESE.Interop
         [FieldOffset(0x48A0)] internal fixed ushort r_AITribeIdsByStorageRole[300];
         [FieldOffset(0x4AF8)] internal fixed uint r_AITribeGlobalIdsByStorageRole[300];
     }
-    [StructLayout(LayoutKind.Explicit, Size = 0x32C)] internal struct GameBuilding
+    [StructLayout(LayoutKind.Explicit, Size = 0x32C)] public struct GameBuilding
     {
         [FieldOffset(0xCC)] internal AliveState r_AliveState;
         [FieldOffset(0xD6)] internal ushort r_PlayerIdOwner;
@@ -60,9 +60,10 @@ namespace SHCDESE.API
         internal bool TryGetPlayerResourcesById(int id, out GamePlayerResources* resources)
         { resources = id >= 1 && id <= 8 ? Fixture.Player(id) : null; return resources != null; }
     }
-    internal sealed unsafe class GameBuildingManagerAPI
+    public sealed unsafe class GameBuildingManagerAPI
     {
         internal static readonly GameBuildingManagerAPI Instance = new GameBuildingManagerAPI();
+        public bool IsValidId(int id) => id >= 1 && id < 10000;
         internal bool TryGetBuildingById(int id, out GameBuilding* building)
         { building = id >= 1 && id < 10000 ? (GameBuilding*)((byte*)Fixture.Module + 0x64CCBB0 + id * 0x32C + 0x5C) : null; return building != null; }
     }

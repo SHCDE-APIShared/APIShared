@@ -49,7 +49,7 @@ namespace APIShared.Units.AiMilitary.Native
             { order = new AiCurrentOrder(AiOrderKind.Hold, x, y); return true; }
             // Native 3E940 fallback: keep origin +(3,4), not the building template center.
             int keepId = (int)resources->r_KeepId;
-            if (keepId > 0 && GameBuildingManagerAPI.Instance.TryGetBuildingById(keepId, out GameBuilding* keep) && keep != null)
+            if (keepId > 0 && BuildingAccess.TryGetById(GameBuildingManagerAPI.Instance, keepId, out GameBuilding* keep, out _) && keep != null)
             {
                 x = keep->r_TilePositionXBegin + 3; y = keep->r_TilePositionYBegin + 4;
                 if (IsMapPosition(x, y)) { order = new AiCurrentOrder(AiOrderKind.Hold, x, y); return true; }
