@@ -1522,6 +1522,11 @@ APIShared.ModSettings.MissionModSettingsSession | public System.Collections.Gene
 APIShared.ModSettings.MissionModSettingsSession | public long? MissionSessionId { get; }
 APIShared.ModSettings.MissionModSettingsSession | public void ConfirmStarted(long sessionId)
 APIShared.ModSettings.MissionModSettingsSession | public void Exit()
+APIShared.ModSettings.ModSettingMove | public sealed class APIShared.ModSettings.ModSettingMove
+APIShared.ModSettings.ModSettingMove | public .ctor(string sourceProperty, string targetProperty, System.Type valueType)
+APIShared.ModSettings.ModSettingMove | public System.Type ValueType { get; }
+APIShared.ModSettings.ModSettingMove | public string SourceProperty { get; }
+APIShared.ModSettings.ModSettingMove | public string TargetProperty { get; }
 APIShared.ModSettings.ModSettingRenamedFromAttribute | public sealed class APIShared.ModSettings.ModSettingRenamedFromAttribute : System.Attribute
 APIShared.ModSettings.ModSettingRenamedFromAttribute | public .ctor(params string[] formerNames)
 APIShared.ModSettings.ModSettingRenamedFromAttribute | public System.Collections.Generic.IReadOnlyList<string> FormerNames { get; }
@@ -1545,7 +1550,16 @@ APIShared.ModSettings.ModSettingsApplication | public static void EnterContext(s
 APIShared.ModSettings.ModSettingsApplication | public static void ExitContext()
 APIShared.ModSettings.ModSettingsApplication | public static void RestorePreparedSources(string id)
 APIShared.ModSettings.ModSettingsMigration | public static class APIShared.ModSettings.ModSettingsMigration
+APIShared.ModSettings.ModSettingsMigration | public static APIShared.ModSettings.MissionModSettingsDocument MigrateMissionDocument(APIShared.ModSettings.MissionModSettingsDocument document)
 APIShared.ModSettings.ModSettingsMigration | public static System.Collections.Generic.Dictionary<string, byte[]> MigrateStoredSnapshot(object settings, System.Collections.Generic.Dictionary<string, byte[]> stored)
+APIShared.ModSettings.ModSettingsMigration | public static void RegisterModMove(string ownerGuid, string registrationId, APIShared.ModSettings.ModSettingsModMove definition)
+APIShared.ModSettings.ModSettingsModMove | public sealed class APIShared.ModSettings.ModSettingsModMove
+APIShared.ModSettings.ModSettingsModMove | public .ctor(string sourceModGuid, string targetModGuid, System.Collections.Generic.IEnumerable<APIShared.ModSettings.ModSettingMove> movedSettings, System.Collections.Generic.IEnumerable<APIShared.ModSettings.ModSettingMove> copiedSettings = null, System.Collections.Generic.IDictionary<string, object> targetDefaults = null)
+APIShared.ModSettings.ModSettingsModMove | public System.Collections.Generic.IReadOnlyDictionary<string, object> TargetDefaults { get; }
+APIShared.ModSettings.ModSettingsModMove | public System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingMove> CopiedSettings { get; }
+APIShared.ModSettings.ModSettingsModMove | public System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingMove> MovedSettings { get; }
+APIShared.ModSettings.ModSettingsModMove | public string SourceModGuid { get; }
+APIShared.ModSettings.ModSettingsModMove | public string TargetModGuid { get; }
 APIShared.ModSettings.ModSettingsMode | public static class APIShared.ModSettings.ModSettingsMode
 APIShared.ModSettings.ModSettingsMode | public static APIShared.ModSettings.ModSettingsModeAvailability GetAvailability(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsMode | public static readonly Noesis.DependencyProperty AvailabilityProperty

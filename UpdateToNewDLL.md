@@ -55,7 +55,19 @@ including the same type, so every observed initialization starts a fresh generat
 Save-loaded generations must be imported before issuing a new serial. Existing
 building-spawn Post events similarly queue buildings until outer integration.
 The startup-prepared transaction and callback remain rooted for process lifetime;
-published hooks are logically dormant when unsupported or without enabled demand.
+published hooks are logically dormant when unsupported or without enabled demand
+and without current-mission history.
+
+An available observer also remains logically demanded while the current mission
+owns health history, even if every policy handle is disabled. A cached flag keeps
+archive lookups out of the native observer guard. These notifications preserve
+generation provenance only: completed dormant objects are recorded without HP
+writes or policy evaluation. The save callback also completes ready dormant
+provenance before an early resave. Unfinished native initialization and reciprocal
+tower links retain their normal wait conditions. A dormant or `None` unit retires
+an old applied proxy target while preserving both original bases; generations
+already completed under an active policy retain their frozen target. A proxy
+completed while all policies are disabled is never rewritten retroactively.
 
 Required interop layouts are hash-bound and checked before publication:
 GameUnit stride `0x490`, current/max `0x3C4/0x3C8`, percentage `0x2D0`, blocks

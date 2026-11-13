@@ -605,6 +605,60 @@ A mod that stores settings of such a class in its own format calls
 `ModSettingsMigration.MigrateStoredSnapshot(settings, stored)` on the raw stored values,
 before merging them with defaults. Renames cannot be applied to a merged snapshot, because
 it no longer tells a stored value from a default.
+The helper gives a converter its own dictionary and byte buffers, preserving the input
+comparer and null values. In-place conversion and a rejected conversion leave the raw
+stored data unchanged; the converter's returned dictionary is used as-is. Without a
+converter, an unchanged snapshot can be returned directly, so the result is not a
+general-purpose deep copy of the input.
+
+## Moving mission settings between mods
+
+APIShared 0.51.0 extends the existing migration pipeline with explicit owner moves.
+The destination mod registers `ModSettingsMigration.RegisterModMove(ownerGuid,
+registrationId, definition)` during initialization, before any mission preparation.
+`ModSettingsModMove` names the source and destination GUIDs, typed `ModSettingMove`
+entries, optional copied auxiliary settings and fixed scalar destination defaults.
+The registering owner must equal the destination. Registration is process-lived;
+identical owner/id declarations are idempotent. Conflicts, ambiguous claims and cycles
+throw without publishing the new declaration. Deterministically ordered chains are
+supported; one declaration owns each destination.
+
+A moved property in stored values or author rules is positive evidence of the old
+configuration. Rules retained while their owner is uninstalled still migrate even
+without stored values. A source GUID or a copied activation setting alone is
+insufficient. Mission values retain their validated wire representation, including
+enum names and JSON doubles for float settings. An explicit destination in
+saved values or author rules wins as a whole, including a disabled or empty entry.
+Moved properties leave the detached effective source even when an explicit target
+wins; copied settings remain there. This canonical cleanup prevents an empty target
+which a later codec/pruning pass omits from resurrecting obsolete source values.
+Defaults are applied before actual source values and rules. Fixed author values stay
+fixed; Player rules resolve against the destination owner's current personal/host
+settings. This is an intentional ownership change, not a historical-source alias.
+No personal settings file is imported by this API.
+
+Save preparation applies owner moves after wire validation but before matching
+participants, then applies the existing property renames and snapshot conversions.
+Required conversion errors refuse preparation; they do not select current settings
+as an invalid-record fallback. Choosing current settings still uses current values,
+subject to the existing author rules. A strict Trail resets saved values before
+applying author rules, so a newly introduced destination feature which must stay off
+needs a fixed false destination default, not only a saved false value.
+
+Map/Trail consumers call `ModSettingsMigration.MigrateMissionDocument(document)`
+before provider validation, pruning or caching author/reset sources. It returns a
+detached schema-3 document; it never rewrites the source file. `MissionModSettingsSession`
+also applies the migration before provider matching. Its existing supplied-document
+update contract remains in effect. Consumers must keep the migrated author document,
+not substitute a snapshot of materialized live values. On subsequent ordinary writes,
+the canonical destination entries are saved. Wire formats and unrelated missing-mod
+disabled behavior are unchanged.
+
+For example, when moving a group of boolean settings, mark the group's actual
+properties as moved, copy its shared old `EnableMod` only as an auxiliary setting,
+and provide false defaults for unrelated new destination features. Do not mark the
+master switch as the sole trigger: a modern save intentionally created without the
+destination mod can legitimately contain that same source master switch.
 
 ## Locking an individual setting during a mission
 

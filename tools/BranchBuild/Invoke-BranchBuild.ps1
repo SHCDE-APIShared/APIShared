@@ -10,7 +10,7 @@ param(
 $run = $null
 $exitCode = 0
 try {
-    $null = Get-ApiBuildTestMode $Driver $DriverArguments
+    $testMode = Get-ApiBuildTestMode $Driver $DriverArguments
     $branch = Get-BranchChoice $DriverArguments
     if ($branch -eq 'working') {
         $root = [IO.Path]::GetFullPath($Repository).TrimEnd('\','/')
@@ -23,7 +23,7 @@ try {
     $cacheArguments=@('/nopause','/noinstall','/tests:full','/keepsource','/branch:main','/branch:develop')
     $unknownArguments=@($DriverArguments | Where-Object { $_.ToLowerInvariant() -notin $cacheArguments })
     if ($Api -and $Driver -eq 'build.bat' -and $DriverArguments -icontains '/noinstall' -and
-        (Get-ApiBuildTestMode $Driver $DriverArguments) -eq 'full' -and -not $unknownArguments.Count) {
+        $testMode -eq 'full' -and -not $unknownArguments.Count) {
         $run=Find-ReusableApiBranchRun $Repository $branch
         if ($run) {
             if ($DriverArguments -icontains '/keepsource') { $run.State.KeepSource=$true }
@@ -36,12 +36,13 @@ try {
     $selection | Add-Member NoteProperty Run $run
     $null = Invoke-SelectedBranchBuild -Repository $Repository -Driver $Driver -Branch $branch -DriverArguments $DriverArguments -ControllerRoot $Repository -Api:$Api -SourceSelection $selection
     if ($run.State.KeepSource) { Set-ApiBranchRunPhase $run 'retained' '/keepsource requested' }
-    elseif ($Api -and $Driver -eq 'build.bat' -and [IO.File]::Exists((Join-Path $run.Root 'tools/BuildProof.ps1'))) {
+    elseif ($Api -and $Driver -eq 'build.bat' -and $testMode -eq 'full' -and
+        [IO.File]::Exists((Join-Path $run.Root 'tools/BuildProof.ps1'))) {
         . (Join-Path $run.Root 'tools/BuildProof.ps1')
         $null = Assert-ApiBuildProof $run.Root
         Set-ApiBranchRunPhase $run 'sdk-ready' 'Current SDK source retained for consumer proof validation'
         Remove-SupersededApiBranchRuns $run
-    } else { Set-ApiBranchRunPhase $run 'retained' 'Successful output has no standalone SDK proof; retained for review' }
+    } else { Set-ApiBranchRunPhase $run 'retained' "Successful output retained for review (tests:$testMode); not promoted to a full SDK" }
 
 } catch {
     Write-BranchMessage ('ERROR: ' + $_.Exception.Message)

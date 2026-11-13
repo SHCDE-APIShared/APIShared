@@ -167,6 +167,13 @@ Release consumers with hard minimum APIShared/Script Extender versions and `<Pri
 
 ## Extending APIShared
 
+When extracting settings into another plugin, declare an owner move through
+`ModSettingsMigration.RegisterModMove` before mission preparation. Reuse the existing
+renames/converters for property-level changes. Explicit destination data remains
+authoritative, and Player author rules follow the new owner. Custom Map/Trail readers
+must migrate their detached author document before provider checks and reset-source
+caching; see [the migration contract](MOD_SETTINGS.md#moving-mission-settings-between-mods).
+
 Use the [catalog source map](API_CATALOG.md#source-map) to find the current contract
 and its implementation. The [architecture guide](../ARCHITECTURE.md#finding-and-extending-a-feature)
 explains where shared behavior, hook ownership and consumer algorithms belong.
