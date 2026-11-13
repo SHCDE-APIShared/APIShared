@@ -1,3 +1,54 @@
+APIShared.Goods.CustomGoodId | public .ctor(string ownerGuid, string localId)
+APIShared.Goods.CustomGoodId | public bool Equals(APIShared.Goods.CustomGoodId other)
+APIShared.Goods.CustomGoodId | public override bool Equals(object obj)
+APIShared.Goods.CustomGoodId | public override int GetHashCode()
+APIShared.Goods.CustomGoodId | public string LocalId { get; }
+APIShared.Goods.CustomGoodId | public string OwnerGuid { get; }
+APIShared.Goods.CustomGoodId | public struct APIShared.Goods.CustomGoodId : System.IEquatable<APIShared.Goods.CustomGoodId>
+APIShared.Goods.CustomGoodsClient | public APIShared.Goods.GoodsTransactionStatus Apply(long operationSequence, System.Collections.Generic.IReadOnlyList<APIShared.Goods.GoodsChange> changes)
+APIShared.Goods.CustomGoodsClient | public APIShared.Goods.GoodsTransactionStatus Reserve(long operationSequence, System.Collections.Generic.IReadOnlyList<APIShared.Goods.GoodsChange> changes, out APIShared.Goods.GoodsReservation reservation)
+APIShared.Goods.CustomGoodsClient | public bool TryGetBalance(string localId, int playerId, out APIShared.Goods.GoodsBalance balance)
+APIShared.Goods.CustomGoodsClient | public bool TryRegister(string localId, int capacity, out APIShared.Goods.CustomGoodId good, out string reason)
+APIShared.Goods.CustomGoodsClient | public long LastAcceptedSequence { get; }
+APIShared.Goods.CustomGoodsClient | public sealed class APIShared.Goods.CustomGoodsClient
+APIShared.Goods.CustomGoodsClient | public string OwnerGuid { get; }
+APIShared.Goods.CustomGoodsInventory | public .ctor(int maximumGoods = 128, int maximumOperations = 1024)
+APIShared.Goods.CustomGoodsInventory | public APIShared.Goods.CustomGoodsClient ForOwner(string ownerGuid)
+APIShared.Goods.CustomGoodsInventory | public bool TryRestore(byte[] data, out string reason)
+APIShared.Goods.CustomGoodsInventory | public byte[] Capture()
+APIShared.Goods.CustomGoodsInventory | public const int MaximumSnapshotBytes = 1048576
+APIShared.Goods.CustomGoodsInventory | public sealed class APIShared.Goods.CustomGoodsInventory
+APIShared.Goods.CustomGoodsInventory | public void Reset()
+APIShared.Goods.GoodsBalance | public int Available { get; }
+APIShared.Goods.GoodsBalance | public int Capacity { get; }
+APIShared.Goods.GoodsBalance | public int Quantity { get; }
+APIShared.Goods.GoodsBalance | public int Reserved { get; }
+APIShared.Goods.GoodsBalance | public struct APIShared.Goods.GoodsBalance
+APIShared.Goods.GoodsChange | public .ctor(APIShared.Goods.CustomGoodId good, int playerId, int delta)
+APIShared.Goods.GoodsChange | public APIShared.Goods.CustomGoodId Good { get; }
+APIShared.Goods.GoodsChange | public int Delta { get; }
+APIShared.Goods.GoodsChange | public int PlayerId { get; }
+APIShared.Goods.GoodsChange | public struct APIShared.Goods.GoodsChange
+APIShared.Goods.GoodsReservation | public APIShared.Goods.GoodsTransactionStatus Commit()
+APIShared.Goods.GoodsReservation | public APIShared.Goods.GoodsTransactionStatus Release()
+APIShared.Goods.GoodsReservation | public sealed class APIShared.Goods.GoodsReservation
+APIShared.Goods.GoodsTransactionStatus | AlreadyApplied = 1
+APIShared.Goods.GoodsTransactionStatus | AlreadyCommitted = 5
+APIShared.Goods.GoodsTransactionStatus | AlreadyReleased = 7
+APIShared.Goods.GoodsTransactionStatus | AlreadyReserved = 3
+APIShared.Goods.GoodsTransactionStatus | Applied = 0
+APIShared.Goods.GoodsTransactionStatus | CapacityExceeded = 12
+APIShared.Goods.GoodsTransactionStatus | Committed = 4
+APIShared.Goods.GoodsTransactionStatus | Conflict = 10
+APIShared.Goods.GoodsTransactionStatus | ExpiredOperation = 15
+APIShared.Goods.GoodsTransactionStatus | InsufficientStock = 11
+APIShared.Goods.GoodsTransactionStatus | InvalidRequest = 8
+APIShared.Goods.GoodsTransactionStatus | LimitReached = 13
+APIShared.Goods.GoodsTransactionStatus | Released = 6
+APIShared.Goods.GoodsTransactionStatus | Reserved = 2
+APIShared.Goods.GoodsTransactionStatus | StaleReservation = 14
+APIShared.Goods.GoodsTransactionStatus | UnknownGood = 9
+APIShared.Goods.GoodsTransactionStatus | public enum APIShared.Goods.GoodsTransactionStatus : int
 APIShared.Lords.LordMetadataDocument | public System.Collections.Generic.IReadOnlyList<string> MediaReferences()
 APIShared.Lords.LordMetadataDocument | public sealed class APIShared.Lords.LordMetadataDocument
 APIShared.Lords.LordMetadataDocument | public static APIShared.Lords.LordMetadataDocument Parse(string json)

@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Linq;
 using System.Text;
 using APIShared.Economy;
+using APIShared.Goods;
 using MessagePack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SHCDESE.Interop;
@@ -74,6 +75,91 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void LegacyNativeOnlyCatalogDigestsRemainByteIdentical()
+        {
+            // Published /1 and /2 encodings bind native save/catalog agreement. These pins
+            // deliberately protect their exact bytes while /3 adds stored-output semantics.
+            Assert.AreEqual("9A28598D124EA021FB0EEB43D866F41B35AD5FACF1FFB7BEEEE58EEF4780EAC8",
+                WeaponProductionCatalog.Compile(new[] { Recipe("owner", "recipe") }, _ => true).Digest);
+            Assert.AreEqual("B4BFB58591A57FCAF000EA758A841F9943BBC33486A0D2613480F328BAB97085",
+                WeaponProductionCatalog.Compile(new[] { Recipe("owner", "recipe", ingredientAmount: 2) }, _ => true).Digest);
+        }
+
+        [TestMethod]
+        public void StoredOutputAndIngredientCopiesComposeWithoutChangingTheNativeDefinition()
+        {
+            var output = Stored("owner", "ore");
+            var original = new WeaponProductionOptionDefinition(eStructs.STRUCT_FLETCHERS_WORKSHOP,
+                eGoods.STORED_BOWS, eGoods.STORED_SWORDS, "Recipe", 3, 45, 7);
+            var before = original.WithStoredOutput(output).WithIngredientAmount(4);
+            var after = original.WithIngredientAmount(4).WithStoredOutput(output);
+            Assert.IsNull(original.StoredOutput); Assert.IsNull(original.IngredientAmount);
+            foreach (var copy in new[] { before, after })
+            {
+                Assert.AreSame(output, copy.StoredOutput); Assert.AreEqual(4, copy.IngredientAmount);
+                Assert.AreEqual(original.BuildingType, copy.BuildingType); Assert.AreEqual(original.TemplateGood, copy.TemplateGood);
+                Assert.AreEqual(original.OutputGood, copy.OutputGood); Assert.AreEqual(original.DisplayName, copy.DisplayName);
+                Assert.AreEqual(original.BaseAmount, copy.BaseAmount); Assert.AreEqual(original.WorkTicks, copy.WorkTicks);
+                Assert.AreEqual(original.Priority, copy.Priority);
+                var option = new WeaponProductionOption(new WeaponProductionOptionId("owner", "recipe"), copy, false);
+                Assert.AreSame(output, option.StoredOutput); Assert.AreEqual(eGoods.STORED_SWORDS, option.OutputGood);
+            }
+            Assert.ThrowsExactly<ArgumentNullException>(() => original.WithStoredOutput(null));
+        }
+
+        [TestMethod]
+        public void StoredOutputValidationRequiresTheSameOwnerArmoryAndExactRegisteredHandle()
+        {
+            var registered = Stored("owner", "ore");
+            bool Lookup(NativeStoredGood candidate) => ReferenceEquals(candidate, registered);
+            Assert.IsTrue(WeaponProductionRuntime.ValidateStoredOutput("owner", registered, Lookup, out string reason), reason);
+            Assert.IsFalse(WeaponProductionRuntime.ValidateStoredOutput("other", registered,
+                _ => throw new InvalidOperationException("Foreign output must reject before registration lookup."), out reason));
+            Assert.IsFalse(string.IsNullOrEmpty(reason));
+            Assert.IsFalse(WeaponProductionRuntime.ValidateStoredOutput("owner", Stored("owner", "ore"), Lookup, out reason),
+                "Equal key values cannot forge the process-owned registration handle.");
+            Assert.IsFalse(WeaponProductionRuntime.ValidateStoredOutput("owner", Stored("owner", "food", StoragePool.Granary),
+                _ => throw new InvalidOperationException("Granary output must reject before registration lookup."), out reason));
+            Assert.IsFalse(WeaponProductionRuntime.ValidateStoredOutput("owner", null, Lookup, out reason));
+            Assert.IsFalse(WeaponProductionRuntime.ValidateStoredOutput("owner", registered, null, out reason));
+        }
+
+        [TestMethod]
+        public void StoredCatalogAgreementTagsGoodIdentityPoolAndNativeSemanticsWithoutLabels()
+        {
+            string Digest(NativeStoredGood output, string display = "Recipe", int? ingredient = null) =>
+                WeaponProductionCatalog.Compile(new[] { StoredRecipe("owner", "recipe", output, display: display, ingredient: ingredient) }, _ => true).Digest;
+            var output = Stored("owner", "ore");
+            string baseline = Digest(output);
+            Assert.AreEqual("626CF206A44371DE6F5E6BFDEB2817512AC5B55E684065C3DA38B917AD189C2C", baseline);
+            Assert.AreEqual(baseline, Digest(Stored("owner", "ore"), "Localized label"));
+            Assert.AreNotEqual(baseline, Digest(Stored("owner", "other")));
+            Assert.AreNotEqual(baseline, Digest(Stored("other", "ore")));
+            // Catalogue serialization is independently tagged even for an invalid pool candidate;
+            // public registration rejects that candidate before it can reach this compiler.
+            Assert.AreNotEqual(baseline, Digest(Stored("owner", "ore", StoragePool.Granary)));
+            Assert.AreNotEqual(baseline, Digest(output, ingredient: 4));
+            Assert.AreNotEqual(baseline, WeaponProductionCatalog.Compile(new[] { Recipe("owner", "recipe") }, _ => true).Digest);
+            var additions = new[] { StoredRecipe("owner", "a", output), Recipe("owner", "b") };
+            var catalogue = WeaponProductionCatalog.Compile(additions, _ => true);
+            Assert.IsTrue(catalogue.HasStoredOutputs);
+            Assert.AreEqual(catalogue.Digest, WeaponProductionCatalog.Compile(Enumerable.Reverse(additions), _ => true).Digest);
+        }
+
+        [TestMethod]
+        public void UnavailableStoredDeliveryLeavesSlotsAndLegacyDigestForNativeRecipes()
+        {
+            var custom = StoredRecipe("owner", "custom", Stored("owner", "ore"), priority: 100);
+            var native = new[] { Recipe("owner", "a"), Recipe("owner", "b") };
+            var catalogue = WeaponProductionCatalog.Compile(new[] { custom }.Concat(native), _ => true,
+                option => option.StoredOutput == null);
+            Assert.AreEqual(WeaponProductionRegistrationStatus.AdapterUnavailable, custom.Status);
+            Assert.IsFalse(catalogue.HasStoredOutputs);
+            Assert.AreEqual(WeaponProductionCatalog.Compile(native, _ => true).Digest, catalogue.Digest);
+            Assert.AreEqual(4, catalogue.For(eStructs.STRUCT_FLETCHERS_WORKSHOP).Count);
+        }
+
+        [TestMethod]
         public void UnavailableIngredientOverrideLeavesTheSlotForACompatibleRecipe()
         {
             var type = eStructs.STRUCT_TANNERS_WORKSHOP;
@@ -123,9 +209,12 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void TransferTailsBindRecipePhaseAndProgressToTheNativeIdentity()
+        [DataRow(false)]
+        [DataRow(true)]
+        public void TransferTailsBindRecipePhaseAndProgressToTheNativeIdentity(bool storedOutput)
         {
-            var registration = Recipe("owner", "recipe", duration: 60);
+            var registration = storedOutput ? StoredRecipe("owner", "recipe", Stored("owner", "ore")) :
+                Recipe("owner", "recipe", duration: 60);
             var catalogue = WeaponProductionCatalog.Compile(new[] { registration }, _ => true);
             int option = catalogue.IndexOf(registration.Option.Id);
             var type = registration.Option.BuildingType;
@@ -174,6 +263,15 @@ namespace APISharedTests
             eGoods output = eGoods.STORED_SWORDS, int? ingredientAmount = null) => new WeaponProductionRegistration(new WeaponProductionOption(
                 new WeaponProductionOptionId(owner, id), new WeaponProductionOptionDefinition(eStructs.STRUCT_FLETCHERS_WORKSHOP,
                     template, output, display, amount, duration, priority).WithIngredientAmount(ingredientAmount), false));
+
+        private static NativeStoredGood Stored(string owner, string local, StoragePool pool = StoragePool.Armory) =>
+            new NativeStoredGood(new CustomGoodId(owner, local), pool);
+
+        private static WeaponProductionRegistration StoredRecipe(string owner, string id, NativeStoredGood output,
+            int priority = 0, string display = "Recipe", int? ingredient = null) =>
+            new WeaponProductionRegistration(new WeaponProductionOption(new WeaponProductionOptionId(owner, id),
+                new WeaponProductionOptionDefinition(eStructs.STRUCT_FLETCHERS_WORKSHOP, eGoods.STORED_BOWS,
+                    eGoods.STORED_SWORDS, display, 2, 60, priority).WithStoredOutput(output).WithIngredientAmount(ingredient), false));
 
         private static WeaponProductionRegistration Tanner(string id, int? ingredientAmount = null) => new WeaponProductionRegistration(new WeaponProductionOption(
             new WeaponProductionOptionId("owner", id), new WeaponProductionOptionDefinition(eStructs.STRUCT_TANNERS_WORKSHOP,

@@ -490,6 +490,7 @@ public sealed class NativeHookPublicationTests
                 ("APIShared.Economy.WorkerProductionBonusNativeRuntime", "Install"),
                 ("APIShared.Economy.WorkerProductionOutputNativeRuntime", "Install"),
                 ("APIShared.Economy.WeaponProductionNativeRuntime/Adapter", "Install"),
+                ("APIShared.Economy.WeaponProductionNativeRuntime/StoredDeliveryAdapter", "Install"),
                 ("APIShared.Wildlife.HunterNativeSites", "Initialize"),
                 ("APIShared.Wildlife.HunterOwnerGates", "TryEnsureInstalled"),
                 ("APIShared.Wildlife.HerdRuntime", "TryEnsureFlightGates"),

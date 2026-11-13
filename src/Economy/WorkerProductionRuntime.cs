@@ -72,9 +72,17 @@ namespace APIShared.Economy
             WorkerProductionStateRuntime.CompleteIntegration();
             initialized=true;WorkerProductionModifiers.Prepare(default);
         }
+        internal static string StoredOutputMultiplayerDiagnostic => WeaponProductionRuntime.StoredOutputModeDiagnostic(
+            frozenWeaponCatalog ?? WeaponProductionRuntime.PrepareCatalog(), realMultiplayer: true);
+
         internal static string ValidateNativeAdmission(MissionContext context)
         {
             if(context==null)return null;
+            if(context.Mode.IsRealMultiplayer)
+            {
+                string storedOutputReason = StoredOutputMultiplayerDiagnostic;
+                if(storedOutputReason != null)return storedOutputReason;
+            }
             if(initialized)
                 return WorkerProductionWorldSafety.IsFaulted ? "Production initialization failed before native loading." : null;
             // The lifecycle calls this independently of a successful production startup.
@@ -243,7 +251,7 @@ namespace APIShared.Economy
             frozenWeaponCatalog = context.Mode.Kind == GameModeKind.Unknown || context.Mode.IsMapEditor || context.Mode.AllowsCustomGameMods
                 ? WeaponProductionRuntime.PrepareCatalog()
                 : WeaponProductionCatalog.Empty;
-            WeaponProductionRuntime.BeginWorld(frozenWeaponCatalog);
+            WeaponProductionRuntime.BeginWorld(frozenWeaponCatalog, session);
             frozenHuntingCatalog = context.Mode.Kind == GameModeKind.Unknown || context.Mode.IsMapEditor || context.Mode.AllowsCustomGameMods
                 ? Wildlife.HuntablePreyRuntime.PrepareCatalog()
                 : Wildlife.HuntablePreyCatalogBuilder.VanillaOnly;
@@ -268,6 +276,8 @@ namespace APIShared.Economy
             var status=WorkerProductionModifiers.Prepare(mode);var candidate=WorkerProductionModifiers.CurrentPrepared;
             if(!status.CanStart || candidate==null || !WorkerProductionModifiers.IsCandidateInBundle(frozenBundle,mode,candidate))
             { reason="The actual production rules do not match the prepared launch bundle.";return false; }
+            string storedOutputReason = WeaponProductionRuntime.StoredOutputModeDiagnostic(frozenWeaponCatalog, mode.IsRealMultiplayer);
+            if(storedOutputReason != null) { reason=storedOutputReason;return false; }
             if(mode.IsRealMultiplayer)
             {
                 string receipt=WorkerProductionAgreement.ApprovedDescriptorDigest;
