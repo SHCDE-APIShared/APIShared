@@ -11,12 +11,13 @@ namespace APIShared.Audio
     // Process root. No Unity component callback owns this service or its executable hooks.
     internal static class UnitVoiceRuntime
     {
-        private static ILHook copyHook;
+        private static Patching.SafeIlHook copyHook;
         private static ManualLogSource log;
         private static int attempted, playbackReady, copyReady, lifecycleReady, confirmed;
         private static long nextInvocation, failureLogs;
         private static string failure = "Pending";
         private static MissionContext mission;
+        private const string PlaybackFailurePrefix = "Unit voice record integration unavailable: ";
         internal static bool ManagedReady => Volatile.Read(ref playbackReady) != 0 && Volatile.Read(ref copyReady) != 0 &&
             Volatile.Read(ref lifecycleReady) != 0 && UnitVoiceSpeechPipeline.IsReady;
         internal static string Status => ManagedReady && UnitVoiceNativeRuntime.Available ? "Ready" :
@@ -31,13 +32,16 @@ namespace APIShared.Audio
         }
         internal static void SetPlaybackReady(bool value)
         {
+            // A later rebuild of processTestMap can restore the speech edit after a failed one.
+            if (value && (Volatile.Read(ref failure) ?? string.Empty).StartsWith(PlaybackFailurePrefix, StringComparison.Ordinal))
+                Volatile.Write(ref failure, "Pending");
             Volatile.Write(ref playbackReady, value ? 1 : 0);
             UnitVoiceNativeRuntime.RefreshDemand();
         }
         internal static void SetPlaybackFailure(string reason)
         {
             Volatile.Write(ref playbackReady, 0);
-            Fail("Unit voice record integration unavailable: " + reason);
+            Fail(PlaybackFailurePrefix + reason);
             UnitVoiceNativeRuntime.RefreshDemand();
         }
         internal static void InitializeManaged(ManualLogSource logger)
@@ -48,12 +52,12 @@ namespace APIShared.Audio
             {
                 var copy = typeof(EngineInterface).GetMethod("CopyPlayStateStruct", BindingFlags.Public | BindingFlags.Static);
                 if (copy == null) throw new MissingMethodException("Public PlayState copy method missing.");
-                UnitVoiceCopyIlContract.Validate(copy);
-                copyHook = new ILHook(copy, UnitVoiceCopyIlContract.Apply,
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.Audio.UnitVoiceCopy" });
-                copyHook.Apply();
-                if (!copyHook.IsApplied) throw new InvalidOperationException("Unit voice copy hook publication failed.");
-                Volatile.Write(ref copyReady, 1);
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.Audio.UnitVoiceCopy", copy,
+                    UnitVoiceCopyIlContract.Apply, logger, out copyHook, out string reason))
+                    throw new InvalidOperationException("Unit voice copy hook publication failed: " + reason);
+                // The Script Extender also edits this method; a later rebuild can drop our edit.
+                copyHook.Rebuilt += hook => { Volatile.Write(ref copyReady, hook.IsApplied ? 1 : 0); UnitVoiceNativeRuntime.RefreshDemand(); };
+                Volatile.Write(ref copyReady, copyHook.IsApplied ? 1 : 0);
                 UnitVoiceSpeechPipeline.Initialize(logger);
                 if (!UnitVoiceSpeechPipeline.IsReady) throw new InvalidOperationException(UnitVoiceSpeechPipeline.Status);
                 if (!ApiShared.Current.TryGetMissionLifecycle(APISharedPlugin.PluginGuid, out var lifecycle, out var diagnostic))
@@ -66,7 +70,11 @@ namespace APIShared.Audio
                 UnitVoiceNativeRuntime.RefreshDemand();
                 NativeApiLog.Info(log, "UNIT_VOICE_MANAGED_READY: permanent copy/record/request hooks; no component lifetime or polling.");
             }
-            catch (Exception error) { Fail("Unit voice managed integration unavailable: " + error.Message); }
+            catch (Exception error)
+            {
+                Fail("Unit voice managed integration unavailable: " + error.Message);
+                UnitVoiceResources.Fail(error.Message);
+            }
         }
         private static void Started(MissionLifecycleNotification notification)
         {
@@ -127,7 +135,9 @@ namespace APIShared.Audio
                 string basename = Basename(context.OriginalPath);
                 string reason = "Original speech category is unavailable.";
                 UnitVoiceCatalog.TryGetCue(context.Source.OriginalCueKey, out var originalCue);
-                string folder = UnitVoiceCatalog.SpeechFolder(originalCue);
+                // An intent that Vanilla never routes has no folder of its own; a replacement is meant to be
+                // heard, so it plays through its bank's folder. MyAudioManager does not check the file name.
+                string folder = UnitVoiceCatalog.SpeechFolder(originalCue) ?? UnitVoiceCatalog.BankSpeechFolder(originalCue);
                 if (folder != null &&
                     UnitVoiceSpeechPipeline.TryPlayResource(context.Channel, folder, basename, folder == "troops",
                         context.IgnoreSpeechMuting, context.IgnorePauseState, pre.VolumeFactor, target.Resource,

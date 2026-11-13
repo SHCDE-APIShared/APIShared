@@ -36,6 +36,8 @@ namespace APIShared.ScriptExtenderFixes
         internal static void Verify(ImGuiShutdownCompiler compiler, MethodInfo target, List<ILHook> candidates)
         {
             int before = compiler.RoutedCount(target);
+            // No SafeIlHook: the target is APIShared's own private probe method, which no other hook
+            // or Harmony patch can share, and this check must see a real MonoMod failure.
             var hook = new ILHook(target, EmitNativeCall,
                 new ILHookConfig { ManualApply = true, ID = "APIShared.ScriptExtenderFixes.ImGuiShutdown.Probe" });
             candidates.Add(hook);

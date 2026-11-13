@@ -87,6 +87,8 @@
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
     <Compile Include="../../src/Units/Selection/UnitAccess.cs" Link="Production/UnitAccess.cs" />
+    <Compile Include="../../src/Buildings/BuildingAccess.cs" Link="Production/BuildingAccess.cs" />
+    <Compile Include="../../src/Core/Collections/IndexBounds.cs" Link="Production/IndexBounds.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledContracts.cs" Link="Production/UnitSettledContracts.cs" />
     <Compile Include="../../src/Units/Settled/UnitSettledTracker.cs" Link="Production/UnitSettledTracker.cs" />
     <Compile Include="../../src/ModSettings/Internal/DependencyFreeJson.cs" Link="Production/DependencyFreeJson.cs" />

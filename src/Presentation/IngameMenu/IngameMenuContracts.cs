@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Noesis;
 
 namespace APIShared.Presentation
 {
@@ -86,6 +87,23 @@ namespace APIShared.Presentation
         /// <summary>Requests reevaluation on Unity, marshalled from other threads. Closed menus defer evaluation until opening.
         /// Notify only after a relevant change, never from a periodic tick/frame callback. Repeated pending requests coalesce.</summary>
         public void Invalidate() => invalidate();
+    }
+
+    /// <summary>Unity-thread context belonging to one custom control and one ESC-menu view.</summary>
+    /// <remarks>Do not reuse its Menu or control in another view. Registrations remain process-lived;
+    /// the context becomes inert after view replacement, hiding, disabling or loss of its effective placement.
+    /// Consumers retain mission and gameplay authorization. No replay or asynchronous dispatch is performed.</remarks>
+    public sealed class IngameMenuContentContext
+    {
+        private readonly Func<Action, bool> execute;
+        internal IngameMenuContentContext(FrameworkElement menu, Func<Action, bool> execute)
+        { Menu = menu; this.execute = execute; }
+        /// <summary>The current menu, for resolving its resources on Unity. Valid only for this view.</summary>
+        public FrameworkElement Menu { get; }
+        /// <summary>Revalidates the visible, enabled current control and executes synchronously on Unity.
+        /// Returns false for stale/hidden/disabled contexts, an unavailable presentation, or a callback failure.
+        /// Exceptions are isolated and reported through the menu broker. Never call from a state provider.</summary>
+        public bool TryExecute(Action action) => action != null && execute(action);
     }
 
     /// <summary>Immutable last-observed action information; queries never invoke consumer code.</summary>

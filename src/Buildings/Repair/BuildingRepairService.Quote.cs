@@ -51,7 +51,7 @@ namespace APIShared
             GameBuildingManagerAPI buildings = GameBuildingManagerAPI.Instance;
             GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
             if (buildings == null || players == null ||
-                !buildings.TryGetBuildingById(state.in_structure, out GameBuilding* building) || building == null)
+                !BuildingAccess.TryGetById(buildings, state.in_structure, out GameBuilding* building, out _) || building == null)
                 return null;
             int playerId = players.GetLocalPlayerId();
             eStructs type = building->r_BuildingType;

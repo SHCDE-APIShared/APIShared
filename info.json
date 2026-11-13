@@ -3,7 +3,7 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.47.0",
+  "Version": "0.51.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
@@ -11,12 +11,42 @@
   "NetworkMode": 1,
   "SerpChangelog": [
     {
+      "Version": "0.51.0",
+      "Changes": [
+        "Add declarative mission-setting moves between mod GUIDs for savegames and Map/Trail author rules. Explicit destination settings win; Player rules follow the new owner, while declared defaults can keep unrelated new features disabled.",
+        "Keep original health baselines current when modifier application is disabled, and discard obsolete siege-tower proxy targets for newly processed generations.",
+        "Preserve original IL metadata when a safe transpiler fails, and protect raw setting dictionaries and buffers from in-place migration converters.",
+        "Close AI spawn capture before completion callbacks so callback-created units cannot corrupt the original capture list.",
+        "Keep successful quick and unchecked branch builds as retained outputs without marking them as fully verified SDK packages."
+      ]
+    },
+    {
+      "Version": "0.50.0",
+      "Changes": [
+        "Add owner-bound custom controls in ESC menu slots, preserving focus, placement checks and scaled tooltips alongside existing button actions."
+      ]
+    },
+    {
+      "Version": "0.49.0",
+      "Changes": [
+        "Add checked, silent BuildingAccess lookups with explicit failure reasons and a pure IndexBounds helper for zero-based span indices. Existing UnitAccess and entity identity/life-state contracts remain unchanged."
+      ]
+    },
+    {
+      "Version": "0.48.0",
+      "Changes": [
+        "Add SafeIlHook and SafeTranspiler for managed game patches. A patch that no longer fits after a game or mod update is rolled back and reported, and the other mods' patches of the same game method keep working. All APIShared IL patches use them."
+      ]
+    },
+    {
       "Version": "0.47.0",
       "Changes": [
         "Add owner-bound Lord message presentation events with independent voice, video and text replacement, using existing Vanilla messages or private mod resources.",
         "Keep native message queueing and gameplay random state unchanged; bind replacement subtitles to the actual displayed message and retain original components unless explicitly replaced.",
         "Development addition: add general Unit Voices rules for attributed troop orders, recruitment, siege and special actions, and civilian comments, with Vanilla cue replacement, prepared private mod/map recordings, suppression and per-request volume factors.",
-        "Coordinate Unit Voices and Lord message audio at their shared playback site while preserving the existing SFX API; keep consumer-specific skin and faction rules outside APIShared."
+        "Coordinate Unit Voices and Lord message audio at their shared playback site while preserving the existing SFX API; keep consumer-specific skin and faction rules outside APIShared.",
+        "Unit Voices: a replacement for a voice line that the game never plays (for example several Arabian engineer siege lines) is now played; UnitVoiceContext.OriginalIsSilent marks such lines. A voice file whose preparation failed can be prepared again.",
+        "Lord messages keep Vanilla and text replacement available if the Script Extender changes its private mod-asset helpers."
       ]
     },
     {

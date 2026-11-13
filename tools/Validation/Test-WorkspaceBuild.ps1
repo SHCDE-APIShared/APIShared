@@ -64,7 +64,7 @@ $fixture = Join-Path ([IO.Path]::GetTempPath()) ('build-choice-' + [guid]::NewGu
 [void][IO.Directory]::CreateDirectory((Join-Path $fixture 'tools/BranchBuild'))
 . (Join-Path $root 'tools/BranchBuild/BranchBuild.Common.ps1')
 Copy-Item -LiteralPath (Join-Path $root 'build.bat') -Destination $fixture
-foreach ($name in @('BranchBuild.Common.ps1','Invoke-BranchBuild.ps1')) {
+foreach ($name in @('BranchBuild.Common.ps1','Invoke-BranchBuild.ps1','BranchRun.ps1','Release-BranchSource.ps1')) {
     Copy-Item -LiteralPath (Join-Path $root "tools/BranchBuild/$name") -Destination (Join-Path $fixture 'tools/BranchBuild')
 }
 Copy-Item -LiteralPath (Join-Path $root 'tools/BuildChecks.ps1') -Destination (Join-Path $fixture 'tools/BuildChecks.ps1')

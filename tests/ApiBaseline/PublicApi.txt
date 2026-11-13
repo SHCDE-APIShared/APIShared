@@ -204,6 +204,7 @@ APIShared.Audio.UnitVoiceContext | public APIShared.Audio.UnitVoiceSource Source
 APIShared.Audio.UnitVoiceContext | public APIShared.MissionContext MissionContext { get; }
 APIShared.Audio.UnitVoiceContext | public bool IgnorePauseState { get; }
 APIShared.Audio.UnitVoiceContext | public bool IgnoreSpeechMuting { get; }
+APIShared.Audio.UnitVoiceContext | public bool OriginalIsSilent { get; }
 APIShared.Audio.UnitVoiceContext | public float OriginalVolume { get; }
 APIShared.Audio.UnitVoiceContext | public int Channel { get; }
 APIShared.Audio.UnitVoiceContext | public long InvocationId { get; }
@@ -359,6 +360,15 @@ APIShared.BriefingGoldContext | public int CurrentGold { get; }
 APIShared.BriefingGoldContext | public int EffectiveVanillaGold { get; }
 APIShared.BriefingGoldContext | public int SlotIndex { get; }
 APIShared.BriefingGoldContext | public int VanillaDisplayedGold { get; }
+APIShared.BuildingAccess | public static class APIShared.BuildingAccess
+APIShared.BuildingAccess | public static bool TryGetById(SHCDESE.API.GameBuildingManagerAPI manager, int buildingId, out SHCDESE.Interop.GameBuilding* building, out APIShared.BuildingLookupFailure failure)
+APIShared.BuildingAccess | public static bool TryGetById(int buildingId, out SHCDESE.Interop.GameBuilding* building, out APIShared.BuildingLookupFailure failure)
+APIShared.BuildingLookupFailure | public enum APIShared.BuildingLookupFailure : int
+APIShared.BuildingLookupFailure | InvalidId = 1
+APIShared.BuildingLookupFailure | ManagerUnavailable = 2
+APIShared.BuildingLookupFailure | None = 0
+APIShared.BuildingLookupFailure | OutOfRange = 3
+APIShared.BuildingLookupFailure | Unavailable = 4
 APIShared.BuildingRepairQuote | public sealed class APIShared.BuildingRepairQuote
 APIShared.BuildingRepairQuote | public .ctor(int buildingId, int buildingGlobalId, int panel, bool canRepair, int currentHealth, int maxHealth, int wood, int stone, int iron, int pitch, int gold, int availableWood, int availableStone, int availableIron, int availablePitch, int availableGold)
 APIShared.BuildingRepairQuote | public bool CanRepair { get; }
@@ -1228,6 +1238,8 @@ APIShared.IUnitHudPresentationCapability | public bool TryRegisterInteraction(st
 APIShared.IUnitHudPresentationCapability | public bool TryRegisterRecruitment(string categoryId, APIShared.UnitHudRecruitmentHandler handler, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IUnitHudPresentationCapability | public bool TryRemoveUnitFromControlGroups(int unitId, out int removedCount, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.IUnitHudPresentationCapability | public void RequestRefresh()
+APIShared.IndexBounds | public static class APIShared.IndexBounds
+APIShared.IndexBounds | public static bool IsValidIndex(int index, int length)
 APIShared.Lobby.LobbyChatMessage | public sealed class APIShared.Lobby.LobbyChatMessage
 APIShared.Lobby.LobbyChatMessage | public bool IsSystemMessage { get; }
 APIShared.Lobby.LobbyChatMessage | public string Message { get; }
@@ -1511,6 +1523,11 @@ APIShared.ModSettings.MissionModSettingsSession | public System.Collections.Gene
 APIShared.ModSettings.MissionModSettingsSession | public long? MissionSessionId { get; }
 APIShared.ModSettings.MissionModSettingsSession | public void ConfirmStarted(long sessionId)
 APIShared.ModSettings.MissionModSettingsSession | public void Exit()
+APIShared.ModSettings.ModSettingMove | public sealed class APIShared.ModSettings.ModSettingMove
+APIShared.ModSettings.ModSettingMove | public .ctor(string sourceProperty, string targetProperty, System.Type valueType)
+APIShared.ModSettings.ModSettingMove | public System.Type ValueType { get; }
+APIShared.ModSettings.ModSettingMove | public string SourceProperty { get; }
+APIShared.ModSettings.ModSettingMove | public string TargetProperty { get; }
 APIShared.ModSettings.ModSettingRenamedFromAttribute | public sealed class APIShared.ModSettings.ModSettingRenamedFromAttribute : System.Attribute
 APIShared.ModSettings.ModSettingRenamedFromAttribute | public .ctor(params string[] formerNames)
 APIShared.ModSettings.ModSettingRenamedFromAttribute | public System.Collections.Generic.IReadOnlyList<string> FormerNames { get; }
@@ -1534,7 +1551,16 @@ APIShared.ModSettings.ModSettingsApplication | public static void EnterContext(s
 APIShared.ModSettings.ModSettingsApplication | public static void ExitContext()
 APIShared.ModSettings.ModSettingsApplication | public static void RestorePreparedSources(string id)
 APIShared.ModSettings.ModSettingsMigration | public static class APIShared.ModSettings.ModSettingsMigration
+APIShared.ModSettings.ModSettingsMigration | public static APIShared.ModSettings.MissionModSettingsDocument MigrateMissionDocument(APIShared.ModSettings.MissionModSettingsDocument document)
 APIShared.ModSettings.ModSettingsMigration | public static System.Collections.Generic.Dictionary<string, byte[]> MigrateStoredSnapshot(object settings, System.Collections.Generic.Dictionary<string, byte[]> stored)
+APIShared.ModSettings.ModSettingsMigration | public static void RegisterModMove(string ownerGuid, string registrationId, APIShared.ModSettings.ModSettingsModMove definition)
+APIShared.ModSettings.ModSettingsModMove | public sealed class APIShared.ModSettings.ModSettingsModMove
+APIShared.ModSettings.ModSettingsModMove | public .ctor(string sourceModGuid, string targetModGuid, System.Collections.Generic.IEnumerable<APIShared.ModSettings.ModSettingMove> movedSettings, System.Collections.Generic.IEnumerable<APIShared.ModSettings.ModSettingMove> copiedSettings = null, System.Collections.Generic.IDictionary<string, object> targetDefaults = null)
+APIShared.ModSettings.ModSettingsModMove | public System.Collections.Generic.IReadOnlyDictionary<string, object> TargetDefaults { get; }
+APIShared.ModSettings.ModSettingsModMove | public System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingMove> CopiedSettings { get; }
+APIShared.ModSettings.ModSettingsModMove | public System.Collections.Generic.IReadOnlyList<APIShared.ModSettings.ModSettingMove> MovedSettings { get; }
+APIShared.ModSettings.ModSettingsModMove | public string SourceModGuid { get; }
+APIShared.ModSettings.ModSettingsModMove | public string TargetModGuid { get; }
 APIShared.ModSettings.ModSettingsMode | public static class APIShared.ModSettings.ModSettingsMode
 APIShared.ModSettings.ModSettingsMode | public static APIShared.ModSettings.ModSettingsModeAvailability GetAvailability(Noesis.DependencyObject value)
 APIShared.ModSettings.ModSettingsMode | public static readonly Noesis.DependencyProperty AvailabilityProperty
@@ -2391,6 +2417,21 @@ APIShared.ObserverCommandRequest | public int ObserverPlayerId { get; }
 APIShared.ObserverCommandRequest | public int StructureId { get; }
 APIShared.ObserverCommandRequest | public int Value2 { get; }
 APIShared.ObserverCommandRequest | public int ViewedPlayerId { get; }
+APIShared.Patching.SafeIlHook | public sealed class APIShared.Patching.SafeIlHook
+APIShared.Patching.SafeIlHook | public MonoMod.Cil.ILContext.Manipulator Manipulator { get; }
+APIShared.Patching.SafeIlHook | public System.Reflection.MethodBase Target { get; }
+APIShared.Patching.SafeIlHook | public bool IsApplied { get; }
+APIShared.Patching.SafeIlHook | public event System.Action<APIShared.Patching.SafeIlHook> Rebuilt
+APIShared.Patching.SafeIlHook | public long Failures { get; }
+APIShared.Patching.SafeIlHook | public long Runs { get; }
+APIShared.Patching.SafeIlHook | public static APIShared.Patching.SafeIlHook Wrap(string ownerGuid, string id, System.Reflection.MethodBase target, MonoMod.Cil.ILContext.Manipulator manipulator, BepInEx.Logging.ManualLogSource log)
+APIShared.Patching.SafeIlHook | public static bool TryEdit(MonoMod.Cil.ILContext il, MonoMod.Cil.ILContext.Manipulator edit, out System.Exception error)
+APIShared.Patching.SafeIlHook | public static bool TryInstall(string ownerGuid, string id, System.Reflection.MethodBase target, MonoMod.Cil.ILContext.Manipulator manipulator, BepInEx.Logging.ManualLogSource log, out APIShared.Patching.SafeIlHook hook, out string reason)
+APIShared.Patching.SafeIlHook | public string Diagnostic { get; }
+APIShared.Patching.SafeIlHook | public string Id { get; }
+APIShared.Patching.SafeIlHook | public string OwnerGuid { get; }
+APIShared.Patching.SafeTranspiler | public static class APIShared.Patching.SafeTranspiler
+APIShared.Patching.SafeTranspiler | public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> Run(string ownerGuid, string id, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions, System.Func<System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>> transform, BepInEx.Logging.ManualLogSource log, System.Action<bool> outcome = null)
 APIShared.Pathfinding.RouteEngineFeatures | public enum APIShared.Pathfinding.RouteEngineFeatures : int
 APIShared.Pathfinding.RouteEngineFeatures | None = 0
 APIShared.Pathfinding.RouteEngineFeatures | ReplanPolicies = 2
@@ -2633,7 +2674,11 @@ APIShared.Presentation.IngameMenuActionState | public string Tooltip { get; }
 APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
 APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.IngameMenuRowState GetRowState(APIShared.Presentation.IngameMenuRow row)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegisterContent(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Func<APIShared.Presentation.IngameMenuContentContext, Noesis.Control> createContent, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
+APIShared.Presentation.IngameMenuContentContext | public sealed class APIShared.Presentation.IngameMenuContentContext
+APIShared.Presentation.IngameMenuContentContext | public Noesis.FrameworkElement Menu { get; }
+APIShared.Presentation.IngameMenuContentContext | public bool TryExecute(System.Action action)
 APIShared.Presentation.IngameMenuRow | public enum APIShared.Presentation.IngameMenuRow : int
 APIShared.Presentation.IngameMenuRow | ExitStronghold = 7
 APIShared.Presentation.IngameMenuRow | Help = 4
