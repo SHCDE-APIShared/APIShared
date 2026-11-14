@@ -1,3 +1,4 @@
+using ContentJson = APIShared.ContentInternal.DependencyFreeJson;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -104,7 +105,7 @@ namespace APIShared.ModData
             Dictionary<string, object> root;
             try
             {
-                root = APIShared.Internal.DependencyFreeJson.Parse(json) as Dictionary<string, object>;
+                root = ContentJson.Parse(json) as Dictionary<string, object>;
             }
             catch (Exception exception) when (exception is InvalidDataException || exception is FormatException)
             {
@@ -163,7 +164,7 @@ namespace APIShared.ModData
             }
 
             var namespaceObject = (Dictionary<string, object>)requested.Value.Value;
-            string namespaceJson = APIShared.Internal.DependencyFreeJson.Serialize(namespaceObject);
+            string namespaceJson = ContentJson.Serialize(namespaceObject);
             return new ModDataReadResult(
                 ModDataReadStatus.Success,
                 requested.Value.Key,

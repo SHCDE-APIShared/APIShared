@@ -1,5 +1,23 @@
 # API catalog
 
+## Native pooled storage
+
+`ModApiClient.NativeStorage` registers owner-qualified virtual goods in native
+Armory/Granary pools, with exact building identity, coordinated capacity, atomic
+gold/stock exchanges and joint ledger/allocation persistence. No native goods ID,
+recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
+and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
+
+## Custom goods inventory
+
+`APIShared.Goods.CustomGoodsInventory` in the game-independent Content assembly
+provides owner-qualified virtual goods, bounded player stock/capacities, atomic
+multi-good changes, sequenced retry protection and one-shot reservations.
+Caller-owned mission state has canonical snapshots for existing versioned saves.
+Native goods slots, wallets, physical storage and multiplayer transport require
+separate adapters. See [usage, persistence and limits](CUSTOM_GOODS.md) and the
+[compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 ## AI military admission
 
 `ModApiClient.TryGetAiMilitary` exposes semantic military roles, invocation-scoped
@@ -789,6 +807,13 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Native gold and virtual goods
+
+`ModApiClient.GoodsWallet` exchanges a validated native-gold balance and prepared
+owner-bound virtual stock under the engine/inventory monitors. Exact replay intent,
+world generations and schema-1/schema-2 compatibility are documented in the
+[wallet guide](GOODS_WALLET.md).
 
 ## Unit settlement events
 
