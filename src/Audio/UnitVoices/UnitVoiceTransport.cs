@@ -62,6 +62,17 @@ namespace APIShared.Audio
             }
         }
 
+        // Recovery repairs transport only. A caller must not infer source provenance from it.
+        internal static bool TryRecoverOriginalPath(string path, out string originalPath)
+        {
+            originalPath = path;
+            if (!TryDecodeToken(path, out UnitVoiceCue cue, out long id)) return false;
+            var value = Volatile.Read(ref pending);
+            originalPath = value != null && value.EmissionId == id && string.Equals(value.Token, path, StringComparison.Ordinal)
+                ? value.OriginalPath : "fx\\speech\\" + cue.FileName;
+            return true;
+        }
+
         internal static bool TryGetBinding(EngineInterface.PlayState state, out UnitVoiceBinding binding)
         { binding = null; return state != null && bindings.TryGetValue(state, out binding); }
 
