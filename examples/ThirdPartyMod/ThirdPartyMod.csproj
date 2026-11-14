@@ -41,6 +41,7 @@
     <Compile Include="WorkshopExample.cs" />
     <Compile Include="SoundExample.cs" />
     <Compile Include="UnitVoiceExample.cs" />
+    <Compile Include="UnitIdentityExample.cs" />
     <Compile Include="LordMessageExample.cs" />
     <Compile Include="PopularityExample.cs" />
     <Compile Include="BuildingTooltipExample.cs" />

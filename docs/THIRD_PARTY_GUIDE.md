@@ -1240,6 +1240,16 @@ GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, Trib
 
 The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
 
+## Shared troop variant identities
+
+Use `ModApiClient.UnitIdentities` for owner-local identity on an exact native
+carrier, instead of private cross-mod identity readers. The service retains native
+pending-recruitment evidence and separates live simulation queries from immutable
+presentation snapshots. It creates no troop, purchase, native type or art. See
+[the identity guide](UNIT_IDENTITIES.md) and the
+[compiled example](../examples/ThirdPartyMod/UnitIdentityExample.cs) for mutation
+context, world lifetime, save preservation and multiplayer limits.
+
 ## Reacting to created and recruited units
 
 Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it

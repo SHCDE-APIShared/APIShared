@@ -1428,6 +1428,7 @@ APIShared.ModApiClient | public APIShared.Automation.AutomationClient Automation
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
+APIShared.ModApiClient | public APIShared.Units.UnitIdentityClient UnitIdentities { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -3486,6 +3487,18 @@ APIShared.Units.TroopCommandInput | public int X { get; }
 APIShared.Units.TroopCommandInput | public int Y { get; }
 APIShared.Units.TroopCommandInputEvents | public static class APIShared.Units.TroopCommandInputEvents
 APIShared.Units.TroopCommandInputEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Units.TroopCommandInput> callback, out string reason, int order = 0)
+APIShared.Units.UnitIdentityClient | public sealed class APIShared.Units.UnitIdentityClient
+APIShared.Units.UnitIdentityClient | public bool IsCurrentWorldReady { get; }
+APIShared.Units.UnitIdentityClient | public bool TryGet(int unitId, uint globalId, out APIShared.Units.UnitIdentitySnapshot identity)
+APIShared.Units.UnitIdentityClient | public bool TryGetLive(int unitId, uint globalId, out APIShared.Units.UnitIdentitySnapshot identity)
+APIShared.Units.UnitIdentityClient | public bool TryRegisterVariant(string variantId, int nativeType, out APIShared.Units.UnitVariantRegistration registration, out string reason)
+APIShared.Units.UnitIdentitySnapshot | public struct APIShared.Units.UnitIdentitySnapshot
+APIShared.Units.UnitIdentitySnapshot | public bool IsPendingRecruitment { get; }
+APIShared.Units.UnitIdentitySnapshot | public int NativeType { get; }
+APIShared.Units.UnitIdentitySnapshot | public int UnitId { get; }
+APIShared.Units.UnitIdentitySnapshot | public string OwnerGuid { get; }
+APIShared.Units.UnitIdentitySnapshot | public string VariantId { get; }
+APIShared.Units.UnitIdentitySnapshot | public uint GlobalId { get; }
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4
@@ -3508,6 +3521,13 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Units.UnitVariantRegistration | public sealed class APIShared.Units.UnitVariantRegistration
+APIShared.Units.UnitVariantRegistration | public System.Collections.Generic.IReadOnlyList<APIShared.Units.UnitIdentitySnapshot> GetMembers()
+APIShared.Units.UnitVariantRegistration | public bool TryMark(int unitId, uint globalId, out string reason)
+APIShared.Units.UnitVariantRegistration | public bool TryUnmark(int unitId, uint globalId, out string reason)
+APIShared.Units.UnitVariantRegistration | public int NativeType { get; }
+APIShared.Units.UnitVariantRegistration | public string OwnerGuid { get; }
+APIShared.Units.UnitVariantRegistration | public string VariantId { get; }
 APIShared.Wildlife.HerdFlightRule | public sealed class APIShared.Wildlife.HerdFlightRule
 APIShared.Wildlife.HerdFlightRule | public bool TrySetCalm(int herdId, bool calm)
 APIShared.Wildlife.HerdFlightRule | public string OwnerGuid { get; }
