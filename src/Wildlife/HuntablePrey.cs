@@ -21,14 +21,18 @@ namespace APIShared.Wildlife
         public HuntablePreyDefinition(int unitType, int handlingCost = 0)
         { UnitType = unitType; HandlingCost = handlingCost; }
 
-        private HuntablePreyDefinition(int unitType, int handlingCost, int? baseMeat, bool ownPlayer, bool removeCorpse)
+        private HuntablePreyDefinition(int unitType, int handlingCost, int? baseMeat, bool ownPlayer, bool removeCorpse,
+            int? corpseLifetime)
             : this(unitType, handlingCost)
-        { BaseMeat = baseMeat; AllowsOwnPlayerPrey = ownPlayer; RemovesCorpseWhenButchered = removeCorpse; }
+        {
+            BaseMeat = baseMeat; AllowsOwnPlayerPrey = ownPlayer; RemovesCorpseWhenButchered = removeCorpse;
+            MinimumCorpseLifetime = corpseLifetime;
+        }
 
         /// <summary>Copies the definition with a base meat for the Hunter's yield of this animal, from 0
         /// through 1000 before Vanilla's bonus. Null keeps Vanilla's base of 6.</summary>
         public HuntablePreyDefinition WithBaseMeat(int? baseMeat) =>
-            new HuntablePreyDefinition(UnitType, HandlingCost, baseMeat, AllowsOwnPlayerPrey, RemovesCorpseWhenButchered);
+            new HuntablePreyDefinition(UnitType, HandlingCost, baseMeat, AllowsOwnPlayerPrey, RemovesCorpseWhenButchered, MinimumCorpseLifetime);
 
         /// <summary>Copies the definition so that Hunters may also hunt animals of this type owned by their own
         /// player (same owner, not merely allied), as well as unowned ones.</summary>
@@ -36,12 +40,29 @@ namespace APIShared.Wildlife
         /// the first such registration. If another plugin already patches those points (for example an older
         /// ImprovedHunters), the registration is Unsupported.</remarks>
         public HuntablePreyDefinition WithOwnPlayerPrey(bool allowed = true) =>
-            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, allowed, RemovesCorpseWhenButchered);
+            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, allowed, RemovesCorpseWhenButchered, MinimumCorpseLifetime);
 
         /// <summary>Copies the definition so that the corpse is removed as soon as a Hunter starts butchering it,
         /// instead of fading out as Vanilla does. No other Hunter can pick that corpse any more.</summary>
         public HuntablePreyDefinition WithCorpseRemovedWhenButchered(bool removed = true) =>
-            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, AllowsOwnPlayerPrey, removed);
+            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, AllowsOwnPlayerPrey, removed, MinimumCorpseLifetime);
+
+        /// <summary>Copies the definition so that a corpse of this type fades for at least this many map ticks
+        /// before Vanilla removes it. Null keeps Vanilla's time. Requires APIShared 0.54.0 or later.</summary>
+        /// <remarks>
+        /// <para>Supported for rabbits, camels and chickens (<see cref="HuntablePrey.SupportsCorpseLifetime"/>),
+        /// from 1 through <see cref="HuntablePrey.MaximumCorpseLifetime"/> ticks. Vanilla lets their corpses fade
+        /// for 32 ticks (chickens 16) and then deletes them; a request at or below that keeps Vanilla.</para>
+        /// <para>Vanilla compares one constant with both the fading counter and the fade step of the corpse's
+        /// look. A longer time is therefore rounded up to the next value of 256 * n + 8 counter steps (at most
+        /// 255 more; chickens count 2 per tick): the corpse fades to 8 of 32 steps and stays visible until it
+        /// is removed.</para>
+        /// <para>The lifetime of a type combines all enabled registrations of that type, whatever their
+        /// priority: the longest request wins. It is part of the catalog, frozen per mission and part of the
+        /// multiplayer peer agreement like the other options.</para>
+        /// </remarks>
+        public HuntablePreyDefinition WithMinimumCorpseLifetime(int? ticks) =>
+            new HuntablePreyDefinition(UnitType, HandlingCost, BaseMeat, AllowsOwnPlayerPrey, RemovesCorpseWhenButchered, ticks);
 
         /// <summary>Raw native unit type.</summary>
         public int UnitType { get; }
@@ -53,6 +74,9 @@ namespace APIShared.Wildlife
         public bool AllowsOwnPlayerPrey { get; }
         /// <summary>Whether the corpse is removed when a Hunter starts butchering it.</summary>
         public bool RemovesCorpseWhenButchered { get; }
+        /// <summary>Requested minimum fading time of a corpse in map ticks, or null for Vanilla's. See
+        /// <see cref="WithMinimumCorpseLifetime"/>.</summary>
+        public int? MinimumCorpseLifetime { get; }
     }
 
     /// <summary>Result of the most recent catalog preparation for a registration.</summary>
@@ -120,8 +144,9 @@ namespace APIShared.Wildlife
     public sealed class HuntablePreyEntry
     {
         internal HuntablePreyEntry(int unitType, int handlingCost, int? baseMeat, bool ownPlayer, bool removeCorpse,
-            string ownerGuid, string registrationId, bool isVanilla)
+            string ownerGuid, string registrationId, bool isVanilla, int? corpseLifetime = null)
         {
+            MinimumCorpseLifetime = corpseLifetime;
             UnitType = unitType;
             HandlingCost = handlingCost;
             BaseMeat = baseMeat;
@@ -148,6 +173,9 @@ namespace APIShared.Wildlife
         public string RegistrationId { get; }
         /// <summary>True for Vanilla's deer and goat entries that no registration replaced.</summary>
         public bool IsVanilla { get; }
+        /// <summary>The longest minimum corpse lifetime in map ticks that an enabled registration of this type
+        /// requested, whatever its priority; null keeps Vanilla's time. Requires APIShared 0.54.0 or later.</summary>
+        public int? MinimumCorpseLifetime { get; }
     }
 
     /// <summary>Immutable, type-ordered catalog of huntable unit types.</summary>
@@ -203,6 +231,17 @@ namespace APIShared.Wildlife
 
         /// <summary>Whether the reservation release and target admission are installed.</summary>
         public static bool IsAvailable => HuntablePreyRuntime.IsAvailable;
+
+        /// <summary>The longest corpse lifetime in map ticks that <see cref="HuntablePreyDefinition.WithMinimumCorpseLifetime"/>
+        /// accepts. Requires APIShared 0.54.0 or later.</summary>
+        public const int MaximumCorpseLifetime = CorpseLifetimeNativeAssembly.MaximumLifetimeTicks;
+
+        /// <summary>Whether a registration of this unit type may request a corpse lifetime now. Requires APIShared
+        /// 0.54.0 or later.</summary>
+        /// <remarks>True for rabbits on the audited native image with the Script Extender's rabbit constant, and
+        /// for camels and chickens while their native sites are installed or can still be installed (their first
+        /// such registration must come during startup, before the first mission of the process).</remarks>
+        public static bool SupportsCorpseLifetime(int unitType) => CorpseLifetimeNative.IsSupported(unitType);
 
         /// <summary>The frozen catalog of the running mission; outside a mission, the catalog the next
         /// mission would freeze (before its mode is known). Never null.</summary>

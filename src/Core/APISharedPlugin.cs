@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.53.0";
+        public const string PluginVersion = "0.54.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -157,6 +157,13 @@ namespace APIShared
                 new NativeInitializationStep("hunter event ids", () => ScriptExtenderFixes.HunterEventIdentityRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("huntable prey", () => Wildlife.HuntablePreyRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("herds", () => Wildlife.HerdRuntime.Initialize(context, hash, RuntimeLogger)),
+                // Validation only; their inline stubs install on a consumer's first registration (patch window).
+                new NativeInitializationStep("chicken population", () => Wildlife.ChickenPopulationRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("build-menu availability", () => Buildings.BuildMenuAvailabilityRuntime.Initialize(context, hash, RuntimeLogger)),
+                // Validation only: the sight calls install nothing, the building dispatch hook installs on a
+                // consumer's first registration inside the native inline patch window.
+                new NativeInitializationStep("line of sight", () => Sight.LineOfSightNative.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("sight-blocking buildings", () => Sight.SightBlockingBuildingsNative.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),

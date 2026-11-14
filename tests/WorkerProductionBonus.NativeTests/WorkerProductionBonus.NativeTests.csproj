@@ -33,6 +33,10 @@
     <Compile Include="../../src/Economy/WeaponProduction/WeaponProductionNativeDefinition.*.cs;../../src/Economy/WeaponProduction/WeaponProductionNativeAssembly.*.cs" Link="Production/%(Filename)%(Extension)" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Wildlife/HunterNativeAssembly.cs" Link="Wildlife/HunterNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Wildlife/HerdNativeAssembly.cs" Link="Wildlife/HerdNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Wildlife/CorpseLifetimeNativeAssembly.cs" Link="Wildlife/CorpseLifetimeNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Wildlife/ChickenPopulationNativeAssembly.cs" Link="Wildlife/ChickenPopulationNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Buildings/BuildMenu/BuildMenuAvailabilityAssembly.cs" Link="Buildings/BuildMenuAvailabilityAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Sight/SightNativeAssembly.cs" Link="Sight/SightNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
     <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
     <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>

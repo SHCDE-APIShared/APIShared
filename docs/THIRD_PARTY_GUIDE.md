@@ -1999,6 +1999,15 @@ stationary; do not clear unrelated camera reports or enqueue stale cross-mission
 camera work. This broker does not select a building or move the camera itself.
 
 
+## Building panel controls and per-building choices
+
+Use [BuildingPanelSections](BUILDING_PANELS.md) to add a control to Vanilla's building panels
+instead of patching `HUD_Buildings.xaml` and polling the open building: APIShared owns the host
+and the detection and calls Opened, Updated and Closed on Unity. Use
+[BuildingStates](BUILDING_STATE.md) for the player's per-building choice behind such a control:
+owner requests are validated and applied on every peer in the same tick, saved with the game and
+readable from managed and native simulation code.
+
 ## Ally gifts and send-dialog extensions
 
 Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.

@@ -187,6 +187,11 @@ spans are built from each service's native contract constants in
 | `Wildlife.HunterOwnerGates` | Exclusive 0x18AFD8/14 (query owner check), 0x18EBDA/14 (explicit attack team check), 0x192AA7/14 (arrow team check); Observe 0x192B00/0x93 (arrow hit gates the arrow stub repeats) | First huntable-prey registration with own-player prey, before the first mission |
 | `Wildlife.HerdRoutes` | Exclusive 0x127E60/10 (herd route builder entry, Indirect detour); Observe 0x127E6A/15 (validated continuation), see [herds](HERDS.md#implementation) | First `HerdRouteEvents` registration (LibraryLoaded startup window, otherwise with thread suspension) |
 | `Wildlife.HerdFlightGates` | Exclusive 0x124F20/18 (deer threat read), 0x125330/18 (goat threat read); purely native, one byte per herd | First `HerdFlightRules` registration, before the first mission |
+| `Wildlife.CorpseLifetimes` | Exclusive 0x1584BE/19 (camel fading constant), 0x16346B/20 (chicken fading constant); purely native threshold cells, see [huntable prey](HUNTING.md#corpse-lifetime). The rabbit constant is the Script Extender's site and not registered here | First huntable-prey registration with a camel or chicken corpse lifetime, before the first mission |
+| `Wildlife.ChickenPopulation` | Exclusive 0xD2AB4/17 (chicken target compare); native demand gate, managed callback only with an enabled modifier, see [chickens](CHICKENS.md) | First `ChickenPopulationModifiers` registration, before the first mission |
+| `Buildings.MapperAvailability` | Exclusive 0xFFC70/14 (mapper availability query entry); purely native decision byte per mapper, see [build menu](BUILD_MENU.md) | First `BuildMenuAvailability` registration, before the first mission |
+| `Sight.LineOfSightCalls` | CallOnly 0xA06F0/1 (sight wrapper), 0x9E350/1 (sight core); no patch, see [line of sight](LINE_OF_SIGHT.md#implementation) | LibraryLoaded |
+| `Sight.BuildingHeightDispatch` | Exclusive 0x6BA0C/17 (building-height dispatch reader); Observe 0x6B9F1/27 (image base and type switch), 0x6BA1D/5 (dispatch jump), 0x6BAB4/88 (case and type tables); purely native, one byte per building type | First `SightBlockingBuildings` registration, before the first mission |
 
 A conflict with another owner's earlier registration fails that APIShared service
 closed through its existing path (capability diagnostic `Conflict` or its install

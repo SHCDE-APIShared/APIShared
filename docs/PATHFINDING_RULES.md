@@ -42,6 +42,25 @@ wins, otherwise the largest penalty).
   answer; a rule must never make an otherwise valid Vanilla command fail silently.
 - Apply rules to every route the engine publishes, including later live checks of a route.
 
+## Asking whether a place is reachable
+
+Rules change routes; a mod that only needs to know whether a unit could walk somewhere uses
+[`PathReachability`](../src/Pathfinding/Reachability/PathReachability.cs). It asks Vanilla's
+player-aware path connection layers, the coarse component graph the game consults before it plans
+a route, so own gates, enemy gates and the connection classes of the mode (for example ladders)
+count as Vanilla counts them.
+
+- `FromUnitToUnit`, `FromUnitToTile` use the unit's controlling player and live connection mode;
+  `BetweenTiles` and `BetweenComponents` take them explicitly. `TryGetComponent` reads a tile's
+  component for callers that cache.
+- `Unreachable` is a reliable negative. `Connected` only says the components are linked; Vanilla's
+  movement order still decides the detailed route, which can fail for local obstacles.
+  `Unknown` means no answer (invalid input, dead unit, outside the map); treat it as "do not decide".
+- Call it on the simulation thread. The native query updates Vanilla's own query bookkeeping, so in
+  multiplayer use it only for decisions every peer computes identically, and never inside a native
+  hook between a Vanilla query and Vanilla's use of its result. It keeps no cache; gates and buildings
+  change the graph at any moment, so cache briefly and deterministically on the caller side.
+
 ## Limits
 
 - Rules affect only routes of engines that support the contract; with several engines, each states

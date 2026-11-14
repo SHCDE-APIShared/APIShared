@@ -389,8 +389,58 @@ APIShared.BuildingRepairQuote | public int Panel { get; }
 APIShared.BuildingRepairQuote | public int Pitch { get; }
 APIShared.BuildingRepairQuote | public int Stone { get; }
 APIShared.BuildingRepairQuote | public int Wood { get; }
+APIShared.Buildings.BuildMenuAvailability | public static class APIShared.Buildings.BuildMenuAvailability
+APIShared.Buildings.BuildMenuAvailability | public const int MaximumMapper = 511
+APIShared.Buildings.BuildMenuAvailability | public static bool IsAvailable { get; }
+APIShared.Buildings.BuildMenuAvailability | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Buildings.BuildMenuAvailabilityRule rule, out string reason)
+APIShared.Buildings.BuildMenuAvailability | public static string UnavailableReason { get; }
+APIShared.Buildings.BuildMenuAvailabilityDecision | public enum APIShared.Buildings.BuildMenuAvailabilityDecision : byte
+APIShared.Buildings.BuildMenuAvailabilityDecision | Allow = 1
+APIShared.Buildings.BuildMenuAvailabilityDecision | Default = 0
+APIShared.Buildings.BuildMenuAvailabilityDecision | Veto = 2
+APIShared.Buildings.BuildMenuAvailabilityRule | public sealed class APIShared.Buildings.BuildMenuAvailabilityRule
+APIShared.Buildings.BuildMenuAvailabilityRule | public APIShared.Buildings.BuildMenuAvailabilityDecision GetDecision(int mapper)
+APIShared.Buildings.BuildMenuAvailabilityRule | public bool IsEnabled { get; }
+APIShared.Buildings.BuildMenuAvailabilityRule | public bool TrySetDecision(int mapper, APIShared.Buildings.BuildMenuAvailabilityDecision decision, out string reason)
+APIShared.Buildings.BuildMenuAvailabilityRule | public string OwnerGuid { get; }
+APIShared.Buildings.BuildMenuAvailabilityRule | public string RegistrationId { get; }
+APIShared.Buildings.BuildMenuAvailabilityRule | public void ClearAll()
+APIShared.Buildings.BuildMenuAvailabilityRule | public void SetEnabled(bool value)
 APIShared.Buildings.BuildingGeometry | public static class APIShared.Buildings.BuildingGeometry
 APIShared.Buildings.BuildingGeometry | public static bool TryGetSquareFootprintCenter(int beginX, int beginY, int gridSize, out int centerX, out int centerY)
+APIShared.Buildings.BuildingStateRegistration | public sealed class APIShared.Buildings.BuildingStateRegistration
+APIShared.Buildings.BuildingStateRegistration | public .ctor(string ownerGuid, string registrationId, string saveDataIdentifier, System.Collections.Generic.IEnumerable<SHCDESE.Interop.eStructs> buildingTypes, System.Collections.Generic.IEnumerable<APIShared.Buildings.BuildingStateValue> values)
+APIShared.Buildings.BuildingStateRegistration | public System.Collections.Generic.IReadOnlyList<APIShared.Buildings.BuildingStateValue> Values { get; }
+APIShared.Buildings.BuildingStateRegistration | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
+APIShared.Buildings.BuildingStateRegistration | public System.Func<bool> AcceptsOwnerRequests { get; set; }
+APIShared.Buildings.BuildingStateRegistration | public string OwnerGuid { get; }
+APIShared.Buildings.BuildingStateRegistration | public string RegistrationId { get; }
+APIShared.Buildings.BuildingStateRegistration | public string SaveDataIdentifier { get; }
+APIShared.Buildings.BuildingStateTable | public sealed class APIShared.Buildings.BuildingStateTable
+APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChange(int buildingId, uint globalId, int valueIndex, byte value)
+APIShared.Buildings.BuildingStateTable | public bool AppliesTo(SHCDESE.Interop.eStructs buildingType)
+APIShared.Buildings.BuildingStateTable | public bool HasPendingRequest { get; }
+APIShared.Buildings.BuildingStateTable | public bool TrySetFromSimulation(int buildingId, uint globalId, int valueIndex, byte value)
+APIShared.Buildings.BuildingStateTable | public byte GetValue(int buildingId, uint globalId, int valueIndex)
+APIShared.Buildings.BuildingStateTable | public int Capacity { get; }
+APIShared.Buildings.BuildingStateTable | public int EntrySize { get; }
+APIShared.Buildings.BuildingStateTable | public int GlobalIdOffset { get; }
+APIShared.Buildings.BuildingStateTable | public int ValueCount { get; }
+APIShared.Buildings.BuildingStateTable | public int ValuesOffset { get; }
+APIShared.Buildings.BuildingStateTable | public string OwnerGuid { get; }
+APIShared.Buildings.BuildingStateTable | public string RegistrationId { get; }
+APIShared.Buildings.BuildingStateTable | public ulong NativeAddress { get; }
+APIShared.Buildings.BuildingStateTable | public void ForgetPendingRequest()
+APIShared.Buildings.BuildingStateValue | public sealed class APIShared.Buildings.BuildingStateValue
+APIShared.Buildings.BuildingStateValue | public .ctor(string name, byte maximum, APIShared.Buildings.BuildingStateValueAccess access)
+APIShared.Buildings.BuildingStateValue | public APIShared.Buildings.BuildingStateValueAccess Access { get; }
+APIShared.Buildings.BuildingStateValue | public byte Maximum { get; }
+APIShared.Buildings.BuildingStateValue | public string Name { get; }
+APIShared.Buildings.BuildingStateValueAccess | public enum APIShared.Buildings.BuildingStateValueAccess : int
+APIShared.Buildings.BuildingStateValueAccess | OwnerRequest = 0
+APIShared.Buildings.BuildingStateValueAccess | Simulation = 1
+APIShared.Buildings.BuildingStates | public static class APIShared.Buildings.BuildingStates
+APIShared.Buildings.BuildingStates | public static bool TryRegister(APIShared.Buildings.BuildingStateRegistration registration, out APIShared.Buildings.BuildingStateTable table, out string reason)
 APIShared.Buildings.EnemyProximityContext | public struct APIShared.Buildings.EnemyProximityContext
 APIShared.Buildings.EnemyProximityContext | public byte Unknown { get; }
 APIShared.Buildings.EnemyProximityContext | public int CivilianRadius { get; }
@@ -2450,6 +2500,16 @@ APIShared.Patching.SafeIlHook | public string Id { get; }
 APIShared.Patching.SafeIlHook | public string OwnerGuid { get; }
 APIShared.Patching.SafeTranspiler | public static class APIShared.Patching.SafeTranspiler
 APIShared.Patching.SafeTranspiler | public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> Run(string ownerGuid, string id, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions, System.Func<System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>> transform, BepInEx.Logging.ManualLogSource log, System.Action<bool> outcome = null)
+APIShared.Pathfinding.PathReachability | public static class APIShared.Pathfinding.PathReachability
+APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult BetweenComponents(int playerId, SHCDESE.Interop.Enums.PathConnectionQueryMode mode, int fromComponent, int toComponent)
+APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult BetweenTiles(int playerId, SHCDESE.Interop.Enums.PathConnectionQueryMode mode, int fromX, int fromY, int toX, int toY)
+APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult FromUnitToTile(int unitId, int toX, int toY)
+APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult FromUnitToUnit(int unitId, int targetUnitId)
+APIShared.Pathfinding.PathReachability | public static bool TryGetComponent(int tileX, int tileY, out int componentId)
+APIShared.Pathfinding.PathReachabilityResult | public enum APIShared.Pathfinding.PathReachabilityResult : int
+APIShared.Pathfinding.PathReachabilityResult | Connected = 2
+APIShared.Pathfinding.PathReachabilityResult | Unknown = 0
+APIShared.Pathfinding.PathReachabilityResult | Unreachable = 1
 APIShared.Pathfinding.RouteEngineFeatures | public enum APIShared.Pathfinding.RouteEngineFeatures : int
 APIShared.Pathfinding.RouteEngineFeatures | None = 0
 APIShared.Pathfinding.RouteEngineFeatures | ReplanPolicies = 2
@@ -2634,6 +2694,39 @@ APIShared.Presentation.AllyPanelButtonPreEventArgs | public sealed class APIShar
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public CrusaderDE.HUD_AlliesPanel Panel { get; }
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public bool TryClaim(System.Action<APIShared.Presentation.AllyPanelButtonInvocation> execute)
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public string Button { get; }
+APIShared.Presentation.BuildingPanelContext | public sealed class APIShared.Presentation.BuildingPanelContext
+APIShared.Presentation.BuildingPanelContext | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Presentation.BuildingPanelContext | public bool IsOwnedByLocalPlayer { get; }
+APIShared.Presentation.BuildingPanelContext | public int BuildingId { get; }
+APIShared.Presentation.BuildingPanelContext | public int LocalPlayerId { get; }
+APIShared.Presentation.BuildingPanelContext | public int OwnerPlayerId { get; }
+APIShared.Presentation.BuildingPanelContext | public int ViewedPlayerId { get; }
+APIShared.Presentation.BuildingPanelContext | public long PanelGeneration { get; }
+APIShared.Presentation.BuildingPanelContext | public uint GlobalId { get; }
+APIShared.Presentation.BuildingPanelSectionEventArgs | public sealed class APIShared.Presentation.BuildingPanelSectionEventArgs
+APIShared.Presentation.BuildingPanelSectionEventArgs | public APIShared.Presentation.BuildingPanelContext Context { get; }
+APIShared.Presentation.BuildingPanelSectionEventArgs | public Noesis.FrameworkElement Content { get; }
+APIShared.Presentation.BuildingPanelSectionFactoryContext | public sealed class APIShared.Presentation.BuildingPanelSectionFactoryContext
+APIShared.Presentation.BuildingPanelSectionFactoryContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.BuildingPanelSectionFactoryContext | public long PanelGeneration { get; }
+APIShared.Presentation.BuildingPanelSectionOptions | public sealed class APIShared.Presentation.BuildingPanelSectionOptions
+APIShared.Presentation.BuildingPanelSectionOptions | public .ctor(string ownerGuid, string registrationId, System.Collections.Generic.IEnumerable<SHCDESE.Interop.eStructs> buildingTypes, System.Func<APIShared.Presentation.BuildingPanelSectionFactoryContext, Noesis.FrameworkElement> factory)
+APIShared.Presentation.BuildingPanelSectionOptions | public System.Action<APIShared.Presentation.BuildingPanelSectionEventArgs> Closed { get; set; }
+APIShared.Presentation.BuildingPanelSectionOptions | public System.Action<APIShared.Presentation.BuildingPanelSectionEventArgs> Opened { get; set; }
+APIShared.Presentation.BuildingPanelSectionOptions | public System.Action<APIShared.Presentation.BuildingPanelSectionEventArgs> Updated { get; set; }
+APIShared.Presentation.BuildingPanelSectionOptions | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
+APIShared.Presentation.BuildingPanelSectionOptions | public System.Func<APIShared.Presentation.BuildingPanelContext, bool> ShowWhen { get; set; }
+APIShared.Presentation.BuildingPanelSectionOptions | public System.Func<APIShared.Presentation.BuildingPanelSectionFactoryContext, Noesis.FrameworkElement> Factory { get; }
+APIShared.Presentation.BuildingPanelSectionOptions | public int Order { get; set; }
+APIShared.Presentation.BuildingPanelSectionOptions | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelSectionOptions | public string RegistrationId { get; }
+APIShared.Presentation.BuildingPanelSectionRegistration | public sealed class APIShared.Presentation.BuildingPanelSectionRegistration
+APIShared.Presentation.BuildingPanelSectionRegistration | public APIShared.Presentation.BuildingPanelSectionEventArgs Current { get; }
+APIShared.Presentation.BuildingPanelSectionRegistration | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelSectionRegistration | public string RegistrationId { get; }
+APIShared.Presentation.BuildingPanelSections | public static class APIShared.Presentation.BuildingPanelSections
+APIShared.Presentation.BuildingPanelSections | public static bool TryGetContext(out APIShared.Presentation.BuildingPanelContext context)
+APIShared.Presentation.BuildingPanelSections | public static bool TryRegister(APIShared.Presentation.BuildingPanelSectionOptions options, out APIShared.Presentation.BuildingPanelSectionRegistration registration, out string reason)
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }
@@ -3153,6 +3246,58 @@ APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int NA
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public const int PATHFINDING_UNIT_TYPE_COUNT = 89
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public static APIShared.ScriptExtenderReplacements.GamePathingManagerAPI Instance { get; }
 APIShared.ScriptExtenderReplacements.GamePathingManagerAPI | public string UnavailabilityReason { get; }
+APIShared.Sight.LineOfSight | public static class APIShared.Sight.LineOfSight
+APIShared.Sight.LineOfSight | public const int MaximumHeightMagnitude = 100000
+APIShared.Sight.LineOfSight | public const int SamePointResult = 100000
+APIShared.Sight.LineOfSight | public const int StepLimitResult = 1000
+APIShared.Sight.LineOfSight | public const int TargetHeight = 26
+APIShared.Sight.LineOfSight | public const int TargetQueryMaximumResult = 432
+APIShared.Sight.LineOfSight | public const int TileCenterOffset = 4
+APIShared.Sight.LineOfSight | public const int TileWorldSize = 8
+APIShared.Sight.LineOfSight | public const int ViewerEyeHeight = 30
+APIShared.Sight.LineOfSight | public static bool IsAvailable { get; }
+APIShared.Sight.LineOfSight | public static bool IsVisibleForDirectAttack(int result)
+APIShared.Sight.LineOfSight | public static bool IsVisibleForTargetQuery(int result)
+APIShared.Sight.LineOfSight | public static bool TryEvaluate(APIShared.Sight.SightPoint viewer, APIShared.Sight.SightPoint target, APIShared.Sight.LineOfSightRoutine routine, out int result, out APIShared.Sight.LineOfSightFailure failure)
+APIShared.Sight.LineOfSight | public static bool TryEvaluateUnits(in SHCDESE.Interop.GameUnit viewer, in SHCDESE.Interop.GameUnit target, APIShared.Sight.LineOfSightRoutine routine, out int result, out APIShared.Sight.LineOfSightFailure failure)
+APIShared.Sight.LineOfSight | public static bool TryEvaluateUnits(in SHCDESE.Interop.GameUnit viewer, int viewerHeightOffset, in SHCDESE.Interop.GameUnit target, int targetHeightOffset, APIShared.Sight.LineOfSightRoutine routine, out int result, out APIShared.Sight.LineOfSightFailure failure)
+APIShared.Sight.LineOfSight | public static bool TryEvaluateUnits(int viewerUnitId, int targetUnitId, APIShared.Sight.LineOfSightRoutine routine, out int result, out APIShared.Sight.LineOfSightFailure failure)
+APIShared.Sight.LineOfSight | public static bool TryGetTileViewpoint(int tileX, int tileY, int heightOffset, out APIShared.Sight.SightPoint point)
+APIShared.Sight.LineOfSight | public static bool TryGetUnitPoint(in SHCDESE.Interop.GameUnit unit, int heightOffset, out APIShared.Sight.SightPoint point)
+APIShared.Sight.LineOfSight | public static bool TryGetUnitPoint(int unitId, int heightOffset, out APIShared.Sight.SightPoint point)
+APIShared.Sight.LineOfSight | public static string UnavailableReason { get; }
+APIShared.Sight.LineOfSightFailure | public enum APIShared.Sight.LineOfSightFailure : int
+APIShared.Sight.LineOfSightFailure | HeightOutOfRange = 3
+APIShared.Sight.LineOfSightFailure | InvalidRoutine = 7
+APIShared.Sight.LineOfSightFailure | InvalidUnit = 5
+APIShared.Sight.LineOfSightFailure | NativeContractViolation = 6
+APIShared.Sight.LineOfSightFailure | None = 0
+APIShared.Sight.LineOfSightFailure | OutsideMap = 2
+APIShared.Sight.LineOfSightFailure | Reentrant = 4
+APIShared.Sight.LineOfSightFailure | Unavailable = 1
+APIShared.Sight.LineOfSightRoutine | public enum APIShared.Sight.LineOfSightRoutine : int
+APIShared.Sight.LineOfSightRoutine | Bidirectional = 0
+APIShared.Sight.LineOfSightRoutine | Directional = 1
+APIShared.Sight.SightBlockingBuildingRule | public sealed class APIShared.Sight.SightBlockingBuildingRule
+APIShared.Sight.SightBlockingBuildingRule | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Sight.SightBlockingBuildingRule | public bool IsEnabled { get; }
+APIShared.Sight.SightBlockingBuildingRule | public string OwnerGuid { get; }
+APIShared.Sight.SightBlockingBuildingRule | public string RegistrationId { get; }
+APIShared.Sight.SightBlockingBuildingRule | public void SetEnabled(bool enabled)
+APIShared.Sight.SightBlockingBuildings | public static class APIShared.Sight.SightBlockingBuildings
+APIShared.Sight.SightBlockingBuildings | public const int MaximumRegistrations = 64
+APIShared.Sight.SightBlockingBuildings | public static bool IsAvailable { get; }
+APIShared.Sight.SightBlockingBuildings | public static bool IsBlocking(SHCDESE.Interop.eStructs buildingType)
+APIShared.Sight.SightBlockingBuildings | public static bool IsExemptInVanilla(SHCDESE.Interop.eStructs buildingType)
+APIShared.Sight.SightBlockingBuildings | public static bool TryRegister(string ownerGuid, string registrationId, SHCDESE.Interop.eStructs buildingType, out APIShared.Sight.SightBlockingBuildingRule rule, out string reason)
+APIShared.Sight.SightBlockingBuildings | public static string UnavailableReason { get; }
+APIShared.Sight.SightPoint | public struct APIShared.Sight.SightPoint
+APIShared.Sight.SightPoint | public .ctor(int x, int y, int height)
+APIShared.Sight.SightPoint | public int Height { get; }
+APIShared.Sight.SightPoint | public int TileX { get; }
+APIShared.Sight.SightPoint | public int TileY { get; }
+APIShared.Sight.SightPoint | public int X { get; }
+APIShared.Sight.SightPoint | public int Y { get; }
 APIShared.Simulation.EngineRunEvents | public static class APIShared.Simulation.EngineRunEvents
 APIShared.Simulation.EngineRunEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action begin, System.Action end, out string reason, int order = 0)
 APIShared.Simulation.PeaceTimeState | public static class APIShared.Simulation.PeaceTimeState
@@ -3508,6 +3653,21 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Wildlife.ChickenPopulationContext | public struct APIShared.Wildlife.ChickenPopulationContext
+APIShared.Wildlife.ChickenPopulationContext | public .ctor(int playerId, int vanillaTarget, int currentChickens)
+APIShared.Wildlife.ChickenPopulationContext | public int CurrentChickens { get; }
+APIShared.Wildlife.ChickenPopulationContext | public int PlayerId { get; }
+APIShared.Wildlife.ChickenPopulationContext | public int VanillaTarget { get; }
+APIShared.Wildlife.ChickenPopulationModifierHandle | public sealed class APIShared.Wildlife.ChickenPopulationModifierHandle
+APIShared.Wildlife.ChickenPopulationModifierHandle | public bool IsEnabled { get; }
+APIShared.Wildlife.ChickenPopulationModifierHandle | public string OwnerGuid { get; }
+APIShared.Wildlife.ChickenPopulationModifierHandle | public string RegistrationId { get; }
+APIShared.Wildlife.ChickenPopulationModifierHandle | public void SetEnabled(bool value)
+APIShared.Wildlife.ChickenPopulationModifiers | public static class APIShared.Wildlife.ChickenPopulationModifiers
+APIShared.Wildlife.ChickenPopulationModifiers | public const int MaximumTarget = 1000
+APIShared.Wildlife.ChickenPopulationModifiers | public static bool IsAvailable { get; }
+APIShared.Wildlife.ChickenPopulationModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Wildlife.ChickenPopulationContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Wildlife.ChickenPopulationModifierHandle handle, out string reason, int order = 0)
+APIShared.Wildlife.ChickenPopulationModifiers | public static string UnavailableReason { get; }
 APIShared.Wildlife.HerdFlightRule | public sealed class APIShared.Wildlife.HerdFlightRule
 APIShared.Wildlife.HerdFlightRule | public bool TrySetCalm(int herdId, bool calm)
 APIShared.Wildlife.HerdFlightRule | public string OwnerGuid { get; }
@@ -3559,8 +3719,10 @@ APIShared.Wildlife.Herds | public static bool TryGet(int herdId, out APIShared.W
 APIShared.Wildlife.Herds | public static bool TrySpawn(APIShared.Wildlife.HerdKind kind, int tileX, int tileY, int maxAnimals, out int herdId, out string reason)
 APIShared.Wildlife.Herds | public static string UnavailableReason { get; }
 APIShared.Wildlife.HuntablePrey | public static class APIShared.Wildlife.HuntablePrey
+APIShared.Wildlife.HuntablePrey | public const int MaximumCorpseLifetime = 16000
 APIShared.Wildlife.HuntablePrey | public static APIShared.Wildlife.HuntablePreyCatalog Current { get; }
 APIShared.Wildlife.HuntablePrey | public static bool IsAvailable { get; }
+APIShared.Wildlife.HuntablePrey | public static bool SupportsCorpseLifetime(int unitType)
 APIShared.Wildlife.HuntablePrey | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Wildlife.HuntablePreyDefinition definition, out APIShared.Wildlife.HuntablePreyRegistration registration, out string reason, int priority = 0)
 APIShared.Wildlife.HuntablePreyCatalog | public sealed class APIShared.Wildlife.HuntablePreyCatalog
 APIShared.Wildlife.HuntablePreyCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Wildlife.HuntablePreyEntry> Entries { get; }
@@ -3572,12 +3734,14 @@ APIShared.Wildlife.HuntablePreyDefinition | public sealed class APIShared.Wildli
 APIShared.Wildlife.HuntablePreyDefinition | public .ctor(int unitType, int handlingCost = 0)
 APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithBaseMeat(int? baseMeat)
 APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithCorpseRemovedWhenButchered(bool removed = true)
+APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithMinimumCorpseLifetime(int? ticks)
 APIShared.Wildlife.HuntablePreyDefinition | public APIShared.Wildlife.HuntablePreyDefinition WithOwnPlayerPrey(bool allowed = true)
 APIShared.Wildlife.HuntablePreyDefinition | public bool AllowsOwnPlayerPrey { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public bool RemovesCorpseWhenButchered { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int HandlingCost { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int UnitType { get; }
 APIShared.Wildlife.HuntablePreyDefinition | public int? BaseMeat { get; }
+APIShared.Wildlife.HuntablePreyDefinition | public int? MinimumCorpseLifetime { get; }
 APIShared.Wildlife.HuntablePreyEntry | public sealed class APIShared.Wildlife.HuntablePreyEntry
 APIShared.Wildlife.HuntablePreyEntry | public bool AllowsOwnPlayerPrey { get; }
 APIShared.Wildlife.HuntablePreyEntry | public bool IsVanilla { get; }
@@ -3585,6 +3749,7 @@ APIShared.Wildlife.HuntablePreyEntry | public bool RemovesCorpseWhenButchered { 
 APIShared.Wildlife.HuntablePreyEntry | public int HandlingCost { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int UnitType { get; }
 APIShared.Wildlife.HuntablePreyEntry | public int? BaseMeat { get; }
+APIShared.Wildlife.HuntablePreyEntry | public int? MinimumCorpseLifetime { get; }
 APIShared.Wildlife.HuntablePreyEntry | public string OwnerGuid { get; }
 APIShared.Wildlife.HuntablePreyEntry | public string RegistrationId { get; }
 APIShared.Wildlife.HuntablePreyRegistration | public sealed class APIShared.Wildlife.HuntablePreyRegistration

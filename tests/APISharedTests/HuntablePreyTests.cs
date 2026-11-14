@@ -131,6 +131,38 @@ namespace APISharedTests
             Assert.IsNull(HuntablePreyCatalogBuilder.BuildFlagTable(HuntablePreyCatalogBuilder.VanillaOnly, entry => entry.AllowsOwnPlayerPrey));
         }
 
+        // A corpse lifetime is a lower bound: every enabled registration of the type contributes whatever its
+        // priority, the longest wins independent of order, disabled ones do not count, every With method keeps
+        // it, and only catalogs that use it change their digest (older peers keep agreeing without it).
+        [TestMethod]
+        public void CorpseLifetimesCombineAcrossEnabledRegistrationsAndArePartOfTheDigest()
+        {
+            var plain = new HuntablePreyDefinition((int)eChimps.CHIMP_TYPE_CAMEL).WithCorpseRemovedWhenButchered();
+            var lasting = plain.WithMinimumCorpseLifetime(1800);
+            Assert.IsNull(plain.MinimumCorpseLifetime);
+            Assert.AreEqual(1800, lasting.MinimumCorpseLifetime);
+            Assert.AreEqual(1800, lasting.WithBaseMeat(3).WithOwnPlayerPrey().WithCorpseRemovedWhenButchered().MinimumCorpseLifetime);
+            Assert.AreEqual(3, plain.WithBaseMeat(3).WithMinimumCorpseLifetime(10).BaseMeat);
+
+            var winner = Register("z-owner", "winner", plain, priority: 5);
+            var shorter = Register("a-owner", "short", plain.WithMinimumCorpseLifetime(900));
+            var longer = Register("b-owner", "long", plain.WithMinimumCorpseLifetime(2400));
+            var disabled = Register("c-owner", "off", plain.WithMinimumCorpseLifetime(9000));
+            Assert.IsTrue(disabled.SetEnabledFlag(false));
+            var catalog = Compile(shorter, winner, disabled, longer);
+            Assert.AreEqual(HuntablePreyRegistrationStatus.ExcludedByPriority, longer.Status);
+            Assert.IsTrue(catalog.TryGet((int)eChimps.CHIMP_TYPE_CAMEL, out var camel));
+            Assert.AreEqual("winner", camel.RegistrationId);
+            Assert.AreEqual(2400, camel.MinimumCorpseLifetime);
+            Assert.AreEqual(catalog.Digest, Compile(longer, disabled, winner, shorter).Digest);
+            Assert.IsTrue(catalog.TryGet((int)eChimps.CHIMP_TYPE_DEER, out var deer) && deer.MinimumCorpseLifetime == null);
+
+            string without = Compile(Register("owner", "id", plain)).Digest;
+            Assert.AreNotEqual(without, Compile(Register("owner", "id", lasting)).Digest);
+            Assert.AreNotEqual(Compile(Register("owner", "id", lasting)).Digest, Compile(Register("owner", "id", plain.WithMinimumCorpseLifetime(1801))).Digest);
+            Assert.AreEqual(without, Compile(Register("owner", "id", plain.WithMinimumCorpseLifetime(null))).Digest);
+        }
+
         // The native corpse record is keyed by Hunter id; out-of-range ids are ignored on both sides.
         [TestMethod]
         public void ButcheredRecordsRoundTripPerHunter()

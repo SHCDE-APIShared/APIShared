@@ -3,13 +3,27 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.53.0",
+  "Version": "0.54.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.54.0",
+      "Changes": [
+        "Add PathReachability: coarse reachability between units, tiles and path components through Vanilla's player-aware path connection layers.",
+        "Add LineOfSight: Vanilla's own line-of-sight test between world points, units and tile viewpoints, with Vanilla's two visibility rules.",
+        "Add SightBlockingBuildings: building types that Vanilla exempts from sight checks (such as the Hunter's hut) can block sight like ordinary buildings.",
+        "Add BuildingPanelSections: shared host and detection for mod sections in Vanilla's building panels, with Unity-thread Opened/Updated/Closed callbacks.",
+        "Add BuildingStates: owner-bound per-building values with synchronized owner requests, versioned save records and a stable native layout.",
+        "Add minimum corpse lifetimes for huntable rabbits, camels and chickens (HuntablePreyDefinition.WithMinimumCorpseLifetime).",
+        "Add BuildMenuAvailability: allow or veto build-menu entries for the local player relative to Vanilla's decision.",
+        "Add ChickenPopulationModifiers: staged modifiers for Vanilla's chicken target per player.",
+        "Fixed: the Tanner production receipt source is now decided at the first mission initialization. Before, APIShared always occupied it because ImprovedHunters loads after APIShared, which kept ImprovedHunters' Tannery meat feature from installing."
+      ]
+    },
     {
       "Version": "0.53.0",
       "Changes": [

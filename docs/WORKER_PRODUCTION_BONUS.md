@@ -234,8 +234,9 @@ permanent native entry with the exact SE stockpile primitive ABI, documented on
 the method. It is only for audited final-delivery sites, never arbitrary goods
 creation. With no enabled observer it forwards entirely natively. ImprovedHunters
 uses it in both permanent routes and calls `ConfirmExternalTannerAdapter` only
-after successful stub publication. If that plugin is absent APIShared owns the
-ordinary Tanner source itself; the two owners never patch the same span.
+after successful stub publication. APIShared decides at the first mission
+initialization, once every plugin has loaded: without that confirmation it installs
+the ordinary Tanner source itself; the two owners never patch the same span.
 
 The event is additive and does not change existing modifier registrations,
 Extender events, production arithmetic or saved production formats. Native source,

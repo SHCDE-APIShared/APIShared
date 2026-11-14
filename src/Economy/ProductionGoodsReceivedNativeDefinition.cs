@@ -9,6 +9,9 @@ namespace APIShared.Economy
     internal static class ProductionGoodsReceivedNativeDefinition
     {
         internal const string SiteGroup = "Economy.ProductionGoodsReceived";
+        // Claimed separately: decided at the first mission initialization (ImprovedHunters may own it).
+        internal const string TannerSiteGroup = "Economy.ProductionGoodsReceived.Tanner";
+        internal const string TannerSiteName = "Tanner";
         internal sealed class Site
         {
             internal Site(string name, int rva, string bytes, string next)

@@ -26,6 +26,7 @@
 - [Huntable prey reservation word](#huntable-prey-reservation-word)
 - [Hunter native sites](#hunter-native-sites)
 - [Hunter owner gates](#hunter-owner-gates)
+- [Line of sight](#line-of-sight)
 
 ## Shared health initialization
 
@@ -1623,6 +1624,148 @@ leaves herds unavailable. Static audit of 2026-11-08.
 - Before adding a hash: repeat the dispatcher, spawn-art and route-reader audit, the register liveness of
   both flight spans, the raw field map against the Extender's `GameTribe`, and check that the Fixes mod
   (it hooks `DeerUpdate` `0x156130`, not these functions) and other plugins leave the spans alone.
+
+## Corpse lifetimes
+
+Owner: `Wildlife.CorpseLifetimeNative` (generator and arithmetic in `Wildlife.CorpseLifetimeNativeAssembly`,
+executed by `tests/WorkerProductionBonus.NativeTests/WildlifeEconomyNativeTests.cs`; catalog combination in
+`tests/APISharedTests/HuntablePreyTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback (the whole HuntablePrey
+service is bound to this image), an unknown image leaves corpse lifetimes unavailable. Static audit of 2026-11-14.
+
+- Fading branch (AI state `0x6E`, raw `+0x918`) of the rabbit `0x157810`, camel `0x158020` and chicken `0x162CB0`
+  updates: the fade byte `+0x986` (signed, read by the render export at `0x43C21`) and the counter `+0x920`
+  (signed word) grow by 1 per update, chickens by 2 (`0x16346B`/`0x163477`/`0x16347F`/`0x16349F`); one
+  `mov ecx, 0x20` gives both the fade cap (`cmp byte,cl; cmovg`) and the counter threshold (`cmp word,cx; jle`);
+  above it the update writes alive state 3 (`0x157F02`, `0x1584FE`, `0x1634B6`) and the unit pass deletes the
+  corpse. Outside `0x6E` the fade byte counts down again (`0x1578CA`). Rabbits and camels reset the counter on
+  entering `0x6E` (`0x157ECD`, `0x1584A2`); the chicken entries `0x163426`/`0x163456` do not.
+- Camel span `[0x1584BE,0x1584D1)` `FE 84 2B 86 09 00 00 B9 20 00 00 00 38 8C 2B 86 09 00 00`, continuation
+  `0F B6 84 2B 86 09 00 00 0F 4F C1`; chicken span `[0x16346B,0x16347F)` `FE 84 2B 86 09 00 00 B9 20 00 00 00
+  66 FF 84 2B 20 09 00 00`, continuation `FE 84 2B 86 09 00 00 38 8C 2B 86 09 00 00`. Anchors `0x1584B8`
+  (`cmp si,0x6E; jne`), `0x163465` (`cmp di,0x6E; jne`), `0x1584EB` and `0x1634A7` (counter compare). No direct
+  branch and no table entry in the image targets the span interiors; RCX is dead before the replaced `mov`, flags
+  are recomputed by the following compare (camel) or are dead (chicken). Stubs replay the span with `mov rcx,cell;
+  mov ecx,[rcx]` for the constant; the cell holds `0x20` (Vanilla) unless a catalog asks for longer.
+- Rabbit: the constant at `0x157EDC` (`FE C2 B9 20 00 00 00 3A D1` from `0x157EDA`) is the Script Extender's
+  `GameGlobalsManager.RabbitDespawnTickTime` (`B9 ? ? ? ? 3A D1`); APIShared validates that the Extender's
+  site is that instruction with original value 32 and only places an owner-bound `SetOverride`, never its own
+  patch. Script Extender and Fixes AOBs, and the workspace mods, do not touch the two camel/chicken spans
+  (scan of 2026-11-14); an older ImprovedHunters wrote the same two immediates directly.
+- Encoding: ticks * step; at or below `0x20` stays `0x20`; otherwise rounded up to `256 * n + 8` (cap 8 keeps a
+  long-lived corpse visible, as ImprovedHunters' former 1800 did), at most `0x7F08`; public limit 16000 ticks.
+- Writes happen only in `HuntablePreyRuntime.Activate`/`EndWorld`, which `WorkerProductionRuntime` calls under the
+  engine monitor (`EngineInterface.threadLock`) before a mission's first admitted tick and at its end.
+- Before adding a hash: repeat the fading-branch audit of all three updates (both meanings of the constant,
+  counter start, deletion), the span register/flag liveness, the Extender's rabbit pattern, and the render use of
+  `+0x986`.
+
+## Build-menu availability
+
+Owner: `Buildings.BuildMenuAvailabilityRuntime` (generator `Buildings.BuildMenuAvailabilityAssembly`, executed
+against Vanilla's own function body by `tests/WorkerProductionBonus.NativeTests/WildlifeEconomyNativeTests.cs`).
+Reference native SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback.
+Static audit of 2026-11-14.
+
+- `0xFFC70(record rcx, mapper edx)`, a leaf without stack use. Callers: export `DLL_IsMapperAvailable` `0x84A20`
+  (`8B D1 48 8D 0D 07 2D 24 03 E9 42 B2 07 00`, record `0x32C7730`; managed `EngineInterface.IsMapperAvailable`
+  under `threadLock`, result `> 0`, used by `MainViewModel.CanPlaceMapper`, `HUD_Main.SetupNewBuildScreen`,
+  `KeyManager.Update`, `GameMap.processTestMap`), `0xC2030` (mappers `0x60`/`0x61`, `!= 0`) and the UI state
+  producer `0x19D960` from `DLL_RunTick` (recruitment mappers `0x123`, `0xBE`..`0xC2`, `0x166`). No simulation,
+  AI or command path asks it.
+- Branches: game type `0x3665F28` (0 campaign, 1 map editor, 2 freebuild, 3 skirmish, 4, 6 siege editor) with
+  special tables for 2/3 and the trail switches `0x87EE2F0`/`0x87EE2F4`; network mode `0x8574B90` (0 single
+  player, 99 skirmish, 1 network): Hunter's hut `0x4E` off without deer/goats at map start (`0x37EF97C`), dog cage
+  `0x138` off with NoDogs (`0x37EF964`, BugfixesAndQoL NOPs `0xFFD98`); game type 4 refuses `0x34`,
+  `0x3D`..`0x40`, `0x4E`, `0x4F`, `0x15B`, `0x15C`, `0x179`..`0x17B`; final branch `0xFFF92`
+  (`81 FA B7 01 00 00 0F 87 E6 FD FF FF 48 63 C2 41 0F BF 84 40 2C 02 00 00 C3`) returns the mission's signed
+  availability word `record + 0x22C + mapper * 2` for mappers below `0x1B8`.
+- Entry span `[0xFFC70,0xFFC7E)` `8D 82 4E FF FF FF 4C 8B C1 83 F8 01 76 14` (the backend displaces exactly 14),
+  continuation `83 FA 35 74 0F`. No branch or table entry targets the span interior. The stub reads one byte per
+  mapper (0..511): 0 replays the entry and continues; Veto returns 0; Allow calls a replayed copy (RSP 8 mod 16 at
+  the entry, frame `0x38`), keeps a result above 0, else returns 1 unless the mission word for a mapper below
+  `0x1B8` is 0 or below. Clobbers only RAX, R8, R10 and flags, all free at a function entry.
+- Before adding a hash: repeat the caller list, every branch for the documented mappers, the record argument of
+  the export and the final table branch.
+
+## Chicken population
+
+Owner: `Wildlife.ChickenPopulationRuntime` (generator `Wildlife.ChickenPopulationNativeAssembly`, executed by
+`tests/WorkerProductionBonus.NativeTests/WildlifeEconomyNativeTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback. Static audit of 2026-11-14.
+
+- `0xD29E0(player manager)`, reached only from the scheduled tick step `0xB4` of `0xD1AD0` (`0xCDE60`,
+  `DLL_RunTick`). Returns at once in game types 1 and 6. Loops players 1..8 (`ebx`, `rdi` = manager + `0x1345D0`
+  + player * `0x583C`), active when `[rdi-0x140] > 0` and `[rdi] > 0`. Target from `[rdi+0x1EC8]` (probably the
+  food stock; meaning of it and of the divisor `[rdi+0x1FAC]` not confirmed): 0
+  below 1, 1 below 10, 2 below 20, 3 below 30, else `min(10, food / max(1, 2 * [rdi+0x1FAC]) + 3)`; 100 while
+  `0x3665FE0` is set (`cmovne eax,r13d`, R13D = 100). Compared with the player's count `[rdi+0x2048]`: below,
+  `0xBF510` picks a random bakery (17), mill (34) or granary (19) of the player (game random numbers) and
+  `0x17FEF0` spawns a chicken (type `0x3E`) there; above (`jge` at `0xD2BA7` on the same flags), the first unit of
+  the player with type `0x3E` gets AI state `0x6E` (fading, also when it already fades). The writer of the
+  count was not traced.
+- Span `[0xD2AB4,0xD2AC5)` `83 3D 25 35 59 03 00 41 0F 45 C5 3B 87 48 20 00 00`, continuation `0F 8E DC 00 00 00`;
+  the four `jmp 0xD2AB4` at `0xD2A72`..`0xD2A93` enter at the span start, nothing targets its interior. Anchors
+  `0xD2A07`, `0xD2A10`, `0xD2A16`, `0xD2A34`, `0xD2BA7`, `0xD2BFA`. Live in the loop: R9D `0x6E`, R10D 10, R12..R15,
+  RBP 1; RCX, RDX, R8 and R11 are written before any read on both paths; flags are recomputed by the replayed
+  compare. The stub replays the first two instructions, calls the managed callback only while the demand dword is
+  set (saving RCX, RDX, R8..R11 and XMM0..5, dynamic 16-byte alignment) and replays the compare.
+- Before adding a hash: repeat the target formula, the player loop registers, both branches on the compare's
+  flags and the caller chain to `DLL_RunTick`.
+
+## Line of sight
+
+Owner: `Sight.LineOfSightNative` (public facade `Sight.LineOfSight`, guide
+[docs/LINE_OF_SIGHT.md](docs/LINE_OF_SIGHT.md); executed by
+`tests/WorkerProductionBonus.NativeTests/SightDispatchTests.cs`, managed rules in
+`tests/APISharedTests/SightTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback,
+an unknown image leaves the service unavailable. Static audit of 2026-11-14 (Vanilla
+facts in the baseline `knowledge/LINE_OF_SIGHT.md`). Calls only, no hook; site group
+`Sight.LineOfSightCalls` (CallOnly `0xA06F0`/1, `0x9E350`/1).
+
+- Wrapper `0xA06F0`, validated as all 156 bytes (`48 8B C4 48 89 58 08 ... 41 5C C3`): forward
+  `0x9E350(ctx, start, end, 0)`, reverse `0x9E350(ctx, end, start, 0)` only after a zero result.
+  Both `call rel32` resolve to `0x9E350` (`0xA0743`, `0xA0768`).
+- Core `0x9E350`, entry `44 89 44 24 18 89 54 24 10 48 89 4C 24 08 53 55 56 57 41 54 41 55 41 56
+  41 57 48 83 EC 68`. Its only non-stack store is `[ctx+0xC]` (eight stores); the eighth
+  argument (`[rsp+0xE8]` after the prologue) switches all obstacle checks off when not zero,
+  so `Directional` always passes 0. Tiles are `x / 8`, `y / 8` through the row table
+  `0x402FF2C` and the tile manager `0x405EDB0` without bounds checks: the facade rejects
+  points outside the map diamond and heights beyond +/- 100000.
+- Rule and eye-height anchors (exact bytes): `0x18B052` `83 C1 1A` (target +26), `0x18B070`
+  `83 C1 1E` (viewer +30), `0x18B0A2` `E8 49 56 F1 FF FF C8 3D AF 01 00 00 77 1F` (visible
+  `1..0x1B0`), `0x18E9DE` `C7 44 24 50 1E 00 00 00` (viewer default +30), `0x18ED3C` `83 C1 1A`,
+  `0x18ED6A` `E8 81 19 F1 FF 8B D0 85 C0 0F 8E EB 00 00 00` (visible above 0). Unit fields are
+  raw record origin `0x65C` relative: `+0x70E/+0x710/+0x712/+0x714` = `GameUnit +0xB2/+0xB4/+0xB6/+0xB8`,
+  all read signed.
+- Before adding a hash: repeat the wrapper and core audit (stores, eighth argument, result
+  values, bounds), both callers' offsets and rules, and check that no Script Extender or Fixes
+  hook changes the wrapper or core semantics.
+
+### Sight-blocking buildings
+
+Owner: `Sight.SightBlockingBuildingsNative` (public `Sight.SightBlockingBuildings`, generator
+`Sight.SightNativeAssembly`). Same reference hash, no pattern fallback. Site group
+`Sight.BuildingHeightDispatch`: Exclusive `0x6BA0C`/17; Observe `0x6B9F1`/27 (image-base `lea`
+and type switch), `0x6BA1D`/5 (jump) and `0x6BAB4`/88 (case and type tables). Installed on the
+first registration inside `NativeInlinePatchWindow`, never unpatched.
+
+- Helper `0x6B990(tiles, tile, mode)`; callers only the sight core (`mode = 1`, six calls) and the
+  projectile routine `0x9C730` (`mode = 0`, `0x9CD70`, `0x9CDD5`).
+- `0x6B9F1` `4C 8D 05 08 46 F9 FF` (`lea r8`, image base); `0x6B9F8` `4E 0F BF 9C 11 2E 01 00 00 41 8D
+  43 F9 83 F8 47 77 37 48 98` (type word `+0x12E`, types `7..78`).
+- Span `0x6BA0C` `41 0F B6 84 00 C4 BA 06 00 41 8B 8C 80 B4 BA 06 00` (two table loads, 17 bytes, the
+  RedBird probe must displace exactly 17); continuation `0x6BA1D` `49 03 C8 FF E1`. No direct
+  branch targets `(0x6BA0C, 0x6BA1D)`. RCX is free before the second load, flags are dead until
+  `add rcx,r8`; R8-R11, RBX, RSI, RDI are untouched by the stub.
+- Case targets `0x6BAB4` = `0x6BA3D, 0x6BA30, 0x6BA22, 0x6BA41`; case 0 `0x6BA3D` `85 F6 75 56`
+  (sight mode adds nothing), case 3 `0x6BA41` `47 8B 8C 98 60 8C 2E 00 EB 4C` (height table
+  `0x2E8C60`, type 7 = 40). Type bytes `0x6BAC4`: case 0 only for type 7 (`STRUCT_HUNTERS_HUT`),
+  which `IsExemptInVanilla` derives from the validated load image.
+- Before adding a hash: repeat the helper audit (all callers and modes, case table, register and
+  flag liveness of the span, incoming branches), rerun the native test and check that no other
+  owner hooks `0x6B990`.
 
 ## Native unit-pair exclusion rules
 

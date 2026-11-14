@@ -332,6 +332,12 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
+| Coarse reachability | [PathReachability](../src/Pathfinding/Reachability/PathReachability.cs) | Query through Script Extender path components, no hook ([section](#reachability-and-line-of-sight)) | [Guide](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable) |
+| Line of sight | [Contracts](../src/Sight/LineOfSightContracts.cs), [LineOfSight](../src/Sight/LineOfSight.cs), [sight-blocking buildings](../src/Sight/SightBlockingBuildings.cs) | [Native calls](../src/Sight/LineOfSightNative.cs), [height dispatch owner](../src/Sight/SightBlockingBuildingsNative.cs) | [Guide](LINE_OF_SIGHT.md) |
+| Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs) | [Guide](BUILDING_PANELS.md) |
+| Per-building state | [Contracts](../src/Buildings/State/BuildingStateContracts.cs), [registration](../src/Buildings/State/BuildingStates.cs) | [Native table](../src/Buildings/State/BuildingStateMemory.cs), [request Chore](../src/Buildings/State/BuildingStatePacket.cs) | [Guide](BUILDING_STATE.md) |
+| Build-menu availability | [Rules](../src/Buildings/BuildMenu/BuildMenuAvailability.cs) | [Native wrapper owner](../src/Buildings/BuildMenu/BuildMenuAvailabilityRuntime.cs) | [Guide](BUILD_MENU.md) |
+| Chicken population | [Modifiers](../src/Wildlife/ChickenPopulation.cs) | [Native bridge owner](../src/Wildlife/ChickenPopulationRuntime.cs) | [Guide](CHICKENS.md) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
 | AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
@@ -1049,3 +1055,46 @@ Requires APIShared 0.38.0 or later. `APIShared.Wildlife.Herds` reads Vanilla's a
 simulation tick). `HerdRouteEvents` lets mods shorten or redirect a herd's route right after
 Vanilla built it; `HerdFlightRules` keeps chosen deer and goat herds from fleeing from their
 sector's threat counters, which `TryGetSectorThreats` reads. See [the herd contract](HERDS.md).
+
+Requires APIShared 0.54.0 or later: `HuntablePreyDefinition.WithMinimumCorpseLifetime(ticks)` keeps
+rabbit, camel and chicken corpses at least that many map ticks; the longest request of all active
+registrations applies. It is frozen per mission with the catalog and part of the multiplayer digest.
+See [corpse lifetime](HUNTING.md#corpse-lifetime).
+
+## Chicken population
+
+Requires APIShared 0.54.0 or later. `APIShared.Wildlife.ChickenPopulationModifiers` changes Vanilla's
+chicken target per player with staged `ValueModifierContribution`s (0 to 1000). Providers run
+deterministically on the simulation thread; spawning and removal stay Vanilla's. See
+[the chicken contract](CHICKENS.md).
+
+## Reachability and line of sight
+
+Requires APIShared 0.54.0 or later. `APIShared.Pathfinding.PathReachability` asks Vanilla's
+player-aware path connection layers whether a unit, tile or component can reach another; only
+`Unreachable` is a reliable negative. See [reachability](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable).
+
+`APIShared.Sight.LineOfSight` runs Vanilla's own line-of-sight test between world points, units or
+tile viewpoints and applies Vanilla's two visibility rules; it changes no state, runs on the simulation
+thread and is bound to the audited native build. `SightBlockingBuildings` lets building types that
+Vanilla exempts from sight checks (the Hunter's hut) block sight like ordinary buildings, by owner
+rules. See [line of sight](LINE_OF_SIGHT.md).
+
+## Building panels and per-building state
+
+Requires APIShared 0.54.0 or later. `APIShared.Presentation.BuildingPanelSections` adds owner-bound
+controls to Vanilla's building panels through one shared `HUD_Buildings` host and one open-building
+detection. A factory creates the control per HUD instance; `ShowWhen`, `Opened`, `Updated` and
+`Closed` run on Unity with an immutable `BuildingPanelContext`. See [building panels](BUILDING_PANELS.md).
+
+`APIShared.Buildings.BuildingStates` stores 1 to 12 small values per building identity (ID and
+GlobalId). Owners change values through one tick-synchronous authenticated Chore validated on every
+peer; simulation values are written only by the owning mod. Each table has its own versioned save
+record and a fixed native layout readable by native code. See [building state](BUILDING_STATE.md).
+
+## Build-menu availability
+
+Requires APIShared 0.54.0 or later. `APIShared.Buildings.BuildMenuAvailability` allows (respecting the
+mission's mapper table) or vetoes build-menu mappers for the local player relative to Vanilla's
+decision; a veto wins. It affects only the build menu and placement checks, not simulation, and rules
+register before the first mission. See [build menu](BUILD_MENU.md).
