@@ -9,6 +9,20 @@ namespace ThirdPartyMod
         // A consumer owns activation/settings. Zero keeps this illustrative policy inactive.
         internal static int MaximumConcreteRequest = 0;
 
+        // Call once during Unity startup only when the consumer supplies an owned policy.
+        // ownsRequest must filter both logical activation and the current panel/button context.
+        internal static void RegisterMarketReplacement(Func<PresentationPreEventArgs, bool> ownsRequest,
+            Action<object> replace, Action<string> log)
+        {
+            if (!PresentationEvents.TryRegister(PresentationOperation.MarketBuySell, ExamplePlugin.Guid,
+                "OwnedMarketAction", args => {
+                    if (args.SkipOriginalFunction || !ownsRequest(args)) return;
+                    // Defer effects: another Pre can veto; replace receives the final Parameter.
+                    // Do not retain args.ViewModel or put consumer IDs into native goods arrays.
+                    args.Replacement = replace;
+                }, null, out string reason)) log(reason);
+        }
+
         internal static void Register(Action<string> log)
         {
             if (!GameActionEvents.TryRegisterWithFinalValidation(ExamplePlugin.Guid, "RecruitmentCeiling", args => {
