@@ -75,6 +75,10 @@ an admitted managed engine call with one ordered callback snapshot. The pair
 also surrounds calls that return zero or throw. For time-based rules use the
 native tick API above. See the [engine-run contract](THIRD_PARTY_GUIDE.md#managed-engine-run-boundaries).
 
+The existing owner also contains an internal, explicitly bound NativeRun
+exclusion foundation. It supplies no public suspension client and does not change
+the observer API. See its [scope and lifetime](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion).
+
 ## Managed IL patches that cannot break other patches
 
 `APIShared.Patching.SafeIlHook.TryInstall` installs a MonoMod IL hook whose
@@ -313,6 +317,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatService.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |
 | Player views and control | [Perspective](../src/Players/PlayerPerspectiveAPI.cs), [observer exceptions](../src/Players/ObserverCommandExceptions.cs) | [View identity](../src/Players/ViewIdentity/PlayerViewIdentityRuntime.cs), [input boundaries](../src/Players/Control/ControlInputNative.cs) | — |
 | Simulation ticks and Peace Time | [Ticks](../src/Simulation/SimulationTickEvents.cs), [clock](../src/Simulation/SimulationClock.cs), [Peace Time](../src/Simulation/PeaceTimeState.cs) | [Tick source](../src/Simulation/SimulationTickSource.cs) | — |
+| Managed engine-run boundary | [Observer](../src/Simulation/EngineRunEvents.cs) | [Existing hook](../src/Units/Selection/MarkedUnitSelectionAPI.cs), [internal gate](../src/Economy/WorkerProductionRunGate.cs), [publication](../src/Economy/WorkerProductionRunPublication.cs) | [Scope and lifetime](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion) |
 | Enemy-unit proximity | [Contracts](../src/Buildings/EnemyProximity/EnemyProximityContracts.cs), [registration](../src/Buildings/EnemyProximity/EnemyProximityPolicies.cs) | [Runtime](../src/Buildings/EnemyProximity/EnemyProximityRuntime.cs) | — |
 | Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs), [sprite colours](../src/Presentation/UnitHud/UnitHudSpriteColours.cs), [player colours](../src/Players/PlayerColours.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
