@@ -41,6 +41,7 @@ namespace APIShared
         private readonly MissionLifecycleState state;
         private readonly List<Hook> hooks = new List<Hook>();
         private readonly List<IDisposable> subscriptions = new List<IDisposable>();
+        private readonly MissionNativeAdmission nativeRetirement = new MissionNativeAdmission();
         private Operation executing;
         private Operation waiting;
         private static MissionLifecycleService published;
@@ -68,6 +69,7 @@ namespace APIShared
         private sealed class Operation
         {
             internal long Id;
+            internal MissionNativeOuterEntry RetirementEntry;
             internal MissionStartKind Kind;
             internal GameModeKind Intent;
             internal string File, Name;
@@ -164,13 +166,13 @@ namespace APIShared
         {
             PrepareRestartMenu();
             create = Hook<CreateMap>(typeof(EditorDirector), nameof(EditorDirector.createNewMap), (self, size, mode, siege, multi) =>
-                Run(new Operation { Kind = MissionStartKind.EditorCreated, Intent = GameModeKind.MapEditor, Size = size, SiegeThatEditor = siege },
+                Run(new Operation { RetirementEntry = MissionNativeOuterEntry.EditorCreate, Kind = MissionStartKind.EditorCreated, Intent = GameModeKind.MapEditor, Size = size, SiegeThatEditor = siege },
                     () => { create(self, size, mode, siege, multi); MarkManaged(); }));
             editorLoad = Hook<EditorLoad>(typeof(EditorDirector), nameof(EditorDirector.loadMapIntoEditor), (self, file, name) =>
-                Run(Seed(MissionStartKind.EditorLoaded, GameModeKind.MapEditor, file, name), () =>
+                Run(SeedRetirement(MissionNativeOuterEntry.EditorLoad, Seed(MissionStartKind.EditorLoaded, GameModeKind.MapEditor, file, name)), () =>
                 { bool ok = editorLoad(self, file, name); if (ok) MarkManaged(); return ok; }));
             newMap = Hook<NewMap>(typeof(EngineInterface), nameof(EngineInterface.newMapEditor), (size, type, siege, multi) =>
-                CaptureNative(() => newMap(size, type, siege, multi)));
+                CaptureNative(MissionNativeInnerEntry.EditorCreate, () => newMap(size, type, siege, multi)));
             campaign = Hook<Campaign>(typeof(EditorDirector), nameof(EditorDirector.LoadCampaignMap), (self, id, difficulty) =>
                 Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.Campaign, Campaign = id, Difficulty = difficulty }, () => campaign(self, id, difficulty)));
             trail = Hook<Trail>(typeof(EditorDirector), nameof(EditorDirector.LoadSkirmishMap), (self, type, id, difficulty) =>
@@ -180,12 +182,12 @@ namespace APIShared
             save = Hook<Save>(typeof(EditorDirector), nameof(EditorDirector.loadSaveGame), (self, file, name, header) =>
             {
                 SavegameModSettings.BeginLoad(file, false);
-                Run(Seed(MissionStartKind.LoadedSave, GameModeKind.Unknown, file, name), () => save(self, file, name, header));
+                Run(SeedRetirement(MissionNativeOuterEntry.SaveLoad, Seed(MissionStartKind.LoadedSave, GameModeKind.Unknown, file, name)), () => save(self, file, name, header));
             });
             standalone = Hook<Standalone>(typeof(FRONT_StandaloneMission), nameof(FRONT_StandaloneMission.StartMap), info =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.StandaloneMission), () => standalone(info)));
             skirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), "StartSkirmishGame", (self, info) =>
-                Run(Seed(MissionStartKind.NewGame, GameModeKind.CustomGame), () => skirmish(self, info)));
+                Run(SeedRetirement(MissionNativeOuterEntry.SkirmishStart, Seed(MissionStartKind.NewGame, GameModeKind.CustomGame)), () => skirmish(self, info)));
             restartSkirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), nameof(FRONT_Multiplayer.RestartSkirmishGame), (self, info) =>
             {
                 // Only a ready gameplay mission on the Unity thread is a lifecycle restart. The editor or a
@@ -205,17 +207,19 @@ namespace APIShared
                 // start therefore unwinds that frame; the coordinator withdraws the host's start value.
                 if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true))
                     throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
-                Run(new Operation { Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
+                Run(new Operation { RetirementEntry = MissionNativeOuterEntry.MultiplayerStart, Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
                     Multiplayer = true, File = map?.filePath }, () => multiplayerNew(self, setup, map, coop, mission));
             });
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
                 SavegameModSettings.BeginLoad(map?.filePath, true);
-                Run(new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true },
+                Run(new Operation { RetirementEntry = MissionNativeOuterEntry.MultiplayerSave, Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true },
                     () => multiplayerSave(self, setup, map));
             });
             multiplayerInit = Hook<MultiplayerInit>(typeof(EngineInterface), nameof(EngineInterface.initMultiplayerGame), (skirmishGame, restart, coop, mission, test, custom, extreme) =>
             {
+                using (nativeRetirement.EnterInner(MissionNativeInnerEntry.MultiplayerInit))
+                {
                 Safe(() =>
                 {
                     if (executing == null) return;
@@ -229,7 +233,9 @@ namespace APIShared
                 // Lobby settings received during this start must reach the models before the map loads.
                 if (executing != null && executing.Multiplayer)
                     Safe(ModSettings.LobbySettingsReceiveRuntime.FlushBeforeMultiplayerStart);
+                nativeRetirement.RequireContinuingInner();
                 return multiplayerInit(skirmishGame, restart, coop, mission, test, custom, extreme);
+                }
             });
             message = Hook<Message>(typeof(Platform_Multiplayer), "processMessage", ProcessMessage);
             postLoad = Hook<PostLoad>(typeof(EditorDirector), nameof(EditorDirector.postLoading), (self, data, thread, fromSave) =>
@@ -237,10 +243,10 @@ namespace APIShared
             nativeLoad = Hook<NativeLoad>(typeof(EngineInterface), "loadMap", (id, file, dummy, fromSave, type, mission, classic) =>
             {
                 Safe(() => { if (executing != null) { executing.File = file; executing.Campaign = id > 0 ? id : 0; executing.Trail = type; } });
-                return CaptureNative(() => nativeLoad(id, file, dummy, fromSave, type, mission, classic));
+                return CaptureNative(MissionNativeInnerEntry.MapLoad, () => nativeLoad(id, file, dummy, fromSave, type, mission, classic));
             });
-            saveFile = Hook<SaveFile>(typeof(EngineInterface), nameof(EngineInterface.LoadSaveFile), file => CaptureNative(() => saveFile(file)));
-            editorFile = Hook<EditorFile>(typeof(EngineInterface), nameof(EngineInterface.LoadMapFile), (file, editor) => CaptureNative(() => editorFile(file, editor)));
+            saveFile = Hook<SaveFile>(typeof(EngineInterface), nameof(EngineInterface.LoadSaveFile), file => CaptureNative(MissionNativeInnerEntry.SaveLoad, () => saveFile(file)));
+            editorFile = Hook<EditorFile>(typeof(EngineInterface), nameof(EngineInterface.LoadMapFile), (file, editor) => CaptureNative(MissionNativeInnerEntry.EditorLoad, () => editorFile(file, editor)));
             screen = Hook<Screen>(typeof(MainViewModel), nameof(MainViewModel.GoToScreen), (self, target) =>
             { try { screen(self, target); } finally { Safe(() => { if (self.CurrentScreenNo != Enums.SceneIDS.ActualMainGame) End(MissionEndReason.SceneChanged); }); } });
             scene = Hook<Scene>(typeof(FatControler), nameof(FatControler.NewScene), (self, target) =>
@@ -338,44 +344,112 @@ namespace APIShared
             try { T result = original(); returnedNormally = true; return result; }
             catch (NativeAdmissionAbort) { return default; }
         }
+        // Inactive: branch to the complete old path before creating slow-path closures.
         private T Run<T>(Operation op, Func<T> original)
         {
-            if (executing != null) return original(); // Nested custom-trail -> skirmish belongs to the outer attempt.
+            if (!nativeRetirement.Required) return RunCore(op, original);
+            return RunWithNativeRetirement(op, original);
+        }
+
+        private T RunWithNativeRetirement<T>(Operation op, Func<T> original) =>
+            nativeRetirement.Execute(op.RetirementEntry,
+                Thread.CurrentThread.ManagedThreadId == unityThread,
+                () => Internal.EngineMonitor.Current, () => RunRetiredCore(op, original),
+                () => AbandonBeforeManagedStart(op), Report);
+
+        private static Operation SeedRetirement(MissionNativeOuterEntry entry, Operation op)
+        { op.RetirementEntry = entry; return op; }
+
+        // Only pre-start sidecars are released. This is not UI/world rollback.
+        private static void AbandonBeforeManagedStart(Operation op)
+        {
+            try
+            {
+                if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.FinishLoad();
+            }
+            finally
+            {
+                if (op.Kind == MissionStartKind.NewGame && op.Multiplayer)
+                    MapRecordLoadCoordinator.FinishLoad();
+            }
+        }
+
+        // No caller is supplied. A future trusted backend needs separate whole-entry,
+        // table-lifetime and cooperating-writer qualification before attachment.
+        internal static void AttachNativeRetirementOwner(IMissionNativeRetirementOwner owner)
+        {
+            var service = published ?? throw new InvalidOperationException("Mission lifecycle is unavailable.");
+            if (Thread.CurrentThread.ManagedThreadId != service.unityThread)
+                throw new InvalidOperationException("Mission retirement attachment requires the Unity thread.");
+            if (service.executing != null || service.waiting != null)
+                throw new InvalidOperationException("Cannot attach a retirement owner during mission initialization.");
+            service.nativeRetirement.Attach(owner);
+        }
+
+        private T RunCore<T>(Operation op, Func<T> original)
+        {
+            if (executing != null) return original();
+            BeginOperation(op); // Dormant setup stays before finally, as in the existing owner.
+            bool normal = false;
+            try { return InvokeOperation(op, original, out normal); }
+            finally { FinishOperation(op, normal); }
+        }
+
+        private T RunRetiredCore<T>(Operation op, Func<T> original)
+        {
+            bool normal = false;
+            try
+            {
+                BeginOperation(op);
+                return InvokeOperation(op, original, out normal);
+            }
+            finally { FinishOperation(op, normal); }
+        }
+
+        private void BeginOperation(Operation op)
+        {
             executing = op;
             if (waiting?.Kind == MissionStartKind.LoadedSave && op.Kind != MissionStartKind.LoadedSave)
                 SavegameModSettings.FinishLoad();
             waiting = null;
-            bool normal = false;
             GameModeHelper.BeginModeDecisions();
             Safe(() => op.Id = state.Begin(Capture(op)));
-            try
+        }
+
+        private T InvokeOperation<T>(Operation op, Func<T> original, out bool normal)
+        {
+            normal = false;
+            if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
+            T result;
+            using (nativeRetirement.OpenOriginal())
             {
-                if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
-                T result = InvokeNativeAdmission(original, out normal);
-                if (!normal) op.NativeFailed = true;
-                return result;
+                result = InvokeNativeAdmission(original, out normal);
+                nativeRetirement.CompleteOriginal(ref normal);
             }
-            finally
+            if (!normal) op.NativeFailed = true;
+            return result;
+        }
+
+        private void FinishOperation(Operation op, bool normal)
+        {
+            executing = null;
+            Safe(CoopAiStartImportService.NotifyAttemptFinished);
+            if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
+                !op.NativeFailed && op.ManagedSucceeded)
             {
-                executing = null;
-                Safe(CoopAiStartImportService.NotifyAttemptFinished);
-                if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
-                    !op.NativeFailed && op.ManagedSucceeded)
-                {
-                    try { SavegameModSettings.ApplyLoadedSettings(Capture(op)); }
-                    catch (Exception error) { SavegameModSettings.ReportRestoreFailure(error); }
-                }
-                Safe(() =>
-                {
-                    var context = Capture(op);
-                    if (state.Finish(op.Id, context, normal, op.NativeSucceeded && !op.NativeFailed,
-                        op.ManagedSucceeded, op.Multiplayer && context.IsHost == false)) waiting = op;
-                });
-                if (op.Kind == MissionStartKind.LoadedSave && waiting == null)
-                    SavegameModSettings.FinishLoad();
-                if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null)
-                    MapRecordLoadCoordinator.FinishLoad();
+                try { SavegameModSettings.ApplyLoadedSettings(Capture(op)); }
+                catch (Exception error) { SavegameModSettings.ReportRestoreFailure(error); }
             }
+            Safe(() =>
+            {
+                var context = Capture(op);
+                if (state.Finish(op.Id, context, normal, op.NativeSucceeded && !op.NativeFailed,
+                    op.ManagedSucceeded, op.Multiplayer && context.IsHost == false)) waiting = op;
+            });
+            if (op.Kind == MissionStartKind.LoadedSave && waiting == null)
+                SavegameModSettings.FinishLoad();
+            if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null)
+                MapRecordLoadCoordinator.FinishLoad();
         }
 
         private bool ProcessMessage(Platform_Multiplayer self, Platform_Multiplayer.MPData data,
@@ -439,7 +513,17 @@ namespace APIShared
             finally { cleanup?.Invoke(); }
         }
 
-        private EngineInterface.LoadMapReturnData CaptureNative(Func<EngineInterface.LoadMapReturnData> original)
+        private EngineInterface.LoadMapReturnData CaptureNative(MissionNativeInnerEntry entry, Func<EngineInterface.LoadMapReturnData> original)
+        {
+            using (nativeRetirement.EnterInner(entry))
+            {
+                var result = CaptureNativeCore(original);
+                nativeRetirement.RequireContinuingInner();
+                return result;
+            }
+        }
+
+        private EngineInterface.LoadMapReturnData CaptureNativeCore(Func<EngineInterface.LoadMapReturnData> original)
         {
             var op = executing;
             if (op != null && op.Multiplayer && op.Kind == MissionStartKind.NewGame &&
@@ -469,7 +553,7 @@ namespace APIShared
                 // simulation-thread gap before internal state reconciliation. Public notifications
                 // below retain their previous position outside this internal critical section.
                 object engine = Internal.EngineMonitor.Current;
-                if (engine == null) { result = original(); returned = true; }
+                if (engine == null) { result = InvokeAdmittedNativeOriginal(original); returned = true; }
                 else lock (engine)
                 {
                     // A synchronous load can be nested inside an old placement callback. Its new
@@ -477,7 +561,7 @@ namespace APIShared
                     // parent's mutation receipt. The parent becomes invalid again on return.
                     using (Units.AiMilitary.Orders.AiRecruitMutationReceipts.Enter(() =>
                         nativeGeneration == Units.AiMilitary.AiMilitaryService.Instance.Generation))
-                        result = original();
+                        result = InvokeAdmittedNativeOriginal(original);
                     returned = true;
                     if (nativeGeneration != Units.AiMilitary.AiMilitaryService.Instance.Generation ||
                         Units.AiMilitary.AiMilitaryService.Instance.DidRawRestoreFail) result.errorCode = 0;
@@ -505,6 +589,11 @@ namespace APIShared
                     state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.NativeLoaded);
             });
             return result;
+        }
+        private EngineInterface.LoadMapReturnData InvokeAdmittedNativeOriginal(Func<EngineInterface.LoadMapReturnData> original)
+        {
+            nativeRetirement.RequireContinuingInner();
+            return original();
         }
         private void MarkManaged() => Safe(() => { if (executing != null) executing.ManagedSucceeded = true; });
         private void End(MissionEndReason reason)

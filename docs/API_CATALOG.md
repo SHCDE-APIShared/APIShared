@@ -307,7 +307,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Feature | Public contracts / entry | Behavior / hook owner | Example |
 |---|---|---|---|
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
-| Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
+| Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs), [internal admission](../src/Missions/MissionNativeAdmission.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | — |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatService.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |

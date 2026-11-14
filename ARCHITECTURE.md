@@ -329,6 +329,13 @@ The mission lifecycle keeps a private native-world identity: successful loads cr
 and load/unload invalidates it before observer delivery. Player views, view identity
 protection and spectator input control use it to bind state to one world.
 
+The same owner contains the dormant internal `MissionNativeAdmission` seam for a future
+trusted default-stat owner. It guards existing outer/inner initialization paths without
+adding public notifications or hook sites; no production retirement backend is attached.
+Public lifecycle ordering remains unchanged. Its short engine-held retirement does not
+cover the complete Original/finish lifetime: combined run exclusion, native entry coverage
+and table ownership still require separate qualification before attachment or writes.
+
 Player views and control: `PlayerViewIdentityRuntime` (`src/Players/ViewIdentity`) owns the
 single process-wide view-identity core and its leases, shared by the common Save writer,
 the raw Chore submission and the local-ID correction. `PlayerPerspectiveAPI` owns view and
