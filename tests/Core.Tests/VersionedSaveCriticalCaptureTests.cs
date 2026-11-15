@@ -19,18 +19,19 @@ public partial class VersionedSaveDataTests
         internal VersionedSavePreparedOrigin Origin;
         internal int Captures;
         internal VersionedSaveCapture DuringCapture;
+        internal Action<VersionedSaveLoad> DuringLoaded;
         internal byte Value = 1;
         internal string OriginError;
 
         internal CriticalSourceFixture(string identifier, FakeExtender extender = null)
         {
             Extender = extender ?? new FakeExtender();
-            var registration = Extender.Registration(identifier, 3, 1, new[] { "value", "cutover" }, writer =>
+            var registration = new VersionedSaveDataRegistration("owner", identifier, 3, 1, new[] { "value", "cutover" }, writer =>
             {
                 Captures++;
                 if (DuringCapture != null) return DuringCapture(writer);
                 writer.Write("value", new byte[] { Value }); return true;
-            });
+            }, load => DuringLoaded?.Invoke(load));
             registration.Scope = VersionedSaveScope.SaveGamesAndMaps;
             registration.SimulationRelevant = true;
             registration.Prepared = load =>
@@ -237,6 +238,81 @@ public partial class VersionedSaveDataTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalFreezeWaitsForItsLoadedCallbackAndRefusesAFailedSource(bool rejectLoaded)
+    {
+        var fixture = new CriticalSourceFixture("Critical.FreezeLoaded");
+        bool entered = false, preparedCompletedInside = false, frozeInside = true;
+        fixture.DuringLoaded = ignoredLoad =>
+        {
+            entered = true;
+            preparedCompletedInside = fixture.PreparedSource.TryValidateCompleted(fixture.Origin, out _);
+            frozeInside = fixture.Freeze(out var unexpected, out _);
+            unexpected?.Dispose();
+            if (rejectLoaded) throw new InvalidOperationException("controlled-loaded-rejection");
+        };
+        byte[] record = SaveWith(3, 1, new[] { "value" }, WritesState(1));
+        fixture.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "loaded-freeze.sav"); fixture.Mod.Load(record);
+        fixture.Extender.Registry.PrepareLoad(); fixture.Extender.Registry.EndLoad();
+        Assert.IsTrue(entered && preparedCompletedInside);
+        Assert.IsFalse(frozeInside);
+        Assert.AreEqual(0, fixture.Captures, "A running Loaded callback must not prepare any frozen consumer record.");
+        bool frozeAfter = fixture.Freeze(out var capture, out string reason);
+        Assert.AreEqual(!rejectLoaded, frozeAfter, reason);
+        if (rejectLoaded) Assert.IsNull(capture);
+        else
+        {
+            using (capture)
+            {
+                byte[] bytes = fixture.Mod.SaveCallback(CriticalLogicalContext);
+                Assert.IsTrue(capture.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+            }
+        }
+        Assert.AreEqual(rejectLoaded, fixture.Mod.Handle.KeepsLoadedRecord);
+        Assert.AreEqual(rejectLoaded ? 1L : 0L, fixture.Extender.Registry.CallbackFailures);
+    }
+
+    [TestMethod]
+    public void LaterLoadedCallbackCannotFinalizeEarlierSourceOrOverwriteANestedReplacement()
+    {
+        var extender = new FakeExtender();
+        var first = new CriticalSourceFixture("Critical.A.Finalization", extender);
+        bool nested = false, readDuringLater = true, frozeDuringLater = true, readAfterReentry = true;
+        var later = new VersionedSaveDataRegistration("owner", "Critical.Z.Finalization", 1, 1,
+            new[] { "value" }, Writes(new()), ignoredLoad =>
+            {
+                if (nested) return;
+                readDuringLater = extender.Registry.TryReadCriticalPreparedMarker(first.Enrollment, first.Origin, out _, out _, out _);
+                frozeDuringLater = first.Freeze(out var unexpected, out _);
+                unexpected?.Dispose();
+                extender.Registry.EndLoad(); // A reentrant call cannot finish the outer callback pass.
+                readAfterReentry = extender.Registry.TryReadCriticalPreparedMarker(first.Enrollment, first.Origin, out _, out _, out _);
+                nested = true;
+                extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "replacement.sav");
+                extender.Registry.PrepareLoad(); extender.Registry.EndLoad();
+            });
+        extender.Register(later);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "outer.sav");
+        extender.Registry.PrepareLoad();
+        var oldOrigin = first.Origin;
+        extender.Registry.EndLoad();
+        Assert.IsTrue(nested);
+        Assert.IsFalse(readDuringLater); Assert.IsFalse(frozeDuringLater); Assert.IsFalse(readAfterReentry);
+        Assert.AreEqual(0, first.Captures);
+        Assert.IsFalse(first.PreparedSource.TryValidateCompleted(oldOrigin, out _));
+        Assert.AreNotSame(oldOrigin, first.Origin);
+        Assert.IsTrue(extender.Registry.TryReadCriticalPreparedMarker(first.Enrollment, first.Origin,
+            out var marker, out bool present, out string reason), reason);
+        Assert.IsNull(marker); Assert.IsFalse(present);
+        Assert.IsTrue(first.Freeze(out var capture, out reason), reason);
+        capture.Dispose();
+        extender.Registry.Unload();
+        Assert.IsFalse(extender.Registry.TryReadCriticalPreparedMarker(first.Enrollment, first.Origin, out _, out _, out _));
+        Assert.IsFalse(first.Freeze(out capture, out _)); Assert.IsNull(capture);
+        Assert.AreEqual(0L, extender.Registry.CallbackFailures);
+    }
+    [TestMethod]
     public void CriticalCaptureRetainsUnknownEntriesAndRefusesUnreadableOrigins()
     {
         var fixture = new CriticalSourceFixture("Critical.Unknown");
@@ -279,5 +355,187 @@ public partial class VersionedSaveDataTests
         Assert.IsTrue(fixture.Freeze(out capture, out string reason), reason);
         capture.Dispose(); capture.Dispose();
         Assert.IsFalse(capture.AllWritten(out _), "An ended bundle cannot provide later commit evidence.");
+    }
+    private static VersionedSaveCriticalCapture FreezeForFactory(CriticalSourceFixture fixture, VersionedSaveContext context)
+    {
+        if (!fixture.Extender.Registry.TryFreezeCriticalRecords(new[] { fixture.Record() }, context,
+            4096, out var capture, out string reason)) throw new InvalidOperationException(reason);
+        return capture;
+    }
+
+    [TestMethod]
+    public void FactoryFrameRequiresOnePreparedBundleAndItsActualTransportDelivery()
+    {
+        var fixture = new CriticalSourceFixture("Critical.Factory.Once"); fixture.Load();
+        var context = new VersionedSaveContext(true, false, null);
+        int preparations = 0;
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        using (var frame = VersionedSaveFactoryFrame.Begin(value => { preparations++; return FreezeForFactory(fixture, value); }))
+        {
+            frame.Capture(context);
+            Assert.AreEqual(1, preparations); Assert.AreEqual(1, fixture.Captures);
+            Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Mod.Handle.LastWriteStatus);
+            Assert.IsNull(frame.Failure);
+            byte[] bytes = fixture.Mod.SaveCallback(context);
+            Assert.IsTrue(frame.TryGetWrittenCapture(out var capture, out string reason), reason);
+            Assert.IsTrue(capture.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+            frame.Capture(context);
+            Assert.AreEqual(1, preparations, "A repeated factory must not recapture consumer state.");
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.IsNotNull(frame.Failure);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        // Disposing the failed frame released its reserved source, not just TLS.
+        Assert.IsTrue(fixture.Freeze(out var next, out string detail), detail);
+        next.Dispose();
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    public void FactoryFrameMissingFailedOrNullPreparationCannotAuthorizeReplacement(int kind)
+    {
+        var failure = new InvalidOperationException("controlled-factory-failure");
+        int calls = 0;
+        using (var frame = VersionedSaveFactoryFrame.Begin(context => { calls++; if (kind == 1) throw failure; return null; }))
+        {
+            if (kind != 0) frame.Capture(CriticalLogicalContext);
+            Assert.IsFalse(frame.TryGetWrittenCapture(out var capture, out string reason));
+            Assert.IsNull(capture); Assert.IsFalse(string.IsNullOrEmpty(reason));
+            Assert.AreEqual(kind == 0 ? 0 : 1, calls);
+            if (kind == 1) Assert.AreSame(failure, frame.Failure, "SE swallowing a callback error must not erase it.");
+            Exception first = frame.Failure;
+            frame.Capture(CriticalLogicalContext);
+            Assert.AreSame(first, frame.Failure); Assert.AreEqual(kind == 0 ? 0 : 1, calls);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void FactoryFrameCannotBorrowAnotherContextOrAnAlreadyServedBundle(bool serveFirst)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Factory.Borrow"); fixture.Load();
+        var original = new VersionedSaveContext(true, false, "actual.sav");
+        VersionedSaveCriticalCapture bundle = null;
+        byte[] served = null;
+        using (var frame = VersionedSaveFactoryFrame.Begin(context => {
+            bundle = FreezeForFactory(fixture, original);
+            if (serveFirst) served = fixture.Mod.SaveCallback(original);
+            return bundle;
+        }))
+        {
+            frame.Capture(serveFirst ? original : new VersionedSaveContext(true, false, "other.sav"));
+            Assert.IsNotNull(bundle);
+            if (serveFirst) Assert.IsNotNull(served);
+            Assert.IsNotNull(frame.Failure);
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+        }
+        Assert.IsFalse(bundle.AllWritten(out _));
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void FactoryFrameRequiresItsCallbackToPrepareTheBundleEvenWhenOldContextMatches(bool freshInCallback)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Factory.PreparationOwner"); fixture.Load();
+        var context = new VersionedSaveContext(true, false, null);
+        VersionedSaveCriticalCapture bundle = freshInCallback ? null : FreezeForFactory(fixture, context);
+        int preparations = 0;
+        using (var frame = VersionedSaveFactoryFrame.Begin(value => {
+            preparations++;
+            if (freshInCallback) bundle = FreezeForFactory(fixture, value);
+            return bundle;
+        }))
+        {
+            frame.Capture(context);
+            Assert.AreEqual(1, preparations); Assert.IsNotNull(bundle);
+            byte[] bytes = fixture.Mod.SaveCallback(context);
+            Assert.IsNotNull(bytes);
+            // Its existing standalone delivery contract is independent of
+            // whether this frame may claim preparation ownership.
+            Assert.IsTrue(bundle.AllWritten(out string reason), reason);
+            Assert.IsTrue(bundle.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+            if (freshInCallback)
+            {
+                Assert.IsNull(frame.Failure);
+                Assert.IsTrue(frame.TryGetWrittenCapture(out var written, out reason), reason);
+                Assert.AreSame(bundle, written);
+            }
+            else
+            {
+                Assert.IsNotNull(frame.Failure,
+                    "A pre-Begin bundle must not gain factory ownership just because flags/path match.");
+                Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            }
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void FactoryFrameNestedAndOutOfOrderScopesNeverCertifyTheirParent()
+    {
+        var outer = VersionedSaveFactoryFrame.Begin(context => null);
+        var inner = VersionedSaveFactoryFrame.Begin(context => null);
+        try
+        {
+            Assert.AreSame(inner, VersionedSaveFactoryFrame.Current);
+            Assert.IsNotNull(outer.Failure); Assert.IsNotNull(inner.Failure);
+            Assert.ThrowsExactly<InvalidOperationException>(() => outer.Dispose());
+            Assert.AreSame(inner, VersionedSaveFactoryFrame.Current);
+            Assert.IsFalse(inner.TryGetWrittenCapture(out _, out _));
+        }
+        finally { inner.Dispose(); outer.Dispose(); }
+        outer.Dispose();
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void FactoryFrameForeignThreadCannotBorrowOrCloseItsCreatorScope()
+    {
+        int preparations = 0; Exception closeFailure = null;
+        VersionedSaveFactoryFrame foreignCurrent = null;
+        using (var frame = VersionedSaveFactoryFrame.Begin(context => { preparations++; return null; }))
+        {
+            var thread = new Thread(() => {
+                foreignCurrent = VersionedSaveFactoryFrame.Current;
+                frame.Capture(CriticalLogicalContext);
+                try { frame.Dispose(); } catch (Exception error) { closeFailure = error; }
+            });
+            thread.Start(); Assert.IsTrue(thread.Join(5000), "Controlled frame-only thread failed to terminate.");
+            Assert.IsNull(foreignCurrent); Assert.IsInstanceOfType<InvalidOperationException>(closeFailure);
+            Assert.AreSame(frame, VersionedSaveFactoryFrame.Current); Assert.AreEqual(0, preparations);
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void FactoryFrameReentrantCloseReleasesABundleReturnedAfterItsLifetimeEnded()
+    {
+        var fixture = new CriticalSourceFixture("Critical.Factory.ClosedDuringCapture"); fixture.Load();
+        VersionedSaveFactoryFrame frame = null;
+        VersionedSaveCriticalCapture returned = null;
+        frame = VersionedSaveFactoryFrame.Begin(context => {
+            frame.Dispose();
+            returned = FreezeForFactory(fixture, context);
+            return returned;
+        });
+        try
+        {
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(returned); Assert.IsNotNull(frame.Failure);
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+            Assert.IsFalse(returned.AllWritten(out _));
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.IsTrue(fixture.Freeze(out var next, out string reason), reason);
+            next.Dispose();
+        }
+        finally { frame.Dispose(); }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
     }
 }

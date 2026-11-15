@@ -246,6 +246,83 @@ must not treat a framework commit alone as permission to discard a private
 stock/cargo ledger. This increment supplies no consumer cutover receipt; adding a
 second save hook does not provide that authority.
 
+### Critical load-pass finalization and compatibility
+
+Cold critical-marker reads and enrolled capture now wait until every `Loaded`
+callback in the same load generation has returned. Closing the transport window
+alone is insufficient. Previously, a callback could observe `windowOpen=false`
+and read a critical marker or freeze critical records while that callback, or a
+later callback, could still reject or replace the loaded state. Such operations
+now refuse; an affected protected save must keep its previous destination and
+wait for the complete matching load pass. A nested load or unload cannot finalize
+the replaced generation. A failed source's existing kept-record policy remains.
+
+This tightens behavior for internal owners attempting critical capture or marker
+reads from `Loaded`; additive signatures and test counts do not make it behaviorally
+compatible with that timing. Use the completed load pass. `Prepared` token
+completion retains its earlier meaning, and exact active-`Prepared` marker reads
+remain supported. This finalization is not native-world or writer ownership.
+
+### Internal factory/frame implementation
+
+The [owned factory correction](../src/ScriptExtenderFixes/SaveContext/SaveContextRuntime.cs)
+can pass its exact normalized transport context to an explicitly opened,
+thread-scoped [factory frame](../src/Savegames/VersionedSaveCriticalCapture.cs).
+Preparation tokens bind the returned bundle to that callback's current preparation
+scope; a previously frozen or foreign bundle cannot substitute. Standalone captures
+keep their existing behavior. The frame retains its first failure even if the
+Extender catches a callback exception.
+
+The [critical writer](../src/Economy/WorkerProductionCriticalSaveRuntime.cs) retains
+its expected frame before calling Original. Before replacement it requires the
+expected and current thread-local identities to match, including null: a frame
+appearing during an unframed call also refuses replacement. An active frame needs
+once-delivered frozen records and exact completed-archive verification.
+
+This bridge remains dormant: no production opener, demand, enrollment, storage
+marker/version, import, cutover or frame-cleanup wiring is enabled. Exact factory
+transport context alone does not establish fresh normal/export/Trail provenance or
+native-route reachability. Private ledgers remain until the full cutover
+requirements above are met.
+
+### Internal managed Trail producer metadata
+
+The internal extension in the [existing factory owner](../src/ScriptExtenderFixes/SaveContext/SaveContextRuntime.cs)
+provides expected metadata for one reviewed managed Trail producer. Its current
+binding targets the reviewed game assembly and installed Script Extender **2.14.3**
+(`SHCDESE` SHA-256 `5cb1c33be5463086505a17f5c48aaa357d733cfff7240e101c821f0e3c668498`).
+It adds no public pre-capture or enrollment API. A different dependency needs its
+own binding qualification; unchanged source alone does not qualify shipped IL.
+
+`EditorDirector.SaveCustomTrailMap` first loads `mappath` in editor mode and,
+only after successful loading, calls `EngineInterface.CreateTrailMission` with
+output `trailpath` and encoded restart data. The expected logical context is
+`IsSaveFile=false`, `IsMapEditorSave=false`, with the loaded **source-map path**.
+That path follows the actual load chain's `Encoding.Unicode` round trip and
+trailing-NUL trim, retaining embedded NULs. It is not a canonical filesystem path.
+Neither the output Trail path nor a redirected native temporary path substitutes
+for it; native `mapSave=0` alone does not identify this managed route.
+
+The producer and wrapper share a caller-thread value-frame stack, restored in
+`finally` around the real wrapper body and its existing engine monitor. A matching
+producer is required; unidentified or nested wrapper calls mask outer metadata.
+The existing synchronized policy retains priority and its `(true,false,null)`
+context. Early queries are pure snapshots: they neither enter the factory nor
+start critical capture. The first actual factory closes the query window. Every
+factory preserves its existing normalized callback payload. When an internal
+critical frame is active, a first transport that differs from the pinned Trail
+values records failure in that frame, preserving its first error. A normal save reentered by an archive handler keeps its own
+flags and path. Extender exception isolation does not cancel the native write.
+
+This scope supplies managed invocation metadata only. It grants no native writer,
+world-lifetime, capture, commit, import or cutover authority and does not
+authenticate raw P/Invoke/native-export bypasses. The existing protected owner
+still needs its exact invocation, world and verified transport/archive contracts
+before any native replacement. The dormant enrollment and private-ledger limits
+above remain authoritative. Normal/editor optional-provider work requires an
+official upstream Script Extender addition; this extension supplies no private
+third-party build or installation route.
+
 ### Critical-save cleanup outcomes
 
 The existing protected writer remains the sole native save owner. A capture,

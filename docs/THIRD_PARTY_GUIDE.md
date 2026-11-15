@@ -987,6 +987,8 @@ does not atomically transfer stock, cargo or authority to another service. The
 [internal provenance/capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
 does not expose consumer enrollment. Continue applying ordinary loaded state at
 its supported lifecycle boundary; do not add a competing native save hook.
+Framework implementation work should follow the
+[managed Trail metadata and limits](SAVE_DATA.md#internal-managed-trail-producer-metadata).
 
 ## Workshop package cleanup
 

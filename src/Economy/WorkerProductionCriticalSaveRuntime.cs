@@ -138,6 +138,9 @@ namespace APIShared.Economy
             byte[] payload = null;
             bool committed = false;
             ulong actualWriterResult = 0;
+            // Retain the exact optional owner across Original. Looking up TLS
+            // only afterwards would let a callback-pop hide a failed frame.
+            VersionedSaveFactoryFrame factoryFrame = VersionedSaveFactoryFrame.Current;
             Exception primary = null;
             WorkerProductionSaveCleanupReport cleanup = default;
             object protectedWorld = MissionLifecycleService.NativeWorld;
@@ -193,7 +196,7 @@ namespace APIShared.Economy
                     if (requirements.Storage) NativeStorageRuntime.Instance.VerifyProductionSaveWritten(temporary);
                     // MoveFileExW replacement commits only the verified complete file. Failed capture,
                     // omitted/stale archive records and append errors leave the old destination intact.
-                    CommitSavedFile(temporary, destination, payload, in nativeIo, requirements);
+                    CommitSavedFile(temporary, destination, payload, in nativeIo, requirements, factoryFrame);
                     committed = true;
                     temporary = null;
                 }
@@ -304,6 +307,12 @@ namespace APIShared.Economy
         // when that source participated in this transaction. Never synthesize an empty record.
         internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
             WorkerProductionSaveRequirements requirements)
+            => CommitSavedFile(temporary, destination, payload, in io, requirements, VersionedSaveFactoryFrame.Current);
+
+        // An enrolling owner must retain/pass its frame from before Original;
+        // a later TLS lookup alone cannot detect an early close or thread hop.
+        internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
+            WorkerProductionSaveRequirements requirements, VersionedSaveFactoryFrame factoryFrame)
         {
             if (!io.IsComplete) throw new IOException("A native save write was incomplete or the save file could not close successfully.");
             if (!requirements.Transaction || requirements.Faulted) throw new InvalidDataException("No valid frozen save sources authorize file replacement.");
@@ -313,7 +322,43 @@ namespace APIShared.Economy
                 VerifySavedPayload(temporary, payload);
             }
             else if (payload != null) throw new InvalidDataException("An unexpected production payload cannot label a cargo-only checkpoint.");
+            VerifyFactoryCapture(temporary, factoryFrame);
             Internal.AtomicFileReplacement.Replace(temporary, destination);
+        }
+
+        // Dormant until an internal protected transaction owner explicitly opens
+        // a frame. No production enrollment/source selection is enabled here.
+        // Missing dispatch and SE-swallowed failures must refuse replacement;
+        // a successful native return alone cannot certify the frozen records.
+        internal static void VerifyFactoryCapture(string temporary, VersionedSaveFactoryFrame frame)
+        {
+            var current = VersionedSaveFactoryFrame.Current;
+            if (!ReferenceEquals(frame, current))
+            {
+                // Includes expected=null/current!=null: a frame opened during
+                // Original cannot masquerade as the dormant no-owner path.
+                Exception error = frame?.Failure ?? current?.Failure ??
+                    new InvalidOperationException("The retained critical factory frame does not match the current save scope.");
+                frame?.RecordFailure(error); current?.RecordFailure(error);
+                throw error;
+            }
+            if (frame == null) return;
+            try
+            {
+                if (!frame.TryGetWrittenCapture(out var capture, out string reason))
+                    throw frame.Failure ?? new InvalidDataException(reason);
+                if (!MapArchive.TryLoad(temporary, out MapArchive archive))
+                    throw new InvalidDataException("The critical factory archive is missing or unreadable.");
+                using (archive)
+                    foreach (var record in capture.Records)
+                    {
+                        string identifier = record.Source.PreparedSource.Handle.SaveDataIdentifier;
+                        byte[] bytes = archive.TryReadBinaryFile("_SE_ModData_" + identifier + ".msgpack", true);
+                        if (!capture.MatchesRecord(record.Source, bytes, out reason))
+                            throw new InvalidDataException(reason);
+                    }
+            }
+            catch (Exception error) { frame.RecordFailure(error); throw; }
         }
         internal static void VerifySavedPayload(string path, byte[] expected)
         {

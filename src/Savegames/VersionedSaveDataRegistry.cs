@@ -38,6 +38,9 @@ namespace APIShared.Savegames
         private Slot[] slots = new Slot[0];
         private bool windowOpen;
         private long generation;
+        // Closing the transport window precedes Loaded callbacks. Critical cold
+        // operations wait for the entire matching EndLoad pass instead.
+        private long finalizedLoadGeneration = -1;
         private VersionedSaveLoadSource windowSource;
         private string windowFile;
         private long failures;
@@ -134,6 +137,7 @@ namespace APIShared.Savegames
             {
                 windowOpen = true;
                 generation++;
+                finalizedLoadGeneration = -1;
                 windowSource = source;
                 windowFile = filePath;
                 foreach (Slot slot in slots) { slot.Pending = null; slot.ResetMission(); }
@@ -146,6 +150,7 @@ namespace APIShared.Savegames
             {
                 if (windowOpen) return; // The game unloads the previous map while loading the next one.
                 generation++;
+                finalizedLoadGeneration = -1;
                 foreach (Slot slot in slots) slot.ResetMission();
             }
         }
@@ -287,6 +292,13 @@ namespace APIShared.Savegames
                         slot.Handle.SetKeepsLoaded(true);
                     }
                 }
+            }
+            lock (sync)
+            {
+                // A nested load/unload may already own a replacement generation.
+                // Publish only after every Loaded callback in this pass returned.
+                if (generation == loadGeneration && !windowOpen)
+                    finalizedLoadGeneration = loadGeneration;
             }
         }
 
