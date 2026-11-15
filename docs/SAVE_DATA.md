@@ -235,8 +235,9 @@ names; the channel limit allows 64 records with names at their maximum length.
 The registry has an internal opt-in protocol for framework services that must
 relate an existing mod record to a protected state checkpoint. It is not a public
 legacy-stock import or consumer-enrollment API. Ordinary registrations retain
-their public scope, migration, callback and unknown-record behavior; no new record
-schema or native hook is activated by this protocol.
+their public scope, migration, callback and unknown-record behavior. Tracking or
+standalone enrollment alone activates no record schema or native hook. Explicit
+writer joining below opts NativeStorage into its protected container.
 
 A tracked source binds the exact owner and process-lived registered handle before
 the first archive load. Its origin describes the registry's private original
@@ -269,12 +270,43 @@ the bundle. The save owner must verify every actual archive record against its
 frozen bytes and statuses before committing, then dispose on the owning thread.
 Preparation or `Written` alone is not an archive-commit certificate.
 
-The current native critical writer is not enrolled in this protocol. Supplying
-its genuine pre-capture logical context, storage reader/version validation, save
-demand and one-state consumer cutover remains separate integration work. Consumers
-must not treat a framework commit alone as permission to discard a private
-stock/cargo ledger. This increment supplies no consumer cutover receipt; adding a
-second save hook does not provide that authority.
+NativeStorage keeps its ordinary public registration at current reader 2, with no
+writer enrollment. An internal startup request, made before its first storage
+registration or world, instead selects reader 3, the known reserved marker and a
+process-lifetime writer cohort. No production consumer enables that request yet.
+Tracking or standalone enrollment alone still adds no native save demand.
+Joined state-only sources do add demand, even without cargo or extended production.
+The cohort uses ordered owner GUID/identifier/marker/floor identities, with arbitrary
+GUIDs supported. A stored marker for an unavailable or different cohort is kept
+passively as `MigrationFailed`; it cannot authorize a smaller replacement cohort.
+A joined source cannot use an ordinary callback to omit its marker or downgrade.
+If any original record is protected, all cohort members must have matching original
+protected records; a missing or legacy partner makes the complete cohort passive.
+NativeStorage delays first state publication until this entire matching load pass
+has finished, even during reentrant Prepared/Loaded queries. Early unavailable
+results do not permanently block a valid in-progress load.
+
+NativeStorage's protected outer record is version 3 with minimum reader 3; its
+`ledger`/`stores` payloads retain stores schema 1 or 2. Reader 2 reports `TooNew`
+and retains the protected bytes. Legacy records remain readable, including a markerless future record version with
+an older compatible minimum reader; unknown entries keep their existing retention.
+Only a present marker or a minimum reader at the protection floor requires the
+protected cohort contract. Explicit opt-in changes saving for that process:
+state-only worlds require the qualified writer and owned context, and newly
+protected saves cannot be consumed by the prior reader. The protected freeze is
+SP/editor-only: real-multiplayer saving refuses even without cargo. Neither
+synchronized save metadata nor removing the mode guard would supply the missing
+native multiplayer snapshot/authority qualification. Ordinary unenrolled storage
+retains its existing physical-stock MP path, version selection and unknown-entry
+rules; no opt-in means no forced format bump. An ordinary reader-2 runtime sees
+protected3 as `TooNew`/passive and cannot downgrade it to a legacy record.
+
+This is an internal foundation, not the finished shared enrollment capability.
+An owner-bound public cohort/enrollment contract and an actual lossless consumer
+adapter are the required next slice. This is not legacy import or one-state cutover. Consumers
+must retain private stock/cargo ledgers until every stock, production, payment,
+recruitment and load/save authority has a verified lossless migration. In particular,
+the old Byzantine MED2 handler does not read this protected framework record.
 
 ### Critical load-pass finalization and compatibility
 
@@ -309,11 +341,31 @@ expected and current thread-local identities to match, including null: a frame
 appearing during an unframed call also refuses replacement. An active frame needs
 once-delivered frozen records and exact completed-archive verification.
 
-This bridge remains dormant: no production opener, demand, enrollment, storage
-marker/version, import, cutover or frame-cleanup wiring is enabled. Exact factory
-transport context alone does not establish fresh normal/export/Trail provenance or
-native-route reachability. Private ledgers remain until the full cutover
-requirements above are met.
+The existing native owner caches the pre-capture reader at startup. Behind its
+demand, nesting, engine-monitor and fault guards, it queries owned logical context
+before freezing state or opening a native file, then opens its own frame. All
+source readiness is checked after storage freezing and before Original. The
+actual ensuing factory must match the pinned flags and ordinal nullable path;
+its preparation tag must produce the new bundle. The owned frame rejects factory
+dispatch while participant freezing is incomplete; the owner completes preparation
+only after readiness checks and refuses an observed/failed frame before Original
+can open any file. Standalone internal frames retain their immediate contract.
+Missing dispatch, mismatches,
+failed or omitted records, and changed frame identity prevent replacement.
+Frame release is attempted independently after every other cleanup; its failure
+cannot mask the primary error or erase an already committed native result.
+
+An explicit newly created editor world has no archive callback. Only NativeStorage's
+existing exact `EditorCreated`/world/session boundary, after successful reconciliation
+and the world recheck, may mint a distinct created-world origin. It has no original
+bytes, digest, Prepared receiver or cold-marker authority. A complete created cohort
+must share that world/session; mixing it with archive origins refuses. Load/unload
+revokes it. Archive captures still require the full matching EndLoad pass; a missing
+callback on a loaded world cannot become a blank-world token.
+
+No additional native hook, consumer migration/import or cutover is enabled. These
+managed/file fixtures do not prove native-route reachability in the game. Private
+ledgers remain until the full cutover requirements above are met.
 
 ### Internal managed Trail producer metadata
 

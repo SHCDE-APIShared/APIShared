@@ -9,6 +9,148 @@ namespace APISharedTests
 {
     public partial class NativeStorageCargoSaveTests
     {
+        [DataTestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void OrdinaryStorageCheckpointKeepsItsSchemaOneOrTwoEnvelopeAndPayload(bool hasCargo)
+        {
+            var state = State(out var good);
+            if (hasCargo) Create(state, good);
+            state.Capture(out byte[] goods, out byte[] stores);
+            int schema = hasCargo ? 2 : 1;
+            var original = new NativeStorageProductionSave(state, new object());
+            var explicitOrdinary = new NativeStorageProductionSave(state, new object(), false);
+            var originalWriter = Capture(original); var writer = Capture(explicitOrdinary);
+            Assert.AreEqual(schema, original.ReaderVersion); Assert.AreEqual(schema, explicitOrdinary.ReaderVersion);
+            Assert.AreEqual(schema, writer.RecordVersion); Assert.AreEqual(schema, writer.MinimumReaderVersion);
+            var legacy = new[] { new KeyValuePair<string, byte[]>("ledger", goods), new KeyValuePair<string, byte[]>("stores", stores) };
+            byte[] expected = VersionedSaveRecordCodec.Encode(schema, schema, legacy);
+            CollectionAssert.AreEqual(expected, Record(originalWriter));
+            CollectionAssert.AreEqual(expected, Record(writer));
+            Assert.IsTrue(original.MatchesRecord(expected)); Assert.IsTrue(explicitOrdinary.MatchesRecord(expected));
+            Assert.IsFalse(explicitOrdinary.MatchesRecord(VersionedSaveRecordCodec.Encode(3, 3, writer.Written)));
+        }
+
+        [DataTestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ProtectedStorageCheckpointUsesReaderThreeWithoutRelabelingStoreBytes(bool hasCargo)
+        {
+            var state = State(out var good);
+            if (hasCargo) Create(state, good);
+            state.Capture(out byte[] goods, out byte[] stores);
+            int schema = hasCargo ? 2 : 1;
+            var frozen = new NativeStorageProductionSave(state, new object(), true);
+            Assert.IsTrue(VersionedSaveKnownEntries.TryCreate(new[] { "ledger", "stores", NativeStorageProductionSave.CriticalMarkerEntry },
+                out var known, out string reason), reason);
+            var writer = new VersionedSaveWriter(known, true, false, "synthetic", 3, 3, NativeStorageProductionSave.CriticalMarkerEntry);
+            frozen.Write(writer);
+            Assert.AreEqual(schema, frozen.ReaderVersion);
+            Assert.AreEqual(3, writer.RecordVersion); Assert.AreEqual(3, writer.MinimumReaderVersion);
+            Assert.AreEqual(2, writer.Count, "The checkpoint writes only its pair; the registry injects the marker later.");
+            Assert.IsFalse(writer.Written.ContainsKey(NativeStorageProductionSave.CriticalMarkerEntry));
+            Assert.ThrowsExactly<ArgumentException>(() => writer.Write(NativeStorageProductionSave.CriticalMarkerEntry, new byte[] { 7 }));
+            writer.Close();
+            CollectionAssert.AreEqual(goods, writer.Written["ledger"]); CollectionAssert.AreEqual(stores, writer.Written["stores"]);
+            // Model only the registry's post-callback insertion. Exact marker provenance
+            // belongs to the real registry/frame verifier, not this physical-pair check.
+            var marked = new SortedDictionary<string, byte[]>(writer.Written, StringComparer.Ordinal)
+            { [NativeStorageProductionSave.CriticalMarkerEntry] = new byte[] { 7 } };
+            byte[] record = VersionedSaveRecordCodec.Encode(3, 3, marked);
+            Assert.IsTrue(frozen.MatchesRecord(record));
+            var decoded = VersionedSaveRecordCodec.Decode(record, 3);
+            Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.Valid, decoded.Status);
+            Assert.IsTrue(decoded.Entries.TryGet("ledger", out byte[] actualGoods));
+            Assert.IsTrue(decoded.Entries.TryGet("stores", out byte[] actualStores));
+            CollectionAssert.AreEqual(goods, actualGoods); CollectionAssert.AreEqual(stores, actualStores);
+            Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.TooNew, VersionedSaveRecordCodec.Decode(record, 2).Status);
+            Assert.IsFalse(frozen.MatchesRecord(VersionedSaveRecordCodec.Encode(3, 2, marked)));
+            Assert.IsFalse(frozen.MatchesRecord(VersionedSaveRecordCodec.Encode(schema, schema, marked)));
+            Assert.IsFalse(new NativeStorageProductionSave(state, new object()).MatchesRecord(record));
+        }
+
+        [DataTestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void CriticalFactoryCleanupRunsAfterEveryEarlierFailureAndPreservesCommittedResult(bool committed)
+        {
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+            var primary = committed ? null : new IOException("controlled-capture-failure");
+            var restore = new IOException("restore"); var production = new IOException("production");
+            var workshop = new IOException("workshop"); var storage = new IOException("storage");
+            var calls = new List<string>();
+            var frame = VersionedSaveFactoryFrame.Begin(context => null);
+            if (primary != null) frame.RecordFailure(primary);
+            try
+            {
+                var report = WorkerProductionCriticalSaveRuntime.CompleteSaveCleanup(1, committed, primary,
+                    () => { calls.Add("restore"); throw restore; },
+                    () => { calls.Add("production"); throw production; },
+                    () => { calls.Add("workshops"); throw workshop; },
+                    () => { calls.Add("storage"); throw storage; },
+                    () => { calls.Add("frame"); frame.Dispose(); });
+                // Check before the defensive caller finally, so a skipped frame
+                // release cannot pass merely because this fixture cleans its TLS.
+                Assert.IsNull(VersionedSaveFactoryFrame.Current);
+                CollectionAssert.AreEqual(new[] { "restore", "production", "workshops", "storage", "frame" }, calls);
+                Assert.AreSame(primary ?? restore, report.Primary);
+                Assert.AreSame(restore, report.RestoreError); Assert.AreSame(production, report.ProductionError);
+                Assert.AreSame(workshop, report.WorkshopError); Assert.AreSame(storage, report.StorageError);
+                Assert.IsNull(report.FactoryFrameError); Assert.AreSame(primary, frame.Failure);
+                Assert.IsTrue(report.CleanupFailed); Assert.AreEqual(committed, report.Committed);
+                Assert.AreEqual(1UL, report.ActualWriterResult); Assert.AreEqual(committed ? 1UL : 0UL, report.ReturnValue);
+            }
+            finally { frame.Dispose(); }
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        }
+
+        [DataTestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void CriticalFactoryCleanupFailureIsReportedWithoutReplacingTheFirstFailure(bool committed)
+        {
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+            var primary = committed ? null : new IOException("controlled-capture-failure");
+            var frameError = new IOException("controlled-frame-release-failure");
+            var calls = new List<string>();
+            var frame = VersionedSaveFactoryFrame.Begin(context => null);
+            if (primary != null) frame.RecordFailure(primary);
+            try
+            {
+                var report = WorkerProductionCriticalSaveRuntime.CompleteSaveCleanup(1, committed, primary,
+                    () => calls.Add("restore"), () => calls.Add("production"),
+                    () => calls.Add("workshops"), () => calls.Add("storage"),
+                    () =>
+                    {
+                        calls.Add("frame"); frame.Dispose();
+                        // A controlled release fault follows actual TLS cleanup;
+                        // this is not a native writer or archive-commit invocation.
+                        throw frameError;
+                    });
+                Assert.IsNull(VersionedSaveFactoryFrame.Current);
+                CollectionAssert.AreEqual(new[] { "restore", "production", "workshops", "storage", "frame" }, calls);
+                Assert.AreSame(frameError, report.FactoryFrameError); Assert.AreSame(primary ?? frameError, report.Primary);
+                Assert.IsNull(report.RestoreError); Assert.IsNull(report.ProductionError);
+                Assert.IsNull(report.WorkshopError); Assert.IsNull(report.StorageError);
+                Assert.AreSame(primary, frame.Failure);
+                Assert.IsTrue(report.CleanupFailed); Assert.AreEqual(committed, report.Committed);
+                Assert.AreEqual(1UL, report.ActualWriterResult); Assert.AreEqual(committed ? 1UL : 0UL, report.ReturnValue);
+            }
+            finally { frame.Dispose(); }
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        }
+
+        [DataTestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void CriticalCohortDemandDoesNotInventAStorageCheckpoint(bool criticalCohort)
+        {
+            var requirements = new WorkerProductionSaveRequirements(false, false, false, false, criticalCohort, false);
+            Assert.AreEqual(criticalCohort, requirements.Transaction);
+            Assert.IsFalse(requirements.Storage); Assert.IsFalse(requirements.Production);
+            Assert.IsFalse(requirements.Workshops); Assert.IsFalse(requirements.Faulted);
+        }
+
         // The real registry freezes and serves one record; only the Extender transport
         // delegate is supplied by this fixture. No native writer or production enrollment is run.
         private sealed class FactoryArchiveFixture

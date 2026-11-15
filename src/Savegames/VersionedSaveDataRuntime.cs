@@ -111,6 +111,45 @@ namespace APIShared.Savegames
             return current.TryTrackPreparedSource(owner, handle, out source, out reason);
         }
 
+        internal static bool HasCriticalWriterDemand => System.Threading.Volatile.Read(ref registry)?.HasCriticalWriterDemand == true;
+
+        internal static bool TryJoinCriticalWriterCohort(VersionedSavePreparedSource source, string reservedEntry,
+            int minimumReader, out string reason)
+        {
+            var current = System.Threading.Volatile.Read(ref registry);
+            if (current == null) { reason = "Register the source first."; return false; }
+            return current.TryEnrollCriticalSource(source, reservedEntry, minimumReader, out var enrollment, out reason) &&
+                current.TryJoinCriticalWriterCohort(enrollment, out reason);
+        }
+
+        internal static bool TryAuthorizeCriticalCreatedWorld(VersionedSavePreparedSource source, object world, long sessionId, out string reason)
+        {
+            var current = System.Threading.Volatile.Read(ref registry);
+            if (current == null) { reason = "The critical registry is unavailable."; return false; }
+            return current.TryAuthorizeCriticalCreatedWorld(source, world, sessionId, out reason);
+        }
+
+        internal static bool TryValidateCriticalWorld(VersionedSavePreparedSource source, object world, long sessionId, out string reason)
+        {
+            var current = System.Threading.Volatile.Read(ref registry);
+            if (current == null) { reason = "The critical registry is unavailable."; return false; }
+            return current.TryValidateCriticalWorld(source, world, sessionId, out reason);
+        }
+
+        internal static void RequireCriticalWriterReady()
+        {
+            var current = System.Threading.Volatile.Read(ref registry);
+            if (current == null) throw new InvalidOperationException("The critical registry is unavailable.");
+            current.RequireCriticalWriterReady();
+        }
+
+        internal static VersionedSaveFactoryFrame BeginCriticalWriterFrame(VersionedSaveContext context)
+        {
+            var current = System.Threading.Volatile.Read(ref registry);
+            if (current == null) throw new InvalidOperationException("The critical registry is unavailable.");
+            return current.BeginCriticalWriterFrame(context);
+        }
+
         // Digests of the declared simulation-relevant records as stored in one save file, for the save
         // readiness agreement. Reads the file's appended archive once, like SavegameModSettings.ReadRecord;
         // with no declared record nothing is read. Entry names follow ModSaveDataAPI.cs:67, :272-275.
