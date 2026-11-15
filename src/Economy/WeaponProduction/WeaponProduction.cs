@@ -44,11 +44,11 @@ namespace APIShared.Economy
         /// <param name="priority">Higher values win the available additional slots. Ties sort by ordinal owner and option ID.</param>
         public WeaponProductionOptionDefinition(eStructs buildingType, eGoods templateGood, eGoods outputGood,
             string displayName, int? baseAmount = null, int? workTicks = null, int priority = 0)
-            : this(buildingType, templateGood, outputGood, displayName, baseAmount, workTicks, priority, null)
+            : this(buildingType, templateGood, outputGood, displayName, baseAmount, workTicks, priority, null, null)
         { }
 
         private WeaponProductionOptionDefinition(eStructs buildingType, eGoods templateGood, eGoods outputGood,
-            string displayName, int? baseAmount, int? workTicks, int priority, int? ingredientAmount)
+            string displayName, int? baseAmount, int? workTicks, int priority, int? ingredientAmount, NativeStoredGood storedOutput)
         {
             BuildingType = buildingType;
             TemplateGood = templateGood;
@@ -58,19 +58,32 @@ namespace APIShared.Economy
             WorkTicks = workTicks;
             Priority = priority;
             IngredientAmount = ingredientAmount;
+            StoredOutput = storedOutput;
         }
 
         /// <summary>Copies the recipe with a new cost per charge in the workshop's native ingredient. Null uses the template cost.</summary>
         public WeaponProductionOptionDefinition WithIngredientAmount(int? ingredientAmount) =>
             new WeaponProductionOptionDefinition(BuildingType, TemplateGood, OutputGood, DisplayName, BaseAmount,
-                WorkTicks, Priority, ingredientAmount);
+                WorkTicks, Priority, ingredientAmount, StoredOutput);
+
+        /// <summary>Copies this recipe with an owner-registered Armory output instead of a native weapon.
+        /// The native template still supplies ingredients, animation, cargo and map permission.
+        /// OutputGood retains its declared native value. Registration requires the same owner and
+        /// a qualified delivery adapter; custom outputs currently refuse real multiplayer.</summary>
+        /// <exception cref="ArgumentNullException">The output handle is null.</exception>
+        public WeaponProductionOptionDefinition WithStoredOutput(NativeStoredGood output) =>
+            new WeaponProductionOptionDefinition(BuildingType, TemplateGood, OutputGood, DisplayName, BaseAmount,
+                WorkTicks, Priority, IngredientAmount, output ?? throw new ArgumentNullException(nameof(output)));
 
         /// <summary>The workshop using this recipe.</summary>
         public eStructs BuildingType { get; }
         /// <summary>The native ingredient and animation template.</summary>
         public eGoods TemplateGood { get; }
-        /// <summary>The existing weapon stored at delivery.</summary>
+        /// <summary>The declared native weapon. StoredOutput, when present, replaces its physical delivery.</summary>
         public eGoods OutputGood { get; }
+        /// <summary>Owner-registered Armory good delivered by this recipe, or null for native output.
+        /// The handle has process lifetime; it does not invent a native goods ID or accounting tag.</summary>
+        public NativeStoredGood StoredOutput { get; }
         /// <summary>The caller's localized recipe name.</summary>
         public string DisplayName { get; }
         /// <summary>Override for the template's integer output base.</summary>
@@ -98,8 +111,10 @@ namespace APIShared.Economy
         public eStructs BuildingType => Definition.BuildingType;
         /// <summary>Native work template.</summary>
         public eGoods TemplateGood => Definition.TemplateGood;
-        /// <summary>Weapon delivered by the recipe.</summary>
+        /// <summary>The declared native weapon; inspect StoredOutput for virtual physical delivery.</summary>
         public eGoods OutputGood => Definition.OutputGood;
+        /// <summary>Owner-registered Armory output, or null for a native recipe.</summary>
+        public NativeStoredGood StoredOutput => Definition.StoredOutput;
         /// <summary>Optional integer base before yield modifiers.</summary>
         public int? BaseAmount => Definition.BaseAmount;
         /// <summary>Optional active manufacturing duration.</summary>

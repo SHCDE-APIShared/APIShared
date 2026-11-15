@@ -1,5 +1,39 @@
 # API catalog
 
+## Native pooled storage
+
+`ModApiClient.NativeStorage` registers owner-qualified virtual goods in native
+Armory/Granary pools, with exact building identity, coordinated capacity, atomic
+gold/stock exchanges and joint ledger/allocation persistence. No native goods ID,
+recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
+and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
+
+`NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
+rows and one player's gold, with bounded replay and joint pooled-capacity checks.
+See [atomic multi-store exchanges](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+
+## External production cargo
+
+`NativeStorageClient.TryCreateCargo`, `TryGetCargo`, `TryDepositCargo` and
+`TryDiscardCargo` keep framework-owned undelivered lots beside the existing
+physical storage state. Creation keys have a separate bounded replay stream;
+delivery atomically decreases a cargo checkpoint and adds physical stock.
+SP/editor only, caller-held engine monitor, verified external production/custody/
+arrival and a qualified critical save owner are required. See
+[contracts, retries and save compatibility](NATIVE_STORAGE.md#external-production-cargo), including the
+material passive-record save-policy change, and the
+[compiled example](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
+## Custom goods inventory
+
+`APIShared.Goods.CustomGoodsInventory` in the game-independent Content assembly
+provides owner-qualified virtual goods, bounded player stock/capacities, atomic
+multi-good changes, sequenced retry protection and one-shot reservations.
+Caller-owned mission state has canonical snapshots for existing versioned saves.
+Native goods slots, wallets, physical storage and multiplayer transport require
+separate adapters. See [usage, persistence and limits](CUSTOM_GOODS.md) and the
+[compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 ## AI military admission
 
 `ModApiClient.TryGetAiMilitary` exposes semantic military roles, invocation-scoped
@@ -307,6 +341,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Feature | Public contracts / entry | Behavior / hook owner | Example |
 |---|---|---|---|
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
+| External production cargo | [Cargo snapshots and methods](../src/Economy/Storage/NativeStorageCargo.Contracts.cs) | [Closed cargo engine](../src/Economy/Storage/NativeStorageCargoEngine.cs), [world state](../src/Economy/Storage/NativeStorageState.Cargo.cs), [prepared load](../src/Economy/Storage/NativeStoragePreparedLoad.cs) | [Cargo and custody](../examples/ThirdPartyMod/ExternalCargoExample.cs) |
 | Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | — |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
@@ -790,6 +825,13 @@ hooks use only the installed NativeX64 Indirect backend, with ten displaced byte
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
 
+## Native gold and virtual goods
+
+`ModApiClient.GoodsWallet` exchanges a validated native-gold balance and prepared
+owner-bound virtual stock under the engine/inventory monitors. Exact replay intent,
+world generations and schema-1/schema-2 compatibility are documented in the
+[wallet guide](GOODS_WALLET.md).
+
 ## Unit settlement events
 
 Not in packages up to 0.9.1; check the package you require. [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs)
@@ -819,6 +861,12 @@ callback runs once per archive load with a documented status, including `NoRecor
 declared `SimulationRelevant` are compared across players before a multiplayer save loads.
 Usage, the record-version migration policy, the comparison boundary, limits and
 implementation are in [Save data](SAVE_DATA.md).
+The registry's internal [tracked-origin and enrolled-capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
+binds existing records to frozen bytes and original markers without adding a
+public enrollment or legacy-storage migration API. The existing protected writer
+retains [explicit cleanup/commit outcomes](SAVE_DATA.md#critical-save-cleanup-outcomes).
+The [internal managed Trail metadata](SAVE_DATA.md#internal-managed-trail-producer-metadata)
+has a separate binding and supplies no public pre-capture or enrollment API.
 
 ## Workshop inventory
 
@@ -1027,7 +1075,9 @@ template with an existing weapon or armour good and can set an output base
 amount, manufacturing duration and quantity of the workshop's native ingredient.
 APIShared reserves the original recipes within the four choices per workshop type.
 It supplies the building HUD, Shift selection, synchronized execution and saved
-production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+production state. `WithStoredOutput` binds an owner-matching registered Armory good
+for offline/editor production, with atomic native cargo/custom-stock delivery and
+verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
 
 ## Huntable prey
 
