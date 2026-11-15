@@ -227,3 +227,4 @@ WorkerProductionAgreement.Mismatch=Die Spieler haben unterschiedliche Produktion
 WorkerProductionAgreement.Protocol=Die Spieler verwenden inkompatible Produktionsunterstützung. Aktualisiere APIShared auf allen Rechnern.
 WeaponProduction.ShiftHint=Umschalt gedrückt halten, um alle eigenen Werkstätten dieses Typs umzustellen.
 WeaponProduction.SelectionUnavailable=Die Produktionsauswahl konnte nicht übermittelt werden.
+WeaponProduction.StoredOutputsOfflineOnly=Custom stored-goods workshop recipes are currently available only in single-player and the map editor.

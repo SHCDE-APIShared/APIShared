@@ -59,6 +59,36 @@ An exception is isolated and preserves the original record bytes. Consumers whic
 require protection before simulation must independently refuse native initialization
 when preparation or application fails; throwing this callback alone is no load veto.
 
+### Associating archive callbacks with a mission attempt
+
+`VersionedSaveLoad.MissionSessionId` associates an archive window with its mission attempt.
+It is the process-local attempt captured once at the start of the archive window
+from the owned lifecycle operation executing on that archive caller's thread.
+`Prepared` and `Loaded` receive the same value for every outcome, including
+`NoRecord`, `OutOfScope` and failures. Several archive windows, including nested
+loads within an operation, can share one attempt ID. It is not a unique archive
+invocation ID, and it is not stored in the save.
+
+Lifecycle observers queue reentrant notifications, whereas archive callbacks run
+synchronously. A callback that starts another load can therefore publish its
+incoming data before that load's `BeforeLoad` notification reaches your observer.
+Associate staged data with this captured ID and match later lifecycle notifications;
+do not depend on the last initialization notification you received. A late end of
+an older attempt must not retire data associated with its replacement.
+
+Zero means no owned executing scope was established on the archive caller's thread.
+This includes loads outside that scope and foreign-thread archive calls. A direct
+nested load inside an owned operation may carry the outer attempt's ID. Never fill
+in zero using the latest ready `Current` mission. `Current` may already describe a
+replacement, and null can mean either pending initialization or no ready mission.
+
+The ID supplies association only. It proves neither successful initialization nor
+a current native world, original archive provenance, save commitment or permission
+to import/mutate state. Native use still requires the appropriate protected lifecycle
+boundary. Consumers that reference this getter must require the provider release/build exporting
+it; no numeric release version is assumed here. Existing consumers that ignore it
+retain their prior behavior, record formats and callback ordering.
+
 **Scope.** `SaveGames` (default) reads and writes gameplay saves only. `SaveGamesAndMaps`
 also writes map editor saves and reads every map load, for data that belongs to the map,
 such as a theme chosen in the editor.
@@ -200,6 +230,148 @@ names; the channel limit allows 64 records with names at their maximum length.
 
 ## Implementation
 
+### Tracked origins and enrolled captures
+
+The registry has an internal opt-in protocol for framework services that must
+relate an existing mod record to a protected state checkpoint. It is not a public
+legacy-stock import or consumer-enrollment API. Ordinary registrations retain
+their public scope, migration, callback and unknown-record behavior; no new record
+schema or native hook is activated by this protocol.
+
+A tracked source binds the exact owner and process-lived registered handle before
+the first archive load. Its origin describes the registry's private original
+record, including explicit absence and a digest, rather than a consumer-supplied
+copy. During `Prepared`, origin access requires that exact receiver, generation
+and managed thread. Other registry callbacks mask that delivery. Completion also
+requires the complete load/Post window to succeed; callback failure, a new load or
+unload revokes it. An origin is metadata, not permission to inspect or mutate the
+native world. See [origin lifetime](../src/Savegames/VersionedSavePreparedOrigin.cs).
+
+An independently enrolled critical source must use `SaveGamesAndMaps`, declare
+`SimulationRelevant`, own a known reserved marker entry and support the selected
+cutover reader. Only that explicit enrollment reserves the entry: its capture
+must not write the marker through `VersionedSaveWriter.Write`, which throws
+`ArgumentException` for the reserved name. Unenrolled registrations acquire no
+reserved names. The framework injects a copied marker, retains unknown entries
+and reads confirmation from the private original envelope, before a legacy reader
+or migration could synthesize it. An unreadable record, stale origin or marker
+below its required original reader/version floor cannot authorize confirmation.
+
+[The capture bundle](../src/Savegames/VersionedSaveCriticalCapture.cs) reserves
+all participating slots before calling captures outside the registry lock. It
+freezes bounded bytes once without marking any record `Written`. Actual Extender
+transport serves those bytes once on the same save thread and marks delivery.
+The bundle requires exact logical context: save-file flag, editor flag and ordinal
+nullable file path. A synchronized save can legitimately have a null path; the
+native destination or temporary file cannot stand in for this context. Duplicate
+delivery, nesting, context mismatch, load/unload or a failed capture invalidates
+the bundle. The save owner must verify every actual archive record against its
+frozen bytes and statuses before committing, then dispose on the owning thread.
+Preparation or `Written` alone is not an archive-commit certificate.
+
+The current native critical writer is not enrolled in this protocol. Supplying
+its genuine pre-capture logical context, storage reader/version validation, save
+demand and one-state consumer cutover remains separate integration work. Consumers
+must not treat a framework commit alone as permission to discard a private
+stock/cargo ledger. This increment supplies no consumer cutover receipt; adding a
+second save hook does not provide that authority.
+
+### Critical load-pass finalization and compatibility
+
+Cold critical-marker reads and enrolled capture now wait until every `Loaded`
+callback in the same load generation has returned. Closing the transport window
+alone is insufficient. Previously, a callback could observe `windowOpen=false`
+and read a critical marker or freeze critical records while that callback, or a
+later callback, could still reject or replace the loaded state. Such operations
+now refuse; an affected protected save must keep its previous destination and
+wait for the complete matching load pass. A nested load or unload cannot finalize
+the replaced generation. A failed source's existing kept-record policy remains.
+
+This tightens behavior for internal owners attempting critical capture or marker
+reads from `Loaded`; additive signatures and test counts do not make it behaviorally
+compatible with that timing. Use the completed load pass. `Prepared` token
+completion retains its earlier meaning, and exact active-`Prepared` marker reads
+remain supported. This finalization is not native-world or writer ownership.
+
+### Internal factory/frame implementation
+
+The [owned factory correction](../src/ScriptExtenderFixes/SaveContext/SaveContextRuntime.cs)
+can pass its exact normalized transport context to an explicitly opened,
+thread-scoped [factory frame](../src/Savegames/VersionedSaveCriticalCapture.cs).
+Preparation tokens bind the returned bundle to that callback's current preparation
+scope; a previously frozen or foreign bundle cannot substitute. Standalone captures
+keep their existing behavior. The frame retains its first failure even if the
+Extender catches a callback exception.
+
+The [critical writer](../src/Economy/WorkerProductionCriticalSaveRuntime.cs) retains
+its expected frame before calling Original. Before replacement it requires the
+expected and current thread-local identities to match, including null: a frame
+appearing during an unframed call also refuses replacement. An active frame needs
+once-delivered frozen records and exact completed-archive verification.
+
+This bridge remains dormant: no production opener, demand, enrollment, storage
+marker/version, import, cutover or frame-cleanup wiring is enabled. Exact factory
+transport context alone does not establish fresh normal/export/Trail provenance or
+native-route reachability. Private ledgers remain until the full cutover
+requirements above are met.
+
+### Internal managed Trail producer metadata
+
+The internal extension in the [existing factory owner](../src/ScriptExtenderFixes/SaveContext/SaveContextRuntime.cs)
+provides expected metadata for one reviewed managed Trail producer. Its current
+binding targets the reviewed game assembly and installed Script Extender **2.14.3**
+(`SHCDESE` SHA-256 `5cb1c33be5463086505a17f5c48aaa357d733cfff7240e101c821f0e3c668498`).
+It adds no public pre-capture or enrollment API. A different dependency needs its
+own binding qualification; unchanged source alone does not qualify shipped IL.
+
+`EditorDirector.SaveCustomTrailMap` first loads `mappath` in editor mode and,
+only after successful loading, calls `EngineInterface.CreateTrailMission` with
+output `trailpath` and encoded restart data. The expected logical context is
+`IsSaveFile=false`, `IsMapEditorSave=false`, with the loaded **source-map path**.
+That path follows the actual load chain's `Encoding.Unicode` round trip and
+trailing-NUL trim, retaining embedded NULs. It is not a canonical filesystem path.
+Neither the output Trail path nor a redirected native temporary path substitutes
+for it; native `mapSave=0` alone does not identify this managed route.
+
+The producer and wrapper share a caller-thread value-frame stack, restored in
+`finally` around the real wrapper body and its existing engine monitor. A matching
+producer is required; unidentified or nested wrapper calls mask outer metadata.
+The existing synchronized policy retains priority and its `(true,false,null)`
+context. Early queries are pure snapshots: they neither enter the factory nor
+start critical capture. The first actual factory closes the query window. Every
+factory preserves its existing normalized callback payload. When an internal
+critical frame is active, a first transport that differs from the pinned Trail
+values records failure in that frame, preserving its first error. A normal save reentered by an archive handler keeps its own
+flags and path. Extender exception isolation does not cancel the native write.
+
+This scope supplies managed invocation metadata only. It grants no native writer,
+world-lifetime, capture, commit, import or cutover authority and does not
+authenticate raw P/Invoke/native-export bypasses. The existing protected owner
+still needs its exact invocation, world and verified transport/archive contracts
+before any native replacement. The dormant enrollment and private-ledger limits
+above remain authoritative. Normal/editor optional-provider work requires an
+official upstream Script Extender addition; this extension supplies no private
+third-party build or installation route.
+
+### Critical-save cleanup outcomes
+
+The existing protected writer remains the sole native save owner. A capture,
+native-I/O or archive-verification failure before destination replacement leaves
+the old destination and reports failure. Cleanup independently attempts native
+path restoration and every selected production, workshop and storage release;
+one cleanup exception cannot skip the others or leave the saving guard active.
+The original transaction failure remains primary, with secondary cleanup faults
+reported separately and bounded.
+
+Successful atomic destination replacement is irreversible. A later cleanup fault
+preserves the actual successful writer result and reports protection failure to
+the existing world-safety owner only for the retained exact world/generation. It
+cannot claim rollback, an unwritten file or fault a replacement world. This is an
+intentional failure/result behavior correction, including for existing demanded
+cargo/production saves; additive signatures alone do not establish compatibility.
+The no-demand path continues directly to the original writer. Managed cleanup
+fixtures do not establish live native path restoration or installed-game behavior.
+
 ### Record format
 
 Each record is the complete `ModSaveDataAPI` entry for its identifier
@@ -281,5 +453,10 @@ host's acceptance rules. `VersionedSaveDataRuntimeTests` (APISharedTests) bind t
 installed Script Extender handler table and feed the binding the real event argument types;
 `SavegameReadinessProtocolTests` cover the version-2 packet, protocol-1 recognition and reply,
 later versions, malformed lists, and digests read from save files built with the Extender's
-own archive class. None of them runs the game; in-game checks are listed under
-[Public limits](#public-limits).
+own archive class. The Prepared-origin and enrolled-capture partial fixtures
+exercise receiver/thread/generation provenance, revocation, original-marker
+confirmation, frozen-byte delivery, context mismatch, duplication and record
+verification through the actual registry. `NativeStorageCargoSaveTests` also
+exercise independent cleanup and primary/postcommit result preservation through
+the managed cleanup entry. None of them runs the game; in-game checks are listed
+under [Public limits](#public-limits).

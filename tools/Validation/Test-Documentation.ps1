@@ -20,12 +20,14 @@ foreach ($document in $documents) {
         }
         if (-not (Test-Path -LiteralPath $target)) { throw "Broken documentation link: $reference ($($document.Name))" }
         if ($parts.Length -eq 2 -and [IO.Path]::GetExtension($target) -eq '.md') {
-            $anchors = @(foreach ($heading in [regex]::Matches([IO.File]::ReadAllText($target), '(?m)^#{1,6}\s+([^\r\n]+)')) {
+            # Fenced examples do not define document headings or HTML anchors.
+            $targetText = [regex]::Replace([IO.File]::ReadAllText($target), '(?ms)^```.*?^```[^\r\n]*', '')
+            $anchors = @(foreach ($heading in [regex]::Matches($targetText, '(?m)^#{1,6}\s+([^\r\n]+)')) {
                 $title = $heading.Groups[1].Value.Trim().ToLowerInvariant()
                 [regex]::Replace($title, '[^\p{L}\p{Nd}_ -]', '').Replace(' ', '-')
             })
             # Field/evidence catalogs also use explicit stable HTML anchors, independent of display headings.
-            $anchors += @([regex]::Matches([IO.File]::ReadAllText($target), '<a\s+id="([^"]+)"\s*>') | ForEach-Object { $_.Groups[1].Value })
+            $anchors += @([regex]::Matches($targetText, '<a\s+id="([^"]+)"\s*>') | ForEach-Object { $_.Groups[1].Value })
             if ([Uri]::UnescapeDataString($parts[1]) -notin $anchors) { throw "Broken heading link: $reference ($($document.Name))" }
         }
         $links++

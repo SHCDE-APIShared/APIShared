@@ -159,13 +159,31 @@ namespace APIShared.Savegames
     public sealed class VersionedSaveWriter
     {
         private readonly VersionedSaveKnownEntries known;
+        private readonly int currentVersion, minimumReaderFloor;
+        private readonly string reservedEntry;
         private readonly SortedDictionary<string, byte[]> written =
             new SortedDictionary<string, byte[]>(StringComparer.Ordinal);
         private bool closed;
 
         internal VersionedSaveWriter(VersionedSaveKnownEntries known, bool isSaveFile, bool isMapEditorSave, string filePath)
+            : this(known, isSaveFile, isMapEditorSave, filePath, 1, 1) { }
+
+        internal VersionedSaveWriter(VersionedSaveKnownEntries known, bool isSaveFile, bool isMapEditorSave, string filePath,
+            int currentVersion, int minimumReaderVersion)
+            : this(known, isSaveFile, isMapEditorSave, filePath, currentVersion, minimumReaderVersion, null) { }
+
+        internal VersionedSaveWriter(VersionedSaveKnownEntries known, bool isSaveFile, bool isMapEditorSave, string filePath,
+            int currentVersion, int minimumReaderVersion, string reservedEntry)
         {
+            if (currentVersion < 1) throw new ArgumentOutOfRangeException(nameof(currentVersion));
+            if (minimumReaderVersion < 1 || minimumReaderVersion > currentVersion)
+                throw new ArgumentOutOfRangeException(nameof(minimumReaderVersion));
             this.known = known;
+            this.reservedEntry = reservedEntry;
+            this.currentVersion = currentVersion;
+            minimumReaderFloor = minimumReaderVersion;
+            RecordVersion = currentVersion;
+            MinimumReaderVersion = minimumReaderVersion;
             IsSaveFile = isSaveFile;
             IsMapEditorSave = isMapEditorSave;
             FilePath = filePath;
@@ -184,7 +202,8 @@ namespace APIShared.Savegames
         /// which replaces older data in the save.</summary>
         /// <exception cref="ArgumentNullException">The data is null.</exception>
         /// <exception cref="ArgumentException">The name is invalid, not covered by the registration's known
-        /// entries, already written, or the data exceeds <see cref="VersionedSaveData.MaximumEntryBytes"/>.</exception>
+        /// entries, reserved by an explicitly enrolled critical save owner, already written, or the data exceeds
+        /// <see cref="VersionedSaveData.MaximumEntryBytes"/>.</exception>
         /// <exception cref="InvalidOperationException">The capture callback has returned, or a new entry
         /// would exceed <see cref="VersionedSaveData.MaximumEntries"/>.</exception>
         public void Write(string name, byte[] data)
@@ -195,6 +214,8 @@ namespace APIShared.Savegames
                 throw new ArgumentException("Invalid entry name.", nameof(name));
             if (!known.IsKnown(name))
                 throw new ArgumentException("Entry '" + name + "' is not one of the registration's known entries.", nameof(name));
+            if (reservedEntry != null && string.Equals(name, reservedEntry, StringComparison.Ordinal))
+                throw new ArgumentException("Entry '" + name + "' is reserved by the enrolled critical save owner.", nameof(name));
             if (written.ContainsKey(name))
                 throw new ArgumentException("Entry '" + name + "' was already written.", nameof(name));
             if (data.Length > VersionedSaveRecordCodec.MaximumEntryBytes)
@@ -204,8 +225,23 @@ namespace APIShared.Savegames
             written.Add(name, (byte[])data.Clone());
         }
 
+        // Internal captures may retain an older schema when the state still has its old meaning.
+        // A capture cannot promise readers older than the registration's compatibility floor.
+        internal void UseVersion(int recordVersion, int minimumReader)
+        {
+            if (closed) throw new InvalidOperationException("The save writer is only valid during capture.");
+            if (recordVersion < 1 || recordVersion > currentVersion)
+                throw new ArgumentOutOfRangeException(nameof(recordVersion));
+            if (minimumReader < minimumReaderFloor || minimumReader > recordVersion)
+                throw new ArgumentOutOfRangeException(nameof(minimumReader));
+            RecordVersion = recordVersion;
+            MinimumReaderVersion = minimumReader;
+        }
+
         internal void Close() => closed = true;
         internal SortedDictionary<string, byte[]> Written => written;
+        internal int RecordVersion { get; private set; }
+        internal int MinimumReaderVersion { get; private set; }
     }
 
     /// <summary>Immutable result of one archive load for one registration.</summary>
@@ -217,11 +253,25 @@ namespace APIShared.Savegames
         internal VersionedSaveLoad(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string filePath,
             int recordVersion, int minimumReaderVersion, IReadOnlyDictionary<string, byte[]> entries,
             int keptEntryCount, string detail)
+            : this(status, source, filePath, recordVersion, minimumReaderVersion, entries, keptEntryCount, detail, null, 0) { }
+
+        internal VersionedSaveLoad(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string filePath,
+            int recordVersion, int minimumReaderVersion, IReadOnlyDictionary<string, byte[]> entries,
+            int keptEntryCount, string detail, VersionedSavePreparedOrigin origin)
+            : this(status, source, filePath, recordVersion, minimumReaderVersion, entries, keptEntryCount, detail, origin, 0) { }
+
+        internal VersionedSaveLoad(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string filePath,
+            int recordVersion, int minimumReaderVersion, IReadOnlyDictionary<string, byte[]> entries,
+            int keptEntryCount, string detail, VersionedSavePreparedOrigin origin, long missionSessionId)
         {
+            PreparedOrigin = origin;
+            MissionSessionId = missionSessionId > 0 ? missionSessionId : 0;
             Status = status; Source = source; FilePath = filePath;
             RecordVersion = recordVersion; MinimumReaderVersion = minimumReaderVersion;
             Entries = entries ?? NoEntries; KeptEntryCount = keptEntryCount; Detail = detail ?? string.Empty;
         }
+
+        internal VersionedSavePreparedOrigin PreparedOrigin { get; }
 
         /// <summary>What happened to this registration's record in this load.</summary>
         public VersionedSaveLoadStatus Status { get; }
@@ -229,6 +279,17 @@ namespace APIShared.Savegames
         public VersionedSaveLoadSource Source { get; }
         /// <summary>File name reported by the Extender load event; may be null.</summary>
         public string FilePath { get; }
+        /// <summary>Process-local mission attempt associated with this archive window, or 0 when unknown.
+        /// Captured once before archive callbacks from an owned lifecycle operation executing on the
+        /// archive caller's thread; without that scope the association is unknown.</summary>
+        /// <remarks>Prepared and Loaded retain the same association, including NoRecord and failure
+        /// outcomes. Several archive windows, including nested loads, can share one attempt ID;
+        /// this is not a unique archive-invocation ID. Archive callbacks can precede queued lifecycle notifications.
+        /// This immutable metadata is not serialized and is not evidence of successful initialization,
+        /// a current native world, original archive provenance or permission to import or mutate state.
+        /// Compare with lifecycle notifications only within this process; do not persist the ID or
+        /// replace an unknown association with the latest ready mission.</remarks>
+        public long MissionSessionId { get; }
         /// <summary>Version the record was written at (or the legacy reader's version), before migration;
         /// 0 when no record header was read.</summary>
         public int RecordVersion { get; }
