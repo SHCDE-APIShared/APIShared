@@ -38,6 +38,8 @@ namespace ThirdPartyMod
         }
 
         // Runs once at the end of every archive load, also without a record: reset, then take the entries.
+        // Early state can use MissionSessionId when requiring a provider build exporting it;
+        // see docs/SAVE_DATA.md before coupling Prepared data to queued lifecycle notifications.
         private static void OnLoaded(VersionedSaveLoad load)
         {
             lock (Sync)

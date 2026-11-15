@@ -160,4 +160,49 @@ namespace APIShared
             finally { dispatching = false; }
         }
     }
+
+    // Caller-owned execution scope, shared by ordinary mission entry and deferred message resume.
+    // No game/native reads or notification dispatch occur here. Scope values restore prior thread
+    // ownership through nested calls and exceptions without allocating a context object per entry.
+    internal sealed class MissionExecutionSession
+    {
+        private readonly int creatorThread = Thread.CurrentThread.ManagedThreadId;
+        private int executingThread;
+        private long entrySession;
+        private bool active;
+
+        internal readonly struct Scope
+        {
+            internal readonly int Thread;
+            internal readonly long EntrySession;
+            internal readonly bool Active;
+            internal Scope(int thread, long entrySession, bool active)
+            { Thread = thread; EntrySession = entrySession; Active = active; }
+        }
+
+        internal Scope Enter(MissionLifecycleState state)
+        {
+            var previous = new Scope(executingThread, entrySession, active);
+            executingThread = Thread.CurrentThread.ManagedThreadId;
+            entrySession = state?.Context?.SessionId ?? 0;
+            active = true;
+            return previous;
+        }
+
+        internal void Restore(Scope previous)
+        { executingThread = previous.Thread; entrySession = previous.EntrySession; active = previous.Active; }
+
+        internal long Read(MissionLifecycleState state, bool isExecuting, long operationSessionId)
+        {
+            int caller = Thread.CurrentThread.ManagedThreadId;
+            if (!isExecuting || !active || caller != creatorThread || caller != executingThread) return 0;
+            var context = state?.Context;
+            if (context == null || !state.IsPending(context.SessionId)) return 0;
+            // Begin installs pending before publishing the retired mission's End. The operation's
+            // ID is assigned only after those callbacks return. A zero ID may use only the pending
+            // attempt installed after this scope began, never a previously waiting attempt.
+            if (operationSessionId == 0) return context.SessionId != entrySession ? context.SessionId : 0;
+            return operationSessionId == context.SessionId ? context.SessionId : 0;
+        }
+    }
 }
