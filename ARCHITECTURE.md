@@ -456,6 +456,13 @@ dialog registry and retains ownership of its map/trail data.
 Versioned save data belongs to Savegames. APIShared owns the record format, the migration
 order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
 migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
+The registry also owns internal Prepared-origin lifetimes, original-marker reads
+and once-only enrolled capture bundles; callbacks remain outside its locks. These
+are metadata/transport prerequisites, not native-world authority or an activated
+consumer migration. The existing `PlayerViewSaveScope` writer remains the single
+native critical-save entry. Its economy save owner independently restores and
+releases selected checkpoints and distinguishes committed files from later
+protection-cleanup faults. See the [save implementation contract](docs/SAVE_DATA.md#tracked-origins-and-enrolled-captures).
 
 Native-site registration belongs to Core. Shared services remain the way to avoid
 hook conflicts; the registry supplements them as a safeguard and diagnostic for hooks

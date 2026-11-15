@@ -12,7 +12,7 @@ namespace APISharedTests
     // Actual state/codec, save writer, appended archive reader and atomic file replacement.
     // No installed native writer/game session is launched by these bounded file fixtures.
     [TestClass]
-    public class NativeStorageCargoSaveTests
+    public partial class NativeStorageCargoSaveTests
     {
         private static NativeStorageState State(out CustomGoodId good)
         {

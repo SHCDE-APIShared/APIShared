@@ -210,6 +210,10 @@ reentrant mutations, verifies capture/status/native I/O/archive bytes, then repl
 the destination. Cargo-only worlds need no invented worker/workshop record.
 Matching staged cargo receives this protection even before a first query/tick
 activates it. Saved absent-owner goods/lots remain retained and dormant.
+Path restoration and all selected checkpoint releases are attempted independently.
+A protection-cleanup fault after atomic commit preserves the actual committed
+writer result; see [critical-save cleanup outcomes](SAVE_DATA.md#critical-save-cleanup-outcomes).
+Internal record provenance/capture support does not itself migrate a consumer ledger.
 
 ### Material save-policy compatibility change
 

@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace APIShared.Core.Tests;
 
 [TestClass]
-public class VersionedSaveDataTests
+public partial class VersionedSaveDataTests
 {
     [TestMethod]
     public void PreparedMigratesOnceAndPostOwnsIndependentEntryBytes()

@@ -87,6 +87,9 @@
     <Compile Include="../../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs" Link="Production/ExcludeFromSavegameModSettingsAttribute.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveDataContracts.cs" Link="Production/VersionedSaveDataContracts.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
+    <Compile Include="../../src/Savegames/VersionedSavePreparedOrigin.cs" Link="Production/VersionedSavePreparedOrigin.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveCriticalCapture.cs" Link="Production/VersionedSaveCriticalCapture.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveCriticalMarker.cs" Link="Production/VersionedSaveCriticalMarker.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
     <Compile Include="../../src/Units/Selection/UnitAccess.cs" Link="Production/UnitAccess.cs" />
