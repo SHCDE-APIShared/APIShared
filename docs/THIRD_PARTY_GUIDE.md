@@ -9,6 +9,11 @@ The service owns physical rows, its private ledger and matching save entries.
 Recipes, hauling, art, player authorization and command transport remain consumer
 responsibilities. Existing overlapping private capacity detours must be migrated.
 
+For a per-building display or withdrawal plan, observe the exact store and call
+the registered good's `TryGetQuantity`; combined virtual occupancy is not that
+good's quantity. Follow the [protected read workflow](NATIVE_STORAGE.md#read-one-good-in-one-store),
+which grants no mutation authority.
+
 Use `NativeStorageClient.TryExchangeBatch` for an authorized lot spanning several
 stores; looping single-store exchanges cannot make the lot atomic. Retain the
 original snapshots and owner sequence for an in-world retry. See

@@ -674,6 +674,7 @@ APIShared.Economy.NativeStoredGood | public sealed class APIShared.Economy.Nativ
 APIShared.Economy.NativeStoredGood | public APIShared.Economy.NativeStoragePool Pool { get; }
 APIShared.Economy.NativeStoredGood | public bool TryExchange(APIShared.Economy.NativeStorageSnapshot storage, long operationSequence, int quantityDelta, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStoredGood | public bool TryGetLastSequence(out long sequence, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetQuantity(APIShared.Economy.NativeStorageSnapshot storage, out int quantity, out string reason)
 APIShared.Economy.NativeStoredGood | public bool TryGetStock(int playerId, out APIShared.Goods.GoodsBalance balance, out string reason)
 APIShared.Economy.NativeStoredGood | public string GoodId { get; }
 APIShared.Economy.NativeStoredGood | public string OwnerGuid { get; }
