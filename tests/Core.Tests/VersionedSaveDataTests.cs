@@ -7,6 +7,105 @@ namespace APIShared.Core.Tests;
 public partial class VersionedSaveDataTests
 {
     [TestMethod]
+    public void ArchiveMissionAssociationReachesEveryOutcomeAndBothDeliveryPhases()
+    {
+        byte[] valid=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{1}});
+        var scenarios=new (VersionedSaveLoadStatus Status,byte[] Record,VersionedSaveLoadSource Source,bool FailingLegacy)[]
+        {
+            (VersionedSaveLoadStatus.Restored,valid,VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.NoRecord,null,VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.OutOfScope,valid,VersionedSaveLoadSource.EditorMap,false),
+            (VersionedSaveLoadStatus.TooNew,SaveWith(2,2,new[]{"value"},new(){["value"]=new byte[]{1}}),VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.Corrupt,valid.Take(valid.Length-1).ToArray(),VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.Unrecognized,new byte[]{1,2,3},VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.MigrationFailed,new byte[]{1,2,3},VersionedSaveLoadSource.SaveGame,true)
+        };
+        foreach(bool prepare in new[]{false,true})
+            foreach(var scenario in scenarios)
+            {
+                var extender=new FakeExtender();
+                var early=new List<VersionedSaveLoad>();
+                var registration=extender.Registration("Mod.Session",1,1,new[]{"value"},Writes(new()));
+                if(prepare)registration.Prepared=early.Add;
+                if(scenario.FailingLegacy)
+                    registration.LegacyReader=(byte[] data,VersionedSaveEntries entries,out int version)=>throw new FormatException("legacy failed");
+                var mod=extender.Register(registration);
+                extender.Registry.BeginLoad(scenario.Source,"same-path",117);
+                if(scenario.Record!=null)mod.Load(scenario.Record);
+                if(prepare){extender.Registry.PrepareLoad();extender.Registry.PrepareLoad();}
+                extender.Registry.EndLoad();
+                VersionedSaveLoad loaded=mod.Loads.Single();
+                Assert.AreEqual(scenario.Status,loaded.Status);
+                Assert.AreEqual(117L,loaded.MissionSessionId);
+                if(prepare)
+                {
+                    Assert.AreEqual(scenario.Status,early.Single().Status);
+                    Assert.AreEqual(117L,early.Single().MissionSessionId);
+                    Assert.AreNotSame(early.Single(),loaded);
+                }
+            }
+    }
+
+    [TestMethod]
+    public void UnknownMissionAssociationAndOldConstructionRemainZeroWithoutChangingSaveBytes()
+    {
+        Assert.AreEqual(0L,new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord,
+            VersionedSaveLoadSource.SaveGame,null,0,0,null,0,string.Empty).MissionSessionId);
+        Assert.AreEqual(0L,new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord,
+            VersionedSaveLoadSource.SaveGame,null,0,0,null,0,string.Empty,null).MissionSessionId);
+        // Compile guard: the pre-existing origin overload accepted an untyped
+        // default. A same-arity value-type overload would make it ambiguous.
+        Assert.AreEqual(0L,new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord,
+            VersionedSaveLoadSource.SaveGame,null,0,0,null,0,string.Empty,default).MissionSessionId);
+        var extender=new FakeExtender();
+        var early=new List<VersionedSaveLoad>();
+        var state=new Dictionary<string,byte[]>{["value"]=new byte[]{7}};
+        var registration=extender.Registration("Mod.Session",1,1,new[]{"value"},Writes(state));
+        registration.Prepared=early.Add;
+        var mod=extender.Register(registration);
+        byte[] before=extender.Save(mod);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,null,19);
+        mod.Load(before);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        Assert.AreEqual(19L,early[0].MissionSessionId);
+        CollectionAssert.AreEqual(before,extender.Save(mod),"Mission metadata must not enter the stored envelope.");
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,null);
+        mod.Load(before);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        Assert.AreEqual(0L,early[1].MissionSessionId);
+        Assert.AreEqual(0L,mod.Loads.Last().MissionSessionId);
+        Assert.AreEqual(19L,early[0].MissionSessionId,"A later window must not change a retained receiver.");
+        CollectionAssert.AreEqual(before,extender.Save(mod));
+    }
+
+    [TestMethod]
+    public void ReentrantArchivePreparationKeepsEachCausalAssociationAndRetiresTheOuterDelivery()
+    {
+        var extender=new FakeExtender();
+        var early=new List<VersionedSaveLoad>();
+        bool nested=false;
+        FakeExtender.Mod mod=null;
+        byte[] outer=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{1}});
+        byte[] inner=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{2}});
+        var registration=extender.Registration("Mod.Session",1,1,new[]{"value"},Writes(new()));
+        registration.Prepared=load=>
+        {
+            early.Add(load);
+            if(nested)return;
+            nested=true;
+            extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,"same-path",202);
+            mod.Load(inner);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        };
+        mod=extender.Register(registration);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,"same-path",101);
+        mod.Load(outer);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        CollectionAssert.AreEqual(new long[]{101,202},early.Select(load=>load.MissionSessionId).ToArray());
+        Assert.AreEqual(202L,mod.Loads.Single().MissionSessionId);
+        CollectionAssert.AreEqual(new byte[]{1},early[0].Entries["value"]);
+        CollectionAssert.AreEqual(new byte[]{2},early[1].Entries["value"]);
+        CollectionAssert.AreEqual(new byte[]{2},mod.Loads.Single().Entries["value"]);
+        Assert.AreEqual(101L,early[0].MissionSessionId);
+    }
+
+    [TestMethod]
     public void PreparedMigratesOnceAndPostOwnsIndependentEntryBytes()
     {
         var extender = new FakeExtender();
@@ -64,12 +163,13 @@ public partial class VersionedSaveDataTests
         registration.Prepared = _ => throw new InvalidOperationException("consumer rejected preparation");
         var mod = extender.Register(registration);
         byte[] bytes = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } });
-        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav");
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav", 41);
         mod.Load(bytes);
         extender.Registry.PrepareLoad();
         extender.Registry.EndLoad();
         Assert.AreEqual(1, mod.Loads.Count);
         Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
+        Assert.AreEqual(41L,mod.Loads.Single().MissionSessionId);
         CollectionAssert.AreEqual(bytes, extender.Save(mod));
     }
 

@@ -59,6 +59,36 @@ An exception is isolated and preserves the original record bytes. Consumers whic
 require protection before simulation must independently refuse native initialization
 when preparation or application fails; throwing this callback alone is no load veto.
 
+### Associating archive callbacks with a mission attempt
+
+`VersionedSaveLoad.MissionSessionId` associates an archive window with its mission attempt.
+It is the process-local attempt captured once at the start of the archive window
+from the owned lifecycle operation executing on that archive caller's thread.
+`Prepared` and `Loaded` receive the same value for every outcome, including
+`NoRecord`, `OutOfScope` and failures. Several archive windows, including nested
+loads within an operation, can share one attempt ID. It is not a unique archive
+invocation ID, and it is not stored in the save.
+
+Lifecycle observers queue reentrant notifications, whereas archive callbacks run
+synchronously. A callback that starts another load can therefore publish its
+incoming data before that load's `BeforeLoad` notification reaches your observer.
+Associate staged data with this captured ID and match later lifecycle notifications;
+do not depend on the last initialization notification you received. A late end of
+an older attempt must not retire data associated with its replacement.
+
+Zero means no owned executing scope was established on the archive caller's thread.
+This includes loads outside that scope and foreign-thread archive calls. A direct
+nested load inside an owned operation may carry the outer attempt's ID. Never fill
+in zero using the latest ready `Current` mission. `Current` may already describe a
+replacement, and null can mean either pending initialization or no ready mission.
+
+The ID supplies association only. It proves neither successful initialization nor
+a current native world, original archive provenance, save commitment or permission
+to import/mutate state. Native use still requires the appropriate protected lifecycle
+boundary. Consumers that reference this getter must require the provider release/build exporting
+it; no numeric release version is assumed here. Existing consumers that ignore it
+retain their prior behavior, record formats and callback ordering.
+
 **Scope.** `SaveGames` (default) reads and writes gameplay saves only. `SaveGamesAndMaps`
 also writes map editor saves and reads every map load, for data that belongs to the map,
 such as a theme chosen in the editor.

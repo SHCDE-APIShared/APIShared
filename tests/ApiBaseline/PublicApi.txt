@@ -3174,6 +3174,7 @@ APIShared.Savegames.VersionedSaveLoad | public System.Collections.Generic.IReadO
 APIShared.Savegames.VersionedSaveLoad | public int KeptEntryCount { get; }
 APIShared.Savegames.VersionedSaveLoad | public int MinimumReaderVersion { get; }
 APIShared.Savegames.VersionedSaveLoad | public int RecordVersion { get; }
+APIShared.Savegames.VersionedSaveLoad | public long MissionSessionId { get; }
 APIShared.Savegames.VersionedSaveLoad | public string Detail { get; }
 APIShared.Savegames.VersionedSaveLoad | public string FilePath { get; }
 APIShared.Savegames.VersionedSaveLoadSource | public enum APIShared.Savegames.VersionedSaveLoadSource : int

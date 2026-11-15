@@ -43,6 +43,7 @@ namespace APIShared.Savegames
         private long finalizedLoadGeneration = -1;
         private VersionedSaveLoadSource windowSource;
         private string windowFile;
+        private long windowMissionSessionId;
         private long failures;
 
         internal VersionedSaveDataRegistry(Transport transport, Action<string> warning, Action<string> error)
@@ -132,6 +133,9 @@ namespace APIShared.Savegames
         }
 
         internal void BeginLoad(VersionedSaveLoadSource source, string filePath)
+            => BeginLoad(source, filePath, 0);
+
+        internal void BeginLoad(VersionedSaveLoadSource source, string filePath, long missionSessionId)
         {
             lock (sync)
             {
@@ -140,6 +144,7 @@ namespace APIShared.Savegames
                 finalizedLoadGeneration = -1;
                 windowSource = source;
                 windowFile = filePath;
+                windowMissionSessionId = missionSessionId > 0 ? missionSessionId : 0;
                 foreach (Slot slot in slots) { slot.Pending = null; slot.ResetMission(); }
             }
         }
@@ -151,6 +156,7 @@ namespace APIShared.Savegames
                 if (windowOpen) return; // The game unloads the previous map while loading the next one.
                 generation++;
                 finalizedLoadGeneration = -1;
+                windowMissionSessionId = 0;
                 foreach (Slot slot in slots) slot.ResetMission();
             }
         }
@@ -171,12 +177,14 @@ namespace APIShared.Savegames
         {
             Slot[] snapshot;
             long currentGeneration;
+            long missionSessionId;
             VersionedSaveLoadSource source;
             string file;
             lock (sync)
             {
                 if (!windowOpen) return;
                 snapshot = slots; currentGeneration = generation; source = windowSource; file = windowFile;
+                missionSessionId = windowMissionSessionId;
             }
             foreach (Slot slot in snapshot)
             {
@@ -187,7 +195,7 @@ namespace APIShared.Savegames
                     if (slot.Prepared == null || slot.PreparedOutcome != null) continue;
                     bytes = slot.Pending;
                 }
-                Outcome outcome = Read(slot, bytes, source, file);
+                Outcome outcome = Read(slot, bytes, source, file, missionSessionId);
                 // Only explicitly tracked sources allocate/hash origin metadata. Read's
                 // legacy/migration callbacks already own copies, so bytes stays original.
                 var origin = slot.PreparedSource == null ? null : new VersionedSavePreparedOrigin(
@@ -233,7 +241,7 @@ namespace APIShared.Savegames
             var entries = new Dictionary<string, byte[]>(StringComparer.Ordinal);
             foreach (var entry in load.Entries) entries.Add(entry.Key, (byte[])entry.Value.Clone());
             return new VersionedSaveLoad(load.Status, load.Source, load.FilePath, load.RecordVersion,
-                load.MinimumReaderVersion, entries, load.KeptEntryCount, load.Detail, origin);
+                load.MinimumReaderVersion, entries, load.KeptEntryCount, load.Detail, origin, load.MissionSessionId);
         }
 
         internal void EndLoad()
@@ -242,6 +250,7 @@ namespace APIShared.Savegames
             byte[][] pending;
             Outcome[] prepared;
             long loadGeneration;
+            long missionSessionId;
             VersionedSaveLoadSource source;
             string file;
             lock (sync)
@@ -259,11 +268,12 @@ namespace APIShared.Savegames
                 loadGeneration = generation;
                 source = windowSource;
                 file = windowFile;
+                missionSessionId = windowMissionSessionId;
             }
             for (int i = 0; i < snapshot.Length; i++)
             {
                 Slot slot = snapshot[i];
-                Outcome outcome = prepared[i] ?? Read(slot, pending[i], source, file);
+                Outcome outcome = prepared[i] ?? Read(slot, pending[i], source, file, missionSessionId);
                 lock (sync)
                 {
                     if (generation != loadGeneration) return; // A newer load or unload owns the state now.
@@ -302,37 +312,37 @@ namespace APIShared.Savegames
             }
         }
 
-        private Outcome Read(Slot slot, byte[] data, VersionedSaveLoadSource source, string file)
+        private Outcome Read(Slot slot, byte[] data, VersionedSaveLoadSource source, string file, long missionSessionId)
         {
             if (!slot.Accepts(source))
-                return Outcome.Empty(new VersionedSaveLoad(VersionedSaveLoadStatus.OutOfScope, source, file, 0, 0, null, 0, string.Empty));
+                return Outcome.Empty(new VersionedSaveLoad(VersionedSaveLoadStatus.OutOfScope, source, file, 0, 0, null, 0, string.Empty, null, missionSessionId));
             if (data == null)
-                return Outcome.Empty(new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord, source, file, 0, 0, null, 0, string.Empty));
+                return Outcome.Empty(new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord, source, file, 0, 0, null, 0, string.Empty, null, missionSessionId));
             VersionedSaveEntries entries;
             int version, minimumReader;
             if (!VersionedSaveRecordCodec.HasSignature(data))
             {
-                if (slot.Legacy == null) return Kept(VersionedSaveLoadStatus.Unrecognized, source, file, data, 0, 0, "No legacy reader for unversioned data.");
+                if (slot.Legacy == null) return Kept(VersionedSaveLoadStatus.Unrecognized, source, file, data, 0, 0, "No legacy reader for unversioned data.", missionSessionId);
                 entries = new VersionedSaveEntries();
                 bool accepted;
                 try { using (new PreparedDispatchScope(null)) accepted = slot.Legacy((byte[])data.Clone(), entries, out version); }
                 catch (Exception ex)
                 {
                     Fail("Versioned save data legacy reader failed for " + slot.Identifier + ": " + ex);
-                    return Kept(VersionedSaveLoadStatus.MigrationFailed, source, file, data, 0, 0, "Legacy reader threw: " + ex.Message);
+                    return Kept(VersionedSaveLoadStatus.MigrationFailed, source, file, data, 0, 0, "Legacy reader threw: " + ex.Message, missionSessionId);
                 }
-                if (!accepted) return Kept(VersionedSaveLoadStatus.Unrecognized, source, file, data, 0, 0, "The legacy reader did not recognize the data.");
+                if (!accepted) return Kept(VersionedSaveLoadStatus.Unrecognized, source, file, data, 0, 0, "The legacy reader did not recognize the data.", missionSessionId);
                 if (version < 1 || version > slot.Current)
-                    return Kept(VersionedSaveLoadStatus.MigrationFailed, source, file, data, version, 0, "The legacy reader returned version " + version + ".");
+                    return Kept(VersionedSaveLoadStatus.MigrationFailed, source, file, data, version, 0, "The legacy reader returned version " + version + ".", missionSessionId);
                 minimumReader = 0;
             }
             else
             {
                 VersionedSaveRecordCodec.Decoded decoded = VersionedSaveRecordCodec.Decode(data, slot.Current);
                 if (decoded.Status == VersionedSaveRecordCodec.DecodeStatus.TooNew)
-                    return Kept(VersionedSaveLoadStatus.TooNew, source, file, data, decoded.RecordVersion, decoded.MinimumReaderVersion, decoded.Detail);
+                    return Kept(VersionedSaveLoadStatus.TooNew, source, file, data, decoded.RecordVersion, decoded.MinimumReaderVersion, decoded.Detail, missionSessionId);
                 if (decoded.Status == VersionedSaveRecordCodec.DecodeStatus.Corrupt)
-                    return new Outcome(new VersionedSaveLoad(VersionedSaveLoadStatus.Corrupt, source, file, 0, 0, null, 0, decoded.Detail),
+                    return new Outcome(new VersionedSaveLoad(VersionedSaveLoadStatus.Corrupt, source, file, 0, 0, null, 0, decoded.Detail, null, missionSessionId),
                         data, false, null);
                 entries = decoded.Entries;
                 version = decoded.RecordVersion;
@@ -347,7 +357,7 @@ namespace APIShared.Savegames
                 {
                     Fail("Versioned save data migration " + from + " -> " + (from + 1) + " failed for " + slot.Identifier + ": " + ex);
                     return Kept(VersionedSaveLoadStatus.MigrationFailed, source, file, data, version, minimumReader,
-                        "Migration " + from + " -> " + (from + 1) + " threw: " + ex.Message);
+                        "Migration " + from + " -> " + (from + 1) + " threw: " + ex.Message, missionSessionId);
                 }
             }
             var known = new Dictionary<string, byte[]>(StringComparer.Ordinal);
@@ -358,12 +368,12 @@ namespace APIShared.Savegames
                 else unknown.Add(entry);
             }
             return new Outcome(new VersionedSaveLoad(VersionedSaveLoadStatus.Restored, source, file, version, minimumReader,
-                known, unknown.Count, string.Empty), data, false, unknown);
+                known, unknown.Count, string.Empty, null, missionSessionId), data, false, unknown);
         }
 
         private static Outcome Kept(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string file,
-            byte[] data, int version, int minimumReader, string detail) =>
-            new Outcome(new VersionedSaveLoad(status, source, file, version, minimumReader, null, 0, detail), data, true, null);
+            byte[] data, int version, int minimumReader, string detail, long missionSessionId) =>
+            new Outcome(new VersionedSaveLoad(status, source, file, version, minimumReader, null, 0, detail, null, missionSessionId), data, true, null);
 
         private byte[] Save(Slot slot, VersionedSaveContext context)
         {

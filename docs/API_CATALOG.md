@@ -864,6 +864,8 @@ callback runs once per archive load with a documented status, including `NoRecor
 declared `SimulationRelevant` are compared across players before a multiplayer save loads.
 Usage, the record-version migration policy, the comparison boundary, limits and
 implementation are in [Save data](SAVE_DATA.md).
+The readonly `VersionedSaveLoad.MissionSessionId` associates synchronous archive
+callbacks with queued lifecycle notifications; see the [association contract](SAVE_DATA.md#associating-archive-callbacks-with-a-mission-attempt).
 The registry's internal [tracked-origin and enrolled-capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
 binds existing records to frozen bytes and original markers without adding a
 public enrollment or legacy-storage migration API. The existing protected writer
