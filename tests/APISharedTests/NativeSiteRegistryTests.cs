@@ -102,6 +102,7 @@ namespace APISharedTests
                 ("APIShared.Economy.WorkerProductionBonusNativeRuntime", "Initialize", -1, m => m.Name == "Commit"),
                 ("APIShared.Economy.WorkerProductionOutputNativeRuntime", "Initialize", -1, m => m.Name == "Commit"),
                 ("APIShared.Economy.WeaponProductionNativeRuntime/Adapter", "Install", -1, m => m.Name == "Commit"),
+                ("APIShared.Economy.WeaponProductionNativeRuntime/StoredDeliveryAdapter", "Install", -1, m => m.Name == "Commit"),
                 ("APIShared.Wildlife.HunterNativeSites", "Initialize", -1, m => m.Name == "Commit"),
                 ("APIShared.Wildlife.HunterOwnerGates", "TryEnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.Wildlife.HerdRuntime", "TryEnsureFlightGates", -1, m => m.Name == "Commit"),
