@@ -24,7 +24,9 @@ namespace APIShared.Economy
         private object engine, boundWorld;
         private NativeStorageState state;
         private NativeStorageState staged;
-        private long stagedSession;
+        private NativeStoragePreparedLoad preparedLoad;
+        private long stagedSession => preparedLoad?.MissionSessionId ?? 0;
+        private object blockedWorld;
         private volatile bool ready, blocked;
         private bool attempted;
         private string failure;
@@ -135,10 +137,12 @@ namespace APIShared.Economy
             // never silently erase its unknown state, including after a previous blocked load.
             if (current != null && clock != null &&
                 CanCreateWithoutArchive(stagedSession, current.Mission, clock.Context.StartKind) &&
+                (!blocked || !ReferenceEquals(current, blockedWorld)) &&
                 current.Mission == (MissionLifecycleService.ActiveContext?.SessionId ?? 0))
             {
                 var empty = CreateEmpty();
-                staged = empty; stagedSession = current.Mission; blocked = false; failure = null; passiveCargoRecord = false;
+                preparedLoad = NativeStoragePreparedLoad.ForBlankWorld(empty, current.Mission);
+                staged = empty; blocked = false; blockedWorld = null; failure = null; passiveCargoRecord = false;
                 Volatile.Write(ref boundWorld, null);
             }
             if (blocked) { reason = failure ?? "The native-storage record is blocked."; return false; }
@@ -150,7 +154,7 @@ namespace APIShared.Economy
             if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld)) { reason = "World replacement interrupted storage activation."; return false; }
             state = candidate;
             Volatile.Write(ref boundWorld, world);
-            staged = null;
+            staged = null; preparedLoad.ReleaseState();
             NativeStorageNativeRuntime.UpdateDemand(state.HasRows);
             reason = string.Empty; return true;
         }
@@ -169,6 +173,9 @@ namespace APIShared.Economy
         private bool Block(string reason)
         {
             failure = reason; blocked = true;
+            // Metadata refresh keeps this identity. Only a genuinely new explicit blank
+            // world may recover without an archive; the same Ready world cannot erase a refusal.
+            blockedWorld = MissionLifecycleService.NativeWorld;
             NativeStorageNativeRuntime.UpdateDemand(true); // Unknown occupied storage cannot safely admit more goods.
             return false;
         }
@@ -305,12 +312,12 @@ namespace APIShared.Economy
         {
             lock (engine)
             {
-                blocked = false; failure = null; staged = null;
-                stagedSession = MissionLifecycleService.ActiveContext?.SessionId ?? 0;
+                blocked = false; blockedWorld = null; failure = null; staged = null;
                 Volatile.Write(ref boundWorld, null);
                 NativeStorageNativeRuntime.UpdateDemand(true);
                 var prepared = new NativeStoragePreparedLoad();
-                try { prepared.Prepare(definitions, load); }
+                preparedLoad = prepared;
+                try { prepared.Prepare(definitions, load, MissionLifecycleService.ExecutingSessionId); }
                 finally
                 {
                     staged = prepared.State;
