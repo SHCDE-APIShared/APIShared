@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.54.0",
+  "Version": "0.55.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.55.0",
+      "Changes": [
+        "Add typed ConstructionCosts targets with checked native/visual table bounds and centralized mapper, gate, garden, pond and stationary-engine aliases.",
+        "Add general Human-only construction extras with authoritative payment reservations, saved actual-payment receipts and same-owner demolition refunds, including native float/integer refund arithmetic and signed gold offsets.",
+        "Correct the Extender refund interceptor to use its authoritative final ID/percentage context; distinguish marking removal from terminal slot release with verified semantic native contracts."
+      ]
+    },
     {
       "Version": "0.54.0",
       "Changes": [

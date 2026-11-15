@@ -441,6 +441,66 @@ APIShared.Buildings.BuildingStateValueAccess | OwnerRequest = 0
 APIShared.Buildings.BuildingStateValueAccess | Simulation = 1
 APIShared.Buildings.BuildingStates | public static class APIShared.Buildings.BuildingStates
 APIShared.Buildings.BuildingStates | public static bool TryRegister(APIShared.Buildings.BuildingStateRegistration registration, out APIShared.Buildings.BuildingStateTable table, out string reason)
+APIShared.Buildings.ConstructionCostTarget | public struct APIShared.Buildings.ConstructionCostTarget : System.IEquatable<APIShared.Buildings.ConstructionCostTarget>
+APIShared.Buildings.ConstructionCostTarget | public APIShared.Buildings.ConstructionCostTargetKind Kind { get; }
+APIShared.Buildings.ConstructionCostTarget | public SHCDESE.Interop.eMappers Mapper { get; }
+APIShared.Buildings.ConstructionCostTarget | public SHCDESE.Interop.eStructs Structure { get; }
+APIShared.Buildings.ConstructionCostTarget | public bool Equals(APIShared.Buildings.ConstructionCostTarget other)
+APIShared.Buildings.ConstructionCostTarget | public bool IsValid { get; }
+APIShared.Buildings.ConstructionCostTarget | public bool SupportsHumanExtraCosts { get; }
+APIShared.Buildings.ConstructionCostTarget | public bool SupportsVanillaCosts { get; }
+APIShared.Buildings.ConstructionCostTarget | public override bool Equals(object obj)
+APIShared.Buildings.ConstructionCostTarget | public override int GetHashCode()
+APIShared.Buildings.ConstructionCostTarget | public override string ToString()
+APIShared.Buildings.ConstructionCostTarget | public static APIShared.Buildings.ConstructionCostTarget FromMapper(SHCDESE.Interop.eMappers mapper)
+APIShared.Buildings.ConstructionCostTarget | public static APIShared.Buildings.ConstructionCostTarget FromStructure(SHCDESE.Interop.eStructs structure)
+APIShared.Buildings.ConstructionCostTarget | public static bool TryParseKey(string key, out APIShared.Buildings.ConstructionCostTarget target)
+APIShared.Buildings.ConstructionCostTarget | public static bool op_Equality(APIShared.Buildings.ConstructionCostTarget left, APIShared.Buildings.ConstructionCostTarget right)
+APIShared.Buildings.ConstructionCostTarget | public static bool op_Inequality(APIShared.Buildings.ConstructionCostTarget left, APIShared.Buildings.ConstructionCostTarget right)
+APIShared.Buildings.ConstructionCostTarget | public string Key { get; }
+APIShared.Buildings.ConstructionCostTargetKind | public enum APIShared.Buildings.ConstructionCostTargetKind : byte
+APIShared.Buildings.ConstructionCostTargetKind | Mapper = 2
+APIShared.Buildings.ConstructionCostTargetKind | None = 0
+APIShared.Buildings.ConstructionCostTargetKind | Structure = 1
+APIShared.Buildings.ConstructionCostValues | public struct APIShared.Buildings.ConstructionCostValues : System.IEquatable<APIShared.Buildings.ConstructionCostValues>
+APIShared.Buildings.ConstructionCostValues | public .ctor(int wood, int stone, int iron, int pitch, int gold)
+APIShared.Buildings.ConstructionCostValues | public bool Equals(APIShared.Buildings.ConstructionCostValues other)
+APIShared.Buildings.ConstructionCostValues | public int GetAmount(SHCDESE.Interop.eGoods good)
+APIShared.Buildings.ConstructionCostValues | public int Gold { get; }
+APIShared.Buildings.ConstructionCostValues | public int Iron { get; }
+APIShared.Buildings.ConstructionCostValues | public int Pitch { get; }
+APIShared.Buildings.ConstructionCostValues | public int Stone { get; }
+APIShared.Buildings.ConstructionCostValues | public int Wood { get; }
+APIShared.Buildings.ConstructionCostValues | public override bool Equals(object obj)
+APIShared.Buildings.ConstructionCostValues | public override int GetHashCode()
+APIShared.Buildings.ConstructionCosts | public static class APIShared.Buildings.ConstructionCosts
+APIShared.Buildings.ConstructionCosts | public static bool IsAvailable { get; }
+APIShared.Buildings.ConstructionCosts | public static bool TryGetCurrent(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
+APIShared.Buildings.ConstructionCosts | public static bool TryGetDefault(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
+APIShared.Buildings.ConstructionCosts | public static bool TryGetDisplayCosts(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
+APIShared.Buildings.ConstructionCosts | public static bool TrySetCurrent(APIShared.Buildings.ConstructionCostTarget target, SHCDESE.Interop.eGoods good, int amount, out string reason)
+APIShared.Buildings.ConstructionCosts | public static string UnavailableReason { get; }
+APIShared.Buildings.ConstructionDemolition | public static class APIShared.Buildings.ConstructionDemolition
+APIShared.Buildings.ConstructionDemolition | public static void RunSelfDemolition(int actor, System.Action operation)
+APIShared.Buildings.ConstructionObjectIdentity | public struct APIShared.Buildings.ConstructionObjectIdentity : System.IEquatable<APIShared.Buildings.ConstructionObjectIdentity>
+APIShared.Buildings.ConstructionObjectIdentity | public .ctor(APIShared.Buildings.ConstructionObjectKind kind, int slot, uint globalId)
+APIShared.Buildings.ConstructionObjectIdentity | public APIShared.Buildings.ConstructionObjectKind Kind { get; }
+APIShared.Buildings.ConstructionObjectIdentity | public bool Equals(APIShared.Buildings.ConstructionObjectIdentity other)
+APIShared.Buildings.ConstructionObjectIdentity | public bool IsValid { get; }
+APIShared.Buildings.ConstructionObjectIdentity | public int Slot { get; }
+APIShared.Buildings.ConstructionObjectIdentity | public override bool Equals(object value)
+APIShared.Buildings.ConstructionObjectIdentity | public override int GetHashCode()
+APIShared.Buildings.ConstructionObjectIdentity | public uint GlobalId { get; }
+APIShared.Buildings.ConstructionObjectKind | public enum APIShared.Buildings.ConstructionObjectKind : byte
+APIShared.Buildings.ConstructionObjectKind | Building = 1
+APIShared.Buildings.ConstructionObjectKind | Decoration = 3
+APIShared.Buildings.ConstructionObjectKind | Unit = 2
+APIShared.Buildings.ConstructionRefundContext | public sealed class APIShared.Buildings.ConstructionRefundContext
+APIShared.Buildings.ConstructionRefundContext | public APIShared.Buildings.ConstructionCostTarget Target { get; }
+APIShared.Buildings.ConstructionRefundContext | public int Percentage { get; }
+APIShared.Buildings.ConstructionRefundContext | public int PlayerId { get; }
+APIShared.Buildings.ConstructionRefundPolicies | public static class APIShared.Buildings.ConstructionRefundPolicies
+APIShared.Buildings.ConstructionRefundPolicies | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Buildings.ConstructionRefundContext, int?> policy, out string reason)
 APIShared.Buildings.EnemyProximityContext | public struct APIShared.Buildings.EnemyProximityContext
 APIShared.Buildings.EnemyProximityContext | public byte Unknown { get; }
 APIShared.Buildings.EnemyProximityContext | public int CivilianRadius { get; }
@@ -472,6 +532,16 @@ APIShared.Buildings.EnemyProximityRegistration | public string RegistrationId { 
 APIShared.Buildings.EnemyProximityRegistration | public void SetEnabled(bool enabled)
 APIShared.Buildings.GatehouseClosingRules | public static class APIShared.Buildings.GatehouseClosingRules
 APIShared.Buildings.GatehouseClosingRules | public static bool IsDefinitelyOutsideRange(in SHCDESE.Interop.GameBuilding gate, in SHCDESE.Interop.GameUnit candidate)
+APIShared.Buildings.HumanConstructionCostRegistration | public sealed class APIShared.Buildings.HumanConstructionCostRegistration
+APIShared.Buildings.HumanConstructionCostRegistration | public bool TryGetCosts(APIShared.Buildings.ConstructionCostTarget target, out System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eGoods, int> values)
+APIShared.Buildings.HumanConstructionCostRegistration | public string OwnerGuid { get; }
+APIShared.Buildings.HumanConstructionCostRegistration | public string RegistrationId { get; }
+APIShared.Buildings.HumanConstructionCostRegistration | public void ClearCosts()
+APIShared.Buildings.HumanConstructionCostRegistration | public void SetActive(bool active)
+APIShared.Buildings.HumanConstructionCostRegistration | public void SetCosts(APIShared.Buildings.ConstructionCostTarget target, System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eGoods, int> values)
+APIShared.Buildings.HumanConstructionCosts | public static class APIShared.Buildings.HumanConstructionCosts
+APIShared.Buildings.HumanConstructionCosts | public static bool TryGetEffectiveCosts(APIShared.Buildings.ConstructionCostTarget target, int playerId, out System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eGoods, int> values)
+APIShared.Buildings.HumanConstructionCosts | public static bool TryRegister(string ownerGuid, string registrationId, string saveDataIdentifier, out APIShared.Buildings.HumanConstructionCostRegistration registration, out string reason)
 APIShared.Commands.GameActionAcceptedEventArgs | public sealed class APIShared.Commands.GameActionAcceptedEventArgs
 APIShared.Commands.GameActionAcceptedEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public int ActionState { get; }

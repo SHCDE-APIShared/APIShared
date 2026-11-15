@@ -254,6 +254,8 @@ namespace APIShared
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
             Group(MapperCamera, MapperCameraSpans()),
+            Group(Buildings.HumanConstructionRuntime.DecorationSite, Buildings.HumanConstructionRuntime.DecorationSpans()),
+            Group(Buildings.HumanConstructionRuntime.DisbandSite, Buildings.HumanConstructionRuntime.DisbandSpans()),
             Group(PlayerControlInput, PlayerControlInputSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans()),
             Group("Units.AiMilitary.Calls", Units.AiMilitary.Native.AiMilitaryNativeBindings.CallOnlySpans()),

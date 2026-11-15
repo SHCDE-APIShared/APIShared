@@ -33,26 +33,22 @@ namespace APIShared
                 {
                     GameBuildingManagerAPI buildings = GameBuildingManagerAPI.Instance;
                     GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
-                    if (buildings == null || players == null || args.BuildingId <= 0 ||
-                        !players.TryGetPlayerResourcesById(args.PlayerId, out GamePlayerResources* resources) ||
-                        !BuildingAccess.TryGetById(buildings, args.BuildingId, out GameBuilding* building, out _) || building == null ||
-                        building->r_PlayerIdOwner != args.PlayerId ||
-                        unchecked((int)building->r_GlobalId) != args.BuildingGlobalId ||
-                        building->r_AliveState != AliveState.IsAlive || building->r_MaxHealth == 0 ||
-                        building->r_MaxHealth > short.MaxValue || building->r_CurrentHealth < 0 ||
-                        building->r_BuildingType <= eStructs.STRUCT_NULL ||
-                        building->r_BuildingType > eStructs.STRUCT_GARDEN_LARGE)
+                    RepairRejectionReason rejection = ValidateRepair(buildings, players, args,
+                        out GameBuilding* building, out RepairRejectionSnapshot snapshot);
+                    if (rejection != RepairRejectionReason.None)
                     {
                         args.SkipOriginalFunction = true;
-                        RecordError("Building repair event had an invalid building identity or state; native repair skipped.");
+                        RecordRepairRejection(rejection, snapshot);
                         return;
                     }
                     if (building->r_CurrentHealth >= building->r_MaxHealth) return;
 
                     eStructs type = building->r_BuildingType;
-                    int baseIron = buildings.GetIronIngotCost(type);
-                    int basePitch = buildings.GetRawPitchCost(type);
-                    int baseGold = buildings.GetGoldCost(type);
+                    if (!Buildings.ConstructionCosts.TryGetCurrent(Buildings.ConstructionCostTarget.FromStructure(type), out var constructionCost, out string costReason))
+                        throw new InvalidOperationException("Building repair cost safety unavailable: " + costReason);
+                    int baseIron = constructionCost.Iron;
+                    int basePitch = constructionCost.Pitch;
+                    int baseGold = constructionCost.Gold;
                     if (baseIron < 0 || basePitch < 0 || baseGold < 0)
                     {
                         args.SkipOriginalFunction = true;

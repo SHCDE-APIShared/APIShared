@@ -2116,3 +2116,120 @@ observation. Native fixture tests execute both relay branches with all seven inp
 and the full64-bit result, validate actual backend displacement and generated source
 bytes, and exercise recipe-independent delivery. These are private native fixtures;
 actual game/new/load/editor and real multiplayer acceptance remain separate.
+
+## Typed construction costs
+
+Owner: Buildings.ConstructionCosts. Hash:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+No hooks. Loader RVA 0xC33A0 copies 110 interleaved 20-byte records: default row zero
+0x2DE240, loader cursor 0x2DE244..0x2DEADC. Current row zero is 0x67E5B8C, fields
+wood/stone/iron/pitch/gold at +0/+4/+8/+12/+16. Payment RVA 0xC8A90 consumes them;
+original-image anchor 0xC8B26 is `44 8B A4 88 90 5B 7E 06`.
+
+The independently validated private static readonly GameData.game_data_txt is Int32[545]
+(109 rows); reflection captures it once. Writes validate both destinations first.
+GameData.getStructureCosts resolves turret menu IDs 115/116 to rows 86/87; stationary
+engine construction 0x138D0 pays the same rows through C8A90. Their enum names are
+TOWER1_DESTROYED/TOWER2_DESTROYED and are intentional cost identities. The typed resolver
+also mirrors explicit gate/garden/pond aliases. Mapper input uses its typed SE converter
+plus the abstract wooden-gate identity omitted there. Brazier is not a native cost row.
+
+No unproven layout fallback: unsupported hashes fail before dereference. On update verify
+both loader extent and payment consumer, the genuine managed field/array/method contract,
+and installed enum meanings, then rerun alias and sentinel-buffer tests before rebinding.
+
+
+## Human construction transaction adapters (2026-11-15)
+
+Reference native SHA256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+Permanent SafeIlHooks wrap final SE DetourHandle Original delegates after all Pre modifications. Exactly one getter is required per managed method, including the MirrorTool closure. Existing native SE hooks are untouched. Delegate/signature mismatch disables Human extras.
+
+Free decision: RVA0xB9710, (manager, playerId, canonicalCostRow) -> int; pristine16 bytes8B0512C85A0383F806744D833D6EB44B. It reads free woodcutter/granary state and marketplace exceptions; game6 bypasses them. Only validated rows are passed.
+
+Decoration removal: RVA0x9F410, full121-byte pristine SHA256E3F245F3E19DA54AD3C4AF52E3729A217DFAAC8198B1B21B25734222DE9719E9. Indirect/7 entry4883EC084863C2 (sub rsp,8; movsxd rax,edx), continuation0x9F417. All local branches avoid the entry interior. The second argument is a direct tile ID; active static projectile types10..15 become state3. Only a Chore97 issuer or an authenticated custom self-demolition scope authorizes refund; other cleanup retires receipts. Native tests execute this production backend policy on copied code.
+
+Tower-weapon construction: canonical dispatch table cellRVA0x2C7B80 contains handler0x138D0 for Chore42; independent neighboring entries29 and69 point to0x12400 and0x172B0. Only the matching native Chore bills stationary Mangonel/Ballista unit creation.
+
+Refund0xC4480 precedes bulldoze mark0xC4290. Final SE Original wrappers use effective Pre parameters, ignore skipped native calls, and require exact generation state3 before consuming receipts. Terminal building/unit cleanup retires stale receipts. Wall sentinel IDs are untouched.
+
+All transaction adapters are reference-image bound; no unknown-build address reuse. A prologue alone does not establish the structure, Chore and transaction semantic contract, so unknown images fail closed until re-audited. Publication validates actual RedBird Indirect/7 shape. Published hooks stay rooted and logically dormant on failure. Independent typed-table access has its own availability. Remaining game checks cover actual creation, failure, refund rates, storage removal, saves and multiplayer.
+
+
+### Construction Undo for units and decorations (Chore75)
+
+The matching native dispatch table cellRVA0x2C7C88 selects handler0x17B10. Full421-byte SHA256ED1F269B1FED7EAB0F568734CE46BF921ECD1D517BC5DCA4FED92BA89BECFFE5; entry40534883EC30 is pushrbx(2), subrsp30h(4), Indirect/6 continuation0x17B16. No local branches enter displaced bytes. The handler reads two signedInt16 values: mode1 marks a direct decoration slot state3; mode2 refunds stationary type41/61 with sentinel-3/-4 and percentage100, then marks the unit state3. Capture the authenticated current Chore75 body (exact4 bytes) before Original and require the same object generation/owner/state3 afterwards. NativeC4480 sentinel branches bypass SE's per-material intercept atC487A; their actual factor is effectivePercentage/100, not the ordinary per-good multiplier. ExtraFeatures also deliberately leaves native negative-ID refund events unnormalized. General action policies run once; do not apply the regular-building material factor to tower-weapon refunds. Signed gold rebates offset the same native refund invocation before committing the paid receipt. Other unit disbands and foreign/unpaid objects remain unchanged.
+
+Producer0x63CD0, reached from GameAction dispatcher0x81870 by managed Enums.GameActionCommand.Undo, sends Chore29 with percentage100 for undo kind0(building), Chore75mode1 for kind1(decoration), and Chore75mode2 for kind2(tower weapon). Decoration Undo therefore also uses actionpercentage100 before the ordinary material factor; normal Chore97 and authenticated area-demolition decorations use actionpercentage50. This is construction Undo provenance, not arbitrary troop disband authorization.
+
+Disband publication uses its own strict backend validator: installed NativeX64 reencodes
+the displaced `40 53 48 83 EC 30` as `53 48 83 EC 30`, removing only the redundant REX
+prefix before PUSH RBX. The trampoline is exactly ten bytes: these five relocated
+bytes and a decoded near JMP back to original entry+6. Prepared original bytes and
+installed FF25 pointer slot/callback are verified separately. The shared byte-identical
+entry validator remains unchanged. Private executable tests verify this production
+contract, reject corrupted register/stack-size/continuation, and execute the dormant
+and active callback paths with exactly one original invocation each.
+
+### Extender refund identity and deletion bindings
+
+Game acceptance on 2026-11-15 exposed two integration defects under the canonical
+FBCB9319 native image. Resolve the actual installed SE constructor AddDetour AOBs:
+`c_game_building_delete_hook_impl` targets C4290 (mark state3), while
+`c_game_building_bulldoze_hook_impl` targets B8310 (terminal clear). The nearby SE
+comments describe the opposite names and cannot establish this lifecycle contract.
+Production wrapper tests extract the selected callback from compiled APIShared IL,
+then its AOB from installed SE IL, and assert the canonical executable targets.
+
+The regular C4480 material interceptor at C487A obtains an ID from caller stack
+`29 * IntPtr.Size`; this is beyond C4480's own 0x58-byte frame and is invalid when
+managed Original wrappers change its caller. The failed game run read nonzero
+pointer bits as a building ID and overwrote all refunds with type-zero costs.
+A permanent, shape-checked SafeIlHook replaces only that initial stack read with
+SE's RefundContextBuildingId, which its entry wrapper sets after Pre and before
+Original. Preserve the remaining material calculations and register writes.
+Final generic-policy ID/percentage arguments are synchronized with that context
+around Original and previous values are restored in finally. Sentinel paths
+bypass this material callback. Tests execute the transformed actual identity
+prefix with a null CPU-context pointer and check nested/failing context restoration.
+
+
+Internal phase identities and current SE compatibility mappings live in
+`BuildingRemovalNativeContracts`: `MarkBuildingForRemoval` (C4290, mark state3)
+and `ReleaseBuildingSlot` (B8310, terminal clear). External SE names are confined
+to its `ExtenderAdapter`; public API identities are unchanged.
+
+Refunds preserve the native arithmetic at the amount boundary. Regular material
+quotes match SE's CIL sequence: convert the positive payment magnitude to float,
+multiply by the float material multiplier and then the float percentage factor,
+and convert directly to UInt64. Apply integer bounds and restore a signed rebate
+only after that conversion; an intermediate float store or float Math.Min/Max can
+change Mono's result. The 2026-11-15 game comparison at 0.7f returned native13 for
+base20 and Human6 for extra10, whereas desktop .NET can produce different results
+from the same expression. Validate parity against SE in the actual game runtime,
+not a universal desktop rounding expectation. Stationary-unit quotes retain
+integer `paid * P / 100` (paid100 at29 percent returns29). The ledger rejects sign
+changes or amounts larger than the actual payment. The saved format is unchanged.
+
+### Native Undo parameter contract (2026-11-15)
+
+Canonical image FBCB9319: genuine construction Undo at 63CD0 enqueues opcode75
+(0x4B); 17B10 handles two signed Int16 parameters, mode then object slot.
+1F5F0 reads those fields at pending-record +17 and +19. This is a direct Vanilla
+parameter body, not opcode106's explicit Int32 blob length followed by bytes.
+For example mode1/slot25 begins 01 00 19 00; treating that as length4 rejects it.
+Mode1 marks a decoration for removal; mode2 refunds the stationary tower weapon
+via C4480's sentinel route before marking it. The normal building Undo arm uses
+opcode29 with a100-percent action refund. Current material multipliers still apply.
+
+At execute entry, the immediate enqueue/receive paths and due scheduler 1F7E0
+establish mode0, current slot, authenticated sender and transfer cursor0. The due
+scheduler does not reset payload-size global +0x84CD4: 17B10 itself publishes4
+inside the handler, after an entry detour runs. Never require that stale global
+to equal4 at detour entry. The pending fields are authenticated by the current
+native Chore identity; recheck identity after reading the two parameters.
+
+Game probe462794c61769 launched the genuine FreeBuild menu and shipped map
+A Mightier Oasis. Native worldkind2/mode0, actor=view1. Actual Chore69 paid12
+Human gold for a Brazier; genuine Undo removed the object. The old parameter
+reader rejected it, leaving receipt1 and payout0. This disproves the earlier
+hypothesis that normal FreeBuild never supports this Undo path.

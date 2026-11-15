@@ -2067,3 +2067,31 @@ and the larger of the human and AI thresholds. True allows a consumer to skip
 additional checks. False requires the usual evaluation, including when the
 native rule could not be validated. Keep the rule stable during the query and
 use the timing and origin capabilities to make configuration changes outside it.
+
+## Typed construction costs
+
+Use `ConstructionCostTarget.FromStructure(eStructs)` for a structure or HUD identifier, or
+`FromMapper(eMappers)` for a menu mapper. Never cast between those domains. Factory calls
+access no game state; equality coalesces known aliases. `Key`/`TryParseKey` use canonical
+symbolic identities rather than numeric indexes. Invalid enums produce invalid targets.
+
+After native readiness, `ConstructionCosts.TryGetDefault` and `TryGetCurrent` return
+immutable `ConstructionCostValues` snapshots. Defaults are the present default table
+(including intentional prior mod changes); current values are live base costs. Neither
+applies free-building exceptions. `TryGetDisplayCosts` instead follows Vanilla's current
+free-building and editor rules on Unity's thread, with a current play state.
+
+`TrySetCurrent(target, eGoods, nonnegativeAmount, out reason)` changes one of wood, stone,
+iron, pitch or gold for all players. The caller owns synchronization, authorization and
+restoration; writes have last-write semantics. Both actual native and visual destinations
+are checked before mutation. Native dock row 109 is readable but not writable because
+Vanilla has no corresponding visual row. -1 is a consumer setting sentinel, not a cost.
+
+`SupportsVanillaCosts` identifies a native row; availability and writable visual bounds
+remain operation-time checks. Braziers have only a human-extra-cost identity. Never fall
+back to unchecked SE cost methods when the service rejects a target. Unknown native
+hashes disable this service independently until its table/layout contract is re-audited.
+
+### Human-only construction extras and refunds
+
+See [Human construction costs](HUMAN_CONSTRUCTION_COSTS.md) for owner registration, effective quotes, reservations, persisted receipts and refund policies. Consumers retain mode authorization. Existing SE Post events alone are not payment commits.
