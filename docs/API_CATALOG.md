@@ -387,6 +387,15 @@ Native selection can fail or select another vetoed obstacle; it does not guarant
 Obstacle completion does not expose consumer-defined alternative traversal search
 and requires no command-engine mod.
 
+The weighted-builder owner can call
+`AssassinPathAPI.SetWeightedReconstructionEnabled(ownerGuid, enabled, ignoreGoodsyardWallFlag)`
+with `ignoreGoodsyardWallFlag: true` to require a genuine wall at either endpoint
+of a nonordinary reconstruction fallback. Stockpile-related IsWall flags alone
+cannot authorize climbing; the search must apply the same rule. Ordinary
+connections remain available; the existing two-argument overload keeps its raw
+IsWall behavior. See
+[weighted reconstruction](THIRD_PARTY_GUIDE.md#weighted-assassin-reconstruction).
+
 ## Game-mode permissions and settings presentation
 
 The optional mode evaluator also has a consumer-owned [GameplayModeGate](../src/GameModes/GameplayModeGate.cs).
@@ -1049,6 +1058,8 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 ## Worker production bonus
 
 `APIShared.Economy.WorkerProductionModifiers` composes exact human/AI output bases, signed fixed percentages and signed production percentages per fear level. Desired profiles support factors and fixed values, and prepared status exposes the resolved fear contribution for each level. Its process-held `WorkerProductionBonusOverrides` compatibility facade retains absolute fixed-percentage registration. APIShared owns zero-output completion, Ox transport, display and persisted credits. `APIShared.Lobby.LobbyLaunchGuards` supplies shared Ready/Start and prepared multiplayer-save admission. See the [worker production contract](WORKER_PRODUCTION_BONUS.md).
+
+`APIShared.Economy.ProductionGoodsReceived` observes confirmed production deliveries into final player storage. It reports the effective good and actual received quantity, including output modifiers, with storage and carrier identities. Start goods, trades, refunds, ingredients and failed additions are excluded. See [production receipts](WORKER_PRODUCTION_BONUS.md#received-production-goods).
 
 ## Weapon workshop options
 

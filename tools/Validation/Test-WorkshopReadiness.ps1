@@ -1,7 +1,24 @@
-param([Parameter(Mandatory)][string]$ApiAssembly,[switch]$ExpectLegacyFailure,[switch]$SkipTimeout)
+param([Parameter(Mandatory)][string]$ApiAssembly,[switch]$ExpectLegacyFailure,[switch]$SkipTimeout,[Parameter(DontShow=$true)][string]$OwnedFixture='')
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$fixture=Join-Path $root ('.local/readiness-tests/'+[guid]::NewGuid().ToString('N'))
+. (Join-Path $PSScriptRoot 'WorkshopTestFixture.Common.ps1')
+# The launcher deliberately resolves its script next to Assembly.Location. Run it
+# in an owned child so its copied DLL is unloaded before the parent removes it.
+if(-not $OwnedFixture){
+    $fixture=New-WorkshopTestFixture $root 'readiness'
+    $fixtureError=$null;$workerExit=1
+    try {
+        $arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-ApiAssembly',$ApiAssembly,'-OwnedFixture',$fixture)
+        if($ExpectLegacyFailure){$arguments+='-ExpectLegacyFailure'}
+        if($SkipTimeout){$arguments+='-SkipTimeout'}
+        & powershell.exe @arguments
+        $workerExit=$LASTEXITCODE
+        if($workerExit -ne 0){throw ('Readiness fixture worker failed with exit code '+$workerExit)}
+    }catch{$fixtureError=$_;throw}finally{Complete-WorkshopTestFixture $root 'readiness' $fixture (-not $fixtureError) ([string]$fixtureError)}
+    exit $workerExit
+}
+$null=Assert-WorkshopTestFixture $root 'readiness' $OwnedFixture
+$fixture=$OwnedFixture
 $assets=Join-Path $fixture 'assembly/Workshop'
 [void][IO.Directory]::CreateDirectory($assets)
 $utf8=[Text.UTF8Encoding]::new($false)
@@ -17,6 +34,7 @@ function Wait-FixtureStop {
     while(-not [IO.File]::Exists((Join-Path $Transaction 'fixture-stop.flag')) -and -not [IO.File]::Exists((Join-Path $Transaction 'cancel.flag')) -and $watch.Elapsed.TotalSeconds -lt 30){Start-Sleep -Milliseconds 20}
 }
 [IO.File]::WriteAllText((Join-Path $Transaction 'fixture-pid.txt'),$PID.ToString())
+[IO.File]::WriteAllText((Join-Path $Transaction 'fixture-started.utc'),[Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o'))
 if($mode -eq 'exited-empty'){exit 7}
 if($mode -eq 'exited-valid' -or $mode -eq 'wrong-hash'){
     $value=if($mode -eq 'wrong-hash'){'b'*64}else{$OperationsHash}
@@ -105,6 +123,18 @@ foreach($mode in $cases){
                 Write-Host ('PASS: failed updater cannot confirm a handoff: '+$mode)
             }
         }
-    }finally{[Threading.SynchronizationContext]::SetSynchronizationContext($previous);[IO.File]::WriteAllText((Join-Path $transaction 'fixture-stop.flag'),'stop',$utf8)}
+    }finally{
+        [Threading.SynchronizationContext]::SetSynchronizationContext($previous)
+        [IO.File]::WriteAllText((Join-Path $transaction 'fixture-stop.flag'),'stop',$utf8)
+        $pidPath=Join-Path $transaction 'fixture-pid.txt';$stampPath=Join-Path $transaction 'fixture-started.utc'
+        if([IO.File]::Exists($pidPath) -and [IO.File]::Exists($stampPath)){
+            $owned=$null
+            try{
+                $owned=[Diagnostics.Process]::GetProcessById([int][IO.File]::ReadAllText($pidPath))
+                if($owned.StartTime.ToUniversalTime().ToString('o') -cne [IO.File]::ReadAllText($stampPath)){throw 'Readiness fixture process identity changed.'}
+                if(-not $owned.WaitForExit(5000)){$owned.Kill();if(-not $owned.WaitForExit(3000)){throw 'Readiness fixture worker did not stop.'}}
+            }catch [ArgumentException]{}finally{if($owned){$owned.Dispose()}}
+        }
+    }
 }
-Write-Host ('Readiness handoff evidence retained: '+$fixture)
+Write-Host ('Readiness handoff fixture completed: '+$fixture)

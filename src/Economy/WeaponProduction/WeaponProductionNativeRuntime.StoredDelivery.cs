@@ -32,14 +32,28 @@ namespace APIShared.Economy
             for (int i = 0; i < StoredDeliveryAdapters.Length; i++)
                 if (WeaponProductionNativeDefinition.Roles[i].Building == building)
                     return StoredDeliveryAdapters[i]?.Ready == true
-                        ? StoredDeliveryRouteMatches(building) ? string.Empty : "Stored Tanner output requires its original yield/delivery route."
+                        ? StoredDeliveryRouteMatches(building) ? string.Empty : "Stored Tanner output requires its original yield and original or verified APIShared receipt route."
                         : StoredDeliveryDiagnostics[i] ?? "Stored-goods delivery has not initialized.";
             return "Unsupported stored-output workshop type.";
         }
-        private static bool StoredDeliveryRouteMatches(eStructs building) => building != eStructs.STRUCT_TANNERS_WORKSHOP ||
-            module != IntPtr.Zero && WeaponProductionNativeDefinition.HasVanillaStoredDeliveryRoute(
-                new ReadOnlySpan<byte>((void*)module, WeaponProductionNativeDefinition.TannerStoredRouteBoundaryRva +
-                    WeaponProductionNativeDefinition.TannerStoredRouteBoundaryBytes.Length), building);
+        private static bool StoredDeliveryRouteMatches(eStructs building) => HasCompatibleStoredDeliveryRoute(module, building);
+
+        // The load snapshot remains pristine-only. Live Tanner code may additionally be
+        // the exact published APIShared receipt owner: it preserves this storage call's
+        // tuple/return and cannot establish a different (for example IH meat) cargo route.
+        internal static bool HasCompatibleStoredDeliveryRoute(IntPtr image, eStructs building)
+        {
+            if (building != eStructs.STRUCT_TANNERS_WORKSHOP) return true;
+            if (image == IntPtr.Zero) return false;
+            var memory = new ReadOnlySpan<byte>((void*)image,
+                WeaponProductionNativeDefinition.TannerStoredRouteBoundaryRva +
+                WeaponProductionNativeDefinition.TannerStoredRouteBoundaryBytes.Length);
+            return NativeInlineStub.SnapshotMatches(memory, WeaponProductionNativeDefinition.TannerStoredYieldBoundaryRva,
+                WeaponProductionNativeDefinition.TannerStoredYieldBoundaryBytes) &&
+                (NativeInlineStub.SnapshotMatches(memory, WeaponProductionNativeDefinition.TannerStoredRouteBoundaryRva,
+                    WeaponProductionNativeDefinition.TannerStoredRouteBoundaryBytes) ||
+                    ProductionGoodsReceivedNativeRuntime.HasPublishedTannerSource(image));
+        }
 
         private static void TryInitializeStoredDelivery(CrusaderLibraryLoadContext context, WeaponProductionNativeRole role, int index)
         {
@@ -188,8 +202,8 @@ namespace APIShared.Economy
                 {
                     NativeIndirectEntry.VerifyBytes(module + WeaponProductionNativeDefinition.TannerStoredYieldBoundaryRva,
                         WeaponProductionNativeDefinition.TannerStoredYieldBoundaryBytes);
-                    NativeIndirectEntry.VerifyBytes(module + WeaponProductionNativeDefinition.TannerStoredRouteBoundaryRva,
-                        WeaponProductionNativeDefinition.TannerStoredRouteBoundaryBytes);
+                    if (!HasCompatibleStoredDeliveryRoute(module, role.Building))
+                        throw new InvalidOperationException("Stored Tanner delivery requires its original or verified APIShared receipt route.");
                 }
                 NativeInlineStub.Verify(handle, Address(module + site.Rva), site.Bytes.Length, installed,
                     stub => WeaponProductionNativeAssembly.ExpectedStoredDeliveryStub(site, Address(module), stub,
@@ -203,9 +217,8 @@ namespace APIShared.Economy
             private void ValidateCompatibility(CrusaderLibraryLoadContext context)
             {
                 if (!WeaponProductionNativeDefinition.HasVanillaStoredDeliveryRoute(context.Memory, role.Building) ||
-                    !WeaponProductionNativeDefinition.HasVanillaStoredDeliveryRoute(
-                        new ReadOnlySpan<byte>((void*)module, context.Memory.Length), role.Building))
-                    throw new InvalidOperationException("Stored Tanner output requires its original yield/delivery route; native and ImprovedHunters recipes remain available.");
+                    !HasCompatibleStoredDeliveryRoute(module, role.Building))
+                    throw new InvalidOperationException("Stored Tanner output requires its original yield and original or verified APIShared receipt route; native and ImprovedHunters recipes remain available.");
             }
 
             // 0 Native; 1 custom credit+cargo debit committed; 2 retain cargo/destination

@@ -1,7 +1,10 @@
 param([string]$Bash = '', [switch]$RequireBash, [ValidateSet('auto','windows','bash')][string]$BackendSelection = 'auto')
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$fixture = Join-Path $root ('.local/recovery-tests/' + [guid]::NewGuid().ToString('N'))
+. (Join-Path $PSScriptRoot 'WorkshopTestFixture.Common.ps1')
+$fixture=New-WorkshopTestFixture $root 'recovery'
+$fixtureError=$null
+try {
 [void][IO.Directory]::CreateDirectory($fixture)
 $utf8 = [Text.UTF8Encoding]::new($false)
 function Write-Text([string]$Path,[string]$Value) {
@@ -221,4 +224,8 @@ foreach ($backend in $backends) {
     Run (New-Repair @($old)) -Replacement; Assert-Text (Join-Path $game $target) 'complete latest package'
     Write-Host "PASS: $backend recovery protocol, full preflight, independent/overlapping transactions, cancelled handoff, repair, subsequent update and legacy rollback."
 }
-Write-Host "Recovery fixture evidence retained: $fixture"
+Write-Host "Recovery fixture completed: $fixture"
+
+} catch {$fixtureError=$_;throw} finally {
+    Complete-WorkshopTestFixture $root 'recovery' $fixture (-not $fixtureError) ([string]$fixtureError)
+}

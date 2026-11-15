@@ -18,7 +18,10 @@ if($ReuseOnly){
     Write-Host 'PASS: matching full-build evidence reused; stale evidence rebuilds; final evidence remains mandatory.'
     exit 0
 }
-$temp=Join-Path ([IO.Path]::GetTempPath()) ('ApiSharedProof-'+[Guid]::NewGuid().ToString('N'))
+$tempBase=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')
+$tempName='ApiSharedProof-'+[Guid]::NewGuid().ToString('N')
+$temp=Join-Path $tempBase $tempName
+if([IO.Directory]::Exists($temp)){throw 'Build proof fixture already exists.'}
 [IO.Directory]::CreateDirectory($temp) | Out-Null
 function Check([bool]$value,[string]$message) { if(-not$value){throw $message} }
 function Write-Fixture([string]$Path,[string]$Text) { [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null; [IO.File]::WriteAllText($Path,$Text,[Text.UTF8Encoding]::new($false)) }
@@ -163,4 +166,21 @@ try {
         $env:SHCDE_GAME_DIR=$previousGame;$env:SHCDESE_EXTENDER_DIR=$previousExtender;$env:SHCDE_MSBUILD=$previousCompiler
     }
     Write-Host 'PASS: content-identical commits, retained provenance, changed runtime rejection, package tampering, dirty release rejection, cross-shell fingerprint, local path recovery and child inheritance.'
-} finally { Write-Host ("Build proof fixtures: " + $temp) }
+} finally {
+    # This test owns only its freshly allocated fixture; never follow links into user data.
+    $full=[IO.Path]::GetFullPath($temp).TrimEnd('\','/')
+    if($full -cne (Join-Path $tempBase $tempName) -or $tempName -cnotmatch '^ApiSharedProof-[0-9a-f]{32}$'){throw 'Unsafe build proof cleanup path.'}
+    for($part=$full;$part;$part=[IO.Path]::GetDirectoryName($part)){
+        if([IO.Directory]::Exists($part) -and ([IO.File]::GetAttributes($part) -band [IO.FileAttributes]::ReparsePoint)){throw 'Linked build proof fixture root.'}
+    }
+    function Remove-ProofFixture([IO.DirectoryInfo]$Directory){
+        foreach($entry in $Directory.GetFileSystemInfos()){
+            if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){
+                if($entry -is [IO.DirectoryInfo]){[IO.Directory]::Delete($entry.FullName,$false)}else{[IO.File]::Delete($entry.FullName)}
+            }elseif($entry -is [IO.DirectoryInfo]){Remove-ProofFixture $entry}
+            else{$entry.IsReadOnly=$false;$entry.Delete()}
+        }
+        $Directory.Delete()
+    }
+    if([IO.Directory]::Exists($full)){Remove-ProofFixture ([IO.DirectoryInfo]::new($full))}
+}

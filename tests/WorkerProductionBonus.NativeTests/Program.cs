@@ -74,6 +74,7 @@ internal static partial class Program
                 TestHerdFlightGates();
                 TestWeaponProductionAdapters();
                 TestWeaponStoredDelivery();
+                TestProductionReceiptNative();
             }
             finally { VirtualFree(image, UIntPtr.Zero, 0x8000); }
             Console.WriteLine($"PASS: {checks} worker-production native assertions. Private native execution; actual game, save/restart and host/client acceptance remain separate.");

@@ -477,17 +477,22 @@ internal sealed class SourceModel
                 Require(name is not ("Enable" or "Disable") || unitVoiceAllowances.Contains(call), "Published handle acquired an executable toggle: " + call.GetLocation().GetLineSpan());
             // Marshal.Write* also writes ordinary owned data (gatehouse state, buffers).
             // Its mere presence is not evidence of an executable-memory mutation.
-            if (name is "VirtualProtect" or "FlushInstructionCache" || IsCall(call, "CodePatch", "Write"))
+            bool preparedNativeCode = owner is "PlagueNativeCode" or "ProductionGoodsReceivedNativeCode";
+            if (name is "VirtualProtect" or "FlushInstructionCache" || IsCall(call, "CodePatch", "Write") ||
+                owner == "ProductionGoodsReceivedNativeCode" && IsCall(call, "Marshal", "Copy"))
                 Require(owner == "FixesWheatMemory" ||
-                    (owner == "PlagueNativeCode" && call.Ancestors().OfType<ConstructorDeclarationSyntax>().Any()),
+                    (preparedNativeCode && call.Ancestors().OfType<ConstructorDeclarationSyntax>().Any()),
                     "Executable writer outside an audited preparation boundary: " + call.GetLocation().GetLineSpan());
-            // PlagueNativeCode prepares private RW memory once, before a published hook can reach
-            // it. This named boundary is intentional; it is not permission for runtime patching.
-            if (owner == "PlagueNativeCode" && name == "VirtualFree")
+            // These two named preparation boundaries allocate private RW memory, write it
+            // once in the constructor, then protect RX and flush before publication. Receipt
+            // AdapterAddress exposes only a published helper; no future code writes exist.
+            // This does not permit runtime patching, or freeing a published helper after a
+            // later source-installation failure. The publication barrier is checked below.
+            if (preparedNativeCode && name == "VirtualFree")
                 Require(call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Body?.Statements
                     .OfType<IfStatementSyntax>().Any(i => Text(Unwrap(i.Condition)) == "published" &&
                         i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any() && i.SpanStart < call.SpanStart) == true,
-                    "Published plague code can be freed: " + call.GetLocation().GetLineSpan());
+                    "Published native preparation code can be freed: " + call.GetLocation().GetLineSpan());
             if (!Mutations.Contains(name) || !hookReceiver) continue;
             var method = call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
             // Other managed installers have legacy candidate cleanup in installation catches.

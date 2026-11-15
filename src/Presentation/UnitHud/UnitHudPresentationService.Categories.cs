@@ -63,6 +63,8 @@ namespace APIShared
                         button.Tag = entry.Category.Key;
                         button.ToolTip = ResolveText(entry.Category, UnitHudTextKind.DisplayName);
                         if (button.IsMouseOver) ShowTroopHover(button, button.ToolTip as string);
+                        // Slots are reused: do not inherit the previous Vanilla portrait's vertical offset.
+                        positions[slot].Y = 0f;
                         host.RenderTransform = positions[slot];
                         ImageSource source = ResolveCategoryImage(entry.Category, UnitHudSurface.TroopSelection, panel);
                         ApplyTroopButtonImages(button, entry.Category, panel, source);

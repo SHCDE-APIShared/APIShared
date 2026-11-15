@@ -45,8 +45,9 @@ namespace APIShared.Economy
         internal const string StoredDeliveryBoundaryError = "Weapon stored-delivery native boundary differs.";
         // ImprovedHunters may make the same Tanner batch carry meat. Without a
         // durable route marker an absent/reused destination cannot distinguish that
-        // meat from custom armour. Require the original two adjacent call blocks for
-        // NEW stored-output recipes; the existing native recipe cohort stays usable.
+        // meat from custom armour. This pristine-only contract requires both original
+        // call blocks. The runtime separately recognizes only its exact published
+        // receipt owner at the storage call; the original yield remains mandatory.
         internal const int TannerStoredYieldBoundaryRva = 0x13EBF7, TannerStoredRouteBoundaryRva = 0x13EF38;
         internal static readonly byte[] TannerStoredYieldBoundaryBytes = WorkerProductionBonusNativeDefinition.Hex("E844ED0400");
         internal static readonly byte[] TannerStoredRouteBoundaryBytes = WorkerProductionBonusNativeDefinition.Hex("468B8421F8060000488BCEE8B871F7FF");
