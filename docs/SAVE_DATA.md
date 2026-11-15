@@ -200,6 +200,71 @@ names; the channel limit allows 64 records with names at their maximum length.
 
 ## Implementation
 
+### Tracked origins and enrolled captures
+
+The registry has an internal opt-in protocol for framework services that must
+relate an existing mod record to a protected state checkpoint. It is not a public
+legacy-stock import or consumer-enrollment API. Ordinary registrations retain
+their public scope, migration, callback and unknown-record behavior; no new record
+schema or native hook is activated by this protocol.
+
+A tracked source binds the exact owner and process-lived registered handle before
+the first archive load. Its origin describes the registry's private original
+record, including explicit absence and a digest, rather than a consumer-supplied
+copy. During `Prepared`, origin access requires that exact receiver, generation
+and managed thread. Other registry callbacks mask that delivery. Completion also
+requires the complete load/Post window to succeed; callback failure, a new load or
+unload revokes it. An origin is metadata, not permission to inspect or mutate the
+native world. See [origin lifetime](../src/Savegames/VersionedSavePreparedOrigin.cs).
+
+An independently enrolled critical source must use `SaveGamesAndMaps`, declare
+`SimulationRelevant`, own a known reserved marker entry and support the selected
+cutover reader. Only that explicit enrollment reserves the entry: its capture
+must not write the marker through `VersionedSaveWriter.Write`, which throws
+`ArgumentException` for the reserved name. Unenrolled registrations acquire no
+reserved names. The framework injects a copied marker, retains unknown entries
+and reads confirmation from the private original envelope, before a legacy reader
+or migration could synthesize it. An unreadable record, stale origin or marker
+below its required original reader/version floor cannot authorize confirmation.
+
+[The capture bundle](../src/Savegames/VersionedSaveCriticalCapture.cs) reserves
+all participating slots before calling captures outside the registry lock. It
+freezes bounded bytes once without marking any record `Written`. Actual Extender
+transport serves those bytes once on the same save thread and marks delivery.
+The bundle requires exact logical context: save-file flag, editor flag and ordinal
+nullable file path. A synchronized save can legitimately have a null path; the
+native destination or temporary file cannot stand in for this context. Duplicate
+delivery, nesting, context mismatch, load/unload or a failed capture invalidates
+the bundle. The save owner must verify every actual archive record against its
+frozen bytes and statuses before committing, then dispose on the owning thread.
+Preparation or `Written` alone is not an archive-commit certificate.
+
+The current native critical writer is not enrolled in this protocol. Supplying
+its genuine pre-capture logical context, storage reader/version validation, save
+demand and one-state consumer cutover remains separate integration work. Consumers
+must not treat a framework commit alone as permission to discard a private
+stock/cargo ledger. This increment supplies no consumer cutover receipt; adding a
+second save hook does not provide that authority.
+
+### Critical-save cleanup outcomes
+
+The existing protected writer remains the sole native save owner. A capture,
+native-I/O or archive-verification failure before destination replacement leaves
+the old destination and reports failure. Cleanup independently attempts native
+path restoration and every selected production, workshop and storage release;
+one cleanup exception cannot skip the others or leave the saving guard active.
+The original transaction failure remains primary, with secondary cleanup faults
+reported separately and bounded.
+
+Successful atomic destination replacement is irreversible. A later cleanup fault
+preserves the actual successful writer result and reports protection failure to
+the existing world-safety owner only for the retained exact world/generation. It
+cannot claim rollback, an unwritten file or fault a replacement world. This is an
+intentional failure/result behavior correction, including for existing demanded
+cargo/production saves; additive signatures alone do not establish compatibility.
+The no-demand path continues directly to the original writer. Managed cleanup
+fixtures do not establish live native path restoration or installed-game behavior.
+
 ### Record format
 
 Each record is the complete `ModSaveDataAPI` entry for its identifier
@@ -281,5 +346,10 @@ host's acceptance rules. `VersionedSaveDataRuntimeTests` (APISharedTests) bind t
 installed Script Extender handler table and feed the binding the real event argument types;
 `SavegameReadinessProtocolTests` cover the version-2 packet, protocol-1 recognition and reply,
 later versions, malformed lists, and digests read from save files built with the Extender's
-own archive class. None of them runs the game; in-game checks are listed under
-[Public limits](#public-limits).
+own archive class. The Prepared-origin and enrolled-capture partial fixtures
+exercise receiver/thread/generation provenance, revocation, original-marker
+confirmation, frozen-byte delivery, context mismatch, duplication and record
+verification through the actual registry. `NativeStorageCargoSaveTests` also
+exercise independent cleanup and primary/postcommit result preservation through
+the managed cleanup entry. None of them runs the game; in-game checks are listed
+under [Public limits](#public-limits).

@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Content/APIShared.Content.csproj" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.cs" Link="Production/NativeStorageState.cs" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.Snapshot.cs" Link="Production/NativeStorageState.Snapshot.cs" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.Cargo.cs" Link="Production/NativeStorageState.Cargo.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
     <Compile Include="../../src/Workshop/Proton/WinePathInterop.cs" Link="Production/Proton/WinePathInterop.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonPaths.cs" Link="Production/Proton/ProtonPaths.cs" />
@@ -81,6 +87,9 @@
     <Compile Include="../../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs" Link="Production/ExcludeFromSavegameModSettingsAttribute.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveDataContracts.cs" Link="Production/VersionedSaveDataContracts.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
+    <Compile Include="../../src/Savegames/VersionedSavePreparedOrigin.cs" Link="Production/VersionedSavePreparedOrigin.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveCriticalCapture.cs" Link="Production/VersionedSaveCriticalCapture.cs" />
+    <Compile Include="../../src/Savegames/VersionedSaveCriticalMarker.cs" Link="Production/VersionedSaveCriticalMarker.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />
     <Compile Include="../../src/Units/Selection/UnitAccess.cs" Link="Production/UnitAccess.cs" />

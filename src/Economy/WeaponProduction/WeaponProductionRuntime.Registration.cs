@@ -24,6 +24,10 @@ namespace APIShared.Economy
             if (!string.IsNullOrEmpty(native)) return native;
             if (!backendReady) return "Workshop HUD, transfer or save preparation is unavailable.";
             if (!cleanupReady) return "Workshop simulation lifecycle is unavailable.";
+            if (option.StoredOutput != null && !NativeStorageRuntime.IsRegistrationReady(option.StoredOutput))
+                return "The exact registered Armory output is unavailable.";
+            if (option.StoredOutput != null && !WeaponProductionNativeRuntime.CanDeliverStoredGoods(option.BuildingType))
+                return WeaponProductionNativeRuntime.StoredDeliveryAvailabilityReason(option.BuildingType);
             if (NeedsIngredientAdapter(option) && !WeaponProductionNativeRuntime.CanOverrideIngredients(option.BuildingType))
                 return "The workshop's ingredient adapter is unavailable.";
             if (NeedsTannerIngredientAdapter(option) && !WeaponProductionNativeRuntime.CanOverrideTannerIngredients)
@@ -58,6 +62,10 @@ namespace APIShared.Economy
             if (definition.IngredientAmount < 1 || definition.IngredientAmount > maxIngredientAmount)
             { reason = $"The ingredient amount must be between 1 and {maxIngredientAmount} for this workshop."; return false; }
 
+            if (definition.StoredOutput != null &&
+                (!ValidateStoredOutput(owner, definition.StoredOutput, NativeStorageRuntime.IsRegistrationReady, out reason) ||
+                 !NativeStorageRuntime.TryPrepareRegisteredDelivery(definition.StoredOutput, out reason))) return false;
+
             var key = new WeaponProductionOptionId(owner, id);
             lock (RegistrationGate)
             {
@@ -75,6 +83,21 @@ namespace APIShared.Economy
             return true;
         }
 
+        // The injected predicate is only the process registration lookup; no consumer callback
+        // is accepted by the public API. Tests can verify owner/pool/reference binding offline.
+        internal static bool ValidateStoredOutput(string owner, NativeStoredGood output,
+            Func<NativeStoredGood, bool> isRegistered, out string reason)
+        {
+            if (output == null) { reason = "A registered output handle is required."; return false; }
+            if (!StringComparer.Ordinal.Equals(owner, output.OwnerGuid))
+            { reason = "The recipe and stored output must belong to the same owner."; return false; }
+            if (output.Pool != NativeStoragePool.Armory)
+            { reason = "Weapon-workshop outputs require an Armory storage registration."; return false; }
+            if (isRegistered == null || !isRegistered(output))
+            { reason = "The exact stored-output handle is not registered and ready."; return false; }
+            reason = string.Empty; return true;
+        }
+
         internal static WeaponProductionCatalog PrepareCatalog()
         {
             lock (RegistrationGate)
@@ -82,14 +105,20 @@ namespace APIShared.Economy
                 bool ready = backendReady && cleanupReady && WorkerProductionRuntime.BaseAvailable;
                 bool tannerIngredients = ready && Array.Exists(registrations, registration => NeedsTannerIngredientAdapter(registration.Option)) &&
                     WeaponProductionNativeRuntime.CanOverrideTannerIngredients;
-                if (!ReferenceEquals(preparedRegistrations, registrations) || preparedBackend != ready ||
+                // Stored-output readiness belongs to independent process-owned adapters. Recheck
+                // it at preparation; the established native-only catalogue cache remains intact.
+                bool hasStoredOutputs = Array.Exists(registrations, entry => entry.Option.StoredOutput != null);
+                if (hasStoredOutputs || !ReferenceEquals(preparedRegistrations, registrations) || preparedBackend != ready ||
                     preparedTannerIngredients != tannerIngredients)
                 {
                     prepared = WeaponProductionCatalog.Compile(registrations,
                         type => ready && WeaponProductionNativeRuntime.IsAvailable(type),
-                        option => !NeedsIngredientAdapter(option) ||
+                        option => (option.StoredOutput == null ||
+                            NativeStorageRuntime.IsRegistrationReady(option.StoredOutput) &&
+                            WeaponProductionNativeRuntime.CanDeliverStoredGoods(option.BuildingType)) &&
+                            (!NeedsIngredientAdapter(option) ||
                             WeaponProductionNativeRuntime.CanOverrideIngredients(option.BuildingType) &&
-                            (tannerIngredients || !NeedsTannerIngredientAdapter(option)));
+                            (tannerIngredients || !NeedsTannerIngredientAdapter(option))));
                     preparedRegistrations = registrations;
                     preparedBackend = ready;
                     preparedTannerIngredients = tannerIngredients;
@@ -103,7 +132,7 @@ namespace APIShared.Economy
         internal static bool IsOptionAllowed(WeaponProductionOption option)
         {
             if (option == null || availability == null) return false;
-            switch (option.OutputGood)
+            switch (option.StoredOutput == null ? option.OutputGood : option.TemplateGood)
             {
                 case eGoods.STORED_CROSSBOWS: return availability[0] != 0;
                 case eGoods.STORED_PIKES: return availability[1] != 0;

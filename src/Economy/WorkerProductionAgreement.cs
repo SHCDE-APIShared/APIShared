@@ -148,6 +148,11 @@ namespace APIShared.Economy
         }
         private static string Guard(LobbyLaunchGuardContext context)
         {
+            if(context.RequiresPeerAgreement)
+            {
+                string storedOutputReason = WorkerProductionRuntime.StoredOutputMultiplayerDiagnostic;
+                if(storedOutputReason != null)return storedOutputReason;
+            }
             if(context.Command!="HostLoadGame")
             {
                 try
