@@ -29,6 +29,9 @@ namespace APIShared.Economy
         private readonly NativeHookPublicationState publication=new NativeHookPublicationState();
         private readonly NativeInlineStubGroup group;
         private ProductionGoodsReceivedNativeCode adapter;
+        private int tannerIndex = -1;
+        private IntPtr tannerStub, tannerRelay;
+        private byte[] tannerStubBytes, tannerContinuationBytes, tannerRelayBytes;
         private ProductionGoodsReceivedNativeRuntime(CrusaderLibraryLoadContext context, ManualLogSource log)
         {
             this.context=context;this.log=log;image=unchecked((ulong)context.ModuleHandle.ToInt64());
@@ -47,6 +50,67 @@ namespace APIShared.Economy
             WeaponProductionNativeRuntime.IsAvailable(eStructs.STRUCT_BLACKSMITHS_WORKSHOP) &&
             WeaponProductionNativeRuntime.IsAvailable(eStructs.STRUCT_ARMOURERS_WORKSHOP) &&
             WeaponProductionNativeRuntime.IsAvailable(eStructs.STRUCT_TANNERS_WORKSHOP);
+        // This is a route attestation, independent of receipt demand and weapon readiness.
+        // All metadata is frozen before publication; a frequent capability/delivery query
+        // only reads this process-lifetime owner's exact source, stub, continuation and relay.
+        // It neither installs code nor treats an arbitrary jump as the original Tanner route.
+        internal static bool HasPublishedTannerSource(IntPtr module)
+        {
+            var current = owner;
+            if (current == null || module == IntPtr.Zero || current.image != unchecked((ulong)module.ToInt64()) ||
+                current.externalTanner || current.publication == null || !current.publication.IsReady || current.adapter == null ||
+                !current.adapter.IsPublished)
+                return false;
+            return current.TannerSourceMatches() && ReferenceEquals(current, owner) && current.publication.IsReady;
+        }
+
+        private unsafe bool TannerSourceMatches()
+        {
+            if (tannerIndex < 0 || handles == null || sites == null || tannerIndex >= handles.Length ||
+                tannerIndex >= sites.Length || tannerStub == IntPtr.Zero || tannerRelay == IntPtr.Zero ||
+                tannerStubBytes == null || tannerStubBytes.Length == 0 || tannerContinuationBytes == null ||
+                tannerContinuationBytes.Length < NativeInlineStub.JumpLength || tannerRelayBytes == null ||
+                tannerRelayBytes.Length == 0 || adapter == null || adapter.Address != tannerRelay)
+                return false;
+            var site = sites[tannerIndex];
+            var handle = handles[tannerIndex];
+            if (handle == null || !handle.Success ||
+                !NativeInlineStub.IsPrepared(handle, true, image + (uint)site.Rva, site.Bytes.Length) ||
+                handle.Hook.StubAddress != tannerStub)
+                return false;
+            IntPtr entry = (IntPtr)(image + (uint)site.Rva);
+            return NativeInlineStub.JumpMatches(entry, tannerStub) &&
+                NativeInlineStub.PaddingMatches(entry, site.Bytes.Length) &&
+                new ReadOnlySpan<byte>((void*)tannerStub, tannerStubBytes.Length).SequenceEqual(tannerStubBytes) &&
+                new ReadOnlySpan<byte>((void*)(entry + site.Bytes.Length), tannerContinuationBytes.Length).SequenceEqual(tannerContinuationBytes) &&
+                new ReadOnlySpan<byte>((void*)tannerRelay, tannerRelayBytes.Length).SequenceEqual(tannerRelayBytes);
+        }
+
+        private void PrepareTannerSource(int index)
+        {
+            var site = sites[index];
+            if (site.Rva != WeaponProductionNativeDefinition.TannerStoredRouteBoundaryRva ||
+                !site.Bytes.AsSpan().SequenceEqual(WeaponProductionNativeDefinition.TannerStoredRouteBoundaryBytes))
+                throw new InvalidOperationException("The Tanner receipt source is not the qualified original storage call.");
+            tannerStub = handles[index].Hook.StubAddress;
+            tannerStubBytes = Expected(site, unchecked((ulong)tannerStub.ToInt64()));
+            // Freeze the complete permitted boundary, including an existing indirect
+            // jump's address; checking only its first opcode bytes would accept retargeting.
+            tannerContinuationBytes = NativeInlineStub.ReadLive((IntPtr)image,
+                site.Rva + site.Bytes.Length, Math.Max(NativeInlineStub.JumpLength, site.Next.Length));
+            if (!NativeInlineStub.AcceptsLiveBoundary(tannerContinuationBytes, site.Next))
+                throw new InvalidOperationException("The prepared Tanner receipt continuation differs.");
+            // A non-inline indirect target cell is not covered by these frozen bytes.
+            // Preserve the receipt owner's existing boundary support, but do not attest
+            // that opaque continuation as a qualified custom stored-output route.
+            if (tannerContinuationBytes[0] == 0xFF && tannerContinuationBytes[1] == 0x25 &&
+                BitConverter.ToInt32(tannerContinuationBytes, 2) != 0)
+                return;
+            tannerRelay = adapter.Address;
+            tannerRelayBytes = (byte[])adapter.Bytes.Clone();
+            tannerIndex = index;
+        }
+
         internal static string Diagnostic => owner==null || !owner.publication.IsReady ? diagnostic :
             owner.externalTanner && Volatile.Read(ref externalTannerReady)==0 ? "ImprovedHunters Tanner receipt adapter is unavailable." :
             !WeaponsReady ? "A weapon-workshop production receipt source is unavailable." : string.Empty;
@@ -104,9 +168,17 @@ namespace APIShared.Economy
                     (a,original,back)=>ProductionGoodsReceivedNativeAssembly.Source(a,original,back,image,PreparedAdapterAddress),site.Bytes.Length);
             }
             var result=group.Commit("Production receipt source preparation incomplete.");
-            for(int i=0;i<sites.Length;i++) Verify(i,false);
+            for(int i=0;i<sites.Length;i++)
+            {
+                Verify(i,false);
+                if (sites[i].Name == "Tanner") PrepareTannerSource(i);
+            }
             adapter.Publish();
-            group.Publish(result,this,()=> { for(int i=0;i<sites.Length;i++)Verify(i,true); });
+            group.Publish(result,this,()=> {
+                for(int i=0;i<sites.Length;i++) Verify(i,true);
+                if (tannerIndex >= 0 && !TannerSourceMatches())
+                    throw new InvalidOperationException("The prepared Tanner receipt route changed during publication.");
+            });
             foreach(var site in sites)
                 NativeApiLog.Info(log,$"Production receipt source {site.Name}: reference-rva=0x{site.Rva:X}, length={site.Bytes.Length}.");
         }
