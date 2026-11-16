@@ -84,16 +84,36 @@ namespace APIShared.ModSettings
             var properties = Properties(endpoint);
             var player = endpoint.System_CreatePlayerMissionPresetSnapshot()
                 ?? throw new InvalidDataException("The endpoint returned a null player snapshot.");
+            var selected = new Dictionary<string, byte[]>(StringComparer.Ordinal);
             foreach (string name in entry.PlayerSettings ?? Array.Empty<string>())
-                if (properties.ContainsKey(name) && player.TryGetValue(name, out byte[] bytes))
-                    result[name] = bytes == null ? throw new InvalidDataException("The player snapshot contains a null value: " + name)
-                        : (byte[])bytes.Clone();
+                if (properties.ContainsKey(name))
+                {
+                    if (player.TryGetValue(name, out byte[] bytes))
+                        selected[name] = bytes == null ? throw new InvalidDataException("The player snapshot contains a null value: " + name)
+                            : (byte[])bytes.Clone();
+                    else if (result.TryGetValue(name, out byte[] fallback))
+                        // Explicit Player selection still owns its default fallback. A raw
+                        // converter must not treat the provider's omission as an unselected key.
+                        selected[name] = fallback == null ? null : (byte[])fallback.Clone();
+                }
             if (entry.Overrides != null)
                 foreach (var setting in entry.Overrides)
                     if (properties.TryGetValue(setting.Key, out PropertyInfo property))
-                        result[property.Name] = MessagePackSerializer.Serialize(property.PropertyType,
+                        selected[property.Name] = MessagePackSerializer.Serialize(property.PropertyType,
                             ModSettingsPresetJson.ConvertValue(setting.Value, property.PropertyType));
+            OverlaySelectedSnapshot(endpoint, result, selected, properties);
             return result;
+        }
+
+        // Only selected, authorized host values reach the raw converter. Defaults are merged
+        // afterwards so the converter can distinguish an absent setting from an explicit value.
+        internal static void OverlaySelectedSnapshot(object endpoint, Dictionary<string, byte[]> destination,
+            Dictionary<string, byte[]> selected, IReadOnlyDictionary<string, PropertyInfo> properties)
+        {
+            var migrated = ModSettingsMigration.MigrateRawStoredSnapshot(endpoint, selected);
+            foreach (var value in migrated)
+                if (properties.ContainsKey(value.Key))
+                    destination[value.Key] = value.Value == null ? null : (byte[])value.Value.Clone();
         }
 
         // A mission document keeps the setting names of the mod version its author used. Returns the entry

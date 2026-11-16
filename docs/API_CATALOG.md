@@ -168,6 +168,13 @@ rules, Map/Trail mission settings, personal settings, presets). `IModSettingsSna
 whose meaning changed, and `ModSettingsMigration.MigrateStoredSnapshot` applies both to a
 mod's own stored format; see [renamed and converted settings](MOD_SETTINGS.md#renamed-and-converted-settings).
 
+`IModSettingsStoredSnapshotMigration` separately converts sparse selected stored values
+before missing defaults are added. `ModSettingsMigration.MigrateRawStoredSnapshot`
+preserves explicit-value presence and isolates converter buffers. Personal/published
+presets and save/Map/Trail preparation use the optional contract; existing mission
+converters and endpoints without it retain their behavior. See
+[pre-default conversion](MOD_SETTINGS.md#converting-missing-stored-values-before-defaults).
+
 `ModSettingsMigration.RegisterModMove` adds declarative cross-mod ownership moves to
 that pipeline. Typed moved settings, auxiliary copied settings and fixed destination
 defaults preserve old mission values and author modes without enabling unrelated new
@@ -308,32 +315,38 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 |---|---|---|---|
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
 | Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
-| Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | — |
+| Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | â€” |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatService.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |
-| Player views and control | [Perspective](../src/Players/PlayerPerspectiveAPI.cs), [observer exceptions](../src/Players/ObserverCommandExceptions.cs) | [View identity](../src/Players/ViewIdentity/PlayerViewIdentityRuntime.cs), [input boundaries](../src/Players/Control/ControlInputNative.cs) | — |
-| Simulation ticks and Peace Time | [Ticks](../src/Simulation/SimulationTickEvents.cs), [clock](../src/Simulation/SimulationClock.cs), [Peace Time](../src/Simulation/PeaceTimeState.cs) | [Tick source](../src/Simulation/SimulationTickSource.cs) | — |
-| Enemy-unit proximity | [Contracts](../src/Buildings/EnemyProximity/EnemyProximityContracts.cs), [registration](../src/Buildings/EnemyProximity/EnemyProximityPolicies.cs) | [Runtime](../src/Buildings/EnemyProximity/EnemyProximityRuntime.cs) | — |
+| Player views and control | [Perspective](../src/Players/PlayerPerspectiveAPI.cs), [observer exceptions](../src/Players/ObserverCommandExceptions.cs) | [View identity](../src/Players/ViewIdentity/PlayerViewIdentityRuntime.cs), [input boundaries](../src/Players/Control/ControlInputNative.cs) | â€” |
+| Simulation ticks and Peace Time | [Ticks](../src/Simulation/SimulationTickEvents.cs), [clock](../src/Simulation/SimulationClock.cs), [Peace Time](../src/Simulation/PeaceTimeState.cs) | [Tick source](../src/Simulation/SimulationTickSource.cs) | â€” |
+| Enemy-unit proximity | [Contracts](../src/Buildings/EnemyProximity/EnemyProximityContracts.cs), [registration](../src/Buildings/EnemyProximity/EnemyProximityPolicies.cs) | [Runtime](../src/Buildings/EnemyProximity/EnemyProximityRuntime.cs) | â€” |
 | Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs), [sprite colours](../src/Presentation/UnitHud/UnitHudSpriteColours.cs), [player colours](../src/Players/PlayerColours.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side-HUD visibility | [SideHudVisibility.TryGetState](../src/Presentation/HudExtras/SideHudVisibility.cs) | Validated, read-only query on the Unity thread | [Overlay integration](THIRD_PARTY_GUIDE.md#side-hud-overlays) |
-| Briefing gold | [Contracts](../src/Presentation/BriefingGold/BriefingGoldContracts.cs) | [Capability](../src/Presentation/BriefingGold/BriefingGoldPresentationCapability.cs) | — |
-| Repair | [Contracts](../src/Buildings/Repair/BuildingRepairContracts.cs) | [Capability](../src/Buildings/Repair/BuildingRepairService.cs) | — |
-| Gatehouse coordination | [Timing](../src/Buildings/Gatehouse/GatehouseTimingContracts.cs), [origin](../src/Buildings/Gatehouse/GatehouseDistanceOriginCapability.cs), [drawbridge helper](../src/Buildings/Gatehouse/GatehouseDrawbridgeCoupling.cs) | [Timing service](../src/Buildings/Gatehouse/GatehouseTimingService.cs), [permanent state](../src/Buildings/Gatehouse/GatehousePermanentRuntimeState.cs), [automation](../src/Buildings/Gatehouse/GatehouseAutomationNativeState.cs) | — |
-| Selection and perspective | [Local selection](../src/Units/Selection/LocalSelectionAPI.cs), [marked units](../src/Units/Selection/MarkedUnitSelectionAPI.cs), [perspective](../src/Players/PlayerPerspectiveAPI.cs), [unit access](../src/Units/Selection/UnitAccess.cs), [group-move exclusion](../src/Units/Commands/GroupMoveExclusion.cs) | Implementation in those files | — |
+| Briefing gold | [Contracts](../src/Presentation/BriefingGold/BriefingGoldContracts.cs) | [Capability](../src/Presentation/BriefingGold/BriefingGoldPresentationCapability.cs) | â€” |
+| Repair | [Contracts](../src/Buildings/Repair/BuildingRepairContracts.cs) | [Capability](../src/Buildings/Repair/BuildingRepairService.cs) | â€” |
+| Gatehouse coordination | [Timing](../src/Buildings/Gatehouse/GatehouseTimingContracts.cs), [origin](../src/Buildings/Gatehouse/GatehouseDistanceOriginCapability.cs), [drawbridge helper](../src/Buildings/Gatehouse/GatehouseDrawbridgeCoupling.cs) | [Timing service](../src/Buildings/Gatehouse/GatehouseTimingService.cs), [permanent state](../src/Buildings/Gatehouse/GatehousePermanentRuntimeState.cs), [automation](../src/Buildings/Gatehouse/GatehouseAutomationNativeState.cs) | â€” |
+| Selection and perspective | [Local selection](../src/Units/Selection/LocalSelectionAPI.cs), [marked units](../src/Units/Selection/MarkedUnitSelectionAPI.cs), [perspective](../src/Players/PlayerPerspectiveAPI.cs), [unit access](../src/Units/Selection/UnitAccess.cs), [group-move exclusion](../src/Units/Commands/GroupMoveExclusion.cs) | Implementation in those files | â€” |
 | Modes and launch evidence | [Profiles](../src/GameModes/GameplayModModePolicy.cs), [mode capture](../src/GameModes/GameModeHelper.cs), [origins](../src/GameModes/CustomizedLaunchOrigins.cs) | Implementation in those files | [Mission policy](../examples/ThirdPartyMod/MissionExample.cs), [launch origin](../examples/ThirdPartyMod/CustomizedLaunchExample.cs) |
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettingsCoordinator.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Personal storage](MOD_SETTINGS.md#personal-files-and-previous-installations), [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings search / tooltips | [Explicit catalog and live configured states](../src/ModSettings/UI/ModSettingsSearchCatalog.cs), [search, slider neutral values and opt-in numeric TextBox StateValue metadata](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Managed catalog snapshots, All/Active/Inactive filtering with mixed-row flags; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [Opt-in contract](MOD_SETTINGS.md#explicit-settings-search-support), [standalone search](../examples/ThirdPartyMod/SettingsSearchExample.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Personal mission reset | `ModSettingsWorkingSourceKind.Personal`, `ModSettingsWorkingSourceRegistry.PersonalSettingsId` | Copies personal values into the editable Map/Trail context without personal persistence or changing authored source rules | [Reset source contract](MOD_SETTINGS.md#presets-without-serpsmodshost) |
 | Settings activation presentation | `PresetLobbyModSettingsViewModel.HostSettingsOpacity` / `ClientSettingsOpacity` | Content-only opacity: inactive scopes use 0.65; editing rights and stored values are unchanged | [Settings UI integration](MOD_SETTINGS.md#presets-without-serpsmodshost) |
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](MOD_SETTINGS.md#mission-start-settings-log) |
-| Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | — |
+| Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
-| Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
-| AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | — |
+| Coarse reachability | [PathReachability](../src/Pathfinding/Reachability/PathReachability.cs) | Query through Script Extender path components, no hook ([section](#reachability-and-line-of-sight)) | [Guide](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable) |
+| Line of sight | [Contracts](../src/Sight/LineOfSightContracts.cs), [LineOfSight](../src/Sight/LineOfSight.cs), [sight-blocking buildings](../src/Sight/SightBlockingBuildings.cs) | [Native calls](../src/Sight/LineOfSightNative.cs), [height dispatch owner](../src/Sight/SightBlockingBuildingsNative.cs) | [Guide](LINE_OF_SIGHT.md) |
+| Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs) | [Guide](BUILDING_PANELS.md) |
+| Per-building state | [Contracts](../src/Buildings/State/BuildingStateContracts.cs), [registration](../src/Buildings/State/BuildingStates.cs) | [Native table](../src/Buildings/State/BuildingStateMemory.cs), [request Chore](../src/Buildings/State/BuildingStatePacket.cs) | [Guide](BUILDING_STATE.md) |
+| Build-menu availability | [Rules](../src/Buildings/BuildMenu/BuildMenuAvailability.cs) | [Native wrapper owner](../src/Buildings/BuildMenu/BuildMenuAvailabilityRuntime.cs) | [Guide](BUILD_MENU.md) |
+| Chicken population | [Modifiers](../src/Wildlife/ChickenPopulation.cs) | [Native bridge owner](../src/Wildlife/ChickenPopulationRuntime.cs) | [Guide](CHICKENS.md) |
+| Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | â€” |
+| AIV build observation | [Contracts](../src/Diagnostics/AivBuildStepContracts.cs) | [Capability](../src/Diagnostics/AivBuildStepCapability.cs) | â€” |
 | Managed command interception | [GameActionEvents](../src/Units/Commands/GameActionEvents.cs) | [Shared event infrastructure](../src/Core/Events/InterceptionEvent.cs), [managed hook owner](../src/Core/Events/ManagedInterceptionHook.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | HUD interception | [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) | Named publishers in the same file and shared event infrastructure | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs), [button availability](../src/Units/Recruitment/RecruitmentAvailability.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
@@ -1049,3 +1062,57 @@ Requires APIShared 0.38.0 or later. `APIShared.Wildlife.Herds` reads Vanilla's a
 simulation tick). `HerdRouteEvents` lets mods shorten or redirect a herd's route right after
 Vanilla built it; `HerdFlightRules` keeps chosen deer and goat herds from fleeing from their
 sector's threat counters, which `TryGetSectorThreats` reads. See [the herd contract](HERDS.md).
+
+Requires APIShared 0.54.0 or later: `HuntablePreyDefinition.WithMinimumCorpseLifetime(ticks)` keeps
+rabbit, camel and chicken corpses at least that many map ticks; the longest request of all active
+registrations applies. It is frozen per mission with the catalog and part of the multiplayer digest.
+See [corpse lifetime](HUNTING.md#corpse-lifetime).
+
+## Chicken population
+
+Requires APIShared 0.54.0 or later. `APIShared.Wildlife.ChickenPopulationModifiers` changes Vanilla's
+chicken target per player with staged `ValueModifierContribution`s (0 to 1000). Providers run
+deterministically on the simulation thread; spawning and removal stay Vanilla's. See
+[the chicken contract](CHICKENS.md).
+
+## Reachability and line of sight
+
+Requires APIShared 0.54.0 or later. `APIShared.Pathfinding.PathReachability` asks Vanilla's
+player-aware path connection layers whether a unit, tile or component can reach another; only
+`Unreachable` is a reliable negative. See [reachability](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable).
+
+`APIShared.Sight.LineOfSight` runs Vanilla's own line-of-sight test between world points, units or
+tile viewpoints and applies Vanilla's two visibility rules; it changes no state, runs on the simulation
+thread and is bound to the audited native build. `SightBlockingBuildings` lets building types that
+Vanilla exempts from sight checks (the Hunter's hut) block sight like ordinary buildings, by owner
+rules. See [line of sight](LINE_OF_SIGHT.md).
+
+## Building panels and per-building state
+
+Requires APIShared 0.54.0 or later. `APIShared.Presentation.BuildingPanelSections` adds owner-bound
+controls to Vanilla's building panels through one shared `HUD_Buildings` host and one open-building
+detection. A factory creates the control per HUD instance; `ShowWhen`, `Opened`, `Updated` and
+`Closed` run on Unity with an immutable `BuildingPanelContext`. See [building panels](BUILDING_PANELS.md).
+
+`APIShared.Buildings.BuildingStates` stores 1 to 12 small values per building identity (ID and
+GlobalId). Owners change values through one tick-synchronous authenticated Chore validated on every
+peer; simulation values are written only by the owning mod. Each table has its own versioned save
+record and a fixed native layout readable by native code. See [building state](BUILDING_STATE.md).
+
+## Build-menu availability
+
+Requires APIShared 0.54.0 or later. `APIShared.Buildings.BuildMenuAvailability` allows (respecting the
+mission's mapper table) or vetoes build-menu mappers for the local player relative to Vanilla's
+decision; a veto wins. It affects only the build menu and placement checks, not simulation, and rules
+register before the first mission. See [build menu](BUILD_MENU.md).
+
+## Typed construction costs
+
+`APIShared.Buildings.ConstructionCostTarget` distinguishes structure/tooltip identifiers from
+build-menu mappers and resolves their known cost aliases. `ConstructionCosts` provides checked
+default/current snapshots, per-material global mutations and Unity-thread display quotes.
+Native and managed table bounds are independent; decorations without a native row are never
+indexed into either table. No existing SE cost method is patched. See
+[typed cost access](THIRD_PARTY_GUIDE.md#typed-construction-costs).
+
+Human-only extras, saved payments and exact refunds: [HumanConstructionCosts](HUMAN_CONSTRUCTION_COSTS.md). ConstructionRefundPolicies shares action percentages with optional mods. ConstructionDemolition attributes authenticated custom demolition.

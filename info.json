@@ -3,13 +3,43 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.53.0",
+  "Version": "0.56.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.56.0",
+      "Changes": [
+        "Preserve legacy setting values before defaults are merged across presets, missions and saved games; explicit new choices remain authoritative.",
+        "Reject completed construction commands and isolate nested spawn callbacks so free objects do not receive construction charges or payment receipts.",
+        "Keep independent resource gifts intact when applying negative gold refunds, including nested callbacks."
+      ]
+    },
+    {
+      "Version": "0.55.0",
+      "Changes": [
+        "Add typed ConstructionCosts targets with checked native/visual table bounds and centralized mapper, gate, garden, pond and stationary-engine aliases.",
+        "Add general Human-only construction extras with authoritative payment reservations, saved actual-payment receipts and same-owner demolition refunds, including native float/integer refund arithmetic and signed gold offsets.",
+        "Correct the Extender refund interceptor to use its authoritative final ID/percentage context; distinguish marking removal from terminal slot release with verified semantic native contracts."
+      ]
+    },
+    {
+      "Version": "0.54.0",
+      "Changes": [
+        "Add PathReachability: coarse reachability between units, tiles and path components through Vanilla's player-aware path connection layers.",
+        "Add LineOfSight: Vanilla's own line-of-sight test between world points, units and tile viewpoints, with Vanilla's two visibility rules.",
+        "Add SightBlockingBuildings: building types that Vanilla exempts from sight checks (such as the Hunter's hut) can block sight like ordinary buildings.",
+        "Add BuildingPanelSections: shared host and detection for mod sections in Vanilla's building panels, with Unity-thread Opened/Updated/Closed callbacks.",
+        "Add BuildingStates: owner-bound per-building values with synchronized owner requests, versioned save records and a stable native layout.",
+        "Add minimum corpse lifetimes for huntable rabbits, camels and chickens (HuntablePreyDefinition.WithMinimumCorpseLifetime).",
+        "Add BuildMenuAvailability: allow or veto build-menu entries for the local player relative to Vanilla's decision.",
+        "Add ChickenPopulationModifiers: staged modifiers for Vanilla's chicken target per player.",
+        "Fixed: the Tanner production receipt source is now decided at the first mission initialization. Before, APIShared always occupied it because ImprovedHunters loads after APIShared, which kept ImprovedHunters' Tannery meat feature from installing."
+      ]
+    },
     {
       "Version": "0.53.0",
       "Changes": [

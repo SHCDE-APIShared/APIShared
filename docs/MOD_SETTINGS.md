@@ -611,6 +611,48 @@ stored data unchanged; the converter's returned dictionary is used as-is. Withou
 converter, an unchanged snapshot can be returned directly, so the result is not a
 general-purpose deep copy of the input.
 
+### Converting missing stored values before defaults
+
+Implement `IModSettingsStoredSnapshotMigration` when a conversion needs to distinguish
+an omitted property from an explicitly selected value. APIShared calls
+`System_MigrateStoredSnapshot(Dictionary<string, byte[]>)` after declared renames and
+source/Player selection, before adding missing defaults or applying setters. Its input
+and buffers are detached; the helper also detaches the returned values. Keep every
+input key. Add only properties belonging to the same settings endpoint.
+
+Use `ContainsKey`, not a comparison against a default: explicit null, empty values and
+explicitly selected ModDefault/creator Mode0 values are present and remain authoritative.
+The converter must be pure, deterministic and idempotent, without live settings, UI,
+file or native-state access. An unrecognized legacy representation must not invent data.
+
+Personal schema1/2/3 values, working/published presets and prepared save/Map/Trail
+sources use this opt-in contract. Published policies are resolved for the selected
+properties first; newly derived values are represented as Fixed when overwriting that
+preset. Defaults, exports and authenticated host values received by clients do not
+run an extra conversion. Added properties pass the regular type, scope and host checks
+before application and fingerprinting.
+
+Trail-rule capture for opted-in endpoints keeps rules sparse: it records selected
+Player/Fixed fields and authorized derived Fixed fields, without synthesizing new
+Mode0 rules for omitted properties. It reads no live settings; Player selections
+appear as presence-only null markers during that fixed-value conversion and retain
+their Player mode. Existing explicit Mode0 rules in saved data remain authoritative.
+
+Direct controller entry converts raw mission input. API-owned prepared entry uses
+an endpoint-bound single-use token so a normalized host/source snapshot is not
+converted again. Nested fresh working operations do not inherit that exemption.
+
+A failed conversion rejects that snapshot before its setters and persistence. A
+previously applied independent snapshot is retained. Converter failures do not classify
+a valid personal file as corrupt or replace it with defaults.
+
+Custom stored-format readers call `ModSettingsMigration.MigrateRawStoredSnapshot`
+before their default merge. This new contract does not invoke the older
+`IModSettingsSnapshotMigration` callback. That callback and
+`ModSettingsMigration.MigrateStoredSnapshot` retain their established semantics;
+prepared save loads can run the old mission conversion after the raw conversion and
+default merge. Endpoints that do not opt in retain their existing behavior.
+
 ## Moving mission settings between mods
 
 APIShared 0.51.0 extends the existing migration pipeline with explicit owner moves.

@@ -56,7 +56,12 @@ namespace APISharedTests
                 (0x27FFF, 7, ApiSharedNativeSites.PlayerViewNetwork),
                 (0x28019, 7, ApiSharedNativeSites.PlayerViewNetwork),
                 (0x45F20, 7, ApiSharedNativeSites.MapperCamera),
-                (0x41D60, 10, ApiSharedNativeSites.VisibleMapRender)
+                (0x41D60, 10, ApiSharedNativeSites.VisibleMapRender),
+                (0x1584BE, 19, APIShared.Wildlife.CorpseLifetimeNative.SiteGroup),
+                (0x16346B, 20, APIShared.Wildlife.CorpseLifetimeNative.SiteGroup),
+                (0xD2AB4, 17, APIShared.Wildlife.ChickenPopulationRuntime.SiteGroup),
+                (0xFFC70, 14, APIShared.Buildings.BuildMenuAvailabilityRuntime.SiteGroup),
+                (0x6BA0C, 17, APIShared.Sight.SightBlockingBuildingsNative.SiteGroup)
             };
             foreach (var expected in expectedWriters)
             {
@@ -105,6 +110,9 @@ namespace APISharedTests
                 ("APIShared.Wildlife.HunterNativeSites", "Initialize", -1, m => m.Name == "Commit"),
                 ("APIShared.Wildlife.HunterOwnerGates", "TryEnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.Wildlife.HerdRuntime", "TryEnsureFlightGates", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.CorpseLifetimeNative", "TryEnsureSupported", -1, m => m.Name == "Commit"),
+                ("APIShared.Wildlife.ChickenPopulationRuntime", "TryEnsureInstalled", -1, m => m.Name == "Commit"),
+                ("APIShared.Buildings.BuildMenuAvailabilityRuntime", "TryEnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinPathAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "EnsureInstalled", -1, m => m.Name == "Commit"),
                 ("APIShared.AssassinAttackControlAPI", "RegisterGuard", 3, m => m.Name == "GetDelegateForFunctionPointer"),

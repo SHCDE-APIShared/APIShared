@@ -26,6 +26,7 @@
 - [Huntable prey reservation word](#huntable-prey-reservation-word)
 - [Hunter native sites](#hunter-native-sites)
 - [Hunter owner gates](#hunter-owner-gates)
+- [Line of sight](#line-of-sight)
 
 ## Shared health initialization
 
@@ -106,7 +107,10 @@ equal module `+0x8574320` for the reference image and must fit the complete acce
 range inside the loaded image. The exact base is independently confirmed by
 enqueue, receive and execution; an in-range but different resolver value is rejected. Offsets are
 current-slot `0x84CC8`, phase `0x84CCC`, slot base `0xB0BF8`, stride `0x500`,
-executing source `0x36FA4C`. Slot tick/source/opcode/command ID are at 0/4/8/12.
+executing source `0x36FA4C`. Slot tick/source/opcode/state/command ID are at 0/4/8/9/12.
+The state uses the native signed-byte predicate (nonzero and below10), checked again
+after the identity reads. Due execution at1F7E0 leaves mode/slot/issuer intact after
+marking state10; those stale fields are not an executing-command authorization.
 Only phase 0, opcode 106, slot 0..499 and identical slot/execution sources 1..8
 are admitted, with a second consistency read. Neither a packet's PlayerId nor
 the current native view establishes issuer identity. Native `0x1F9A0` is
@@ -1624,6 +1628,148 @@ leaves herds unavailable. Static audit of 2026-11-08.
   both flight spans, the raw field map against the Extender's `GameTribe`, and check that the Fixes mod
   (it hooks `DeerUpdate` `0x156130`, not these functions) and other plugins leave the spans alone.
 
+## Corpse lifetimes
+
+Owner: `Wildlife.CorpseLifetimeNative` (generator and arithmetic in `Wildlife.CorpseLifetimeNativeAssembly`,
+executed by `tests/WorkerProductionBonus.NativeTests/WildlifeEconomyNativeTests.cs`; catalog combination in
+`tests/APISharedTests/HuntablePreyTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback (the whole HuntablePrey
+service is bound to this image), an unknown image leaves corpse lifetimes unavailable. Static audit of 2026-11-14.
+
+- Fading branch (AI state `0x6E`, raw `+0x918`) of the rabbit `0x157810`, camel `0x158020` and chicken `0x162CB0`
+  updates: the fade byte `+0x986` (signed, read by the render export at `0x43C21`) and the counter `+0x920`
+  (signed word) grow by 1 per update, chickens by 2 (`0x16346B`/`0x163477`/`0x16347F`/`0x16349F`); one
+  `mov ecx, 0x20` gives both the fade cap (`cmp byte,cl; cmovg`) and the counter threshold (`cmp word,cx; jle`);
+  above it the update writes alive state 3 (`0x157F02`, `0x1584FE`, `0x1634B6`) and the unit pass deletes the
+  corpse. Outside `0x6E` the fade byte counts down again (`0x1578CA`). Rabbits and camels reset the counter on
+  entering `0x6E` (`0x157ECD`, `0x1584A2`); the chicken entries `0x163426`/`0x163456` do not.
+- Camel span `[0x1584BE,0x1584D1)` `FE 84 2B 86 09 00 00 B9 20 00 00 00 38 8C 2B 86 09 00 00`, continuation
+  `0F B6 84 2B 86 09 00 00 0F 4F C1`; chicken span `[0x16346B,0x16347F)` `FE 84 2B 86 09 00 00 B9 20 00 00 00
+  66 FF 84 2B 20 09 00 00`, continuation `FE 84 2B 86 09 00 00 38 8C 2B 86 09 00 00`. Anchors `0x1584B8`
+  (`cmp si,0x6E; jne`), `0x163465` (`cmp di,0x6E; jne`), `0x1584EB` and `0x1634A7` (counter compare). No direct
+  branch and no table entry in the image targets the span interiors; RCX is dead before the replaced `mov`, flags
+  are recomputed by the following compare (camel) or are dead (chicken). Stubs replay the span with `mov rcx,cell;
+  mov ecx,[rcx]` for the constant; the cell holds `0x20` (Vanilla) unless a catalog asks for longer.
+- Rabbit: the constant at `0x157EDC` (`FE C2 B9 20 00 00 00 3A D1` from `0x157EDA`) is the Script Extender's
+  `GameGlobalsManager.RabbitDespawnTickTime` (`B9 ? ? ? ? 3A D1`); APIShared validates that the Extender's
+  site is that instruction with original value 32 and only places an owner-bound `SetOverride`, never its own
+  patch. Script Extender and Fixes AOBs, and the workspace mods, do not touch the two camel/chicken spans
+  (scan of 2026-11-14); an older ImprovedHunters wrote the same two immediates directly.
+- Encoding: ticks * step; at or below `0x20` stays `0x20`; otherwise rounded up to `256 * n + 8` (cap 8 keeps a
+  long-lived corpse visible, as ImprovedHunters' former 1800 did), at most `0x7F08`; public limit 16000 ticks.
+- Writes happen only in `HuntablePreyRuntime.Activate`/`EndWorld`, which `WorkerProductionRuntime` calls under the
+  engine monitor (`EngineInterface.threadLock`) before a mission's first admitted tick and at its end.
+- Before adding a hash: repeat the fading-branch audit of all three updates (both meanings of the constant,
+  counter start, deletion), the span register/flag liveness, the Extender's rabbit pattern, and the render use of
+  `+0x986`.
+
+## Build-menu availability
+
+Owner: `Buildings.BuildMenuAvailabilityRuntime` (generator `Buildings.BuildMenuAvailabilityAssembly`, executed
+against Vanilla's own function body by `tests/WorkerProductionBonus.NativeTests/WildlifeEconomyNativeTests.cs`).
+Reference native SHA-256 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback.
+Static audit of 2026-11-14.
+
+- `0xFFC70(record rcx, mapper edx)`, a leaf without stack use. Callers: export `DLL_IsMapperAvailable` `0x84A20`
+  (`8B D1 48 8D 0D 07 2D 24 03 E9 42 B2 07 00`, record `0x32C7730`; managed `EngineInterface.IsMapperAvailable`
+  under `threadLock`, result `> 0`, used by `MainViewModel.CanPlaceMapper`, `HUD_Main.SetupNewBuildScreen`,
+  `KeyManager.Update`, `GameMap.processTestMap`), `0xC2030` (mappers `0x60`/`0x61`, `!= 0`) and the UI state
+  producer `0x19D960` from `DLL_RunTick` (recruitment mappers `0x123`, `0xBE`..`0xC2`, `0x166`). No simulation,
+  AI or command path asks it.
+- Branches: game type `0x3665F28` (0 campaign, 1 map editor, 2 freebuild, 3 skirmish, 4, 6 siege editor) with
+  special tables for 2/3 and the trail switches `0x87EE2F0`/`0x87EE2F4`; network mode `0x8574B90` (0 single
+  player, 99 skirmish, 1 network): Hunter's hut `0x4E` off without deer/goats at map start (`0x37EF97C`), dog cage
+  `0x138` off with NoDogs (`0x37EF964`, BugfixesAndQoL NOPs `0xFFD98`); game type 4 refuses `0x34`,
+  `0x3D`..`0x40`, `0x4E`, `0x4F`, `0x15B`, `0x15C`, `0x179`..`0x17B`; final branch `0xFFF92`
+  (`81 FA B7 01 00 00 0F 87 E6 FD FF FF 48 63 C2 41 0F BF 84 40 2C 02 00 00 C3`) returns the mission's signed
+  availability word `record + 0x22C + mapper * 2` for mappers below `0x1B8`.
+- Entry span `[0xFFC70,0xFFC7E)` `8D 82 4E FF FF FF 4C 8B C1 83 F8 01 76 14` (the backend displaces exactly 14),
+  continuation `83 FA 35 74 0F`. No branch or table entry targets the span interior. The stub reads one byte per
+  mapper (0..511): 0 replays the entry and continues; Veto returns 0; Allow calls a replayed copy (RSP 8 mod 16 at
+  the entry, frame `0x38`), keeps a result above 0, else returns 1 unless the mission word for a mapper below
+  `0x1B8` is 0 or below. Clobbers only RAX, R8, R10 and flags, all free at a function entry.
+- Before adding a hash: repeat the caller list, every branch for the documented mappers, the record argument of
+  the export and the final table branch.
+
+## Chicken population
+
+Owner: `Wildlife.ChickenPopulationRuntime` (generator `Wildlife.ChickenPopulationNativeAssembly`, executed by
+`tests/WorkerProductionBonus.NativeTests/WildlifeEconomyNativeTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback. Static audit of 2026-11-14.
+
+- `0xD29E0(player manager)`, reached only from the scheduled tick step `0xB4` of `0xD1AD0` (`0xCDE60`,
+  `DLL_RunTick`). Returns at once in game types 1 and 6. Loops players 1..8 (`ebx`, `rdi` = manager + `0x1345D0`
+  + player * `0x583C`), active when `[rdi-0x140] > 0` and `[rdi] > 0`. Target from `[rdi+0x1EC8]` (probably the
+  food stock; meaning of it and of the divisor `[rdi+0x1FAC]` not confirmed): 0
+  below 1, 1 below 10, 2 below 20, 3 below 30, else `min(10, food / max(1, 2 * [rdi+0x1FAC]) + 3)`; 100 while
+  `0x3665FE0` is set (`cmovne eax,r13d`, R13D = 100). Compared with the player's count `[rdi+0x2048]`: below,
+  `0xBF510` picks a random bakery (17), mill (34) or granary (19) of the player (game random numbers) and
+  `0x17FEF0` spawns a chicken (type `0x3E`) there; above (`jge` at `0xD2BA7` on the same flags), the first unit of
+  the player with type `0x3E` gets AI state `0x6E` (fading, also when it already fades). The writer of the
+  count was not traced.
+- Span `[0xD2AB4,0xD2AC5)` `83 3D 25 35 59 03 00 41 0F 45 C5 3B 87 48 20 00 00`, continuation `0F 8E DC 00 00 00`;
+  the four `jmp 0xD2AB4` at `0xD2A72`..`0xD2A93` enter at the span start, nothing targets its interior. Anchors
+  `0xD2A07`, `0xD2A10`, `0xD2A16`, `0xD2A34`, `0xD2BA7`, `0xD2BFA`. Live in the loop: R9D `0x6E`, R10D 10, R12..R15,
+  RBP 1; RCX, RDX, R8 and R11 are written before any read on both paths; flags are recomputed by the replayed
+  compare. The stub replays the first two instructions, calls the managed callback only while the demand dword is
+  set (saving RCX, RDX, R8..R11 and XMM0..5, dynamic 16-byte alignment) and replays the compare.
+- Before adding a hash: repeat the target formula, the player loop registers, both branches on the compare's
+  flags and the caller chain to `DLL_RunTick`.
+
+## Line of sight
+
+Owner: `Sight.LineOfSightNative` (public facade `Sight.LineOfSight`, guide
+[docs/LINE_OF_SIGHT.md](docs/LINE_OF_SIGHT.md); executed by
+`tests/WorkerProductionBonus.NativeTests/SightDispatchTests.cs`, managed rules in
+`tests/APISharedTests/SightTests.cs`). Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`; no pattern fallback,
+an unknown image leaves the service unavailable. Static audit of 2026-11-14 (Vanilla
+facts in the baseline `knowledge/LINE_OF_SIGHT.md`). Calls only, no hook; site group
+`Sight.LineOfSightCalls` (CallOnly `0xA06F0`/1, `0x9E350`/1).
+
+- Wrapper `0xA06F0`, validated as all 156 bytes (`48 8B C4 48 89 58 08 ... 41 5C C3`): forward
+  `0x9E350(ctx, start, end, 0)`, reverse `0x9E350(ctx, end, start, 0)` only after a zero result.
+  Both `call rel32` resolve to `0x9E350` (`0xA0743`, `0xA0768`).
+- Core `0x9E350`, entry `44 89 44 24 18 89 54 24 10 48 89 4C 24 08 53 55 56 57 41 54 41 55 41 56
+  41 57 48 83 EC 68`. Its only non-stack store is `[ctx+0xC]` (eight stores); the eighth
+  argument (`[rsp+0xE8]` after the prologue) switches all obstacle checks off when not zero,
+  so `Directional` always passes 0. Tiles are `x / 8`, `y / 8` through the row table
+  `0x402FF2C` and the tile manager `0x405EDB0` without bounds checks: the facade rejects
+  points outside the map diamond and heights beyond +/- 100000.
+- Rule and eye-height anchors (exact bytes): `0x18B052` `83 C1 1A` (target +26), `0x18B070`
+  `83 C1 1E` (viewer +30), `0x18B0A2` `E8 49 56 F1 FF FF C8 3D AF 01 00 00 77 1F` (visible
+  `1..0x1B0`), `0x18E9DE` `C7 44 24 50 1E 00 00 00` (viewer default +30), `0x18ED3C` `83 C1 1A`,
+  `0x18ED6A` `E8 81 19 F1 FF 8B D0 85 C0 0F 8E EB 00 00 00` (visible above 0). Unit fields are
+  raw record origin `0x65C` relative: `+0x70E/+0x710/+0x712/+0x714` = `GameUnit +0xB2/+0xB4/+0xB6/+0xB8`,
+  all read signed.
+- Before adding a hash: repeat the wrapper and core audit (stores, eighth argument, result
+  values, bounds), both callers' offsets and rules, and check that no Script Extender or Fixes
+  hook changes the wrapper or core semantics.
+
+### Sight-blocking buildings
+
+Owner: `Sight.SightBlockingBuildingsNative` (public `Sight.SightBlockingBuildings`, generator
+`Sight.SightNativeAssembly`). Same reference hash, no pattern fallback. Site group
+`Sight.BuildingHeightDispatch`: Exclusive `0x6BA0C`/17; Observe `0x6B9F1`/27 (image-base `lea`
+and type switch), `0x6BA1D`/5 (jump) and `0x6BAB4`/88 (case and type tables). Installed on the
+first registration inside `NativeInlinePatchWindow`, never unpatched.
+
+- Helper `0x6B990(tiles, tile, mode)`; callers only the sight core (`mode = 1`, six calls) and the
+  projectile routine `0x9C730` (`mode = 0`, `0x9CD70`, `0x9CDD5`).
+- `0x6B9F1` `4C 8D 05 08 46 F9 FF` (`lea r8`, image base); `0x6B9F8` `4E 0F BF 9C 11 2E 01 00 00 41 8D
+  43 F9 83 F8 47 77 37 48 98` (type word `+0x12E`, types `7..78`).
+- Span `0x6BA0C` `41 0F B6 84 00 C4 BA 06 00 41 8B 8C 80 B4 BA 06 00` (two table loads, 17 bytes, the
+  RedBird probe must displace exactly 17); continuation `0x6BA1D` `49 03 C8 FF E1`. No direct
+  branch targets `(0x6BA0C, 0x6BA1D)`. RCX is free before the second load, flags are dead until
+  `add rcx,r8`; R8-R11, RBX, RSI, RDI are untouched by the stub.
+- Case targets `0x6BAB4` = `0x6BA3D, 0x6BA30, 0x6BA22, 0x6BA41`; case 0 `0x6BA3D` `85 F6 75 56`
+  (sight mode adds nothing), case 3 `0x6BA41` `47 8B 8C 98 60 8C 2E 00 EB 4C` (height table
+  `0x2E8C60`, type 7 = 40). Type bytes `0x6BAC4`: case 0 only for type 7 (`STRUCT_HUNTERS_HUT`),
+  which `IsExemptInVanilla` derives from the validated load image.
+- Before adding a hash: repeat the helper audit (all callers and modes, case table, register and
+  flag liveness of the span, incoming branches), rerun the native test and check that no other
+  owner hooks `0x6B990`.
+
 ## Native unit-pair exclusion rules
 
 The attack target rule entry is pinned to FBCB9319 at RVA `0x1867A0`.
@@ -1973,3 +2119,151 @@ observation. Native fixture tests execute both relay branches with all seven inp
 and the full64-bit result, validate actual backend displacement and generated source
 bytes, and exercise recipe-independent delivery. These are private native fixtures;
 actual game/new/load/editor and real multiplayer acceptance remain separate.
+
+## Typed construction costs
+
+Owner: Buildings.ConstructionCosts. Hash:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+No hooks. Loader RVA 0xC33A0 copies 110 interleaved 20-byte records: default row zero
+0x2DE240, loader cursor 0x2DE244..0x2DEADC. Current row zero is 0x67E5B8C, fields
+wood/stone/iron/pitch/gold at +0/+4/+8/+12/+16. Payment RVA 0xC8A90 consumes them;
+original-image anchor 0xC8B26 is `44 8B A4 88 90 5B 7E 06`.
+
+The independently validated private static readonly GameData.game_data_txt is Int32[545]
+(109 rows); reflection captures it once. Writes validate both destinations first.
+GameData.getStructureCosts resolves turret menu IDs 115/116 to rows 86/87; stationary
+engine construction 0x138D0 pays the same rows through C8A90. Their enum names are
+TOWER1_DESTROYED/TOWER2_DESTROYED and are intentional cost identities. The typed resolver
+also mirrors explicit gate/garden/pond aliases. Mapper input uses its typed SE converter
+plus the abstract wooden-gate identity omitted there. Brazier is not a native cost row.
+
+No unproven layout fallback: unsupported hashes fail before dereference. On update verify
+both loader extent and payment consumer, the genuine managed field/array/method contract,
+and installed enum meanings, then rerun alias and sentinel-buffer tests before rebinding.
+
+
+## Human construction transaction adapters (2026-11-15)
+
+Reference native SHA256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+Permanent SafeIlHooks wrap final SE DetourHandle Original delegates after all Pre modifications. Exactly one getter is required per managed method, including the MirrorTool closure. Existing native SE hooks are untouched. Delegate/signature mismatch disables Human extras.
+
+Free decision: RVA0xB9710, (manager, playerId, canonicalCostRow) -> int; pristine16 bytes8B0512C85A0383F806744D833D6EB44B. It reads free woodcutter/granary state and marketplace exceptions; game6 bypasses them. Only validated rows are passed.
+
+Decoration removal: RVA0x9F410, full121-byte pristine SHA256E3F245F3E19DA54AD3C4AF52E3729A217DFAAC8198B1B21B25734222DE9719E9. Indirect/7 entry4883EC084863C2 (sub rsp,8; movsxd rax,edx), continuation0x9F417. All local branches avoid the entry interior. The second argument is a direct tile ID; active static projectile types10..15 become state3. Only a Chore97 issuer or an authenticated custom self-demolition scope authorizes refund; other cleanup retires receipts. Native tests execute this production backend policy on copied code.
+
+Tower-weapon construction: canonical dispatch table cellRVA0x2C7B80 contains handler0x138D0 for Chore42; independent neighboring entries29 and69 point to0x12400 and0x172B0. Only the matching native Chore bills stationary Mangonel/Ballista unit creation.
+
+Refund0xC4480 precedes bulldoze mark0xC4290. Final SE Original wrappers use effective Pre parameters, ignore skipped native calls, and require exact generation state3 before consuming receipts. Terminal building/unit cleanup retires stale receipts. Wall sentinel IDs are untouched.
+
+All transaction adapters are reference-image bound; no unknown-build address reuse. A prologue alone does not establish the structure, Chore and transaction semantic contract, so unknown images fail closed until re-audited. Publication validates actual RedBird Indirect/7 shape. Published hooks stay rooted and logically dormant on failure. Independent typed-table access has its own availability. Remaining game checks cover actual creation, failure, refund rates, storage removal, saves and multiplayer.
+
+
+### Construction Undo for units and decorations (Chore75)
+
+The matching native dispatch table cellRVA0x2C7C88 selects handler0x17B10. Full421-byte SHA256ED1F269B1FED7EAB0F568734CE46BF921ECD1D517BC5DCA4FED92BA89BECFFE5; entry40534883EC30 is pushrbx(2), subrsp30h(4), Indirect/6 continuation0x17B16. No local branches enter displaced bytes. The handler reads two signedInt16 values: mode1 marks a direct decoration slot state3; mode2 refunds stationary type41/61 with sentinel-3/-4 and percentage100, then marks the unit state3. Capture the authenticated current Chore75 body (exact4 bytes) before Original and require the same object generation/owner/state3 afterwards. NativeC4480 sentinel branches bypass SE's per-material intercept atC487A; their actual factor is effectivePercentage/100, not the ordinary per-good multiplier. ExtraFeatures also deliberately leaves native negative-ID refund events unnormalized. General action policies run once; do not apply the regular-building material factor to tower-weapon refunds. Signed gold rebates offset the same native refund invocation before committing the paid receipt. Other unit disbands and foreign/unpaid objects remain unchanged.
+
+Producer0x63CD0, reached from GameAction dispatcher0x81870 by managed Enums.GameActionCommand.Undo, sends Chore29 with percentage100 for undo kind0(building), Chore75mode1 for kind1(decoration), and Chore75mode2 for kind2(tower weapon). Decoration Undo therefore also uses actionpercentage100 before the ordinary material factor; normal Chore97 and authenticated area-demolition decorations use actionpercentage50. This is construction Undo provenance, not arbitrary troop disband authorization.
+
+Disband publication uses its own strict backend validator: installed NativeX64 reencodes
+the displaced `40 53 48 83 EC 30` as `53 48 83 EC 30`, removing only the redundant REX
+prefix before PUSH RBX. The trampoline is exactly ten bytes: these five relocated
+bytes and a decoded near JMP back to original entry+6. Prepared original bytes and
+installed FF25 pointer slot/callback are verified separately. The shared byte-identical
+entry validator remains unchanged. Private executable tests verify this production
+contract, reject corrupted register/stack-size/continuation, and execute the dormant
+and active callback paths with exactly one original invocation each.
+
+### Extender refund identity and deletion bindings
+
+Game acceptance on 2026-11-15 exposed two integration defects under the canonical
+FBCB9319 native image. Resolve the actual installed SE constructor AddDetour AOBs:
+`c_game_building_delete_hook_impl` targets C4290 (mark state3), while
+`c_game_building_bulldoze_hook_impl` targets B8310 (terminal clear). The nearby SE
+comments describe the opposite names and cannot establish this lifecycle contract.
+Production wrapper tests extract the selected callback from compiled APIShared IL,
+then its AOB from installed SE IL, and assert the canonical executable targets.
+
+The regular C4480 material interceptor at C487A obtains an ID from caller stack
+`29 * IntPtr.Size`; this is beyond C4480's own 0x58-byte frame and is invalid when
+managed Original wrappers change its caller. The failed game run read nonzero
+pointer bits as a building ID and overwrote all refunds with type-zero costs.
+A permanent, shape-checked SafeIlHook replaces only that initial stack read with
+SE's RefundContextBuildingId, which its entry wrapper sets after Pre and before
+Original. Preserve the remaining material calculations and register writes.
+Final generic-policy ID/percentage arguments are synchronized with that context
+around Original and previous values are restored in finally. Sentinel paths
+bypass this material callback. Tests execute the transformed actual identity
+prefix with a null CPU-context pointer and check nested/failing context restoration.
+
+
+Internal phase identities and current SE compatibility mappings live in
+`BuildingRemovalNativeContracts`: `MarkBuildingForRemoval` (C4290, mark state3)
+and `ReleaseBuildingSlot` (B8310, terminal clear). External SE names are confined
+to its `ExtenderAdapter`; public API identities are unchanged.
+
+Refunds preserve the native arithmetic at the amount boundary. Regular material
+quotes match SE's CIL sequence: convert the positive payment magnitude to float,
+multiply by the float material multiplier and then the float percentage factor,
+and convert directly to UInt64. Apply integer bounds and restore a signed rebate
+only after that conversion; an intermediate float store or float Math.Min/Max can
+change Mono's result. The 2026-11-15 game comparison at 0.7f returned native13 for
+base20 and Human6 for extra10, whereas desktop .NET can produce different results
+from the same expression. Validate parity against SE in the actual game runtime,
+not a universal desktop rounding expectation. Stationary-unit quotes retain
+integer `paid * P / 100` (paid100 at29 percent returns29). The ledger rejects sign
+changes or amounts larger than the actual payment. The saved format is unchanged.
+
+### Native Undo parameter contract (2026-11-15)
+
+Canonical image FBCB9319: genuine construction Undo at 63CD0 enqueues opcode75
+(0x4B); 17B10 handles two signed Int16 parameters, mode then object slot.
+1F5F0 reads those fields at pending-record +17 and +19. This is a direct Vanilla
+parameter body, not opcode106's explicit Int32 blob length followed by bytes.
+For example mode1/slot25 begins 01 00 19 00; treating that as length4 rejects it.
+Mode1 marks a decoration for removal; mode2 refunds the stationary tower weapon
+via C4480's sentinel route before marking it. The normal building Undo arm uses
+opcode29 with a100-percent action refund. Current material multipliers still apply.
+
+At execute entry, the immediate enqueue/receive paths and due scheduler 1F7E0
+establish mode0, current slot, authenticated sender and transfer cursor0. The due
+scheduler does not reset payload-size global +0x84CD4: 17B10 itself publishes4
+inside the handler, after an entry detour runs. Never require that stale global
+to equal4 at detour entry. The pending fields are authenticated by the current
+native Chore identity; recheck identity after reading the two parameters.
+
+Game probe462794c61769 launched the genuine FreeBuild menu and shipped map
+A Mightier Oasis. Native worldkind2/mode0, actor=view1. Actual Chore69 paid12
+Human gold for a Brazier; genuine Undo removed the object. The old parameter
+reader rejected it, leaving receipt1 and payout0. This disproves the earlier
+hypothesis that normal FreeBuild never supports this Undo path.
+
+
+### Exact construction refund gold calls
+
+Reference image FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+C4480 has length0x528 and SHA256
+C1E4DC936740B9D35117AC1539BC0A07D48EF212F61CE57778DC2A82AA8445D7.
+Its two gold calls are C4793 (E8 18 11 FF FF, stationary-unit sentinels) and
+C496C (E8 3F 0F FF FF, regular buildings), both targeting live B58B0 with four
+Win64 arguments and an Int64 result. The other C45AB call is stone/wood, not gold.
+The exclusive spans are exactly5bytes; continuations are C4798/C4971. Validate
+all instructions, incoming branches and every live span before publication. SE's
+material interceptor at C487A is separate; B58B0's existing SE entry stays owned by SE.
+
+These are CALL retargets, never function-entry detours. Prepare each fourteen-byte
+FF25 tail relay with RedBird NativeMemoryManager.AllocateStub near the call and
+validate the rel32 reach, exact relay bytes and original target. Publish only in
+the established startup patch window. The managed bridge enters the same live
+B58B0 chain exactly once, carrying a refund-frame token and expected complete
+SE-resource-wrapper depth. That wrapper includes Pre and Post in a finally scope,
+so recursive gifts do not inherit native-gold attribution. Nested refunds restore
+both tokens and depths. A wrapper-depth check alone cannot exclude independent
+callbacks between C4480's earlier material calls and the gold call.
+
+No caller-stack probe or temporary executable patch is used. Published callbacks,
+relays and claims remain rooted for process lifetime; a partial publication failure
+keeps the adapter dormant and forwards through the existing chain. Unknown native
+hashes or conflicting callsite bytes make this construction adapter unavailable.
+No pattern fallback is claimed for these hash-bound function/CFG contracts.
+Update acceptance must execute the same native ABI/relay path, failure/dormancy,
+nested callbacks and actual SE wrapper behavior, not only inspect instruction bytes.
