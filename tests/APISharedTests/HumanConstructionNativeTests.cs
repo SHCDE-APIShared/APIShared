@@ -21,6 +21,30 @@ namespace APISharedTests
     public sealed class HumanConstructionNativeTests
     {
         [TestMethod]
+        public void CanonicalRefundGoldSitesAreWholeCallsToLiveResourceEntryWithoutInteriorBranches()
+        {
+            byte[] file=File.ReadAllBytes(Path.Combine(InstalledTestEnvironment.GameDirectory(),
+                "Stronghold Crusader Definitive Edition_Data","Plugins","x86_64","CrusaderDE.dll"));
+            using(var hash=SHA256.Create())Assert.AreEqual(ApiSharedRuntime.SupportedHash,BitConverter.ToString(hash.ComputeHash(file)).Replace("-",""));
+            byte[] function=AtRva(file,0xC4480,0x528);
+            using(var hash=SHA256.Create())Assert.AreEqual("C1E4DC936740B9D35117AC1539BC0A07D48EF212F61CE57778DC2A82AA8445D7",BitConverter.ToString(hash.ComputeHash(function)).Replace("-",""));
+            var decoder=Decoder.Create(64,new ByteArrayCodeReader(function));decoder.IP=0xC4480;
+            var instructions=new System.Collections.Generic.List<Instruction>();
+            while(decoder.IP<0xC49A8){decoder.Decode(out var i);Assert.IsFalse(i.IsInvalid);instructions.Add(i);}
+            Assert.AreEqual(0xC49A8UL,decoder.IP);
+            foreach(int site in HumanConstructionRuntime.GoldCallRvas)
+            {
+                var call=instructions.Single(i=>i.IP==(ulong)site);
+                Assert.AreEqual(Code.Call_rel32_64,call.Code);Assert.AreEqual(5,call.Length);Assert.AreEqual(0xB58B0UL,call.NearBranchTarget);
+                var good=instructions.Last(i=>i.IP<(ulong)site && i.Op0Kind==OpKind.Register && i.Op0Register==Register.R8D);
+                Assert.AreEqual((uint)SHCDESE.Interop.eGoods.STORED_GOLD,good.Immediate32);
+                foreach(var i in instructions)
+                    if(i.Op0Kind==OpKind.NearBranch64)
+                        Assert.IsFalse(i.NearBranchTarget>(ulong)site && i.NearBranchTarget<(ulong)site+5,"No original path may enter a CALL's rewritten displacement.");
+            }
+        }
+
+        [TestMethod]
         public void NativeUndoFieldsUseTwoShortsAtPendingParameterStartWithoutCustomEnvelope()
         {
             // Exact native pending-slot layout: offset17 begins opcode-specific parameters;

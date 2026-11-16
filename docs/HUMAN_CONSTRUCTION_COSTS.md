@@ -97,3 +97,17 @@ It covers combined affordability, reservation rollback, signed credits, settings
 snapshots, multiple independent owners, repeat callbacks, identity reuse, save
 ordering, malformed data, legacy saves and mission changes. These tests do not
 replace native adapter, in-game rendering or real host/client acceptance.
+
+## Native origin and callback reentry
+
+Payment history and its version1 format remain unchanged. Native command attribution
+requires an unchanged active pending state as well as the existing issuer/mode/identity
+checks; completed commands cannot authorize later raw spawns. Complete SE spawn-wrapper
+scopes include Pre and Post. Recursive raw spawns cannot acquire the primary payment
+identity; a nested paid prefab operation owns its own transaction.
+
+Negative gold offsets are applied only to the native gold-add calls belonging to the
+current refund frame. The existing live SE resource chain still receives its normal Pre,
+Skip, Original and Post behavior. Independent gifts from resource callbacks or other
+callbacks do not consume that offset; nested refunds restore the outer context. The
+material float conversion order and stationary-unit integer arithmetic are unchanged.

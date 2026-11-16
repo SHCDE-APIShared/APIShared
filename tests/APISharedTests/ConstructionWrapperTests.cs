@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using APIShared;
 using APIShared.Buildings;
@@ -137,7 +138,10 @@ namespace APISharedTests
                 transform.Invoke(adapter, new object[] { context });
                 // Generate the actual transformed installed body. This validates stack/delegate/closure
                 // references without running the SE method or installing any process-wide hook.
-                Assert.IsNotNull(definition.Generate(), method.DeclaringType.FullName + "." + method.Name);
+                MethodInfo generated=definition.Generate();
+                Assert.IsNotNull(generated, method.DeclaringType.FullName + "." + method.Name);
+                Type signature=Expression.GetDelegateType(generated.GetParameters().Select(p=>p.ParameterType).Concat(new[]{generated.ReturnType}).ToArray());
+                RuntimeHelpers.PrepareDelegate(generated.CreateDelegate(signature));
             }
         }
 

@@ -1612,6 +1612,8 @@ APIShared.ModSettings.IModSettingsPresetEndpoint | public void System_EnterMissi
 APIShared.ModSettings.IModSettingsPresetEndpoint | public void System_ExitMissionPreset()
 APIShared.ModSettings.IModSettingsSnapshotMigration | public interface APIShared.ModSettings.IModSettingsSnapshotMigration
 APIShared.ModSettings.IModSettingsSnapshotMigration | public System.Collections.Generic.Dictionary<string, byte[]> System_MigrateMissionSnapshot(System.Collections.Generic.Dictionary<string, byte[]> snapshot)
+APIShared.ModSettings.IModSettingsStoredSnapshotMigration | public interface APIShared.ModSettings.IModSettingsStoredSnapshotMigration
+APIShared.ModSettings.IModSettingsStoredSnapshotMigration | public System.Collections.Generic.Dictionary<string, byte[]> System_MigrateStoredSnapshot(System.Collections.Generic.Dictionary<string, byte[]> snapshot)
 APIShared.ModSettings.IModSettingsWorkingCopyEndpoint | public interface APIShared.ModSettings.IModSettingsWorkingCopyEndpoint : APIShared.ModSettings.IModSettingsPresetEndpoint
 APIShared.ModSettings.IModSettingsWorkingCopyEndpoint | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentMissionPresetSnapshot()
 APIShared.ModSettings.IModSettingsWorkingCopyEndpoint | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentWorkingSnapshot()
@@ -1690,6 +1692,7 @@ APIShared.ModSettings.ModSettingsApplication | public static void ExitContext()
 APIShared.ModSettings.ModSettingsApplication | public static void RestorePreparedSources(string id)
 APIShared.ModSettings.ModSettingsMigration | public static class APIShared.ModSettings.ModSettingsMigration
 APIShared.ModSettings.ModSettingsMigration | public static APIShared.ModSettings.MissionModSettingsDocument MigrateMissionDocument(APIShared.ModSettings.MissionModSettingsDocument document)
+APIShared.ModSettings.ModSettingsMigration | public static System.Collections.Generic.Dictionary<string, byte[]> MigrateRawStoredSnapshot(object settings, System.Collections.Generic.Dictionary<string, byte[]> stored)
 APIShared.ModSettings.ModSettingsMigration | public static System.Collections.Generic.Dictionary<string, byte[]> MigrateStoredSnapshot(object settings, System.Collections.Generic.Dictionary<string, byte[]> stored)
 APIShared.ModSettings.ModSettingsMigration | public static void RegisterModMove(string ownerGuid, string registrationId, APIShared.ModSettings.ModSettingsModMove definition)
 APIShared.ModSettings.ModSettingsModMove | public sealed class APIShared.ModSettings.ModSettingsModMove

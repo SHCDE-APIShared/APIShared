@@ -112,6 +112,12 @@ namespace APIShared.Networking
             if (slot < 0 || slot >= 500) return false;
             long entry = manager + 0xB0BF8 + slot * 0x500L;
             if (readByte(new IntPtr(entry + 8)) != opcode) return false;
+            byte state = readByte(new IntPtr(entry + 9));
+            // 21EE0 dispatches a signed nonzero state below 10. 1F7E0 leaves the
+            // last slot/issuer/mode intact after setting state 10, so those fields
+            // alone also describe an already completed command.
+            sbyte pendingState = unchecked((sbyte)state);
+            if (pendingState == 0 || pendingState >= 10) return false;
             int rawSender = readInt(new IntPtr(entry + 4));
             int sender = readInt(new IntPtr(manager + 0x36FA4C));
             int commandId = readInt(new IntPtr(entry + 12));
@@ -121,7 +127,8 @@ namespace APIShared.Networking
             // A disagreement here is a changed/foreign context, not another remap.
             if (rawSender < 1 || rawSender > 8 || sender != rawSender || commandId < 0 || scheduled < 0) return false;
             if (readInt(new IntPtr(manager + 0x84CCC)) != 0 || readInt(new IntPtr(manager + 0x84CC8)) != slot ||
-                readByte(new IntPtr(entry + 8)) != opcode || readInt(new IntPtr(entry + 4)) != rawSender ||
+                readByte(new IntPtr(entry + 8)) != opcode || readByte(new IntPtr(entry + 9)) != state ||
+                readInt(new IntPtr(entry + 4)) != rawSender ||
                 readInt(new IntPtr(entry)) != scheduled || readInt(new IntPtr(entry + 12)) != commandId ||
                 readInt(new IntPtr(manager + 0x36FA4C)) != sender) return false;
             execution = new NativeChoreExecution(sender, commandId, scheduled, manager, slot);

@@ -31,7 +31,7 @@ namespace APIShared.Buildings
         [ThreadStatic] private static DemolitionFrame demolition;
         [ThreadStatic] private static long demolitionSerial;
         private static readonly Dictionary<ConstructionObjectIdentity, RefundFrame> pending = new Dictionary<ConstructionObjectIdentity, RefundFrame>();
-        private sealed class BuildFrame { internal int Player; internal ConstructionCostTarget Target; internal ConstructionObjectIdentity Identity; }
+        private sealed class BuildFrame { internal int Player, ExpectedSpawnDepth; internal ConstructionCostTarget Target; internal ConstructionObjectIdentity Identity; }
         private sealed class RefundFrame
         {
             internal ConstructionObjectIdentity Identity; internal int Player, Percentage; internal ConstructionCostTarget Target;
@@ -63,6 +63,7 @@ namespace APIShared.Buildings
                 Install(assembly, "BulkPlayerDetours", "c_game_player_add_resources_hook_impl", "c_game_player_add_resources_delegate", Operation.AddResource);
                 InitializeDecorationRemoval(context, hash, logger);
                 InitializeDisband(context, hash, logger);
+                InitializeGoldRefundCalls(context, hash, logger);
                 InitializePlacementPreview();
                 HumanConstructionCosts.SetIdentityValidator(CurrentOwner);
                 HumanConstructionCosts.SetQuoteEligibility((target, player) => PaidSession && Human(player) && !IsFreeConstruction(target, player));
@@ -114,6 +115,12 @@ namespace APIShared.Buildings
                 var cursor = new ILCursor(il); cursor.Goto(sites[0], MoveType.After);
                 cursor.EmitDelegate<Func<Delegate, Delegate>>(Wrap);
                 cursor.Emit(OpCodes.Castclass, type);
+                if (operation == Operation.SpawnUnit)
+                    ApplyMethodScope(il, c => { c.Emit(OpCodes.Ldarg,il.Method.Parameters[6]); c.EmitDelegate<Func<eChimps,int>>(EnterUnitScope); }, previous => LeaveMethodScope(operation, previous));
+                else if (operation == Operation.SpawnDecoration)
+                    ApplyMethodScope(il, c => { c.Emit(OpCodes.Ldarg,il.Method.Parameters[10]); c.EmitDelegate<Func<ProjectileType,int>>(EnterDecorationScope); }, previous => LeaveMethodScope(operation, previous));
+                else if (operation == Operation.SpawnBuilding || operation == Operation.AddResource)
+                    ApplyMethodScope(il, () => EnterMethodScope(operation), previous => LeaveMethodScope(operation, previous));
             }
             private Delegate Wrap(Delegate original)
             {
@@ -291,7 +298,7 @@ namespace APIShared.Buildings
             if (!target.SupportsHumanExtraCosts || !PaidSession || !Human(player)) return Invoke(original,args);
             if (!Prepare(target,player,Convert.ToByte(args[7])!=0,out var transaction)) return Zero(original);
             if(transaction==null) return Invoke(original,args);
-            var previous=building; var frame=new BuildFrame{Player=player,Target=target}; building=frame;
+            var previous=building; var frame=new BuildFrame{Player=player,Target=target,ExpectedSpawnDepth=buildingSpawnDepth+1}; building=frame;
             object result;
             try { result=Invoke(original,args); }
             catch { Cancel(transaction); throw; }
@@ -307,7 +314,7 @@ namespace APIShared.Buildings
             {
                 long rawId=Convert.ToInt64(result);
                 var frame=building;
-                if(rawId>0 && rawId<=int.MaxValue && frame!=null && !frame.Identity.IsValid && frame.Player==(int)args[1] &&
+                if(rawId>0 && rawId<=int.MaxValue && IsPrimaryBuildingSpawn(frame) && frame.Player==(int)args[1] &&
                     ConstructionCostTarget.FromStructure((eStructs)args[5]).Equals(frame.Target) &&
                     BuildingAccess.TryGetById((int)rawId,out GameBuilding* b,out _) && b->r_PlayerIdOwner==frame.Player &&
                     (b->r_AliveState==AliveState.IsAlive || b->r_AliveState==AliveState.NeedsInit))
@@ -319,7 +326,7 @@ namespace APIShared.Buildings
         private static object SpawnUnit(Delegate original,object[] args)
         {
             int player=(int)args[1];
-            if(!PaidSession || !Chore(42,player,out _)) return Invoke(original,args);
+            if(unitSpawnDepth!=1 || !PaidSession || !Chore(42,player,out _)) return Invoke(original,args);
             var type=(eChimps)args[6]; var target=ConstructionCostTarget.FromStructure(type==eChimps.CHIMP_TYPE_MANGONEL?eStructs.STRUCT_MANGONEL:eStructs.STRUCT_BALLISTA);
             if(!Prepare(target,player,false,out var transaction)) return Zero(original);
             object result;
@@ -342,7 +349,7 @@ namespace APIShared.Buildings
         private static object SpawnDecoration(Delegate original,object[] args)
         {
             int player=Convert.ToInt32(args[2]);
-            if(!PaidSession || !Chore(69,player,out _)) return Invoke(original,args);
+            if(decorationSpawnDepth!=1 || !PaidSession || !Chore(69,player,out _)) return Invoke(original,args);
             var target=ConstructionCostTarget.FromStructure(eStructs.STRUCT_BRAZIER);
             if(!Prepare(target,player,false,out var transaction)) return Zero(original);
             object result;
@@ -382,6 +389,14 @@ namespace APIShared.Buildings
         }
         private static object Refund(Delegate original,object[] args)
         {
+            // An unassigned nested refund must not borrow its caller's receipt/token. A valid
+            // building or Disband path below establishes its own frame after authentication.
+            var previous=refund; refund=null;
+            try { return RefundCurrent(original,args); }
+            finally { refund=previous; }
+        }
+        private static object RefundCurrent(Delegate original,object[] args)
+        {
             if(TryDisbandRefund(original,args,out object disbandResult)) return disbandResult;
             int id=(int)args[1],player=(int)args[2];
             if(id<=0 || !Human(player) || !Demolishing(player,out var chore,out long scope) ||
@@ -398,7 +413,8 @@ namespace APIShared.Buildings
         private static object AddResource(Delegate original,object[] args)
         {
             var frame=refund;
-            if(frame!=null && Convert.ToInt32(args[1])==frame.Player && Convert.ToInt32(args[2])==(int)eGoods.STORED_GOLD &&
+            if(MatchesGoldRefundCall() &&
+                Convert.ToInt32(args[1])==frame.Player && Convert.ToInt32(args[2])==(int)eGoods.STORED_GOLD &&
                 HumanConstructionCosts.TryQuoteRefund(frame.Identity,frame.Player,frame.Player,true,(g,paid)=>QuoteFrameRefund(frame,g,paid),out var amounts) &&
                 amounts.TryGetValue(eGoods.STORED_GOLD,out int gold) && gold<0)
             {

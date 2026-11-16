@@ -107,7 +107,10 @@ equal module `+0x8574320` for the reference image and must fit the complete acce
 range inside the loaded image. The exact base is independently confirmed by
 enqueue, receive and execution; an in-range but different resolver value is rejected. Offsets are
 current-slot `0x84CC8`, phase `0x84CCC`, slot base `0xB0BF8`, stride `0x500`,
-executing source `0x36FA4C`. Slot tick/source/opcode/command ID are at 0/4/8/12.
+executing source `0x36FA4C`. Slot tick/source/opcode/state/command ID are at 0/4/8/9/12.
+The state uses the native signed-byte predicate (nonzero and below10), checked again
+after the identity reads. Due execution at1F7E0 leaves mode/slot/issuer intact after
+marking state10; those stale fields are not an executing-command authorization.
 Only phase 0, opcode 106, slot 0..499 and identical slot/execution sources 1..8
 are admitted, with a second consistency read. Neither a packet's PlayerId nor
 the current native view establishes issuer identity. Native `0x1F9A0` is
@@ -2233,3 +2236,34 @@ A Mightier Oasis. Native worldkind2/mode0, actor=view1. Actual Chore69 paid12
 Human gold for a Brazier; genuine Undo removed the object. The old parameter
 reader rejected it, leaving receipt1 and payout0. This disproves the earlier
 hypothesis that normal FreeBuild never supports this Undo path.
+
+
+### Exact construction refund gold calls
+
+Reference image FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+C4480 has length0x528 and SHA256
+C1E4DC936740B9D35117AC1539BC0A07D48EF212F61CE57778DC2A82AA8445D7.
+Its two gold calls are C4793 (E8 18 11 FF FF, stationary-unit sentinels) and
+C496C (E8 3F 0F FF FF, regular buildings), both targeting live B58B0 with four
+Win64 arguments and an Int64 result. The other C45AB call is stone/wood, not gold.
+The exclusive spans are exactly5bytes; continuations are C4798/C4971. Validate
+all instructions, incoming branches and every live span before publication. SE's
+material interceptor at C487A is separate; B58B0's existing SE entry stays owned by SE.
+
+These are CALL retargets, never function-entry detours. Prepare each fourteen-byte
+FF25 tail relay with RedBird NativeMemoryManager.AllocateStub near the call and
+validate the rel32 reach, exact relay bytes and original target. Publish only in
+the established startup patch window. The managed bridge enters the same live
+B58B0 chain exactly once, carrying a refund-frame token and expected complete
+SE-resource-wrapper depth. That wrapper includes Pre and Post in a finally scope,
+so recursive gifts do not inherit native-gold attribution. Nested refunds restore
+both tokens and depths. A wrapper-depth check alone cannot exclude independent
+callbacks between C4480's earlier material calls and the gold call.
+
+No caller-stack probe or temporary executable patch is used. Published callbacks,
+relays and claims remain rooted for process lifetime; a partial publication failure
+keeps the adapter dormant and forwards through the existing chain. Unknown native
+hashes or conflicting callsite bytes make this construction adapter unavailable.
+No pattern fallback is claimed for these hash-bound function/CFG contracts.
+Update acceptance must execute the same native ABI/relay path, failure/dormancy,
+nested callbacks and actual SE wrapper behavior, not only inspect instruction bytes.

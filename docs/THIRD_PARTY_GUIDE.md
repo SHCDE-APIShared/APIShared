@@ -166,6 +166,12 @@ Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode cont
 
 Release consumers with hard minimum APIShared/Script Extender versions and `<Private>false</Private>` for runtime references. Never include APIShared.dll, Script Extender DLLs or game DLLs in the consumer package. Put your XAML under the usual mod Override directory. Keep one centrally installed APIShared instance.
 
+For a settings upgrade that derives a new property from older stored values, implement
+`IModSettingsStoredSnapshotMigration`. It receives sparse selected values before defaults;
+explicit empty/null/default values still count as present. The existing mission converter
+remains separate. Custom readers use `ModSettingsMigration.MigrateRawStoredSnapshot` at
+that same boundary; see [the stored-value conversion contract](MOD_SETTINGS.md#converting-missing-stored-values-before-defaults).
+
 ## Extending APIShared
 
 When extracting settings into another plugin, declare an owner move through

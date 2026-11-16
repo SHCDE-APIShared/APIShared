@@ -168,6 +168,13 @@ rules, Map/Trail mission settings, personal settings, presets). `IModSettingsSna
 whose meaning changed, and `ModSettingsMigration.MigrateStoredSnapshot` applies both to a
 mod's own stored format; see [renamed and converted settings](MOD_SETTINGS.md#renamed-and-converted-settings).
 
+`IModSettingsStoredSnapshotMigration` separately converts sparse selected stored values
+before missing defaults are added. `ModSettingsMigration.MigrateRawStoredSnapshot`
+preserves explicit-value presence and isolates converter buffers. Personal/published
+presets and save/Map/Trail preparation use the optional contract; existing mission
+converters and endpoints without it retain their behavior. See
+[pre-default conversion](MOD_SETTINGS.md#converting-missing-stored-values-before-defaults).
+
 `ModSettingsMigration.RegisterModMove` adds declarative cross-mod ownership moves to
 that pipeline. Typed moved settings, auxiliary copied settings and fixed destination
 defaults preserve old mission values and author modes without enabling unrelated new

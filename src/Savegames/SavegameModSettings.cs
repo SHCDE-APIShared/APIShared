@@ -181,38 +181,62 @@ namespace APIShared
 
         private static Dictionary<string, byte[]> ResolveStartupSnapshot(string modId, CompatibleMod participant,
             SavegameModSettingsRecord record, Dictionary<string, Dictionary<string, byte[]>> values,
-            Dictionary<string, Dictionary<string, byte[]>> current)
+            Dictionary<string, Dictionary<string, byte[]>> current) =>
+            ResolveStartupSnapshotCore(modId, participant, record, values, current, true);
+
+        private static Dictionary<string, byte[]> ResolveStartupSnapshotCore(string modId, CompatibleMod participant,
+            SavegameModSettingsRecord record, Dictionary<string, Dictionary<string, byte[]>> values,
+            Dictionary<string, Dictionary<string, byte[]>> current, bool migrateRawStored)
         {
-                    Dictionary<string, byte[]> snapshot =
-                        participant.Endpoint.System_CreateDisabledMissionPresetSnapshot();
-                    if (snapshot == null)
-                    {
-                        throw new InvalidDataException("Savegame baseline unavailable: " + modId);
-                    }
+                    Dictionary<string, byte[]> snapshot = MissionModSettingsPreparation.CopySnapshot(
+                        participant.Endpoint.System_CreateDisabledMissionPresetSnapshot());
                     // Personal values are never captured into a save-owned mission snapshot.
                     // Stored values and author rules are raw data of the mod version that wrote them:
                     // move entries under declared former names before they are matched by property name.
                     Type settingsType = participant.Endpoint.GetType();
-                    if (values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
-                        OverlaySavedHostProperties(snapshot, participant.Properties,
-                            ModSettingsMigration.ApplyRenames(settingsType, stored), modId);
                     bool strictTrail = record != null && !record.TrailCustomizeAllowed &&
                         (record.Kind == (int)GameModeKind.CustomTrail || record.Kind == (int)GameModeKind.CoopTrail);
-                    if (strictTrail)
+                    bool rawConverter = migrateRawStored && participant.Endpoint is IModSettingsStoredSnapshotMigration;
+                    var selected = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                    if (!strictTrail && values != null && values.TryGetValue(modId, out Dictionary<string, byte[]> stored))
                     {
-                        Dictionary<string, byte[]> baseline = participant.Endpoint.System_CreateDisabledMissionPresetSnapshot();
-                        foreach (PropertyInfo property in participant.Properties)
-                            if (baseline.TryGetValue(property.Name, out byte[] disabled))
-                                snapshot[property.Name] = disabled;
+                        var renamedStored = ModSettingsMigration.ApplyRenames(settingsType, stored);
+                        if (rawConverter)
+                        {
+                            foreach (PropertyInfo property in participant.Properties)
+                                if (renamedStored.TryGetValue(property.Name, out byte[] bytes))
+                                    selected[property.Name] = bytes == null ? null : (byte[])bytes.Clone();
+                        }
+                        else OverlaySavedHostProperties(selected, participant.Properties, renamedStored, modId);
                     }
                     if (record?.CreatorRules != null &&
                         record.CreatorRules.TryGetValue(modId, out var rules))
                     {
-                        ApplyCreatorRules(snapshot, participant.Properties,
-                            ModSettingsMigration.ApplyRenames(settingsType, rules),
-                            current != null && current.TryGetValue(modId, out var currentMod) ? currentMod : null,
-                            strictTrail);
+                        var renamedRules = ModSettingsMigration.ApplyRenames(settingsType, rules);
+                        var currentMod = current != null && current.TryGetValue(modId, out var currentValues) ? currentValues : null;
+                        if (rawConverter)
+                        {
+                            foreach (PropertyInfo property in participant.Properties)
+                            {
+                                if (!renamedRules.TryGetValue(property.Name, out var rule)) continue;
+                                byte[] bytes;
+                                if (rule.Mode == 1 && currentMod != null && currentMod.TryGetValue(property.Name, out bytes) ||
+                                    strictTrail && rule.Mode == 2 && (bytes = rule.FixedValue) != null)
+                                    selected[property.Name] = bytes == null ? null : (byte[])bytes.Clone();
+                            }
+                        }
+                        else ApplyCreatorRules(selected, participant.Properties, renamedRules, currentMod, strictTrail);
+                        // An explicit ModDefault (or a selected value falling back to its default)
+                        // still owns this key. It must not look absent to a legacy raw converter.
+                        foreach (PropertyInfo property in participant.Properties)
+                            if (renamedRules.ContainsKey(property.Name) && !selected.ContainsKey(property.Name) &&
+                                snapshot.TryGetValue(property.Name, out byte[] baseline))
+                                selected[property.Name] = baseline == null ? null : (byte[])baseline.Clone();
                     }
+                    if (migrateRawStored)
+                        selected = ModSettingsMigration.MigrateRawStoredSnapshot(participant.Endpoint, selected);
+                    // Restrict converter additions to the participant's authorized host schema.
+                    OverlaySavedHostProperties(snapshot, participant.Properties, selected, modId);
                     // A change of meaning cannot be declared as a rename. The owner converts such values
                     // before its setters run, so the later verification compares against what those
                     // setters are meant to keep.
