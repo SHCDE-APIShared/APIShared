@@ -166,6 +166,12 @@ Use `APIShared.ModSettings` for settings and `APIShared.GameModes` for mode cont
 
 Release consumers with hard minimum APIShared/Script Extender versions and `<Private>false</Private>` for runtime references. Never include APIShared.dll, Script Extender DLLs or game DLLs in the consumer package. Put your XAML under the usual mod Override directory. Keep one centrally installed APIShared instance.
 
+For a settings upgrade that derives a new property from older stored values, implement
+`IModSettingsStoredSnapshotMigration`. It receives sparse selected values before defaults;
+explicit empty/null/default values still count as present. The existing mission converter
+remains separate. Custom readers use `ModSettingsMigration.MigrateRawStoredSnapshot` at
+that same boundary; see [the stored-value conversion contract](MOD_SETTINGS.md#converting-missing-stored-values-before-defaults).
+
 ## Extending APIShared
 
 When extracting settings into another plugin, declare an owner move through
@@ -1999,6 +2005,15 @@ stationary; do not clear unrelated camera reports or enqueue stale cross-mission
 camera work. This broker does not select a building or move the camera itself.
 
 
+## Building panel controls and per-building choices
+
+Use [BuildingPanelSections](BUILDING_PANELS.md) to add a control to Vanilla's building panels
+instead of patching `HUD_Buildings.xaml` and polling the open building: APIShared owns the host
+and the detection and calls Opened, Updated and Closed on Unity. Use
+[BuildingStates](BUILDING_STATE.md) for the player's per-building choice behind such a control:
+owner requests are validated and applied on every peer in the same tick, saved with the game and
+readable from managed and native simulation code.
+
 ## Ally gifts and send-dialog extensions
 
 Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.
@@ -2058,3 +2073,31 @@ and the larger of the human and AI thresholds. True allows a consumer to skip
 additional checks. False requires the usual evaluation, including when the
 native rule could not be validated. Keep the rule stable during the query and
 use the timing and origin capabilities to make configuration changes outside it.
+
+## Typed construction costs
+
+Use `ConstructionCostTarget.FromStructure(eStructs)` for a structure or HUD identifier, or
+`FromMapper(eMappers)` for a menu mapper. Never cast between those domains. Factory calls
+access no game state; equality coalesces known aliases. `Key`/`TryParseKey` use canonical
+symbolic identities rather than numeric indexes. Invalid enums produce invalid targets.
+
+After native readiness, `ConstructionCosts.TryGetDefault` and `TryGetCurrent` return
+immutable `ConstructionCostValues` snapshots. Defaults are the present default table
+(including intentional prior mod changes); current values are live base costs. Neither
+applies free-building exceptions. `TryGetDisplayCosts` instead follows Vanilla's current
+free-building and editor rules on Unity's thread, with a current play state.
+
+`TrySetCurrent(target, eGoods, nonnegativeAmount, out reason)` changes one of wood, stone,
+iron, pitch or gold for all players. The caller owns synchronization, authorization and
+restoration; writes have last-write semantics. Both actual native and visual destinations
+are checked before mutation. Native dock row 109 is readable but not writable because
+Vanilla has no corresponding visual row. -1 is a consumer setting sentinel, not a cost.
+
+`SupportsVanillaCosts` identifies a native row; availability and writable visual bounds
+remain operation-time checks. Braziers have only a human-extra-cost identity. Never fall
+back to unchecked SE cost methods when the service rejects a target. Unknown native
+hashes disable this service independently until its table/layout contract is re-audited.
+
+### Human-only construction extras and refunds
+
+See [Human construction costs](HUMAN_CONSTRUCTION_COSTS.md) for owner registration, effective quotes, reservations, persisted receipts and refund policies. Consumers retain mode authorization. Existing SE Post events alone are not payment commits.

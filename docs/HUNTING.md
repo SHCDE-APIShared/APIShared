@@ -48,8 +48,34 @@ Two more options on the definition:
 - `WithCorpseRemovedWhenButchered()`: the corpse disappears as soon as a Hunter starts
   butchering it, instead of fading out, so no other Hunter can pick it again.
 
-How long a corpse lasts before it fades is part of each animal type's own update and stays
-with the mod that adds or changes that animal.
+## Corpse lifetime
+
+Requires APIShared 0.54.0 or later. Vanilla lets a rabbit or camel corpse fade for 32 map ticks and a chicken
+corpse for 16, then deletes it; a Hunter usually arrives too late. `WithMinimumCorpseLifetime(ticks)` keeps it
+longer:
+
+```csharp
+HuntablePrey.TryRegister(pluginGuid, "rabbit",
+    new HuntablePreyDefinition((int)eChimps.CHIMP_TYPE_RABBIT).WithMinimumCorpseLifetime(1800),
+    out HuntablePreyRegistration rabbit, out string reason);
+```
+
+- Rabbits, camels and chickens only (`HuntablePrey.SupportsCorpseLifetime`), 1 through
+  `HuntablePrey.MaximumCorpseLifetime` (16000) ticks. Another type, or a value out of range, fails the
+  registration with a reason, as does a camel or chicken whose native sites cannot be installed: their first
+  such registration must come during startup, before the first mission of the process.
+- The lifetime of a type is the longest request of all its enabled registrations, whatever their priority, and
+  never shorter than Vanilla's. It is frozen with the catalog per mission and part of the catalog digest, so
+  multiplayer peers agree on it like on the other options.
+- Vanilla uses one constant both as the corpse's lifetime and as how far its look fades. A lifetime above Vanilla's
+  is rounded up to the next 256 * n + 8 counter steps (at most 255 more; chickens count two steps per tick), so the
+  corpse fades only to a quarter and stays visible. 1800 ticks are exact.
+- Without an active request each type keeps Vanilla's time; another mod that changes the rabbit value through the
+  Script Extender keeps its own override beside APIShared's. The rabbit value follows the Script Extender's override
+  priority: a higher-priority override of another owner wins without an error, while the catalog digest still names
+  APIShared's request. Peers with identical mods stay deterministic.
+
+Other animals' corpse times stay with the mod that adds or changes that animal.
 
 ## Read the catalog
 
@@ -124,8 +150,8 @@ HunterMeatYieldEvents.TryRegister(pluginGuid, "meat", yield =>
 
 APIShared admits the type to Vanilla's Hunter target query and releases the Hunter's
 reservation. Everything else follows Vanilla for that type until a consumer changes it:
-how the animal reacts, whether one arrow kills it, and how long its corpse
-stays. Vanilla's own corpse search only looks for deer and goat corpses. Predators such
+how the animal reacts and whether one arrow kills it, and for types other than rabbits, camels
+and chickens how long its corpse stays. Vanilla's own corpse search only looks for deer and goat corpses. Predators such
 as lions still fight back.
 
 ## Implementation
@@ -159,6 +185,11 @@ as lions still fight back.
   registration that needs them; an empty table keeps Vanilla's behavior.
 - **Corpse removal.** The corpse-arrival stub marks a flagged corpse for deletion (alive state 3),
   Vanilla's own end path; the unit pass then removes it. The butchering Hunter never reads it again.
+- **Corpse lifetimes.** In their fading state the rabbit, camel and chicken updates compare a fade byte and a
+  fading counter with one constant 0x20. Two purely native stubs load it from a cell for camels (`0x1584BE`) and
+  chickens (`0x16346B`); the rabbit's constant is the Script Extender's `RabbitDespawnTickTime`, on which APIShared
+  only places an owner-bound override. Cells and override change only at mission activation and end, under the
+  engine lock. Details: [UpdateToNewDLL.md](../UpdateToNewDLL.md#corpse-lifetimes).
 - **Native contract.** The field and the sites are bound to the audited native image. See
   [UpdateToNewDLL.md](../UpdateToNewDLL.md#huntable-prey-reservation-word) and
   [Hunter native sites](../UpdateToNewDLL.md#hunter-native-sites).

@@ -323,8 +323,12 @@ namespace APIShared.Health
             building->r_MaxHealth=(ushort)maximum; building->r_CurrentHealth=(short)current;
             record.AppliedMaximum=maximum; Applied.Add(key); return true;
         }
-        private static uint BuildingLimit(eStructs type) => HealthArithmetic.BuildingLimit(
-            GameBuildingManagerAPI.Instance.GetWoodCost(type),GameBuildingManagerAPI.Instance.GetStoneCost(type));
+        private static uint BuildingLimit(eStructs type)
+        {
+            if (!global::APIShared.Buildings.ConstructionCosts.TryGetCurrent(global::APIShared.Buildings.ConstructionCostTarget.FromStructure(type), out var cost, out string reason))
+                throw new InvalidOperationException("Building HP cost safety unavailable: " + reason);
+            return HealthArithmetic.BuildingLimit(cost.Wood, cost.Stone);
+        }
         private static bool TryBuilding(int id,out GameBuilding* building)
         {
             building=null; var manager=GameBuildingManagerAPI.Instance;

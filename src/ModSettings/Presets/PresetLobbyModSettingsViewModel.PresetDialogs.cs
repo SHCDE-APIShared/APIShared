@@ -448,11 +448,15 @@ namespace APIShared.ModSettings
         {
             if (preset == null)
                 return;
+            // UI-only mode initialization also works before registration. Defaults and Player
+            // sources exist only after preparation, when derived selections can be materialized.
+            var modes = presetController != null ? presetController.GetPresetSaveModes(preset) :
+                preset.Settings.ToDictionary(entry => entry.Key, entry => entry.Value.Mode, StringComparer.Ordinal);
             foreach (PresetSaveSettingViewModel row in presetSaveSettings)
             {
-                if (preset.Settings.TryGetValue(row.PropertyName, out PublishedPresetSetting setting))
+                if (modes.TryGetValue(row.PropertyName, out PublishedPresetValueMode mode))
                 {
-                    row.SelectedModeIndex = (int)setting.Mode;
+                    row.SelectedModeIndex = (int)mode;
                 }
                 else
                 {

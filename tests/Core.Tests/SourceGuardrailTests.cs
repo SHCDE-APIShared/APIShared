@@ -112,6 +112,71 @@ public sealed class SourceGuardrailTests
         Assert.IsTrue(UnitVoicePublication.Contains(before), "Fixture mutation must change the source.");
         Assert.ThrowsExactly<InvalidOperationException>(() => Model(UnitVoicePublication.Replace(before, after)).CheckHooks());
     }
+
+    const string GoldPublication = """
+        class ConstructionGoldCallPatch {
+            ulong[] sites; byte[][] calls;
+            internal static ConstructionGoldCallPatch Prepare(object sites,object bytes,object callback) { return new ConstructionGoldCallPatch(); }
+            internal void Publish() { for(int i=0;i<2;i++) CodePatch.Write(sites[i],calls[i]); }
+        }
+        class NativeHookPublicationState {
+            public void Begin(object a,object b,object owner) {} public void Complete() {} public void Fail(object error) {}
+            public void RollbackUnpublished(object candidate,System.Action clear) {}
+        }
+        class HumanConstructionRuntime {
+            static ConstructionGoldCallPatch goldPatches;
+            static readonly NativeHookPublicationState goldPublication=new NativeHookPublicationState();
+            static object GoldCallRvas,GoldCallBytes,goldCallback;
+            internal static void Initialize(object context,string hash,object logger) { InitializeGoldRefundCalls(context,hash,logger); }
+            private static void InitializeGoldRefundCalls(object context,string hash,object logger) {
+                if(!NativeStartupPatchWindow.IsOpen || hash!=ApiSharedRuntime.SupportedHash ||
+                    ApiSharedRuntime.ComputeSha256(context.Memory.Slice(0xC4480,0x528))!="0000000000000000000000000000000000000000000000000000000000000000")
+                    throw new System.Exception();
+                for(int i=0;i<2;i++) if(!context.Memory.Slice(GoldCallRvas[i],5).SequenceEqual(GoldCallBytes[i])) throw new System.Exception();
+                try {
+                    goldPatches=ConstructionGoldCallPatch.Prepare(null,GoldCallBytes,goldCallback);
+                    goldPublication.Begin(null,null,goldPatches);
+                    try { goldPatches.Publish(); goldPublication.Complete(); }
+                    catch(System.Exception error) { goldPublication.Fail(error); throw; }
+                } catch {
+                    goldPublication.RollbackUnpublished(null,()=>{goldPatches=null;});throw;
+                }
+            }
+        }
+        """;
+    [TestMethod]
+    public void GoldCallWriterRequiresVerifiedStartupProvenanceAndPermanentPublicationBarrier()
+    {
+        Model(GoldPublication).CheckHooks();
+        // Ownership follows the AST/call chain rather than a filename or whitespace fragment.
+        var renamedFile=new SourceModel(new[]{KeyValuePair.Create("moved-bridge.cs",GoldPublication.Replace("goldPatches","candidate").Replace("goldPublication","barrier"))});
+        renamedFile.CheckHooks();
+        Assert.AreEqual(1,renamedFile.ConstructionGoldCallAllowances().Count);
+    }
+    [TestMethod]
+    [DataRow("!NativeStartupPatchWindow.IsOpen || ", "")]
+    [DataRow("hash!=ApiSharedRuntime.SupportedHash ||", "")]
+    [DataRow("!NativeStartupPatchWindow.IsOpen ||", "!NativeStartupPatchWindow.IsOpen &&")]
+    [DataRow(".SequenceEqual(GoldCallBytes[i])", ".Unvalidated(GoldCallBytes[i])")]
+    [DataRow("if(!context.Memory", "if(false && !context.Memory")]
+    [DataRow("for(int i=0;i<2;i++) if(!context.Memory", "for(int i=0;i<1;i++) if(!context.Memory")]
+    [DataRow("goldPublication.Begin(null,null,goldPatches);", "if(false) goldPublication.Begin(null,null,goldPatches);")]
+    [DataRow("goldPublication.Begin(null,null,goldPatches);", "")]
+    [DataRow("goldPublication.Begin(null,null,goldPatches);", "goldPublication.Begin(null,null,null);")]
+    [DataRow("goldPatches.Publish(); goldPublication.Complete();", "goldPublication.Complete(); goldPatches.Publish();")]
+    [DataRow("goldPublication.Fail(error);", "goldPatches=null;")]
+    [DataRow("goldPatches.Publish();", "System.Action later=goldPatches.Publish;")]
+    [DataRow("goldPatches.Publish();", "System.Action later=()=>goldPatches.Publish();")]
+    [DataRow("internal void Publish()", "internal void Later() { Publish(); } internal void Publish()")]
+    [DataRow("internal void Publish()", "internal void OnDestroy() { } internal void Publish()")]
+    [DataRow("goldPublication.Complete();", "goldPublication.Complete(); goldPatches=null;")]
+    [DataRow("goldPublication.Complete();", "goldPublication.Complete(); goldPatches.Dispose();")]
+    [DataRow("CodePatch.Write(sites[i],calls[i]);", "CodePatch.Write(other,calls[i]);")]
+    public void GoldCallWriterRejectsWeakenedGuardsLateCallsAndPublishedCleanup(string before,string after)
+    {
+        Assert.IsTrue(GoldPublication.Contains(before));
+        Assert.ThrowsExactly<InvalidOperationException>(()=>Model(GoldPublication.Replace(before,after)).CheckHooks());
+    }
     [TestMethod]
     public void AudioCountsFormattingAndNeighborMethodsAreNotContracts()
     {

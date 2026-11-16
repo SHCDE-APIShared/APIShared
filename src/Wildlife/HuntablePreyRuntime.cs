@@ -53,6 +53,8 @@ namespace APIShared.Wildlife
         {
             if (IsAvailable) return;
             log = logger;
+            // Optional part: its failure leaves only corpse lifetimes unavailable.
+            CorpseLifetimeNative.Initialize(context, hash, logger);
             try
             {
                 if (!HuntablePreyNativeContract.TryValidate(context, hash, out string invalid))
@@ -94,6 +96,13 @@ namespace APIShared.Wildlife
             { reason = "The unit type must be from 1 through 65535, the handling cost non-negative and the base meat from 0 through " + MaximumBaseMeat + "."; return false; }
             if ((definition.BaseMeat.HasValue || definition.RemovesCorpseWhenButchered) && !HunterNativeSites.IsAvailable)
             { reason = "A base meat or corpse removal needs the Hunter native sites: " + HunterNativeSites.Diagnostic; return false; }
+            if (definition.MinimumCorpseLifetime.HasValue)
+            {
+                if (definition.MinimumCorpseLifetime.Value < 1 || definition.MinimumCorpseLifetime.Value > HuntablePrey.MaximumCorpseLifetime)
+                { reason = "The corpse lifetime must be from 1 through " + HuntablePrey.MaximumCorpseLifetime + " map ticks."; return false; }
+                // Camels and chickens install their native sites here, on their first such registration.
+                if (!CorpseLifetimeNative.TryEnsureSupported(definition.UnitType, out reason)) return false;
+            }
             string unsupported = HuntablePreyCatalogBuilder.UnsupportedReason(definition.UnitType);
             // Own-player prey needs the owner gates; they install on the first such registration.
             // Installing before the duplicate check below is harmless: gates without a matching
@@ -163,6 +172,8 @@ namespace APIShared.Wildlife
             HunterNativeSites.SetCorpseFlags(HuntablePreyCatalogBuilder.BuildFlagTable(catalog,
                 entry => entry.RemovesCorpseWhenButchered, HunterNativeAssembly.RemoveCorpseFlag));
             HunterOwnerGates.SetTypes(HuntablePreyCatalogBuilder.BuildFlagTable(catalog, entry => entry.AllowsOwnPlayerPrey));
+            // The mission owner calls Activate under the engine monitor, before the mission's first tick.
+            CorpseLifetimeNative.Apply(catalog);
             Volatile.Write(ref worldActive, 1);
             UpdateMeatDemand();
             if (changed && catalog.HasRegistrations)
@@ -174,6 +185,7 @@ namespace APIShared.Wildlife
             Volatile.Write(ref demand, null);
             HunterNativeSites.SetCorpseFlags(null);
             HunterOwnerGates.SetTypes(null);
+            CorpseLifetimeNative.Apply(null);
             Volatile.Write(ref worldActive, 0);
             Volatile.Write(ref active, HuntablePreyCatalogBuilder.VanillaOnly);
             frozen = HuntablePreyCatalogBuilder.VanillaOnly;

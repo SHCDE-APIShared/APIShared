@@ -128,6 +128,7 @@ src/
   Economy/                      market, ally-transfer, popularity and worker-production native owners
     WeaponProduction/           weapon workshop recipes, selection, batches and HUD
   Wildlife/                     herd runtime and huntable-prey registrations
+  Sight/                        Vanilla line-of-sight queries and sight-blocking building rules
   Missions/                     mission contracts, state and event relay
   Networking/                   owner-bound Chore, authenticated Chore and control-plane channels
   Simulation/                   native map ticks, mission clock and Peace Time reader
@@ -139,10 +140,12 @@ src/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
     EnemyProximity/             enemy-unit proximity policies, registry and read-only native query
+    State/                      owner-bound per-building values, request Chore, save record and native layout
   Presentation/
     Events/                     named HUD Pre/Post publishers
     UiWork/                     owner-bound deferred Unity work and coalesced refreshes
     AllyGoods/                  ally goods-panel selection, extensions and adornments
+    BuildingPanel/              shared building-panel host, open-building detection and sections
     IngameMenu/                 in-game menu rows, actions and tooltips
     MapperCamera/               mapper camera bridge and selection-camera events
     VisibleMap/                 visible map render bounds and events
@@ -458,6 +461,12 @@ settings; block coordination remains independent of native-copy availability.
 Simulation/PeaceTimeState reads validated mission state without a timer or event.
 Both are prepared before native API publication can run consumer readiness
 callbacks. See [enemy proximity](docs/ENEMY_PROXIMITY.md).
+
+Buildings/State owns per-building value tables: one request Chore for all tables, one versioned
+record per table and a fixed native layout. Presentation/BuildingPanel owns the single
+`HUD_Buildings` section host and the open-building detection. Consumers own the meaning of the
+values, their controls, texts and activation. See [building state](docs/BUILDING_STATE.md) and
+[building panel sections](docs/BUILDING_PANELS.md).
 
 Players owns the player-view identity, the original-spectator and eliminated-participant
 views and spectator input control; consumers own their selection UI, activation and the
