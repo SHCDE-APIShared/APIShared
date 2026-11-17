@@ -63,7 +63,14 @@ namespace APIShared.Units.AiMilitary.Native
             {
                 context[0] = 0; context[1] = 0; context[2] = allAssassins(TribeManager, group.Id) != 0 ? 1 : 0;
                 if (!AiUnitMoveReceipts.TryRun(unitId, x, y, 0,
-                    () => buildRoute(UnitManager, unitId, x, y, 0), out reason)) return false;
+                    () => buildRoute(UnitManager, unitId, x, y, 0), out reason))
+                {
+                    // Failure path only: start tile and the destination tile flags (0x30 refuses).
+                    int destination = x + *(int*)((byte*)Module + 0x402FF2C + y * 12);
+                    reason += " start=" + cx + "," + cy + " group=" + group.Id + "/" + group.GlobalId +
+                        " targetFlags=0x" + ((uint*)((byte*)Module + 0x48F71B0))[destination].ToString("X");
+                    return false;
+                }
                 if (!IsWorldCurrent(operationWorld) || unit->r_GlobalId != globalId || !HasMember(group, unitId) ||
                     *(short*)(raw + 0x744) != x || *(short*)(raw + 0x746) != y)
                 { reason = "The effective singleton movement was rejected or changed."; return false; }

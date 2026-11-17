@@ -86,6 +86,14 @@ namespace APIShared.Units.AiMilitary.Native
             if (*(ushort*)(record + 0x40) != (ushort)AliveState.IsAlive || *(int*)(record + 0x2C) != owner) return false;
             group = new AiNativeGroup(id, *(uint*)(record + 0x34), owner); return group.GlobalId != 0;
         }
+        // Rejection evidence for a native tribe ID that TryGetGroup refused; reads only bounded records.
+        internal string DescribeTribeRecord(int id, int owner)
+        {
+            if (id <= 0 || id >= TribeCapacity) return "returnedGroup=" + id + " (outside the tribe table)";
+            byte* record = (byte*)TribeManager + id * TribeStride;
+            return "returnedGroup=" + id + " state=" + *(ushort*)(record + 0x40) + " owner=" + *(int*)(record + 0x2C) +
+                "/" + owner + " global=" + *(uint*)(record + 0x34) + " members=" + *(short*)(record + 0x5C);
+        }
         internal bool IsCurrent(AiNativeGroup group) => TryGetGroup(group.Id, group.Owner, out var current) && current.Equals(group);
         internal byte* Tribe(AiNativeGroup group) => (byte*)TribeManager + group.Id * TribeStride;
 
@@ -231,7 +239,11 @@ namespace APIShared.Units.AiMilitary.Native
                     ? defense(LordManager, owner, cls)
                     : fallback(LordManager, owner, fallbackClass(LordManager, unitId) == 0 ? 1 : 0);
                 if (TryGetGroup(id, owner, out group)) { reason = string.Empty; return true; }
-                reason = "Native defensive allocation failed."; return false;
+                // Failure path only: the values that distinguish an empty window from a returned
+                // stale/foreign record (audit 17.11.2026, AI_MILITARY_ADMISSION.md role-1 allocation).
+                reason = "Native defensive allocation failed. class=" + cls + " positions=" +
+                    resources->r_AIDefensivePositionCountsByClass.r_Counts[cls] + " " + DescribeTribeRecord(id, owner);
+                return false;
             }
             var expandedStorage = ExpandedStorage;
             if (expandedStorage != null)

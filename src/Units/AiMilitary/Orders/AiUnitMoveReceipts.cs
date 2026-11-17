@@ -19,7 +19,9 @@ namespace APIShared.Units.AiMilitary.Orders
                 AiRecruitMutationReceipts.IsCurrentWorld && AiRecruitMutationReceipts.IsRecruitIdentityCurrent;
             reason = success ? string.Empty : receipt.Redirected ? "A Pre callback redirected the recruit route; original was refused." :
                 receipt.Count == 0 ? "The recruit route was vetoed or no Original receipt was observed." :
-                "The actual native recruit route did not succeed exactly once.";
+                "The actual native recruit route did not succeed exactly once. target=" + x + "," + y +
+                " calls=" + receipt.Count + " completed=" + receipt.Completed + " raw=" + receipt.Result +
+                " world=" + AiRecruitMutationReceipts.IsCurrentWorld + " identity=" + AiRecruitMutationReceipts.IsRecruitIdentityCurrent;
             return success;
         }
         internal static bool Before(int unitId, int x, int y, int extra)
