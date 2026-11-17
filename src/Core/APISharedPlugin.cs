@@ -74,6 +74,9 @@ namespace APIShared
             try
             {
             runtime.RunNativeInitialization(RuntimeLogger,
+                // The Script Extender's unpatched load snapshot, before APIShared's first native patch:
+                // every APIShared span is compared with it before it is written (NativeForeignPatchGuard).
+                new NativeInitializationStep("native foreign-patch guard", () => NativeForeignPatchGuard.Bind(context.Region, RuntimeLogger)),
                 // Binds the image for site registrations before any APIShared or consumer hook claims it.
                 new NativeInitializationStep("native site registry", () => runtime.NativeOwnership.BindModule(
                     context.ModuleHandle.ToInt64(), context.Memory.Length, new ProcessNativeMemory().ReadByte)),
@@ -146,6 +149,8 @@ namespace APIShared
                     RuntimeLogger,
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
+                // Needs the mission lifecycle published above; later APIShared spans are watched as they publish.
+                new NativeInitializationStep("native foreign-patch recheck", () => NativeForeignPatchGuard.SubscribeRecheck(RuntimeLogger)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("production goods receipts", () => Economy.ProductionGoodsReceived.Initialize(context, hash, RuntimeLogger)),
