@@ -68,10 +68,6 @@ namespace APIShared.Workshop
             return new CleanRepair { Plans = plans.AsReadOnly(), Retained = catalog.Where(c => c.IsSubscribed && c.Package != null).ToArray(),
                 Superseded = readable, Archived = unreadable };
         }
-        internal static Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart, WorkshopStartupAuthorization authorization) =>
-            RecoveryRequestAsync(() => WorkshopRecovery.StageRollback(Paths.GameRootPath, entries, restart), authorization,
-                restart ? "confirmed recovery with restart" : "confirmed rollback and stop");
-
         // Finishes the single interrupted installation with its staged files (Windows only;
         // the caller checks WorkshopRecovery.ResumeError first) and restarts the game.
         internal static Task ResumeAsync(WorkshopInterruptedTransaction entry, WorkshopStartupAuthorization authorization) =>

@@ -251,11 +251,12 @@ function Show-UpdaterProgress([string]$Phase,[int]$Value=-1,[int]$Maximum=0) {
             $form=[Windows.Forms.Form]::new()
             $form.Text=$script:uiText.Title; $form.FormBorderStyle=[Windows.Forms.FormBorderStyle]::FixedDialog
             $form.ControlBox=$false; $form.MaximizeBox=$false; $form.MinimizeBox=$false; $form.ShowInTaskbar=$true; $form.TopMost=$true
-            $form.StartPosition=[Windows.Forms.FormStartPosition]::CenterScreen; $form.ClientSize=[Drawing.Size]::new(600,230)
+            $form.StartPosition=[Windows.Forms.FormStartPosition]::CenterScreen; $form.ClientSize=[Drawing.Size]::new(600,150)
             # Closing would only hide progress while the updater continues; keep it until the end.
             $form.Add_FormClosing({ param($source,$e) if (-not $script:progressClosing) { $e.Cancel=$true } })
-            $label=[Windows.Forms.Label]::new(); $label.SetBounds(16,14,568,166)
-            $bar=[Windows.Forms.ProgressBar]::new(); $bar.SetBounds(16,190,568,24)
+            # The label sizes itself to its wrapped text; the bar and window follow it below.
+            $label=[Windows.Forms.Label]::new(); $label.AutoSize=$true; $label.MaximumSize=[Drawing.Size]::new(568,0); $label.Location=[Drawing.Point]::new(16,12)
+            $bar=[Windows.Forms.ProgressBar]::new(); $bar.Size=[Drawing.Size]::new(568,20)
             $form.Controls.Add($label); $form.Controls.Add($bar)
             $script:progress=[pscustomobject]@{Form=$form;Label=$label;Bar=$bar}
             # A launcher's hidden STARTUPINFO can swallow the first ShowWindow call of this process.
@@ -267,6 +268,8 @@ function Show-UpdaterProgress([string]$Phase,[int]$Value=-1,[int]$Maximum=0) {
         $line=[Environment]::NewLine
         $script:progress.Label.Text=$intro+$line+[IO.Path]::Combine($GameRoot,'BepInEx','plugins')+$line+$line+$script:uiText.Warning+$line+$line+$text
         $bar=$script:progress.Bar
+        $top=$script:progress.Label.Bottom+10
+        if ($bar.Top -ne $top) { $bar.Location=[Drawing.Point]::new(16,$top); $script:progress.Form.ClientSize=[Drawing.Size]::new(600,$top+$bar.Height+14) }
         if ($Maximum -gt 0 -and $Value -ge 0) { $bar.Style=[Windows.Forms.ProgressBarStyle]::Continuous; $bar.Maximum=$Maximum; $bar.Value=[Math]::Min($Value,$Maximum) }
         else { $bar.Style=[Windows.Forms.ProgressBarStyle]::Marquee }
         [Windows.Forms.Application]::DoEvents()

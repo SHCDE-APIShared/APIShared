@@ -43,11 +43,12 @@ namespace APIShared.Workshop
 
     internal static class WorkshopRecovery
     {
-        internal enum Choice { Later, Repair, Rollback, CompleteRepair, Resume }
-        // With resume available, Yes continues the interrupted installation instead of the
-        // restore-and-restart repair; No (rollback and close) and Cancel keep their meaning.
-        internal static Choice Decide(bool rollback, int answer, bool resume = false) => rollback
-            ? answer == 6 ? (resume ? Choice.Resume : Choice.Repair) : answer == 7 ? Choice.Rollback : Choice.Later
+        internal enum Choice { Later, CompleteRepair, Resume }
+        // Resume dialog (Yes/No/Cancel): continue, reinstall cleanly from Steam, later.
+        // Clean-reinstall dialog (Yes/No): reinstall, later. Rollback to the previous version is
+        // not offered: it depended on backups and only led to the same update again.
+        internal static Choice Decide(bool resume, int answer) => resume
+            ? answer == 6 ? Choice.Resume : answer == 7 ? Choice.CompleteRepair : Choice.Later
             : answer == 6 ? Choice.CompleteRepair : Choice.Later;
 
         internal const string Protocol = "APISHARED-WORKSHOP-RECOVERY-1";
@@ -192,23 +193,18 @@ namespace APIShared.Workshop
             if (!actual.Select(x => x.Reference).OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(entries.Select(x => x.Reference).OrderBy(x => x, StringComparer.Ordinal)))
                 throw new IOException("Interrupted transactions changed; inspect and confirm recovery again.");
         }
-        internal static string StageRollback(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart) =>
-            StageRequest(game, entries, restart ? Restart : Stop);
-        internal static string StageResume(string game, WorkshopInterruptedTransaction entry) =>
-            StageRequest(game, new[] { entry }, ResumeDisposition);
-        private static string StageRequest(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, string disposition)
+        // The game stages only resume requests. The updater still executes restart/stop
+        // requests (manual recovery and requests staged by earlier releases).
+        internal static string StageResume(string game, WorkshopInterruptedTransaction entry)
         {
             WorkshopTransaction.EnterState();
             try {
-                ValidateReferences(game, entries);
-                if (entries.Count == 0 || entries.Any(x => !x.CanRollback)) throw new InvalidOperationException("Rollback is not available for every interrupted transaction.");
-                if (disposition == ResumeDisposition) {
-                    // Inspection is repeated here because files can change while the dialog is open.
-                    string error = entries.Count == 1 ? ResumeError(game, entries[0]) : "Resume requires exactly one interrupted transaction.";
-                    if (error != null) throw new InvalidOperationException("Resume is not available: " + error);
-                }
+                ValidateReferences(game, new[] { entry });
+                // Inspection is repeated here because files can change while the dialog is open.
+                string error = ResumeError(game, entry);
+                if (error != null) throw new InvalidOperationException("Resume is not available: " + error);
                 string directory = WorkshopInstallation.CreateTransaction(game, Guid.NewGuid().ToString("N"));
-                File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), new[] { Protocol, disposition }.Concat(entries.Select(x => x.Reference)), new UTF8Encoding(false));
+                File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), new[] { Protocol, ResumeDisposition, entry.Reference }, new UTF8Encoding(false));
                 return directory;
             } finally { WorkshopTransaction.StateGate.Release(); }
         }

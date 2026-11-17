@@ -218,10 +218,10 @@ namespace APIShared.Workshop
             }
             if (entries.Count == 0) return false;
             string details = string.Join("\n\n", entries.Select(x => x.Directory + "\n" + APIShared.Localization.UiText.Get("Workshop.Recovery.Items", "Ids", x.Items.Length == 0 ? "?" : string.Join(", ", x.Items)) + "\n" +
-                WorkshopRecovery.Describe(x, APIShared.Localization.GameLocale.Current()) + (x.CanRollback ? "" : "\n" + APIShared.Localization.UiText.Get("Workshop.Recovery.NoRollback", "Reason", x.RollbackError))));
+                WorkshopRecovery.Describe(x, APIShared.Localization.GameLocale.Current())));
             // Show a failed external recovery/replacement attempt too: its
             // failure belongs to the request journal, not the original journal.
-            bool attemptFailed = false, resumeFailed = false, reported = false;
+            bool resumeFailed = false, reported = false;
             foreach (string directory in directories.OrderByDescending(Directory.GetLastWriteTimeUtc)) {
                 if (WorkshopRecovery.Finished(directory)) continue;
                 string references = WorkshopPaths.Inside(directory, "supersedes.tsv");
@@ -233,29 +233,28 @@ namespace APIShared.Workshop
                 if (failure == null) continue;
                 if (!reported) details += "\n\n" + APIShared.Localization.UiText.Get("Workshop.PreviousAttempt") + directory + "\n" + failure;
                 reported = true;
-                // A failed resume only withdraws the resume offer; rollback was not attempted.
+                // A failed resume withdraws the resume offer; clean reinstallation remains.
                 if (lines.Length >= 2 && lines[0] == WorkshopRecovery.Protocol && lines[1] == WorkshopRecovery.ResumeDisposition) resumeFailed = true;
-                else attemptFailed = true;
             }
-            // A rollback that already failed is not offered again: the clean reinstallation
-            // below is the fallback that is always available.
-            bool rollback = !attemptFailed && entries.All(x => x.CanRollback);
-            if (rollback) {
-                // Resume continues one interrupted installation with its own staged files. Only
-                // the Windows updater implements it; Proton keeps restore-and-restart repair.
-                bool resume = false;
-                if (!resumeFailed && entries.Count == 1 && !Proton.WinePathInterop.Instance.IsWine) {
-                    string resumeError = await Task.Run(() => WorkshopRecovery.ResumeError(game, entries[0]));
-                    resume = resumeError == null;
-                    WorkshopRuntime.Log("Workshop resume " + (resume ? "available" : "unavailable: " + resumeError) + "; transaction=" + entries[0].Directory);
-                }
-                string choices = APIShared.Localization.UiText.Get(resume ? "Workshop.YesResumeNoRollbackCancelLater" : "Workshop.YesRepairRestoreFirstRestartAnd");
-                int decision = Ask(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationNeedsAttention") + details + "\n\n" + choices, 0x3u);
-                var choice = WorkshopRecovery.Decide(true, decision, resume);
+            // Resume continues one interrupted installation with its own staged files (Windows
+            // updater only). Otherwise, or when the player prefers it, the affected mods are
+            // reinstalled cleanly from their Steam downloads: that path needs no backup or
+            // readable history and is therefore always available once Steam provides the items.
+            bool resume = false;
+            if (!resumeFailed && entries.Count == 1 && !Proton.WinePathInterop.Instance.IsWine) {
+                string resumeError = await Task.Run(() => WorkshopRecovery.ResumeError(game, entries[0]));
+                resume = resumeError == null;
+                WorkshopRuntime.Log("Workshop resume " + (resume ? "available" : "unavailable: " + resumeError) + "; transaction=" + entries[0].Directory);
+            }
+            if (resume) {
+                int decision = Ask(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationNeedsAttention") + details + "\n\n" +
+                    APIShared.Localization.UiText.Get("Workshop.YesResumeNoReinstallCancelLater"), 0x3u);
+                var choice = WorkshopRecovery.Decide(true, decision);
                 if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
-                if (choice == WorkshopRecovery.Choice.Resume) await WorkshopRuntime.ResumeAsync(entries[0], WorkshopStartupGate.AuthorizeConfirmedUpdate());
-                else await WorkshopRuntime.RollbackAsync(entries, choice == WorkshopRecovery.Choice.Repair, WorkshopStartupGate.AuthorizeConfirmedUpdate());
-                return true;
+                if (choice == WorkshopRecovery.Choice.Resume) {
+                    await WorkshopRuntime.ResumeAsync(entries[0], WorkshopStartupGate.AuthorizeConfirmedUpdate());
+                    return true;
+                }
             }
             return await CompleteRepairAsync(game, entries, details, german);
         }
@@ -282,7 +281,7 @@ namespace APIShared.Workshop
             string plans = string.Join("\n", repair.Plans.Select(p => WorkshopStartupSummary.Describe(p, APIShared.Localization.GameLocale.Current()) + (p.RemovedFiles.Count == 0 ? "" :
                 APIShared.Localization.UiText.Get("Workshop.RemovedFiles", "Count", p.RemovedFiles.Count)) +
                 (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
-            string body = APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationCannotBe") + details + "\n\n" + plans + "\n\n" +
+            string body = APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationReinstall") + details + "\n\n" + plans + "\n\n" +
                 APIShared.Localization.UiText.Get("Workshop.YesAfterTheGameClosesReinstall");
             if (WorkshopRecovery.Decide(false, Ask(body, 0x4)) != WorkshopRecovery.Choice.CompleteRepair) {
                 WorkshopRuntime.Log("Workshop complete repair postponed; retained " + details);

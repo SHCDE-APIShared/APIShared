@@ -44,16 +44,13 @@ public sealed class WorkshopRecoveryTests
     }
     [TestMethod] public void RecoveryButtonsKeepTheirExplicitActionsAndCancelIsSafe()
     {
-        Assert.AreEqual(WorkshopRecovery.Choice.Repair, WorkshopRecovery.Decide(true, 6));
-        Assert.AreEqual(WorkshopRecovery.Choice.Rollback, WorkshopRecovery.Decide(true, 7));
+        // Resume dialog: Yes continues, No reinstalls cleanly from Steam, everything else is later.
+        Assert.AreEqual(WorkshopRecovery.Choice.Resume, WorkshopRecovery.Decide(true, 6));
+        Assert.AreEqual(WorkshopRecovery.Choice.CompleteRepair, WorkshopRecovery.Decide(true, 7));
         foreach (int answer in new[] { 0, 1, 2, -1, 99 }) Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(true, answer));
+        // Clean-reinstall dialog: only Yes reinstalls.
         Assert.AreEqual(WorkshopRecovery.Choice.CompleteRepair, WorkshopRecovery.Decide(false, 6));
-        Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(false, 7));
-        // With resume available only Yes changes its meaning.
-        Assert.AreEqual(WorkshopRecovery.Choice.Resume, WorkshopRecovery.Decide(true, 6, resume: true));
-        Assert.AreEqual(WorkshopRecovery.Choice.Rollback, WorkshopRecovery.Decide(true, 7, resume: true));
-        foreach (int answer in new[] { 0, 1, 2, -1, 99 }) Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(true, answer, resume: true));
-        Assert.AreEqual(WorkshopRecovery.Choice.CompleteRepair, WorkshopRecovery.Decide(false, 6, resume: true));
+        foreach (int answer in new[] { 0, 1, 2, 7, -1, 99 }) Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(false, answer));
     }
     [TestMethod] public void ResumePointAcceptsOnlySequentialProgress()
     {
@@ -148,8 +145,8 @@ public sealed class WorkshopRecoveryTests
         StringAssert.Contains(WorkshopRecovery.Describe(entry, false), "Locales/zh-CN.txt");
         Assert.IsNull(entry.Progress.Pending); Assert.IsFalse(File.Exists(Path.Combine(game, Receipt)));
         Assert.IsFalse(Directory.Exists(Path.Combine(old, "New")));
-        string request = WorkshopRecovery.StageRollback(game, new[] { entry }, false);
-        Assert.AreNotEqual(old, request); Assert.IsFalse(File.Exists(Path.Combine(request, "cancel.flag")));
+        // Without staged copies the startup offers the clean reinstallation instead of resume.
+        StringAssert.Contains(WorkshopRecovery.ResumeError(game, entry), "Staged file missing");
         CollectionAssert.AreEqual(journal.ToArray(), File.ReadAllLines(Path.Combine(old, "journal.log")));
         File.Delete(Path.Combine(old, "Backup/0"));
         entry = WorkshopRecovery.Inspect(game).Single();
@@ -184,19 +181,19 @@ public sealed class WorkshopRecoveryTests
             StringAssert.Contains(WorkshopRecovery.Describe(entry, false), "failure original diagnostic");
         }
     }
-    [TestMethod] public void InspectionAndDialogRollbackAreReadOnlyUntilConfirmedHandoff()
+    [TestMethod] public void InspectionIsReadOnlyAndResumeNeedsStagedCopies()
     {
+        string journal = File.ReadAllText(Path.Combine(old, "journal.log"));
         var interrupted = WorkshopRecovery.Inspect(game);
         Assert.HasCount(1, interrupted); Assert.IsTrue(interrupted[0].CanRollback);
         CollectionAssert.AreEqual(new ulong[] { 123 }, interrupted[0].Items);
         Assert.AreEqual("failure interrupted test", interrupted[0].Failure);
-        string request = WorkshopRecovery.StageRollback(game, interrupted, false);
-        Assert.AreEqual(Path.Combine(game, "_APIShared", "T"), Path.GetDirectoryName(request));
-        string[] rows = File.ReadAllLines(Path.Combine(request, "operations.tsv"));
-        Assert.AreEqual(WorkshopRecovery.Protocol, rows[0]); Assert.AreEqual("stop", rows[1]);
+        // This fixture has no New copies: resume is refused before any request is staged.
+        StringAssert.Contains(WorkshopRecovery.ResumeError(game, interrupted[0]), "Staged file missing");
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopRecovery.StageResume(game, interrupted[0]));
+        Assert.IsFalse(Directory.Exists(Path.Combine(game, "_APIShared", "T")));
         Assert.AreEqual("partial", File.ReadAllText(Path.Combine(game, Target)));
-        Assert.AreEqual("applying", File.ReadAllLines(Path.Combine(old, "journal.log"))[0]);
-        Assert.AreNotEqual(old, request);
+        Assert.AreEqual(journal, File.ReadAllText(Path.Combine(old, "journal.log")));
     }
     [TestMethod] public void DuplicateTransactionIdentityBlocksRecoveryWithoutTouchingEitherCopy()
     {
@@ -214,7 +211,7 @@ public sealed class WorkshopRecoveryTests
         var entries = WorkshopRecovery.Inspect(game);
         Assert.IsFalse(entries[0].CanRollback);
         CollectionAssert.AreEqual(new ulong[] { 123 }, entries[0].Items);
-        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopRecovery.StageRollback(game, entries, true));
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopRecovery.StageResume(game, entries[0]));
     }
     [TestMethod] public void InterruptedRollbackCanContinueWithoutAlreadyRestoredBackup()
     {
@@ -225,7 +222,7 @@ public sealed class WorkshopRecoveryTests
     {
         var entries = WorkshopRecovery.Inspect(game);
         File.AppendAllText(Path.Combine(old, "journal.log"), "failure changed\r\n");
-        Assert.ThrowsExactly<IOException>(() => WorkshopRecovery.StageRollback(game, entries, true));
+        Assert.ThrowsExactly<IOException>(() => WorkshopRecovery.StageResume(game, entries[0]));
     }
     [TestMethod] public void OverlappingTransactionsDisableRollback()
     {
