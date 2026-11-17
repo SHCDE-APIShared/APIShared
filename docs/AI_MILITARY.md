@@ -77,9 +77,21 @@ Moving/patrolling/attacking recruits get their own route. Strategic work selects
 fresh eligible job and reserves it only after successful setup; paths and jobs are
 never copied from a leader.
 
-A genuinely empty newly allocated group can use its verified initial order. An
-existing group's unknown, expired or incompatible order is rejected explicitly;
-there is no wait until its next AI command. Strategic intent additionally checks
+A genuinely empty newly allocated group can use its verified initial order. That
+initial order then counts as the group's current order until an observed group
+command replaces it, so later recruits of the same group, including the other units
+of one multi-unit placement, receive the same state for every role. When an
+existing group has no observed current order (for example after loading a save), the
+defensive roles `CastleDefense`, `DefensePatrol`, `HomeMoat`, `EconomyProtection` and
+`Intervention` admit the recruit exactly like Vanilla admits its own recruits:
+membership and role only. The owner's next regular AI pass then orders the group;
+its native group move sends only members that are not already at their post, so
+existing members receive nothing new. The `Applied` result carries a non-empty
+`Detail` in this case. A patrol recruit can therefore wait up to the AIC patrol
+delay, and an economy-protection or intervention group below its AIC strength
+receives no order, as in Vanilla. For all other roles an unknown, expired or
+incompatible order of an existing group is rejected explicitly; there is no wait
+until its next AI command. Strategic intent additionally checks
 the current siege phase, target identities, AIC, group storage identity and native
 task-list ownership. Unsupported transitions and exhausted/unreachable tasks fail
 without changing existing members. A failed fresh placement removes that captured

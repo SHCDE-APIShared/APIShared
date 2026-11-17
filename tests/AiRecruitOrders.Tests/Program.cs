@@ -267,5 +267,17 @@ internal static unsafe class Program
         ledger.ObserveAccepted(5, Group, new AiCurrentOrder(AiOrderKind.Hold, 20, 30, moveType: -255), 1);
         ledger.Restore(ledger.Capture(), 6);
         Check(ledger.TryGetCurrent(6, Group, out order, out _) && order.MoveType == -255, "a negative raw move type survives the save roundtrip");
+        // Regression: a second recruit of a group created by an empty-group admission was rejected
+        // (CurrentOrderUnknown) because APIShared's own initial order was not the group's order.
+        ledger.Invalidate(Group);
+        ledger.RecordAdmissionOrder(5, Group, new AiCurrentOrder(AiOrderKind.Idle));
+        Check(!ledger.TryGetCurrent(6, Group, out _, out _), "admission order of another world is ignored");
+        ledger.RecordAdmissionOrder(6, Group, new AiCurrentOrder(AiOrderKind.Idle));
+        Check(ledger.TryGetCurrent(6, Group, out order, out _) && order.Kind == AiOrderKind.Idle, "empty-group admission order becomes the group's order");
+        ledger.Restore(ledger.Capture(), 7);
+        Check(ledger.TryGetCurrent(7, Group, out order, out _) && order.Kind == AiOrderKind.Idle, "admission order survives the save roundtrip");
+        ledger.ObserveAccepted(7, Group, new AiCurrentOrder(AiOrderKind.AttackTile, 20, 30), 1);
+        ledger.RecordAdmissionOrder(7, Group, new AiCurrentOrder(AiOrderKind.Idle));
+        Check(ledger.TryGetCurrent(7, Group, out order, out _) && order.Kind == AiOrderKind.AttackTile, "admission order never overwrites an observed command");
     }
 }

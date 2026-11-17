@@ -206,7 +206,8 @@ namespace APIShared.Units.AiMilitary
             }
             rawRestored = false;
             // Pending restored units need explicit requeue: UnitSettledEvents has no save-load replay.
-            foreach (var entry in tracked.Values) if (entry.Pending) { Wake(); break; }
+            foreach (var entry in tracked.Values) if (entry.Pending) Enqueue(entry);
+            if (pendingWork.Count != 0) Wake();
             prepared = null;
         }
 
