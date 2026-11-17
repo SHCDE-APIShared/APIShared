@@ -65,8 +65,24 @@ namespace APIShared.Workshop
                 var catalog = await WorkshopRuntime.GetCatalogAsync();
                 WorkshopDiagnostics.ReportStartupCatalog(WorkshopRuntime.WriteDiagnostic, catalog, out blocked, out failures);
                 var plans = new List<WorkshopInstallPlan>();
+                step = "installation requests";
+                // Unity thread: configuration writes stay on the thread that owns the settings UI.
+                WorkshopRuntime.ResolveHandedOffInstallRequests(BepInEx.Paths.GameRootPath);
+                var requests = WorkshopRuntime.PendingInstallRequests();
+                // A request for an item that is no longer subscribed cannot be fulfilled and
+                // would stay invisible in Mod Options, which lists subscribed items only.
+                var unsubscribed = requests.Where(id => !catalog.Any(c => c.IsSubscribed && c.WorkshopId == id)).ToArray();
+                if (unsubscribed.Length != 0) {
+                    WorkshopRuntime.RemoveInstallRequests(unsubscribed);
+                    WorkshopRuntime.Log("Workshop installation requests removed for items that are no longer subscribed: " + string.Join(", ", unsubscribed) + ".");
+                }
+                step = "catalog";
                 foreach (var item in catalog) {
-                    if (item.DiagnosticError != null || item.IsSubscribed && (item.Package == null || !item.CanInstall)) continue;
+                    bool requested = item.IsSubscribed && requests.Contains(item.WorkshopId);
+                    if (item.DiagnosticError != null || item.IsSubscribed && (item.Package == null || !item.CanInstall)) {
+                        if (requested) WorkshopRuntime.Log("Workshop requested installation kept for a later start; item=" + item.WorkshopId + "; status=" + item.Status + ".");
+                        continue;
+                    }
                     string context = WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "local installation");
                     try {
                         var status = WorkshopLocalStatus.Missing;
@@ -75,12 +91,12 @@ namespace APIShared.Workshop
                             var evidence = await WorkshopRuntime.InspectLocalAsync(item);
                             status = evidence.Status;
                             context = WorkshopDiagnostics.InstallationContext(item, evidence.Bootstrap, "local installation");
-                            WorkshopRuntime.Log(context + "; localState=" + status + "; startupOffers=" + offers +
+                            WorkshopRuntime.Log(context + "; localState=" + status + "; startupOffers=" + offers + "; installationRequested=" + requested +
                                 (evidence.Difference == null ? "" : "; difference=" + evidence.Difference) +
-                                (status == WorkshopLocalStatus.Verified ? "" : "; local selection kept; choose installation in APIShared Mod Options"));
+                                (status == WorkshopLocalStatus.Verified || requested ? "" : "; local selection kept; choose installation in APIShared Mod Options"));
                             WorkshopDiagnostics.ReportOwnership(WorkshopRuntime.WriteDiagnostic, context, evidence.Conflicts);
                         }
-                        var action = WorkshopLocalState.StartupAction(item, status, offers);
+                        var action = WorkshopLocalState.StartupAction(item, status, offers, requested);
                         if (action != null) {
                             var plan = await WorkshopRuntime.PrepareStartupAsync(item.WorkshopId, action.Value);
                             plans.Add(plan);
@@ -135,14 +151,23 @@ namespace APIShared.Workshop
                 step = "confirmation";
                 int decision = MessageBoxW(IntPtr.Zero, body, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), 0x4 | 0x30 | 0x100);
                 if (decision == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
+                var requestedPlans = new HashSet<ulong>(plans.Where(p => p.Action != WorkshopAction.Remove && requests.Contains(p.WorkshopId)).Select(p => p.WorkshopId));
                 if (decision != 6) {
                     result = "declined";
-                    WorkshopRuntime.Log("Workshop startup changes declined; installed files are untouched."); return;
+                    WorkshopRuntime.Log("Workshop startup changes declined; installed files are untouched." +
+                        (requestedPlans.Count == 0 ? "" : " Installation requests remain for the next start: " + string.Join(", ", requestedPlans) + "."));
+                    return;
                 }
                 step = "updater handoff";
-                var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, WorkshopStartupGate.AuthorizeConfirmedUpdate());
+                var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, WorkshopStartupGate.AuthorizeConfirmedUpdate(), requested: requestedPlans);
                 WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + ": " + operation.State + "; " + operation.Diagnostic);
                 result = operation.State == WorkshopOperationState.AwaitingRestart ? "awaiting restart" : "failed";
+                // The next start removes the request once this transaction committed. Until then
+                // an interrupted application is owned by the recovery dialog, not by a repeated offer.
+                if (operation.State == WorkshopOperationState.AwaitingRestart && requestedPlans.Count != 0) {
+                    try { WorkshopRuntime.MarkInstallRequestsHandedOff(requestedPlans, operation.OperationId); }
+                    catch (Exception ex) { WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=record installation request handoff", ex); }
+                }
                 if (operation.State != WorkshopOperationState.AwaitingRestart) {
                     if (operation.Failure != null && WorkshopDiagnostics.Level(operation.Failure) == WorkshopDiagnosticLevel.Warning) { blocked = true; result = "blocked"; }
                     else {
@@ -181,6 +206,12 @@ namespace APIShared.Workshop
             if (directories.Length != 0) {
                 foreach (var interrupted in entries)
                     WorkshopRuntime.Log("Workshop unfinished transaction=" + interrupted.Directory + "; " + WorkshopRecovery.Describe(interrupted, false));
+                // A normal updater exit empties apply.lock. A record that survived names the
+                // phase and process of an updater that was terminated from outside.
+                if (entries.Count != 0 && !Proton.WinePathInterop.Instance.IsWine) {
+                    string stale = await Task.Run(() => WorkshopUpdaterActivity.DescribeStaleWindows(game));
+                    if (stale != null) WorkshopRuntime.Log("Workshop updater ended without its normal exit; last activity record: " + stale);
+                }
                 string latest = directories.Where(WorkshopRecovery.Finished).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault();
                 if (latest != null)
                     WorkshopRuntime.Log("Workshop latest transaction=" + latest + "; outcome=" + WorkshopRecovery.Journal(latest).Last(x => x == "committed" || x == "restored"));
@@ -190,27 +221,40 @@ namespace APIShared.Workshop
                 WorkshopRecovery.Describe(x, APIShared.Localization.GameLocale.Current()) + (x.CanRollback ? "" : "\n" + APIShared.Localization.UiText.Get("Workshop.Recovery.NoRollback", "Reason", x.RollbackError))));
             // Show a failed external recovery/replacement attempt too: its
             // failure belongs to the request journal, not the original journal.
-            bool attemptFailed = false;
+            bool attemptFailed = false, resumeFailed = false, reported = false;
             foreach (string directory in directories.OrderByDescending(Directory.GetLastWriteTimeUtc)) {
                 if (WorkshopRecovery.Finished(directory)) continue;
                 string references = WorkshopPaths.Inside(directory, "supersedes.tsv");
                 if (!File.Exists(references)) references = WorkshopPaths.Inside(directory, "operations.tsv");
-                if (!File.Exists(references) || !File.ReadAllLines(references).Any(line => entries.Any(e => line.StartsWith(Path.GetFileName(e.Directory) + "\t", StringComparison.Ordinal)))) continue;
+                if (!File.Exists(references)) continue;
+                string[] lines = File.ReadAllLines(references);
+                if (!lines.Any(line => entries.Any(e => line.StartsWith(Path.GetFileName(e.Directory) + "\t", StringComparison.Ordinal)))) continue;
                 string failure = WorkshopRecovery.Journal(directory).LastOrDefault(line => line.StartsWith("failure ", StringComparison.Ordinal));
                 if (failure == null) continue;
-                details += "\n\n" + APIShared.Localization.UiText.Get("Workshop.PreviousAttempt") + directory + "\n" + failure;
-                attemptFailed = true;
-                break;
+                if (!reported) details += "\n\n" + APIShared.Localization.UiText.Get("Workshop.PreviousAttempt") + directory + "\n" + failure;
+                reported = true;
+                // A failed resume only withdraws the resume offer; rollback was not attempted.
+                if (lines.Length >= 2 && lines[0] == WorkshopRecovery.Protocol && lines[1] == WorkshopRecovery.ResumeDisposition) resumeFailed = true;
+                else attemptFailed = true;
             }
             // A rollback that already failed is not offered again: the clean reinstallation
             // below is the fallback that is always available.
             bool rollback = !attemptFailed && entries.All(x => x.CanRollback);
             if (rollback) {
-                string choices = APIShared.Localization.UiText.Get("Workshop.YesRepairRestoreFirstRestartAnd");
+                // Resume continues one interrupted installation with its own staged files. Only
+                // the Windows updater implements it; Proton keeps restore-and-restart repair.
+                bool resume = false;
+                if (!resumeFailed && entries.Count == 1 && !Proton.WinePathInterop.Instance.IsWine) {
+                    string resumeError = await Task.Run(() => WorkshopRecovery.ResumeError(game, entries[0]));
+                    resume = resumeError == null;
+                    WorkshopRuntime.Log("Workshop resume " + (resume ? "available" : "unavailable: " + resumeError) + "; transaction=" + entries[0].Directory);
+                }
+                string choices = APIShared.Localization.UiText.Get(resume ? "Workshop.YesResumeNoRollbackCancelLater" : "Workshop.YesRepairRestoreFirstRestartAnd");
                 int decision = Ask(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationNeedsAttention") + details + "\n\n" + choices, 0x3u);
-                var choice = WorkshopRecovery.Decide(true, decision);
+                var choice = WorkshopRecovery.Decide(true, decision, resume);
                 if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
-                await WorkshopRuntime.RollbackAsync(entries, choice == WorkshopRecovery.Choice.Repair, WorkshopStartupGate.AuthorizeConfirmedUpdate());
+                if (choice == WorkshopRecovery.Choice.Resume) await WorkshopRuntime.ResumeAsync(entries[0], WorkshopStartupGate.AuthorizeConfirmedUpdate());
+                else await WorkshopRuntime.RollbackAsync(entries, choice == WorkshopRecovery.Choice.Repair, WorkshopStartupGate.AuthorizeConfirmedUpdate());
                 return true;
             }
             return await CompleteRepairAsync(game, entries, details, german);

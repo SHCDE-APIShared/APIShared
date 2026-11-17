@@ -41,23 +41,19 @@ namespace APIShared.Workshop
                 throw new TimeoutException("Proton path initialization exceeded its time budget.");
             return await pending.ConfigureAwait(false);
         }
-        internal static async Task Launch(string transaction, string game, WorkshopInstallPlan manualPlan = null)
+        internal static async Task Launch(string transaction, string game)
         {
             string assets = Path.Combine(Path.GetDirectoryName(typeof(WorkshopUpdaterLauncher).Assembly.Location), "Workshop");
             string hash = WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "operations.tsv"));
             string repairHash = File.Exists(WorkshopPaths.Inside(transaction, "supersedes.tsv")) ? WorkshopInventory.Hash(WorkshopPaths.Inside(transaction, "supersedes.tsv")) : "";
             string ready = WorkshopPaths.Inside(transaction, "ready.flag");
-            string sourceManifest = manualPlan == null ? null : WorkshopPaths.Inside(manualPlan.Source, WorkshopPackage.ManifestFileName);
             if (WinePathInterop.Instance.IsWine)
             {
                 var context = await LinuxContext(game, TimeSpan.FromSeconds(2));
                 context.ValidateGameIdentity(TimeSpan.FromSeconds(2));
                 string script = WorkshopPaths.Inside(assets, "workshop-updater.sh");
                 if (!File.Exists(script)) throw new FileNotFoundException("Proton updater script is missing.", script);
-                string[] arguments = manualPlan == null
-                    ? new[] { context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--restart", repairHash }
-                    : new[] { context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--manual", repairHash,
-                        context.Paths.ToHostExisting(sourceManifest), manualPlan.ManifestHash };
+                string[] arguments = { context.Paths.ToHostExisting(game), context.Paths.ToHostExisting(transaction), hash, "--restart", repairHash };
                 if (File.Exists(ready)) throw new InvalidOperationException("This transaction already has an updater handoff.");
                 // No process handle exists under Wine (see HostRun): the exit record replaces HasExited.
                 using (var run = context.StartScript(context.Paths.ToHostExisting(script), arguments))
@@ -66,9 +62,11 @@ namespace APIShared.Workshop
             }
             string windowsScript = WorkshopPaths.Inside(assets, "workshop-updater.ps1");
             if (!File.Exists(windowsScript)) throw new FileNotFoundException("Windows updater script is missing.", windowsScript);
-            string launchOptions = manualPlan == null ? " -RestartSteam" :
-                " -RequireRunningGame -SourceManifest " + Quote(sourceManifest) + " -SourceManifestHash " + manualPlan.ManifestHash;
-            var start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + Quote(windowsScript) + " -GameRoot " + Quote(game) + " -Transaction " + Quote(transaction) + " -OperationsHash " + hash + launchOptions + (repairHash.Length == 0 ? "" : " -SupersedesHash " + repairHash));
+            // -ProgressWindow shows the player that files are being written once the game has
+            // closed; it never affects the installation (see Show-UpdaterProgress). -Sta is
+            // required by Windows Forms.
+            string launchOptions = " -RestartSteam -ProgressWindow -Language " + ProgressLanguage();
+            var start = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -Sta -ExecutionPolicy Bypass -File " + Quote(windowsScript) + " -GameRoot " + Quote(game) + " -Transaction " + Quote(transaction) + " -OperationsHash " + hash + launchOptions + (repairHash.Length == 0 ? "" : " -SupersedesHash " + repairHash));
             start.UseShellExecute = false; start.CreateNoWindow = true; start.WindowStyle = ProcessWindowStyle.Hidden;
             if (File.Exists(ready)) throw new InvalidOperationException("This transaction already has an updater handoff.");
             using (var process = Process.Start(start))
@@ -77,6 +75,16 @@ namespace APIShared.Workshop
                 await AwaitReadiness(transaction, ready, hash, () => process.HasExited ? process.ExitCode : (int?)null);
             }
         }
+        // Separate, non-inlined method: the locale lookup needs BepInEx/Unity assemblies, which
+        // are absent in game-independent launcher fixtures. A missing assembly or any lookup
+        // failure falls back to English and never prevents the updater handoff.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string ProgressLanguage()
+        {
+            try { return LocaleLanguage(); } catch { return "en"; }
+        }
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string LocaleLanguage() => APIShared.Localization.GameLocale.Current() == "de-DE" ? "de" : "en";
         // exitCode returns null while the updater still runs. A child can publish readiness
         // and fail before this poll; its leftover hash must not authorize closing the game.
         private static async Task AwaitReadiness(string transaction, string ready, string hash, Func<int?> exitCode)

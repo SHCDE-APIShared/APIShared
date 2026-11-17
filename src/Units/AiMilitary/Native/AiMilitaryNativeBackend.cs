@@ -32,6 +32,10 @@ namespace APIShared.Units.AiMilitary.Native
         private AiExpandedDefenseStorage ExpandedStorage => expanded ?? (expanded = AiExpandedDefenseStorage.Discover());
         private readonly HashSet<AiNativeGroup> allocatedHere = new HashSet<AiNativeGroup>();
         private bool admitting;
+        // Set by TryBuildRecruitRoute when the unmodified native route 196280 ran once and returned 0
+        // (no path for this unit); reset by every TryAdmit. Vetoes/redirects never set it.
+        private bool routeRefusedByNative;
+        internal bool LastAdmissionRouteRefused => routeRefusedByNative;
         private long worldGeneration, admittingGeneration;
         internal long WorldGeneration => worldGeneration;
         internal bool IsWorldCurrent(long value) => value == worldGeneration && AiRecruitMutationReceipts.IsCurrentWorld;
@@ -85,14 +89,6 @@ namespace APIShared.Units.AiMilitary.Native
             byte* record = (byte*)TribeManager + id * TribeStride;
             if (*(ushort*)(record + 0x40) != (ushort)AliveState.IsAlive || *(int*)(record + 0x2C) != owner) return false;
             group = new AiNativeGroup(id, *(uint*)(record + 0x34), owner); return group.GlobalId != 0;
-        }
-        // Rejection evidence for a native tribe ID that TryGetGroup refused; reads only bounded records.
-        internal string DescribeTribeRecord(int id, int owner)
-        {
-            if (id <= 0 || id >= TribeCapacity) return "returnedGroup=" + id + " (outside the tribe table)";
-            byte* record = (byte*)TribeManager + id * TribeStride;
-            return "returnedGroup=" + id + " state=" + *(ushort*)(record + 0x40) + " owner=" + *(int*)(record + 0x2C) +
-                "/" + owner + " global=" + *(uint*)(record + 0x34) + " members=" + *(short*)(record + 0x5C);
         }
         internal bool IsCurrent(AiNativeGroup group) => TryGetGroup(group.Id, group.Owner, out var current) && current.Equals(group);
         internal byte* Tribe(AiNativeGroup group) => (byte*)TribeManager + group.Id * TribeStride;
@@ -239,11 +235,7 @@ namespace APIShared.Units.AiMilitary.Native
                     ? defense(LordManager, owner, cls)
                     : fallback(LordManager, owner, fallbackClass(LordManager, unitId) == 0 ? 1 : 0);
                 if (TryGetGroup(id, owner, out group)) { reason = string.Empty; return true; }
-                // Failure path only: the values that distinguish an empty window from a returned
-                // stale/foreign record (audit 17.11.2026, AI_MILITARY_ADMISSION.md role-1 allocation).
-                reason = "Native defensive allocation failed. class=" + cls + " positions=" +
-                    resources->r_AIDefensivePositionCountsByClass.r_Counts[cls] + " " + DescribeTribeRecord(id, owner);
-                return false;
+                reason = "Native defensive allocation failed."; return false;
             }
             var expandedStorage = ExpandedStorage;
             if (expandedStorage != null)
@@ -291,6 +283,7 @@ namespace APIShared.Units.AiMilitary.Native
             AiCurrentOrder order, out string reason)
         {
             reason = string.Empty;
+            routeRefusedByNative = false;
             long operationWorld = worldGeneration;
             if (admitting && admittingGeneration == operationWorld) { reason = "Recursive AI admission is not permitted."; return false; }
             if (!IsCurrent(group) || !TryUnit(unitId, unitGlobalId, out var unit, out reason))
@@ -326,6 +319,17 @@ namespace APIShared.Units.AiMilitary.Native
             {
                 oldPrivate = new byte[TribeStride];
                 Marshal.Copy((IntPtr)Tribe(oldGroup) + TribeRecordOffset, oldPrivate, 0, oldPrivate.Length);
+            }
+            // An empty target (typically just allocated by 2BC40/2BF10/119D60 and already stored in
+            // the owner's storage slot) must leave a failed admission exactly as it was. Removing the
+            // sole member through 123EA0 would mark it state 3 while its slot ID/global still match;
+            // 2BC40 tests only that pair and would keep returning the dead group to every later
+            // recruit until 1261F0 clears it (in-game 17.11.2026: returnedGroup=4074 state=3).
+            byte[] emptyTarget = null;
+            if (memberCount == 0)
+            {
+                emptyTarget = new byte[TribeStride];
+                Marshal.Copy((IntPtr)Tribe(group) + TribeRecordOffset, emptyTarget, 0, emptyTarget.Length);
             }
             bool previousAdmitting = admitting; long previousAdmissionGeneration = admittingGeneration;
             admitting = true; admittingGeneration = operationWorld;
@@ -364,6 +368,15 @@ namespace APIShared.Units.AiMilitary.Native
                     {
                         if (!TryDetach(unitId, unitGlobalId, out var rollbackReason))
                             throw new InvalidOperationException("AI admission rollback failed: " + rollbackReason);
+                    }
+                    if (emptyTarget != null)
+                    {
+                        // Only the same, again memberless record is restored; 11D370/123EA0/11A2B0/11E820
+                        // write nothing outside this record and the recruit (restored below).
+                        byte* target = Tribe(group);
+                        if (*(uint*)(target + 0x34) == group.GlobalId && *(int*)(target + 0x2C) == group.Owner &&
+                            *(short*)(target + 0x5C) == 0 && !RawHasMember(group, unitId))
+                            Marshal.Copy(emptyTarget, 0, (IntPtr)target + TribeRecordOffset, emptyTarget.Length);
                     }
                     // Removing its sole member marks the private tribe for deletion. No native
                     // tick can delete it in this scope; restore this owned private record only.

@@ -36,7 +36,7 @@ maintenance_node() {
     m_resolved[$id]=${m_terminal[$id]}; m_request[$id]=0; m_refs[$id]=''; m_items[$id]=''
     if [[ $protocol == APISHARED-WORKSHOP-RECOVERY-1 ]]; then
         local -a request_lines=(); mapfile -t request_lines < "$dir/operations.tsv"
-        [[ ${#request_lines[@]} -ge 3 && ( ${request_lines[1]%$'\r'} == restart || ${request_lines[1]%$'\r'} == stop ) ]] || return 1
+        [[ ${#request_lines[@]} -ge 3 && ( ${request_lines[1]%$'\r'} == restart || ${request_lines[1]%$'\r'} == stop || ${request_lines[1]%$'\r'} == resume ) ]] || return 1
         m_request[$id]=1
         for ((i=2;i<${#request_lines[@]};i++)); do
             reference "${request_lines[$i]}" || return 1

@@ -9,19 +9,22 @@ namespace APIShared.Units.AiMilitary.Orders
         [ThreadStatic] private static Receipt current;
         internal static bool IsActive => current != null;
         internal static bool TryRun(int unitId, int x, int y, int extra, Func<long> invoke, out string reason)
+            => TryRun(unitId, x, y, extra, invoke, out reason, out _);
+        // nativeRefused: the single matching Original call completed in the current world/identity
+        // and returned 0, i.e. 196280 itself found no route for this unit (not a veto or redirect).
+        internal static bool TryRun(int unitId, int x, int y, int extra, Func<long> invoke, out string reason, out bool nativeRefused)
         {
             var receipt = new Receipt(unitId, x, y, extra);
             var previous = current;
             current = receipt;
             try { invoke(); }
             finally { current = previous; }
-            bool success = receipt.Count == 1 && receipt.Completed && receipt.Result == 1 && !receipt.Redirected &&
-                AiRecruitMutationReceipts.IsCurrentWorld && AiRecruitMutationReceipts.IsRecruitIdentityCurrent;
+            bool live = AiRecruitMutationReceipts.IsCurrentWorld && AiRecruitMutationReceipts.IsRecruitIdentityCurrent;
+            bool success = receipt.Count == 1 && receipt.Completed && receipt.Result == 1 && !receipt.Redirected && live;
+            nativeRefused = receipt.Count == 1 && receipt.Completed && receipt.Result == 0 && !receipt.Redirected && live;
             reason = success ? string.Empty : receipt.Redirected ? "A Pre callback redirected the recruit route; original was refused." :
                 receipt.Count == 0 ? "The recruit route was vetoed or no Original receipt was observed." :
-                "The actual native recruit route did not succeed exactly once. target=" + x + "," + y +
-                " calls=" + receipt.Count + " completed=" + receipt.Completed + " raw=" + receipt.Result +
-                " world=" + AiRecruitMutationReceipts.IsCurrentWorld + " identity=" + AiRecruitMutationReceipts.IsRecruitIdentityCurrent;
+                "The actual native recruit route did not succeed exactly once.";
             return success;
         }
         internal static bool Before(int unitId, int x, int y, int extra)

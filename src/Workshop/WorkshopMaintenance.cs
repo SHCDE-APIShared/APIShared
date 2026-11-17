@@ -80,7 +80,7 @@ namespace APIShared.Workshop
             node.Resolved = node.Terminal;
             string[] refs = new string[0];
             if (lines.Length >= 3 && lines[0] == WorkshopRecovery.Protocol) {
-                if (lines[1] != "restart" && lines[1] != "stop") return node;
+                if (!WorkshopRecovery.Dispositions.Contains(lines[1])) return node;
                 node.Request = true;
                 refs = References(lines.Skip(2));
                 if (refs == null) return node;

@@ -25,7 +25,7 @@ $utf8=[Text.UTF8Encoding]::new($false)
 $copy=Join-Path $fixture 'assembly/APIShared.dll'
 Copy-Item -LiteralPath $ApiAssembly -Destination $copy
 $writer=@'
-param([string]$GameRoot,[string]$Transaction,[string]$OperationsHash,[switch]$RestartSteam)
+param([string]$GameRoot,[string]$Transaction,[string]$OperationsHash,[switch]$RestartSteam,[switch]$ProgressWindow,[string]$Language)
 $ErrorActionPreference='Stop'
 $path=Join-Path $Transaction 'ready.flag'
 $mode=[IO.File]::ReadAllText((Join-Path $Transaction 'fixture-mode.txt'))

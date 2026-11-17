@@ -43,6 +43,7 @@ internal static unsafe class Program
         ProvenanceTests();
         byte[] file = File.ReadAllBytes(args[0]);
         Check(Convert.ToHexString(SHA256.HashData(file)) == AiQuotaNativeContract.Hash, "canonical DLL identity");
+        CastleDefenseTableTests(file);
         image = VirtualAlloc(IntPtr.Zero, (UIntPtr)Size, 0x3000, 0x40);
         state = Marshal.AllocHGlobal(64 + 40000); capture = Marshal.AllocHGlobal(256);
         if (image == IntPtr.Zero) throw new Exception("Private native fixture allocation failed.");
@@ -431,6 +432,39 @@ internal static unsafe class Program
     private static void WriteCode(ulong address, Action<Assembler> generate)
     { var a = new Assembler(64); generate(a); using var stream = new MemoryStream(); a.Assemble(new StreamCodeWriter(stream), address); byte[] bytes = stream.ToArray();
         Marshal.Copy(bytes, 0, (IntPtr)unchecked((long)address), bytes.Length); FlushInstructionCache(GetCurrentProcess(), (IntPtr)unchecked((long)address), (UIntPtr)bytes.Length); }
+    // AiCastleDefenseTables against the canonical DLL: controller class lists, the 2D760 type
+    // table and class-13 ranged mask, and the three 2BC40 class comparisons of the window cut.
+    private static void CastleDefenseTableTests(byte[] file)
+    {
+        int[] Ints(int rva, int count) { var bytes = ReadRva(file, rva, count * 4); var values = new int[count]; Buffer.BlockCopy(bytes, 0, values, 0, bytes.Length); return values; }
+        var families = new[] { (0x2CF020, 7, 1), (0x2CF060, 9, 2), (0x2CF0A8, 6, 3) };
+        var listed = new Dictionary<int, int>();
+        foreach (var (rva, pairs, family) in families)
+        {
+            int[] table = Ints(rva, pairs * 2);
+            for (int i = 0; i < pairs; i++) listed[table[i * 2 + 1]] = family;
+        }
+        for (int cls = 0; cls < 30; cls++)
+            Check(AiCastleDefenseTables.ControllerFamily(cls) == (listed.TryGetValue(cls, out int f) ? f : 0), "castle-defense controller family " + cls);
+        Check(ReadRva(file, 0x2D7C6, 2).SequenceEqual(new byte[] { 0x49, 0xB8 }), "2D760 ranged-mask movabs");
+        ulong ranged = BitConverter.ToUInt64(ReadRva(file, 0x2D7C8, 8), 0);
+        int[] types = Ints(0x2CEE00, 30);
+        for (int type = 0; type < 256; type++)
+        {
+            int cls = Array.IndexOf(types, type); if (cls < 0) cls = 0;
+            bool cut = cls == 8 || cls == 10 || cls == 17;
+            bool ok = AiCastleDefenseTables.TryGetMobileWindowClass(type, out int mapped);
+            Check(ok == cut && (!ok || mapped == cls), "deterministic 2BC40 window class of type " + type);
+            if (cut) Check((uint)(type - 0x16) >= 0x3D || ((ranged >> (type - 0x16)) & 1) == 0, "class-13 override cannot apply to type " + type);
+        }
+        Check(ReadRva(file, 0x2BCBB, 4).SequenceEqual(new byte[] { 0x41, 0x83, 0xFB, 0x08 }) &&
+            ReadRva(file, 0x2BCC6, 4).SequenceEqual(new byte[] { 0x41, 0x83, 0xFB, 0x0A }) &&
+            ReadRva(file, 0x2BCD1, 4).SequenceEqual(new byte[] { 0x41, 0x83, 0xFB, 0x11 }), "2BC40 cuts classes 8/10/17");
+        Check(ReadRva(file, 0x2BCB6, 5).SequenceEqual(new byte[] { 0x44, 0x3B, 0xC0, 0x7E, 0x1E }) &&
+            ReadRva(file, 0x2BCEB, 9).SequenceEqual(new byte[] { 0x45, 0x85, 0xC0, 0x0F, 0x8E, 0x9B, 0x00, 0x00, 0x00 }),
+            "2BC40 signed count/maximum comparison and nonpositive-window return");
+    }
+
     private static byte[] ReadRva(byte[] file, int rva, int length)
     {
         int pe = BitConverter.ToInt32(file, 0x3C), count = BitConverter.ToUInt16(file, pe + 6), table = pe + 24 + BitConverter.ToUInt16(file, pe + 20);

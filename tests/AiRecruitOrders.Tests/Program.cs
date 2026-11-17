@@ -231,6 +231,15 @@ internal static unsafe class Program
         Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(2, 10, 20, 0); AiUnitMoveReceipts.After(0); return 1; }, out _), "Post true cannot mask native failure");
         Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { Check(!AiUnitMoveReceipts.Before(3, 10, 20, 0), "redirected recruit rejected before native mutation"); return 1; }, out _), "redirect has no successful receipt");
         Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => 1, out _), "veto/no original is not success");
+        // Castle defense lets only a genuine native "no route" (one matching Original, raw 0, same
+        // world/identity) join like a Vanilla recruit; vetoes, redirects and successes never qualify.
+        Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(2, 10, 20, 0); AiUnitMoveReceipts.After(0); return 0; }, out _, out bool noRoute) && noRoute,
+            "native route result 0 is reported as a native refusal");
+        Check(AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(2, 10, 20, 0); AiUnitMoveReceipts.After(1); return 1; }, out _, out bool routed) && !routed,
+            "a successful route is no refusal");
+        Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => 0, out _, out bool vetoed) && !vetoed, "a veto is no native refusal");
+        Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(3, 10, 20, 0); return 0; }, out _, out bool redirected) && !redirected,
+            "a redirect is no native refusal");
         Check(!AiUnitMoveReceipts.IsActive, "thread receipt cleared after invocation");
     }
     private static void LedgerTests(AiMilitaryNativeBackend backend)

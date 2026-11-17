@@ -86,11 +86,46 @@ function New-UserCase {
     Write-Text (Join-Path $dir 'cancel.flag') 'stale original handoff'
     return $dir
 }
-function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement,[switch]$External,[switch]$WrongHash,[int]$TimeoutMilliseconds=30000) {
+# Interrupted installation for resume: row 0 completed, row 1 begun with partial bytes,
+# rows 2-4 (delete, new file, receipt) not begun. Staged copies and backups are intact.
+function New-ResumeOld([int]$Extra=0) {
+    $dir = Join-Path $shortTransactions ([guid]::NewGuid().ToString('N'))
+    $specs = [Collections.Generic.List[object]]::new()
+    $specs.Add(@('write','BepInEx/plugins/Example/Example.dll','original 0','new 0'))
+    $specs.Add(@('write','BepInEx/plugins/Example/Second.dll','original 1','new 1'))
+    $specs.Add(@('delete','BepInEx/plugins/Example/Obsolete/old.dll','obsolete',$null))
+    $specs.Add(@('write','BepInEx/plugins/Example/Added.dll',$null,'added'))
+    for ($i=0; $i -lt $Extra; $i++) { $specs.Add(@('write',('BepInEx/plugins/Example/Extra/file'+$i+'.txt'),('original x'+$i),('new x'+$i))) }
+    $specs.Add(@('receipt-write',$receipt,$null,'new receipt'))
+    $operations = @('APISHARED-WORKSHOP-2')
+    for ($i=0; $i -lt $specs.Count; $i++) {
+        $kind,$relative,$original,$new = $specs[$i]
+        if ($null -ne $original) { Write-Text (Join-Path $dir ('Backup/'+$i)) $original; Write-Text (Join-Path $game $relative) $original }
+        if ($null -ne $new) { Write-Text (Join-Path $dir ('New/'+$i)) $new }
+        $before = Hash (Join-Path $dir ('Backup/'+$i)); $after = Hash (Join-Path $dir ('New/'+$i))
+        $operations += ($kind,$relative,$i,$before,$after) -join "`t"
+    }
+    Write-Text (Join-Path $game 'BepInEx/plugins/Example/Example.dll') 'new 0'
+    Write-Text (Join-Path $game 'BepInEx/plugins/Example/Second.dll') 'partial'
+    Write-Text (Join-Path $dir 'operations.tsv') (($operations -join "`r`n")+"`r`n")
+    Write-Text (Join-Path $dir 'journal.log') "trace t; handoff ready`r`napplying`r`nbegin`t0`r`ndone`t0`r`nbegin`t1`r`n"
+    Write-Text (Join-Path $dir 'ready.flag') (Hash (Join-Path $dir 'operations.tsv'))
+    Write-Text (Join-Path $dir 'cancel.flag') 'stale original handoff'
+    $script:resumeSpecs = $specs
+    return $dir
+}
+function New-ResumeRequest([string]$Old) {
+    $request = Join-Path $shortTransactions ([guid]::NewGuid().ToString('N'))
+    Write-Text (Join-Path $request 'operations.tsv') ("APISHARED-WORKSHOP-RECOVERY-1`r`nresume`r`n" + (Reference $Old) + "`r`n")
+    return $request
+}
+function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement,[switch]$External,[switch]$WrongHash,[int]$TimeoutMilliseconds=30000,[switch]$ProgressWindow,[switch]$Maintain,[scriptblock]$WhileRunning) {
     $hash = Hash (Join-Path $Dir 'operations.tsv')
     if ($script:backend -eq 'windows') {
-        $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File '+(Quote (Join-Path $root 'Workshop/workshop-updater.ps1'))+' -GameRoot '+(Quote $game)+' -Transaction '+(Quote $Dir)+' -OperationsHash '+$hash
+        $arguments = '-NoProfile -NonInteractive -Sta -ExecutionPolicy Bypass -File '+(Quote (Join-Path $root 'Workshop/workshop-updater.ps1'))+' -GameRoot '+(Quote $game)
+        $arguments += $(if ($Maintain) { ' -Maintain' } else { ' -Transaction '+(Quote $Dir)+' -OperationsHash '+$hash })
         if ($Recover) { $arguments += ' -Recover' }
+        if ($ProgressWindow) { $arguments += ' -ProgressWindow -Language de' }
         if ($Replacement) { $arguments += ' -SupersedesHash '+$(if ($WrongHash) { 'a'*64 } else { Hash (Join-Path $Dir 'supersedes.tsv') }) }
         $start = [Diagnostics.ProcessStartInfo]::new('powershell.exe',$arguments)
     } else {
@@ -109,8 +144,10 @@ function Run([string]$Dir,[int]$Expected=0,[switch]$Recover,[switch]$Replacement
     $p = [Diagnostics.Process]::Start($start)
     try {
         $stdout=$p.StandardOutput.ReadToEndAsync(); $stderr=$p.StandardError.ReadToEndAsync()
+        if ($WhileRunning) { & $WhileRunning $p }
         if (-not $p.WaitForExit($TimeoutMilliseconds)) { $p.Kill(); throw "Updater fixture timeout: $Dir" }
         if ($p.ExitCode -ne $Expected) { throw "Updater $script:backend expected $Expected, got $($p.ExitCode): $($stdout.Result) $($stderr.Result); evidence=$Dir" }
+        $script:lastOutput = $stdout.Result
     } finally { $p.Dispose() }
 }
 function Assert-Text([string]$Path,[string]$Expected) { if ([IO.File]::ReadAllText($Path) -cne $Expected) { throw "Unexpected fixture bytes: $Path" } }
@@ -210,6 +247,59 @@ foreach ($backend in $backends) {
         try { Run $request -Expected 1 } finally { $held.Dispose() }
         Assert-Text (Join-Path $game $target) 'partial new bytes'
         Run (New-Request @($old)); Assert-Text (Join-Path $game $target) 'original'
+
+        # Resume (Windows updater only): finish the interrupted installation with its staged copies.
+        Write-Host "Checking $backend resume with progress window..."
+        New-Case "$backend-resume"; $old=New-ResumeOld -Extra 300; $request=New-ResumeRequest $old
+        $script:sawWindow=$false
+        Run $request -ProgressWindow -TimeoutMilliseconds 120000 -WhileRunning {
+            param($process)
+            $watch=[Diagnostics.Stopwatch]::StartNew()
+            while (-not $process.HasExited -and $watch.ElapsedMilliseconds -lt 60000) {
+                try { $process.Refresh(); if ($process.MainWindowHandle -ne [IntPtr]::Zero -and $process.MainWindowTitle -ceq 'Stronghold Crusader - Workshop-Mods werden installiert') { $script:sawWindow=$true; break } } catch { }
+                Start-Sleep -Milliseconds 20
+            }
+        }
+        if (-not $script:sawWindow) { throw 'Resume did not show a visible progress window.' }
+        for ($i=0; $i -lt $script:resumeSpecs.Count; $i++) {
+            $spec=$script:resumeSpecs[$i]; $path=Join-Path $game $spec[1]
+            if ($null -eq $spec[3]) { if ([IO.File]::Exists($path)) { throw "Resume did not delete $($spec[1])" } } else { Assert-Text $path $spec[3] }
+        }
+        if ([IO.Directory]::Exists((Join-Path $game 'BepInEx/plugins/Example/Obsolete'))) { throw 'Resume left an emptied obsolete folder.' }
+        $oldJournal=[IO.File]::ReadAllLines((Join-Path $old 'journal.log')); $requestJournal=[IO.File]::ReadAllLines((Join-Path $request 'journal.log'))
+        if ($oldJournal -cnotcontains 'committed' -or @($oldJournal -cmatch "^begin`t1$").Count -ne 1 -or @($oldJournal -cmatch '^begin\t').Count -ne $script:resumeSpecs.Count) { throw 'Resume did not continue the original journal sequentially.' }
+        if ($requestJournal -cnotcontains 'resuming' -or $requestJournal -cnotcontains 'committed' -or @($requestJournal -cmatch '^ui-warning ').Count) { throw 'Resume request journal is incomplete or reports a UI failure.' }
+        Assert-Text (Join-Path $request ('RecoveryBackup/'+[IO.Path]::GetFileName($old)+'/1')) 'partial'
+        if (-not [IO.File]::Exists((Join-Path $old 'completed.utc'))) { throw 'Resumed transaction has no completion time.' }
+        Assert-Text (Join-Path $old 'cancel.flag') 'stale original handoff'
+        Run $request -Maintain
+        if ($script:lastOutput -notmatch 'deferred=0') { throw "Maintenance does not accept the resumed history: $script:lastOutput" }
+
+        New-Case "$backend-resume-twice"; $old=New-ResumeOld
+        # State left by a resume that was itself interrupted while deleting row 2.
+        Write-Text (Join-Path $game 'BepInEx/plugins/Example/Second.dll') 'new 1'
+        [IO.File]::Delete((Join-Path $game 'BepInEx/plugins/Example/Obsolete/old.dll'))
+        [IO.File]::AppendAllText((Join-Path $old 'journal.log'),"done`t1`r`nbegin`t2`r`n",$utf8)
+        Run (New-ResumeRequest $old)
+        Assert-Text (Join-Path $game 'BepInEx/plugins/Example/Added.dll') 'added'; Assert-Text (Join-Path $game $receipt) 'new receipt'
+
+        New-Case "$backend-resume-changed-target"; $old=New-ResumeOld
+        Write-Text (Join-Path $game 'BepInEx/plugins/Example/Added.dll') 'foreign file'
+        $journalBefore=Hash (Join-Path $old 'journal.log'); $request=New-ResumeRequest $old
+        Run $request -Expected 1
+        if ((Hash (Join-Path $old 'journal.log')) -cne $journalBefore) { throw 'Rejected resume changed the original journal.' }
+        Assert-Text (Join-Path $game 'BepInEx/plugins/Example/Second.dll') 'partial'; Assert-Text (Join-Path $game 'BepInEx/plugins/Example/Added.dll') 'foreign file'
+        if (-not (@([IO.File]::ReadAllLines((Join-Path $request 'journal.log'))) -match '^failure .*Target changed')) { throw 'Rejected resume did not record its reason.' }
+        # Rollback remains available after a rejected resume.
+        Run (New-Request @($old))
+        Assert-Text (Join-Path $game 'BepInEx/plugins/Example/Example.dll') 'original 0'; Assert-Text (Join-Path $game 'BepInEx/plugins/Example/Second.dll') 'original 1'
+
+        New-Case "$backend-resume-missing-staged"; $old=New-ResumeOld
+        [IO.File]::Delete((Join-Path $old 'New/3'))
+        Run (New-ResumeRequest $old) -Expected 1
+        Assert-Text (Join-Path $game 'BepInEx/plugins/Example/Second.dll') 'partial'
+        if ([IO.File]::Exists((Join-Path $game 'BepInEx/plugins/Example/Added.dll'))) { throw 'Rejected resume wrote a target.' }
+        Write-Host "PASS: $backend resume finishes interrupted installations with a visible progress window, continues an interrupted resume, rejects changed targets or missing staged copies without writes and keeps rollback available."
     }
 
     New-Case "$backend-cancelled-request"; $old=New-Old; $request=New-Request @($old)

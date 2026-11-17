@@ -43,12 +43,18 @@ namespace APIShared.Workshop
 
     internal static class WorkshopRecovery
     {
-        internal enum Choice { Later, Repair, Rollback, CompleteRepair }
-        internal static Choice Decide(bool rollback, int answer) => rollback
-            ? answer == 6 ? Choice.Repair : answer == 7 ? Choice.Rollback : Choice.Later
+        internal enum Choice { Later, Repair, Rollback, CompleteRepair, Resume }
+        // With resume available, Yes continues the interrupted installation instead of the
+        // restore-and-restart repair; No (rollback and close) and Cancel keep their meaning.
+        internal static Choice Decide(bool rollback, int answer, bool resume = false) => rollback
+            ? answer == 6 ? (resume ? Choice.Resume : Choice.Repair) : answer == 7 ? Choice.Rollback : Choice.Later
             : answer == 6 ? Choice.CompleteRepair : Choice.Later;
 
         internal const string Protocol = "APISHARED-WORKSHOP-RECOVERY-1";
+        // Second line of a recovery request: restore and restart, restore and stop, or
+        // finish the single referenced installation and restart (Windows updater only).
+        internal const string Restart = "restart", Stop = "stop", ResumeDisposition = "resume";
+        internal static readonly string[] Dispositions = { Restart, Stop, ResumeDisposition };
         internal static string Describe(WorkshopInterruptedTransaction entry, bool german) => Describe(entry, german ? "de-DE" : "en-US");
         internal static string Describe(WorkshopInterruptedTransaction entry, string locale) =>
             (entry.Failure ?? Localization.UiText.ForLocale(locale, "Workshop.Recovery.Interrupted")) + "\n" + entry.Progress.Describe(locale);
@@ -94,6 +100,9 @@ namespace APIShared.Workshop
             }
             return false;
         }
+        // True when a committed complete repair replaced this interrupted transaction.
+        internal static bool SupersededByCommit(string game, string directory) =>
+            Superseded(WorkshopInstallation.TransactionDirectories(game), directory);
         internal static string[] Reference(string line)
         {
             string[] row = line.Split('\t');
@@ -183,19 +192,75 @@ namespace APIShared.Workshop
             if (!actual.Select(x => x.Reference).OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(entries.Select(x => x.Reference).OrderBy(x => x, StringComparer.Ordinal)))
                 throw new IOException("Interrupted transactions changed; inspect and confirm recovery again.");
         }
-        internal static string StageRollback(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart)
+        internal static string StageRollback(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart) =>
+            StageRequest(game, entries, restart ? Restart : Stop);
+        internal static string StageResume(string game, WorkshopInterruptedTransaction entry) =>
+            StageRequest(game, new[] { entry }, ResumeDisposition);
+        private static string StageRequest(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, string disposition)
         {
             WorkshopTransaction.EnterState();
-            try { return StageRollbackLocked(game, entries, restart); }
-            finally { WorkshopTransaction.StateGate.Release(); }
+            try {
+                ValidateReferences(game, entries);
+                if (entries.Count == 0 || entries.Any(x => !x.CanRollback)) throw new InvalidOperationException("Rollback is not available for every interrupted transaction.");
+                if (disposition == ResumeDisposition) {
+                    // Inspection is repeated here because files can change while the dialog is open.
+                    string error = entries.Count == 1 ? ResumeError(game, entries[0]) : "Resume requires exactly one interrupted transaction.";
+                    if (error != null) throw new InvalidOperationException("Resume is not available: " + error);
+                }
+                string directory = WorkshopInstallation.CreateTransaction(game, Guid.NewGuid().ToString("N"));
+                File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), new[] { Protocol, disposition }.Concat(entries.Select(x => x.Reference)), new UTF8Encoding(false));
+                return directory;
+            } finally { WorkshopTransaction.StateGate.Release(); }
         }
-        private static string StageRollbackLocked(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart)
+
+        // Read-only mirror of the Windows updater's resume preflight (Read-ResumePoint and
+        // Assert-ResumeState in workshop-updater.ps1). Null means a resume can be offered;
+        // the updater repeats every check before and after the game exits.
+        internal static string ResumeError(string game, WorkshopInterruptedTransaction entry)
         {
-            ValidateReferences(game, entries);
-            if (entries.Count == 0 || entries.Any(x => !x.CanRollback)) throw new InvalidOperationException("Rollback is not available for every interrupted transaction.");
-            string directory = WorkshopInstallation.CreateTransaction(game, Guid.NewGuid().ToString("N"));
-            File.WriteAllLines(WorkshopPaths.Inside(directory, "operations.tsv"), new[] { Protocol, restart ? "restart" : "stop" }.Concat(entries.Select(x => x.Reference)), new UTF8Encoding(false));
-            return directory;
+            try {
+                if (!entry.Readable) return "The operation list is unreadable.";
+                if (!entry.CanRollback) return entry.RollbackError;
+                if (File.Exists(WorkshopPaths.Inside(entry.Directory, "supersedes.tsv"))) return "A complete repair cannot be resumed.";
+                var rows = ReadOperations(game, entry.Directory);
+                var point = ResumePoint(Journal(entry.Directory), rows.Length);
+                for (int i = 0; i < rows.Length; i++) {
+                    var r = rows[i];
+                    string target = WorkshopPaths.Inside(game, r[1]);
+                    if (System.IO.Directory.Exists(target)) return "Target is a directory: " + r[1];
+                    string current = WorkshopInstallation.CurrentHash(target);
+                    if (i < point.Next) { if (current != r[4]) return "Completed target changed: " + r[1]; continue; }
+                    if (i != point.Pending && current != r[3]) return "Target changed: " + r[1];
+                    if (r[0].EndsWith("write", StringComparison.Ordinal) && WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(entry.Directory, "New/" + i.ToString(CultureInfo.InvariantCulture))) != r[4])
+                        return "Staged file missing or changed: " + r[1];
+                    if (r[3] != "missing" && WorkshopInstallation.CurrentHash(WorkshopPaths.Inside(entry.Directory, "Backup/" + i.ToString(CultureInfo.InvariantCulture))) != r[3])
+                        return "Backup missing or changed: " + r[1];
+                }
+                return null;
+            } catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is UnauthorizedAccessException || ex is ArgumentException) {
+                return ex.Message;
+            }
+        }
+        // Sequential begin/done pairs in ordinal order with at most one trailing begin.
+        // Next: first row not completed; Pending: that row if it was begun, else -1.
+        internal static (int Next, int Pending) ResumePoint(string[] journal, int count)
+        {
+            int next = 0, pending = -1;
+            foreach (string line in journal) {
+                var match = Regex.Match(line, "^(begin|done)\t(0|[1-9][0-9]{0,8})$");
+                if (match.Success) {
+                    int ordinal = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+                    if (match.Groups[1].Value == "begin") {
+                        if (pending >= 0 || ordinal != next) throw new InvalidDataException("Journal progress is not sequential.");
+                        pending = ordinal;
+                    } else {
+                        if (ordinal != pending) throw new InvalidDataException("Journal progress is not sequential.");
+                        pending = -1; next++;
+                    }
+                } else if (Regex.IsMatch(line, "^(begin|done)(\\s|$)")) throw new InvalidDataException("Malformed journal progress marker.");
+            }
+            if (next > count || pending >= count) throw new InvalidDataException("Journal progress exceeds the operation list.");
+            return (next, pending);
         }
         // A superseded transaction must be readable and completely covered by the replacement
         // batch, with the same rule the updater applies before it starts (see WorkshopRepairPlanner).

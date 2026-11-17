@@ -58,8 +58,7 @@ namespace APIShared.Workshop
         internal static Task<WorkshopInstallPlan> PrepareStartupAsync(ulong id, WorkshopAction action) => PrepareCoreAsync(APISharedPlugin.PluginGuid, id, action, true);
         internal static async Task<WorkshopInstallPlan> PrepareSettingsAsync(WorkshopCatalogItem item)
         {
-            if (SettingsInstallPending)
-                throw WorkshopDiagnostics.Blocked(Localization.UiText.Get("Workshop.Options.RestartPending"));
+            // Preview only: the request is applied by the next startup dialog, which plans again.
             CheckStartupConditions(allowActiveMission: true);
             return await PrepareAsync(APISharedPlugin.PluginGuid, item.WorkshopId, WorkshopLocalState.ManualAction(item));
         }

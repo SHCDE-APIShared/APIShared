@@ -56,6 +56,27 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void CastleDefenseWindowClosesExactlyWhereVanillasAllocatorReturnsNoGroup()
+        {
+            // In-game 17.11.2026: Rat with AIV spearman positions and a zero mobile-group window got
+            // "Native defensive allocation failed. class=8 positions=3 returnedGroup=0" after the
+            // role had been offered. 2BC40 cuts only classes 8/10/17 and only for a positive count.
+            var mobile = new[] { (eChimps.CHIMP_TYPE_SPEARMAN, 8), (eChimps.CHIMP_TYPE_MACEMAN, 10), (eChimps.CHIMP_TYPE_ARAB_HORSEMAN, 17) };
+            foreach (var (type, cls) in mobile)
+            {
+                Assert.IsTrue(APIShared.Units.AiMilitary.Native.AiCastleDefenseTables.TryGetMobileWindowClass((int)type, out int actual), type.ToString());
+                Assert.AreEqual(cls, actual, type.ToString());
+            }
+            foreach (var type in new[] { eChimps.CHIMP_TYPE_ARCHER, eChimps.CHIMP_TYPE_PIKEMAN, eChimps.CHIMP_TYPE_KNIGHT,
+                eChimps.CHIMP_TYPE_ARAB_SLINGER, eChimps.CHIMP_TYPE_BEDOUIN_CAMEL_LANCER })
+                Assert.IsFalse(APIShared.Units.AiMilitary.Native.AiCastleDefenseTables.TryGetMobileWindowClass((int)type, out _), type.ToString());
+            Assert.IsTrue(APIShared.Units.AiMilitary.Native.AiCastleDefenseTables.IsDefenseWindowClosed(3, 0));
+            Assert.IsTrue(APIShared.Units.AiMilitary.Native.AiCastleDefenseTables.IsDefenseWindowClosed(1, -1));
+            Assert.IsFalse(APIShared.Units.AiMilitary.Native.AiCastleDefenseTables.IsDefenseWindowClosed(3, 1), "window cut to one group");
+            Assert.IsFalse(APIShared.Units.AiMilitary.Native.AiCastleDefenseTables.IsDefenseWindowClosed(0, 0), "no positions: the fallback slot always yields a group");
+        }
+
+        [TestMethod]
         public void EditorDefersFinalAicButStillRefusesUncrewedMachinesAndWrongSpecialists()
         {
             var option = AiMilitaryCatalog.Option(1, eChimps.CHIMP_TYPE_ARCHER, AiMilitaryRole.SiegeStorm, true);

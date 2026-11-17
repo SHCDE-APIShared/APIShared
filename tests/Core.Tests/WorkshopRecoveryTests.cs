@@ -49,6 +49,70 @@ public sealed class WorkshopRecoveryTests
         foreach (int answer in new[] { 0, 1, 2, -1, 99 }) Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(true, answer));
         Assert.AreEqual(WorkshopRecovery.Choice.CompleteRepair, WorkshopRecovery.Decide(false, 6));
         Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(false, 7));
+        // With resume available only Yes changes its meaning.
+        Assert.AreEqual(WorkshopRecovery.Choice.Resume, WorkshopRecovery.Decide(true, 6, resume: true));
+        Assert.AreEqual(WorkshopRecovery.Choice.Rollback, WorkshopRecovery.Decide(true, 7, resume: true));
+        foreach (int answer in new[] { 0, 1, 2, -1, 99 }) Assert.AreEqual(WorkshopRecovery.Choice.Later, WorkshopRecovery.Decide(true, answer, resume: true));
+        Assert.AreEqual(WorkshopRecovery.Choice.CompleteRepair, WorkshopRecovery.Decide(false, 6, resume: true));
+    }
+    [TestMethod] public void ResumePointAcceptsOnlySequentialProgress()
+    {
+        Assert.AreEqual((0, -1), WorkshopRecovery.ResumePoint(new[] { "applying" }, 2));
+        Assert.AreEqual((0, 0), WorkshopRecovery.ResumePoint(new[] { "applying", "begin\t0", "failure x", "trace t; y" }, 2));
+        Assert.AreEqual((1, 1), WorkshopRecovery.ResumePoint(new[] { "applying", "begin\t0", "pause p", "done\t0", "begin\t1" }, 2));
+        Assert.AreEqual((2, -1), WorkshopRecovery.ResumePoint(new[] { "applying", "begin\t0", "done\t0", "begin\t1", "done\t1" }, 2));
+        foreach (var journal in new[] {
+            new[] { "begin\t1" }, new[] { "begin\t0", "begin\t0" }, new[] { "done\t0" }, new[] { "begin\t0", "done\t1" },
+            new[] { "begin\t00" }, new[] { "begin 0" }, new[] { "begin" }, new[] { "begin\t0", "done\t0", "begin\t1", "done\t1", "begin\t2" } })
+            Assert.ThrowsExactly<InvalidDataException>(() => WorkshopRecovery.ResumePoint(journal, 2), string.Join("|", journal));
+    }
+    [TestMethod] public void ResumeIsOfferedOnlyWithIntactStagedCopiesBackupsAndTargets()
+    {
+        // Row 0 completed, receipt row 1 begun with partial bytes.
+        Write(old, "Backup/0", "original");
+        Write(old, "New/0", "new payload"); Write(old, "New/1", "new receipt");
+        string before = WorkshopInventory.Hash(Path.Combine(old, "Backup/0"));
+        string after = WorkshopInventory.Hash(Path.Combine(old, "New/0")), receiptAfter = WorkshopInventory.Hash(Path.Combine(old, "New/1"));
+        Write(old, "operations.tsv", WorkshopTransaction.BatchProtocol + "\r\nwrite\t" + Target + "\t0\t" + before + "\t" + after +
+            "\r\nreceipt-write\t" + Receipt + "\t1\tmissing\t" + receiptAfter + "\r\n");
+        Write(game, Target, "new payload"); Write(game, Receipt, "partial receipt");
+        Write(old, "journal.log", "applying\r\nbegin\t0\r\ndone\t0\r\nbegin\t1\r\n");
+        var entry = WorkshopRecovery.Inspect(game).Single();
+        Assert.IsTrue(entry.CanRollback);
+        Assert.IsNull(WorkshopRecovery.ResumeError(game, entry));
+        string request = WorkshopRecovery.StageResume(game, entry);
+        CollectionAssert.AreEqual(new[] { WorkshopRecovery.Protocol, WorkshopRecovery.ResumeDisposition, entry.Reference }, File.ReadAllLines(Path.Combine(request, "operations.tsv")));
+        Directory.Delete(request, true);
+
+        File.Delete(Path.Combine(old, "New/1"));
+        StringAssert.Contains(WorkshopRecovery.ResumeError(game, WorkshopRecovery.Inspect(game).Single()), "Staged file missing");
+        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopRecovery.StageResume(game, WorkshopRecovery.Inspect(game).Single()));
+        Write(old, "New/1", "new receipt");
+        Write(game, Target, "changed by player");
+        StringAssert.Contains(WorkshopRecovery.ResumeError(game, WorkshopRecovery.Inspect(game).Single()), "Completed target changed");
+        Write(game, Target, "new payload");
+        Write(old, "journal.log", "applying\r\nbegin\t0\r\ndone\t0\r\nbegin\t1\r\nbegin\t1\r\n");
+        StringAssert.Contains(WorkshopRecovery.ResumeError(game, WorkshopRecovery.Inspect(game).Single()), "not sequential");
+        Write(old, "journal.log", "applying\r\nbegin\t0\r\ndone\t0\r\nbegin\t1\r\n");
+        Write(old, "supersedes.tsv", "x"); Write(old, "supersedes.sha256", "x");
+        StringAssert.Contains(WorkshopRecovery.ResumeError(game, WorkshopRecovery.Inspect(game).Single()), "complete repair");
+    }
+    [TestMethod] public void StaleUpdaterRecordIsDescribedForDiagnosticsOnly()
+    {
+        long ticks = new DateTime(2026, 11, 17, 12, 0, 0, DateTimeKind.Utc).Ticks;
+        string text = string.Join("\t", WorkshopUpdaterActivity.Header, "windows", "4242", ticks.ToString(), "install", "apply", new string('b', 32), new string('c', 64));
+        Assert.AreEqual("platform=windows; pid=4242; processStart=2026-11-17 12:00:00.000Z; mode=install; phase=apply; transaction=" + new string('b', 32),
+            WorkshopUpdaterActivity.DescribeRecord(text));
+        Assert.IsNull(WorkshopUpdaterActivity.DescribeRecord(""));
+        Assert.IsNull(WorkshopUpdaterActivity.DescribeRecord("garbage"));
+        string state = Path.Combine(game, "_APIShared/Workshop");
+        Assert.IsNull(WorkshopUpdaterActivity.DescribeStaleWindows(game));
+        Write(state, "apply.lock", text);
+        StringAssert.Contains(WorkshopUpdaterActivity.DescribeStaleWindows(game), "phase=apply");
+        using (File.Open(Path.Combine(state, "apply.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+            Assert.IsNull(WorkshopUpdaterActivity.DescribeStaleWindows(game), "A live writer is not stale.");
+        Write(state, "apply.lock", "");
+        Assert.IsNull(WorkshopUpdaterActivity.DescribeStaleWindows(game));
     }
     [TestMethod] public void LargeUserCaseWithoutFailureOrReceiptHasReadableProgressAndFreshConsent()
     {

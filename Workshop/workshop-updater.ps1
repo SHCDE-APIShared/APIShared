@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$GameRoot, [string]$Transaction, [string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam, [string]$SupersedesHash = '', [switch]$Maintain, [switch]$RequireRunningGame, [string]$SourceManifest, [string]$SourceManifestHash)
+param([Parameter(Mandatory=$true)][string]$GameRoot, [string]$Transaction, [string]$OperationsHash, [switch]$Recover, [switch]$RestartSteam, [string]$SupersedesHash = '', [switch]$Maintain, [switch]$ProgressWindow, [string]$Language = 'en')
 $ErrorActionPreference = 'Stop'
 if ($env:SCDEModManagerLaunchId) { throw 'Externally managed installation; no changes are allowed.' }
 # Runs in a separate process. Receipts form the final phase and roll back first.
@@ -62,19 +62,10 @@ function Get-TransactionDirectories {
     }
 }
 function Hash([string]$Path) {
+    Pump-UpdaterProgress
     if (-not [IO.File]::Exists($Path)) { return 'missing' }
     $stream=[IO.File]::OpenRead($Path); $sha=[Security.Cryptography.SHA256]::Create()
     try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose(); $stream.Dispose() }
-}
-function Assert-ConfirmedSource {
-    if (-not $RequireRunningGame) { return }
-    if (-not $SourceManifest -or [IO.Path]::GetFullPath($SourceManifest) -cne $SourceManifest -or
-        [IO.Path]::GetFileName($SourceManifest) -cne 'apishared-workshop.json' -or $SourceManifestHash -cnotmatch '^[a-f0-9]{64}$') {
-        throw 'Invalid confirmed Workshop manifest reference.'
-    }
-    Assert-Unlinked $SourceManifest
-    if ((Hash $SourceManifest) -cne $SourceManifestHash) { throw 'Steam download changed; confirm a new Workshop installation preview.' }
-    if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence.' }
 }
 function Journal([string]$Text) {
     if ($Text.StartsWith('failure ',[StringComparison]::Ordinal)) { $Text = 'failure '+[DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss.fff')+'; step='+$script:step+'; '+$Text.Substring(8) }
@@ -108,6 +99,7 @@ function Wait-GameExit {
             $script:keepInterrupted=$true; throw 'Game exit wait exceeded 120 seconds; keep transaction backups and confirm recovery on the next start.'
         }
         if ($cancelPath -and [IO.File]::Exists($cancelPath)) { $script:keepInterrupted=$true; throw 'Updater handoff cancelled while waiting for game exit.' }
+        Pump-UpdaterProgress
         Start-Sleep -Milliseconds 200
     }
     $script:pauseMilliseconds += $watch.Elapsed.TotalMilliseconds
@@ -117,6 +109,11 @@ function Wait-GameExit {
     if ((Hash $operationsPath) -cne $OperationsHash) { $script:keepInterrupted=$true; throw 'Operations changed during game-exit pause.' }
     if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { $script:keepInterrupted=$true; throw 'Replacement references changed during game-exit pause.' }
     foreach ($reference in $script:recoveryReferences) { $null=Assert-Reference $reference }
+    if ($script:resumeState) {
+        $resume=$script:resumeState
+        if ((Hash (Inside $resume.Directory 'operations.tsv')) -cne $resume.OperationsHash) { throw 'Resumed operations changed during game-exit pause.' }
+        $null=Assert-ResumeState $resume.Directory $resume.Rows $resume.Next $resume.Partial
+    }
     if ($script:activityMode -eq 'install' -and $phase -ne 'restore') {
         foreach ($row in $rows) {
             $expected=if($phase -eq 'apply' -and $started -contains $row.Ordinal){$row.After}else{$row.Before}
@@ -222,6 +219,200 @@ function Completed-Maintenance {
     try { Maintenance-Completed $Transaction } catch { Write-Output ('Workshop maintenance completion warning: '+$_.Exception.Message) }
     try { Invoke-WorkshopMaintenance } catch { Write-Output ('Workshop maintenance warning after completion: '+$_.Exception.Message) }
 }
+# Timestamped diagnostic line. Readers ignore it: progress, recovery and maintenance
+# only interpret begin/done/applying/committed/restored/failure. Never written after a
+# commit marker of the same journal, so committed history keeps its final content.
+function Journal-Trace([string]$Text) { if ($journalPath) { Journal ('trace '+[DateTime]::UtcNow.ToString('o')+'; '+$Text) } }
+function Journal-Original([string]$Path,[string]$Text) { $journalPath=$Path; Journal $Text }
+# Optional progress window (-ProgressWindow, Windows only). It tells the player that files
+# are being written after the game closed. Presentation only: any failure disables it,
+# is journaled as ui-warning and never changes the installation result. The texts are
+# ASCII because Windows PowerShell reads this BOM-less script with the ANSI code page.
+$script:progress=$null; $script:progressFailed=$false; $script:progressClosing=$false; $script:progressRestoring=$false; $script:resumeState=$null
+# Intro names what is installed where, so the player can tell this window from foreign software.
+$script:uiText = if ($Language -eq 'de') {
+    @{Title='Stronghold Crusader - Workshop-Mods werden installiert'
+      Intro='Abonnierte Stronghold Crusader Workshop-Mods werden in den BepInEx-Ordner des Spiels installiert:'
+      IntroRestore='Der vorherige Stand der Stronghold Crusader Workshop-Mods im BepInEx-Ordner des Spiels wird wiederhergestellt:'
+      Warning='Bitte den PC nicht ausschalten und das Spiel nicht starten, solange dieses Fenster angezeigt wird.'
+      Backup='Bisherige Dateien werden gesichert'; Apply='Mod-Dateien werden installiert'; Restore='Der vorherige Stand wird wiederhergestellt'; Finish='Abschluss'}
+} else {
+    @{Title='Stronghold Crusader - Installing Workshop mods'
+      Intro='Subscribed Stronghold Crusader Workshop mods are being installed into the game''s BepInEx folder:'
+      IntroRestore='The previous state of the Stronghold Crusader Workshop mods in the game''s BepInEx folder is being restored:'
+      Warning='Do not turn off the PC or start the game while this window is shown.'
+      Backup='Backing up current files'; Apply='Installing mod files'; Restore='Restoring the previous state'; Finish='Finishing'}
+}
+function Show-UpdaterProgress([string]$Phase,[int]$Value=-1,[int]$Maximum=0) {
+    if (-not $ProgressWindow -or $script:progressFailed) { return }
+    try {
+        if (-not $script:progress) {
+            Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+            $form=[Windows.Forms.Form]::new()
+            $form.Text=$script:uiText.Title; $form.FormBorderStyle=[Windows.Forms.FormBorderStyle]::FixedDialog
+            $form.ControlBox=$false; $form.MaximizeBox=$false; $form.MinimizeBox=$false; $form.ShowInTaskbar=$true; $form.TopMost=$true
+            $form.StartPosition=[Windows.Forms.FormStartPosition]::CenterScreen; $form.ClientSize=[Drawing.Size]::new(600,230)
+            # Closing would only hide progress while the updater continues; keep it until the end.
+            $form.Add_FormClosing({ param($source,$e) if (-not $script:progressClosing) { $e.Cancel=$true } })
+            $label=[Windows.Forms.Label]::new(); $label.SetBounds(16,14,568,166)
+            $bar=[Windows.Forms.ProgressBar]::new(); $bar.SetBounds(16,190,568,24)
+            $form.Controls.Add($label); $form.Controls.Add($bar)
+            $script:progress=[pscustomobject]@{Form=$form;Label=$label;Bar=$bar}
+            # A launcher's hidden STARTUPINFO can swallow the first ShowWindow call of this process.
+            $form.Show(); $form.Hide(); $form.Show()
+        }
+        if ($Phase -eq 'Restore') { $script:progressRestoring=$true }
+        $text=$script:uiText[$Phase]; if ($Maximum -gt 0 -and $Value -ge 0) { $text+=' ('+$Value+'/'+$Maximum+')' }
+        $intro=if ($script:progressRestoring) { $script:uiText.IntroRestore } else { $script:uiText.Intro }
+        $line=[Environment]::NewLine
+        $script:progress.Label.Text=$intro+$line+[IO.Path]::Combine($GameRoot,'BepInEx','plugins')+$line+$line+$script:uiText.Warning+$line+$line+$text
+        $bar=$script:progress.Bar
+        if ($Maximum -gt 0 -and $Value -ge 0) { $bar.Style=[Windows.Forms.ProgressBarStyle]::Continuous; $bar.Maximum=$Maximum; $bar.Value=[Math]::Min($Value,$Maximum) }
+        else { $bar.Style=[Windows.Forms.ProgressBarStyle]::Marquee }
+        [Windows.Forms.Application]::DoEvents()
+    } catch {
+        $script:progressFailed=$true; $message=$_.Exception.Message
+        Close-UpdaterProgress
+        try { if ($journalPath) { Journal ('ui-warning '+$message) } } catch { }
+    }
+}
+function Pump-UpdaterProgress { if ($script:progress) { try { [Windows.Forms.Application]::DoEvents() } catch { } } }
+function Close-UpdaterProgress {
+    if (-not $script:progress) { return }
+    $script:progressClosing=$true
+    try { $script:progress.Form.Close(); $script:progress.Form.Dispose() } catch { }
+    $script:progress=$null
+}
+function Restart-Game {
+    Close-UpdaterProgress
+    try { $launch=[Diagnostics.ProcessStartInfo]::new('steam://rungameid/3024040'); $launch.UseShellExecute=$true; [void][Diagnostics.Process]::Start($launch) }
+    catch { Journal ('restart-warning '+$_.Exception.Message) }
+}
+function Remove-EmptyDeletedFolders($Rows) {
+    try {
+        foreach ($row in $Rows | Where-Object { $_.Kind -eq 'delete' }) {
+            $directory = [IO.Path]::GetDirectoryName($row.Target)
+            while ($directory -and $directory.StartsWith((Inside $GameRoot 'BepInEx/plugins')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
+                Assert-Unlinked $directory
+                if (-not [IO.Directory]::Exists($directory) -or @([IO.Directory]::EnumerateFileSystemEntries($directory)).Count) { break }
+                [IO.Directory]::Delete($directory,$false); $directory = [IO.Path]::GetDirectoryName($directory)
+            }
+        }
+    } catch { Journal ('cleanup-warning '+$_.Exception.Message) }
+}
+# Resume finishes one interrupted installation with its own staged copies instead of
+# restoring it. It is defined only for a sequential journal (begin/done pairs in ordinal
+# order, at most one trailing begin) whose completed targets hold their new bytes, whose
+# remaining targets still hold their original bytes and whose staged copies and backups
+# are intact. The original journal keeps recording begin/done, so a resume that is itself
+# interrupted remains recoverable by rollback or another resume.
+function Read-ResumePoint([string]$Directory,[int]$Count) {
+    $next=0; $pending=-1
+    foreach ($line in @(Read-Journal $Directory)) {
+        if ($line -cmatch "^(begin|done)`t(0|[1-9][0-9]{0,8})$") {
+            $ordinal=[int]$matches[2]
+            if ($matches[1] -ceq 'begin') { if ($pending -ge 0 -or $ordinal -ne $next) { throw 'Journal progress is not sequential.' }; $pending=$ordinal }
+            else { if ($ordinal -ne $pending) { throw 'Journal progress is not sequential.' }; $pending=-1; $next++ }
+        } elseif ($line -cmatch '^(begin|done)(\s|$)') { throw 'Malformed journal progress marker.' }
+    }
+    if ($next -gt $Count -or $pending -ge $Count) { throw 'Journal progress exceeds the operation list.' }
+    return [pscustomobject]@{Next=$next;Pending=$pending}
+}
+# $Next is the first row not completed; $Partial a begun row that may hold partial bytes
+# (-1 for none). Returns the current hash of that row.
+function Assert-ResumeState([string]$Directory,$Rows,[int]$Next,[int]$Partial) {
+    $partialHash=$null
+    for ($i=0; $i -lt $Rows.Count; $i++) {
+        $r=$Rows[$i]; $target=Inside $GameRoot $r[1]
+        if ([IO.Directory]::Exists($target)) { throw "Resume target is a directory: $($r[1])" }
+        $current=Hash $target
+        if ($i -lt $Next) { if ($current -cne $r[4]) { throw "Completed target changed: $($r[1])" }; continue }
+        if ($i -eq $Partial) { $partialHash=$current } elseif ($current -cne $r[3]) { throw "Target changed: $($r[1])" }
+        if ($r[0] -clike '*write' -and (Hash (Inside $Directory ('New/'+$i))) -cne $r[4]) { throw "Staged file missing or changed: $($r[1])" }
+        if ($r[3] -cne 'missing' -and (Hash (Inside $Directory ('Backup/'+$i))) -cne $r[3]) { throw "Backup missing or changed: $($r[1])" }
+    }
+    return $partialHash
+}
+function Assert-NoOtherUnfinished([string]$Directory) {
+    foreach ($other in @(Get-TransactionDirectories)) {
+        if ($other -eq $Directory -or $other -eq $Transaction) { continue }
+        $history=@(Read-Journal $other)
+        if ($history -ccontains 'applying' -and $history -cnotcontains 'committed' -and $history -cnotcontains 'restored' -and -not (Superseded $other)) { throw "Another unfinished transaction requires recovery first: $other" }
+    }
+}
+function Invoke-Resume($References) {
+    if ($References.Count -ne 1) { throw 'Resume requires exactly one interrupted transaction.' }
+    $reference=$References[0]
+    $original=Assert-Reference $reference
+    $history=@(Read-Journal $original)
+    if ($history -cnotcontains 'applying' -or $history -ccontains 'committed' -or $history -ccontains 'restored') { throw 'Resume target is no longer interrupted.' }
+    if ([IO.File]::Exists((Inside $original 'supersedes.tsv'))) { throw 'A complete repair cannot be resumed.' }
+    Assert-NoOtherUnfinished $original
+    $rows=@(Read-RecoveryRows $original)
+    $point=Read-ResumePoint $original $rows.Count
+    # The full hash check of targets, staged copies and backups runs after the game exits
+    # (below): before readiness it could exceed the launcher's 20-second handoff budget for
+    # large packages. The game already ran the same check (WorkshopRecovery.ResumeError).
+    [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
+    Publish-Activity 'waiting'
+    Journal-Trace ('handoff ready; pid='+$PID+'; mode=recover; disposition=resume; completed='+$point.Next+'/'+$rows.Count)
+    $script:step='resume waiting for game exit'
+    $cancelPath=Inside $Transaction 'cancel.flag'
+    Wait-GameExit
+    if ([IO.File]::Exists($cancelPath)) { throw 'Resume handoff cancelled.' }
+    if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence; restart and retry recovery.' }
+    Journal-Trace 'game exit confirmed'
+    Show-UpdaterProgress 'Apply' $point.Next $rows.Count
+    $script:step='resume final validation and interrupted-file backup'
+    $original=Assert-Reference $reference
+    Assert-NoOtherUnfinished $original
+    $point=Read-ResumePoint $original $rows.Count
+    $partial=Assert-ResumeState $original $rows $point.Next $point.Pending
+    if ($point.Pending -ge 0 -and $partial -cne 'missing' -and $partial -cne $rows[$point.Pending][3] -and $partial -cne $rows[$point.Pending][4]) {
+        $saved=Inside $Transaction ('RecoveryBackup/'+[IO.Path]::GetFileName($original)+'/'+$point.Pending)
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($saved)); [IO.File]::Copy((Inside $GameRoot $rows[$point.Pending][1]),$saved,$false)
+        if ((Hash $saved) -cne $partial) { throw 'Interrupted-file backup verification failed.' }
+    }
+    $originalJournal=Inside $original 'journal.log'
+    # The original journal changes from here on, so its pinned reference hash no longer
+    # applies; a pause revalidates the progress state against the targets instead.
+    $script:recoveryReferences=@()
+    $script:resumeState=[pscustomobject]@{Directory=$original;Rows=$rows;OperationsHash=$reference[1];Next=$point.Next;Partial=$point.Pending}
+    Journal 'resuming'
+    Publish-Activity 'apply'
+    $script:step='resume installation writes and receipt commit'
+    for ($i=$point.Next; $i -lt $rows.Count; $i++) {
+        Show-UpdaterProgress 'Apply' $i $rows.Count
+        $script:resumeState.Next=$i
+        Wait-GameExit
+        $r=$rows[$i]; $target=Inside $GameRoot $r[1]
+        if ($i -ne $point.Pending) {
+            if ((Hash $target) -cne $r[3]) { throw "Target changed: $($r[1])" }
+            Journal-Original $originalJournal ("begin`t"+$i)
+        }
+        if ($r[0] -clike '*write') {
+            $new=Inside $original ('New/'+$i); Assert-Unlinked $new
+            if ((Hash $new) -cne $r[4]) { throw 'Staged file changed.' }
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)); $null=Inside $GameRoot $r[1]
+            [IO.File]::Copy($new,$target,$true)
+        } elseif ([IO.File]::Exists($target)) { [IO.File]::Delete($target) }
+        if ((Hash $target) -cne $r[4]) { throw 'Write verification failed.' }
+        Journal-Original $originalJournal ("done`t"+$i)
+        $script:resumeState.Partial=-1
+        if (($i+1) % 100 -eq 0) { Journal-Trace ('applied='+($i+1)+'/'+$rows.Count) }
+    }
+    if ((Hash (Inside $original 'operations.tsv')) -cne $reference[1]) { throw 'Operations changed before commit.' }
+    Publish-Activity 'committing'
+    Journal-Original $originalJournal 'committed'
+    try { Maintenance-Completed $original } catch { Write-Output ('Workshop maintenance completion warning: '+$_.Exception.Message) }
+    Journal 'committed'
+    $script:resumeState=$null
+    Show-UpdaterProgress 'Finish'
+    Completed-Maintenance
+    Remove-EmptyDeletedFolders @($rows | Where-Object { $_[0] -ceq 'delete' } | ForEach-Object { [pscustomobject]@{Kind='delete';Target=(Inside $GameRoot $_[1])} })
+    # The game launcher always passes -RestartSteam; manual and fixture runs do not restart.
+    if ($RestartSteam) { Restart-Game }
+}
 $lock = $null
 $script:activityMode='maintenance'; $script:pauseMilliseconds=0; $script:keepInterrupted=$false; $script:recoveryReferences=@()
 $ownerProcess=[Diagnostics.Process]::GetCurrentProcess()
@@ -259,10 +450,11 @@ try {
         $script:activityMode='recover'
         $script:step = 'recovery preflight'
         $null = @(Get-TransactionDirectories)
-        if ($lines[1] -cnotin @('restart','stop')) { throw 'Invalid recovery request.' }
-        $directories = @(); $restore = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        if ($lines[1] -cnotin @('restart','stop','resume')) { throw 'Invalid recovery request.' }
         $references = @($lines | Select-Object -Skip 2 | ForEach-Object { Read-Reference $_ })
         $script:recoveryReferences=$references
+        if ($lines[1] -ceq 'resume') { Invoke-Resume $references; exit 0 }
+        $directories = @(); $restore = @(); $targets = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($reference in $references) {
             $directory = Assert-Reference $reference
             if (@(Read-Journal $directory) -notcontains 'applying' -or @(Read-Journal $directory) -contains 'committed' -or @(Read-Journal $directory) -contains 'restored') { throw 'Recovery target is no longer interrupted.' }
@@ -271,11 +463,14 @@ try {
         }
         [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
         Publish-Activity 'waiting'
+        Journal-Trace ('handoff ready; pid='+$PID+'; mode=recover; disposition='+$lines[1])
         $script:step = 'recovery waiting for game exit'
         $cancelPath = Inside $Transaction 'cancel.flag'
         Wait-GameExit
         if ([IO.File]::Exists($cancelPath)) { throw 'Recovery handoff cancelled.' }
         if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence; restart and retry recovery.' }
+        Journal-Trace 'game exit confirmed'
+        Show-UpdaterProgress 'Restore'
         $restore = @()
         $script:step = 'recovery final validation and interrupted-file backup'
         foreach ($reference in $references) { $directory = Assert-Reference $reference; $restore += @(Get-RestoreRows $directory) }
@@ -297,8 +492,9 @@ try {
             try { Journal 'restored' } finally { $journalPath = $requestJournal }
         }
         Journal 'committed'
+        Show-UpdaterProgress 'Finish'
         Completed-Maintenance
-        if ($lines[1] -eq 'restart') { $launch=[Diagnostics.ProcessStartInfo]::new('steam://rungameid/3024040'); $launch.UseShellExecute=$true; [void][Diagnostics.Process]::Start($launch) }
+        if ($lines[1] -eq 'restart') { Restart-Game }
         exit 0
     }
     if ($lines.Length -lt 2 -or $lines[0] -notin @('APISHARED-WORKSHOP-1','APISHARED-WORKSHOP-2')) { throw 'Unknown transaction protocol.' }
@@ -350,35 +546,40 @@ try {
     }
     $started = @($prior | Where-Object { $_ -match '^begin\t[0-9]+$' } | ForEach-Object { $_.Split([char]9)[1] })
     if ($started.Count -and -not $Recover) { throw 'Interrupted transaction: run with -Recover to restore its backup.' }
-    if ($RequireRunningGame -and -not (Game-Running)) { throw 'Calling game is not visible to the process detector; no handoff.' }
-    Assert-ConfirmedSource
     [IO.File]::WriteAllText((Inside $Transaction 'ready.flag'),$OperationsHash,[Text.UTF8Encoding]::new($false))
     Publish-Activity 'waiting'
+    Journal-Trace ('handoff ready; pid='+$PID+'; mode='+$script:activityMode+'; operations='+$rows.Count)
     # Legacy manual -Recover is an explicit new recovery consent, not the old
     # cancelled installation. Dialog recovery uses a fresh request directory.
     $cancelPath=Inside $Transaction $(if ($Recover) { 'recovery-cancel.flag' } else { 'cancel.flag' })
     Wait-GameExit
     if ([IO.File]::Exists($cancelPath)) { throw 'Handoff cancelled; no installation started.' }
     if ([IO.Directory]::Exists((Inside $GameRoot '_SE/.staging'))) { throw 'Script Extender staging takes precedence.' }
-    Assert-ConfirmedSource
+    Journal-Trace 'game exit confirmed'
     if (-not $Recover) {
         Publish-Activity 'backup'
         $script:step = 'installation validation and backup'
         if ($SupersedesHash -and (Hash $supersedesPath) -cne $SupersedesHash) { throw 'Replacement references changed before application.' }
         foreach ($line in $(if ($SupersedesHash) { [IO.File]::ReadAllLines($supersedesPath) })) { $null = Assert-Reference (Read-Reference $line) }
         # Full validation and backup precede any change to installed files.
+        $count = 0
         foreach ($row in $rows) {
+            Show-UpdaterProgress 'Backup' $count $rows.Count; $count++
             Wait-GameExit
             if ((Hash $row.Target) -ne $row.Before -or [IO.Directory]::Exists($row.Target)) { throw "Target changed: $($row.Relative)" }
             if ($row.Before -ne 'missing') { [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($row.Backup)); [IO.File]::Copy($row.Target,$row.Backup,$true); if ((Hash $row.Backup) -ne $row.Before) { throw 'Backup verification failed.' } }
         }
-        Assert-ConfirmedSource
+        Journal-Trace 'backup complete'
         Journal 'applying'
         Publish-Activity 'apply'
         $script:step = 'installation writes and receipt commit'
         $committed = $false
+        $count = 0
         try {
             foreach ($row in $rows) {
+                Show-UpdaterProgress 'Apply' $count $rows.Count
+                if ($count -and $count % 100 -eq 0) { Journal-Trace ('applied='+$count+'/'+$rows.Count) }
+                $count++
                 Wait-GameExit
                 $null = Inside $GameRoot $row.Relative
                 if ((Hash $row.Target) -ne $row.Before) { throw "Target changed: $($row.Relative)" }
@@ -404,25 +605,15 @@ try {
         # Commit is the irreversible success boundary. Maintenance, empty-folder
         # cleanup and Steam restart can never enter the installation rollback.
         if ($committed) {
+            Show-UpdaterProgress 'Finish'
             Completed-Maintenance
-            try {
-            foreach ($row in $rows | Where-Object { $_.Kind -eq 'delete' }) {
-                $directory = [IO.Path]::GetDirectoryName($row.Target)
-                while ($directory -and $directory.StartsWith((Inside $GameRoot 'BepInEx/plugins')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
-                    Assert-Unlinked $directory
-                    if (-not [IO.Directory]::Exists($directory) -or @([IO.Directory]::EnumerateFileSystemEntries($directory)).Count) { break }
-                    [IO.Directory]::Delete($directory,$false); $directory = [IO.Path]::GetDirectoryName($directory)
-                }
-            }
-            } catch { Journal ('cleanup-warning '+$_.Exception.Message) }
-            if ($RestartSteam) {
-                try { $launch=[Diagnostics.ProcessStartInfo]::new('steam://rungameid/3024040'); $launch.UseShellExecute=$true; [void][Diagnostics.Process]::Start($launch) }
-                catch { Journal ('restart-warning '+$_.Exception.Message) }
-            }
+            Remove-EmptyDeletedFolders $rows
+            if ($RestartSteam) { Restart-Game }
             exit 0
         }
     }
     if ($Recover) {
+        Show-UpdaterProgress 'Restore'
         Publish-Activity 'restore'
         $script:step = 'rollback preflight and restore'
         $restore = @(Get-RestoreRows $Transaction)
@@ -431,4 +622,4 @@ try {
         Journal 'restored'; Completed-Maintenance; exit 2
     }
 } catch { if ($journalPath) { Journal ('failure '+$_.Exception.Message) }; Write-Error $_; exit 1 }
-finally { if ($lock) { try { $lock.SetLength(0); $lock.Flush($true) } finally { $lock.Dispose() } } }
+finally { Close-UpdaterProgress; if ($lock) { try { $lock.SetLength(0); $lock.Flush($true) } finally { $lock.Dispose() } } }

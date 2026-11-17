@@ -39,7 +39,7 @@ function Maintenance-Scan {
             $node.Resolved=$node.Terminal
             if ([IO.File]::Exists((Inside $directory 'operations.sha256')) -and [IO.File]::ReadAllText((Inside $directory 'operations.sha256')) -cne (Hash $operations)) { throw 'Operation hash pin changed.' }
             if ($lines.Count -ge 3 -and $lines[0] -ceq 'APISHARED-WORKSHOP-RECOVERY-1') {
-                if ($lines[1] -cnotin @('restart','stop')) { throw 'Invalid recovery disposition.' }
+                if ($lines[1] -cnotin @('restart','stop','resume')) { throw 'Invalid recovery disposition.' }
                 $node.Request=$true
                 $node.Refs=@($lines | Select-Object -Skip 2 | ForEach-Object { Read-Reference $_ })
                 foreach ($file in $node.Files) {

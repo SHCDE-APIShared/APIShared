@@ -56,4 +56,45 @@ public sealed class WorkshopLocalStateTests
             Directory.Delete(game, recursive: true);
         }
     }
+
+    [TestMethod]
+    public void RequestedInstallationIsOfferedAtStartupLikeTheExplicitChoice()
+    {
+        var item = new WorkshopCatalogItem {
+            IsSubscribed = true, CanInstall = true,
+            Package = new WorkshopPackage { Version = "1.0.35", Files = Array.Empty<WorkshopFile>() }
+        };
+        // Not installed: no automatic offer, but a request installs it.
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, true));
+        Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, false, requested: true));
+        // Modified installation with disabled offers: the request still applies the explicit action.
+        item.Receipt = new WorkshopReceipt { Version = "1.0.32", Files = Array.Empty<WorkshopFile>() };
+        Assert.AreEqual(WorkshopAction.Update, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, false, requested: true));
+        item.Receipt.Version = "1.0.35";
+        Assert.AreEqual(WorkshopAction.Reinstall, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, false, requested: true));
+        // A package that cannot be installed now keeps waiting.
+        item.CanInstall = false;
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, true, requested: true));
+        item.CanInstall = true; item.Package = null;
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, true, requested: true));
+    }
+
+    [TestMethod]
+    public void InstallationRequestsSurviveMalformedEntriesAndResolveOnlyByCommit()
+    {
+        const string transaction = "0123456789abcdef0123456789abcdef";
+        var requests = WorkshopLocalState.ParseRequests(" 42 ,7:" + transaction + ",0,abc,-1,9:XYZ,8:" + transaction + ":x,42:" + transaction + ",");
+        CollectionAssert.AreEquivalent(new ulong[] { 7, 42 }, requests.Keys.ToArray());
+        Assert.AreEqual(transaction, requests[7]);
+        Assert.IsNull(requests[42], "A pending entry is not replaced by a later handed-off duplicate.");
+        Assert.AreEqual("7:" + transaction + ",42", WorkshopLocalState.FormatRequests(requests));
+        Assert.AreEqual(0, WorkshopLocalState.ParseRequests(null).Count);
+        Assert.AreEqual(WorkshopLocalState.RequestOutcome.Fulfilled, WorkshopLocalState.ResolveRequest(new[] { "applying", "begin\t0", "done\t0", "committed" }));
+        foreach (var journal in new[] { null, new string[0], new[] { "applying", "failure x", "restored" }, new[] { "failure Handoff cancelled" }, new[] { "applying", "begin\t0" } })
+            Assert.AreEqual(WorkshopLocalState.RequestOutcome.Offer, WorkshopLocalState.ResolveRequest(journal));
+        // A committed complete repair reinstalled the item although the original never commits.
+        Assert.AreEqual(WorkshopLocalState.RequestOutcome.Fulfilled, WorkshopLocalState.ResolveRequest(new[] { "applying", "begin\t0" }, superseded: true));
+        CollectionAssert.AreEquivalent(new ulong[] { 3, 5 }, WorkshopLocalState.ParseIds("5, 3,x,0,5").ToArray());
+        Assert.AreEqual("3,5", WorkshopLocalState.FormatIds(new ulong[] { 5, 3, 5 }));
+    }
 }

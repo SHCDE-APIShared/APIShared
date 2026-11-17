@@ -68,18 +68,27 @@ namespace APIShared.Workshop
             return new CleanRepair { Plans = plans.AsReadOnly(), Retained = catalog.Where(c => c.IsSubscribed && c.Package != null).ToArray(),
                 Superseded = readable, Archived = unreadable };
         }
-        internal static async Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart, WorkshopStartupAuthorization authorization)
+        internal static Task RollbackAsync(IReadOnlyList<WorkshopInterruptedTransaction> entries, bool restart, WorkshopStartupAuthorization authorization) =>
+            RecoveryRequestAsync(() => WorkshopRecovery.StageRollback(Paths.GameRootPath, entries, restart), authorization,
+                restart ? "confirmed recovery with restart" : "confirmed rollback and stop");
+
+        // Finishes the single interrupted installation with its staged files (Windows only;
+        // the caller checks WorkshopRecovery.ResumeError first) and restarts the game.
+        internal static Task ResumeAsync(WorkshopInterruptedTransaction entry, WorkshopStartupAuthorization authorization) =>
+            RecoveryRequestAsync(() => WorkshopRecovery.StageResume(Paths.GameRootPath, entry), authorization, "confirmed resume with restart");
+
+        private static async Task RecoveryRequestAsync(Func<string> stage, WorkshopStartupAuthorization authorization, string reason)
         {
             authorization.Validate();
             CheckStartupConditions();
-            string transaction = await Task.Run(() => WorkshopRecovery.StageRollback(Paths.GameRootPath, entries, restart));
+            string transaction = await Task.Run(stage);
             try {
                 authorization.Validate();
                 CheckStartupConditions();
                 await WorkshopUpdaterLauncher.Launch(transaction, Paths.GameRootPath);
                 CheckStartupConditions();
                 authorization.ConfirmHandoff(transaction);
-                authorization.Quit(Log, UnityEngine.Application.Quit, restart ? "confirmed recovery with restart" : "confirmed rollback and stop");
+                authorization.Quit(Log, UnityEngine.Application.Quit, reason);
             } catch { WorkshopUpdaterLauncher.Cancel(transaction); throw; }
         }
     }

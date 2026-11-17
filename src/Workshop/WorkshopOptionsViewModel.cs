@@ -19,6 +19,7 @@ namespace APIShared.Workshop
         private readonly RelayCommand prepare;
         private readonly RelayCommand confirm;
         private readonly RelayCommand cancel;
+        private readonly RelayCommand withdraw;
         private WorkshopOption selected;
         private WorkshopInstallPlan preview;
         private bool busy, visible;
@@ -46,10 +47,13 @@ namespace APIShared.Workshop
         private WorkshopOptionsViewModel()
         {
             refresh = new RelayCommand(Refresh, () => !busy);
-            prepare = new RelayCommand(Prepare, () => !busy && preview == null && selected?.Item.CanInstall == true);
+            prepare = new RelayCommand(Prepare, () => !busy && preview == null && selected?.Item.CanInstall == true && !SelectedRequested);
             confirm = new RelayCommand(Confirm, () => !busy && preview != null);
             cancel = new RelayCommand(() => { preview = null; Changed(); }, () => !busy && preview != null);
+            withdraw = new RelayCommand(Withdraw, () => !busy && SelectedRequested);
         }
+
+        private bool SelectedRequested => selected != null && WorkshopRuntime.InstallRequested(selected.Item.WorkshopId);
 
         public string WorkshopTitle => UiText.Get("Workshop.Options.Title");
         public string PackageLabel => UiText.Get("Workshop.Options.Package");
@@ -60,13 +64,17 @@ namespace APIShared.Workshop
         public string PrepareHelp => UiText.Get("Workshop.Options.RestartRequired");
         public string ConfirmLabel => UiText.Get("Workshop.Options.Confirm");
         public string CancelLabel => UiText.Get("Workshop.Options.Cancel");
+        public string WithdrawLabel => UiText.Get("Workshop.Options.Withdraw");
+        public string WithdrawHelp => UiText.Get("Workshop.Options.WithdrawHelp");
         public ICommand RefreshCommand => refresh;
         public ICommand PrepareCommand => prepare;
         public ICommand ConfirmCommand => confirm;
         public ICommand CancelCommand => cancel;
+        public ICommand WithdrawCommand => withdraw;
         public IReadOnlyList<WorkshopOption> Packages { get; private set; } = Array.Empty<WorkshopOption>();
         public string Message { get; private set; } = string.Empty;
-        public string PendingMessage => WorkshopRuntime.SettingsInstallPending ? UiText.Get("Workshop.Options.RestartPending") : string.Empty;
+        public string PendingMessage => SelectedRequested ? UiText.Get("Workshop.Options.RestartPending") : string.Empty;
+        public Visibility WithdrawVisibility => SelectedRequested ? Visibility.Visible : Visibility.Collapsed;
         public Visibility PreviewVisibility => preview == null ? Visibility.Collapsed : Visibility.Visible;
         public bool CanChangeOffers => !busy && preview == null && selected != null;
         public bool CanSelectPackage => !busy;
@@ -111,10 +119,12 @@ namespace APIShared.Workshop
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StartupOffers)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviewVisibility)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviewText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(WithdrawVisibility)));
             refresh.RaiseCanExecuteChanged();
             prepare.RaiseCanExecuteChanged();
             confirm.RaiseCanExecuteChanged();
             cancel.RaiseCanExecuteChanged();
+            withdraw.RaiseCanExecuteChanged();
         }
 
         private async void Refresh()
@@ -153,17 +163,31 @@ namespace APIShared.Workshop
             });
         }
 
-        private async void Confirm()
+        // Only records the request. The next start plans again and asks in its startup dialog;
+        // no updater runs at game exit (an exit can be followed directly by a PC shutdown).
+        private void Confirm()
         {
             if (!confirm.CanExecute(null)) return;
             var plan = preview;
             preview = null;
-            await RunAsync("confirmed installation", async () => {
-                var operation = await WorkshopRuntime.ApplySettingsAsync(plan);
-                Message = operation.State == WorkshopOperationState.AwaitingRestart
-                    ? string.Empty
-                    : operation.Failure != null ? FailureText(operation.Failure) : operation.Diagnostic;
-            });
+            try {
+                WorkshopRuntime.SetInstallRequested(plan.WorkshopId, true);
+                WorkshopRuntime.Log("Workshop installation requested for the next start; item=" + plan.WorkshopId +
+                    "; previewAction=" + plan.Action + "; previewVersion=" + plan.Version + ".");
+                Message = string.Empty;
+            } catch (Exception ex) { ReportError("installation request", ex); }
+            Changed();
+        }
+
+        private void Withdraw()
+        {
+            if (!withdraw.CanExecute(null)) return;
+            try {
+                WorkshopRuntime.SetInstallRequested(selected.Item.WorkshopId, false);
+                WorkshopRuntime.Log("Workshop installation request withdrawn; item=" + selected.Item.WorkshopId + ".");
+                Message = string.Empty;
+            } catch (Exception ex) { ReportError("withdraw installation request", ex); }
+            Changed();
         }
 
         private async Task RunAsync(string phase, Func<Task> work)

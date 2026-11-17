@@ -2,7 +2,6 @@
 # Host-side Proton updater. LF intentionally; requires bash, flock and GNU coreutils.
 set -euo pipefail
 game=${1:?game root required}; transaction=${2:?transaction or --maintain required}; expected=${3:-}; recover=${4:-}; supersedes_hash=${5:-}
-source_manifest=${6:-}; source_manifest_hash=${7:-}
 [[ $game == /* && ( $transaction == /* || $transaction == --maintain || $transaction == --status ) ]] || { echo 'Host absolute paths are required.' >&2; exit 1; }
 [[ -z ${SCDEModManagerLaunchId:-} ]] || { echo 'Externally managed installation.' >&2; exit 1; }
 unlinked() {
@@ -21,16 +20,6 @@ inside() {
     printf '%s' "$root/$relative"
 }
 hash() { if [[ -f $1 ]]; then sha256sum -- "$1" | cut -d ' ' -f1; else printf missing; fi; }
-assert_confirmed_source() {
-    [[ $recover == --manual ]] || return 0
-    [[ $source_manifest == /*/apishared-workshop.json && $source_manifest_hash =~ ^[a-f0-9]{64}$ ]] ||
-        { record 'failure Invalid confirmed Workshop manifest reference'; return 1; }
-    unlinked "$source_manifest" || return 1
-    [[ $(hash "$source_manifest") == "$source_manifest_hash" ]] ||
-        { record 'failure Steam download changed; confirm a new Workshop installation preview'; return 1; }
-    [[ ! -d "$(inside "$game" _SE/.staging)" ]] ||
-        { record 'failure Script Extender staging takes precedence'; return 1; }
-}
 process_start() {
     local stat_line; local -a values
     IFS= read -r stat_line < "/proc/$1/stat" || return 1
@@ -273,11 +262,11 @@ running() {
     done
     return 1
 }
-# A handoff from the game (--restart or --manual) requires a running process. If the detector
+# A handoff from the game (--restart) requires a running process. If the detector
 # cannot see that game now, a later "not running" proves nothing: refuse before
 # readiness, so the game stays open. Manual recovery runs with the game closed.
 require_visible_game() {
-    [[ $recover != --restart && $recover != --manual ]] || running || { record 'failure Calling game is not visible to the Linux process detector; no handoff'; exit 1; }
+    [[ $recover != --restart ]] || running || { record 'failure Calling game is not visible to the Linux process detector; no handoff'; exit 1; }
 }
 restart_game() {
     # A desktop launcher can fail or wait for its client. Do not hold apply.lock
@@ -394,14 +383,12 @@ for other in "$legacy_root"/*/journal.log "$short_root"/*/journal.log; do
 done
 if [[ ${#begun[@]} -gt 0 && $recover != --recover ]]; then record 'failure Interrupted transaction; use --recover'; exit 1; fi
 require_visible_game
-assert_confirmed_source
 printf '%s' "$expected" > "$(inside "$transaction" ready.flag)"
 publish_activity waiting
 if [[ $recover == --recover ]]; then cancel=$(inside "$transaction" recovery-cancel.flag); else cancel=$(inside "$transaction" cancel.flag); fi
 wait_game_exit
 [[ ! -f $cancel ]] || { record 'failure Handoff cancelled'; exit 1; }
 [[ ! -d "$(inside "$game" _SE/.staging)" ]] || { record 'failure Script Extender staging takes precedence'; exit 1; }
-assert_confirmed_source
 rollback() {
     publish_activity restore
     step='rollback preflight and restore'
@@ -423,7 +410,6 @@ for ((index=0; index<${#targets[@]}; index++)); do
     target=$(inside "$game" "${targets[$index]}"); [[ ! -d $target && $(hash "$target") == "${befores[$index]}" ]] || { record "failure Target changed: ${targets[$index]}"; exit 1; }
     if [[ ${befores[$index]} != missing ]]; then backup=$(inside "$transaction" "Backup/$index"); mkdir -p -- "$(dirname -- "$backup")"; cp -- "$target" "$backup"; [[ $(hash "$backup") == "${befores[$index]}" ]] || exit 1; sync -f "$backup"; fi
 done
-assert_confirmed_source
 record applying
 publish_activity apply
 step='installation writes and receipt commit'

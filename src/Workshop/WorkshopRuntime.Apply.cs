@@ -22,7 +22,7 @@ namespace APIShared.Workshop
     internal static partial class WorkshopRuntime
     {
         internal static async Task<WorkshopOperation> ApplyStartupAsync(IReadOnlyList<WorkshopInstallPlan> plans, IReadOnlyList<WorkshopCatalogItem> catalog, WorkshopStartupAuthorization authorization,
-            IReadOnlyList<WorkshopInterruptedTransaction> repair = null, IReadOnlyList<WorkshopInterruptedTransaction> archive = null)
+            IReadOnlyList<WorkshopInterruptedTransaction> repair = null, IReadOnlyList<WorkshopInterruptedTransaction> archive = null, ISet<ulong> requested = null)
         {
             authorization.Validate();
             CheckStartupConditions(); CheckBatch(plans, catalog);
@@ -39,7 +39,9 @@ namespace APIShared.Workshop
                 try {
                     transaction = await Task.Run(() => {
                         foreach (var plan in plans.Where(p => p.Package != null)) {
-                            if (plan.Action == WorkshopAction.Update &&
+                            // Automatic offers require an intact installation; a requested update is
+                            // the explicit choice that may replace modified files with backups.
+                            if (plan.Action == WorkshopAction.Update && (requested == null || !requested.Contains(plan.WorkshopId)) &&
                                 WorkshopLocalState.InspectReceipt(plan.GameRoot, plan.Previous).Status != WorkshopLocalStatus.Verified)
                                 throw WorkshopDiagnostics.Blocked("Local Workshop installation changed after the startup check: " + plan.PackageId);
                             WorkshopBootstrapValidation.Verify(plan.Package, plan.Source);
@@ -76,19 +78,13 @@ namespace APIShared.Workshop
             try { WorkshopRecovery.Restore(moved); }
             catch (Exception ex) { WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=restore archived transactions", ex); }
         }
-        internal static Task<WorkshopOperation> ApplyAsync(string owner, WorkshopInstallPlan plan) =>
-            ApplyCoreAsync(owner, plan, false);
-
-        internal static Task<WorkshopOperation> ApplySettingsAsync(WorkshopInstallPlan plan) =>
-            ApplyCoreAsync(APISharedPlugin.PluginGuid, plan, true);
-
-        private static async Task<WorkshopOperation> ApplyCoreAsync(string owner, WorkshopInstallPlan plan, bool fromSettings)
+        internal static async Task<WorkshopOperation> ApplyAsync(string owner, WorkshopInstallPlan plan)
         {
             RequireSteam();
             if (plan == null || plan.Owner != owner || plan.GameRoot != Path.GetFullPath(Paths.GameRootPath)) throw new ArgumentException("This client does not own the plan.");
             if (IsExternallyManaged) throw new InvalidOperationException(APIShared.Localization.UiText.Get("Workshop.ExternallyManaged"));
             if (startupDownloadPending || Directory.Exists(WorkshopPaths.Inside(Paths.GameRootPath, "_SE/.staging"))) throw new InvalidOperationException("Extender startup work takes precedence. Restart before applying this plan.");
-            if (!fromSettings && MissionLifecycleService.HasContext) throw new InvalidOperationException("Return to the menu before applying Workshop changes.");
+            if (MissionLifecycleService.HasContext) throw new InvalidOperationException("Return to the menu before applying Workshop changes.");
             var subscriptions = Subscriptions(); var subscription = subscriptions.FirstOrDefault(x => x.Id == plan.WorkshopId);
             if (subscriptions.Any(x => (x.State & (EItemState.k_EItemStateNeedsUpdate | EItemState.k_EItemStateDownloading | EItemState.k_EItemStateDownloadPending)) != 0)) throw new InvalidOperationException("Let Extender finish pending downloads and restart first.");
             if (plan.Action == WorkshopAction.Remove ? subscription != null : subscription == null || !Stable(subscription) || Path.GetFullPath(subscription.Root) != plan.Source)
@@ -96,14 +92,6 @@ namespace APIShared.Workshop
             Prerequisites(plan.Package);
             return await ApplyCoordinator.ExecuteAsync(plan.OperationId, async operation =>
             {
-                if (fromSettings) {
-                    WorkshopTransaction.ValidateManifest(plan);
-                    SettingsHandoff.Queue(() => LaunchOnShutdown(plan, subscriptions, operation));
-                    operation.Set(WorkshopOperationState.AwaitingRestart, "Plan queued for validation on manual game exit.", plan.WorkshopId);
-                    Log("Workshop installation plan queued for manual game exit; item=" + plan.WorkshopId +
-                        "; version=" + plan.Version + "; operation=" + operation.OperationId + ".");
-                    return operation;
-                }
                 string transaction = await Task.Run(() => StageInstallation(plan, subscriptions));
                 var completion = new TaskCompletionSource<WorkshopOperation>();
                 if (!UnityMainThreadDispatch.TryEnqueue(async () => {

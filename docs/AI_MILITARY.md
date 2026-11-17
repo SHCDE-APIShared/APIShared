@@ -87,7 +87,21 @@ defensive roles `CastleDefense`, `DefensePatrol`, `HomeMoat`, `EconomyProtection
 membership and role only. The owner's next regular AI pass then orders the group;
 its native group move sends only members that are not already at their post, so
 existing members receive nothing new. The `Applied` result carries a non-empty
-`Detail` in this case. A patrol recruit can therefore wait up to the AIC patrol
+`Detail` in this case.
+
+`CastleDefense` follows Vanilla's controller for the group's storage slot. The first
+recruit of an empty group receives the position that the next AI pass would choose:
+the keep entrance area for the first fallback group, the keep door for the second
+(mounted units use it), and otherwise the group's AIV guarding position if it is
+reachable from the recruit, else the keep. Where that pass gives no order now (for
+example during a defensive alert), or where the recruit's own route to the recorded
+position fails (for example a horseman and a keep tile), the recruit joins like a
+Vanilla recruit with a non-empty `Detail`. `GetOptions` reports castle defense as
+unavailable (`InvalidGroupCount`) for spearmen, macemen and Arabian horse archers when
+the AIV has positions for their class but the AIC `max_mobile_groups` is not positive,
+because Vanilla's allocator then has no group for them. A failed admission into an
+empty group leaves that group exactly as it was, so it remains usable for later
+recruits. A patrol recruit can therefore wait up to the AIC patrol
 delay, and an economy-protection or intervention group below its AIC strength
 receives no order, as in Vanilla. For all other roles an unknown, expired or
 incompatible order of an existing group is rejected explicitly; there is no wait

@@ -34,6 +34,29 @@ namespace APIShared.Workshop
                 !Regex.IsMatch(r[6], "^[a-f0-9]{32}$") || !Regex.IsMatch(r[7], "^[a-f0-9]{64}$")) return unknown;
             return new WorkshopUpdaterActivity { Busy = true, Active = true, Transaction = r[6], OperationsHash = r[7], Phase = r[5] };
         }
+        // Diagnostics only. The Windows updater empties apply.lock in its finally block, so a
+        // record that remains while no writer holds the lock was left by a process that was
+        // terminated from outside (killed, logoff, shutdown or power loss). Returns a readable
+        // description or null; never authorizes or blocks anything.
+        internal static string DescribeStaleWindows(string game)
+        {
+            try {
+                string path = WorkshopPaths.Inside(WorkshopInstallation.StateRoot(game), "apply.lock");
+                if (!File.Exists(path)) return null;
+                using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite)) { }
+                return DescribeRecord(ReadRecord(path));
+            } catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is InvalidDataException) {
+                return null; // Held by a live writer or unreadable: nothing stale to report.
+            }
+        }
+        internal static string DescribeRecord(string text)
+        {
+            string[] r = (text ?? "").TrimEnd('\r', '\n').Split('\t');
+            if (r.Length != 8 || r[0] != Header) return null;
+            string started = long.TryParse(r[3], NumberStyles.None, CultureInfo.InvariantCulture, out long ticks) && ticks > 0 && ticks <= DateTime.MaxValue.Ticks
+                ? new DateTime(ticks, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture) : "unknown";
+            return "platform=" + r[1] + "; pid=" + r[2] + "; processStart=" + started + "; mode=" + r[4] + "; phase=" + r[5] + "; transaction=" + r[6];
+        }
         internal static WorkshopUpdaterActivity ReadWindows(string game)
         {
             string state = WorkshopInstallation.StateRoot(game), path = WorkshopPaths.Inside(state, "apply.lock");
