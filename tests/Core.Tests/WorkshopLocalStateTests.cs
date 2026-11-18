@@ -28,17 +28,19 @@ public sealed class WorkshopLocalStateTests
 
             File.WriteAllText(file, "develop"); // Same length as release.
             Assert.AreEqual(WorkshopLocalStatus.Modified, WorkshopLocalState.Inspect(game, item).Status);
-            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
+            // A damaged installation is offered as the clean installation of the current release.
+            Assert.AreEqual(WorkshopAction.Update, WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
+            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, false));
             Assert.AreEqual(WorkshopAction.Update, WorkshopLocalState.ManualAction(item));
             Assert.AreEqual("develop", File.ReadAllText(file));
 
             File.WriteAllText(file, "older package");
             Assert.AreEqual(WorkshopLocalStatus.Modified, WorkshopLocalState.Inspect(game, item).Status);
-            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
+            Assert.AreEqual(WorkshopAction.Update, WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
 
             File.Delete(file);
             Assert.AreEqual(WorkshopLocalStatus.Missing, WorkshopLocalState.Inspect(game, item).Status);
-            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
+            Assert.AreEqual(WorkshopAction.Update, WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
             Assert.AreEqual("local", File.ReadAllText(preference));
 
             item.Package.Version = item.Receipt.Version;
@@ -58,43 +60,56 @@ public sealed class WorkshopLocalStateTests
     }
 
     [TestMethod]
-    public void RequestedInstallationIsOfferedAtStartupLikeTheExplicitChoice()
+    public void OnlyReceiptedInstallablePackagesAreOfferedAndIdsParseStrictly()
     {
         var item = new WorkshopCatalogItem {
             IsSubscribed = true, CanInstall = true,
             Package = new WorkshopPackage { Version = "1.0.35", Files = Array.Empty<WorkshopFile>() }
         };
-        // Not installed: no automatic offer, but a request installs it.
+        // Not installed by APIShared: never offered automatically (Mod Options installs it).
         Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, true));
-        Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, false, requested: true));
-        // Modified installation with disabled offers: the request still applies the explicit action.
-        item.Receipt = new WorkshopReceipt { Version = "1.0.32", Files = Array.Empty<WorkshopFile>() };
-        Assert.AreEqual(WorkshopAction.Update, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, false, requested: true));
-        item.Receipt.Version = "1.0.35";
-        Assert.AreEqual(WorkshopAction.Reinstall, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, false, requested: true));
-        // A package that cannot be installed now keeps waiting.
+        item.Receipt = new WorkshopReceipt { Version = "1.0.35", Files = Array.Empty<WorkshopFile>() };
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, true), "current and intact");
+        Assert.AreEqual(WorkshopAction.Reinstall, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, true), "damaged: clean reinstallation");
         item.CanInstall = false;
-        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, true, requested: true));
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, true));
         item.CanInstall = true; item.Package = null;
-        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, true, requested: true));
-    }
-
-    [TestMethod]
-    public void InstallationRequestsSurviveMalformedEntriesAndResolveOnlyByCommit()
-    {
-        const string transaction = "0123456789abcdef0123456789abcdef";
-        var requests = WorkshopLocalState.ParseRequests(" 42 ,7:" + transaction + ",0,abc,-1,9:XYZ,8:" + transaction + ":x,42:" + transaction + ",");
-        CollectionAssert.AreEquivalent(new ulong[] { 7, 42 }, requests.Keys.ToArray());
-        Assert.AreEqual(transaction, requests[7]);
-        Assert.IsNull(requests[42], "A pending entry is not replaced by a later handed-off duplicate.");
-        Assert.AreEqual("7:" + transaction + ",42", WorkshopLocalState.FormatRequests(requests));
-        Assert.AreEqual(0, WorkshopLocalState.ParseRequests(null).Count);
-        Assert.AreEqual(WorkshopLocalState.RequestOutcome.Fulfilled, WorkshopLocalState.ResolveRequest(new[] { "applying", "begin\t0", "done\t0", "committed" }));
-        foreach (var journal in new[] { null, new string[0], new[] { "applying", "failure x", "restored" }, new[] { "failure Handoff cancelled" }, new[] { "applying", "begin\t0" } })
-            Assert.AreEqual(WorkshopLocalState.RequestOutcome.Offer, WorkshopLocalState.ResolveRequest(journal));
-        // A committed complete repair reinstalled the item although the original never commits.
-        Assert.AreEqual(WorkshopLocalState.RequestOutcome.Fulfilled, WorkshopLocalState.ResolveRequest(new[] { "applying", "begin\t0" }, superseded: true));
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, true));
         CollectionAssert.AreEquivalent(new ulong[] { 3, 5 }, WorkshopLocalState.ParseIds("5, 3,x,0,5").ToArray());
         Assert.AreEqual("3,5", WorkshopLocalState.FormatIds(new ulong[] { 5, 3, 5 }));
+    }
+
+    // The former updater interrupted while installing (here: a first installation, no receipt
+    // yet): the item is offered as a clean installation until its files match the package,
+    // even with offers disabled. Finished or unreadable transactions name no item.
+    [TestMethod]
+    public void InterruptedFormerTransactionsAreOfferedAsCleanInstallation()
+    {
+        string game = Path.Combine(Path.GetTempPath(), "ApiRepair-" + Guid.NewGuid().ToString("N"));
+        try {
+            string Transaction(string name, string journal) {
+                string dir = Path.Combine(game, "_APIShared", "T", name);
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "journal.log"), journal);
+                File.WriteAllText(Path.Combine(dir, "operations.tsv"), "write\tBepInEx/plugins/Pack/a.dll\t0\tmissing\tabc\nreceipt-write\t_APIShared/Workshop/Receipts/3788821961.json\t1\tmissing\tdef\n");
+                return dir;
+            }
+            CollectionAssert.AreEqual(new ulong[] { 3788821961 }, WorkshopLocalState.InterruptedItems(Transaction("a", "prepared\napplying\nwrite 0\n")).ToArray());
+            Assert.IsFalse(WorkshopLocalState.InterruptedItems(Transaction("b", "prepared\napplying\ncommitted\n")).Any());
+            Assert.IsFalse(WorkshopLocalState.InterruptedItems(Transaction("c", "prepared\n")).Any(), "never started changing files");
+            Assert.IsFalse(WorkshopLocalState.InterruptedItems(Path.Combine(game, "missing")).Any());
+
+            WorkshopLocalState.WriteRepairs(game, new HashSet<ulong> { 3788821961 });
+            CollectionAssert.AreEquivalent(new ulong[] { 3788821961 }, WorkshopLocalState.ReadRepairs(game).ToArray());
+            WorkshopLocalState.WriteRepairs(game, new HashSet<ulong>());
+            Assert.IsFalse(File.Exists(WorkshopLocalState.RepairPath(game)));
+
+            var item = new WorkshopCatalogItem { IsSubscribed = true, CanInstall = true, Package = new WorkshopPackage { Version = "1.0.38", Files = Array.Empty<WorkshopFile>() } };
+            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, false), "without repair: receipt-less items are not offered");
+            Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, false, repair: true));
+            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, false, repair: true), "files match the package again");
+        } finally {
+            if (Directory.Exists(game)) Directory.Delete(game, recursive: true);
+        }
     }
 }

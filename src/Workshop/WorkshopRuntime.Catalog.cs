@@ -58,7 +58,9 @@ namespace APIShared.Workshop
         internal static Task<WorkshopInstallPlan> PrepareStartupAsync(ulong id, WorkshopAction action) => PrepareCoreAsync(APISharedPlugin.PluginGuid, id, action, true);
         internal static async Task<WorkshopInstallPlan> PrepareSettingsAsync(WorkshopCatalogItem item)
         {
-            // Preview only: the request is applied by the next startup dialog, which plans again.
+            // Preview for Mod Options; confirming it stages the change (StageConfirmedAsync), which
+            // rechecks Steam and the startup conditions.
+            CheckInstallerActive();
             CheckStartupConditions(allowActiveMission: true);
             return await PrepareAsync(APISharedPlugin.PluginGuid, item.WorkshopId, WorkshopLocalState.ManualAction(item));
         }

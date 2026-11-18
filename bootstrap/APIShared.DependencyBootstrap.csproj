@@ -24,6 +24,8 @@
     <Compile Include="src\EarlyEntry\DependencyBootstrapPatcher.cs" />
     <Compile Include="src\DependencyCorrection\HookRuntime.cs" />
     <Compile Include="src\EarlyEntry\ReadyGate.cs" />
+    <Compile Include="src\Workshop\WorkshopInstallPass.cs" />
+    <Compile Include="..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Shared\WorkshopSafeInstall.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

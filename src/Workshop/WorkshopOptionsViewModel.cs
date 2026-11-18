@@ -53,7 +53,7 @@ namespace APIShared.Workshop
             withdraw = new RelayCommand(Withdraw, () => !busy && SelectedRequested);
         }
 
-        private bool SelectedRequested => selected != null && WorkshopRuntime.InstallRequested(selected.Item.WorkshopId);
+        private bool SelectedRequested => selected != null && WorkshopRuntime.InstallationPending(selected.Item.WorkshopId);
 
         public string WorkshopTitle => UiText.Get("Workshop.Options.Title");
         public string PackageLabel => UiText.Get("Workshop.Options.Package");
@@ -163,33 +163,30 @@ namespace APIShared.Workshop
             });
         }
 
-        // Only records the request. The next start plans again and asks in its startup dialog;
-        // no updater runs at game exit (an exit can be followed directly by a PC shutdown).
-        private void Confirm()
+        // Stages the previewed plan now (copy and hash check on a worker; BepInEx/plugins is not
+        // touched). APIShared's preloader installs it at the next game start.
+        private async void Confirm()
         {
             if (!confirm.CanExecute(null)) return;
             var plan = preview;
             preview = null;
-            try {
-                WorkshopRuntime.SetInstallRequested(plan.WorkshopId, true);
-                WorkshopRuntime.Log("Workshop installation requested for the next start; item=" + plan.WorkshopId +
-                    "; previewAction=" + plan.Action + "; previewVersion=" + plan.Version + ".");
-                Message = string.Empty;
-            } catch (Exception ex) { ReportError("installation request", ex); }
-            Changed();
+            await RunAsync("staging", async () => {
+                await WorkshopRuntime.StageConfirmedAsync(plan);
+                WorkshopRuntime.Log("Workshop change staged from Mod Options for the next start; item=" + plan.WorkshopId +
+                    "; action=" + plan.Action + "; version=" + plan.Version + ".");
+            });
         }
 
         private void Withdraw()
         {
             if (!withdraw.CanExecute(null)) return;
             try {
-                WorkshopRuntime.SetInstallRequested(selected.Item.WorkshopId, false);
-                WorkshopRuntime.Log("Workshop installation request withdrawn; item=" + selected.Item.WorkshopId + ".");
+                WorkshopRuntime.WithdrawInstallation(selected.Item.WorkshopId);
+                WorkshopRuntime.Log("Workshop staged change withdrawn; item=" + selected.Item.WorkshopId + ".");
                 Message = string.Empty;
-            } catch (Exception ex) { ReportError("withdraw installation request", ex); }
+            } catch (Exception ex) { ReportError("withdraw staged change", ex); }
             Changed();
         }
-
         private async Task RunAsync(string phase, Func<Task> work)
         {
             busy = true;
@@ -197,7 +194,7 @@ namespace APIShared.Workshop
             Changed();
             try {
                 await work();
-                if (phase == "preview") Message = string.Empty;
+                if (phase == "preview" || phase == "staging") Message = string.Empty;
             } catch (Exception ex) { ReportError(phase, ex); }
             finally { busy = false; Changed(); }
         }

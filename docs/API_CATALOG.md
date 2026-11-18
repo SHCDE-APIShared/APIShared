@@ -354,7 +354,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | In-game tooltip extensions | [Public service](../src/Presentation/Tooltips/TooltipPresentation.cs), [content and positions](../src/Presentation/Tooltips/TooltipContracts.cs) | Shared renderer for buildings, recruitment, siege construction and repair | [Guide](TOOLTIPS.md), [standalone example](../examples/ThirdPartyMod/TooltipExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
-| Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
+| Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md), [installation core](../src/Workshop/Install/WorkshopSafeInstall.cs) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 | Native sites | [Contracts](../src/Core/NativeSites/NativeSiteContracts.cs), [registry](../src/Core/NativeSites/NativeSiteRegistry.cs) | [Owner registry](../src/Core/Internal/Native/NativeOwnershipRegistry.cs), [APIShared site catalog](../src/Core/NativeSites/ApiSharedNativeSites.cs), [guide](NATIVE_SITES.md) | [Native sites](../examples/ThirdPartyMod/NativeSiteExample.cs) |
@@ -844,8 +844,12 @@ map packages remain Extender-owned. See [inventory and cleanup](WORKSHOP.md#work
 `ApiShared.ForMod(guid).Workshop` provides package validation, subscription and
 owned-item queries, upload preparation, installation plans and explicit application.
 Steam entry points require initialized Steamworks on Unity. Planning does not
-change installed files; application requires consent and uses a post-exit updater.
-See [Workshop contracts and workflows](WORKSHOP.md).
+change installed files; application requires consent, stages a verified copy and
+returns `AwaitingRestart`: APIShared's preloader swaps the plugin folders at the next
+game start, and the game is no longer closed. Signatures are unchanged; see the
+[compatibility note](WORKSHOP.md#workshop-publishing-and-loose-packages), the
+[keep list](WORKSHOP.md#keep-list-apishared-keeptxt) for player files and
+[Workshop contracts and workflows](WORKSHOP.md).
 
 See [Linux deployment](WORKSHOP.md#linux-paths-and-first-install-repair) for path
 configuration, the separate first-install repair and platform acceptance limits.

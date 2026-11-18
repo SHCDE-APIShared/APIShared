@@ -456,16 +456,17 @@ startup snapshot. APIShared logs a warning on every start with the persisted swi
 enabled. Neither the branch nor Debug/Release compilation enables tracing implicitly.
 
 Info messages are not gated: APIShared keeps their number small at the call sites
-(one-time startup and state markers such as Workshop transaction outcomes), so they
+(one-time startup and state markers such as Workshop installation outcomes), so they
 are available in every player log. Routine and per-use tracing is Debug. Scroll
 tracing additionally needs the caller's `enableScrollDiagnostics` option. Services
 receive a forwarding logger so their direct Debug calls cannot bypass the gate.
 Successful native-site summaries are not constructed without opt-in; refused
 registrations still produce warnings. Warnings, errors, capability failure results
 and recovery evidence remain available.
-Workshop `_APIShared/T/*/diagnostics.txt` contains installation warnings and is
-retained without opt-in, alongside the transaction protocol. The independent
-dependency bootstrap emits only warnings/errors and creates no tracing files.
+Workshop installations performed by the preloader at game start are logged on the
+BepInEx source `APIShared.WorkshopInstall` without opt-in; the plugin reports their
+outcome once from `_APIShared/I/result.txt`. The independent dependency bootstrap
+otherwise emits only warnings/errors and creates no tracing files.
 
 Consumer observation contracts retain their existing behavior: registering an
 `IAivBuildStepObserver`, `IEnemyBridgePathObserver` or temporary gate-route observer
@@ -965,7 +966,12 @@ and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cl
 
 Use the shipped external publisher for explicitly declared Payload packages.
 The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
-bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton limits.
+bootstrap maps, consent, embedded-copy replacement, the
+[installation at the next game start](WORKSHOP.md#installation-preloader-swap) and
+Windows/Proton limits. An update replaces each plugin folder as a whole; if your mod
+keeps player files inside its plugin folder, declare them in a
+[keep list](WORKSHOP.md#keep-list-apishared-keeptxt), or store them below Documents instead.
+`ApplyAsync` stages the change and returns `AwaitingRestart`; the game is not closed.
 
 ## HUD integration
 

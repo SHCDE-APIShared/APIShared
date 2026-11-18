@@ -1,6 +1,6 @@
+using APIShared.Workshop.Install;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -9,13 +9,26 @@ using System.Threading.Tasks;
 
 namespace APIShared.Workshop
 {
-    // Steam can initialize more than once. One process-owned attempt prevents
-    // repeated prompts; deferred/declined work is rediscovered on the next start.
+    // Steam can initialize more than once. One process-owned attempt prevents repeated prompts;
+    // deferred or declined work is rediscovered on the next start. Installation itself happens
+    // in APIShared's preloader at the next start (src/Workshop/Install); this workflow only
+    // reports its outcome, asks for consent and stages the confirmed changes.
     internal static class WorkshopStartup
     {
         private static int attempted;
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern int MessageBoxW(IntPtr window, string text, string caption, uint flags);
+        [DllImport("user32.dll")] private static extern int ShowCursor(bool show);
+        [DllImport("user32.dll")] private static extern bool ClipCursor(IntPtr rect);
+        [DllImport("user32.dll")] private static extern bool ClipCursor(ref Rect rect);
+        [DllImport("user32.dll")] private static extern bool GetClipCursor(out Rect rect);
+        [DllImport("user32.dll")] private static extern bool EnumThreadWindows(uint thread, EnumWindowsProc callback, IntPtr state);
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+        [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+        private delegate bool EnumWindowsProc(IntPtr window, IntPtr state);
+        [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
         internal static void Run() => WorkshopStartupGate.Run(RunAsync);
         private static async Task RunAsync()
         {
@@ -24,66 +37,44 @@ namespace APIShared.Workshop
             int failures = 0;
             string result = "failed", step = "startup conditions";
             try {
+                step = "installation result";
+                failures += ReportPreloaderResult();
+                step = "former updater state";
+                RemoveFormerUpdaterState(BepInEx.Paths.GameRootPath);
+                step = "startup conditions";
                 if (WorkshopRuntime.IsExternallyManaged) {
                     blocked = true; result = "blocked";
                     WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop step=startup conditions; Managed by external mod manager");
                     return;
                 }
+                if (!WorkshopRuntime.InstallerActive) {
+                    // No fallback installer: offers are skipped and Mod Options explains why.
+                    blocked = true; result = "blocked";
+                    WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop step=startup conditions; " + APIShared.Localization.UiText.Get("Workshop.InstallerInactive"));
+                    return;
+                }
+                var repairs = WorkshopLocalState.ReadRepairs(BepInEx.Paths.GameRootPath);
+                int repairCount = repairs.Count;
                 try { WorkshopPaths.CheckLinks(BepInEx.Paths.GameRootPath); }
-                catch (System.IO.InvalidDataException ex) {
+                catch (InvalidDataException ex) {
                     blocked = true; result = "blocked";
                     WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop startup blocked by linked installation path; use the canonical installation path or update manually. " + ex.Message);
                     return;
                 }
-                step = "active updater check";
-                var activity = await WorkshopUpdaterLauncher.Activity(BepInEx.Paths.GameRootPath);
-                if (activity.Busy) {
-                    blocked = true; result = "blocked";
-                    if (activity.Active) {
-                        Notice(APIShared.Localization.UiText.Get("Workshop.APreviouslyConfirmedWorkshopUpdateIs"));
-                        var currentActivity = await WorkshopUpdaterLauncher.Activity(BepInEx.Paths.GameRootPath);
-                        if (!currentActivity.Active || currentActivity.Transaction != activity.Transaction || currentActivity.OperationsHash != activity.OperationsHash) {
-                            WorkshopRuntime.Log("Workshop updater activity changed while the notice was open; no game exit requested and no startup changes planned.");
-                            return;
-                        }
-                        var authorization = WorkshopStartupGate.AuthorizeConfirmedUpdate();
-                        authorization.ConfirmHandoff(activity.Transaction);
-                        authorization.Quit(WorkshopRuntime.Log, UnityEngine.Application.Quit, "previous confirmed updater still active; phase=" + activity.Phase);
-                    } else WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop updater lock is busy or its status is unverified; startup planning and recovery deferred. Close the game and inspect _APIShared/Workshop/apply.lock if this persists.");
-                    return;
-                }
                 WorkshopRuntime.CheckStartupConditions();
-                step = "history maintenance";
-                if (!await WorkshopUpdaterLauncher.Maintain(BepInEx.Paths.GameRootPath)) {
-                    // A maintenance child survived its kill and still owns the
-                    // transaction directory; recovery and staging wait for a later start.
-                    blocked = true; result = "blocked"; return;
-                }
-                step = "recovery inspection";
-                if (await RecoverAsync()) { result = "recovery offered"; return; }
                 step = "catalog";
                 var catalog = await WorkshopRuntime.GetCatalogAsync();
-                WorkshopDiagnostics.ReportStartupCatalog(WorkshopRuntime.WriteDiagnostic, catalog, out blocked, out failures);
+                WorkshopDiagnostics.ReportStartupCatalog(WorkshopRuntime.WriteDiagnostic, catalog, out bool catalogBlocked, out int catalogFailures);
+                blocked |= catalogBlocked; failures += catalogFailures;
                 var plans = new List<WorkshopInstallPlan>();
-                step = "installation requests";
-                // Unity thread: configuration writes stay on the thread that owns the settings UI.
-                WorkshopRuntime.ResolveHandedOffInstallRequests(BepInEx.Paths.GameRootPath);
-                var requests = WorkshopRuntime.PendingInstallRequests();
-                // A request for an item that is no longer subscribed cannot be fulfilled and
-                // would stay invisible in Mod Options, which lists subscribed items only.
-                var unsubscribed = requests.Where(id => !catalog.Any(c => c.IsSubscribed && c.WorkshopId == id)).ToArray();
-                if (unsubscribed.Length != 0) {
-                    WorkshopRuntime.RemoveInstallRequests(unsubscribed);
-                    WorkshopRuntime.Log("Workshop installation requests removed for items that are no longer subscribed: " + string.Join(", ", unsubscribed) + ".");
-                }
-                step = "catalog";
                 foreach (var item in catalog) {
-                    bool requested = item.IsSubscribed && requests.Contains(item.WorkshopId);
-                    if (item.DiagnosticError != null || item.IsSubscribed && (item.Package == null || !item.CanInstall)) {
-                        if (requested) WorkshopRuntime.Log("Workshop requested installation kept for a later start; item=" + item.WorkshopId + "; status=" + item.Status + ".");
+                    if (item.DiagnosticError != null || item.IsSubscribed && (item.Package == null || !item.CanInstall)) continue;
+                    string context = WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "local installation");
+                    if (WorkshopRuntime.InstallationPending(item.WorkshopId)) {
+                        // Staged earlier in this or a previous session: the next start applies it.
+                        WorkshopRuntime.Log(context + "; staged change waits for the next game start.");
                         continue;
                     }
-                    string context = WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "local installation");
                     try {
                         var status = WorkshopLocalStatus.Missing;
                         bool offers = WorkshopRuntime.OffersEnabled(item.WorkshopId);
@@ -91,16 +82,15 @@ namespace APIShared.Workshop
                             var evidence = await WorkshopRuntime.InspectLocalAsync(item);
                             status = evidence.Status;
                             context = WorkshopDiagnostics.InstallationContext(item, evidence.Bootstrap, "local installation");
-                            WorkshopRuntime.Log(context + "; localState=" + status + "; startupOffers=" + offers + "; installationRequested=" + requested +
-                                (evidence.Difference == null ? "" : "; difference=" + evidence.Difference) +
-                                (status == WorkshopLocalStatus.Verified || requested ? "" : "; local selection kept; choose installation in APIShared Mod Options"));
+                            WorkshopRuntime.Log(context + "; localState=" + status + "; startupOffers=" + offers +
+                                (evidence.Difference == null ? "" : "; difference=" + evidence.Difference));
                             WorkshopDiagnostics.ReportOwnership(WorkshopRuntime.WriteDiagnostic, context, evidence.Conflicts);
                         }
-                        var action = WorkshopLocalState.StartupAction(item, status, offers, requested);
-                        if (action != null) {
-                            var plan = await WorkshopRuntime.PrepareStartupAsync(item.WorkshopId, action.Value);
-                            plans.Add(plan);
-                        }
+                        bool repair = repairs.Contains(item.WorkshopId);
+                        // Repaired (or no longer subscribed): the interrupted former transaction is settled.
+                        if (repair && (!item.IsSubscribed || status == WorkshopLocalStatus.Verified)) repairs.Remove(item.WorkshopId);
+                        var action = WorkshopLocalState.StartupAction(item, status, offers, repair);
+                        if (action != null) plans.Add(await WorkshopRuntime.PrepareStartupAsync(item.WorkshopId, action.Value));
                     }
                     catch (Exception ex) {
                         blocked = true;
@@ -108,6 +98,8 @@ namespace APIShared.Workshop
                         WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, context, ex);
                     }
                 }
+                repairs.IntersectWith(catalog.Select(c => c.WorkshopId));
+                if (repairs.Count != repairCount) WorkshopLocalState.WriteRepairs(BepInEx.Paths.GameRootPath, repairs);
                 step = "batch validation";
                 var retained = catalog.Where(c => c.IsSubscribed && c.Package != null).ToArray();
                 // Remove invalid candidates to a fixed point; an unavailable update
@@ -144,38 +136,21 @@ namespace APIShared.Workshop
                 } while (changed && plans.Count > 0);
                 if (plans.Count == 0) { result = WorkshopDiagnostics.NoChangesResult(blocked, failures); return; }
                 WorkshopRuntime.CheckBatch(plans, retained);
-                WorkshopRuntime.CheckStartupConditions();
                 string body = string.Join("\n", plans.Select(p => WorkshopStartupSummary.Describe(p, APIShared.Localization.GameLocale.Current()) +
                     (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
-                body += "\n\n" + APIShared.Localization.UiText.Get("Workshop.YesApplyTheseChangesAndRestart");
+                body += "\n\n" + APIShared.Localization.UiText.Get("Workshop.YesInstallAtNextStart");
                 step = "confirmation";
-                int decision = MessageBoxW(IntPtr.Zero, body, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), 0x4 | 0x30 | 0x100);
-                if (decision == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
-                var requestedPlans = new HashSet<ulong>(plans.Where(p => p.Action != WorkshopAction.Remove && requests.Contains(p.WorkshopId)).Select(p => p.WorkshopId));
-                if (decision != 6) {
+                if (Ask(body, 0x4) != 6) {
                     result = "declined";
-                    WorkshopRuntime.Log("Workshop startup changes declined; installed files are untouched." +
-                        (requestedPlans.Count == 0 ? "" : " Installation requests remain for the next start: " + string.Join(", ", requestedPlans) + "."));
+                    WorkshopRuntime.Log("Workshop startup changes declined; installed files are untouched.");
                     return;
                 }
-                step = "updater handoff";
-                var operation = await WorkshopRuntime.ApplyStartupAsync(plans, retained, WorkshopStartupGate.AuthorizeConfirmedUpdate(), requested: requestedPlans);
-                WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + ": " + operation.State + "; " + operation.Diagnostic);
-                result = operation.State == WorkshopOperationState.AwaitingRestart ? "awaiting restart" : "failed";
-                // The next start removes the request once this transaction committed. Until then
-                // an interrupted application is owned by the recovery dialog, not by a repeated offer.
-                if (operation.State == WorkshopOperationState.AwaitingRestart && requestedPlans.Count != 0) {
-                    try { WorkshopRuntime.MarkInstallRequestsHandedOff(requestedPlans, operation.OperationId); }
-                    catch (Exception ex) { WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=record installation request handoff", ex); }
-                }
-                if (operation.State != WorkshopOperationState.AwaitingRestart) {
-                    if (operation.Failure != null && WorkshopDiagnostics.Level(operation.Failure) == WorkshopDiagnosticLevel.Warning) { blocked = true; result = "blocked"; }
-                    else {
-                        failures++;
-                        WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Error, "Workshop step=" + step + "; operation=" + operation.OperationId + "; " + operation.Diagnostic);
-                        Notice(APIShared.Localization.UiText.Get("Workshop.WorkshopUpdateCouldNotBeStarted") + operation.Diagnostic);
-                    }
-                }
+                step = "staging";
+                // Staging (copy and hash check) continues on a worker after this gate returns, so
+                // the game start is not delayed; the preloader applies it at the next start.
+                var operation = WorkshopRuntime.StageStartupBatch(plans);
+                WorkshopRuntime.Log("Workshop startup batch " + operation.OperationId + " confirmed; staging " + plans.Count + " change(s) for the next game start.");
+                result = "staging";
             } catch (Exception ex) {
                 blocked = WorkshopDiagnostics.Level(ex) == WorkshopDiagnosticLevel.Warning || blocked;
                 if (WorkshopDiagnostics.Level(ex) == WorkshopDiagnosticLevel.Error) failures++;
@@ -186,110 +161,96 @@ namespace APIShared.Workshop
             } finally { WorkshopDiagnostics.Outcome(WorkshopRuntime.WriteDiagnostic, result, blocked, failures); }
         }
 
+        // Runs on the game's main thread, which hides the system cursor (ShowCursor counter is per
+        // thread) and confines it to the game window. Without an owner the box also opened behind
+        // the game, so neither it nor other programs were reachable with the mouse. The box is
+        // owned by the game window (stays above it, application-modal only: other programs stay
+        // usable) and cursor visibility and confinement are released while it is open and then
+        // restored for the game.
         private static int Ask(string text, uint flags) {
-            int answer = MessageBoxW(IntPtr.Zero, text, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), flags | 0x30 | (flags == 0x3 ? 0x200u : flags == 0x4 ? 0x100u : 0u));
-            if (answer == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
-            return answer;
+            bool clipped = GetClipCursor(out Rect clip);
+            int shown = 0;
+            try {
+                ClipCursor(IntPtr.Zero);
+                while (ShowCursor(true) < 0 && shown < 64) shown++;
+                shown++;
+                // MB_SETFOREGROUND (0x10000) brings the box to the front when it opens.
+                int answer = MessageBoxW(GameWindow(), text, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), flags | 0x30 | 0x10000 | (flags == 0x4 ? 0x100u : 0u));
+                if (answer == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
+                return answer;
+            } finally {
+                for (int i = 0; i < shown; i++) ShowCursor(false);
+                // GetClipCursor also reports a rectangle when nothing was clipped; restoring that
+                // could confine a multi-monitor player to one screen. Only a real clip returns.
+                if (clipped && !(clip.Left == GetSystemMetrics(76) && clip.Top == GetSystemMetrics(77) && // SM_X/YVIRTUALSCREEN
+                    clip.Right - clip.Left == GetSystemMetrics(78) && clip.Bottom - clip.Top == GetSystemMetrics(79))) // SM_CX/CYVIRTUALSCREEN
+                    ClipCursor(ref clip);
+            }
+        }
+
+        // Visible top-level window of the calling (main) thread, i.e. the game window; zero
+        // before it exists, which keeps the former unowned box.
+        private static IntPtr GameWindow() {
+            IntPtr found = IntPtr.Zero;
+            EnumThreadWindows(GetCurrentThreadId(), (window, _) => {
+                if (!IsWindowVisible(window) || GetWindow(window, 4) != IntPtr.Zero) return true; // GW_OWNER
+                found = window;
+                return false;
+            }, IntPtr.Zero);
+            return found;
         }
         private static void Notice(string text) => Ask(text, 0);
 
-        // Recovery is separate from public ApplyAsync: neither discovery nor a
-        // third-party caller silently consents to installation or rollback.
-        private static async Task<bool> RecoverAsync()
+        // The preloader records what it did at this start. Successful installations are logged;
+        // a failure is shown once, because the player expected the confirmed change.
+        private static int ReportPreloaderResult()
         {
-            string game = BepInEx.Paths.GameRootPath;
-            var entries = await Task.Run(() => WorkshopRecovery.Inspect(game));
-            string[] directories = WorkshopInstallation.TransactionDirectories(game);
-            bool german = APIShared.Localization.GameLocale.Current() == "de-DE";
-            // Unfinished transactions are logged in full; of the retained finished history
-            // only the newest outcome, so the log does not repeat it on every start.
-            if (directories.Length != 0) {
-                foreach (var interrupted in entries)
-                    WorkshopRuntime.Log("Workshop unfinished transaction=" + interrupted.Directory + "; " + WorkshopRecovery.Describe(interrupted, false));
-                // A normal updater exit empties apply.lock. A record that survived names the
-                // phase and process of an updater that was terminated from outside.
-                if (entries.Count != 0 && !Proton.WinePathInterop.Instance.IsWine) {
-                    string stale = await Task.Run(() => WorkshopUpdaterActivity.DescribeStaleWindows(game));
-                    if (stale != null) WorkshopRuntime.Log("Workshop updater ended without its normal exit; last activity record: " + stale);
-                }
-                string latest = directories.Where(WorkshopRecovery.Finished).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault();
-                if (latest != null)
-                    WorkshopRuntime.Log("Workshop latest transaction=" + latest + "; outcome=" + WorkshopRecovery.Journal(latest).Last(x => x == "committed" || x == "restored"));
+            var lines = InstallRunner.TakeResult(WorkshopRuntime.Installation);
+            int errors = 0;
+            foreach (var line in lines) {
+                if (line.Error) { errors++; WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Error, "Workshop preloader installation: " + line.Text); }
+                else WorkshopRuntime.Log("Workshop preloader installation: " + line.Text);
             }
-            if (entries.Count == 0) return false;
-            string details = string.Join("\n\n", entries.Select(x => x.Directory + "\n" + APIShared.Localization.UiText.Get("Workshop.Recovery.Items", "Ids", x.Items.Length == 0 ? "?" : string.Join(", ", x.Items)) + "\n" +
-                WorkshopRecovery.Describe(x, APIShared.Localization.GameLocale.Current())));
-            // Show a failed external recovery/replacement attempt too: its
-            // failure belongs to the request journal, not the original journal.
-            bool resumeFailed = false, reported = false;
-            foreach (string directory in directories.OrderByDescending(Directory.GetLastWriteTimeUtc)) {
-                if (WorkshopRecovery.Finished(directory)) continue;
-                string references = WorkshopPaths.Inside(directory, "supersedes.tsv");
-                if (!File.Exists(references)) references = WorkshopPaths.Inside(directory, "operations.tsv");
-                if (!File.Exists(references)) continue;
-                string[] lines = File.ReadAllLines(references);
-                if (!lines.Any(line => entries.Any(e => line.StartsWith(Path.GetFileName(e.Directory) + "\t", StringComparison.Ordinal)))) continue;
-                string failure = WorkshopRecovery.Journal(directory).LastOrDefault(line => line.StartsWith("failure ", StringComparison.Ordinal));
-                if (failure == null) continue;
-                if (!reported) details += "\n\n" + APIShared.Localization.UiText.Get("Workshop.PreviousAttempt") + directory + "\n" + failure;
-                reported = true;
-                // A failed resume withdraws the resume offer; clean reinstallation remains.
-                if (lines.Length >= 2 && lines[0] == WorkshopRecovery.Protocol && lines[1] == WorkshopRecovery.ResumeDisposition) resumeFailed = true;
-            }
-            // Resume continues one interrupted installation with its own staged files (Windows
-            // updater only). Otherwise, or when the player prefers it, the affected mods are
-            // reinstalled cleanly from their Steam downloads: that path needs no backup or
-            // readable history and is therefore always available once Steam provides the items.
-            bool resume = false;
-            if (!resumeFailed && entries.Count == 1 && !Proton.WinePathInterop.Instance.IsWine) {
-                string resumeError = await Task.Run(() => WorkshopRecovery.ResumeError(game, entries[0]));
-                resume = resumeError == null;
-                WorkshopRuntime.Log("Workshop resume " + (resume ? "available" : "unavailable: " + resumeError) + "; transaction=" + entries[0].Directory);
-            }
-            if (resume) {
-                int decision = Ask(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationNeedsAttention") + details + "\n\n" +
-                    APIShared.Localization.UiText.Get("Workshop.YesResumeNoReinstallCancelLater"), 0x3u);
-                var choice = WorkshopRecovery.Decide(true, decision);
-                if (choice == WorkshopRecovery.Choice.Later) { WorkshopRuntime.Log("Workshop recovery postponed; retained " + details); return true; }
-                if (choice == WorkshopRecovery.Choice.Resume) {
-                    await WorkshopRuntime.ResumeAsync(entries[0], WorkshopStartupGate.AuthorizeConfirmedUpdate());
-                    return true;
-                }
-            }
-            return await CompleteRepairAsync(game, entries, details, german);
+            if (errors != 0)
+                Notice(APIShared.Localization.UiText.Get("Workshop.InstallationFailedAtStart") + string.Join("\n", lines.Where(l => l.Error).Select(l => l.Text)));
+            return errors;
         }
 
-        // Clean reinstallation from the Steam downloads (WorkshopRepairPlanner). It needs no
-        // backup of the interrupted transaction and no readable history, so it is always
-        // possible once Steam provides the subscribed packages. Every outcome is shown.
-        private static async Task<bool> CompleteRepairAsync(string game, IReadOnlyList<WorkshopInterruptedTransaction> entries, string details, bool german)
+        // Leftovers of the former external updater (removed in favour of the preloader swap):
+        // transaction folders, its lock and retention files. Skipped while a former updater still
+        // holds its lock. Items of a transaction that was interrupted while applying may be half
+        // written, possibly without a receipt (first installation); they are recorded in
+        // _APIShared/I/repair.txt and offered as a clean installation at every start until their
+        // files match the Workshop package again (StartupAction, repair).
+        internal static void RemoveFormerUpdaterState(string game)
         {
-            WorkshopRuntime.CleanRepair repair;
-            try { repair = await WorkshopRuntime.PrepareCleanRepairAsync(entries); }
-            catch (Exception ex) {
-                WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic, "Workshop step=complete repair preparation", ex);
-                Notice(APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationMustBe") + ex.Message + "\n\n" +
-                    APIShared.Localization.UiText.Get("Workshop.NothingWasChangedTheRepairIs") + "\n\n" + details);
-                return true;
+            string workshop = WorkshopPaths.Inside(game, "_APIShared/Workshop");
+            string lockPath = Path.Combine(workshop, "apply.lock");
+            var folders = new[] { WorkshopPaths.Inside(game, "_APIShared/T"), Path.Combine(workshop, "Transactions"), Path.Combine(workshop, "Unrecoverable") };
+            var files = new[] { lockPath, Path.Combine(workshop, "cleanup.pending.tsv") };
+            if (!folders.Any(Directory.Exists) && !files.Any(File.Exists)) return;
+            if (File.Exists(lockPath)) {
+                try { using (new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { } }
+                catch (IOException) { WorkshopRuntime.Log("Workshop former updater still holds its lock; its leftovers are removed at a later start."); return; }
             }
-            if (repair.Plans.Count == 0) {
-                // Only unreadable history and no APIShared-managed package installed or subscribed.
-                var moved = await Task.Run(() => WorkshopRecovery.Archive(game, repair.Archived));
-                WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop unreadable transactions archived; no installed package is affected: " + string.Join(", ", moved.Select(x => x.Value)));
-                return false;
+            var interrupted = new HashSet<ulong>();
+            foreach (string folder in folders.Take(2).Where(Directory.Exists))
+                foreach (string transaction in Directory.GetDirectories(folder))
+                    interrupted.UnionWith(WorkshopLocalState.InterruptedItems(transaction));
+            if (interrupted.Count > 0) {
+                var repairs = WorkshopLocalState.ReadRepairs(game);
+                repairs.UnionWith(interrupted);
+                WorkshopLocalState.WriteRepairs(game, repairs);
+                WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop former updater was interrupted while installing item(s) " +
+                    string.Join(", ", interrupted.OrderBy(id => id)) + "; a clean installation is offered at startup.");
             }
-            string plans = string.Join("\n", repair.Plans.Select(p => WorkshopStartupSummary.Describe(p, APIShared.Localization.GameLocale.Current()) + (p.RemovedFiles.Count == 0 ? "" :
-                APIShared.Localization.UiText.Get("Workshop.RemovedFiles", "Count", p.RemovedFiles.Count)) +
-                (p.Diagnostics.Count == 0 ? "" : "\n  " + string.Join("\n  ", p.Diagnostics))));
-            string body = APIShared.Localization.UiText.Get("Workshop.AnInterruptedWorkshopInstallationReinstall") + details + "\n\n" + plans + "\n\n" +
-                APIShared.Localization.UiText.Get("Workshop.YesAfterTheGameClosesReinstall");
-            if (WorkshopRecovery.Decide(false, Ask(body, 0x4)) != WorkshopRecovery.Choice.CompleteRepair) {
-                WorkshopRuntime.Log("Workshop complete repair postponed; retained " + details);
-                return true;
+            foreach (string folder in folders) {
+                if (!Directory.Exists(folder)) continue;
+                WorkshopPaths.CheckLinks(folder);
+                InstallTree.Delete(folder);
             }
-            var operation = await WorkshopRuntime.ApplyStartupAsync(repair.Plans, repair.Retained, WorkshopStartupGate.AuthorizeConfirmedUpdate(), repair.Superseded, repair.Archived);
-            if (operation.State != WorkshopOperationState.AwaitingRestart) throw operation.Failure ?? new IOException(operation.Diagnostic);
-            return true;
+            foreach (string file in files) InstallTree.DeleteFileIfExists(file);
+            WorkshopRuntime.Log("Workshop leftovers of the former updater removed.");
         }
     }
 }

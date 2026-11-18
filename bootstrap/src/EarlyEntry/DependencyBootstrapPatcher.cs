@@ -21,6 +21,15 @@ namespace APIShared.DependencyBootstrap
                 if (listener != null) return;
                 ProbeTrace.Initialize();
                 mode = File.Exists(Path.Combine(BepInEx.Paths.ConfigPath, "APIShared.DependencyBootstrap.disabled")) ? "Disabled" : "Active";
+                // Safe Workshop installation: Finish runs before the chainloader opens anything in
+                // BepInEx/plugins. Same inert-companion gate as the hooks below.
+                // Contained separately: an installation failure must not skip the listener below.
+                try
+                {
+                    if (mode == "Active" && PairContract.HasRuntimeDirectory(BepInEx.Paths.GameRootPath))
+                        WorkshopInstallPass.Run(BepInEx.Paths.GameRootPath);
+                }
+                catch (Exception ex) { ProbeTrace.Error("Workshop installation pass " + ex.Message); }
                 listener = new ReadinessListener(new ReadyGate(OnReady, () => { }, (marker, detail) => ProbeTrace.Error(detail)));
                 Logger.Listeners.Add(listener);
             }

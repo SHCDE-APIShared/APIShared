@@ -46,22 +46,23 @@ namespace APIShared.Workshop
             return new WorkshopLocalState(difference == null ? WorkshopLocalStatus.Verified : WorkshopLocalStatus.Modified, difference);
         }
 
-        internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status, bool offersEnabled, bool requested = false)
+        // Startup offers (the dialog remains the consent). An unsubscribed receipted installation
+        // is removed. A subscribed receipted package is offered when a newer release exists, and
+        // also when its delivered files are missing or changed: a clean installation from Steam
+        // repairs it, for example after an interrupted installation of the former updater.
+        // repair: the former external updater was interrupted while installing this item
+        // (WorkshopStartup.RemoveFormerUpdaterState); a clean installation is offered regardless
+        // of disabled offers and of a missing receipt until the files match the package.
+        internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status, bool offersEnabled, bool repair = false)
         {
             // The catalog describes an unsubscribed installation by its receipt version only;
             // it attaches the receipt object to subscribed items alone.
             if (!item.IsSubscribed && item.InstalledVersion != null) return WorkshopAction.Remove;
-            // An installation requested in Mod Options is offered like the explicit choice it
-            // replaces: independent of the local state and of disabled update offers. The
-            // startup dialog remains the consent.
-            if (requested && item.IsSubscribed && item.CanInstall && item.Package != null) return ManualAction(item);
-            if (offersEnabled && item.CanInstall && item.Package != null && item.Receipt != null &&
-                status == WorkshopLocalStatus.Verified &&
-                WorkshopPackageCodec.Version(item.Package.Version) > WorkshopPackageCodec.Version(item.Receipt.Version))
-                return WorkshopAction.Update;
-            return null;
+            if (repair && item.IsSubscribed && item.CanInstall && item.Package != null && status != WorkshopLocalStatus.Verified) return ManualAction(item);
+            if (!offersEnabled || !item.CanInstall || item.Package == null || item.Receipt == null) return null;
+            if (status != WorkshopLocalStatus.Verified) return ManualAction(item);
+            return WorkshopPackageCodec.Version(item.Package.Version) > WorkshopPackageCodec.Version(item.Receipt.Version) ? WorkshopAction.Update : (WorkshopAction?)null;
         }
-
         internal static WorkshopAction ManualAction(WorkshopCatalogItem item)
         {
             if (item.Receipt == null) return WorkshopAction.Install;
@@ -77,36 +78,39 @@ namespace APIShared.Workshop
         internal static string FormatIds(IEnumerable<ulong> ids) =>
             string.Join(",", ids.Distinct().OrderBy(id => id).Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
-        // Installation requests: "<id>" waits for the next startup offer; "<id>:<transaction>"
-        // was handed off to that updater transaction and is resolved by its outcome on the
-        // following start. Malformed entries are ignored like malformed IDs.
-        internal static Dictionary<ulong, string> ParseRequests(string value)
+        // Former transaction format: journal.log gains "applying" when files start to change and
+        // "committed" or "restored" when finished; operations.tsv rows "receipt-write|receipt-delete
+        // <tab> _APIShared/Workshop/Receipts/<id>.json ..." name the items. Unreadable data names no item.
+        internal static IEnumerable<ulong> InterruptedItems(string transaction)
         {
-            var result = new Dictionary<ulong, string>();
-            foreach (string entry in (value ?? string.Empty).Split(',')) {
-                string[] parts = entry.Trim().Split(':');
-                if (parts.Length > 2 || !ulong.TryParse(parts[0], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong id) || id == 0) continue;
-                string transaction = parts.Length == 2 ? parts[1] : null;
-                if (transaction != null && !System.Text.RegularExpressions.Regex.IsMatch(transaction, "^[a-f0-9]{32}$")) continue;
-                // Duplicates are never written; if hand-edited, a pending entry wins (offer again).
-                if (!result.ContainsKey(id) || transaction == null) result[id] = transaction;
-            }
-            return result;
+            try {
+                string journal = Path.Combine(transaction, "journal.log"), operations = Path.Combine(transaction, "operations.tsv");
+                if (!File.Exists(journal) || !File.Exists(operations)) return new ulong[0];
+                var steps = File.ReadAllLines(journal);
+                if (!steps.Contains("applying") || steps.Contains("committed") || steps.Contains("restored")) return new ulong[0];
+                return File.ReadAllLines(operations).Select(line => line.Split('\t'))
+                    .Where(row => row.Length > 1 && row[0].StartsWith("receipt-", StringComparison.Ordinal))
+                    .Select(row => ulong.TryParse(Path.GetFileNameWithoutExtension(row[1]), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong id) ? id : 0)
+                    .Where(id => id != 0).ToList();
+            } catch (IOException) { return new ulong[0]; }
+            catch (UnauthorizedAccessException) { return new ulong[0]; }
         }
-        internal static string FormatRequests(IReadOnlyDictionary<ulong, string> requests) =>
-            string.Join(",", requests.OrderBy(pair => pair.Key).Select(pair => pair.Key.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                (pair.Value == null ? "" : ":" + pair.Value)));
 
-        internal enum RequestOutcome { Fulfilled, Offer }
-        // Outcome of a handed-off request from its transaction journal. A committed
-        // installation fulfils it, and so does a committed complete repair that superseded
-        // the interrupted transaction (it reinstalled the item from Steam; the original
-        // journal never receives 'committed'). A rollback, cancellation, missing transaction
-        // or an updater that never applied makes the request pending again, so the player is
-        // asked again instead of losing the request silently. Other interrupted transactions
-        // never reach this decision: the recovery dialog runs before installation offers.
-        internal static RequestOutcome ResolveRequest(string[] journal, bool superseded = false) =>
-            superseded || journal != null && journal.Contains("committed") ? RequestOutcome.Fulfilled : RequestOutcome.Offer;
+        internal static string RepairPath(string game) => Path.Combine(new Install.InstallPaths(game).Work, "repair.txt");
+
+        internal static HashSet<ulong> ReadRepairs(string game)
+        {
+            string path = RepairPath(game);
+            return File.Exists(path) ? ParseIds(File.ReadAllText(path)) : new HashSet<ulong>();
+        }
+
+        internal static void WriteRepairs(string game, HashSet<ulong> ids)
+        {
+            string path = RepairPath(game);
+            if (ids.Count == 0) { Install.InstallTree.DeleteFileIfExists(path); return; }
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            Install.InstallTree.WriteDurable(path, FormatIds(ids) + "\r\n");
+        }
 
         internal static IReadOnlyList<string> ReceiptRoots(WorkshopReceipt receipt) =>
             receipt.Files.Select(file => string.Join("/", file.Path.Split('/').Take(3)))

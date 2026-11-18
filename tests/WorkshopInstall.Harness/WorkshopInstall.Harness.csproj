@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <OutputType>Exe</OutputType><TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <AssemblyName>WorkshopInstall.Harness</AssemblyName><LangVersion>latest</LangVersion>
+    <OutputPath>bin\</OutputPath><IntermediateOutputPath>obj\</IntermediateOutputPath>
+    <Optimize>true</Optimize><DebugType>none</DebugType><WarningLevel>4</WarningLevel><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" /><Reference Include="System.Core" />
+    <Compile Include="Program.cs" />
+    <Compile Include="..\..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Production\WorkshopSafeInstall.cs</Link></Compile>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -18,7 +18,7 @@ namespace APIShared.Workshop
         Ready, /// <summary>A Steam request is in flight.</summary>
         Submitted, /// <summary>The remote operation completed.</summary>
         Succeeded, /// <summary>The diagnostic explains the failed step.</summary>
-        Failed, /// <summary>The updater awaits game exit; inspect its journal and receipt after restart.</summary>
+        Failed, /// <summary>Staged; APIShared's preloader applies it at the next game start. Inspect the receipt after that start.</summary>
         AwaitingRestart }
 
     /// <summary>A delivered immutable file. Path is relative to the game root, uses forward slashes and is restricted to declared plugin folders.</summary>
