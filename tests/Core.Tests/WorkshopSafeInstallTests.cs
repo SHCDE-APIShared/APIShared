@@ -189,6 +189,39 @@ public sealed class WorkshopSafeInstallTests
         AssertVersionTwoWithPlayerFiles();
     }
 
+    // Same for a removal: root A must not stay removed while root B is still loaded.
+    [TestMethod] public void SecondRootLockedUndoesARemovalAndKeepsTheRequest()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Windows file sharing semantics."); return; }
+        InstallVersionOneWithPlayerFiles();
+        string oldA = TreeId(Target(0)), oldB = TreeId(Target(1));
+        InstallStaging.StageRemove(paths, Id, "PkgId", Targets, _ => { });
+        bool failed = false;
+        using (new FileStream(Path.Combine(Target(1), "b.dll"), FileMode.Open, FileAccess.Read, FileShare.None))
+            try { Apply(); } catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { failed = true; }
+        Assert.IsTrue(failed);
+        Assert.AreEqual(oldA, TreeId(Target(0))); Assert.AreEqual(oldB, TreeId(Target(1)));
+        Assert.IsFalse(File.Exists(paths.Journal(Id)));
+        Assert.IsTrue(InstallStaging.Pending(paths, Id));
+        Preloader();
+        Assert.IsFalse(Directory.Exists(Target(0))); Assert.IsFalse(Directory.Exists(Target(1)));
+        AssertClean();
+    }
+
+    // A swap whose cleanup is deferred is installed: it must not show as pending in this session.
+    [TestMethod] public void DeferredCleanupIsNotReportedAsPending()
+    {
+        Stage(1);
+        InstallSwap.Fault = s => { if (s == "backup-deleted") throw new IOException("briefly locked"); };
+        Apply();
+        InstallSwap.Fault = null;
+        Assert.AreEqual("a1", Read("PkgA/a.dll"));
+        Assert.IsTrue(File.Exists(paths.Journal(Id)), "journal finishes the cleanup");
+        Assert.IsFalse(InstallStaging.Pending(paths, Id));
+        Preloader();
+        AssertClean();
+    }
+
     // A failed attempt already carried player files; the player then changes one and deletes
     // another before the retry: newest data wins, the deleted one falls back to the shipped file.
     [TestMethod] public void RetryUsesTheCurrentPlayerState()

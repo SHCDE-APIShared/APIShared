@@ -688,12 +688,14 @@ namespace APIShared.Workshop.Install
             Step("receipt");
             try
             {
+                // The request goes first: a deferred cleanup must not show the applied change as
+                // still pending for the rest of the session. The journal alone finishes it.
+                InstallTree.DeleteFileIfExists(paths.Request(plan.WorkshopId));
                 foreach (var root in roots) InstallTree.Delete(root.Backup);
                 // Parked persist entries were restored into the shipped roots; a dropped root's
                 // parking stays for a later reinstallation.
                 if (plan.Action == "install") foreach (var root in roots.Where(r => !r.Drop)) InstallTree.Delete(root.Park);
                 Step("backup-deleted");
-                InstallTree.DeleteFileIfExists(paths.Request(plan.WorkshopId));
                 // plan.txt goes first: Recover treats a container without it as finished, so the
                 // receipt copy above is never repeated from a half-deleted container (deletion
                 // order of the remaining files depends on the file system).
@@ -763,36 +765,53 @@ namespace APIShared.Workshop.Install
                             if (!root.Drop && InstallTree.ReadMarker(root.Target) == plan.TransactionId && !Directory.Exists(root.Staged)) Directory.Move(root.Target, root.Staged);
                             if (!Directory.Exists(root.Target) && Directory.Exists(root.Backup)) Directory.Move(root.Backup, root.Target);
                         }
-                        // A backup that cannot return (a folder was recreated at its place) may hold
-                        // the only copy of player files. Without a journal the next Apply deletes
-                        // backups as leftovers, so it is moved aside and named in the log instead.
-                        foreach (var root in roots.Where(r => Directory.Exists(r.Backup)))
-                        {
-                            string kept = root.Backup + "-kept-" + plan.TransactionId.Substring(0, 8);
-                            for (int n = 2; Directory.Exists(kept); n++) kept = root.Backup + "-kept-" + plan.TransactionId.Substring(0, 8) + "-" + n.ToString(CultureInfo.InvariantCulture);
-                            Directory.Move(root.Backup, kept);
-                            log("RECOVERY_KEPT_OLD_FOLDER " + root.Target + " -> " + kept);
-                        }
-                        File.Delete(journal);
-                        log("RECOVERED " + id + " rolled-back (" + forward.Message + ")");
-                        return "rolled-back";
+                        return RolledBack(id, plan, roots, journal, forward, log);
                     }
                 }
             }
             else
             {
-                foreach (var root in roots)
+                try
                 {
-                    if (!Directory.Exists(root.Target)) continue;
-                    InstallKeep.Park(root.Target, root.Park);
-                    if (Directory.Exists(root.Backup)) InstallTree.Delete(root.Backup);
-                    Directory.Move(root.Target, root.Backup);
+                    foreach (var root in roots)
+                    {
+                        if (!Directory.Exists(root.Target)) continue;
+                        InstallKeep.Park(root.Target, root.Park);
+                        if (Directory.Exists(root.Backup)) InstallTree.Delete(root.Backup);
+                        Directory.Move(root.Target, root.Backup);
+                    }
+                    outcome = "removed";
                 }
-                outcome = "removed";
+                catch (Exception forward) when (!(forward is InstallCrashSimulation))
+                {
+                    // A root that cannot be removed (e.g. a locked file) undoes the removal, so this
+                    // start never loads a package with some of its roots missing.
+                    foreach (var root in roots)
+                        if (!Directory.Exists(root.Target) && Directory.Exists(root.Backup)) Directory.Move(root.Backup, root.Target);
+                    return RolledBack(id, plan, roots, journal, forward, log);
+                }
             }
             Finish(paths, plan, roots, journal, log);
             log("RECOVERED " + id + " " + outcome);
             return outcome;
+        }
+
+        // The old roots are back; the request stays and is retried at the next start.
+        private static string RolledBack(ulong id, InstallPlanFile plan, List<RootState> roots, string journal, Exception reason, Action<string> log)
+        {
+            // A backup that cannot return (a folder was recreated at its place) may hold the only
+            // copy of player files. Without a journal the next Apply deletes backups as leftovers,
+            // so it is moved aside and named in the log instead.
+            foreach (var root in roots.Where(r => Directory.Exists(r.Backup)))
+            {
+                string kept = root.Backup + "-kept-" + plan.TransactionId.Substring(0, 8);
+                for (int n = 2; Directory.Exists(kept); n++) kept = root.Backup + "-kept-" + plan.TransactionId.Substring(0, 8) + "-" + n.ToString(CultureInfo.InvariantCulture);
+                Directory.Move(root.Backup, kept);
+                log("RECOVERY_KEPT_OLD_FOLDER " + root.Target + " -> " + kept);
+            }
+            File.Delete(journal);
+            log("RECOVERED " + id + " rolled-back (" + reason.Message + ")");
+            return "rolled-back";
         }
     }
 

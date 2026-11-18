@@ -23,7 +23,7 @@ namespace APIShared
     // - Install: RequireUnpatched compares every prepared span (hook TargetAddress plus its displaced
     //   or overwritten length) with the snapshot before the first byte is written. A deviation logs an
     //   Error with feature, RVA, expected/live bytes and a jump/module hint, then throws, so only that
-    //   feature stays Vanilla. A foreign patch directly before or behind the span is allowed (Info).
+    //   feature stays Vanilla. A foreign patch directly before or behind the span is allowed and not reported.
     // - Later: Watch records the bytes a span holds after publication; Recheck compares them again at
     //   every mission and editor start and logs each new deviation once as an Error. Nothing is ever
     //   rewritten or undone.

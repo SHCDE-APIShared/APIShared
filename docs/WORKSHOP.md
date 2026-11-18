@@ -140,7 +140,7 @@ Guarantees and behavior:
 
 - Plugin folders are only renamed, never changed file by file. BepInEx always sees the complete old or the complete new version of every root.
 - Recovery decides from the file system and a transaction marker file (`.apishared-install`) inside each staged root. It rolls forward when the staged data is complete and otherwise restores the old roots. Recovery is idempotent and runs again if the preloader itself is interrupted.
-- A locked file in an installed root (for example held by a virus scanner) makes the swap undo itself immediately; the old version stays installed and the request is retried at the next start.
+- A locked file in an installed root (for example held by a virus scanner) makes the swap or removal undo itself immediately; the old version stays installed and the request is retried at the next start.
 - Outcomes are logged on the BepInEx log source `APIShared.WorkshopInstall` and written to `_APIShared/I/result.txt`. The APIShared plugin reports that file once at startup; failures are shown in a dialog.
 - The preloader pass is silent and does nothing when no request or journal exists.
 - A batch confirmed at startup is staged all or nothing: every container is prepared first and the requests are written last, so quitting the game while it still copies leaves nothing to apply; if one change fails to stage, the changes of that batch already staged are withdrawn and offered again at the next start. At the next start each request is swapped on its own, so an item whose swap fails there does not hold back the others.
