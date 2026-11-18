@@ -26,6 +26,7 @@
     <Compile Include="..\..\bootstrap\src\EarlyEntry\ReadyGate.cs" />
     <Compile Include="..\..\bootstrap\src\Workshop\WorkshopInstallPass.cs" />
     <Compile Include="..\..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Shared\WorkshopSafeInstall.cs</Link></Compile>
+    <Compile Include="..\..\src\Workshop\WorkshopManagerPolicy.cs"><Link>Shared\WorkshopManagerPolicy.cs</Link></Compile>
     <Compile Include="ContractTests.cs" /><Compile Include="PairTests.cs" /><Compile Include="..\..\bootstrap\src\Package\PairContract.cs" />
     <Compile Include="ShadowTests.cs" />
     <None Include="App.config" />

@@ -26,6 +26,7 @@
     <Compile Include="src\EarlyEntry\ReadyGate.cs" />
     <Compile Include="src\Workshop\WorkshopInstallPass.cs" />
     <Compile Include="..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Shared\WorkshopSafeInstall.cs</Link></Compile>
+    <Compile Include="..\src\Workshop\WorkshopManagerPolicy.cs"><Link>Shared\WorkshopManagerPolicy.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

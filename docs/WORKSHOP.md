@@ -10,6 +10,7 @@ Extender-managed maps and explicitly declared loose packages are separate paths.
 - [Package format](#package-format-and-bootstrap): inventory and bootstrap preparation.
 - [Keep list](#keep-list-apishared-keeptxt): player files that survive updates.
 - [Installation (preloader swap)](#installation-preloader-swap): staging, the swap at the next start, recovery and limits.
+- [External mod managers](#external-mod-managers-apisharedmodmanagerjson): let another program take packages over.
 - [Linux paths and first-install repair](#linux-paths-and-first-install-repair): Wine drive mappings and the independent manual patcher.
 - [Internal implementation](#internal-implementation): staging hooks, the installation core, the independent patcher and persistent publishers.
 
@@ -47,7 +48,7 @@ Open **Mod Options → APIShared → Workshop** to install the version supplied 
 
 Earlier releases first recorded only a request, offered it in the next startup dialog, then closed the game, installed through an external updater with a progress window and restarted the game. That updater and its restart handoff were removed; see [Installation (preloader swap)](#installation-preloader-swap).
 
-A statically rooted Steam-initialization subscriber prepares one startup decision per process. It offers Update for newer releases of intact receipt-owned installations, a clean reinstallation when receipted files are missing or modified, and Remove for receipted items that are no longer subscribed. The local **Offer updates at startup** switch controls the update and reinstallation offers per Workshop item and defaults to on; switch it off for an item whose files are changed on purpose, such as a standalone development build. Items with a prepared, not yet installed change are not offered again. Extender work and bootstrap installation take priority. Invalid dependencies or ownership conflicts defer changes safely.
+A statically rooted Steam-initialization subscriber prepares one startup decision per process. It offers the first installation of subscribed packages that APIShared has not installed yet (this also adopts matching files), Update for newer releases of intact receipt-owned installations, a clean reinstallation when receipted files are missing or modified, and Remove for receipted items that are no longer subscribed. The local **Offer updates at startup** switch controls the installation, update and reinstallation offers per Workshop item and defaults to on; switch it off for an item whose files are changed on purpose, such as a standalone development build. Items with a prepared, not yet installed change are not offered again. Extender work and bootstrap installation take priority. Invalid dependencies or ownership conflicts defer changes safely.
 
 The startup dialog lists every change and asks once (**Yes**: prepare these changes now, they are installed at the next start; **No**: keep the current installation). After **Yes** staging continues in the background; nothing is applied in the current session and the game is never closed or restarted. Declining preserves files and rediscovers eligible changes on the next start. At the next start, the outcome of the preloader installation is reported once: successes are logged, failures are logged as errors and shown in a dialog; the previous version then remains installed and the installation is retried at the following start.
 
@@ -160,6 +161,22 @@ Extender staging/download restarts take precedence. Under `SCDEModManagerLaunchI
 
 Platform-test records are optional and are not read by the maintainer release/upload drivers. Missing, outdated or malformed records do not block manual publication. SerpsMods publishes a separate Workshop-content ZIP alongside its ordinary plugin ZIP; reusing a release restores the complete verified content ZIP, including manifest and Payload, rather than just its bootstrap map.
 
+### External mod managers (APIShared.ModManager.json)
+
+A mod manager outside the game can take Workshop packages over, for example because the player switched a mod off or pinned a version there. It writes `BepInEx/config/APIShared.ModManager.json` (UTF-8):
+
+```json
+{ "SchemaVersion": 1, "Manager": "Example Manager", "Items": { "3788821961": "managed" } }
+```
+
+- `Items` maps Workshop IDs to `"managed"`; `"*": "managed"` takes over every package. `Manager` is the name shown to players.
+- APIShared never installs, updates, repairs, removes or offers a managed package. Mod Options shows "Managed by <Manager>" without installation buttons, and `WorkshopClient.ApplyAsync` refuses it.
+- A change staged before the manager took the package over is discarded by the preloader at the next start (log `WITHDRAWN <id>`). An interrupted swap is still finished or undone first, so no folder stays partial.
+- Switching mods on or off and installing them stays the manager's job; APIShared does not load or hide mods. Remove the item (or the file) to hand the package back to APIShared.
+- What APIShared installed can be read from the receipts `_APIShared/Workshop/Receipts/<WorkshopId>.json`.
+- A file that exists but is not understood (invalid JSON, unknown `SchemaVersion`, invalid ID) takes over every package and is logged as an error; an unknown value for an item still marks that item managed. A manager's intent is never overridden by guessing.
+- The file lives in `BepInEx/config`, not in `BepInEx/plugins`: plugin folders belong to their packages and are replaced as a whole by an update.
+- The Script Extender's `SCDEModManagerLaunchId` launch variable keeps working as before: during such a launch APIShared offers and stages nothing for any package.
 ### Former updater leftovers
 
 The former external updater kept transaction folders and history (`_APIShared/T`, `_APIShared/Workshop/Transactions`, `_APIShared/Workshop/Unrecoverable`, `apply.lock`, `cleanup.pending.tsv`). Startup removes these leftovers automatically, unless a former updater still holds `apply.lock`; then they are removed at a later start. Before deleting them, startup reads which items a transaction was installing when it was interrupted (journal `applying` without `committed`/`restored`, items from the receipt rows of `operations.tsv`) and records them in `_APIShared/I/repair.txt`. Such an item is offered as a clean installation at every start, even without a receipt (an interrupted first installation) and with update offers disabled, until its files match the Workshop package again. There is no history retention or resume/rollback dialog anymore.

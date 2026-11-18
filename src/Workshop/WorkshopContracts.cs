@@ -114,6 +114,8 @@ namespace APIShared.Workshop
         internal Exception DiagnosticError;
         internal WorkshopReceipt Receipt;
         internal string ManifestHash;
+        // Name of the external mod manager that took this item over (WorkshopManagerPolicy), or null.
+        internal string ManagedBy;
         /// <summary>Steam-issued item identity; zero or empty means unavailable.</summary>
         public ulong WorkshopId { get; internal set; }
         /// <summary>Human-readable item or upload title.</summary>

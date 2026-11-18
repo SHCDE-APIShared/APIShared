@@ -24,6 +24,8 @@ namespace APIShared.Workshop
         internal static Task<IReadOnlyList<WorkshopCatalogItem>> GetCatalogAsync()
         {
             var snapshot = Subscriptions(); string game = Paths.GameRootPath;
+            var policy = WorkshopManagerPolicy.Read(game);
+            string managedText = policy.Manager == null ? null : APIShared.Localization.UiText.Get("Workshop.ManagedByManager", "Manager", policy.Manager);
             return Task.Run<IReadOnlyList<WorkshopCatalogItem>>(() => {
                 var catalog = new List<WorkshopCatalogItem>();
                 var receipts = new Dictionary<ulong, WorkshopReceipt>();
@@ -42,15 +44,20 @@ namespace APIShared.Workshop
                             entry.ManifestHash = Sha256Hex.Of(bytes).ToLowerInvariant();
                             using (var reader = new StreamReader(new MemoryStream(bytes))) entry.Package = WorkshopPackageCodec.Read(reader.ReadToEnd());
                             entry.Title = entry.Package.PackageId;
-                            entry.CanInstall = !IsExternallyManaged;
+                            entry.CanInstall = !IsExternallyManaged && !policy.Manages(item.Id);
                             entry.Status = IsExternallyManaged ? APIShared.Localization.UiText.Get("Workshop.ExternallyManaged") : receipt == null ? APIShared.Localization.UiText.Get("Workshop.Catalog.InstallationAdoptionAvailable") :
                                 WorkshopPackageCodec.Version(entry.Package.Version) > WorkshopPackageCodec.Version(receipt.Version) ? APIShared.Localization.UiText.Get("Workshop.Catalog.UpdateAvailable") : APIShared.Localization.UiText.Get("Workshop.Catalog.ReceiptCurrentLocalFilesAreNot");
                         }
                     } catch (Exception ex) { entry.Status = ex.Message; entry.DiagnosticError = ex; }
+                    if (policy.Manages(item.Id)) { entry.ManagedBy = policy.Manager; if (entry.DiagnosticError == null) entry.Status = managedText; }
                     catalog.Add(entry); receipts.Remove(item.Id);
                 }
-                foreach (var receipt in receipts.Values) catalog.Add(new WorkshopCatalogItem { WorkshopId = WorkshopPackageCodec.Id(receipt.WorkshopId), Title = receipt.PackageId,
-                    InstalledVersion = receipt.Version, Status = IsExternallyManaged ? APIShared.Localization.UiText.Get("Workshop.ExternallyManaged") : APIShared.Localization.UiText.Get("Workshop.Catalog.UnsubscribedRemovalAvailable"), IsSubscribed = false });
+                foreach (var receipt in receipts.Values) {
+                    ulong id = WorkshopPackageCodec.Id(receipt.WorkshopId);
+                    bool managed = policy.Manages(id);
+                    catalog.Add(new WorkshopCatalogItem { WorkshopId = id, Title = receipt.PackageId, InstalledVersion = receipt.Version, ManagedBy = managed ? policy.Manager : null,
+                        Status = managed ? managedText : IsExternallyManaged ? APIShared.Localization.UiText.Get("Workshop.ExternallyManaged") : APIShared.Localization.UiText.Get("Workshop.Catalog.UnsubscribedRemovalAvailable"), IsSubscribed = false });
+                }
                 return catalog.AsReadOnly();
             });
         }

@@ -16,19 +16,6 @@ namespace APIShared.Workshop
     internal static class WorkshopStartup
     {
         private static int attempted;
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern int MessageBoxW(IntPtr window, string text, string caption, uint flags);
-        [DllImport("user32.dll")] private static extern int ShowCursor(bool show);
-        [DllImport("user32.dll")] private static extern bool ClipCursor(IntPtr rect);
-        [DllImport("user32.dll")] private static extern bool ClipCursor(ref Rect rect);
-        [DllImport("user32.dll")] private static extern bool GetClipCursor(out Rect rect);
-        [DllImport("user32.dll")] private static extern bool EnumThreadWindows(uint thread, EnumWindowsProc callback, IntPtr state);
-        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
-        [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
-        [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
-        [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
-        private delegate bool EnumWindowsProc(IntPtr window, IntPtr state);
-        [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
         internal static void Run() => WorkshopStartupGate.Run(RunAsync);
         private static async Task RunAsync()
         {
@@ -53,6 +40,8 @@ namespace APIShared.Workshop
                     WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Warning, "Workshop step=startup conditions; " + APIShared.Localization.UiText.Get("Workshop.InstallerInactive"));
                     return;
                 }
+                var policy = WorkshopManagerPolicy.Read(BepInEx.Paths.GameRootPath);
+                if (policy.Error != null) WorkshopRuntime.WriteDiagnostic(WorkshopDiagnosticLevel.Error, "Workshop step=external mod manager; " + policy.Error + " Every package is treated as managed until the file is fixed.");
                 var repairs = WorkshopLocalState.ReadRepairs(BepInEx.Paths.GameRootPath);
                 int repairCount = repairs.Count;
                 try { WorkshopPaths.CheckLinks(BepInEx.Paths.GameRootPath); }
@@ -70,6 +59,11 @@ namespace APIShared.Workshop
                 foreach (var item in catalog) {
                     if (item.DiagnosticError != null || item.IsSubscribed && (item.Package == null || !item.CanInstall)) continue;
                     string context = WorkshopDiagnostics.Context(item.WorkshopId, item.Title, item.InstalledVersion, item.Package?.Version, "local installation");
+                    if (item.ManagedBy != null) {
+                        // A change staged before the manager took over is discarded by the preloader.
+                        WorkshopRuntime.Log(context + "; managed by external mod manager " + item.ManagedBy + "; APIShared changes nothing.");
+                        continue;
+                    }
                     if (WorkshopRuntime.InstallationPending(item.WorkshopId)) {
                         // Staged earlier in this or a previous session: the next start applies it.
                         WorkshopRuntime.Log(context + "; staged change waits for the next game start.");
@@ -161,43 +155,11 @@ namespace APIShared.Workshop
             } finally { WorkshopDiagnostics.Outcome(WorkshopRuntime.WriteDiagnostic, result, blocked, failures); }
         }
 
-        // Runs on the game's main thread, which hides the system cursor (ShowCursor counter is per
-        // thread) and confines it to the game window. Without an owner the box also opened behind
-        // the game, so neither it nor other programs were reachable with the mouse. The box is
-        // owned by the game window (stays above it, application-modal only: other programs stay
-        // usable) and cursor visibility and confinement are released while it is open and then
-        // restored for the game.
+        // Native box owned by the game window with a free, visible cursor (Presentation/NativeMessageBox).
         private static int Ask(string text, uint flags) {
-            bool clipped = GetClipCursor(out Rect clip);
-            int shown = 0;
-            try {
-                ClipCursor(IntPtr.Zero);
-                while (ShowCursor(true) < 0 && shown < 64) shown++;
-                shown++;
-                // MB_SETFOREGROUND (0x10000) brings the box to the front when it opens.
-                int answer = MessageBoxW(GameWindow(), text, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), flags | 0x30 | 0x10000 | (flags == 0x4 ? 0x100u : 0u));
-                if (answer == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
-                return answer;
-            } finally {
-                for (int i = 0; i < shown; i++) ShowCursor(false);
-                // GetClipCursor also reports a rectangle when nothing was clipped; restoring that
-                // could confine a multi-monitor player to one screen. Only a real clip returns.
-                if (clipped && !(clip.Left == GetSystemMetrics(76) && clip.Top == GetSystemMetrics(77) && // SM_X/YVIRTUALSCREEN
-                    clip.Right - clip.Left == GetSystemMetrics(78) && clip.Bottom - clip.Top == GetSystemMetrics(79))) // SM_CX/CYVIRTUALSCREEN
-                    ClipCursor(ref clip);
-            }
-        }
-
-        // Visible top-level window of the calling (main) thread, i.e. the game window; zero
-        // before it exists, which keeps the former unowned box.
-        private static IntPtr GameWindow() {
-            IntPtr found = IntPtr.Zero;
-            EnumThreadWindows(GetCurrentThreadId(), (window, _) => {
-                if (!IsWindowVisible(window) || GetWindow(window, 4) != IntPtr.Zero) return true; // GW_OWNER
-                found = window;
-                return false;
-            }, IntPtr.Zero);
-            return found;
+            int answer = APIShared.Presentation.NativeMessageBox.Show(text, APIShared.Localization.UiText.Get("Workshop.DialogTitle"), flags | 0x30 | (flags == 0x4 ? 0x100u : 0u));
+            if (answer == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Workshop confirmation could not be displayed.");
+            return answer;
         }
         private static void Notice(string text) => Ask(text, 0);
 

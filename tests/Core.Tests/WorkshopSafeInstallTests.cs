@@ -399,6 +399,21 @@ public sealed class WorkshopSafeInstallTests
         AssertClean();
     }
 
+    // An external mod manager took the item over after a change was staged: the preloader discards
+    // the change and leaves the installed version alone.
+    [TestMethod] public void ManagedItemsStagedChangeIsDiscardedByThePreloader()
+    {
+        InstallVersionOneWithPlayerFiles();
+        string oldA = TreeId(Target(0));
+        Stage(2);
+        var messages = new List<string>();
+        InstallRunner.Run(Game, messages.Add, message => throw new AssertFailedException("preloader error: " + message), id => id == Id);
+        Assert.AreEqual(oldA, TreeId(Target(0)));
+        Assert.IsFalse(InstallStaging.Pending(paths, Id));
+        Assert.IsTrue(messages.Any(m => m.StartsWith("WITHDRAWN " + Id)));
+        AssertClean();
+    }
+
     // A batch stages without requests and publishes them last: an unpublished container (game
     // quit while copying) is never applied.
     [TestMethod] public void UnpublishedContainerIsIgnoredUntilPublished()

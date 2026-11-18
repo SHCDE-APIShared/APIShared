@@ -55,11 +55,16 @@ namespace APIShared.Workshop
         // of disabled offers and of a missing receipt until the files match the package.
         internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status, bool offersEnabled, bool repair = false)
         {
+            // Taken over by an external mod manager: APIShared changes nothing for this item.
+            if (item.ManagedBy != null) return null;
             // The catalog describes an unsubscribed installation by its receipt version only;
             // it attaches the receipt object to subscribed items alone.
             if (!item.IsSubscribed && item.InstalledVersion != null) return WorkshopAction.Remove;
             if (repair && item.IsSubscribed && item.CanInstall && item.Package != null && status != WorkshopLocalStatus.Verified) return ManualAction(item);
-            if (!offersEnabled || !item.CanInstall || item.Package == null || item.Receipt == null) return null;
+            if (!offersEnabled || !item.CanInstall || item.Package == null) return null;
+            // Subscribed, but not installed by APIShared yet: offer the first installation (it also
+            // adopts files that already match). Folders owned by other mods block it in planning.
+            if (item.Receipt == null) return item.IsSubscribed ? WorkshopAction.Install : (WorkshopAction?)null;
             if (status != WorkshopLocalStatus.Verified) return ManualAction(item);
             return WorkshopPackageCodec.Version(item.Package.Version) > WorkshopPackageCodec.Version(item.Receipt.Version) ? WorkshopAction.Update : (WorkshopAction?)null;
         }

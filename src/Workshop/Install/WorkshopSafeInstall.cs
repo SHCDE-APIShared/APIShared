@@ -811,7 +811,10 @@ namespace APIShared.Workshop.Install
             internal string Text;
         }
 
-        internal static void Run(string game, Action<string> info, Action<string> error)
+        // managed: items an external mod manager took over (WorkshopManagerPolicy); their staged,
+        // not yet started changes are discarded instead of applied. Interrupted swaps are always
+        // finished or undone first, so no folder stays partial.
+        internal static void Run(string game, Action<string> info, Action<string> error, Func<ulong, bool> managed = null)
         {
             var paths = new InstallPaths(game);
             if (!Directory.Exists(paths.Work)) return;
@@ -832,6 +835,12 @@ namespace APIShared.Workshop.Install
                 foreach (string request in Directory.GetFiles(paths.Requests, "*.request"))
                 {
                     if (!ulong.TryParse(Path.GetFileNameWithoutExtension(request), NumberStyles.None, CultureInfo.InvariantCulture, out ulong id) || id == 0) continue;
+                    if (managed != null && managed(id))
+                    {
+                        try { InstallStaging.Withdraw(paths, id); ok("WITHDRAWN " + id + " managed by an external mod manager"); }
+                        catch (Exception ex) { fail("item " + id + " is managed by an external mod manager; its staged change could not be discarded: " + ex.Message); }
+                        continue;
+                    }
                     try { InstallSwap.Apply(paths, id, ok); }
                     catch (Exception ex)
                     {

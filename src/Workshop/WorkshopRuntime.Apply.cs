@@ -77,6 +77,9 @@ namespace APIShared.Workshop
         private static void CheckStageable(IReadOnlyList<WorkshopInstallPlan> plans)
         {
             CheckInstallerActive();
+            var policy = WorkshopManagerPolicy.Read(Paths.GameRootPath);
+            foreach (var plan in plans)
+                if (policy.Manages(plan.WorkshopId)) throw WorkshopDiagnostics.Blocked(APIShared.Localization.UiText.Get("Workshop.ManagedByManager", "Manager", policy.Manager));
             var latest = CheckStartupConditions(allowActiveMission: true);
             foreach (var plan in plans) {
                 CheckPlanSubscription(plan, latest);

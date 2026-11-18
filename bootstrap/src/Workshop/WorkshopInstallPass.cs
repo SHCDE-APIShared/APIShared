@@ -17,7 +17,13 @@ namespace APIShared.DependencyBootstrap
         {
             // Tells the APIShared plugin that staged changes are applied at the next start.
             try { AppDomain.CurrentDomain.SetData(InstallRunner.ActiveKey, true); } catch { }
-            try { InstallRunner.Run(game, message => Write(LogLevel.Info, message), message => Write(LogLevel.Error, message)); }
+            try
+            {
+                // An external mod manager's policy wins over changes staged earlier (src/Workshop/WorkshopManagerPolicy.cs).
+                var policy = APIShared.Workshop.WorkshopManagerPolicy.Read(game);
+                if (policy.Error != null) Write(LogLevel.Error, policy.Error);
+                InstallRunner.Run(game, message => Write(LogLevel.Info, message), message => Write(LogLevel.Error, message), policy.Manages);
+            }
             catch (Exception ex) { Write(LogLevel.Error, "Workshop installation pass failed: " + ex.Message); }
         }
 

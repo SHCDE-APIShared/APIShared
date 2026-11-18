@@ -48,7 +48,9 @@ public sealed class WorkshopLocalStateTests
             item.Package.Version = "1.0.30";
             Assert.AreEqual(WorkshopAction.Downgrade, WorkshopLocalState.ManualAction(item));
             item.Receipt = null;
-            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
+            // Subscribed but not installed by APIShared: first installation offered unless offers are off.
+            Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, true));
+            Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(game, item).Status, false));
             Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.ManualAction(item));
 
             // Exactly the catalog's shape for a receipt whose subscription ended: no receipt object.
@@ -60,14 +62,15 @@ public sealed class WorkshopLocalStateTests
     }
 
     [TestMethod]
-    public void OnlyReceiptedInstallablePackagesAreOfferedAndIdsParseStrictly()
+    public void InstallablePackagesAreOfferedAndIdsParseStrictly()
     {
         var item = new WorkshopCatalogItem {
             IsSubscribed = true, CanInstall = true,
             Package = new WorkshopPackage { Version = "1.0.35", Files = Array.Empty<WorkshopFile>() }
         };
-        // Not installed by APIShared: never offered automatically (Mod Options installs it).
-        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, true));
+        // Subscribed, not installed by APIShared yet: the first installation is offered (offers on).
+        Assert.AreEqual(WorkshopAction.Install, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, true));
+        Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Missing, false));
         item.Receipt = new WorkshopReceipt { Version = "1.0.35", Files = Array.Empty<WorkshopFile>() };
         Assert.IsNull(WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Verified, true), "current and intact");
         Assert.AreEqual(WorkshopAction.Reinstall, WorkshopLocalState.StartupAction(item, WorkshopLocalStatus.Modified, true), "damaged: clean reinstallation");

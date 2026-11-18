@@ -46,6 +46,7 @@
     <Compile Include="../../src/Workshop/WorkshopInstallation.cs" Link="Production/WorkshopInstallation.cs" />
     <Compile Include="../../src/Workshop/WorkshopStaging.cs" Link="Production/WorkshopStaging.cs" />
     <Compile Include="../../src/Workshop/Install/WorkshopSafeInstall.cs" Link="Production/WorkshopSafeInstall.cs" />
+    <Compile Include="../../src/Workshop/WorkshopManagerPolicy.cs" Link="Production/WorkshopManagerPolicy.cs" />
     <Compile Include="../../src/Workshop/WorkshopBatch.cs" Link="Production/WorkshopBatch.cs" />
     <Compile Include="../../src/Workshop/WorkshopInstalledVersions.cs" Link="Production/WorkshopInstalledVersions.cs" />
     <Compile Include="../../src/Workshop/WorkshopStartupSummary.cs" Link="Production/WorkshopStartupSummary.cs" />
