@@ -1253,7 +1253,10 @@ the Extender's `FindNextComponentTowardDestination`, mode 0) and the `3E940` fal
 Unnamed player fields: mobile rotation counter `+0x2B54` (`379D924`) and defensive alert
 `+0x38F0` (`379E6C0`), player stride `0x583C`. They are hash-bound: no instruction anchor
 gives a second proof of these displacements. `2BC40` cuts only classes 8/10/17 (types
-24/26/74 via `2CEE00`) to AIC `+0x118`; the option check depends on that. The native
+24/26/74 via `2CEE00`) to AIC `+0x118`; the option check depends on that. The AIC
+array passed as first argument to `2BC40`/`2BF10`/`2D760`/`2DB60`/`2B780` is the AI lord
+manager `404C950` (`LEA RCX` at `57452` before `2AE40`, also the Extender's
+`AILordManagerRVA`), not the player manager `366C210`. The native
 fixture compares the class data with the DLL tables and the `2BC40` comparisons.
 
 Run `AiMilitary.NativeTests` with the canonical DLL, `AiRecruitOrders.Tests`,

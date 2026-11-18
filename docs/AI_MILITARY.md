@@ -83,7 +83,8 @@ command replaces it, so later recruits of the same group, including the other un
 of one multi-unit placement, receive the same state for every role. When an
 existing group has no observed current order (for example after loading a save), the
 defensive roles `CastleDefense`, `DefensePatrol`, `HomeMoat`, `EconomyProtection` and
-`Intervention` admit the recruit exactly like Vanilla admits its own recruits:
+`Intervention`, `Harassment`, and the siege roles while the owner's AI is not besieging
+(siege state 0) admit the recruit exactly like Vanilla admits its own recruits:
 membership and role only. The owner's next regular AI pass then orders the group;
 its native group move sends only members that are not already at their post, so
 existing members receive nothing new. The `Applied` result carries a non-empty
@@ -103,7 +104,18 @@ because Vanilla's allocator then has no group for them. A failed admission into 
 empty group leaves that group exactly as it was, so it remains usable for later
 recruits. A patrol recruit can therefore wait up to the AIC patrol
 delay, and an economy-protection or intervention group below its AIC strength
-receives no order, as in Vanilla. For all other roles an unknown, expired or
+receives no order, as in Vanilla. A harassment recruit waits for the group's next order,
+which can follow a target-cache interval, like a Vanilla recruit. Engineers of both
+pools and `None` never need a group order. Siege recruits also join like Vanilla
+recruits in every siege state. Outside a siege the AI orders them on its next turn.
+During a siege its siege controller orders idle members within a few passes for
+storm groups while approaching and attacking (siege states 3-5), shock groups from
+state 4, and moat, assassin, diversion, cover, reserve and wall groups in the main
+assault (state 5). In every other siege phase the recruit waits, and its
+`Detail` says so, until the AI's next group
+order at its next siege phase, its retreat or its return home. Vanilla stops siege
+recruitment during a siege, so this wait has no Vanilla counterpart except scripted
+mission spawns. Otherwise an unknown, expired or
 incompatible order of an existing group is rejected explicitly; there is no wait
 until its next AI command. Strategic intent additionally checks
 the current siege phase, target identities, AIC, group storage identity and native

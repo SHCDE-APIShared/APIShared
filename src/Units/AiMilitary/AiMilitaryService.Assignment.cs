@@ -176,6 +176,11 @@ namespace APIShared.Units.AiMilitary
             "Target group " + group.Id + "/" + group.GlobalId + " of player " + group.Owner +
             (backend.IsCurrent(group) ? " has " + *(short*)(backend.Tribe(group) + 0x5C) + " members." : " is no longer current.");
 
+        // The owner's AI siege state (3C2E0 phase); -1 when the player record is unavailable.
+        private static int SiegeState(int player) =>
+            GamePlayerManagerAPI.Instance.TryGetPlayerResourcesById(player, out GamePlayerResources* resources) && resources != null
+                ? (int)resources->r_AISiegeState : -1;
+
         private void Apply(Tracked entry, GameUnit* unit)
         {
             long applyGeneration = generation;
@@ -228,7 +233,8 @@ namespace APIShared.Units.AiMilitary
                         // castle defense: its groups always come from the storage slots that 2FE20
                         // visits every pass, and the initial target is absent only where that pass
                         // itself gives no order now (see TryCastleDefenseTarget).
-                        if (!AiControllerHandoffPolicy.CommandsJoinedMembers(entry.Assignment.Role) ||
+                        int siegeState = SiegeState(entry.Player);
+                        if (!AiControllerHandoffPolicy.CommandsJoinedMembers(entry.Assignment.Role, siegeState) ||
                             !backend.IsCurrent(group) || (*(short*)(backend.Tribe(group) + 0x5C) < 1 &&
                             entry.Assignment.Role != AiMilitaryRole.CastleDefense))
                         {
@@ -237,7 +243,7 @@ namespace APIShared.Units.AiMilitary
                             return;
                         }
                         order = new AiCurrentOrder(AiOrderKind.Idle);
-                        appliedDetail = AiControllerHandoffPolicy.AppliedDetail;
+                        appliedDetail = AiControllerHandoffPolicy.Detail(entry.Assignment.Role, siegeState);
                     }
                     else emptyGroupOrder = true;
                 }

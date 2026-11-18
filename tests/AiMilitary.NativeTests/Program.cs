@@ -460,6 +460,10 @@ internal static unsafe class Program
         Check(ReadRva(file, 0x2BCBB, 4).SequenceEqual(new byte[] { 0x41, 0x83, 0xFB, 0x08 }) &&
             ReadRva(file, 0x2BCC6, 4).SequenceEqual(new byte[] { 0x41, 0x83, 0xFB, 0x0A }) &&
             ReadRva(file, 0x2BCD1, 4).SequenceEqual(new byte[] { 0x41, 0x83, 0xFB, 0x11 }), "2BC40 cuts classes 8/10/17");
+        // The AI passes hand 2AE40 the AIC array at 404C950 (LEA RCX,[RIP+3FF54F7] at 57452), which
+        // AiMilitaryNativeBackend.LordManager must equal for 2BC40's max_mobile_groups read.
+        Check(ReadRva(file, 0x57452, 12).SequenceEqual(new byte[] { 0x48, 0x8D, 0x0D, 0xF7, 0x54, 0xFF, 0x03, 0xE8, 0xE2, 0x39, 0xFD, 0xFF }) &&
+            0x57459 + 0x3FF54F7 == 0x404C950, "AI passes receive the AIC array at 404C950");
         Check(ReadRva(file, 0x2BCB6, 5).SequenceEqual(new byte[] { 0x44, 0x3B, 0xC0, 0x7E, 0x1E }) &&
             ReadRva(file, 0x2BCEB, 9).SequenceEqual(new byte[] { 0x45, 0x85, 0xC0, 0x0F, 0x8E, 0x9B, 0x00, 0x00, 0x00 }),
             "2BC40 signed count/maximum comparison and nonpositive-window return");

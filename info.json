@@ -19,6 +19,7 @@
         "Admitting several troops into the same new AI group (for example harassment or siege groups) no longer rejects every troop after the first: the first troop's starting order now counts as the group's order until the AI commands the group.",
         "Process many AI troop admissions at once (for example several units placed in one go) without rescanning every already assigned unit.",
         "AI castle defense admission now sends new troops where the AI itself would (the keep door for mounted units, the guarding position only when the troop can reach it, otherwise the keep), lets a troop that cannot walk to its group's spot join like the AI's own recruits instead of failing, no longer blocks the following troops after one failed placement, and the role is no longer offered for spearmen, macemen and Arabian horse archers when the AI's settings leave no group for them.",
+        "After loading a save, AI troops can again join harassment groups and the AI's siege groups like the AI's own recruits instead of being rejected (during a siege the troop follows its group at the AI's next order; in some siege phases that order only comes with the next phase or the retreat), and spearmen can join castle defense again (APIShared read the AI's group limit from the wrong place).",
         "Fix the troop panel's page arrows being hard to click: the troop selection area raised for APIShared's buttons covered them except for a few pixels."
       ]
     },

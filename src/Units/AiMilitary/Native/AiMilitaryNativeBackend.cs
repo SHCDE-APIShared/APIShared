@@ -21,7 +21,12 @@ namespace APIShared.Units.AiMilitary.Native
         internal readonly IntPtr Module;
         internal IntPtr UnitManager => Module + 0x67E8400;
         internal IntPtr TribeManager => Module + 0x7CC6720;
-        internal IntPtr LordManager => Module + 0x366C210;
+        // AI lord manager = AIC array (stride 0x5E4), the first argument the AI passes give every
+        // role writer: 57330 loads it with LEA RCX,[404C950] before calling 2AE40, and 2BC40 reads
+        // max_mobile_groups at arg1 + identity*0x5E4 - 0x4CC. It is also the Extender's
+        // AILordManagerRVA (GetAICArray). 0x366C210 is the player manager: reading the window there
+        // closed 2BC40 for spearmen although the AIC allowed a group (in-game 17./18.11.2026).
+        internal IntPtr LordManager => Module + 0x404C950;
         private readonly AllocateDelegate allocate;
         private readonly UnitGroupDelegate assign;
         private readonly ClassifyDelegate classify;

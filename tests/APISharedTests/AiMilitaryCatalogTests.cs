@@ -77,6 +77,48 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void ControllerHandoffCoversHarassmentAndEverySiegeStateWithItsWaitDetail()
+        {
+            // In-game 18.11.2026: after a save/load, harassment and idle siege groups had lost their
+            // recorded order through ordinary member routes and every recruit was rejected, although
+            // 3E200 and 3C2E0 command those groups as a whole. User decision 18.11.2026: siege recruits
+            // join in every siege state and wait for the next phase where 3C2E0 does not reach them sooner.
+            Func<AiMilitaryRole, int, bool> commands = (role, state) => APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.CommandsJoinedMembers(role, state);
+            Func<AiMilitaryRole, int, bool> prompt = (role, state) => APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.SiegeControllerReachesIdleMember(role, state);
+            foreach (var role in new[] { AiMilitaryRole.CastleDefense, AiMilitaryRole.DefensePatrol, AiMilitaryRole.HomeMoat,
+                AiMilitaryRole.EconomyProtection, AiMilitaryRole.Intervention, AiMilitaryRole.Harassment })
+                Assert.IsTrue(commands(role, 5) && commands(role, -1), role.ToString());
+            var siege = new[] { AiMilitaryRole.SiegeEngineers, AiMilitaryRole.SiegeMoat, AiMilitaryRole.SiegeAssassins,
+                AiMilitaryRole.SiegeDiversion, AiMilitaryRole.SiegeLadders, AiMilitaryRole.SiegeTunnelers, AiMilitaryRole.SiegeStorm,
+                AiMilitaryRole.SiegeCover, AiMilitaryRole.SiegeShock, AiMilitaryRole.SiegeReserve, AiMilitaryRole.SiegeWall };
+            foreach (var role in siege)
+            {
+                for (int state = 0; state <= 9; state++) Assert.IsTrue(commands(role, state), role + " siege state " + state);
+                // An unreadable or out-of-domain siege state stays an explicit rejection.
+                Assert.IsFalse(commands(role, -1) || commands(role, 10), role + " unknown siege state");
+                Assert.IsTrue(prompt(role, 0), role + " idle siege state");
+                foreach (int state in new[] { 1, 2, 6, 7, 8, 9 }) Assert.IsFalse(prompt(role, state), role + " state " + state);
+            }
+            // 3C2E0 reaches an idle joined member: storm 3CE40 (3-5), shock 3CDC0/122B40 (4-5),
+            // state-5 dispatch of moat/assassins/diversion/cover/reserve/wall; ladders, tunnelers and
+            // engineers only at a later transition.
+            Assert.IsTrue(prompt(AiMilitaryRole.SiegeStorm, 3) && prompt(AiMilitaryRole.SiegeStorm, 4) && prompt(AiMilitaryRole.SiegeStorm, 5));
+            Assert.IsTrue(!prompt(AiMilitaryRole.SiegeShock, 3) && prompt(AiMilitaryRole.SiegeShock, 4) && prompt(AiMilitaryRole.SiegeShock, 5));
+            foreach (var role in new[] { AiMilitaryRole.SiegeMoat, AiMilitaryRole.SiegeAssassins, AiMilitaryRole.SiegeDiversion,
+                AiMilitaryRole.SiegeCover, AiMilitaryRole.SiegeReserve, AiMilitaryRole.SiegeWall })
+                Assert.IsTrue(!prompt(role, 3) && !prompt(role, 4) && prompt(role, 5), role.ToString());
+            foreach (var role in new[] { AiMilitaryRole.SiegeLadders, AiMilitaryRole.SiegeTunnelers, AiMilitaryRole.SiegeEngineers })
+                Assert.IsFalse(prompt(role, 3) || prompt(role, 4) || prompt(role, 5), role.ToString());
+            Assert.AreEqual(APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.SiegeWaitDetail,
+                APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.Detail(AiMilitaryRole.SiegeLadders, 5));
+            Assert.AreEqual(APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.AppliedDetail,
+                APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.Detail(AiMilitaryRole.SiegeStorm, 4));
+            Assert.AreEqual(APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.AppliedDetail,
+                APIShared.Units.AiMilitary.Orders.AiControllerHandoffPolicy.Detail(AiMilitaryRole.Harassment, 3));
+            Assert.IsFalse(commands(AiMilitaryRole.HarassmentEngineers, 0) || commands(AiMilitaryRole.None, 0));
+        }
+
+        [TestMethod]
         public void EditorDefersFinalAicButStillRefusesUncrewedMachinesAndWrongSpecialists()
         {
             var option = AiMilitaryCatalog.Option(1, eChimps.CHIMP_TYPE_ARCHER, AiMilitaryRole.SiegeStorm, true);
