@@ -95,9 +95,8 @@ recruit of an empty group receives the position that the next AI pass would choo
 the keep entrance area for the first fallback group, the keep door for the second
 (mounted units use it), and otherwise the group's AIV guarding position if it is
 reachable from the recruit, else the keep. Where that pass gives no order now (for
-example during a defensive alert), or where the recruit's own route to the recorded
-position fails (for example a horseman and a keep tile), the recruit joins like a
-Vanilla recruit with a non-empty `Detail`. `GetOptions` reports castle defense as
+example during a defensive alert), the recruit joins like a Vanilla recruit with a
+non-empty `Detail`; a failed own route is handled as described below. `GetOptions` reports castle defense as
 unavailable (`InvalidGroupCount`) for spearmen, macemen and Arabian horse archers when
 the AIV has positions for their class but the AIC `max_mobile_groups` is not positive,
 because Vanilla's allocator then has no group for them. A failed admission into an
@@ -115,7 +114,11 @@ assault (state 5). In every other siege phase the recruit waits, and its
 `Detail` says so, until the AI's next group
 order at its next siege phase, its retreat or its return home. Vanilla stops siege
 recruitment during a siege, so this wait has no Vanilla counterpart except scripted
-mission spawns. Otherwise an unknown, expired or
+mission spawns. For every role whose AI controller commands joined members in this
+way (all of the above), a recruit whose own route to the group's current order fails
+in the game's pathfinder (for example a horseman on a wall or keep tile) joins like a
+Vanilla recruit with a non-empty `Detail` instead of being rejected. Like a Vanilla
+member without a route, it stays in place until a later group order can route it. Otherwise an unknown, expired or
 incompatible order of an existing group is rejected explicitly; there is no wait
 until its next AI command. Strategic intent additionally checks
 the current siege phase, target identities, AIC, group storage identity and native

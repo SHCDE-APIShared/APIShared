@@ -250,14 +250,17 @@ namespace APIShared.Units.AiMilitary
                 if (!backend.TryAdmit(entry.Unit.UnitId, entry.Unit.GlobalId, group,
                     AiMilitaryCatalog.NativeRole(entry.Assignment.Role), order, out reason))
                 {
-                    // Castle defense whose own native route (196280) found no path to the initial or
-                    // recorded position, e.g. a mounted unit and a keep tile or an unconnected wall:
-                    // Vanilla never routes a recruit when it joins (291F0 writes role and membership
-                    // only) and its controller recommands the storage group on every pass, where an
-                    // unroutable member simply stays. The rolled-back recruit therefore joins like a
-                    // Vanilla recruit instead of being rejected. Vetoes and redirects stay rejections.
-                    bool rejoin = entry.Assignment.Role == AiMilitaryRole.CastleDefense && backend.LastAdmissionRouteRefused &&
-                        (order.Kind == AiOrderKind.Hold || order.Kind == AiOrderKind.Move) &&
+                    // The recruit's own native route (196280) found no path to the initial or recorded
+                    // group order, e.g. a mounted unit on a keep tile or an unconnected wall (castle
+                    // defense, 18.11.2026) or a siege diversion horseman in state 7 (in-game 18.11.2026).
+                    // Vanilla never routes a recruit when it joins (291F0/294B0 write role and membership
+                    // only); the controller of these roles commands the whole group itself (castle
+                    // defense every pass, the others per AiControllerHandoffPolicy), where an unroutable
+                    // member simply stays. The rolled-back recruit therefore joins like a Vanilla recruit
+                    // instead of being rejected. Vetoes and redirects stay rejections.
+                    bool rejoin = backend.LastAdmissionRouteRefused &&
+                        (entry.Assignment.Role == AiMilitaryRole.CastleDefense ||
+                         AiControllerHandoffPolicy.CommandsJoinedMembers(entry.Assignment.Role, SiegeState(entry.Player))) &&
                         generation == applyGeneration && IsTracked(entry);
                     string routeReason = reason;
                     if (!rejoin || !backend.TryAdmit(entry.Unit.UnitId, entry.Unit.GlobalId, group,

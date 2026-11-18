@@ -21,7 +21,8 @@
         "Subscribing to a Workshop package is enough: if APIShared has not installed it yet, the startup question now offers its installation (Mod Options → Workshop remains available, and the startup offers can be switched off per package).",
         "The Workshop question at game start, and the hint of package bootstraps that APIShared is missing, open in front of the game with a visible, free mouse cursor and no longer block other programs.",
         "Mod Options: the first Workshop button is now 'Check Workshop version…', because it only shows what would change; nothing is installed before you confirm.",
-        "For mod authors: WorkshopClient.ApplyAsync now only stages the change (AwaitingRestart = installed at the next start) and no longer closes the game; it throws when the preloader is unavailable. RemovedFiles lists every file of the affected mod folders that the new version neither ships nor keeps."
+        "For mod authors: WorkshopClient.ApplyAsync now only stages the change (AwaitingRestart = installed at the next start) and no longer closes the game; it throws when the preloader is unavailable. RemovedFiles lists every file of the affected mod folders that the new version neither ships nor keeps.",
+        "AI troop admission: a troop that cannot walk to its group's current destination (for example a horseman on a wall) now joins every AI group like the AI's own recruits instead of being rejected and removed; before, only castle defense did this."
       ]
     },
     {
