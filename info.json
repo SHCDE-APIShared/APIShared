@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.57.0",
+  "Version": "0.58.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.58.0",
+      "Changes": [
+        "Share saved presets with other players in the multiplayer lobby. An offer appears in the chat area and recipients can save a personal copy under a name they choose.",
+        "Preset offers retry briefly until the receiving player confirms receipt. The sender is told when some or all players do not confirm.",
+        "Open the personal preset folder from a preset dialog on Windows or Linux under Proton."
+      ]
+    },
     {
       "Version": "0.57.0",
       "Changes": [

@@ -1640,6 +1640,10 @@ APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void Re
 APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void RegisterExternalWorkingCopy(BepInEx.Logging.ManualLogSource log, string storageAssemblyLocation, string modName, string targetGuid, System.Version targetVersion, APIShared.ModSettings.PresetLobbyModSettingsViewModel viewModel)
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public sealed class APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public void Activate(System.Action enable, System.Func<System.Exception, bool> definitelyRejected = null)
+APIShared.ModSettings.LobbyPresetOffers | public static class APIShared.ModSettings.LobbyPresetOffers
+APIShared.ModSettings.LobbyPresetOffers | public static bool GetEnabled(Noesis.DependencyObject element)
+APIShared.ModSettings.LobbyPresetOffers | public static readonly Noesis.DependencyProperty EnabledProperty
+APIShared.ModSettings.LobbyPresetOffers | public static void SetEnabled(Noesis.DependencyObject element, bool enabled)
 APIShared.ModSettings.MissionIndependentAttribute | public sealed class APIShared.ModSettings.MissionIndependentAttribute : System.Attribute
 APIShared.ModSettings.MissionIndependentAttribute | public .ctor()
 APIShared.ModSettings.MissionModSettingsApplicationKind | public enum APIShared.ModSettings.MissionModSettingsApplicationKind : int
@@ -1941,12 +1945,15 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_ModSettingsSearchPanelVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_ModeNoticeVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetDeleteVisibility { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetFolderVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetInlineConfirmationVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetLoadPanelVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetOperationErrorVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetOperationStatusVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetOperationSuccessVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetSavePanelVisibility { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetShareOnlyPickerVisibility { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetShareVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetStatusVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_SettingsSourceVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_TrailSourceNoticeVisibility { get; }
@@ -1960,8 +1967,10 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUti
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_DeletePresetCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_DismissPresetStatusCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_LoadSettingsSourceCommand { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_OpenPresetFolderCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_OpenPresetLoadCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_OpenPresetSaveCommand { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_SharePresetCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_ToggleModSettingsSearchCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentMissionPresetSnapshot()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentWorkingSnapshot()
@@ -2000,6 +2009,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ArePe
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanConfirmPresetSave { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanDeleteSelectedPreset { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanLoadSettingsSource { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanSharePreset { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ConfigurationNeedsRestart()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_HasApplicationBackend { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_HasDynamicSettings { get; }
@@ -2045,6 +2055,8 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_Mod
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModeNoticeText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_OwnConfigurationFingerprint()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetDeleteText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetFolderHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetFolderText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetInlineCancelText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetInlineConfirmText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetInlineConfirmationMessage { get; }
@@ -2065,6 +2077,10 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_Pre
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetSaveNameText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetSaveTargetText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetSaveText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareOnlyPickerHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareOnlyPickerText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetStatusDismissText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetStatusText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_SavePersonalPreset(string id, string name, string description, System.Collections.Generic.IEnumerable<APIShared.ModSettings.PresetSaveSelection> selections, bool overwrite)

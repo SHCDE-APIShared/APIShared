@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.57.0";
+        public const string PluginVersion = "0.58.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -176,6 +176,7 @@ namespace APIShared
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.
                 new NativeInitializationStep("interpolate event reuse", () => ScriptExtenderFixes.InterpolateEventReuseRuntime.Initialize(Config, RuntimeLogger)),
+                new NativeInitializationStep("lobby preset sharing", () => ModSettings.PresetShareService.Initialize(RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));

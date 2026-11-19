@@ -5,6 +5,7 @@
     <Compile Include="../../src/Workshop/Proton/WinePathInterop.cs" Link="Production/Proton/WinePathInterop.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonPaths.cs" Link="Production/Proton/ProtonPaths.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonProcess.cs" Link="Production/Proton/ProtonProcess.cs" />
+    <Compile Include="../../src/ModSettings/Presets/PresetFolderLauncher.cs" Link="Production/Presets/PresetFolderLauncher.cs" />
     <Compile Include="../../src/Presentation/UiWork/UiWorkContracts.cs" Link="Production/UiWorkContracts.cs" />
     <Compile Include="../../src/Presentation/UiWork/UiWorkScheduler.cs" Link="Production/UiWorkScheduler.cs" />
     <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
