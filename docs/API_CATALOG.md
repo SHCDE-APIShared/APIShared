@@ -400,7 +400,7 @@ APIShared places 36 x 34 buttons bottom to top inside Vanilla's `HUD_ObjectivesP
 
 Handles expose `SetVisible`, `SetEnabled`, `SetTooltip`, and `RequestContentRefresh`; the owner capability exposes `SetOwnerActive`. Commands are rechecked against current owner/button/HUD availability and receive the actual Button. Factories and commands execute on the Unity thread outside registry locks; exceptions isolate the entry. HUD replacement recreates visuals. This API does not impose local-troop selection or multiplayer gameplay authorization.
 
-Default popups use the existing modoptions template, including Script Extender resolution scaling and a 60000 ms duration. Empty text suppresses the popup. An optional tooltip factory must return a fresh unattached ToolTip with explicit Style or Template; APIShared sets its Content to the current text and preserves that custom presentation. `RequestContentRefresh` retries factory failures. No screen coordinates or hook lifetimes are exposed.
+Default popups use the shared dark-and-gold template with 14 logical units of text relative to the button. APIShared accounts for the popup and HUD screen transforms independently. Popups have a 60000 ms duration. Empty text suppresses the popup. An optional tooltip factory must return a fresh unattached ToolTip with explicit Style or Template and controls its own sizing. APIShared sets its Content to the current text and closes it when its button is hidden or replaced. `RequestContentRefresh` retries factory failures.
 
 <a id="vanilla-troop-action-slots-and-overflow"></a>
 

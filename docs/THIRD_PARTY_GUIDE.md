@@ -990,7 +990,8 @@ visibility, enabled state, text or content. APIShared owns layout and paging; yo
 owns command authorization and multiplayer synchronization.
 
 Factories and commands run on the Unity thread and must not block. Troop descriptions
-use Vanilla rollover text; side buttons use the mod-options popup by default.
+use Vanilla rollover text. Side buttons use the shared popup by default. Its text
+follows the button's HUD scale even when Noesis opens it in a separate view.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
 
