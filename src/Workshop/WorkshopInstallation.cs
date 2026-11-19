@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace APIShared.Workshop
 {
@@ -68,9 +67,7 @@ namespace APIShared.Workshop
                 Version = package?.Version ?? previous.Version, Diagnostics = warnings.AsReadOnly()
             };
             plan.Files = package?.Files ?? new WorkshopFile[0];
-            var targets = plan.Files.ToDictionary(file => file.Path, file => CurrentHash(WorkshopPaths.Inside(game, file.Path)), StringComparer.OrdinalIgnoreCase);
             plan.RemovedFiles = Removed(plan).ToList().AsReadOnly();
-            plan.TargetHashes = new System.Collections.ObjectModel.ReadOnlyDictionary<string,string>(targets);
             return plan;
         }
         internal static void AssertOwnership(string game, ulong id, WorkshopPackage package)

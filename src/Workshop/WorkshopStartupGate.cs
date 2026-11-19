@@ -10,10 +10,6 @@ namespace APIShared.Workshop
     internal sealed class WorkshopStartupGate : SynchronizationContext
     {
         private readonly BlockingCollection<Action> callbacks = new BlockingCollection<Action>();
-        private readonly int ownerThread = Thread.CurrentThread.ManagedThreadId;
-        private int active = 1;
-        internal bool IsOpenOnOwnerThread => Volatile.Read(ref active) != 0 &&
-            Thread.CurrentThread.ManagedThreadId == ownerThread && ReferenceEquals(Current, this);
 
         public override void Post(SendOrPostCallback callback, object state) => callbacks.Add(() => callback(state));
 
@@ -29,7 +25,6 @@ namespace APIShared.Workshop
                 }
                 task.GetAwaiter().GetResult();
             } finally {
-                Volatile.Write(ref gate.active, 0);
                 SetSynchronizationContext(previous);
                 gate.callbacks.Dispose();
             }

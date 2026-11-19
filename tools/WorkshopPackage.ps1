@@ -73,7 +73,7 @@ function Copy-ApiModOptionsView {
 }
 
 # Only this previously shipped immutable view is obsolete. Never remove an
-# edited copy or other files from the installed updater/template directory.
+# edited copy or other files from the installed template directory.
 function Remove-ApiLegacyWorkshopView {
     [CmdletBinding()]
     param([string]$Directory)

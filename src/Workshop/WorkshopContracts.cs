@@ -140,7 +140,6 @@ namespace APIShared.Workshop
         internal string Owner, GameRoot, Source, ManifestHash, ReceiptHash;
         internal WorkshopReceipt Previous;
         internal WorkshopPackage Package;
-        internal IReadOnlyDictionary<string, string> TargetHashes;
         internal WorkshopInstallPlan() { }
         /// <summary>Unique local operation identity used for snapshots, transactions and diagnostics.</summary>
         public string OperationId { get; internal set; }
