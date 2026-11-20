@@ -89,12 +89,12 @@ namespace APIShared
         {
             if (self.activeLobby?.isHost != true) { original(self, name); return; }
             if (!MapRecordLoadCoordinator.CancelSelection())
-            { ShowBlocked("A confirmed multiplayer map is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true); return; }
+            { ShowBlocked("A confirmed multiplayer map is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true, name); return; }
             if (pending != null)
             {
                 if (pending.SaveName == name) return; // Repeated button callback, not another load.
                 if (released || loading)
-                { ShowBlocked("A confirmed multiplayer save is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true); return; }
+                { ShowBlocked("A confirmed multiplayer save is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true, name); return; }
                 Abort("Selected save changed.", notify: true, showError: false);
             }
             owner = self;
@@ -133,7 +133,7 @@ namespace APIShared
                 if (!agreement.Ready) Send(pending);
                 Tick(); // Solo host: no network echo, no artificial delay.
             }
-            catch (Exception error) { Abort(error.Message, phase: "request"); }
+            catch (Exception error) { Abort(error.Message, phase: "request", saveName: name); }
             finally { ScheduleWaitingCheck(); }
         }
 
@@ -168,7 +168,7 @@ namespace APIShared
                 if (!result.Submitted) NativeApiLog.Error(log, "Could not cancel the protocol-1 peer's preparation: " + result.Reason);
             }
             if (pending != null) { Abort(text, phase: "protocol"); return; }
-            ShowBlocked(text, lobby, packet.Token ?? LobbyReadinessSupport.NewAttemptId(), "protocol", lobby.isHost);
+            ShowBlocked(text, lobby, packet.Token ?? LobbyReadinessSupport.NewAttemptId(), "protocol", lobby.isHost, packet.SaveName);
         }
 
         private static void Receive(NetworkMessage<SavegameLoadPacket> message)
@@ -214,10 +214,18 @@ namespace APIShared
                 // The host compares every peer's declared simulation records with its own; a difference
                 // ends the preparation for everyone with the explanation.
                 if (packet.Operation == 1 && pending != null && agreement != null && packet.SaveName == pending.SaveName &&
-                    packet.Checksum == pending.Checksum && packet.Time == pending.Time &&
-                    !agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint, packet.Records,
-                        LobbyReadinessSupport.PlayerName(message.SenderSteamId), out string mismatch) && mismatch != null)
-                { Abort(mismatch, phase: "peer-comparison"); return; }
+                    packet.Checksum == pending.Checksum && packet.Time == pending.Time)
+                {
+                    var recordDetails = new List<string>();
+                    if (!agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint, packet.Records,
+                        LobbyReadinessSupport.PlayerName(message.SenderSteamId), out string mismatch, recordDetails) && mismatch != null)
+                    {
+                        Abort(mismatch, phase: "peer-comparison", logDetails: "peerSteamId=" + message.SenderSteamId +
+                            " peerSettingsFingerprint=" + packet.Fingerprint +
+                            (recordDetails.Count == 0 ? "" : "; " + string.Join("; ", recordDetails)));
+                        return;
+                    }
+                }
                 Tick(); return;
             }
             if (retired.Contains(packet.Token)) return;
@@ -395,7 +403,7 @@ namespace APIShared
                     string.Equals(path, rejectedNativePath, StringComparison.OrdinalIgnoreCase)) throw;
                 rejectedNativeLobby = lobby;
                 rejectedNativePath = path;
-                try { Abort(error.Message, phase: "native-start"); }
+                try { Abort(error.Message, phase: "native-start", saveName: path); }
                 catch (Exception cleanup)
                 {
                     try { NativeApiLog.Error(log, "Save launch rejection cleanup failed: " + cleanup); }
@@ -423,16 +431,19 @@ namespace APIShared
             Abort("Save selection cancelled.", notify: true, showError: false);
             return true;
         }
-        private static void Abort(string reason, bool notify = true, bool showError = true, string phase = "preparation")
+        private static void Abort(string reason, bool notify = true, bool showError = true, string phase = "preparation",
+            string saveName = null, string logDetails = null)
         {
             var lobby = owner?.activeLobby ?? Platform_Multiplayer.Instance?.activeLobby;
             ulong lobbyId = pending?.Lobby ?? lobby?.id.m_SteamID ?? 0;
             bool isHost = attempt != null ? attemptHost : lobby?.isHost == true;
             string attemptId = attempt ?? LobbyReadinessSupport.NewAttemptId();
-            string comparison = " expected=" + (pending?.Fingerprint ?? "unavailable") +
-                " observed=" + (observedFingerprint ?? "unavailable");
-            if (phase == "timeout" && agreement != null)
+            string comparison = showError
+                ? SaveDetails(localSavePath ?? pending?.SaveName ?? saveName, localSaveHash, pending?.Fingerprint, observedFingerprint)
+                : null;
+            if (showError && phase == "timeout" && agreement != null)
                 comparison += " unconfirmed=" + string.Join(",", agreement.Unconfirmed);
+            if (showError && logDetails != null) comparison += "; " + logDetails;
             bool relayed = false;
             if (pending != null)
             {
@@ -479,11 +490,22 @@ namespace APIShared
             }
         }
 
-        private static void ShowBlocked(string reason, Platform_Multiplayer.MPLobby lobby, string attemptId, string phase, bool broadcast) =>
-            ShowBlocked(reason, lobby.id.m_SteamID, lobby.isHost, attemptId, phase, broadcast, !broadcast);
+        private static string SaveDetails(string path, string saveHash, string expectedSettings, string observedSettings)
+        {
+            // An invalid path can itself be the failure. Log only the final component without validating it.
+            string name = string.IsNullOrEmpty(path) ? "unavailable" :
+                path.Substring(Math.Max(path.LastIndexOf('\\'), path.LastIndexOf('/')) + 1);
+            return " saveName='" + name + "' localSaveSha256=" + (saveHash ?? "unavailable") +
+                " expectedSettingsFingerprint=" + (expectedSettings ?? "unavailable") +
+                " observedSettingsFingerprint=" + (observedSettings ?? "unavailable");
+        }
+
+        private static void ShowBlocked(string reason, Platform_Multiplayer.MPLobby lobby, string attemptId, string phase, bool broadcast, string saveName) =>
+            ShowBlocked(reason, lobby.id.m_SteamID, lobby.isHost, attemptId, phase, broadcast, !broadcast,
+                SaveDetails(saveName, null, null, null));
 
         private static void ShowBlocked(string reason, ulong lobbyId, bool isHost, string attemptId, string phase,
-            bool broadcast, bool showLocal, string comparison = "")
+            bool broadcast, bool showLocal, string comparison)
         {
             Lobby.LobbyLaunchStatus.ReportPreparationBlocked(log, reason, "SAVE_SETTINGS_LOAD_BLOCKED attempt=" + attemptId +
                 " role=" + (isHost ? "host" : "client") + " phase=" + phase + comparison, lobbyId, broadcast, showLocal);

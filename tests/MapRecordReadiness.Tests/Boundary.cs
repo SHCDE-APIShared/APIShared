@@ -18,6 +18,7 @@ internal static class Boundary
     internal static FileHeader LookupHeader;
     internal static Action DuringCapture, DuringPrepare;
     internal static IReadOnlyList<SavegameRecordDigest> Records = Array.Empty<SavegameRecordDigest>();
+    internal static IReadOnlyList<SavegameRecordDigest> SaveRecords = Array.Empty<SavegameRecordDigest>();
     internal static readonly Dictionary<Type, Action<object, ulong>> Receivers = new Dictionary<Type, Action<object, ulong>>();
     internal static readonly List<object> Sent = new List<object>();
     internal static readonly List<string> Logs = new List<string>();
@@ -197,7 +198,7 @@ namespace APIShared.Savegames
     {
         internal static IReadOnlyList<SavegameRecordDigest> CaptureMapSimulationDigests(string path)
         { Boundary.Captures++; Boundary.DuringCapture?.Invoke(); return Boundary.Records; }
-        internal static IReadOnlyList<SavegameRecordDigest> CaptureSimulationDigests(string path) => Array.Empty<SavegameRecordDigest>();
+        internal static IReadOnlyList<SavegameRecordDigest> CaptureSimulationDigests(string path) => Boundary.SaveRecords;
     }
 }
 namespace APIShared

@@ -587,6 +587,12 @@ callback returned, not that the mission initialized successfully. Use the missio
 lifecycle for the latter. A rejected confirmation keeps its request/selection and
 restores the requester view; it does not invoke the original action.
 
+For an expected preparation rejection, call `context.RejectPreparation(reason)`
+synchronously from `Prepare` and return. Supply a non-empty, localized player-facing
+reason when translations are available. The first reason wins. APIShared stops later
+preparation, runs attempt cleanup and displays that reason. The next confirmation
+starts with no rejection reason. Unexpected preparation exceptions are logged.
+
 Do not install another requester hook. Vanilla hides the requester before invoking
 its confirmation callback; APIShared captures checkbox availability before that hide.
 An installed ExtendedData plugin must advertise the shared dialog integration with

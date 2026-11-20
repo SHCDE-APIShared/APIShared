@@ -734,6 +734,8 @@ if (import is ICoopAiStartPreviewCapability preview &&
 Mission settings preparation, personal values, settings participant diagnostics, presets
 without SerpsModsHost, settings search, load/save requesters and settings locked during a
 mission are described in [mod settings integration](MOD_SETTINGS.md).
+For an expected rejection during save selection or confirmation, see
+[load/save requester integration](MOD_SETTINGS.md#loadsave-requester-integration).
 
 ## Optional game-mode permissions
 
@@ -802,6 +804,18 @@ Independent pages can instead own a `ModSettingsModeAvailability`, use `GetState
 for observable row state, and supply `SetPreview(contexts, multiplayer)` or
 `SetMission(snapshot)` on the Unity UI thread. Consumers own policy and localization;
 the built-in compact legend has English and German fallbacks.
+
+## Agreeing on simulation features
+
+Register with `SimulationAgreement.Register` once on the Unity thread at plug-in
+startup. Use the same owner GUID and feature ID on every supported installation.
+Report actual hook availability in a side-effect-free callback. The apply callback
+must publish the supplied activation synchronously without installing or removing hooks.
+A required feature rejects mixed readiness. An optional feature receives `false`
+on all peers when even one peer cannot participate. Use the admitted value for both
+sending and receiving simulation commands for the whole match. When an active
+feature detects a runtime loss, call `SimulationAgreement.ReportFault` to stop the
+world through the shared terminal boundary.
 
 ## Multiplayer actions and messages
 

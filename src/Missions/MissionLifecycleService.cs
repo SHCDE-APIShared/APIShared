@@ -78,6 +78,7 @@ namespace APIShared
             internal bool SiegeThatEditor;
             internal bool Multiplayer, Restart, NativeFailed, NativeSucceeded, ManagedSucceeded;
             internal long? RestartedFrom;
+            internal Multiplayer.SimulationAgreement.Attempt SimulationAttempt;
             internal GameModeSnapshot? RestartMode;
             internal EngineInterface.LoadMapReturnData? Data;
         }
@@ -347,6 +348,7 @@ namespace APIShared
             waiting = null;
             bool normal = false;
             GameModeHelper.BeginModeDecisions();
+            op.SimulationAttempt = Multiplayer.SimulationAgreement.PrepareAttempt(op.RestartedFrom);
             Safe(() => op.Id = state.Begin(Capture(op)));
             try
             {
@@ -358,6 +360,8 @@ namespace APIShared
             finally
             {
                 executing = null;
+                if (op.NativeFailed || !normal)
+                    Multiplayer.SimulationAgreement.Retire(op.Id);
                 Safe(CoopAiStartImportService.NotifyAttemptFinished);
                 if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
                     !op.NativeFailed && op.ManagedSucceeded)
@@ -459,6 +463,14 @@ namespace APIShared
                 op.NativeFailed=true;
                 Safe(()=>state.CompleteNativeLoad(op.Id,false));
                 throw new NativeAdmissionAbort(productionRejection);
+            }
+            string simulationRejection = op == null ? null : Multiplayer.SimulationAgreement.Admit(Capture(op), op.SimulationAttempt);
+            if (!string.IsNullOrEmpty(simulationRejection))
+            {
+                op.NativeFailed = true;
+                Safe(() => state.CompleteNativeLoad(op.Id, false));
+                Report(new InvalidOperationException(simulationRejection));
+                throw new NativeAdmissionAbort(simulationRejection);
             }
             long nativeGeneration = Units.AiMilitary.AiMilitaryService.Instance.Generation;
             EngineInterface.LoadMapReturnData result;

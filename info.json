@@ -3,13 +3,25 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.58.1",
+  "Version": "0.58.3",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.58.3",
+      "Changes": [
+        "Show the specific reason when a mod asks the load/save dialog to wait. Multiplayer save diagnostics distinguish simulation-record hashes from the settings fingerprint."
+      ]
+    },
+    {
+      "Version": "0.58.2",
+      "Changes": [
+        "Check which simulation fixes each player can run before starting a multiplayer match. Optional features turn off for everyone when a player cannot run them, and incompatible fixes are reported before the match starts."
+      ]
+    },
     {
       "Version": "0.58.1",
       "Changes": [

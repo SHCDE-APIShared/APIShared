@@ -2206,6 +2206,9 @@ APIShared.Modifiers.ValueModifierKind | None = 0
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Multiplayer.SimulationAgreement | public static class APIShared.Multiplayer.SimulationAgreement
+APIShared.Multiplayer.SimulationAgreement | public static void Register(string ownerGuid, string featureId, bool required, System.Func<bool> isReady, System.Action<bool> apply)
+APIShared.Multiplayer.SimulationAgreement | public static void ReportFault(string message)
 APIShared.NativeApiState | public enum APIShared.NativeApiState : int
 APIShared.NativeApiState | Pending = 0
 APIShared.NativeApiState | Ready = 1
@@ -3236,6 +3239,7 @@ APIShared.Savegames.SaveLoadDialogContext | public FileHeader Header { get; }
 APIShared.Savegames.SaveLoadDialogContext | public long Generation { get; }
 APIShared.Savegames.SaveLoadDialogContext | public object State { get; set; }
 APIShared.Savegames.SaveLoadDialogContext | public string FileName { get; }
+APIShared.Savegames.SaveLoadDialogContext | public void RejectPreparation(string reason)
 APIShared.Savegames.SaveLoadDialogEvents | public static class APIShared.Savegames.SaveLoadDialogEvents
 APIShared.Savegames.SaveLoadDialogEvents | public static bool IsAvailable { get; }
 APIShared.Savegames.SaveLoadDialogEvents | public static void Register(string ownerGuid, string registrationId, APIShared.Savegames.SaveLoadDialogCallbacks callbacks, int order = 0)

@@ -20,7 +20,7 @@ internal static class Program
         APIShared.Economy.WorkerProductionAgreement.Checks=0;
         Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.SaveVeto = false; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
         Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = Boundary.StartWithdrawals = 0;Boundary.LookupHeader=null;
-        Boundary.Settings = "host-settings"; Boundary.Records = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = Boundary.DuringPrepare = null;
+        Boundary.Settings = "host-settings"; Boundary.Records = Boundary.SaveRecords = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = Boundary.DuringPrepare = null;
         Boundary.Logs.Clear(); Boundary.Sent.Clear(); Boundary.Broadcast.Clear(); Boundary.LocalChat.Clear();
         Boundary.WaitingBroadcast.Clear(); Boundary.WaitingLocal.Clear();
         Boundary.Presented.Clear();
@@ -268,6 +268,33 @@ internal static class Program
         Reset(solo: true); Start(); Boundary.Prepare = false;
         Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.Broadcast.Single().Contains("MapConfigurationWaiting"),
             "pending configuration gets its own start-blocking reason");
+
+        Reset(); Boundary.SaveRecords = new[] { Present(1) }; Save();
+        var saveRequest = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+        var saveReply = Reply(saveRequest);
+        saveReply.Time = saveRequest.Time;
+        saveReply.Records = new[] { Present(2) };
+        Boundary.Receive(saveReply, 2002);
+        string hostRecordHash = Sha256Hex.Format(saveRequest.Records[0].Hash);
+        string peerRecordHash = Sha256Hex.Format(saveReply.Records[0].Hash);
+        string blockedSaveLog = Boundary.Logs.Single(text => text.Contains("SAVE_SETTINGS_LOAD_BLOCKED"));
+        Check(Boundary.SaveStarts == 0 && blockedSaveLog.Contains(saveRequest.Token) &&
+            blockedSaveLog.Contains("role=host") && blockedSaveLog.Contains("phase=peer-comparison") &&
+            blockedSaveLog.Contains(Path.GetFileName(Boundary.Path)) &&
+            blockedSaveLog.Contains("localSaveSha256=" + Sha256Hex.Of(File.ReadAllBytes(Boundary.Path))) &&
+            blockedSaveLog.Contains("expectedSettingsFingerprint=" + saveRequest.Fingerprint) &&
+            blockedSaveLog.Contains("observedSettingsFingerprint=" + saveRequest.Fingerprint) &&
+            blockedSaveLog.Contains("peerSteamId=2002") && blockedSaveLog.Contains("foreign.mod") &&
+            blockedSaveLog.Contains("foreign-record") && blockedSaveLog.Contains("hostState=Present") &&
+            blockedSaveLog.Contains("peerState=Present") &&
+            blockedSaveLog.Contains("hostRecordSha256=" + hostRecordHash) &&
+            blockedSaveLog.Contains("peerRecordSha256=" + peerRecordHash),
+            "save record mismatch logs both stored record hashes separately from matching settings");
+        var saveCancel = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 3);
+        Check(!Boundary.Broadcast.Single().Contains(hostRecordHash) &&
+            !Boundary.Broadcast.Single().Contains(peerRecordHash) &&
+            !saveCancel.Reason.Contains(hostRecordHash) && !saveCancel.Reason.Contains(peerRecordHash),
+            "record hash diagnostics are local and never added to the rejection sent to peers");
 
         Reset(solo: true); Boundary.SaveVeto = true; Save();
         Check(Boundary.SaveStarts == 0 && Boundary.Broadcast.Single().Contains("fixture save veto") &&

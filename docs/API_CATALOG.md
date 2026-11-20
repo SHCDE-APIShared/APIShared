@@ -305,6 +305,13 @@ manager/size failures but cannot promise an atomic native queue acknowledgement.
 See the [networking guide](THIRD_PARTY_GUIDE.md#multiplayer-actions-and-messages) and
 [compiled example](../examples/ThirdPartyMod/NetworkingExample.cs).
 
+## Multiplayer simulation agreement
+
+`APIShared.Multiplayer.SimulationAgreement` (0.58.2) agrees on whether all peers can
+use each registered simulation feature before the native map load. Required features
+block unequal readiness. Optional features use the Vanilla path for the whole match
+unless every peer is ready. See the [registration contract](THIRD_PARTY_GUIDE.md#agreeing-on-simulation-features).
+
 ## Source map
 
 Start at the linked contract to learn what a consumer may call. Read the service
@@ -559,7 +566,8 @@ APIShared also owns the load dialog checkbox and remembers its last explicit loc
 choice across saves and process restarts (initially off). Without a usable checkbox,
 automatic loads use current supported settings, subject to saved mission/creator rules.
 [`SaveLoadDialogEvents`](../src/Savegames/SaveLoadDialogEvents.cs) coordinates ordered,
-owner-bound dialog gates and preparation; see the [dialog integration](MOD_SETTINGS.md#loadsave-requester-integration).
+owner-bound dialog gates and preparation. Preparations can reject the current attempt
+with a player-facing reason. See [dialog integration](MOD_SETTINGS.md#loadsave-requester-integration).
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](MOD_SETTINGS.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.
