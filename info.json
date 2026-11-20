@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.59.0",
+  "Version": "0.59.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.59.1",
+      "Changes": [
+        "Fix multiplayer starts that could leave the host on a black map even after the players agreed on production rules.",
+        "Retry failed production-rule confirmations during multiplayer startup without freezing the game. If the agreement is still missing after 30 seconds, show the reason and cancel the start.",
+        "Keep multiplayer save loading in preparation while simulation confirmations are still arriving. Conflicting rules still cancel the load, and the game checks the agreement again before loading."
+      ]
+    },
     {
       "Version": "0.59.0",
       "Changes": [

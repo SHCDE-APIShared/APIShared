@@ -7,8 +7,13 @@ namespace APIShared.Multiplayer
     internal static class SimulationAgreementPolicy
     {
         internal static bool TryDecide(string local, IEnumerable<string> reports, out string enabled, out string reason)
+            => TryDecide(local, reports, out enabled, out reason, out _);
+
+        internal static bool TryDecide(string local, IEnumerable<string> reports, out string enabled,
+            out string reason, out bool waiting)
         {
             enabled = "";
+            waiting = false;
             reason = "Players reported different simulation capability registrations.";
             if (!TryParse(local, out var own)) return false;
             var states = new List<Dictionary<string, string>>();
@@ -22,26 +27,22 @@ namespace APIShared.Multiplayer
                 states.Add(state);
             }
 
-            var result = new List<string>();
-            foreach (var pair in own.OrderBy(item => item.Key, StringComparer.Ordinal))
+            var required = own.Where(pair => pair.Value[0] == 'r');
+            foreach (var pair in required.OrderBy(item => item.Key, StringComparer.Ordinal))
             {
-                if (pair.Value[0] == 'r')
-                {
-                    if (missing)
-                    {
-                        reason = "Waiting for all players to report required simulation fixes.";
-                        return false;
-                    }
-                    if (states.Any(state => state[pair.Key] != pair.Value))
-                    {
-                        reason = "Players have different readiness for simulation fix " + pair.Key + ".";
-                        return false;
-                    }
-                }
-                if (pair.Value[1] == '1' && !missing && states.All(state => state[pair.Key][1] == '1'))
-                    result.Add(pair.Key);
+                if (!states.Any(state => state[pair.Key] != pair.Value)) continue;
+                reason = "Players have different readiness for simulation fix " + pair.Key + ".";
+                return false;
             }
-            enabled = string.Join(";", result);
+            if (missing && required.Any())
+            {
+                waiting = true;
+                reason = "Waiting for all players to report required simulation fixes.";
+                return false;
+            }
+            if (!missing)
+                enabled = string.Join(";", own.Where(pair => pair.Value[1] == '1' &&
+                    states.All(state => state[pair.Key][1] == '1')).Select(pair => pair.Key).OrderBy(key => key, StringComparer.Ordinal));
             reason = null;
             return true;
         }

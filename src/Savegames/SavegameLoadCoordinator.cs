@@ -29,6 +29,7 @@ namespace APIShared
         private static SavegameLoadAgreement agreement;
         private static Platform_Multiplayer owner;
         private static DateTime deadline, waitNoticeAt;
+        private static long nextExchangeCheck;
         private static string waitingReason, announcedWaiting;
         private static bool acknowledged, released, loading, initialized;
         private static ulong hostId;
@@ -294,7 +295,18 @@ namespace APIShared
                 {
                     if (!FingerprintMatches(false))
                         throw new InvalidOperationException("Prepared host settings changed.");
-                    if (released || !agreement.Ready) return;
+                    if (released) return;
+                    if (!agreement.Ready)
+                    {
+                        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                        if (now < nextExchangeCheck) return;
+                        nextExchangeCheck = now + System.Diagnostics.Stopwatch.Frequency;
+                        var exchange = Multiplayer.SimulationAgreement.AdvancePreparedSaveExchange(pending.Lobby);
+                        if (exchange.State == Lobby.LobbyLaunchGuardState.Rejected)
+                            throw new InvalidOperationException(exchange.Reason);
+                        waitingReason = exchange.Reason;
+                        return;
+                    }
                     if (!ModSettings.ModSettingsApplication.PrepareLaunch())
                     { waitingReason = UiText.Get("LobbyLaunch.MapConfigurationWaiting"); return; }
                     if (!FingerprintMatches(true))
@@ -305,7 +317,7 @@ namespace APIShared
                         waitingReason = productionReason;
                         return;
                     }
-                    RequirePreparedLaunchGuards(lobby);
+                    if (!RequirePreparedLaunchGuards(lobby, allowWaiting: true)) return;
                     released = true;
                     deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
                     if (Humans(lobby).Length > 1) Send(Reply(2));
@@ -324,7 +336,7 @@ namespace APIShared
                         waitingReason = productionReason;
                         return;
                     }
-                    RequirePreparedLaunchGuards(lobby);
+                    if (!RequirePreparedLaunchGuards(lobby, allowWaiting: true)) return;
                     SavegameModSettings.AcceptPreparedClient(header.filePath, record);
                     var result = channel.SendToSteamPeer(Reply(1), SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID);
                     if (!result.Submitted) throw new InvalidOperationException(result.Reason);
@@ -414,12 +426,15 @@ namespace APIShared
             loading = true;
             ScheduleWaitingCheck();
         }
-        private static void RequirePreparedLaunchGuards(Platform_Multiplayer.MPLobby lobby)
+        private static bool RequirePreparedLaunchGuards(Platform_Multiplayer.MPLobby lobby, bool allowWaiting = false)
         {
             // A previous Ready button does not admit a selected save: preparation can
             // apply different settings, and peer capability reports are not fingerprints.
             var decision = Lobby.LobbyLaunchGuards.EvaluatePreparedMultiplayerLoad(Humans(lobby).Length);
+            if (allowWaiting && decision.Waiting)
+            { waitingReason = decision.Reason; return false; }
             if (decision.Blocked) throw new InvalidOperationException(decision.Reason);
+            return true;
         }
         internal static bool CancelSelection()
         {
@@ -475,6 +490,7 @@ namespace APIShared
             pending = null; agreement = null; record = null; owner = null;
             localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
+            nextExchangeCheck = 0;
             attempt = observedFingerprint = waitingReason = announcedWaiting = null;
             try
             {
@@ -527,6 +543,7 @@ namespace APIShared
         }
         internal static void FinishLoad()
         {
+            nextExchangeCheck = 0;
             if (pending != null) retired.Add(pending.Token);
             pending = null; agreement = null; record = null; owner = null;
             attempt = observedFingerprint = waitingReason = announcedWaiting = null;

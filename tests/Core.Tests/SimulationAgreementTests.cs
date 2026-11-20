@@ -6,6 +6,22 @@ namespace APIShared.Tests;
 [TestClass]
 public sealed class SimulationAgreementTests
 {
+    [TestMethod]
+    public void MissingRequiredReportWaitsButAnAlreadyKnownConflictRejects()
+    {
+        const string local = "required=r1";
+        Assert.IsFalse(SimulationAgreementPolicy.TryDecide(local, new[] { local, null },
+            out _, out _, out bool waiting));
+        Assert.IsTrue(waiting);
+        Assert.IsFalse(SimulationAgreementPolicy.TryDecide(local, new[] { local, "required=r0", null },
+            out _, out _, out waiting));
+        Assert.IsFalse(waiting);
+        Assert.IsTrue(SimulationAgreementPolicy.TryDecide(local, new[] { local, local },
+            out string enabled, out _, out waiting));
+        Assert.AreEqual("required", enabled);
+        Assert.IsFalse(waiting);
+    }
+
     [DataTestMethod]
     [DataRow("world=r1;shift=o1", "shift;world")]
     [DataRow("world=r1;shift=o0", "world")]

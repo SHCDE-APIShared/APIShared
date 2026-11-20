@@ -18,8 +18,9 @@ internal static class Program
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
         APIShared.Economy.WorkerProductionAgreement.Waiting=APIShared.Economy.WorkerProductionAgreement.Blocked=false;
         APIShared.Economy.WorkerProductionAgreement.Checks=0;
-        Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.SaveVeto = false; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
+        Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.SaveVeto = Boundary.SaveGuardWaiting = false; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
         Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = Boundary.StartWithdrawals = 0;Boundary.LookupHeader=null;
+        Boundary.SaveExchangeChecks = 0;
         Boundary.Settings = "host-settings"; Boundary.Records = Boundary.SaveRecords = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = Boundary.DuringPrepare = null;
         Boundary.Logs.Clear(); Boundary.Sent.Clear(); Boundary.Broadcast.Clear(); Boundary.LocalChat.Clear();
         Boundary.WaitingBroadcast.Clear(); Boundary.WaitingLocal.Clear();
@@ -411,6 +412,55 @@ internal static class Program
         try{SavegameLoadCoordinator.ValidateStart(Boundary.Path,true);}catch(InvalidOperationException){productionRejected=true;}
         Check(productionRejected && APIShared.Economy.WorkerProductionAgreement.Checks>admittedProductionChecks &&
             !SavegameLoadCoordinator.IsLoadingMultiplayerSave,"Final production rejection revokes admission before native loading");
+
+        void SaveTick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/20-save-load"]();
+        Reset(); Boundary.SaveGuardWaiting = true; Save(); SaveTick();
+        saveRequest = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+        Check(Boundary.SaveExchangeChecks == 1 && Boundary.SaveStarts == 0,
+            "Host drives the simulation exchange before file acknowledgement without repeating it every frame");
+        saveReply = Reply(saveRequest);
+        saveReply.Time = saveRequest.Time;
+        Boundary.Receive(saveReply, 2002);
+        Check(Boundary.SaveStarts == 0 && !Boundary.Sent.OfType<SavegameLoadPacket>().Any(packet => packet.Operation >= 2),
+            "After file acknowledgement, a pending simulation guard retains the host attempt without publishing release or cancellation");
+        Boundary.SaveGuardWaiting = false; SaveTick(); SaveTick();
+        Check(Boundary.SaveStarts == 1 && Boundary.Sent.OfType<SavegameLoadPacket>().Count(packet => packet.Operation == 2) == 1,
+            "The waiting host releases that attempt once after the simulation acknowledgement arrives");
+
+        void BeginWaitingClient()
+        {
+            Reset(client: true);
+            saveRequest.Token = Guid.NewGuid().ToString("N");
+            Boundary.SaveGuardWaiting = true;
+            Boundary.Receive(saveRequest, 2001);
+        }
+        BeginWaitingClient();
+        Check(Boundary.Sent.Count == 0, "A waiting client sends neither a save acknowledgement nor a cancellation");
+        Boundary.SaveGuardWaiting = false; SaveTick(); SaveTick();
+        Check(Boundary.Sent.OfType<SavegameLoadPacket>().Single().Operation == 1,
+            "A later simulation decision releases the client acknowledgement exactly once");
+
+        BeginWaitingClient();
+        Boundary.SaveVeto = true; SaveTick();
+        Check(Boundary.Sent.OfType<SavegameLoadPacket>().Single().Operation == 3,
+            "A confirmed conflict still cancels a waiting save attempt immediately");
+
+        BeginWaitingClient();
+        typeof(SavegameLoadCoordinator).GetField("deadline", BindingFlags.NonPublic | BindingFlags.Static)
+            .SetValue(null, DateTime.UtcNow.AddSeconds(-1));
+        SaveTick(); Boundary.SaveGuardWaiting = false; SaveTick();
+        Check(Boundary.Sent.OfType<SavegameLoadPacket>().Single().Operation == 3 &&
+            Boundary.Logs.Any(text => text.Contains("timed out") && text.Contains("simulation acknowledgement pending")),
+            "An expired save attempt reports the pending stage and cannot acknowledge a late decision");
+
+        Reset(solo: true); Boundary.Path = Path.Combine(AppContext.BaseDirectory, "save-name.sav");
+        File.WriteAllText(Boundary.Path, "valid saved world");
+        Save(); Boundary.SaveGuardWaiting = true;
+        bool waitingRejected = false;
+        try { SavegameLoadCoordinator.ValidateStart(Boundary.Path, true); }
+        catch (InvalidOperationException) { waitingRejected = true; }
+        Check(waitingRejected && !SavegameLoadCoordinator.IsLoadingMultiplayerSave && Boundary.Broadcast.Count == 1,
+            "Loss of a simulation decision after release fails closed at the native boundary");
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
         Console.WriteLine("PASS: " + checks + " production map-readiness checks: all-peer records, authority, immutable native tickets, file changes, selection changes and mutual save/map exclusion.");
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -48,6 +49,8 @@ namespace APIShared.Multiplayer
         private static string rosterKey = "", localManifest = "";
         private static ulong host, self;
         private static long round, nextRound, consumedRound;
+        private static long retryAfter;
+        private static bool rejectedDecision;
         private static Receipt proposal, accepted;
         private static Attempt world;
 
@@ -100,7 +103,7 @@ namespace APIShared.Multiplayer
             log = logger;
             channel = ApiShared.ForMod(APISharedPlugin.PluginGuid).Network.RegisterMessage<SimulationAgreementPacket>(
                 "simulation-capability-agreement", Receive, new MessageChannelOptions<SimulationAgreementPacket> { MaximumBodyBytes = 8192 });
-            if (!LobbyLaunchGuards.TryRegister(APISharedPlugin.PluginGuid, "simulation-capability-agreement", Guard, out string error))
+            if (!LobbyLaunchGuards.TryRegisterReadiness(APISharedPlugin.PluginGuid, "simulation-capability-agreement", Guard, out string error))
                 throw new InvalidOperationException(error);
             if (!ApiShared.Current.TryGetLobbyState(APISharedPlugin.PluginGuid, out var state, out var diagnostic) ||
                 !state.TryRegisterObserver("simulation-capability-agreement", Observe, out diagnostic))
@@ -149,6 +152,7 @@ namespace APIShared.Multiplayer
                 self = currentSelf;
                 localManifest = manifest;
                 proposal = accepted = null;
+                rejectedDecision = false;
                 Reports.Clear();
                 Acknowledged.Clear();
                 if (key.Length != 0 && host == self) BeginRound();
@@ -166,50 +170,87 @@ namespace APIShared.Multiplayer
             Reports.Clear();
             Acknowledged.Clear();
             Reports[self] = localManifest;
+            DeferRetry();
             foreach (ulong peer in roster.Players.Values)
                 if (peer != self) Send(peer, SimulationAgreementPacket.Challenge, round, "");
             if (roster.Players.Count == 1) TryPropose(false);
         }
 
-        private static string Guard(LobbyLaunchGuardContext context)
+        private static LobbyLaunchGuardResult Guard(LobbyLaunchGuardContext context)
         {
-            if (Features.Count == 0 || !context.RequiresPeerAgreement) return null;
-            Refresh();
-            if (context.Operation == LobbyLaunchOperation.Ready) return null;
-            if (rosterKey.Length == 0) return "Simulation capability agreement is waiting for the multiplayer roster.";
-            if (host != self) return accepted == null || accepted.Round == consumedRound
-                ? "Waiting for the host's simulation capability agreement." : null;
-
-            if (round == 0 || round == consumedRound) BeginRound();
-            foreach (ulong peer in roster.Players.Values)
-                if (!Reports.ContainsKey(peer)) Send(peer, SimulationAgreementPacket.Challenge, round, "");
-            string reason = TryPropose(true);
-            if (proposal == null) return reason;
-
-            foreach (ulong peer in proposal.Peers)
-                if (!Acknowledged.Contains(peer))
-                    Send(peer, SimulationAgreementPacket.Decision, round, proposal.Enabled);
-            if (Acknowledged.Count != proposal.Peers.Length)
-                return "Waiting for every player to acknowledge the simulation capability agreement.";
-            accepted = proposal;
-            return null;
+            if (!context.RequiresPeerAgreement) return default;
+            if (context.Operation == LobbyLaunchOperation.Ready) { Refresh(); return default; }
+            return EvaluateStart();
         }
 
-        private static string TryPropose(bool allowMissing)
+        // File acknowledgement on the client itself requires the simulation decision.
+        // Drive the existing exchange while the host still awaits those file acknowledgements.
+        internal static LobbyLaunchGuardResult AdvancePreparedSaveExchange(ulong lobbyId)
         {
-            if (proposal != null || !allowMissing && Reports.Count != roster.Players.Count) return null;
+            if (Features.Count == 0) return default;
+            if (roster?.LobbyId != lobbyId)
+                return Waiting("Simulation capability agreement is waiting for the multiplayer roster.");
+            return EvaluateStart(allowMissingReports: false);
+        }
+
+        private static LobbyLaunchGuardResult EvaluateStart(bool allowMissingReports = true)
+        {
+            if (Features.Count == 0) return default;
+            Refresh();
+            if (rosterKey.Length == 0) return Waiting("Simulation capability agreement is waiting for the multiplayer roster.");
+            if (host != self)
+            {
+                if (accepted != null && accepted.Round != consumedRound) return default;
+                return rejectedDecision
+                    ? new LobbyLaunchGuardResult(LobbyLaunchGuardState.Rejected, "The host's simulation capability decision differs from the local capabilities.")
+                    : Waiting("Waiting for the host's simulation capability agreement.");
+            }
+
+            if (round == 0 || round == consumedRound) BeginRound();
+            var result = TryPropose(allowMissingReports);
+            RetryOutstanding();
+            if (proposal == null) return result;
+            if (Acknowledged.Count != proposal.Peers.Length)
+                return Waiting("Waiting for every player to acknowledge the simulation capability agreement.");
+            accepted = proposal;
+            return default;
+        }
+
+        private static LobbyLaunchGuardResult Waiting(string reason) =>
+            new LobbyLaunchGuardResult(LobbyLaunchGuardState.Waiting, reason);
+
+        private static void DeferRetry() => retryAfter = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
+
+        private static void RetryOutstanding()
+        {
+            if (Stopwatch.GetTimestamp() < retryAfter) return;
+            DeferRetry();
+            foreach (ulong peer in roster.Players.Values)
+            {
+                if (!Reports.ContainsKey(peer)) Send(peer, SimulationAgreementPacket.Challenge, round, "");
+                if (proposal != null && !Acknowledged.Contains(peer))
+                    Send(peer, SimulationAgreementPacket.Decision, round, proposal.Enabled);
+            }
+        }
+
+        private static LobbyLaunchGuardResult TryPropose(bool allowMissing)
+        {
+            if (proposal != null) return default;
             if (!SimulationAgreementPolicy.TryDecide(localManifest, roster.Players.Values.Select(peer =>
-                Reports.TryGetValue(peer, out string manifest) ? manifest : null), out string enabled, out string reason))
-                return reason;
+                Reports.TryGetValue(peer, out string manifest) ? manifest : null), out string enabled, out string reason, out bool waiting))
+                return new LobbyLaunchGuardResult(waiting ? LobbyLaunchGuardState.Waiting : LobbyLaunchGuardState.Rejected, reason);
+            if (!allowMissing && Reports.Count != roster.Players.Count)
+                return Waiting("Waiting for all players to report simulation capabilities.");
             proposal = new Receipt
             {
                 Lobby = roster.LobbyId.Value, Local = self, Roster = rosterKey, Round = round,
                 Enabled = enabled, Peers = roster.Players.Values.ToArray()
             };
             Acknowledged.Add(self);
+            DeferRetry();
             foreach (ulong peer in proposal.Peers)
                 if (peer != self) Send(peer, SimulationAgreementPacket.Decision, round, enabled);
-            return null;
+            return default;
         }
 
         private static void Receive(NetworkMessage<SimulationAgreementPacket> message)
@@ -263,14 +304,16 @@ namespace APIShared.Multiplayer
             if (message.SenderSteamId != host || packet.Round < round) return;
             if (packet.Operation == SimulationAgreementPacket.Challenge)
             {
-                if (packet.Round > round) accepted = null;
+                if (packet.Round > round) { accepted = null; rejectedDecision = false; }
                 round = packet.Round;
                 Send(host, SimulationAgreementPacket.Report, round, localManifest);
             }
-            else if (packet.Operation == SimulationAgreementPacket.Decision && packet.Round == round &&
-                     SimulationAgreementPolicy.Accepts(localManifest, packet.Data))
+            else if (packet.Operation == SimulationAgreementPacket.Decision && packet.Round == round)
             {
                 if (accepted != null && accepted.Enabled != packet.Data) return;
+                if (!SimulationAgreementPolicy.Accepts(localManifest, packet.Data))
+                { rejectedDecision = true; return; }
+                rejectedDecision = false;
                 if (Send(host, SimulationAgreementPacket.Acknowledge, round, packet.Data))
                     accepted = new Receipt
                     {
