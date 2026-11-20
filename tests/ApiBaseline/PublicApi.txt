@@ -413,11 +413,13 @@ APIShared.Buildings.BuildingStateRegistration | public .ctor(string ownerGuid, s
 APIShared.Buildings.BuildingStateRegistration | public System.Collections.Generic.IReadOnlyList<APIShared.Buildings.BuildingStateValue> Values { get; }
 APIShared.Buildings.BuildingStateRegistration | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
 APIShared.Buildings.BuildingStateRegistration | public System.Func<bool> AcceptsOwnerRequests { get; set; }
+APIShared.Buildings.BuildingStateRegistration | public bool AllowSameTypeOwnerRequests { get; set; }
 APIShared.Buildings.BuildingStateRegistration | public string OwnerGuid { get; }
 APIShared.Buildings.BuildingStateRegistration | public string RegistrationId { get; }
 APIShared.Buildings.BuildingStateRegistration | public string SaveDataIdentifier { get; }
 APIShared.Buildings.BuildingStateTable | public sealed class APIShared.Buildings.BuildingStateTable
 APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChange(int buildingId, uint globalId, int valueIndex, byte value)
+APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChangeForSameType(int buildingId, uint globalId, int valueIndex, byte value)
 APIShared.Buildings.BuildingStateTable | public bool AppliesTo(SHCDESE.Interop.eStructs buildingType)
 APIShared.Buildings.BuildingStateTable | public bool HasPendingRequest { get; }
 APIShared.Buildings.BuildingStateTable | public bool TrySetFromSimulation(int buildingId, uint globalId, int valueIndex, byte value)

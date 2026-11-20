@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.58.3",
+  "Version": "0.59.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.59.0",
+      "Changes": [
+        "Building state tables can opt in to synchronized owner requests for all buildings of the selected type."
+      ]
+    },
     {
       "Version": "0.58.3",
       "Changes": [

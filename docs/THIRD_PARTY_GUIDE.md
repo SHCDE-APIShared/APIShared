@@ -2033,7 +2033,8 @@ instead of patching `HUD_Buildings.xaml` and polling the open building: APIShare
 and the detection and calls Opened, Updated and Closed on Unity. Use
 [BuildingStates](BUILDING_STATE.md) for the player's per-building choice behind such a control:
 owner requests are validated and applied on every peer in the same tick, saved with the game and
-readable from managed and native simulation code.
+readable from managed and native simulation code. A table can opt in to applying one owner value
+to all of the sender's living buildings of the selected type.
 
 ## Ally gifts and send-dialog extensions
 

@@ -1110,7 +1110,8 @@ detection. A factory creates the control per HUD instance; `ShowWhen`, `Opened`,
 
 `APIShared.Buildings.BuildingStates` stores 1 to 12 small values per building identity (ID and
 GlobalId). Owners change values through one tick-synchronous authenticated Chore validated on every
-peer; simulation values are written only by the owning mod. Each table has its own versioned save
+peer, including optional requests for all the sender's buildings of the selected type. Simulation
+values are written only by the owning mod. Each table has its own versioned save
 record and a fixed native layout readable by native code. See [building state](BUILDING_STATE.md).
 
 ## Build-menu availability
