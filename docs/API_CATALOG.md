@@ -56,6 +56,13 @@ within the same mission and the forward Int32 half-range.
 unit-pair check. Owners publish immutable player, unit type or global ID selectors.
 See [attack target rule integration](THIRD_PARTY_GUIDE.md#attack-target-rules).
 
+## Local input and mod keybinds
+
+`APIShared.Input.InputState` reads physical Unity input, Noesis event modifiers or the
+game's configured action state. `ModKeybinds` registers mod actions and adds them to
+**Mod Keybinds** under the game's keyboard settings. Each action reads and writes its
+own existing local setting. See [mod keybind integration](THIRD_PARTY_GUIDE.md#local-input-and-mod-keybinds).
+
 ## Local troop-command input
 
 `APIShared.Units.TroopCommandInputEvents` reports local command releases with

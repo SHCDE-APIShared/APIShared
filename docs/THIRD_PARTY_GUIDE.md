@@ -2036,6 +2036,39 @@ owner requests are validated and applied on every peer in the same tick, saved w
 readable from managed and native simulation code. A table can opt in to applying one owner value
 to all of the sender's living buildings of the selected type.
 
+## Local input and mod keybinds
+
+Use `InputState.PhysicalModifiers` for physical modifier keys, `ReadModifiers` for
+Noesis input events, and `ReadGestureModifiers` for UI gestures that still accept the
+mouse when the keyboard is routed to the game. Use the game-action methods for Vanilla
+actions that players can rebind. Use Script Extender press and release events for
+edge-triggered behavior and query held state inside the relevant gesture callback.
+
+After managed initialization on Unity, register one `ModKeybindRegistration` per action.
+The owner and action IDs are stable. The registration's name and binding readers are called
+on Unity. The edit predicate and normal settings setter control changes, the execution
+predicate controls in-game activation, and the action only requests the existing command.
+The game settings page lists registrations by mod. A mod can also call `BeginCapture` from
+its own editor, pass its visibility predicate, and route active Noesis preview input through
+`TryCapture`. Assignment ends on Escape, lost focus or a closed surface. Call
+`NotifyBindingChanged` for settings changes made outside the shared editor.
+
+For example, a preview overlay with an existing local binding can register:
+
+```csharp
+var shortcut = new ModKeybindRegistration(MyPluginGuid, "toggle-preview", "My Mod",
+    () => Localize("TogglePreview"), new KeybindChord(KeyCode.B),
+    () => settings.PreviewShortcut, chord => settings.PreviewShortcut = chord,
+    chord => chord.Key != KeyCode.Escape, () => settings.CanEditPreviewShortcut,
+    () => preview.CanToggle, preview.Toggle);
+if (!ModKeybinds.TryRegister(shortcut, out string reason)) Log(reason);
+```
+
+The broker reuses the Script Extender input stream. Trigger matches use the exact modifier
+combination and leave Vanilla input available. The editor warns about duplicate chords
+without rewriting either binding. Keep local shortcut settings local and use the mod's
+existing authenticated command path for effects shared in multiplayer.
+
 ## Ally gifts and send-dialog extensions
 
 Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.

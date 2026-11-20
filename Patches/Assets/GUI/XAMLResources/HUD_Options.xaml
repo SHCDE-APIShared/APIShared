@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Operation Type="AddNamespace" AttributeName="apiKeys" Value="clr-namespace:APIShared.Input;assembly=APIShared" />
+  <Operation Type="SetAttribute" XPath="//n:Grid[@Name='KeySettings']" AttributeName="apiKeys:ModKeybindOptions.Enabled" Value="True" />
+  <Operation Type="Add" XPath="//n:UserControl.Resources">
+    <Content>
+      <Style x:Key="APISharedModKeybindOptionsButton" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="#FF453322" />
+        <Setter Property="Foreground" Value="#FFF6E4BB" />
+        <Setter Property="BorderBrush" Value="#FFD5A663" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="{x:Type Button}">
+              <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+                <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Surface" Property="Background" Value="#FF765431" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Surface" Property="BorderBrush" Value="#FFFFEBAC" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="Surface" Property="Opacity" Value="0.45" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+    </Content>
+  </Operation>
+  <Operation Type="Add" XPath="//n:UserControl.Resources">
+    <Content>
+      <Style x:Key="APISharedModKeybindOptionsTooltip" TargetType="{x:Type ToolTip}">
+        <Setter Property="Background" Value="#FF1D1710" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="BorderBrush" Value="#FFF2D48A" />
+        <Setter Property="BorderThickness" Value="1.5" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="{x:Type ToolTip}">
+              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}"
+                      MaxWidth="{TemplateBinding MaxWidth}">
+                <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                           FontSize="{TemplateBinding FontSize}" TextWrapping="Wrap" />
+              </Border>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+    </Content>
+  </Operation>
+</Patch>
