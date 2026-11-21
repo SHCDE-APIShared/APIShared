@@ -186,6 +186,10 @@ tracking/reset methods. The last selection distinguishes first-write snapshots,
 stack overrides and original-value resets; source-version identity alone is not
 a substitute for those binary method contracts.
 
+The lifecycle selection also includes campaign, skirmish and non-skirmish start
+wrappers so their native-call retry and notification-suppression paths can be
+checked alongside save, load and unload. Their existing report limit is unchanged.
+
 Layout values describe metadata declarations. Sequential field order and packing
 do not establish computed native offsets. The profile does not prove native
 predicate equivalence, payment, save/reset exclusion, deployment or gameplay.

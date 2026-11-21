@@ -71,7 +71,10 @@
         "c_game_dll_savesavegame_hook_impl",
         "c_game_dll_loadsavegame_hook_impl",
         "c_game_dll_loadmaptoplay_hook_impl",
-        "c_game_unload_map_hook_impl"
+        "c_game_unload_map_hook_impl",
+        "c_game_start_campaign_game_handler_hook_impl",
+        "c_game_start_skirmish_game_handler_hook_impl",
+        "c_game_start_non_skirmish_game_handler_hook_impl"
       ],
       "maxOutputBytes": 1048576,
       "includeNested": false
