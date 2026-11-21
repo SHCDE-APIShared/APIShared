@@ -41,7 +41,7 @@ try {
     Write-Fixture (Join-Path $proofRoot '.gitignore') ".local/`n"
     Write-Fixture (Join-Path $proofRoot 'tools/Build.ps1') 'build fixture'
     foreach($name in @('WorkshopPackage.ps1','Prepare-WorkshopPackage.ps1','New-WorkshopBootstrap.ps1','PublisherPackage.ps1')) { Write-Fixture (Join-Path $proofRoot ('tools/' + $name)) 'packaging fixture' }
-    Write-Fixture (Join-Path $proofRoot 'Workshop/workshop-updater.ps1') 'updater fixture'
+    Write-Fixture (Join-Path $proofRoot 'Workshop/Bootstrap/Plugin.cs.template') 'bootstrap template fixture'
     $viewSource=Join-Path $proofRoot 'tools/WorkshopUploader/UploadMod-linux.sh'
     $viewTarget=Join-Path $proofRoot 'BepInEx/tools/APISharedWorkshopPublisher/UploadMod-linux.sh'
     Write-Fixture $viewSource '<Grid />'

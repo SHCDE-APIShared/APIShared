@@ -468,6 +468,34 @@ to Documents and preserves old JSON files. Explicit deletion removes personal co
 of the selected identity from both directories and reports partial failures.
 Bundled and external provider presets remain read-only in their original locations.
 
+The **Open folder** action in the save and load dialogs opens the mod's personal
+`Presets` directory in the desktop file manager. APIShared creates the directory
+on demand. On Linux under Wine or Proton, APIShared resolves the prefix's path
+and hands it to the desktop's `xdg-open`.
+
+To add the action to an existing dialog, bind `System_OpenPresetFolderCommand`,
+`System_PresetFolderText` and `System_PresetFolderHelpText`. Bind visibility to
+`System_PresetFolderVisibility` with `FallbackValue=Collapsed` so older APIShared
+builds hide the button.
+
+In a supported multiplayer lobby, **Share** offers the preset selected in the
+load dialog to compatible human players. The offer appears in the lobby chat
+area. A player can open it, choose a name and request a personal copy. The
+sender transfers the preset only to that player after the request. APIShared
+uses a bounded retry until each eligible lobby peer acknowledges the offer and
+reports when some or all peers have not confirmed receipt. A fresh request made
+immediately after a previous download receives a retry message. Preset sharing
+is limited to the lobby and to 64 KiB of preset JSON.
+
+Bind the Share button to `System_SharePresetCommand`,
+`System_CanSharePreset` and `System_PresetShareVisibility`. Use
+`System_PresetShareText` and `System_PresetShareHelpText` for the label and
+tooltip. On pages where certain players cannot apply presets, provide the
+`System_PresetShareOnlyPickerVisibility` entry point with
+`System_OpenPresetLoadCommand`. Keep Load and Delete gated by their existing
+permissions. Use `FallbackValue=Collapsed` for the sharing visibility
+bindings to preserve older APIShared installations.
+
 When no Documents working file exists, APIShared loads the previous plugin-local
 `.msgpack` and writes the validated/migrated state to Documents, retaining the original.
 A present but corrupt or inaccessible new file does not fall back to stale installation
@@ -558,6 +586,12 @@ Opening errors block that contribution's confirmation. Confirmation means the ga
 callback returned, not that the mission initialized successfully. Use the mission
 lifecycle for the latter. A rejected confirmation keeps its request/selection and
 restores the requester view; it does not invoke the original action.
+
+For an expected preparation rejection, call `context.RejectPreparation(reason)`
+synchronously from `Prepare` and return. Supply a non-empty, localized player-facing
+reason when translations are available. The first reason wins. APIShared stops later
+preparation, runs attempt cleanup and displays that reason. The next confirmation
+starts with no rejection reason. Unexpected preparation exceptions are logged.
 
 Do not install another requester hook. Vanilla hides the requester before invoking
 its confirmation callback; APIShared captures checkbox availability before that hide.

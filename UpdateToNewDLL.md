@@ -1244,6 +1244,21 @@ Role-22 `2ECD0` gates both recruitment and building on a physical population bel
 Admission reserves the currently missing regular two-engineer pool without
 claiming unrestricted future construction capacity.
 
+Castle-defense targets ([initial order](src/Units/AiMilitary/Native/AiInitialGroupOrder.cs),
+[class data](src/Units/AiMilitary/Native/AiCastleDefenseTables.cs)) mirror `2FE20`:
+storage slot 0 `3E6C0 -> 3E940` (keep origin +3/+4), slot 1 `3EA10 -> 3E9A0` (keep door
+`+0x1D4/+0x1D8/+0x1DC`), class windows `3D9E0`/`3DEE0`/`3DB30` (tables `2CF020`,
+`2CF060`, `2CF0A8`) -> `3E850` with the `3E650` reachability test (`E2610`, used through
+the Extender's `FindNextComponentTowardDestination`, mode 0) and the `3E940` fallback.
+Unnamed player fields: mobile rotation counter `+0x2B54` (`379D924`) and defensive alert
+`+0x38F0` (`379E6C0`), player stride `0x583C`. They are hash-bound: no instruction anchor
+gives a second proof of these displacements. `2BC40` cuts only classes 8/10/17 (types
+24/26/74 via `2CEE00`) to AIC `+0x118`; the option check depends on that. The AIC
+array passed as first argument to `2BC40`/`2BF10`/`2D760`/`2DB60`/`2B780` is the AI lord
+manager `404C950` (`LEA RCX` at `57452` before `2AE40`, also the Extender's
+`AILordManagerRVA`), not the player manager `366C210`. The native
+fixture compares the class data with the DLL tables and the `2BC40` comparisons.
+
 Run `AiMilitary.NativeTests` with the canonical DLL, `AiRecruitOrders.Tests`,
 `AiMilitary.AttackTests`, `MapRecordReadiness.Tests`, and the affected framework,
 save-context, API compatibility and consumer tests. Verify real normal/DevDiag

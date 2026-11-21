@@ -45,6 +45,7 @@ namespace APIShared.Workshop
             } else if (plan.Action == WorkshopAction.Install) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Install", "Version", plan.Version);
             else if (plan.Action == WorkshopAction.Update) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Update", "Previous", plan.Previous.Version, "Version", plan.Version);
             else if (plan.Action == WorkshopAction.Reinstall) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Reinstall", "Version", plan.Version);
+            else if (plan.Action == WorkshopAction.Downgrade) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Downgrade", "Previous", plan.Previous.Version, "Version", plan.Version);
             else text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Remove", "Version", plan.Version);
             return name + ": " + text;
         }
