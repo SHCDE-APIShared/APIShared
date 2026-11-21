@@ -780,6 +780,9 @@ APIShared.Economy.NativeStorageClient | public bool TryGetLastCargoSequence(out 
 APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryPrepareImport(APIShared.Savegames.CriticalSaveParticipant participant, APIShared.Savegames.VersionedSaveLoad load, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportAllocation> allocations, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportCargo> cargo, out APIShared.Economy.NativeStorageImportPlan plan, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryRegisterGood(string goodId, APIShared.Economy.NativeStoragePool pool, out APIShared.Economy.NativeStoredGood good, out string reason)
+APIShared.Economy.NativeStorageClient | public static int MaximumImportAccounts { get; }
+APIShared.Economy.NativeStorageClient | public static int MaximumImportAllocations { get; }
+APIShared.Economy.NativeStorageClient | public static int MaximumImportCargo { get; }
 APIShared.Economy.NativeStorageImportAllocation | public struct APIShared.Economy.NativeStorageImportAllocation
 APIShared.Economy.NativeStorageImportAllocation | public .ctor(APIShared.Economy.NativeStoredGood good, int buildingId, uint buildingGlobalId, int playerId, int quantity)
 APIShared.Economy.NativeStorageImportAllocation | public APIShared.Economy.NativeStoredGood Good { get; }
