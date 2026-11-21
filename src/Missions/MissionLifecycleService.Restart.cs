@@ -22,7 +22,7 @@ namespace APIShared
             service.Restart(action);
         }
 
-        private void Restart(Action action)
+        private void Restart(Action action, Operation prepared = null)
         {
             if (Thread.CurrentThread.ManagedThreadId != unityThread)
                 throw new InvalidOperationException("Restart requires the Unity thread.");
@@ -44,7 +44,8 @@ namespace APIShared
                 RestartedFrom = source.SessionId, RestartMode = source.Mode, Multiplayer = source.Mode.IsRealMultiplayer,
                 Campaign = source.Mode.CampaignMapId, Trail = source.Mode.EventTrailType,
                 CoopTrail = source.Mode.CoopTrailId > 0 ? source.Mode.CoopTrailId : (int?)null,
-                MissionIndex = source.MissionIndex, Size = source.MapSize, Difficulty = source.Difficulty
+                MissionIndex = source.MissionIndex, Size = source.MapSize, Difficulty = source.Difficulty,
+                MapAlias = prepared?.MapAlias, MapAliasPath = prepared?.MapAliasPath
             }, action);
         }
 

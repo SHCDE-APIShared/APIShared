@@ -46,8 +46,9 @@ Unrelated patchers are not removed. Unknown or unreadable patcher metadata refus
 this optional correction rather than guessing ownership.
 
 Create `BepInEx/config/APIShared.DependencyBootstrap.disabled` before starting to
-disable the companion; this also suspends the Workshop installation pass, so staged
-Workshop installations wait until the companion is active again. The switch is sampled once in Finish. Configuration changes
+disable the companion. New Workshop installations wait until the companion is active
+again. Recovery of an already interrupted installation still runs before plugins can
+load. The switch is sampled once in Finish. Configuration changes
 take effect on a complete restart. No hook is undone during Unity cleanup.
 
 ## Initialization and diagnostics
@@ -55,12 +56,12 @@ take effect on a complete restart. No hook is undone during Unity cleanup.
 Finish attaches a static listener and initializes diagnostics. Before that, Finish runs
 the [Workshop installation pass](WORKSHOP.md#installation-preloader-swap), which
 recovers interrupted swaps and applies staged Workshop installations while nothing in
-`BepInEx/plugins` is open yet. The pass uses the same gate as the hooks (active mode
-and an existing APIShared plugin directory), is silent and does nothing without
-staged work, and logs its outcomes on its own BepInEx source `APIShared.WorkshopInstall`.
-Its failures are contained separately and never skip the listener. It writes only the
-Workshop installation state below `_APIShared/I`, including the `result.txt` outcome
-that the APIShared plugin reports. Runtime type
+`BepInEx/plugins` is open yet. The pass holds a process-lifetime lease in the game
+directory. A second instance of that installation stops before mod discovery. Staged
+changes require active mode and an existing APIShared plugin directory. A recovery
+conflict stops the launch before it can load an incomplete installation. The
+`APIShared.WorkshopInstall` log source reports outcomes, along with the
+`_APIShared/I/result.txt` file consumed by the APIShared plugin. Runtime type
 resolution, pair validation and hook preparation start at the synchronous BepInEx
 `Chainloader ready` message. Neither Initialize nor Start is called manually, and
 no BepInEx initialization flag is changed. Both transformed method copies are

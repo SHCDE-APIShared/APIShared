@@ -84,7 +84,7 @@ public sealed class WorkshopLocalStateTests
 
     // The former updater interrupted while installing (here: a first installation, no receipt
     // yet): the item is offered as a clean installation until its files match the package,
-    // even with offers disabled. Finished or unreadable transactions name no item.
+    // even with offers disabled. Unreadable transactions keep their recovery evidence.
     [TestMethod]
     public void InterruptedFormerTransactionsAreOfferedAsCleanInstallation()
     {
@@ -97,10 +97,13 @@ public sealed class WorkshopLocalStateTests
                 File.WriteAllText(Path.Combine(dir, "operations.tsv"), "write\tBepInEx/plugins/Pack/a.dll\t0\tmissing\tabc\nreceipt-write\t_APIShared/Workshop/Receipts/3788821961.json\t1\tmissing\tdef\n");
                 return dir;
             }
-            CollectionAssert.AreEqual(new ulong[] { 3788821961 }, WorkshopLocalState.InterruptedItems(Transaction("a", "prepared\napplying\nwrite 0\n")).ToArray());
-            Assert.IsFalse(WorkshopLocalState.InterruptedItems(Transaction("b", "prepared\napplying\ncommitted\n")).Any());
-            Assert.IsFalse(WorkshopLocalState.InterruptedItems(Transaction("c", "prepared\n")).Any(), "never started changing files");
-            Assert.IsFalse(WorkshopLocalState.InterruptedItems(Path.Combine(game, "missing")).Any());
+            CollectionAssert.AreEqual(new ulong[] { 3788821961 }, WorkshopLocalState.ReadFormerTransaction(Transaction("a", "prepared\napplying\nwrite 0\n")).ToArray());
+            Assert.HasCount(0, WorkshopLocalState.ReadFormerTransaction(Transaction("b", "prepared\napplying\ncommitted\n")));
+            Assert.HasCount(0, WorkshopLocalState.ReadFormerTransaction(Transaction("c", "prepared\n")));
+            Assert.IsNull(WorkshopLocalState.ReadFormerTransaction(Path.Combine(game, "missing")));
+            string incomplete = Transaction("d", "prepared\napplying\n");
+            File.Delete(Path.Combine(incomplete, "operations.tsv"));
+            Assert.IsNull(WorkshopLocalState.ReadFormerTransaction(incomplete));
 
             WorkshopLocalState.WriteRepairs(game, new HashSet<ulong> { 3788821961 });
             CollectionAssert.AreEquivalent(new ulong[] { 3788821961 }, WorkshopLocalState.ReadRepairs(game).ToArray());

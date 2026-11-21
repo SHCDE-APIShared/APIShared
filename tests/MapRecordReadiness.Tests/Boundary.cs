@@ -13,9 +13,11 @@ internal static class Boundary
     internal static Delegate MapHook, SaveHook, RefreshHook;
     internal static int MapStarts, SaveStarts, Captures, Popups, StartWithdrawals, SaveExchangeChecks;
     internal static bool MainThread = true, Prepare = true, SendOk = true, SaveVeto, SaveGuardWaiting;
+    internal static bool MapAliasHookAvailable = true;
     internal static ulong Local = 2001, Host = 2001;
     internal static string Settings = "host-settings", Path;
     internal static FileHeader LookupHeader;
+    internal static Func<string, bool, APIShared.Maps.MapLoadDecision> DecideMapLoad;
     internal static Action DuringCapture, DuringPrepare;
     internal static IReadOnlyList<SavegameRecordDigest> Records = Array.Empty<SavegameRecordDigest>();
     internal static IReadOnlyList<SavegameRecordDigest> SaveRecords = Array.Empty<SavegameRecordDigest>();
@@ -38,6 +40,20 @@ internal static class Boundary
     internal static void Receive<T>(T packet, ulong sender) where T : class => Receivers[typeof(T)](packet, sender);
 }
 namespace BepInEx.Logging { public sealed class ManualLogSource { } }
+namespace APIShared.Maps
+{
+    public static partial class MapLoadPolicy
+    {
+        internal static bool CanAlias => Boundary.MapAliasHookAvailable;
+
+        private static bool TryInstallNativeAlias(out string diagnostic)
+        {
+            // The tests cover managed admission; IL installation belongs to the game boundary.
+            diagnostic = null;
+            return CanAlias;
+        }
+    }
+}
 namespace SHCDESE.API { internal sealed class Unused { } }
 namespace UnityEngine { internal sealed class Unused { } }
 namespace Steamworks

@@ -971,6 +971,12 @@ multiplayer map lookup hook. Owner-bound providers can supply a verified local
 query. No provider means Vanilla; different claimed header instances fail closed.
 See [integration and lifetime](THIRD_PARTY_GUIDE.md#multiplayer-map-lookup-and-lobby-system-hints).
 
+`APIShared.Maps.MapLoadPolicy` accepts one optional provider for ordinary local Skirmish
+and steam multiplayer matches. A provider can allow the original filename, supply a
+short native filename, or reject a local path with a message. The original path and
+lobby identity remain authoritative. Register on the Unity thread after APIShared's
+`LibraryLoaded` initialization. APIShared uses the original name without a provider.
+
 `APIShared.Lobby.LobbyChatPresentation` registers owner-bound predicates that classify
 received lobby text as a system hint. It preserves the original renderer and never
 sends packets, changes text or authorizes gameplay. Registrations are process-lived.

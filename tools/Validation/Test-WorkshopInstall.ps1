@@ -4,6 +4,7 @@
 #   swap:      kill the swap, then run the preloader (recovery + pending request)
 #   preloader: kill the preloader itself during recovery, then run it again
 #   stage:     kill staging during the copy, then stage again
+#   group:     kill at reachable transaction boundaries where multiple packages and receipts change
 # Invariants: no moment exposes a partial plugin folder; afterwards the complete new version, its
 # receipt and no leftovers. Fixtures live in .local/workshop-install and are removed on success.
 param([int]$SwapKills = 150, [int]$PreloaderKills = 60, [int]$StageKills = 30, [int]$Seed = 20261118)
@@ -23,14 +24,46 @@ function Invoke-Harness([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw ('harness ' + ($Arguments -join ' ') + ': ' + ($output -join ' ')) }
     return @($output)[-1]
 }
-function Start-Killed([string[]]$Arguments, [int]$MinMs, [int]$MaxMs) {
+function Start-Harness([string[]]$Arguments) {
     $quoted = $Arguments | ForEach-Object { '"' + $_ + '"' }
-    $process = Start-Process -FilePath $harness -ArgumentList $quoted -PassThru -WindowStyle Hidden
-    Start-Sleep -Milliseconds ($random.Next($MinMs, $MaxMs))
-    if ($process.HasExited) { return 'finished' }
-    Stop-Process -Id $process.Id -Force
-    $process.WaitForExit()
-    return 'killed'
+    $start = [Diagnostics.ProcessStartInfo]::new($harness, ($quoted -join ' '))
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    return [Diagnostics.Process]::Start($start)
+}
+function Start-Killed([string[]]$Arguments, [int]$MinMs, [int]$MaxMs) {
+    $process = Start-Harness $Arguments
+    try {
+        Start-Sleep -Milliseconds ($random.Next($MinMs, $MaxMs))
+        if ($process.HasExited) { return 'finished' }
+        $process.Kill()
+        $process.WaitForExit()
+        return 'killed'
+    } finally { $process.Dispose() }
+}
+function Kill-GroupAt([string]$Game, [string]$Step) {
+    $signal = Join-Path (Split-Path $Game) 'paused'
+    if (Test-Path -LiteralPath $signal) { Remove-Item -LiteralPath $signal }
+    $process = Start-Harness @('group-run', $Game, $Step)
+    try {
+        $wait = [Diagnostics.Stopwatch]::StartNew()
+        while (-not ([IO.File]::Exists($signal))) {
+            if ($process.HasExited -or $wait.Elapsed.TotalSeconds -ge 10) { throw "Group did not reach $Step." }
+            Start-Sleep -Milliseconds 20
+        }
+    } finally {
+        try {
+            if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
+        } finally { $process.Dispose() }
+    }
+}
+function Remove-Fixture([string]$Directory) {
+    $resolved = (Resolve-Path -LiteralPath $Directory).ProviderPath
+    $workRoot = [IO.Path]::GetFullPath($work)
+    if ($resolved -ne $workRoot -and -not $resolved.StartsWith($workRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unexpected installation test fixture path."
+    }
+    Remove-Item -LiteralPath $resolved -Recurse -Force
 }
 function New-Game([string]$Name) {
     $game = Join-Path $work ($Name + '\game')
@@ -53,7 +86,7 @@ try {
         $null = Invoke-Harness @('preloader', $game)
         Assert-Final "swap $i" $game
         Count ("swap/$how/" + $seen)
-        Remove-Item -LiteralPath (Split-Path $game) -Recurse -Force
+        Remove-Fixture (Split-Path $game)
     }
     for ($i = 1; $i -le $PreloaderKills; $i++) {
         $game = New-Game "p$i"
@@ -66,7 +99,7 @@ try {
         $null = Invoke-Harness @('preloader', $game)
         Assert-Final "preloader $i" $game
         Count ("preloader/$how/" + $seen)
-        Remove-Item -LiteralPath (Split-Path $game) -Recurse -Force
+        Remove-Fixture (Split-Path $game)
     }
     for ($i = 1; $i -le $StageKills; $i++) {
         $game = New-Game "t$i"
@@ -77,11 +110,24 @@ try {
         $null = Invoke-Harness @('stage', $game)
         if (-not (Test-Path -LiteralPath (Join-Path $container '.apishared-complete')) -or (Test-Path -LiteralPath ($container + '.tmp'))) { $failures.Add("stage $i retry incomplete") }
         Count ("stage/$how/published=$published")
-        Remove-Item -LiteralPath (Split-Path $game) -Recurse -Force
+        Remove-Fixture (Split-Path $game)
+    }
+    foreach ($step in @('prepared', 'old-moved', 'new-moved', 'receipt-moved', 'rollback-old', 'committed', 'retired')) {
+        $game = New-Game ("g-" + $step)
+        $null = Invoke-Harness @('group-prepare', $game)
+        if ($step -eq 'rollback-old') { Kill-GroupAt $game 'old-moved' }
+        Kill-GroupAt $game $step
+        $null = Invoke-Harness @('group-run', $game)
+        $seen = Invoke-Harness @('group-check', $game)
+        $version = if ($step -in @('committed', 'retired')) { 2 } else { 1 }
+        $expected = "1:${version}/${version},2:${version}/${version}|clean"
+        if ($seen -ne $expected) { $failures.Add("group/$step expected $expected but got $seen") }
+        Count ("group/" + $step)
+        Remove-Fixture (Split-Path $game)
     }
 } finally {
     $outcomes.GetEnumerator() | Sort-Object Name | ForEach-Object { Write-Host ("  {0,-34} {1}" -f $_.Name, $_.Value) }
-    if ($failures.Count -eq 0 -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }
+    if ($failures.Count -eq 0 -and (Test-Path -LiteralPath $work)) { Remove-Fixture $work }
 }
 if ($failures.Count -ne 0) { $failures | ForEach-Object { Write-Host "FAIL $_" }; throw "$($failures.Count) Workshop installation kill check(s) failed; fixtures kept in $work." }
-Write-Host "PASS: Workshop installation survives $SwapKills swap, $PreloaderKills preloader and $StageKills staging kills without a partial plugin folder."
+Write-Host "PASS: Workshop installation survives $SwapKills swap, $PreloaderKills preloader, $StageKills staging and 7 group process kills."

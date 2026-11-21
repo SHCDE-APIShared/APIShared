@@ -51,7 +51,7 @@ namespace APIShared.Workshop
         // also when its delivered files are missing or changed: a clean installation from Steam
         // repairs it, for example after an interrupted installation of the former updater.
         // repair: the former external updater was interrupted while installing this item
-        // (WorkshopStartup.RemoveFormerUpdaterState); a clean installation is offered regardless
+        // (WorkshopStartup.InspectFormerUpdaterState); a clean installation is offered regardless
         // of disabled offers and of a missing receipt until the files match the package.
         internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status, bool offersEnabled, bool repair = false)
         {
@@ -85,20 +85,23 @@ namespace APIShared.Workshop
 
         // Former transaction format: journal.log gains "applying" when files start to change and
         // "committed" or "restored" when finished; operations.tsv rows "receipt-write|receipt-delete
-        // <tab> _APIShared/Workshop/Receipts/<id>.json ..." name the items. Unreadable data names no item.
-        internal static IEnumerable<ulong> InterruptedItems(string transaction)
+        // <tab> _APIShared/Workshop/Receipts/<id>.json ..." name the items. Null means the
+        // old transaction could not be classified. Keep its backups.
+        internal static IReadOnlyList<ulong> ReadFormerTransaction(string transaction)
         {
             try {
                 string journal = Path.Combine(transaction, "journal.log"), operations = Path.Combine(transaction, "operations.tsv");
-                if (!File.Exists(journal) || !File.Exists(operations)) return new ulong[0];
+                if (!File.Exists(journal)) return null;
                 var steps = File.ReadAllLines(journal);
-                if (!steps.Contains("applying") || steps.Contains("committed") || steps.Contains("restored")) return new ulong[0];
-                return File.ReadAllLines(operations).Select(line => line.Split('\t'))
+                if (steps.Contains("committed") || steps.Contains("restored")) return Array.Empty<ulong>();
+                if (!steps.Contains("applying")) return steps.Contains("prepared") ? Array.Empty<ulong>() : null;
+                var ids = File.ReadAllLines(operations).Select(line => line.Split('\t'))
                     .Where(row => row.Length > 1 && row[0].StartsWith("receipt-", StringComparison.Ordinal))
                     .Select(row => ulong.TryParse(Path.GetFileNameWithoutExtension(row[1]), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong id) ? id : 0)
-                    .Where(id => id != 0).ToList();
-            } catch (IOException) { return new ulong[0]; }
-            catch (UnauthorizedAccessException) { return new ulong[0]; }
+                    .ToArray();
+                return ids.Length == 0 || ids.Contains(0ul) ? null : ids;
+            } catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
         }
 
         internal static string RepairPath(string game) => Path.Combine(new Install.InstallPaths(game).Work, "repair.txt");
@@ -114,7 +117,10 @@ namespace APIShared.Workshop
             string path = RepairPath(game);
             if (ids.Count == 0) { Install.InstallTree.DeleteFileIfExists(path); return; }
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            Install.InstallTree.WriteDurable(path, FormatIds(ids) + "\r\n");
+            string temporary = path + ".tmp";
+            Install.InstallTree.WriteDurable(temporary, FormatIds(ids) + "\r\n");
+            if (File.Exists(path)) File.Replace(temporary, path, null);
+            else File.Move(temporary, path);
         }
 
         internal static IReadOnlyList<string> ReceiptRoots(WorkshopReceipt receipt) =>

@@ -21,7 +21,7 @@ internal static class Program
         try
         {
             string game = args[1];
-            int delay = args.Length > 2 ? int.Parse(args[2]) : 0;
+            int delay = args.Length > 2 && int.TryParse(args[2], out int ms) ? ms : 0;
             switch (args[0])
             {
                 case "prepare": Prepare(game); break;
@@ -38,11 +38,51 @@ internal static class Program
                     StageBig(game);
                     break;
                 case "check": Console.WriteLine(Check(game)); break;
-                default: Console.Error.WriteLine("usage: prepare|apply|preloader|stage|check <game> [delayMs]"); return 2;
+                case "group-prepare":
+                    StageGroup(game, 1);
+                    if (!InstallRunner.Run(game, _ => { }, message => throw new InvalidOperationException(message))) return 1;
+                    StageGroup(game, 2);
+                    break;
+                case "group-run":
+                    if (args.Length > 2)
+                        InstallBatch.Fault = step => {
+                            if (step != args[2]) return;
+                            File.WriteAllText(Path.Combine(game, "..", "paused"), step);
+                            Thread.Sleep(Timeout.Infinite);
+                        };
+                    if (!InstallRunner.Run(game, _ => { }, message => Console.WriteLine(message))) return 1;
+                    break;
+                case "group-check": Console.WriteLine(CheckGroup(game)); break;
+                default: Console.Error.WriteLine("usage: prepare|apply|preloader|stage|check|group-prepare|group-run|group-check <game> [delayMs|step]"); return 2;
             }
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); return 1; }
+    }
+
+    private static void StageGroup(string game, int version)
+    {
+        var paths = new InstallPaths(game);
+        ulong[] ids = { 1, 2 };
+        foreach (ulong id in ids)
+        {
+            string source = Path.Combine(game, "..", "group-source", id.ToString());
+            string relative = "mod.dll";
+            Write(source, new Dictionary<string, string> { [relative] = id + ":" + version });
+            string file = Path.Combine(source, relative);
+            var root = new InstallRoot("BepInEx/plugins/Member" + id, source, new[] { new InstallFile(relative, new FileInfo(file).Length, InstallTree.Sha256(file)) });
+            InstallStaging.StageInstall(paths, id, "Member" + id, new[] { root }, version.ToString(), _ => { }, request: false);
+        }
+        InstallStaging.PublishBatch(paths, ids);
+    }
+
+    private static string CheckGroup(string game)
+    {
+        var paths = new InstallPaths(game);
+        string[] contents = new ulong[] { 1, 2 }.Select(id => File.ReadAllText(Path.Combine(paths.Target("BepInEx/plugins/Member" + id), "mod.dll")) +
+            "/" + File.ReadAllText(paths.Receipt(id))).ToArray();
+        bool pending = InstallStaging.Pending(paths, 1) || InstallStaging.Pending(paths, 2) || InstallRunner.RequiresRecovery(game);
+        return string.Join(",", contents) + (pending ? "|pending" : "|clean");
     }
 
     private static Dictionary<string, string> Files(int v) => new Dictionary<string, string>

@@ -118,13 +118,16 @@ Deletion is deferred through `_SE/.staging/delete_list.txt`; installed files are
 
 Open **Mod Options → APIShared → Workshop** to install the version supplied by Steam. The tab lists subscribed APIShared packages even if their payload is absent from the game. Review the previewed version and planned changes before choosing **Install at next start**. This prepares the installation immediately on a worker: the package is copied into APIShared's staging area and verified there, without touching `BepInEx/plugins`. The next game start installs it before any mod is loaded (Install, Update, Reinstall or Downgrade as chosen in the tab), whether or not the package is installed or intact and regardless of **Offer updates at startup**. **Discard prepared installation** withdraws a prepared change that has not been installed yet; this is not possible while an interrupted installation of that item is still open, which the next start completes first.
 
-Earlier releases first recorded only a request, offered it in the next startup dialog, then closed the game, installed through an external updater with a progress window and restarted the game. That updater and its restart handoff were removed; see [Installation (preloader swap)](#installation-preloader-swap).
-
 A statically rooted Steam-initialization subscriber prepares one startup decision per process. It offers the first installation of subscribed packages that APIShared has not installed yet (this also adopts matching files), Update for newer releases of intact receipt-owned installations, a clean reinstallation when receipted files are missing or modified, and Remove for receipted items that are no longer subscribed. The local **Offer updates at startup** switch controls the installation, update and reinstallation offers per Workshop item and defaults to on; switch it off for an item whose files are changed on purpose, such as a standalone development build. Items with a prepared, not yet installed change are not offered again. Extender work and bootstrap installation take priority. Invalid dependencies or ownership conflicts defer changes safely.
 
-The startup dialog lists every change and asks once (**Yes**: prepare these changes now, they are installed at the next start; **No**: keep the current installation). After **Yes** staging continues in the background; nothing is applied in the current session and the game is never closed or restarted. Declining preserves files and rediscovers eligible changes on the next start. At the next start, the outcome of the preloader installation is reported once: successes are logged, failures are logged as errors and shown in a dialog; the previous version then remains installed and the installation is retried at the following start.
+The startup dialog lists the proposed changes. **Yes** prepares the whole group and restarts the game through Steam. The preloader installs the confirmed group before mods load. **No** continues startup with the current installation. If the restart helper cannot start, the game remains open and the prepared changes wait for a manual Steam restart. If preparation itself fails, the current installation stays in place.
 
-Startup diagnostics use timestamped Info, Warning and Error entries. Warnings explain policy blockers (including every conflicting plugin/asset GUID with its existing path and allowed payload roots, package versions and Workshop ID). Errors identify technical failures with their step and exception details, including unreadable manifests or receipts, staging failures and failed preloader installations. Each startup attempt ends with a result: current, blocked, declined, staging or failed; blocked items and technical failures cannot be reported as current. Staging confirms the decision only, not a committed installation. Repeated Steam initialization does not repeat the decision or its warnings. Pure Script Extender maps remain outside this package catalog.
+The restart helper runs outside the game process tree. It waits for the old game
+process to exit and for the Steam client to remove the app from its running list.
+It sends one Steam launch request after both checks pass. The same restart path
+handles installations, updates and removals.
+
+Startup diagnostics identify policy blockers, staging and restart outcomes, and the preloader's installation result. Installation failures are shown once on the resulting startup. A recovery conflict that prevents Unity startup is shown by the preloader and logged under `APIShared.WorkshopInstall`. Repeated Steam initialization does not repeat the decision. Pure Script Extender maps remain outside this package catalog.
 
 The publisher saves settings and Workshop IDs outside the package in LocalApplicationData/APIShared/WorkshopPublisher, scoped by app, account, publishing mode and package. Enter `/cancel` to cancel at a prompt. The `/nopause` option suppresses the closing pause.
 
@@ -207,27 +210,17 @@ Startup update offers require the recorded immutable files to still match the re
 
 An installation runs in two phases:
 
-1. **Staging (current session).** On a worker, APIShared copies every package root (`BepInEx/plugins/<folder>`) from the Steam Workshop folder into `<game>/_APIShared/I/s/<WorkshopId>.tmp`, verifies the copies (not the Steam source) against the manifest's size and SHA-256 values, validates the keep lists and writes the plan, the receipt to install and a completion marker. One rename then publishes the container as `_APIShared/I/s/<WorkshopId>`, and a request `_APIShared/I/r/<WorkshopId>.request` is written. If Steam replaces the item meanwhile, the staged change is withdrawn. Staging never touches `BepInEx/plugins`.
-2. **Swap (next game start).** APIShared's preloader (`APIShared.DependencyBootstrap`, in its `Finish` entry, before the BepInEx chainloader opens anything in `BepInEx/plugins`) first recovers interrupted swaps, then applies each request: it writes a journal (`_APIShared/I/j/<WorkshopId>.journal`), carries keep-listed player files over into the staged roots, renames every installed root to a backup (`_APIShared/I/b`), renames every staged root into `BepInEx/plugins`, moves roots of the previous version that the new one no longer ships out of `BepInEx/plugins` as well, writes the receipt `_APIShared/Workshop/Receipts/<WorkshopId>.json` and deletes backups, container, journal and request. A removal (unsubscribed item) parks `persist` entries, removes the complete roots and deletes the receipt.
+1. **Staging.** A worker copies package roots into temporary containers below `_APIShared/I/s`, verifies every staged file against the manifest, validates keep lists and records the installation plan. Once all containers are complete, a single atomic request publishes the group. Mod Options and the public client prepare one-item requests.
+2. **Installation.** The preloader recovers interrupted transactions before handling new requests. It checks the plans, staged inventory and previous receipts before it moves plugin folders, receipts or parked player files. It retains the old state until the whole group commits. After an interrupted pre-commit operation, recovery restores the old state. After commit, recovery completes cleanup.
 
-Guarantees and behavior:
-
-- Plugin folders are only renamed, never changed file by file. BepInEx always sees the complete old or the complete new version of every root.
-- Recovery decides from the file system and a transaction marker file (`.apishared-install`) inside each staged root. It rolls forward when the staged data is complete and otherwise restores the old roots. Recovery is idempotent and runs again if the preloader itself is interrupted.
-- A locked file in an installed root (for example held by a virus scanner) makes the swap or removal undo itself immediately; the old version stays installed and the request is retried at the next start.
-- Outcomes are logged on the BepInEx log source `APIShared.WorkshopInstall` and written to `_APIShared/I/result.txt`. The APIShared plugin reports that file once at startup; failures are shown in a dialog.
-- The preloader pass is silent and does nothing when no request or journal exists.
-- A batch confirmed at startup is staged all or nothing: every container is prepared first and the requests are written last, so quitting the game while it still copies leaves nothing to apply; if one change fails to stage, the changes of that batch already staged are withdrawn and offered again at the next start. At the next start each request is swapped on its own, so an item whose swap fails there does not hold back the others.
-- A swap that fails transiently (for example a briefly locked folder) and is completed by the immediate recovery counts as installed.
-- A linked installed root (junction or symbolic link) is never moved; such a request fails with an error and stays pending.
-- If a rollback cannot return an old root because a folder was recreated at its place, the old root is kept as `_APIShared/I/b/<WorkshopId>-<index>-kept-<transaction>` and named in the log, so player files are never lost.
+The preloader holds a lease for the running game. A second start of the same installation cannot read mods during a swap or replace folders used by the current session. If a recovered folder cannot be restored because its path is occupied or locked, the launch stops before mod discovery. The transaction, backups and error details remain available for the next start. Existing preloader journals are still recognized.
 
 Limits:
 
-- The swap runs only when the dependency bootstrap is installed and active (no `APIShared.DependencyBootstrap.disabled` switch) and the APIShared plugin folder exists. The preloader marks the process when its pass ran; without that mark APIShared offers and stages nothing (startup logs a warning, Mod Options and `ApplyAsync` report why), so no change waits for an installer that never runs. Requests staged earlier wait until a start where it runs; see [Early dependency-index correction](DEPENDENCY_BOOTSTRAP.md#initialization-and-diagnostics).
+- New installations require the matching dependency bootstrap. A disabled companion defers staged work and still recovers an interrupted installation before mod discovery. See [Early dependency-index correction](DEPENDENCY_BOOTSTRAP.md#initialization-and-diagnostics).
 - Staging needs free disk space for one complete copy of the affected packages below `_APIShared/I`, on the same volume as `BepInEx/plugins`.
-- Proton/Wine live acceptance of the folder renames has not been performed yet; the Linux CI job covers the installation core only on a native Linux file system.
-- Staging is refused under `SCDEModManagerLaunchId`; a change staged during an earlier ordinary start is still applied by the preloader at the next start.
+- Proton automatic restart uses a user systemd service outside the Steam game process tree. If that service is unavailable, the game stays open and the pending installation can be applied by restarting manually.
+- External managed launches and pending Script Extender deployment defer new APIShared installations.
 
 If the game cannot be started or an installation keeps failing, players can reinstall a package by hand: close the game, copy the `Payload/BepInEx` folder of the subscribed item (`steamapps/workshop/content/3024040/<Workshop ID>/Payload/BepInEx`) over the game's `BepInEx` folder and overwrite existing files. Files of earlier releases may remain until the next installation through APIShared; if the copied files differ from the recorded receipt, the next start offers a clean reinstallation.
 
@@ -352,16 +345,16 @@ The installed managed contracts are checked by `tools/Validation/Verify-Workshop
 
 ### Installation core
 
-[WorkshopSafeInstall.cs](../src/Workshop/Install/WorkshopSafeInstall.cs) uses only System types. It is compiled into APIShared.dll (staging, requests, withdrawal, result reporting) and source-linked into the preloader `APIShared.DependencyBootstrap` (swap and recovery), and the offline tests compile it unchanged. [WorkshopStaging](../src/Workshop/WorkshopStaging.cs) turns a confirmed plan into roots, keep-list exclusions and the receipt; [WorkshopRuntime.Apply](../src/Workshop/WorkshopRuntime.Apply.cs) serializes staging on a worker; [WorkshopStartup](../src/Workshop/WorkshopStartup.cs) reports the preloader result, removes former updater leftovers and runs the startup decision. The preloader entry is [WorkshopInstallPass](../bootstrap/src/Workshop/WorkshopInstallPass.cs), called from `DependencyBootstrapPatcher.Finish` (see [Early dependency-index correction](DEPENDENCY_BOOTSTRAP.md#initialization-and-diagnostics)).
+[The installation core](../src/Workshop/Install) is compiled into APIShared.dll, the independent preloader and the offline tests. [WorkshopStartup](../src/Workshop/WorkshopStartup.cs) owns the startup decision and awaits the staged request before handing off restart. [WorkshopInstallPass](../bootstrap/src/Workshop/WorkshopInstallPass.cs) holds the game lease and runs recovery and installation before the chainloader opens plugins.
 
-All state lives below `<game>/_APIShared/I` on the volume of `BepInEx/plugins`, so every step is a same-volume rename: `s` staged containers, `r` requests, `j` journals, `b` backups, `k` parked `persist` entries, plus `result.txt`. A container holds one numbered folder per target root, `plan.txt` (protocol `APISHARED-INSTALL-1`: Workshop ID, action, package ID, 32-hex transaction ID, game-relative targets, each exactly one folder directly below `BepInEx/plugins`; for an update, `-`-prefixed roots of the previous version to remove), `receipt.json` and the completion marker `.apishared-complete`. Each staged root contains `.apishared-install` with the transaction ID. A leftover `.tmp` container or a container without completion marker is never trusted.
-
-The journal (`APISHARED-SWAP-1`) only records that a swap of an item started; recovery does not rely on journal progress entries. It compares the markers of the target roots with the plan's transaction ID: all targets marked means completed; no target marked and no backup means not started (journal dropped, request kept); otherwise it rolls forward with the remaining staged roots and, if that fails, moves the new roots back into the container and restores the backups. Keep-list carry-over first records the files it will overwrite in an undo folder inside the container, so a repeated attempt starts from the pristine staged root and uses the current player state. If cleanup after the receipt fails, the kept journal finishes it at the next start without reporting the installation as failed. Withdrawing a request refuses while a journal for the item exists. `Finish` deletes `plan.txt` before the rest of the container, so recovery never repeats the receipt copy from a half-deleted container, whatever order the file system deletes the remaining files in.
+State resides below `<game>/_APIShared/I` on the volume of the plugin folders. `s` holds staged containers, `q` holds confirmed group requests and `x` holds journals and the associated backups. Each request binds its members to specific plan and inventory identities. The journal identifies old and proposed plugin roots, receipts and parked player files. Publishing the active journal precedes the first live rename. Publishing the commit marker follows all renames and verification. Repeated recovery uses these identities to restore the old state or finish cleanup. Earlier single-item journals remain readable. Repair of transactions from the former external updater retains their evidence until the affected items verify.
 
 ### Linux host processes and game-exit detection
 
-This applies to the [independent first-install patcher](#independent-linux-first-install-patcher)
-and its embedded helper; APIShared's own installation starts no host process.
+The [independent first-install patcher](#independent-linux-first-install-patcher)
+uses a host helper for Extender deployment. APIShared's startup restart uses a
+separate host waiter that only observes the game process and requests launch through
+Steam. Its status lives below `_APIShared/I/restart`.
 
 Under Wine a Linux program started by the game has no Windows process. ntdll's
 `fork_and_exec` (Proton 10 and 11) returns process handle 0, detaches the program with
@@ -379,7 +372,9 @@ and pressure-vessel's `pv-adverb`) adopt. They wait for all descendants and name
 only as a later argument. The helper therefore counts a process as the game only
 when argv[0] or argv[1] names the game executable, which is Wine's program position after
 its loader. It refuses before readiness when that game is not visible, so a detector
-mismatch keeps the game open.
+mismatch keeps the game open. APIShared submits the waiter to the systemd user
+manager so Steam's reapers can exit independently before it asks Steam to start a
+new instance.
 
 ### Independent Linux first-install patcher
 

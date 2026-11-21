@@ -12,15 +12,15 @@ namespace APIShared.Workshop
     // exercise exactly this code.
     internal static class WorkshopStaging
     {
-        // request: false leaves publishing to the caller (InstallStaging.Publish), see StagePlansAsync.
+        // request: false leaves publishing to the caller (InstallStaging.PublishBatch).
         internal static void StagePlan(InstallPaths paths, WorkshopInstallPlan plan, Action<string> log, bool request = true)
         {
+            Validate(plan);
             if (plan.Action == WorkshopAction.Remove) {
                 var targets = plan.Previous.Files.Select(file => PluginRoot(file.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                InstallStaging.StageRemove(paths, plan.WorkshopId, plan.PackageId, targets, log, request);
+                InstallStaging.StageRemove(paths, plan.WorkshopId, plan.PackageId, targets, log, request, expectedReceipt: plan.ReceiptHash);
                 return;
             }
-            Validate(plan);
             var package = plan.Package;
             var roots = new List<InstallRoot>();
             var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -39,7 +39,8 @@ namespace APIShared.Workshop
                 Files = package.Files.Where(file => !kept.Contains(file.Path)).ToList(), ModGuids = package.ModGuids, Dependencies = package.Dependencies,
                 ManifestHash = plan.ManifestHash, TransactionId = plan.OperationId
             });
-            InstallStaging.StageInstall(paths, plan.WorkshopId, plan.PackageId, roots, receipt, log, DroppedRoots(plan).ToList(), request);
+            InstallStaging.StageInstall(paths, plan.WorkshopId, plan.PackageId, roots, receipt, log, DroppedRoots(plan).ToList(), request,
+                expectedReceipt: plan.ReceiptHash);
             // Steam may have replaced the item meanwhile; the copies were verified against the
             // manifest, and a changed manifest withdraws the staged change again.
             try { ValidateManifest(plan); }

@@ -62,10 +62,11 @@ namespace APIShared.Workshop.Install
 
         // Relative '/'-separated paths of all files below root, excluding installer metadata.
         // Links are rejected: an installation never follows or moves reparse points.
-        internal static List<string> Files(string root)
+        internal static List<string> Files(string root, bool includeMetadata = false)
         {
             var result = new List<string>();
             if (!Directory.Exists(root)) return result;
+            CheckUnlinked(root);
             var pending = new Stack<string>();
             pending.Push(root);
             while (pending.Count > 0)
@@ -78,8 +79,9 @@ namespace APIShared.Workshop.Install
                 }
                 foreach (string file in Directory.GetFiles(directory))
                 {
+                    if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new IOException("Link inside a package folder: " + file);
                     string relative = file.Substring(root.Length + 1).Replace('\\', '/');
-                    if (relative != CompleteName && relative != MarkerName && relative != InstallKeep.StateName) result.Add(relative);
+                    if (includeMetadata || relative != CompleteName && relative != MarkerName && relative != InstallKeep.StateName) result.Add(relative);
                 }
             }
             result.Sort(StringComparer.Ordinal);
@@ -96,6 +98,42 @@ namespace APIShared.Workshop.Install
             }
         }
 
+        internal static void WriteAtomic(string path, string text)
+        {
+            string temporary = path + ".tmp";
+            CheckUnlinked(temporary);
+            WriteDurable(temporary, text);
+            File.Move(temporary, path);
+        }
+
+        internal static void CheckUnlinked(string path)
+        {
+            for (string part = Path.GetFullPath(path); part != null; part = Path.GetDirectoryName(part))
+            {
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(part); }
+                catch (FileNotFoundException) { continue; }
+                catch (DirectoryNotFoundException) { continue; }
+                if ((attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked installation path: " + part);
+            }
+        }
+
+        internal static string FileHash(string path) => File.Exists(path) ? Sha256(path) : "missing";
+
+        internal static void CopyDurable(string source, string target, bool overwrite)
+        {
+            CheckUnlinked(source);
+            CheckUnlinked(target);
+            using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var output = new FileStream(target, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                input.CopyTo(output);
+                output.Flush(true);
+            }
+            File.SetLastWriteTimeUtc(target, File.GetLastWriteTimeUtc(source));
+            File.SetAttributes(target, File.GetAttributes(source));
+        }
+
         internal static string ReadMarker(string root)
         {
             string path = Path.Combine(root, MarkerName);
@@ -109,7 +147,7 @@ namespace APIShared.Workshop.Install
             {
                 string to = Path.Combine(target, Native(relative));
                 Directory.CreateDirectory(Path.GetDirectoryName(to));
-                File.Copy(Path.Combine(source, Native(relative)), to, true);
+                CopyDurable(Path.Combine(source, Native(relative)), to, true);
                 count++;
             }
             return count;
@@ -119,6 +157,7 @@ namespace APIShared.Workshop.Install
         internal static void Delete(string root)
         {
             if (!Directory.Exists(root)) return;
+            if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) { Directory.Delete(root, false); return; }
             foreach (string sub in Directory.GetDirectories(root))
             {
                 if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0) Directory.Delete(sub, false);
@@ -126,7 +165,7 @@ namespace APIShared.Workshop.Install
             }
             foreach (string file in Directory.GetFiles(root))
             {
-                File.SetAttributes(file, FileAttributes.Normal);
+                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) == 0) File.SetAttributes(file, FileAttributes.Normal);
                 File.Delete(file);
             }
             Directory.Delete(root, false);
@@ -220,7 +259,7 @@ namespace APIShared.Workshop.Install
         // the staged, not yet loaded root and writes the applied revisions. Every attempt first
         // undoes the previous attempt (undo folder), so the result depends only on the current
         // player state: newest data wins, a file deleted meanwhile falls back to the shipped one.
-        internal static string CarryOver(string source, string staged, string undo)
+        internal static string CarryOver(string source, string staged, string undo, Action<InstallFile> carried = null)
         {
             Undo(staged, undo);
             var entries = Read(staged);
@@ -251,7 +290,7 @@ namespace APIShared.Workshop.Install
             // A deeper file/folder clash with the new version (e.g. old folder config/x, new file
             // config/x): the shipped version wins for that path instead of failing at every start.
             copies.RemoveAll(relative => Clashes(staged, relative));
-            if (copies.Count > 0)
+            if (undo != null && copies.Count > 0)
             {
                 foreach (string relative in copies)
                 {
@@ -264,12 +303,14 @@ namespace APIShared.Workshop.Install
                 Directory.CreateDirectory(undo);
                 // Written before the first overwrite: a crash afterwards is undone completely.
                 InstallTree.WriteDurable(Path.Combine(undo, "carried.txt"), string.Join("\r\n", copies.ToArray()) + "\r\n");
-                foreach (string relative in copies)
-                {
-                    string to = Path.Combine(staged, InstallTree.Native(relative));
-                    Directory.CreateDirectory(Path.GetDirectoryName(to));
-                    File.Copy(Path.Combine(source, InstallTree.Native(relative)), to, true);
-                }
+            }
+            foreach (string relative in copies)
+            {
+                string to = Path.Combine(staged, InstallTree.Native(relative));
+                string from = Path.Combine(source, InstallTree.Native(relative));
+                Directory.CreateDirectory(Path.GetDirectoryName(to));
+                carried?.Invoke(new InstallFile(relative, new FileInfo(from).Length, InstallTree.Sha256(from)));
+                InstallTree.CopyDurable(from, to, true);
             }
             if (entries.Count > 0) InstallTree.WriteDurable(Path.Combine(staged, StateName), state.ToString());
             return "kept=" + kept + " reset=" + reset + " files=" + copies.Count;
@@ -294,7 +335,9 @@ namespace APIShared.Workshop.Install
             if (File.Exists(carried))
                 foreach (string relative in File.ReadAllLines(carried).Where(l => l.Length > 0))
                 {
+                    if (!relative.Split('/').All(InstallPlanFile.ValidSegment)) throw new InvalidDataException("Invalid Workshop undo path: " + relative);
                     string file = Path.Combine(staged, InstallTree.Native(relative));
+                    InstallTree.CheckUnlinked(file);
                     if (!File.Exists(file)) continue;
                     InstallTree.DeleteFileIfExists(file);
                     for (string dir = Path.GetDirectoryName(file);
@@ -327,11 +370,11 @@ namespace APIShared.Workshop.Install
                 else if (!entry.Folder && File.Exists(from))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(to));
-                    File.Copy(from, to, true);
+                    InstallTree.CopyDurable(from, to, true);
                     count++;
                 }
             }
-            if (count > 0 && File.Exists(Path.Combine(root, StateName))) File.Copy(Path.Combine(root, StateName), Path.Combine(parking, StateName), true);
+            if (count > 0 && File.Exists(Path.Combine(root, StateName))) InstallTree.CopyDurable(Path.Combine(root, StateName), Path.Combine(parking, StateName), true);
             return count;
         }
     }
@@ -400,8 +443,8 @@ namespace APIShared.Workshop.Install
                 Targets = lines.Skip(5).Where(l => l.Length > 0 && l[0] != '-').ToList(),
                 Dropped = lines.Skip(5).Where(l => l.Length > 1 && l[0] == '-').Select(l => l.Substring(1)).ToList()
             };
-            if ((plan.Action != "install" && plan.Action != "remove") || plan.TransactionId.Length != 32 || plan.PackageId.Length == 0 ||
-                plan.PackageId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || plan.Action == "remove" && plan.Dropped.Count > 0)
+            if ((plan.Action != "install" && plan.Action != "remove") || !Guid.TryParseExact(plan.TransactionId, "N", out _) ||
+                !ValidSegment(plan.PackageId) || plan.Action == "remove" && plan.Dropped.Count > 0)
                 throw new InvalidDataException("Invalid installation plan in " + container);
             foreach (string target in plan.Targets.Concat(plan.Dropped))
                 if (!IsPluginRoot(target)) throw new InvalidDataException("Installation target outside BepInEx/plugins: " + target);
@@ -414,9 +457,12 @@ namespace APIShared.Workshop.Install
         internal static bool IsPluginRoot(string target)
         {
             string[] parts = target.Split('/');
-            return parts.Length == 3 && parts[0] == "BepInEx" && parts[1] == "plugins" && parts[2].Length > 0 && parts[2] != "." && parts[2] != ".." &&
-                parts[2].IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+            return parts.Length == 3 && parts[0] == "BepInEx" && parts[1] == "plugins" && ValidSegment(parts[2]);
         }
+
+        internal static bool ValidSegment(string value) => value.Length != 0 && value != "." && value != ".." &&
+            value.IndexOfAny(new[] { '/', '\\', ':', '*', '?', '<', '>', '"', '|', '\t', '\r', '\n', '\0' }) < 0 &&
+            value.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 && !value.EndsWith(".", StringComparison.Ordinal) && !value.EndsWith(" ", StringComparison.Ordinal);
     }
 
     internal static class InstallStaging
@@ -428,11 +474,11 @@ namespace APIShared.Workshop.Install
         // then writes the request. receiptJson is written by the preloader as the transaction's
         // last step. An incomplete leftover container is never trusted.
         internal static string StageInstall(InstallPaths paths, ulong id, string packageId, IList<InstallRoot> roots, string receiptJson, Action<string> log,
-            IList<string> dropped = null, bool request = true)
+            IList<string> dropped = null, bool request = true, string expectedReceipt = null)
         {
             string container = paths.Container(id);
             string temporary = container + ".tmp";
-            Withdraw(paths, id);
+            PrepareSlot(paths, id);
             if (Directory.Exists(temporary)) InstallTree.Delete(temporary);
             Directory.CreateDirectory(temporary);
             var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -481,6 +527,7 @@ namespace APIShared.Workshop.Install
                 }
                 InstallTree.WriteDurable(Path.Combine(temporary, InstallPlanFile.ReceiptName), receiptJson);
                 InstallTree.WriteDurable(Path.Combine(temporary, InstallPlanFile.Name), InstallPlanFile.Format(plan));
+                InstallInventory.Write(temporary, roots, expectedReceipt ?? InstallTree.FileHash(paths.Receipt(id)));
                 InstallTree.WriteDurable(Path.Combine(temporary, InstallTree.CompleteName), transaction + "\r\n");
                 Directory.Move(temporary, container);
                 if (request) WriteRequest(paths, id);
@@ -495,17 +542,19 @@ namespace APIShared.Workshop.Install
         }
 
         // A removal needs no files: the plan names the roots, the preloader parks persist entries.
-        internal static string StageRemove(InstallPaths paths, ulong id, string packageId, IList<string> targets, Action<string> log, bool request = true)
+        internal static string StageRemove(InstallPaths paths, ulong id, string packageId, IList<string> targets, Action<string> log, bool request = true,
+            string expectedReceipt = null)
         {
             string container = paths.Container(id);
             string temporary = container + ".tmp";
             foreach (string target in targets)
                 if (!InstallPlanFile.IsPluginRoot(target)) throw new InvalidDataException("Removal target outside BepInEx/plugins: " + target);
-            Withdraw(paths, id);
+            PrepareSlot(paths, id);
             if (Directory.Exists(temporary)) InstallTree.Delete(temporary);
             Directory.CreateDirectory(temporary);
             var plan = new InstallPlanFile { WorkshopId = id, Action = "remove", PackageId = packageId, TransactionId = Guid.NewGuid().ToString("N"), Targets = targets.ToList() };
             InstallTree.WriteDurable(Path.Combine(temporary, InstallPlanFile.Name), InstallPlanFile.Format(plan));
+            InstallInventory.Write(temporary, new InstallRoot[0], expectedReceipt ?? InstallTree.FileHash(paths.Receipt(id)));
             InstallTree.WriteDurable(Path.Combine(temporary, InstallTree.CompleteName), plan.TransactionId + "\r\n");
             Directory.Move(temporary, container);
             if (request) WriteRequest(paths, id);
@@ -523,10 +572,12 @@ namespace APIShared.Workshop.Install
             WriteRequest(paths, id);
         }
 
+        internal static string PublishBatch(InstallPaths paths, IReadOnlyList<ulong> ids) => InstallBatch.Publish(paths, ids);
+
         private static void WriteRequest(InstallPaths paths, ulong id)
         {
             Directory.CreateDirectory(paths.Requests);
-            InstallTree.WriteDurable(paths.Request(id), InstallPlanFile.Protocol + "\r\n");
+            InstallTree.WriteAtomic(paths.Request(id), InstallPlanFile.Protocol + "\r\n");
         }
 
         // Withdraws a pending (not yet applied) request and its container. Never touches an
@@ -534,6 +585,24 @@ namespace APIShared.Workshop.Install
         internal static bool Withdraw(InstallPaths paths, ulong id)
         {
             if (File.Exists(paths.Journal(id))) throw new InvalidOperationException("An interrupted installation of this item is completed at the next game start.");
+            if (InstallBatch.Find(paths, id, out var batch)) return InstallBatch.Withdraw(paths, batch);
+            return WithdrawContainer(paths, id);
+        }
+
+        private static void PrepareSlot(InstallPaths paths, ulong id)
+        {
+            string container = paths.Container(id);
+            InstallTree.CheckUnlinked(container);
+            InstallTree.CheckUnlinked(container + ".tmp");
+            InstallTree.CheckUnlinked(paths.Request(id));
+            InstallTree.CheckUnlinked(paths.Journal(id));
+            if (InstallBatch.Find(paths, id, out _))
+                throw new InvalidOperationException("This Workshop item is part of an already confirmed installation.");
+            Withdraw(paths, id);
+        }
+
+        internal static bool WithdrawContainer(InstallPaths paths, ulong id)
+        {
             bool had = File.Exists(paths.Request(id)) || Directory.Exists(paths.Container(id));
             InstallTree.DeleteFileIfExists(paths.Request(id));
             if (Directory.Exists(paths.Container(id))) InstallTree.Delete(paths.Container(id));
@@ -541,6 +610,7 @@ namespace APIShared.Workshop.Install
         }
 
         internal static bool Pending(InstallPaths paths, ulong id) =>
+            InstallBatch.Find(paths, id, out _) ||
             File.Exists(paths.Request(id)) && File.Exists(Path.Combine(paths.Container(id), InstallTree.CompleteName));
     }
 
@@ -571,12 +641,17 @@ namespace APIShared.Workshop.Install
             var plan = InstallPlanFile.Read(container);
             if (plan.WorkshopId != id) throw new InvalidDataException("Staged installation belongs to another item.");
             var roots = Roots(paths, plan, container);
-            if (plan.Action == "install" && roots.Any(root => !root.Drop && InstallTree.ReadMarker(root.Staged) != plan.TransactionId))
+            try
             {
-                // A damaged container (e.g. partly deleted cache) can never be applied: discard it
-                // instead of failing at every start; the startup offer prepares it again.
+                if (plan.Action == "install")
+                    foreach (var root in roots.Where(root => !root.Drop)) InstallKeep.Undo(root.Staged, root.Undo);
+                InstallInventory.Verify(paths, id);
+            }
+            catch (InvalidDataException)
+            {
+                // A damaged or older unverified container must be prepared again.
                 InstallStaging.Withdraw(paths, id);
-                throw new InvalidDataException("Staged installation was damaged and has been discarded; prepare it again in Mod Options or at the next startup offer.");
+                throw;
             }
             foreach (var root in roots)
             {
@@ -639,6 +714,7 @@ namespace APIShared.Workshop.Install
                         Directory.Move(root.Staged, root.Target);
                         Step("new-moved");
                     }
+                    InstallInventory.VerifyLegacyRecovery(paths, plan, roots.Where(root => !root.Drop).Select(root => root.Target).ToArray());
                 }
                 catch (Exception ex) when (!(ex is InstallCrashSimulation)) { if (RecoverAfterFailure(paths, journal, log)) return plan.Action; throw; }
             }
@@ -713,6 +789,7 @@ namespace APIShared.Workshop.Install
         // data is complete; otherwise restore the old roots. Idempotent.
         internal static string Recover(InstallPaths paths, string journal, Action<string> log)
         {
+            InstallTree.CheckUnlinked(journal);
             string[] lines = File.ReadAllLines(journal);
             if (lines.Length < 2 || lines[0] != Protocol) throw new InvalidDataException("Unknown installation journal " + journal);
             ulong id = ulong.Parse(lines[1], NumberStyles.None, CultureInfo.InvariantCulture);
@@ -721,24 +798,38 @@ namespace APIShared.Workshop.Install
             {
                 // Finish already removed the plan: only cleanup leftovers and the journal remain. A
                 // request is necessarily this finished one's (staging refuses while a journal exists).
+                if (Directory.Exists(paths.Backups) && Directory.EnumerateDirectories(paths.Backups, id.ToString(CultureInfo.InvariantCulture) + "-*")
+                    .Any(backup => int.TryParse(Path.GetFileName(backup).Split('-').Last(), NumberStyles.None, CultureInfo.InvariantCulture, out _)))
+                    throw new IOException("Cannot recover an old Workshop journal with missing plan and retained backups: " + journal);
                 try { InstallTree.DeleteFileIfExists(paths.Request(id)); InstallTree.Delete(container); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                 File.Delete(journal);
                 log("RECOVERED " + id + " completed");
                 return "completed";
             }
             var plan = InstallPlanFile.Read(container);
+            if (plan.WorkshopId != id) throw new InvalidDataException("Legacy workshop journal belongs to another item: " + journal);
             var roots = Roots(paths, plan, container);
             string outcome;
             if (plan.Action == "install")
             {
                 var shipped = roots.Where(r => !r.Drop).ToList();
-                bool complete = shipped.All(r => InstallTree.ReadMarker(r.Target) == plan.TransactionId) && roots.Where(r => r.Drop).All(r => !Directory.Exists(r.Target));
-                bool anyMoved = shipped.Any(r => InstallTree.ReadMarker(r.Target) == plan.TransactionId) || roots.Any(r => Directory.Exists(r.Backup));
-                if (complete) outcome = "completed";
-                else if (!anyMoved) { File.Delete(journal); log("RECOVERED " + id + " not-started"); return "not-started"; }
-                else
+                foreach (var root in roots)
                 {
-                    try
+                    InstallTree.CheckUnlinked(root.Target);
+                    InstallTree.CheckUnlinked(root.Backup);
+                    InstallTree.CheckUnlinked(root.Staged);
+                }
+                bool[] placed = shipped.Select(root => InstallTree.ReadMarker(root.Target) == plan.TransactionId).ToArray();
+                bool complete = placed.All(isPlaced => isPlaced) && roots.Where(r => r.Drop).All(r => !Directory.Exists(r.Target));
+                if (!complete && !placed.Any(isPlaced => isPlaced) && !roots.Any(r => Directory.Exists(r.Backup)))
+                {
+                    File.Delete(journal); log("RECOVERED " + id + " not-started"); return "not-started";
+                }
+                try
+                {
+                    var candidates = shipped.Select((root, index) => placed[index] ? root.Target : root.Staged).ToArray();
+                    InstallInventory.VerifyLegacyRecovery(paths, plan, candidates);
+                    if (!complete)
                     {
                         foreach (var root in roots)
                         {
@@ -755,18 +846,28 @@ namespace APIShared.Workshop.Install
                             Directory.Move(root.Staged, root.Target);
                             Step("recover-new-moved");
                         }
-                        outcome = "rolled-forward";
+                        InstallInventory.VerifyLegacyRecovery(paths, plan, shipped.Select(root => root.Target).ToArray());
                     }
-                    catch (Exception forward) when (!(forward is InstallCrashSimulation))
+                    outcome = complete ? "completed" : "rolled-forward";
+                }
+                catch (Exception forward) when (!(forward is InstallCrashSimulation))
+                {
+                    string newReceipt = Path.Combine(container, InstallPlanFile.ReceiptName);
+                    string oldReceipt = paths.Receipt(id);
+                    if (File.Exists(newReceipt) && InstallTree.FileHash(newReceipt) == InstallTree.FileHash(oldReceipt) ||
+                        !File.Exists(oldReceipt) && File.Exists(oldReceipt + ".tmp"))
+                        throw new IOException("Workshop installation receipt replacement already started; retained journal and backups for item " + id + ".", forward);
+                    // A conflicting destination retains the backup and journal for a later start.
+                    foreach (var root in roots)
                     {
-                        // Undo: staged data goes back to the container, old roots return.
-                        foreach (var root in roots)
+                        if (!root.Drop && InstallTree.ReadMarker(root.Target) == plan.TransactionId)
                         {
-                            if (!root.Drop && InstallTree.ReadMarker(root.Target) == plan.TransactionId && !Directory.Exists(root.Staged)) Directory.Move(root.Target, root.Staged);
-                            if (!Directory.Exists(root.Target) && Directory.Exists(root.Backup)) Directory.Move(root.Backup, root.Target);
+                            if (Directory.Exists(root.Staged)) throw new IOException("Both staged and installed Workshop roots are present: " + root.Target, forward);
+                            Directory.Move(root.Target, root.Staged);
                         }
-                        return RolledBack(id, plan, roots, journal, forward, log);
+                        if (!Directory.Exists(root.Target) && Directory.Exists(root.Backup)) Directory.Move(root.Backup, root.Target);
                     }
+                    return RolledBack(id, plan, roots, journal, forward, log);
                 }
             }
             else
@@ -776,8 +877,8 @@ namespace APIShared.Workshop.Install
                     foreach (var root in roots)
                     {
                         if (!Directory.Exists(root.Target)) continue;
+                        if (Directory.Exists(root.Backup)) throw new IOException("Old root and backup both present: " + root.Target);
                         InstallKeep.Park(root.Target, root.Park);
-                        if (Directory.Exists(root.Backup)) InstallTree.Delete(root.Backup);
                         Directory.Move(root.Target, root.Backup);
                     }
                     outcome = "removed";
@@ -799,16 +900,9 @@ namespace APIShared.Workshop.Install
         // The old roots are back; the request stays and is retried at the next start.
         private static string RolledBack(ulong id, InstallPlanFile plan, List<RootState> roots, string journal, Exception reason, Action<string> log)
         {
-            // A backup that cannot return (a folder was recreated at its place) may hold the only
-            // copy of player files. Without a journal the next Apply deletes backups as leftovers,
-            // so it is moved aside and named in the log instead.
-            foreach (var root in roots.Where(r => Directory.Exists(r.Backup)))
-            {
-                string kept = root.Backup + "-kept-" + plan.TransactionId.Substring(0, 8);
-                for (int n = 2; Directory.Exists(kept); n++) kept = root.Backup + "-kept-" + plan.TransactionId.Substring(0, 8) + "-" + n.ToString(CultureInfo.InvariantCulture);
-                Directory.Move(root.Backup, kept);
-                log("RECOVERY_KEPT_OLD_FOLDER " + root.Target + " -> " + kept);
-            }
+            var blocked = roots.FirstOrDefault(r => Directory.Exists(r.Backup));
+            if (blocked != null)
+                throw new IOException("Cannot restore " + blocked.Target + "; retained backup " + blocked.Backup + ".", reason);
             File.Delete(journal);
             log("RECOVERED " + id + " rolled-back (" + reason.Message + ")");
             return "rolled-back";
@@ -822,7 +916,7 @@ namespace APIShared.Workshop.Install
         internal const string ResultName = "result.txt";
         // AppDomain data the preloader sets when its installation pass ran in this process. The
         // runtime stages only then: without an active preloader a staged change would wait forever.
-        internal const string ActiveKey = "APIShared.WorkshopInstall.Active";
+        internal const string ActiveKey = "APIShared.WorkshopInstall.Transactional";
 
         internal sealed class ResultLine
         {
@@ -833,26 +927,61 @@ namespace APIShared.Workshop.Install
         // managed: items an external mod manager took over (WorkshopManagerPolicy); their staged,
         // not yet started changes are discarded instead of applied. Interrupted swaps are always
         // finished or undone first, so no folder stays partial.
-        internal static void Run(string game, Action<string> info, Action<string> error, Func<ulong, bool> managed = null)
+        internal static bool RequiresRecovery(string game, bool permitLinkedInspection = false)
         {
             var paths = new InstallPaths(game);
-            if (!Directory.Exists(paths.Work)) return;
-            bool hasWork = Directory.Exists(paths.Journals) && Directory.EnumerateFiles(paths.Journals, "*.journal").Any() ||
-                Directory.Exists(paths.Requests) && Directory.EnumerateFiles(paths.Requests, "*.request").Any();
-            if (!hasWork) return;
+            if (!permitLinkedInspection) InstallTree.CheckUnlinked(paths.Journals);
+            return InstallBatch.Active(paths, permitLinkedInspection).Length != 0 ||
+                Directory.Exists(paths.Journals) && Directory.EnumerateFiles(paths.Journals, "*.journal").Any();
+        }
+
+        internal static bool Run(string game, Action<string> info, Action<string> error, Func<ulong, bool> managed = null, bool allowPending = true)
+        {
+            var paths = new InstallPaths(game);
+            InstallTree.CheckUnlinked(paths.Work);
+            if (!Directory.Exists(paths.Work)) return true;
+            var batches = InstallBatch.Active(paths);
+            InstallBatch.CleanAbandoned(paths, info);
+            InstallTree.CheckUnlinked(paths.Journals);
+            InstallTree.CheckUnlinked(paths.Requests);
+            var oldJournals = Directory.Exists(paths.Journals) ? Directory.GetFiles(paths.Journals, "*.journal") : new string[0];
+            var pendingBatches = allowPending ? InstallBatch.Pending(paths) : new string[0];
+            var pendingLegacy = allowPending && Directory.Exists(paths.Requests) ? Directory.GetFiles(paths.Requests, "*.request") : new string[0];
+            if (batches.Length == 0 && oldJournals.Length == 0 && pendingBatches.Length == 0 && pendingLegacy.Length == 0) return true;
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var result = new StringBuilder();
             Action<string> ok = message => { info(message); result.Append("I\t").Append(message).Append("\r\n"); };
             Action<string> fail = message => { error(message); result.Append("E\t").Append(message).Append("\r\n"); };
-            if (Directory.Exists(paths.Journals))
-                foreach (string journal in Directory.GetFiles(paths.Journals, "*.journal"))
+            try
+            {
+                foreach (string batch in batches)
+                {
+                    try
+                    {
+                        string state = InstallBatch.Recover(paths, batch, ok);
+                        if (state == "rollback") fail("Interrupted Workshop group " + Path.GetFileName(batch) + " was restored to its previous installation.");
+                    }
+                    catch (Exception ex) when (!(ex is InstallCrashSimulation))
+                    {
+                        fail("Recovery of Workshop group " + Path.GetFileName(batch) + " failed: " + ex.Message);
+                        return false;
+                    }
+                }
+                foreach (string journal in oldJournals)
                 {
                     try { InstallSwap.Recover(paths, journal, ok); }
-                    catch (Exception ex) { fail("recovery of " + Path.GetFileName(journal) + " failed: " + ex.Message); }
+                    catch (Exception ex) when (!(ex is InstallCrashSimulation))
+                    {
+                        fail("recovery of " + Path.GetFileName(journal) + " failed: " + ex.Message);
+                        return false;
+                    }
                 }
-            if (Directory.Exists(paths.Requests))
-                foreach (string request in Directory.GetFiles(paths.Requests, "*.request"))
+                foreach (string batch in pendingBatches)
+                    if (File.Exists(batch) && !Directory.Exists(Path.Combine(paths.Work, "x", Path.GetFileNameWithoutExtension(batch))) &&
+                        !InstallBatch.Apply(paths, batch, ok, fail, managed)) return false;
+                foreach (string request in pendingLegacy)
                 {
+                    if (!File.Exists(request)) continue;
                     if (!ulong.TryParse(Path.GetFileNameWithoutExtension(request), NumberStyles.None, CultureInfo.InvariantCulture, out ulong id) || id == 0) continue;
                     if (managed != null && managed(id))
                     {
@@ -861,15 +990,26 @@ namespace APIShared.Workshop.Install
                         continue;
                     }
                     try { InstallSwap.Apply(paths, id, ok); }
-                    catch (Exception ex)
+                    catch (Exception ex) when (!(ex is InstallCrashSimulation))
                     {
                         // A kept request is retried; a discarded one (damaged container) is offered anew.
                         fail("item " + id + " not installed" + (File.Exists(request) ? ", retried at the next start: " : ": ") + ex.Message);
+                        if (File.Exists(paths.Journal(id))) return false;
                     }
                 }
-            info("INSTALL_PASS_DONE ms=" + watch.ElapsedMilliseconds);
-            try { File.AppendAllText(Path.Combine(paths.Work, ResultName), result.ToString(), new UTF8Encoding(false)); }
-            catch (Exception ex) { error("Workshop installation result not recorded: " + ex.Message); }
+                return true;
+            }
+            finally
+            {
+                info("INSTALL_PASS_DONE ms=" + watch.ElapsedMilliseconds);
+                try
+                {
+                    string path = Path.Combine(paths.Work, ResultName);
+                    InstallTree.CheckUnlinked(path);
+                    File.AppendAllText(path, result.ToString(), new UTF8Encoding(false));
+                }
+                catch (Exception ex) { error("Workshop installation result not recorded: " + ex.Message); }
+            }
         }
 
         // Reads and removes the preloader outcome of this start (plugin side).

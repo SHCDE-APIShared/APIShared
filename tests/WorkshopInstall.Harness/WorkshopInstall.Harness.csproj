@@ -13,6 +13,8 @@
     <Reference Include="System" /><Reference Include="System.Core" />
     <Compile Include="Program.cs" />
     <Compile Include="..\..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Production\WorkshopSafeInstall.cs</Link></Compile>
+    <Compile Include="..\..\src\Workshop\Install\WorkshopBatchInstall.cs"><Link>Production\WorkshopBatchInstall.cs</Link></Compile>
+    <Compile Include="..\..\src\ModSettings\Internal\DependencyFreeJson.cs"><Link>Production\DependencyFreeJson.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

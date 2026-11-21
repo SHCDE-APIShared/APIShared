@@ -19,7 +19,7 @@ public sealed class WorkshopSafeInstallTests
     private string Game => Path.Combine(fixture, "game");
 
     [TestInitialize] public void Init() { fixture = Path.Combine(Path.GetTempPath(), "ApiSafeInstall-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Game); paths = new InstallPaths(Game); }
-    [TestCleanup] public void Cleanup() { InstallSwap.Fault = null; InstallStaging.AfterCopy = null; if (Directory.Exists(fixture)) Directory.Delete(fixture, true); }
+    [TestCleanup] public void Cleanup() { InstallSwap.Fault = null; InstallBatch.Fault = null; InstallStaging.AfterCopy = null; if (Directory.Exists(fixture)) Directory.Delete(fixture, true); }
 
     private static void Write(string root, IDictionary<string, string> files)
     {
@@ -93,6 +93,154 @@ public sealed class WorkshopSafeInstallTests
         Assert.IsFalse(File.Exists(paths.Request(Id)), "request left");
         Assert.IsFalse(Directory.Exists(paths.Container(Id)), "container left");
         for (int i = 0; i < Targets.Length; i++) Assert.IsFalse(Directory.Exists(paths.Backup(Id, i)), "backup left");
+    }
+
+    private void StageMember(ulong id, int version, bool request = false)
+    {
+        string name = "Member" + id;
+        string target = "BepInEx/plugins/" + name;
+        string source = Path.Combine(fixture, "member-" + id + "-" + version);
+        Write(source, new Dictionary<string, string> { ["mod.dll"] = id + ":" + version });
+        string dll = Path.Combine(source, "mod.dll");
+        var roots = new[] { new InstallRoot(target, source, new[] { new InstallFile("mod.dll", new FileInfo(dll).Length, InstallTree.Sha256(dll)) }) };
+        InstallStaging.StageInstall(paths, id, name, roots, version.ToString(), _ => { }, request: request);
+    }
+
+    private string PrepareGroup()
+    {
+        StageMember(1, 1); StageMember(2, 1);
+        InstallStaging.PublishBatch(paths, new ulong[] { 1, 2 });
+        Preloader();
+        StageMember(1, 2); StageMember(2, 2);
+        return InstallStaging.PublishBatch(paths, new ulong[] { 1, 2 });
+    }
+
+    private void AssertGroupVersion(int version)
+    {
+        foreach (ulong id in new ulong[] { 1, 2 })
+        {
+            Assert.AreEqual(id + ":" + version, Read("Member" + id + "/mod.dll"));
+            Assert.AreEqual(version.ToString(), File.ReadAllText(paths.Receipt(id)));
+        }
+    }
+
+    [TestMethod]
+    public void UnpublishedOrDamagedMemberNeverChangesAnyPackageInTheGroup()
+    {
+        StageMember(1, 1); StageMember(2, 1);
+        InstallBatch.Fault = step => { if (step == "before-publish") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(() => InstallStaging.PublishBatch(paths, new ulong[] { 1, 2 }));
+        InstallBatch.Fault = null;
+        Preloader();
+        Assert.AreEqual("<missing>", Read("Member1/mod.dll"));
+        Assert.AreEqual("<missing>", Read("Member2/mod.dll"));
+        PrepareGroup();
+        File.Delete(Path.Combine(paths.Container(2), "0", "mod.dll"));
+        var errors = new List<string>();
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, errors.Add));
+        Assert.HasCount(1, errors);
+        AssertGroupVersion(1);
+        Assert.IsFalse(InstallStaging.Pending(paths, 1));
+        Assert.IsFalse(InstallStaging.Pending(paths, 2));
+    }
+
+    [TestMethod]
+    [DataRow("prepared", 1)]
+    [DataRow("journal", 1)]
+    [DataRow("old-moved", 1)]
+    [DataRow("new-moved", 1)]
+    [DataRow("receipt-moved", 1)]
+    [DataRow("committed", 2)]
+    [DataRow("retired", 2)]
+    public void InterruptedGroupAlwaysRecoversAllRootsAndReceipts(string boundary, int expected)
+    {
+        PrepareGroup();
+        InstallBatch.Fault = step => { if (step == boundary) throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(() => InstallRunner.Run(Game, _ => { }, _ => { }));
+        InstallBatch.Fault = null;
+        bool publishedJournal = boundary != "prepared" && boundary != "retired";
+        Assert.AreEqual(publishedJournal, InstallRunner.RequiresRecovery(Game));
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, _ => { }, allowPending: !publishedJournal));
+        Assert.IsFalse(InstallRunner.RequiresRecovery(Game));
+        string journals = Path.Combine(paths.Work, "x");
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(journals).Any());
+        AssertGroupVersion(expected);
+    }
+
+    [TestMethod]
+    public void ConflictingManualFolderBlocksLoadingAndASecondCrashDuringRollbackIsRecoverable()
+    {
+        PrepareGroup();
+        InstallBatch.Fault = step => { if (step == "old-moved") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(() => InstallRunner.Run(Game, _ => { }, _ => { }));
+        InstallBatch.Fault = null;
+        string userFolder = paths.Target("BepInEx/plugins/Member1");
+        Write(userFolder, new Dictionary<string, string> { ["manual.txt"] = "user data" });
+        Assert.IsFalse(InstallRunner.Run(Game, _ => { }, _ => { }));
+        Assert.AreEqual("user data", File.ReadAllText(Path.Combine(userFolder, "manual.txt")));
+        Assert.IsTrue(InstallRunner.RequiresRecovery(Game));
+        Directory.Delete(userFolder, true);
+        InstallBatch.Fault = step => { if (step == "rollback-old") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(() => InstallRunner.Run(Game, _ => { }, _ => { }));
+        InstallBatch.Fault = null;
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, _ => { }));
+        AssertGroupVersion(1);
+    }
+
+    [TestMethod]
+    public void EditedJournalCannotDiscardAnUnrestoredBackup()
+    {
+        string group = PrepareGroup();
+        InstallBatch.Fault = step => { if (step == "old-moved") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(() => InstallRunner.Run(Game, _ => { }, _ => { }));
+        InstallBatch.Fault = null;
+        string journal = Path.Combine(paths.Work, "x", group, "journal.txt");
+        byte[] original = File.ReadAllBytes(journal);
+        string[] lines = File.ReadAllLines(journal);
+        File.WriteAllLines(journal, lines.Where(line => !line.StartsWith("BepInEx/plugins/Member1\t", StringComparison.Ordinal)));
+        Assert.IsFalse(InstallRunner.Run(Game, _ => { }, _ => { }));
+        Assert.IsTrue(InstallRunner.RequiresRecovery(Game));
+        Assert.AreEqual("<missing>", Read("Member1/mod.dll"));
+        File.WriteAllBytes(journal, original);
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, _ => { }));
+        AssertGroupVersion(1);
+    }
+
+    [TestMethod]
+    public void LegacyRecoveryRejectsMissingStagedDllWithIntactMarker()
+    {
+        InstallVersionOneWithPlayerFiles();
+        Stage(2);
+        InstallSwap.Fault = step => { if (step == "old-moved") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(Apply);
+        InstallSwap.Fault = null;
+        File.Delete(Path.Combine(paths.Container(Id), "1", "b.dll"));
+        var messages = new List<string>();
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, messages.Add));
+        Assert.AreEqual("a1", Read("PkgA/a.dll"));
+        Assert.AreEqual("b1", Read("PkgB/b.dll"));
+        Assert.AreEqual("{\"Version\":\"1\"}", File.ReadAllText(paths.Receipt(Id)));
+        Assert.IsTrue(messages.Any(message => message.Contains("not installed")));
+        AssertClean();
+    }
+
+    [TestMethod]
+    public void ChangedReceiptOrManagerPolicyRejectsWholeGroup()
+    {
+        PrepareGroup();
+        File.WriteAllText(paths.Receipt(2), "other transaction");
+        var errors = new List<string>();
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, errors.Add));
+        Assert.HasCount(1, errors);
+        Assert.AreEqual("1:1", Read("Member1/mod.dll"));
+        Assert.AreEqual("other transaction", File.ReadAllText(paths.Receipt(2)));
+        StageMember(1, 2); StageMember(2, 2);
+        InstallStaging.PublishBatch(paths, new ulong[] { 1, 2 });
+        errors.Clear();
+        Assert.IsTrue(InstallRunner.Run(Game, _ => { }, errors.Add, id => id == 2));
+        Assert.HasCount(1, errors);
+        Assert.AreEqual("1:1", Read("Member1/mod.dll"));
+        Assert.AreEqual("2:1", Read("Member2/mod.dll"));
     }
 
     [TestMethod] public void StagingPublishesOnlyVerifiedCopies()
@@ -369,10 +517,9 @@ public sealed class WorkshopSafeInstallTests
         AssertClean();
     }
 
-    // A folder recreated where a moved-aside root belongs (e.g. a manual copy) blocks the roll
-    // back of that root; the backup holds the only copy of the player files and must survive the
-    // following installation instead of being deleted as a leftover.
-    [TestMethod] public void RollbackKeepsABackupThatCannotReturn()
+    // Recovery blocks plugin discovery when a recreated root prevents proving the old version
+    // is complete. Retain the live manual folder, backup and journal for the next recovery.
+    [TestMethod] public void LegacyRollbackBlocksLoadingAndKeepsABackupThatCannotReturn()
     {
         InstallVersionOneWithPlayerFiles();
         Stage(2);
@@ -380,11 +527,12 @@ public sealed class WorkshopSafeInstallTests
         Assert.ThrowsExactly<InstallCrashSimulation>(Apply);
         InstallSwap.Fault = null;
         Write(Target(0), new Dictionary<string, string> { ["manual.txt"] = "manual copy" });
-        Preloader();
-        Assert.AreEqual("a2", Read("PkgA/a.dll"));
-        var kept = Directory.GetDirectories(paths.Backups, Id + "-0-kept-*");
-        Assert.HasCount(1, kept);
-        Assert.AreEqual("player settings", File.ReadAllText(Path.Combine(kept[0], "settings.json")));
+        var errors = new List<string>();
+        Assert.IsFalse(InstallRunner.Run(Game, _ => { }, errors.Add));
+        Assert.HasCount(1, errors);
+        Assert.AreEqual("manual copy", Read("PkgA/manual.txt"));
+        Assert.AreEqual("player settings", File.ReadAllText(Path.Combine(paths.Backup(Id, 0), "settings.json")));
+        Assert.IsTrue(File.Exists(paths.Journal(Id)));
     }
 
     [TestMethod] public void LinkedInstalledRootIsNeverMoved()

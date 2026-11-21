@@ -1,11 +1,8 @@
 using APIShared.Workshop.Install;
 using BepInEx;
-using Steamworks;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,8 +10,7 @@ namespace APIShared.Workshop
 {
     // Applying a confirmed plan stages a verified copy (src/Workshop/Install) and leaves a
     // request; APIShared's preloader swaps it into BepInEx/plugins at the next game start,
-    // before any plugin is loaded. Nothing in BepInEx/plugins changes during this session and
-    // the game is never closed for an installation.
+    // before any plugin is loaded. Only WorkshopStartup can request an automatic restart.
     internal static partial class WorkshopRuntime
     {
         // Serializes staging; each item has exactly one staging container.
@@ -25,24 +21,11 @@ namespace APIShared.Workshop
         // process; only then does the next start apply a staged change.
         internal static bool InstallerActive => AppDomain.CurrentDomain.GetData(InstallRunner.ActiveKey) is bool active && active;
 
-        // Startup batch after the consent dialog. Staging runs on a worker after the startup
-        // gate returned; the operation reports AwaitingRestart once every plan is staged.
-        internal static WorkshopOperation StageStartupBatch(IReadOnlyList<WorkshopInstallPlan> plans)
+        // The startup gate awaits the published batch before authorizing a restart.
+        internal static Task<string> StageStartupBatchAsync(IReadOnlyList<WorkshopInstallPlan> plans)
         {
             CheckStageable(plans);
-            var operation = new WorkshopOperation(Guid.NewGuid().ToString("N"));
-            Task.Run(async () => {
-                try {
-                    await StagePlansAsync(plans);
-                    operation.Set(WorkshopOperationState.AwaitingRestart, "Staged " + plans.Count + " Workshop change(s); applied at the next game start.");
-                    Log("Workshop startup batch " + operation.OperationId + " staged; applied at the next game start: " + string.Join(", ", plans.Select(p => p.WorkshopId)) + ".");
-                } catch (Exception ex) {
-                    operation.Failure = ex;
-                    WorkshopDiagnostics.Failure(WriteDiagnostic, "Workshop step=staging; operation=" + operation.OperationId, ex);
-                    operation.Set(WorkshopOperationState.Failed, ex.Message);
-                }
-            });
-            return operation;
+            return Task.Run(() => StagePlansAsync(plans));
         }
 
         // Public consumer path (WorkshopClient.ApplyAsync): the plan is the explicit consent.
@@ -87,11 +70,8 @@ namespace APIShared.Workshop
             }
         }
 
-        // All or nothing per call: every container is staged first and the requests are published
-        // last, so quitting the game while it still copies leaves no request; if one plan fails, the
-        // containers this call already staged are withdrawn again. (A swap that later fails at the
-        // preloader still affects only its own item.)
-        private static async Task StagePlansAsync(IReadOnlyList<WorkshopInstallPlan> plans)
+        // Every container is staged first. One request then publishes the complete set.
+        private static async Task<string> StagePlansAsync(IReadOnlyList<WorkshopInstallPlan> plans)
         {
             await StagingGate.WaitAsync().ConfigureAwait(false);
             try {
@@ -102,7 +82,7 @@ namespace APIShared.Workshop
                         WorkshopStaging.StagePlan(paths, plan, Log, request: false);
                         staged.Add(plan.WorkshopId);
                     }
-                    foreach (ulong id in staged) InstallStaging.Publish(paths, id);
+                    return InstallStaging.PublishBatch(paths, staged);
                 } catch {
                     foreach (ulong id in staged) {
                         try { InstallStaging.Withdraw(paths, id); }
@@ -123,7 +103,13 @@ namespace APIShared.Workshop
         internal static bool InstallationPending(ulong id) => InstallStaging.Pending(Installation, id);
 
         // Withdraws a staged but not yet applied change (Mod Options).
-        internal static bool WithdrawInstallation(ulong id) => InstallStaging.Withdraw(Installation, id);
+        internal static bool WithdrawInstallation(ulong id)
+        {
+            // A UI command must not wait on a worker that is still preparing a request.
+            if (!StagingGate.Wait(0)) throw new InvalidOperationException("A Workshop installation is being prepared.");
+            try { return InstallStaging.Withdraw(Installation, id); }
+            finally { StagingGate.Release(); }
+        }
     }
 
 }

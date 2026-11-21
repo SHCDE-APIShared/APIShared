@@ -3,6 +3,7 @@ using System.Reflection;
 using APIShared.Events;
 using APIShared.Internal;
 using APIShared.Localization;
+using APIShared.Maps;
 using BepInEx.Logging;
 using CrusaderDE;
 
@@ -113,6 +114,23 @@ namespace APIShared.Lobby
             bool agreement = LobbyLaunchGuardRegistry.RequiresPeerAgreement(command,
                 !ReferenceEquals(self, null), FRONT_Multiplayer.skirmishGame,
                 !ReferenceEquals(self, null) && self.singlePlayerCoop);
+            // Production and other guards may open the selected file. Report a path
+            // rejection before they can replace it with a generic file-read error.
+            if (MapLoadPolicy.HasProvider && !ReferenceEquals(self, null) && command != "COOP_START" &&
+                !FRONT_Multiplayer.coopGame && !self.singlePlayerCoop && !self.trailMakerMode)
+            {
+                var header = LobbySelectedMapHeader.Read(self);
+                if (header != null && !header.missionMap && !header.skirmishMap)
+                {
+                    string rejection = MapLoadPolicy.Evaluate(header.filePath).Rejection;
+                    if (rejection != null)
+                    {
+                        if (agreement) Report(APISharedPlugin.PluginGuid, operation, rejection, null);
+                        else MissionLifecycleService.ReportLocalMapRejection(Log, rejection);
+                        return;
+                    }
+                }
+            }
             var decision = Registry.Evaluate(new LobbyLaunchGuardContext(self, command, operation, agreement));
             if (decision.Blocked)
             { Report(decision.Owner, operation, decision.Reason, decision.Detail); return; }

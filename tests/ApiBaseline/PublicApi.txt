@@ -1514,6 +1514,13 @@ APIShared.LordSkin | Unknown = 0
 APIShared.LordSkins | public static class APIShared.LordSkins
 APIShared.LordSkins | public static bool TryGetForPlayer(int playerId, out APIShared.LordSkin skin)
 APIShared.LordSkins | public static bool TryGetFromMaterial(SHCDESE.Interop.GM material, out APIShared.LordSkin skin)
+APIShared.Maps.MapLoadDecision | public struct APIShared.Maps.MapLoadDecision
+APIShared.Maps.MapLoadDecision | public static APIShared.Maps.MapLoadDecision Allow()
+APIShared.Maps.MapLoadDecision | public static APIShared.Maps.MapLoadDecision Reject(string reason)
+APIShared.Maps.MapLoadDecision | public static APIShared.Maps.MapLoadDecision UseNativeFileName(string name)
+APIShared.Maps.MapLoadPolicy | public static class APIShared.Maps.MapLoadPolicy
+APIShared.Maps.MapLoadPolicy | public const int NativeFileNameLimit = 63
+APIShared.Maps.MapLoadPolicy | public static bool TryRegister(string ownerGuid, System.Func<string, bool, APIShared.Maps.MapLoadDecision> decide, out string diagnostic)
 APIShared.Maps.MultiplayerMapLookup | public static class APIShared.Maps.MultiplayerMapLookup
 APIShared.Maps.MultiplayerMapLookup | public static bool IsAvailable { get; }
 APIShared.Maps.MultiplayerMapLookup | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Maps.MultiplayerMapLookupResult> observer, out string diagnostic)
