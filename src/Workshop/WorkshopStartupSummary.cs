@@ -9,7 +9,9 @@ namespace APIShared.Workshop
     internal static class WorkshopStartupSummary
     {
         internal static string Describe(WorkshopInstallPlan plan, bool german) => Describe(plan, german ? "de-DE" : "en-US");
-        internal static string Describe(WorkshopInstallPlan plan, string locale)
+        internal static string FormatVersion(Version version) => version.ToString(version.Revision > 0 ? 4 : 3);
+
+        internal static string Describe(WorkshopInstallPlan plan, string locale, Version localVersion = null)
         {
             string name = plan.PackageId, oldVersion = null;
             bool existing = plan.Package != null && plan.Package.Roots.Any(root => Directory.Exists(WorkshopPaths.Inside(plan.GameRoot, root)));
@@ -36,7 +38,9 @@ namespace APIShared.Workshop
             } else if (existing) uncertain = true;
 
             string text;
-            if (plan.Action == WorkshopAction.Install && existing) {
+            if (localVersion != null && plan.Package != null && WorkshopPackageCodec.Version(plan.Version) < localVersion) {
+                text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Downgrade", "Previous", FormatVersion(localVersion), "Version", plan.Version);
+            } else if (plan.Action == WorkshopAction.Install && existing) {
                 text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Existing");
                 if (oldVersion != null) text += " " + oldVersion;
                 text += Localization.UiText.ForLocale(locale, "Workshop.Summary.Migrate", "Version", plan.Version);

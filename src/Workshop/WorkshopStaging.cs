@@ -13,7 +13,7 @@ namespace APIShared.Workshop
     internal static class WorkshopStaging
     {
         // request: false leaves publishing to the caller (InstallStaging.PublishBatch).
-        internal static void StagePlan(InstallPaths paths, WorkshopInstallPlan plan, Action<string> log, bool request = true)
+        internal static void StagePlan(InstallPaths paths, WorkshopInstallPlan plan, Action<string> log, bool request = true, bool startup = false)
         {
             Validate(plan);
             if (plan.Action == WorkshopAction.Remove) {
@@ -39,6 +39,11 @@ namespace APIShared.Workshop
                 Files = package.Files.Where(file => !kept.Contains(file.Path)).ToList(), ModGuids = package.ModGuids, Dependencies = package.Dependencies,
                 ManifestHash = plan.ManifestHash, TransactionId = plan.OperationId
             });
+            if (startup) {
+                var localVersion = WorkshopLocalState.ReadInstalledPackageVersion(plan.GameRoot, package);
+                string versionBlock = WorkshopLocalState.StartupVersionBlock(package, plan.Previous, localVersion);
+                if (versionBlock != null) throw WorkshopDiagnostics.Blocked(versionBlock);
+            }
             InstallStaging.StageInstall(paths, plan.WorkshopId, plan.PackageId, roots, receipt, log, DroppedRoots(plan).ToList(), request,
                 expectedReceipt: plan.ReceiptHash);
             // Steam may have replaced the item meanwhile; the copies were verified against the

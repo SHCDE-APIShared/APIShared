@@ -68,6 +68,13 @@ public sealed class WorkshopStartupTests
             StringAssert.Contains(WorkshopStartupSummary.Describe(plan, german), german ? "erstmals" : "first installation");
             plan.Action = WorkshopAction.Update; plan.Previous = new WorkshopReceipt { Version = "1.0.25" };
             StringAssert.Contains(WorkshopStartupSummary.Describe(plan, german), "1.0.25");
+            plan.Action = WorkshopAction.Reinstall;
+            string locale = german ? "de-DE" : "en-US";
+            summary = WorkshopStartupSummary.Describe(plan, locale, new Version(1, 0, 27, 0));
+            StringAssert.Contains(summary, german ? "zurückstufen: 1.0.27 auf 1.0.26" : "downgrade: 1.0.27 to 1.0.26");
+            Assert.AreEqual(WorkshopAction.Reinstall, plan.Action, "presentation keeps the receipt-based operation");
+            Assert.AreEqual(WorkshopStartupSummary.Describe(plan, locale),
+                WorkshopStartupSummary.Describe(plan, locale, new Version(1, 0, 26, 0)));
         } finally { if (Directory.Exists(fixture)) Directory.Delete(fixture, true); }
     }
 
