@@ -22,6 +22,7 @@ namespace APIShared.Workshop
         private readonly RelayCommand withdraw;
         private WorkshopOption selected;
         private WorkshopInstallPlan preview;
+        private Version previewInstalledVersion;
         private bool busy, visible;
         private int viewGeneration;
 
@@ -78,7 +79,7 @@ namespace APIShared.Workshop
         public Visibility PreviewVisibility => preview == null ? Visibility.Collapsed : Visibility.Visible;
         public bool CanChangeOffers => !busy && preview == null && selected != null;
         public bool CanSelectPackage => !busy;
-        public string PreviewText => preview == null ? string.Empty : WorkshopStartupSummary.Describe(preview, GameLocale.Current()) +
+        public string PreviewText => preview == null ? string.Empty : WorkshopStartupSummary.Describe(preview, GameLocale.Current(), previewInstalledVersion) +
             "\n" + UiText.Get("Workshop.Options.PreviewFiles", "Write", preview.Files.Count, "Remove", preview.RemovedFiles.Count) +
             "\n" + string.Join("\n", preview.Package.Roots.Concat(preview.Diagnostics)) +
             "\n\n" + UiText.Get("Workshop.Options.RestartRequired");
@@ -137,8 +138,8 @@ namespace APIShared.Workshop
                 var catalog = await WorkshopRuntime.GetCatalogAsync();
                 foreach (var item in catalog.Where(item => item.IsSubscribed && (item.Package != null || item.Receipt != null))) {
                     try {
-                        var evidence = await WorkshopRuntime.InspectLocalAsync(item);
-                        packages.Add(new WorkshopOption(item, evidence.Status));
+                        var evidence = await WorkshopRuntime.InspectLocalAsync(item, inspectPackageVersion: true);
+                        packages.Add(new WorkshopOption(item, evidence.Status, evidence.LocalVersion));
                     } catch (Exception ex) {
                         packages.Add(new WorkshopOption(item, null));
                         WorkshopDiagnostics.Failure(WorkshopRuntime.WriteDiagnostic,
@@ -159,7 +160,11 @@ namespace APIShared.Workshop
             int generation = viewGeneration;
             await RunAsync("preview", async () => {
                 var plan = await WorkshopRuntime.PrepareSettingsAsync(item);
-                if (visible && generation == viewGeneration && ReferenceEquals(selected?.Item, item)) preview = plan;
+                var localVersion = await Task.Run(() => WorkshopLocalState.ReadInstalledPackageVersion(plan.GameRoot, plan.Package));
+                if (visible && generation == viewGeneration && ReferenceEquals(selected?.Item, item)) {
+                    previewInstalledVersion = localVersion;
+                    preview = plan;
+                }
             });
         }
 
@@ -219,10 +224,17 @@ namespace APIShared.Workshop
         {
             internal WorkshopCatalogItem Item { get; }
             private WorkshopLocalStatus? Status { get; }
-            internal WorkshopOption(WorkshopCatalogItem item, WorkshopLocalStatus? status) { Item = item; Status = status; }
+            private readonly string localVersion;
+            internal WorkshopOption(WorkshopCatalogItem item, WorkshopLocalStatus? status, Version installedVersion = null)
+            {
+                Item = item;
+                Status = status;
+                localVersion = installedVersion != null ? WorkshopStartupSummary.FormatVersion(installedVersion)
+                    : status == WorkshopLocalStatus.Verified ? item.InstalledVersion : null;
+            }
             public string Name => Item.Title;
             public string Local => UiText.Get("Workshop.Options.Local", "State", UiText.Get("Workshop.Options.State." + (Status?.ToString() ?? "Unknown"))) +
-                (Status == WorkshopLocalStatus.Verified ? " (" + Item.InstalledVersion + ")" : string.Empty);
+                (localVersion == null ? string.Empty : " (" + localVersion + ")");
             public string Available => UiText.Get("Workshop.Options.Available", "Version", Item.Package?.Version ?? UiText.Get("Workshop.Options.State.Unknown"));
             public string UnavailableReason => Item.CanInstall ? string.Empty : Item.Status;
         }
