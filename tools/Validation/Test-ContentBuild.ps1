@@ -41,6 +41,13 @@ function Initialize-Fixture([string]$ProjectDirectory) {
     <Exec Command="dotnet msbuild &quot;$(MSBuildThisFileDirectory)tests/APISharedTests/APISharedTests.csproj&quot; /t:RecordContentReference /p:Configuration=$(Configuration) /p:ContentReferenceReport=&quot;$(ContentReferenceReport)&quot; /nologo"
           EnvironmentVariables="DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false;DOTNET_GENERATE_ASPNET_CERTIFICATE=false;APISharedArtifactsRoot=$(_APISharedArtifactsRoot)" />
   </Target>
+  <Target Name="RecordContentCompileItems">
+    <Exec Command="dotnet msbuild &quot;$(MSBuildThisFileDirectory)Content/APIShared.Content.csproj&quot; /t:WriteContentCompileItems /p:Configuration=$(Configuration) /p:ContentReferenceReport=&quot;$(ContentReferenceReport)&quot; /nologo"
+          EnvironmentVariables="DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false;DOTNET_GENERATE_ASPNET_CERTIFICATE=false;APISharedArtifactsRoot=$(_APISharedArtifactsRoot)" />
+  </Target>
+  <Target Name="WriteContentCompileItems">
+    <WriteLinesToFile File="$(ContentReferenceReport)" Lines="@(Compile->'%(FullPath)')" Overwrite="true" />
+  </Target>
 </Project>
 '@ $ProjectDirectory
 }
@@ -109,6 +116,53 @@ if ($edited -eq $added) { throw 'An added nested source left stale Content outpu
 Remove-Item -LiteralPath (Join-Path $fixture 'Content/Nested/Added.cs')
 $removed = Build-Content 'nested-remove'
 if ($added -eq $removed -or $edited -ne $removed) { throw 'Removing a nested source failed to restore the deterministic output.' }
+
+# Switching an already-built project must not turn its retained default obj
+# generated C# into input. Exercise the same actual Content project, then keep
+# its old bin/obj tree intact as evidence rather than deleting it to pass.
+function Get-DefaultContentOutputSnapshot {
+    $snapshot = @()
+    foreach ($relative in @('Content/bin', 'Content/obj')) {
+        $directory = Join-Path $fixture $relative
+        if (-not [IO.Directory]::Exists($directory)) { throw "Default Content output missing before reroute: $relative" }
+        foreach ($file in @(Get-ChildItem -LiteralPath $directory -File -Recurse -Force | Sort-Object FullName)) {
+            $snapshot += [ordered]@{ path = $file.FullName; bytes = $file.Length; hash = (Get-ContentHash $file.FullName) }
+        }
+    }
+    return $snapshot
+}
+$defaultBefore = @(Get-DefaultContentOutputSnapshot)
+if ($defaultBefore.Count -eq 0) { throw 'Existing default Content output evidence required.' }
+Write-Fixture 'default-reroute-before.json' (ConvertTo-Json -InputObject $defaultBefore -Depth 5)
+$existingArtifacts = Join-Path $fixture 'rerouted existing project artifacts'
+$compileReport = Join-Path $fixture 'default-reroute-compile-items.txt'
+try {
+    # This report uses the SDK's actual evaluated Compile items, not a model of
+    # its globs. Preserve it even when the following actual compiler rejects the
+    # old generated AssemblyInfo/target-framework attributes on the RED source.
+    Invoke-FixtureTarget $fixture 'RecordContentCompileItems' 'default-reroute-compile-items' $existingArtifacts $compileReport
+    $rerouted = Build-Content 'default-reroute-build' $fixture $existingArtifacts
+    $compileItems = @(Get-Content -LiteralPath $compileReport | ForEach-Object { [IO.Path]::GetFullPath($_) })
+    foreach ($relative in @('Content/bin', 'Content/obj')) {
+        $prefix = [IO.Path]::GetFullPath((Join-Path $fixture $relative)).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        if (@($compileItems | Where-Object { $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }).Count) {
+            throw "Rerouted Compile items include retained default output: $relative"
+        }
+    }
+    foreach ($relative in @('Content/Document.cs', 'Content/Nested/Value.cs')) {
+        if ([IO.Path]::GetFullPath((Join-Path $fixture $relative)) -notin $compileItems) {
+            throw "Rerouted Compile items lost an actual authored source: $relative"
+        }
+    }
+}
+finally {
+    $defaultAfter = @(Get-DefaultContentOutputSnapshot)
+    Write-Fixture 'default-reroute-after.json' (ConvertTo-Json -InputObject $defaultAfter -Depth 5)
+    if ((ConvertTo-Json -InputObject $defaultBefore -Compress -Depth 5) -cne (ConvertTo-Json -InputObject $defaultAfter -Compress -Depth 5)) {
+        throw 'Rerouting modified or removed retained default Content output files.'
+    }
+}
+Write-Host 'PASS: The same default-built Content project reroutes without compiling or changing its retained default outputs.'
 
 function Test-IsolatedContent([string]$Label, [string]$ArtifactsDirectoryName) {
     # Separate fresh sources prevent the default builds above from concealing a
