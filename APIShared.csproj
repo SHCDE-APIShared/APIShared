@@ -72,12 +72,10 @@
        Let the SDK own incremental checks, including nested/removed sources and imports. -->
   <Target Name="BuildContentLibrary" BeforeTargets="ResolveAssemblyReferences"
           Condition="'$(DesignTimeBuild)' != 'true'">
-    <!-- The nested MSBuild imports its environment property as escaped data.
-         %2525 becomes the literal %25 Replace argument after argument unescaping;
-         string-result escaping then protects that percent carrier for Exec.
-         These first-use defaults affect this child process only. -->
+    <!-- Environment forwarding avoids shell quoting of roots containing spaces or
+         a trailing separator. These defaults affect this child process only. -->
     <Exec Command="dotnet build &quot;$(MSBuildThisFileDirectory)Content\APIShared.Content.csproj&quot; --configuration &quot;$(Configuration)&quot; --nologo"
-          EnvironmentVariables="DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false;DOTNET_GENERATE_ASPNET_CERTIFICATE=false;APISharedArtifactsRoot=$(_APISharedArtifactsRoot.Replace('%', '%2525'))" />
+          EnvironmentVariables="DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false;DOTNET_GENERATE_ASPNET_CERTIFICATE=false;APISharedArtifactsRoot=$(_APISharedArtifactsRoot)" />
   </Target>
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(ExtenderDir)\SHCDESE.dll')" Text="SHCDESE.dll was not found: $(ExtenderDir)" />

@@ -15,50 +15,7 @@ function Initialize-Fixture([string]$ProjectDirectory) {
     [void][IO.Directory]::CreateDirectory($ProjectDirectory)
     Copy-Item -LiteralPath (Join-Path $root 'APIShared.csproj') -Destination $ProjectDirectory
     Copy-Item -LiteralPath (Join-Path $root 'Directory.Build.props') -Destination $ProjectDirectory
-    # Diagnostic-only fixture instrumentation. The real production project,
-    # its routing expressions and its Exec environment are unchanged.
-    $apiPath = Join-Path $ProjectDirectory 'APIShared.csproj'
-    $apiXml = New-Object Xml.XmlDocument
-    $apiXml.PreserveWhitespace = $true
-    $apiXml.Load($apiPath)
-    $contentExec = @($apiXml.GetElementsByTagName('Exec') | Where-Object {
-        $_.ParentNode.GetAttribute('Name') -eq 'BuildContentLibrary'
-    })
-    if ($contentExec.Count -ne 1) { throw 'One actual Content build command is required.' }
-    # GetProperty with an explicit Build target records values from the same
-    # SDK invocation that builds Content, not a substitute evaluation process.
-    $properties = 'APISharedArtifactsRoot,_APISharedArtifactsRoot,BaseOutputPath,BaseIntermediateOutputPath,MSBuildProjectExtensionsPath,OutputPath,IntermediateOutputPath'
-    $contentExec[0].SetAttribute('Command', ($contentExec[0].GetAttribute('Command') + ' -target:Build -getProperty:' + $properties))
-    [IO.File]::WriteAllText($apiPath, $apiXml.OuterXml, [Text.UTF8Encoding]::new($false))
-    Write-Fixture 'Content/APIShared.Content.csproj' @'
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>netstandard2.0</TargetFramework><NuGetAudit>false</NuGetAudit></PropertyGroup>
-  <Target Name="RecordArtifactEnvironment" BeforeTargets="CoreCompile">
-    <!-- No environment override: the probe inherits the actual SDK task's OS
-         environment. Root is read by PowerShell and encoded before any MSBuild
-         property/list formatting. It never appears in this command string. -->
-    <Exec Command="powershell.exe -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)/RecordArtifactEnvironment.ps1&quot; -Report &quot;$(MSBuildProjectDirectory)/ARTIFACT_ENVIRONMENT.json&quot;" />
-  </Target>
-</Project>
-'@ $ProjectDirectory
-    Write-Fixture 'Content/RecordArtifactEnvironment.ps1' @'
-[CmdletBinding()]
-param([Parameter(Mandatory)][string]$Report)
-$ErrorActionPreference = 'Stop'
-$rootValue = [Environment]::GetEnvironmentVariable('APISharedArtifactsRoot', 'Process')
-$encoded = $null
-if ($null -ne $rootValue) { $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($rootValue)) }
-$record = [ordered]@{
-    schema = 'content-sdk-inherited-os-environment/1'
-    observer = 'PowerShell child of actual SDK CoreCompile-before target; no environment overrides'
-    processId = $PID
-    rootPresent = ($null -ne $rootValue)
-    rootUtf8Base64 = $encoded
-    addGlobalToolsToPath = [Environment]::GetEnvironmentVariable('DOTNET_ADD_GLOBAL_TOOLS_TO_PATH', 'Process')
-    generateAspnetCertificate = [Environment]::GetEnvironmentVariable('DOTNET_GENERATE_ASPNET_CERTIFICATE', 'Process')
-}
-[IO.File]::WriteAllText($Report, ($record | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
-'@ $ProjectDirectory
+    Write-Fixture 'Content/APIShared.Content.csproj' '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework><NuGetAudit>false</NuGetAudit></PropertyGroup></Project>' $ProjectDirectory
     Write-Fixture 'Content/Document.cs' 'public class Document {}' $ProjectDirectory
     Write-Fixture 'Content/Nested/Value.cs' 'public class Value { public const int Number = 1; }' $ProjectDirectory
     Write-Fixture 'tests/Directory.Build.props' '<Project><Import Project="../Directory.Build.props" /></Project>' $ProjectDirectory
@@ -107,31 +64,10 @@ function Invoke-FixtureTarget([string]$ProjectDirectory, [string]$Target, [strin
     & $MSBuild @arguments *> $log
     if ($LASTEXITCODE) { throw "Fixture target $Target failed; see $log" }
 }
-function Record-OuterArtifactProperties([string]$Label, [string]$ProjectDirectory, [string]$ArtifactsRoot) {
-    # Use the same actual outer executable, project, Configuration and /p codec
-    # as Invoke-FixtureTarget. With no target, GetProperty does not resolve game
-    # references or build the API. JSON avoids path-as-item-list diagnostics.
-    $propertyRoot = $ArtifactsRoot.Replace('%', '%25').Replace(';', '%3B')
-    $properties = 'APISharedArtifactsRoot,_APISharedArtifactsRoot,BaseOutputPath,BaseIntermediateOutputPath,MSBuildProjectExtensionsPath,OutputPath,IntermediateOutputPath'
-    $arguments = @((Join-Path $ProjectDirectory 'APIShared.csproj'), '/p:Configuration=Release', '/nologo',
-        "/p:APISharedArtifactsRoot=$propertyRoot", ('-getProperty:' + $properties))
-    $request = [ordered]@{ requestedRoot = $ArtifactsRoot; powershellArguments = $arguments; executable = $MSBuild }
-    [IO.File]::WriteAllText((Join-Path $fixture ($Label + '-outer-request.json')),
-        ($request | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
-    $log = Join-Path $fixture ($Label + '-outer-properties.json')
-    & $MSBuild @arguments *> $log
-    if ($LASTEXITCODE) { throw "Outer property evaluation failed; see $log" }
-}
 function Build-Content([string]$Label, [string]$ProjectDirectory = $fixture, [string]$ArtifactsRoot = '') {
     # Exercise the actual Framework project's target and the real SDK compiler.
     # The SDK remains responsible for incremental checks, including source removal.
-    Record-OuterArtifactProperties $Label $ProjectDirectory $ArtifactsRoot
     Invoke-FixtureTarget $ProjectDirectory 'BuildContentLibrary' $Label $ArtifactsRoot
-    # Retain raw inherited OS input before the existing expected-output read
-    # can fail. The per-build copy cannot be overwritten by the next edit.
-    $environmentReport = Join-Path $ProjectDirectory 'Content/ARTIFACT_ENVIRONMENT.json'
-    if (-not (Test-Path -LiteralPath $environmentReport -PathType Leaf)) { throw 'Actual SDK environment probe did not run.' }
-    Copy-Item -LiteralPath $environmentReport -Destination (Join-Path $fixture ($Label + '-sdk-environment.json'))
     $relative = 'Content/bin/Release/netstandard2.0/APIShared.Content.dll'
     if ($ArtifactsRoot) { $relative = 'bin/APIShared.Content/Release/netstandard2.0/APIShared.Content.dll' }
     $outputDirectory = $ProjectDirectory
@@ -201,8 +137,58 @@ function Test-IsolatedContent([string]$Label, [string]$ArtifactsDirectoryName) {
 }
 
 Test-IsolatedContent 'isolated-spaces' 'isolated artifacts with spaces'
-# The real semicolon and literal percent sequence expose delimiter splitting
-# and unintended extra decoding after the outer /p input is escaped.
-Test-IsolatedContent 'isolated-delimiters' 'isolated artifacts with spaces;literal%3B'
-Write-Host 'PASS: Content rebuilds nested edits/additions/removals; spaces and semicolon/literal-percent roots resolve through both actual project HintPaths.'
+Test-IsolatedContent 'isolated-semicolon' 'isolated artifacts with spaces;ordinary'
+
+function Test-RejectedPercentRoot([string]$Target) {
+    $project = Join-Path $fixture ('rejected percent root ' + $Target)
+    $artifacts = Join-Path $fixture ('rejected artifacts ' + $Target + ';literal%3B')
+    Initialize-Fixture $project
+    $propertyRoot = $artifacts.Replace('%', '%25').Replace(';', '%3B')
+    $log = Join-Path $fixture ('rejected-percent-' + $Target + '.log')
+    if ($Target -eq 'BuildContentLibrary') {
+        $arguments = @((Join-Path $project 'APIShared.csproj'), '/t:BuildContentLibrary',
+            '/p:Configuration=Release', "/p:APISharedArtifactsRoot=$propertyRoot", '/nologo')
+        & $MSBuild @arguments *> $log
+    } else {
+        # Actual SDK Restore on tiny Content sources; no API/game references.
+        $arguments = @('msbuild', (Join-Path $project 'Content/APIShared.Content.csproj'), '/t:Restore',
+            '/p:Configuration=Release', "/p:APISharedArtifactsRoot=$propertyRoot", '/nologo')
+        # The standalone fixture may inherit an isolated CLI home. Force these
+        # child defaults explicitly and restore the fixture process afterward.
+        $priorFirstUse = @{}
+        foreach ($name in @('DOTNET_ADD_GLOBAL_TOOLS_TO_PATH', 'DOTNET_GENERATE_ASPNET_CERTIFICATE')) {
+            $priorFirstUse[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+        }
+        try {
+            foreach ($name in $priorFirstUse.Keys) { [Environment]::SetEnvironmentVariable($name, 'false', 'Process') }
+            & dotnet @arguments *> $log
+        }
+        finally {
+            foreach ($name in $priorFirstUse.Keys) {
+                [Environment]::SetEnvironmentVariable($name, $priorFirstUse[$name], 'Process')
+            }
+        }
+    }
+    $exit = $LASTEXITCODE
+    $output = [IO.File]::ReadAllText($log)
+    # The stable code distinguishes declared refusal from unrelated tool failure.
+    if ($exit -eq 0 -or $output -notmatch '\bAPISHARED1001\b') {
+        throw "Percent root did not receive the named refusal for $Target; see $log"
+    }
+    if ($output -match '(?m)^\s+dotnet build ') { throw "Rejected root launched nested Content for $Target." }
+    foreach ($relative in @('BepInEx', 'bin', 'obj', 'Content/bin', 'Content/obj', 'tests/APISharedTests/bin', 'tests/APISharedTests/obj')) {
+        if (Test-Path -LiteralPath (Join-Path $project $relative)) {
+            throw "Rejected root created a default build artifact directory for ${Target}: $relative"
+        }
+    }
+    # Check the observed wrong decoded name too; relocation is not refusal.
+    foreach ($path in @($artifacts, $artifacts.Replace('%3B', ';'))) {
+        if (Test-Path -LiteralPath $path) { throw "Rejected root created or redirected artifacts for ${Target}: $path" }
+    }
+    Write-Host "PASS: $Target rejects literal percent roots before build artifacts or nested Content launch."
+}
+
+Test-RejectedPercentRoot 'BuildContentLibrary'
+Test-RejectedPercentRoot 'Restore'
+Write-Host 'PASS: Content incrementality and exact spaces/semicolon routing; percent roots explicitly refused before build/restore.'
 Write-Host "Fixture retained: $fixture"
