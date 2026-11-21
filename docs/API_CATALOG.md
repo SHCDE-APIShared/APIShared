@@ -59,8 +59,8 @@ See [attack target rule integration](THIRD_PARTY_GUIDE.md#attack-target-rules).
 ## Local input and mod keybinds
 
 `APIShared.Input.InputState` reads physical Unity input, Noesis event modifiers or the
-game's configured action state. `ModKeybinds` registers mod actions and adds them to
-**Mod Keybinds** under the game's keyboard settings. Each action reads and writes its
+game's configured action state. `ModKeybinds` registers mod actions and lists them under
+**Mod Keybinds** at the bottom of the game's Hotkeys list. Each action reads and writes its
 own existing local setting. See [mod keybind integration](THIRD_PARTY_GUIDE.md#local-input-and-mod-keybinds).
 
 ## Local troop-command input

@@ -54,6 +54,10 @@ namespace APIShared.Input
         /// <summary>Starts exclusive assignment while the provided surface remains active. Escape cancels.
         /// The optional completion callback runs on Unity after success or cancellation.</summary>
         public static bool BeginCapture(ModKeybindRegistration registration, Func<bool> isActive, Action finished = null)
+            => BeginCapture(registration, isActive, finished, null, null);
+
+        internal static bool BeginCapture(ModKeybindRegistration registration, Func<bool> isActive, Action finished,
+            Action<KeybindChord> preview, Func<bool> ignoreLeftMouse)
         {
             if (!UnityMainThreadDispatch.IsMainThread || registration == null || !registration.CanEdit ||
                 isActive == null || captureWork == null || capture != null || releasing != null || !Application.isFocused ||
@@ -71,7 +75,7 @@ namespace APIShared.Input
 
             // This existing game mode bypasses Vanilla's shortcut execution but still publishes SE key edges.
             manager.HotKeySelectorMode = true;
-            capture = new Capture(registration, isActive, finished, manager, Time.frameCount, heldMouse);
+            capture = new Capture(registration, isActive, finished, manager, Time.frameCount, heldMouse, preview, ignoreLeftMouse);
             captureWork.SetContinuous(true);
             NotifyBindingChanged();
             return true;
@@ -130,7 +134,11 @@ namespace APIShared.Input
         public static bool HasConflict(ModKeybindRegistration registration)
         {
             if (!UnityMainThreadDispatch.IsMainThread || registration == null) return false;
-            KeybindChord chord = registration.Current;
+            return HasConflict(registration, registration.Current);
+        }
+
+        internal static bool HasConflict(ModKeybindRegistration registration, KeybindChord chord)
+        {
             if (chord.Key == KeyCode.None) return false;
             foreach (var other in registrations)
             {
@@ -243,7 +251,13 @@ namespace APIShared.Input
                 (active.HeldMouse & (1 << (key - KeyCode.Mouse0))) != 0) return;
             try
             {
-                if (active.Registration.TrySet(new KeybindChord(key, modifiers)) && ReferenceEquals(capture, active))
+                if (key == KeyCode.Mouse0 && active.IgnoreLeftMouse?.Invoke() == true) return;
+                var chord = new KeybindChord(key, modifiers);
+                if (active.Preview != null)
+                {
+                    if (active.Registration.Accepts(chord)) active.Preview(chord);
+                }
+                else if (active.Registration.TrySet(chord) && ReferenceEquals(capture, active))
                     FinishCapture();
             }
             catch (Exception error)
@@ -288,16 +302,20 @@ namespace APIShared.Input
             internal readonly ModKeybindRegistration Registration;
             internal readonly Func<bool> IsActive;
             internal readonly Action Finished;
+            internal readonly Action<KeybindChord> Preview;
+            internal readonly Func<bool> IgnoreLeftMouse;
             internal readonly KeyManager Manager;
             internal readonly int StartFrame;
             internal readonly HashSet<KeyCode> ConsumedKeys = new HashSet<KeyCode>();
             internal int HeldMouse;
 
             internal Capture(ModKeybindRegistration registration, Func<bool> isActive, Action finished,
-                KeyManager manager, int startFrame, int heldMouse)
+                KeyManager manager, int startFrame, int heldMouse, Action<KeybindChord> preview, Func<bool> ignoreLeftMouse)
             {
                 Registration = registration; IsActive = isActive; Finished = finished;
                 Manager = manager; StartFrame = startFrame; HeldMouse = heldMouse;
+                Preview = preview;
+                IgnoreLeftMouse = ignoreLeftMouse;
             }
         }
     }

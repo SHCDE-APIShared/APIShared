@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
+using CrusaderDE;
 using APIShared.Events;
 using APIShared.Internal;
 using APIShared.Localization;
@@ -42,13 +46,21 @@ namespace APIShared.Input
             private readonly Grid host;
             private readonly Dictionary<ModKeybindRegistration, Row> rows = new Dictionary<ModKeybindRegistration, Row>();
             private ListView vanillaList;
-            private Thickness originalListMargin;
-            private Button open, back;
-            private Border page;
-            private StackPanel rowsPanel;
-            private TextBlock prompt;
-            private ModKeybindRegistration capture;
-            private Style tooltipStyle, buttonStyle;
+            private ControlTemplate listTemplate;
+            private object originalTemplate;
+            private GridViewColumn vanillaColumn;
+            private DataTemplate cellTemplate, originalCellTemplate;
+            private StackPanel footer;
+            private Style rowStyle, tooltipStyle;
+            private Grid editor;
+            private FrameworkElement secondaryCaption;
+            private Button choose, apply, clear, cancel;
+            private Row selected;
+            private Dialog dialog;
+            private object previousDataContext, previousApplyEnabled;
+            private BindingBase previousContextBinding;
+            private Visibility previousCaptionVisibility;
+            private KeyboardNavigationMode previousTabNavigation;
             private bool observing, refreshQueued, missingAnchorReported;
 
             internal View(Grid host) { this.host = host; }
@@ -67,8 +79,7 @@ namespace APIShared.Input
                 host.Unloaded -= OnUnloaded;
                 host.IsVisibleChanged -= OnVisibilityChanged;
                 StopObserving();
-                if (open != null) host.Children.Remove(open);
-                if (page != null) host.Children.Remove(page);
+                RestoreListTemplate();
             }
 
             private void OnLoaded(object sender, RoutedEventArgs args) => Observe();
@@ -79,29 +90,27 @@ namespace APIShared.Input
             {
                 if (observing) return;
                 observing = true;
-                ModKeybinds.Changed += OnRegistryChanged;
-                Refresh();
+                ModKeybinds.Changed += QueueRefresh;
+                QueueRefresh();
             }
 
             private void StopObserving()
             {
                 if (!observing) return;
                 observing = false;
-                ModKeybinds.Changed -= OnRegistryChanged;
-                ClosePage();
-                SetEntryVisible(false);
+                ModKeybinds.Changed -= QueueRefresh;
+                CloseEditor(false);
             }
 
             private void OnVisibilityChanged(object sender, DependencyPropertyChangedEventArgs args)
             {
-                if (!host.IsVisible) ClosePage();
-                else if (observing) Refresh();
+                if (!host.IsVisible) CloseEditor(false);
+                else if (observing) QueueRefresh();
             }
 
-            private void OnRegistryChanged()
+            private void QueueRefresh()
             {
-                // A routed button or keyboard event can arrive during capture. Defer structural changes
-                // until the current Noesis route is finished, and update existing rows in place.
+                // Applying a template or refreshing rows inside a routed event can invalidate the route.
                 if (refreshQueued) return;
                 refreshQueued = true;
                 if (!UnityMainThreadDispatch.TryEnqueue(RefreshQueued))
@@ -111,256 +120,361 @@ namespace APIShared.Input
             private void RefreshQueued()
             {
                 refreshQueued = false;
-                if (observing) Refresh();
+                if (observing && host.IsVisible) Refresh();
             }
 
-            private bool EnsureView()
+            private bool EnsureFooter()
             {
-                if (open != null) return true;
+                if (footer != null) return ReferenceEquals(vanillaList.Template, listTemplate);
                 for (int index = 0; index < host.Children.Count; index++)
                 {
                     if (!(host.Children[index] is ListView candidate) || candidate.Name != "HotKeyList") continue;
                     vanillaList = candidate;
                     break;
                 }
+
+                listTemplate = host.TryFindResource("APISharedHotKeyListTemplate") as ControlTemplate;
+                cellTemplate = host.TryFindResource("APISharedHotKeyCellTemplate") as DataTemplate;
+                rowStyle = host.TryFindResource("APISharedModHotKeyRow") as Style;
                 tooltipStyle = host.TryFindResource("APISharedModKeybindOptionsTooltip") as Style;
-                buttonStyle = host.TryFindResource("APISharedModKeybindOptionsButton") as Style;
-                if (vanillaList == null || tooltipStyle == null || buttonStyle == null)
+                if (!(vanillaList?.View is GridView view) || view.Columns.Count != 1 ||
+                    listTemplate == null || cellTemplate == null || rowStyle == null ||
+                    tooltipStyle == null || !FindEditor())
+                    return ReportMissingAnchor();
+
+                // The item source must continue to contain only the game's HotKeyRow objects.
+                // The original negative vertical margin clips text in a physically scrolled panel.
+                vanillaColumn = view.Columns[0];
+                originalCellTemplate = vanillaColumn.CellTemplate;
+                originalTemplate = vanillaList.ReadLocalValue(Control.TemplateProperty);
+                try
                 {
-                    if (!missingAnchorReported)
-                    {
-                        missingAnchorReported = true;
-                        InterceptionDiagnostics.Report("mod keybind options", new InvalidOperationException(
-                            "The game's keyboard settings list or the Mod Keybinds resources were not found."));
-                    }
-                    return false;
+                    vanillaColumn.CellTemplate = cellTemplate;
+                    vanillaList.Template = listTemplate;
+                    vanillaList.ApplyTemplate();
+                    footer = listTemplate.FindName("APISharedModKeybindsFooter", vanillaList) as StackPanel;
+                    if (footer != null) return true;
                 }
-                originalListMargin = vanillaList.Margin;
-
-                open = CreateButton("APISharedModKeybindsOpen", "Title", "OpenHelp", OpenPage);
-                open.Width = 350;
-                open.Height = 28;
-                open.Margin = new Thickness(23, 0, 0, 114);
-                open.HorizontalAlignment = HorizontalAlignment.Left;
-                open.VerticalAlignment = VerticalAlignment.Bottom;
-                open.Visibility = Visibility.Collapsed;
-
-                rowsPanel = new StackPanel();
-                var scroll = new ScrollViewer
+                catch (Exception error)
                 {
-                    Content = rowsPanel,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    Margin = new Thickness(0, 46, 0, 47)
-                };
-                var heading = Label(Text("Title"), 24);
-                heading.HorizontalAlignment = HorizontalAlignment.Center;
-                heading.VerticalAlignment = VerticalAlignment.Top;
-                prompt = Label(string.Empty, 15);
-                prompt.Margin = new Thickness(0, 0, 88, 0);
-                prompt.VerticalAlignment = VerticalAlignment.Bottom;
-                back = CreateButton("APISharedModKeybindsBack", "Back", "BackHelp", ClosePage);
-                back.HorizontalAlignment = HorizontalAlignment.Right;
-                back.VerticalAlignment = VerticalAlignment.Bottom;
-
-                var content = new Grid();
-                content.Children.Add(heading);
-                content.Children.Add(scroll);
-                content.Children.Add(prompt);
-                content.Children.Add(back);
-                page = new Border
-                {
-                    Name = "APISharedModKeybindsPage",
-                    Background = new SolidColorBrush(Color.FromArgb(255, 29, 23, 16)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(255, 242, 212, 138)),
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(12),
-                    Child = content,
-                    Visibility = Visibility.Collapsed
-                };
-                KeyboardNavigation.SetTabNavigation(page, KeyboardNavigationMode.Cycle);
-                page.PreviewKeyDown += CaptureKey;
-                page.PreviewMouseDown += CaptureMouse;
-                host.Children.Add(open);
-                host.Children.Add(page);
-                return true;
-            }
-
-            private void SetEntryVisible(bool value)
-            {
-                if (open == null) return;
-                Visibility visibility = value ? Visibility.Visible : Visibility.Collapsed;
-                if (open.Visibility == visibility) return;
-                if (value)
-                {
-                    originalListMargin = vanillaList.Margin;
-                    vanillaList.Margin = new Thickness(originalListMargin.Left, originalListMargin.Top,
-                        originalListMargin.Right, originalListMargin.Bottom + 32);
+                    RestoreListTemplate();
+                    return ReportMissingAnchor(error);
                 }
-                else
-                    vanillaList.Margin = originalListMargin;
-                open.Visibility = visibility;
+
+                RestoreListTemplate();
+                return ReportMissingAnchor();
             }
 
-            private void OpenPage()
+            private bool ReportMissingAnchor(Exception error = null)
             {
-                page.Visibility = Visibility.Visible;
-                Refresh();
-                back.Focus();
+                if (!missingAnchorReported)
+                {
+                    missingAnchorReported = true;
+                    InterceptionDiagnostics.Report("mod keybind options", error ?? new InvalidOperationException(
+                        "The game's keyboard settings list or the Mod Keybinds resources were not found."));
+                }
+                return false;
             }
 
-            private void ClosePage()
+            private void RestoreListTemplate()
             {
-                if (capture != null)
-                    ModKeybinds.CancelCapture(capture);
-                if (page == null || page.Visibility == Visibility.Collapsed) return;
-                page.Visibility = Visibility.Collapsed;
-                if (host.IsVisible && open.IsVisible) open.Focus();
+                if (vanillaColumn != null && ReferenceEquals(vanillaColumn.CellTemplate, cellTemplate))
+                    vanillaColumn.CellTemplate = originalCellTemplate;
+                if (vanillaList == null || listTemplate == null || !ReferenceEquals(vanillaList.Template, listTemplate)) return;
+                if (originalTemplate is ControlTemplate template) vanillaList.Template = template;
+                else vanillaList.ClearValue(Control.TemplateProperty);
             }
 
             private void Refresh()
             {
                 var registrations = ModKeybinds.Registrations;
-                if (registrations.Count == 0)
+                if (registrations.Count == 0 || !EnsureFooter()) return;
+                if (selected == null && rows.Count != registrations.Count)
                 {
-                    ClosePage();
-                    SetEntryVisible(false);
-                    return;
-                }
-                if (!host.IsVisible || !EnsureView()) return;
-                SetEntryVisible(true);
-                if (page.Visibility != Visibility.Visible) return;
+                    footer.Children.Clear();
+                    var heading = Label(Text("Title"), 15);
+                    heading.FontWeight = FontWeights.Bold;
+                    heading.Margin = new Thickness(3, 4, 3, 3);
+                    footer.Children.Add(heading);
 
-                if (rows.Count != registrations.Count)
-                {
-                    rowsPanel.Children.Clear();
-                    rows.Clear();
-                    foreach (var group in registrations.GroupBy(registration => registration.OwnerGuid)
-                        .OrderBy(group => group.First().ModName, StringComparer.CurrentCultureIgnoreCase)
-                        .ThenBy(group => group.Key, StringComparer.Ordinal))
+                    foreach (var registration in registrations.OrderBy(item => item.ModName, StringComparer.CurrentCultureIgnoreCase)
+                        .ThenBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                        .ThenBy(item => item.OwnerGuid, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal))
                     {
-                        var groupHeading = Label(group.First().ModName, 19);
-                        groupHeading.Margin = new Thickness(0, 12, 0, 5);
-                        rowsPanel.Children.Add(groupHeading);
-                        foreach (var registration in group.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-                            .ThenBy(item => item.Id, StringComparer.Ordinal))
-                            rows.Add(registration, CreateRow(registration));
+                        if (!rows.TryGetValue(registration, out Row row))
+                        {
+                            row = CreateRow(registration);
+                            rows.Add(registration, row);
+                        }
+                        footer.Children.Add(row.Button);
                     }
                 }
 
-                foreach (var entry in rows)
+                foreach (var row in rows.Values)
                 {
-                    var registration = entry.Key;
-                    var row = entry.Value;
-                    bool canEdit = registration.CanEdit && capture == null;
-                    KeybindChord chord = registration.Current;
-                    row.Value.Text = chord.Key == UnityEngine.KeyCode.None ? Text("Unassigned") : ModKeybinds.Format(chord);
-                    row.Conflict.Visibility = ModKeybinds.HasConflict(registration) ? Visibility.Visible : Visibility.Collapsed;
-                    row.Assign.IsEnabled = canEdit;
-                    row.Clear.IsEnabled = canEdit;
-                    row.Reset.IsEnabled = canEdit;
+                    row.Title.Text = registrations.Count(item => item.DisplayName == row.Registration.DisplayName) > 1
+                        ? row.Registration.DisplayName + " (" + row.Registration.ModName + ")" : row.Registration.DisplayName;
+                    row.Value.Text = Format(row.Registration.Current);
+                    row.Button.IsEnabled = row.Registration.CanEdit;
                 }
-                prompt.Text = capture == null ? string.Empty : Text("Capture");
+                dialog?.Refresh();
             }
 
             private Row CreateRow(ModKeybindRegistration registration)
             {
-                var title = Label(registration.DisplayName, 16);
-                var value = Label(string.Empty, 16);
-                var conflict = Label(Text("Conflict"), 14);
-                conflict.Visibility = Visibility.Collapsed;
-                var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 0) };
-                var assign = CreateButton(null, "Assign", "AssignHelp", () => Assign(registration));
-                var clear = CreateButton(null, "Clear", "ClearHelp", () => registration.TrySet(default));
-                var reset = CreateButton(null, "Reset", "ResetHelp", () => registration.TrySet(registration.Default));
-                buttons.Children.Add(assign);
-                buttons.Children.Add(clear);
-                buttons.Children.Add(reset);
-                var body = new StackPanel { Margin = new Thickness(0, 0, 0, 7) };
-                body.Children.Add(title);
-                body.Children.Add(value);
-                body.Children.Add(conflict);
-                body.Children.Add(buttons);
-                rowsPanel.Children.Add(body);
-                return new Row(value, conflict, assign, clear, reset);
+                var titleLabel = Label(registration.DisplayName, 14);
+                titleLabel.Margin = new Thickness(0, 0, 8, 0);
+                var valueLabel = Label(Format(registration.Current), 14);
+                valueLabel.MaxWidth = 135;
+                valueLabel.HorizontalAlignment = HorizontalAlignment.Right;
+                valueLabel.TextAlignment = TextAlignment.Right;
+
+                var line = new Grid();
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(valueLabel, 1);
+                line.Children.Add(titleLabel);
+                line.Children.Add(valueLabel);
+                var button = new Button { Style = rowStyle, Content = line };
+                SetTooltip(button, registration.ModName);
+                var row = new Row(registration, button, titleLabel, valueLabel);
+                button.Click += (sender, args) => OpenEditor(row);
+                return row;
             }
 
-            private void Assign(ModKeybindRegistration registration)
+            private bool FindEditor()
             {
-                if (capture != null || !registration.CanEdit) return;
-                if (!ModKeybinds.BeginCapture(registration, () => observing && page.IsVisible && registration.CanEdit, FinishCapture))
-                    return;
-                capture = registration;
-                back.Focus();
-                Refresh();
+                DependencyObject ancestor = host;
+                while (ancestor != null && !(ancestor is HUD_Options))
+                    ancestor = VisualTreeHelper.GetParent(ancestor);
+                if (!(ancestor is HUD_Options options)) return false;
+                editor = options.FindName("OptionsHotKeyPanel") as Grid;
+                choose = options.FindName("APISharedHotKeyChoose") as Button;
+                apply = options.FindName("OptionsHotKeyNewKeyApply") as Button;
+                clear = options.FindName("APISharedHotKeyClear") as Button;
+                cancel = options.FindName("APISharedHotKeyCancel") as Button;
+                secondaryCaption = options.FindName("APISharedHotKeySecondaryCaption") as FrameworkElement;
+                return editor != null && choose != null && apply != null && clear != null &&
+                    cancel != null && secondaryCaption != null;
             }
 
-            private void FinishCapture()
+            private void OpenEditor(Row row)
             {
-                capture = null;
-                OnRegistryChanged();
+                if (!row.Registration.CanEdit || selected != null || editor.Visibility == Visibility.Visible) return;
+                selected = row;
+                dialog = new Dialog(this, row);
+                previousDataContext = editor.ReadLocalValue(FrameworkElement.DataContextProperty);
+                previousContextBinding = BindingOperations.GetBindingBase(editor, FrameworkElement.DataContextProperty);
+                previousApplyEnabled = apply.ReadLocalValue(UIElement.IsEnabledProperty);
+                previousCaptionVisibility = secondaryCaption.Visibility;
+                previousTabNavigation = KeyboardNavigation.GetTabNavigation(editor);
+
+                // The same controls keep their existing bindings. A separate data context prevents
+                // HUD_Options.Update from overwriting mod input or sending commands to a Vanilla slot.
+                editor.DataContext = dialog;
+                secondaryCaption.Visibility = Visibility.Hidden;
+                apply.IsEnabled = true;
+                KeyboardNavigation.SetTabNavigation(editor, KeyboardNavigationMode.Cycle);
+                editor.PreviewKeyDown += OnEditorKey;
+                editor.PreviewMouseDown += OnEditorMouse;
+                editor.IsVisibleChanged += OnEditorVisibility;
+                editor.Visibility = Visibility.Visible;
+                choose.Focus();
             }
 
-            private void CaptureKey(object sender, KeyEventArgs args)
+            private void CloseEditor(bool restoreFocus)
             {
-                if (capture != null && ModKeybinds.TryCapture(args)) args.Handled = true;
+                Row row = selected;
+                if (row == null) return;
+                selected = null;
+                var previousDialog = dialog;
+                dialog = null;
+                ModKeybinds.CancelCapture(row.Registration);
+                editor.PreviewKeyDown -= OnEditorKey;
+                editor.PreviewMouseDown -= OnEditorMouse;
+                editor.IsVisibleChanged -= OnEditorVisibility;
+                editor.Visibility = Visibility.Hidden;
+                if (ReferenceEquals(editor.DataContext, previousDialog))
+                {
+                    if (previousContextBinding != null)
+                        BindingOperations.SetBinding(editor, FrameworkElement.DataContextProperty, previousContextBinding);
+                    else if (ReferenceEquals(previousDataContext, DependencyProperty.UnsetValue))
+                        editor.ClearValue(FrameworkElement.DataContextProperty);
+                    else
+                        editor.DataContext = previousDataContext;
+                }
+                if (previousApplyEnabled is bool enabled) apply.IsEnabled = enabled;
+                else apply.ClearValue(UIElement.IsEnabledProperty);
+                secondaryCaption.Visibility = previousCaptionVisibility;
+                KeyboardNavigation.SetTabNavigation(editor, previousTabNavigation);
+                previousDataContext = previousApplyEnabled = null;
+                previousContextBinding = null;
+                if (restoreFocus && host.IsVisible && row.Button.IsEnabled) row.Button.Focus();
+                QueueRefresh();
+            }
+
+            private void OnEditorVisibility(object sender, DependencyPropertyChangedEventArgs args)
+            {
+                if (!editor.IsVisible) CloseEditor(false);
+            }
+
+            private void OnEditorKey(object sender, KeyEventArgs args)
+            {
+                if (dialog?.Capturing == true && ModKeybinds.TryCapture(args)) args.Handled = true;
                 else if (args.Key == Key.Escape)
                 {
-                    ClosePage();
+                    CloseEditor(true);
                     args.Handled = true;
                 }
             }
 
-            private void CaptureMouse(object sender, MouseButtonEventArgs args)
+            private bool OverCaptureButton() => apply.IsMouseOver || clear.IsMouseOver || cancel.IsMouseOver;
+
+            private void OnEditorMouse(object sender, MouseButtonEventArgs args)
             {
-                if (capture == null) return;
-                if (back.IsMouseOver)
-                    ClosePage();
-                else if (ModKeybinds.TryCapture(args))
+                if (dialog?.Capturing == true &&
+                    !(args.ChangedButton == MouseButton.Left && OverCaptureButton()) &&
+                    ModKeybinds.TryCapture(args))
                     args.Handled = true;
             }
 
-            private Button CreateButton(string name, string label, string help, Action click)
+            private void SetTooltip(Button button, string text)
             {
-                var button = new Button
-                {
-                    Content = Text(label),
-                    Style = buttonStyle,
-                    Padding = new Thickness(8, 3, 8, 3),
-                    Margin = new Thickness(0, 0, 5, 0),
-                    MinHeight = 25
-                };
-                if (name != null) button.Name = name;
-                button.Click += (sender, args) => click();
-                var tip = new ToolTip { Content = Text(help), Style = tooltipStyle };
+                var tip = new ToolTip { Content = text, Style = tooltipStyle };
                 SharedToolTipSizing.SetEnabled(tip, true);
                 ToolTipService.SetToolTip(button, tip);
                 ToolTipService.SetShowDuration(button, 60000);
-                return button;
             }
 
             private static TextBlock Label(string value, int size) => new TextBlock
             {
                 Text = value,
                 FontSize = size,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 246, 228, 187)),
+                Foreground = new SolidColorBrush(Colors.Black),
                 TextWrapping = TextWrapping.Wrap
             };
 
+            private static string Format(KeybindChord chord) =>
+                chord.Key == UnityEngine.KeyCode.None ? Text("Unassigned") : ModKeybinds.Format(chord);
+
             private static string Text(string key) => UiText.Get("ModKeybinds." + key);
+
+            private sealed class Dialog : INotifyPropertyChanged, ICommand
+            {
+                // Command parameters from the original HUD_Options XAML.
+                private const int Close = -101, Choose = -102, Reset = -103,
+                    Cancel = -104, Apply = -105, Clear = -106;
+                private readonly View view;
+                private readonly Row row;
+                private KeybindChord? pending;
+
+                internal Dialog(View view, Row row)
+                {
+                    this.view = view;
+                    this.row = row;
+                }
+
+                internal bool Capturing { get; private set; }
+                public string OptionsHotKeyTitle => row.Title.Text;
+                public string OptionsHotKey1 => Format(row.Registration.Current);
+                public string OptionsHotKey2 => Text("Reset");
+                public string OptionsHotKeyCurrentKey => OptionsHotKey1;
+                public string OptionsHotKeyNewKey => pending.HasValue ? Format(pending.Value) : string.Empty;
+                public string OptionsHotKeyWarning => ModKeybinds.HasConflict(row.Registration,
+                    pending ?? row.Registration.Current) ? Text("Conflict") : string.Empty;
+                public Visibility OptionsHotKeySelectVis => Capturing ? Visibility.Hidden : Visibility.Visible;
+                public Visibility OptionsHotKeyChangeVis => Capturing ? Visibility.Visible : Visibility.Hidden;
+                public ICommand OptionsCommand => this;
+
+                public event PropertyChangedEventHandler PropertyChanged;
+                public event System.EventHandler CanExecuteChanged;
+
+                internal void Refresh()
+                {
+                    foreach (string property in new[] { nameof(OptionsHotKey1), nameof(OptionsHotKeyCurrentKey),
+                        nameof(OptionsHotKeyNewKey), nameof(OptionsHotKeyWarning), nameof(OptionsHotKeySelectVis),
+                        nameof(OptionsHotKeyChangeVis) })
+                        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
+                    CanExecuteChanged?.Invoke(this, System.EventArgs.Empty);
+                }
+
+                public bool CanExecute(object parameter)
+                {
+                    if (!ReferenceEquals(view.dialog, this)) return false;
+                    switch (CommandId(parameter))
+                    {
+                        case Close: return !Capturing;
+                        case Choose:
+                        case Reset: return !Capturing && row.Registration.CanEdit;
+                        case Cancel: return Capturing;
+                        case Apply: return Capturing && pending.HasValue && row.Registration.CanEdit;
+                        case Clear: return Capturing && row.Registration.CanEdit && row.Registration.Accepts(default);
+                        default: return false;
+                    }
+                }
+
+                public void Execute(object parameter)
+                {
+                    if (!CanExecute(parameter)) return;
+                    switch (CommandId(parameter))
+                    {
+                        case Close: view.CloseEditor(true); break;
+                        case Choose: Begin(); break;
+                        case Reset: row.Registration.TrySet(row.Registration.Default); Refresh(); break;
+                        case Cancel: ModKeybinds.CancelCapture(row.Registration); break;
+                        case Apply: Commit(pending.Value); break;
+                        case Clear: Commit(default); break;
+                    }
+                }
+
+                private void Begin()
+                {
+                    if (!ModKeybinds.BeginCapture(row.Registration,
+                        () => ReferenceEquals(view.dialog, this) && view.editor.IsVisible,
+                        Finish, Preview, view.OverCaptureButton)) return;
+                    Capturing = true;
+                    Refresh();
+                    view.cancel.Focus();
+                }
+
+                private void Preview(KeybindChord chord)
+                {
+                    if (pending.HasValue && pending.Value.Equals(chord)) return;
+                    pending = chord;
+                    Refresh();
+                }
+
+                private void Commit(KeybindChord chord)
+                {
+                    if (row.Registration.TrySet(chord)) ModKeybinds.CancelCapture(row.Registration);
+                }
+
+                private void Finish()
+                {
+                    Capturing = false;
+                    pending = null;
+                    if (!ReferenceEquals(view.dialog, this)) return;
+                    Refresh();
+                    view.choose.Focus();
+                }
+
+                private static int CommandId(object parameter) =>
+                    int.TryParse(Convert.ToString(parameter, CultureInfo.InvariantCulture), NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out int command) ? command : 0;
+            }
 
             private sealed class Row
             {
-                internal readonly TextBlock Value, Conflict;
-                internal readonly Button Assign, Clear, Reset;
+                internal readonly ModKeybindRegistration Registration;
+                internal readonly Button Button;
+                internal readonly TextBlock Title, Value;
 
-                internal Row(TextBlock value, TextBlock conflict, Button assign, Button clear, Button reset)
+                internal Row(ModKeybindRegistration registration, Button button, TextBlock title, TextBlock value)
                 {
+                    Registration = registration;
+                    Button = button;
+                    Title = title;
                     Value = value;
-                    Conflict = conflict;
-                    Assign = assign;
-                    Clear = clear;
-                    Reset = reset;
                 }
             }
         }
