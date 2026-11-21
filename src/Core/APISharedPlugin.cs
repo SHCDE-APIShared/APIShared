@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.56.0";
+        public const string PluginVersion = "0.60.1";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -74,6 +74,9 @@ namespace APIShared
             try
             {
             runtime.RunNativeInitialization(RuntimeLogger,
+                // The Script Extender's unpatched load snapshot, before APIShared's first native patch:
+                // every APIShared span is compared with it before it is written (NativeForeignPatchGuard).
+                new NativeInitializationStep("native foreign-patch guard", () => NativeForeignPatchGuard.Bind(context.Region, RuntimeLogger)),
                 // Binds the image for site registrations before any APIShared or consumer hook claims it.
                 new NativeInitializationStep("native site registry", () => runtime.NativeOwnership.BindModule(
                     context.ModuleHandle.ToInt64(), context.Memory.Length, new ProcessNativeMemory().ReadByte)),
@@ -92,6 +95,7 @@ namespace APIShared
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("map filename policy", () => Maps.MapLoadPolicy.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("typed construction costs", () => Buildings.ConstructionCosts.Initialize(context.ModuleHandle, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("human construction transactions", () => Buildings.HumanConstructionRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("Vanilla Lord message references", () => Presentation.VanillaLordMessages.Initialize(context, hash, RuntimeLogger)),
@@ -146,6 +150,8 @@ namespace APIShared
                     RuntimeLogger,
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
+                // Needs the mission lifecycle published above; later APIShared spans are watched as they publish.
+                new NativeInitializationStep("native foreign-patch recheck", () => NativeForeignPatchGuard.SubscribeRecheck(RuntimeLogger)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("native storage context", () => Economy.NativeStorageNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native custom-goods wallet", () => Economy.GoodsWalletNative.Initialize(hash, RuntimeLogger)),
@@ -169,10 +175,12 @@ namespace APIShared
                 new NativeInitializationStep("line of sight", () => Sight.LineOfSightNative.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("sight-blocking buildings", () => Sight.SightBlockingBuildingsNative.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("multiplayer simulation capability agreement", () => Multiplayer.SimulationAgreement.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.
                 new NativeInitializationStep("interpolate event reuse", () => ScriptExtenderFixes.InterpolateEventReuseRuntime.Initialize(Config, RuntimeLogger)),
+                new NativeInitializationStep("lobby preset sharing", () => ModSettings.PresetShareService.Initialize(RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));

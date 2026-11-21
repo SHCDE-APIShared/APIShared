@@ -151,10 +151,20 @@ namespace APIShared
 
         private void SetupTroopsHook(HUD_Troops panel)
         {
+            // Vanilla clamps against its own type count, which can be smaller than the
+            // category entry count. Keep the requested page without writing HUD state early.
+            // Dormant owners retain the original-only path without a reflective field read.
+            bool hadCategories = HasCategories(UnitHudSurface.TroopSelection);
+            int requestedPage = hadCategories ? (int)CurrentPageField.GetValue(panel) : 0;
             setupTroopsOriginal(panel);
             if (!HasCategories(UnitHudSurface.TroopSelection))
                 return;
-            try { RenderTroopCategories(panel); }
+            try
+            {
+                // A category activated by the original uses that original's resulting page.
+                if (!hadCategories) requestedPage = (int)CurrentPageField.GetValue(panel);
+                RenderTroopCategories(panel, requestedPage);
+            }
             catch (Exception ex)
             {
                 HideCategoryButtons();

@@ -413,11 +413,13 @@ APIShared.Buildings.BuildingStateRegistration | public .ctor(string ownerGuid, s
 APIShared.Buildings.BuildingStateRegistration | public System.Collections.Generic.IReadOnlyList<APIShared.Buildings.BuildingStateValue> Values { get; }
 APIShared.Buildings.BuildingStateRegistration | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
 APIShared.Buildings.BuildingStateRegistration | public System.Func<bool> AcceptsOwnerRequests { get; set; }
+APIShared.Buildings.BuildingStateRegistration | public bool AllowSameTypeOwnerRequests { get; set; }
 APIShared.Buildings.BuildingStateRegistration | public string OwnerGuid { get; }
 APIShared.Buildings.BuildingStateRegistration | public string RegistrationId { get; }
 APIShared.Buildings.BuildingStateRegistration | public string SaveDataIdentifier { get; }
 APIShared.Buildings.BuildingStateTable | public sealed class APIShared.Buildings.BuildingStateTable
 APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChange(int buildingId, uint globalId, int valueIndex, byte value)
+APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChangeForSameType(int buildingId, uint globalId, int valueIndex, byte value)
 APIShared.Buildings.BuildingStateTable | public bool AppliesTo(SHCDESE.Interop.eStructs buildingType)
 APIShared.Buildings.BuildingStateTable | public bool HasPendingRequest { get; }
 APIShared.Buildings.BuildingStateTable | public bool TrySetFromSimulation(int buildingId, uint globalId, int valueIndex, byte value)
@@ -1468,6 +1470,63 @@ APIShared.IUnitHudPresentationCapability | public bool TryRemoveUnitFromControlG
 APIShared.IUnitHudPresentationCapability | public void RequestRefresh()
 APIShared.IndexBounds | public static class APIShared.IndexBounds
 APIShared.IndexBounds | public static bool IsValidIndex(int index, int length)
+APIShared.Input.InputState | public static class APIShared.Input.InputState
+APIShared.Input.InputState | public static APIShared.Input.KeybindModifiers GameModifiers { get; }
+APIShared.Input.InputState | public static APIShared.Input.KeybindModifiers PhysicalModifiers { get; }
+APIShared.Input.InputState | public static APIShared.Input.KeybindModifiers ReadGestureModifiers(Noesis.UIElement element)
+APIShared.Input.InputState | public static APIShared.Input.KeybindModifiers ReadModifiers(Noesis.RoutedEventArgs args)
+APIShared.Input.InputState | public static bool IsGameActionHeld(Enums.KeyFunctions action, bool ignoreModifiers = false)
+APIShared.Input.InputState | public static bool IsGameActionPressed(Enums.KeyFunctions action)
+APIShared.Input.InputState | public static bool IsGameActionReleased(Enums.KeyFunctions action)
+APIShared.Input.InputState | public static bool IsGameKeyHeld(UnityEngine.KeyCode key, bool ignoreModifiers = false)
+APIShared.Input.InputState | public static bool IsGameKeyPressed(UnityEngine.KeyCode key, bool ignoreModifiers = false)
+APIShared.Input.InputState | public static bool IsGameKeyReleased(UnityEngine.KeyCode key)
+APIShared.Input.InputState | public static bool IsHeld(UnityEngine.KeyCode key)
+APIShared.Input.InputState | public static bool IsMouseHeld(int button)
+APIShared.Input.InputState | public static bool IsMousePressed(int button)
+APIShared.Input.InputState | public static bool IsMouseReleased(int button)
+APIShared.Input.InputState | public static bool IsPressed(UnityEngine.KeyCode key)
+APIShared.Input.InputState | public static bool IsReleased(UnityEngine.KeyCode key)
+APIShared.Input.InputState | public static bool PhysicalAltHeld { get; }
+APIShared.Input.InputState | public static bool PhysicalControlHeld { get; }
+APIShared.Input.InputState | public static bool PhysicalShiftHeld { get; }
+APIShared.Input.KeybindChord | public struct APIShared.Input.KeybindChord : System.IEquatable<APIShared.Input.KeybindChord>
+APIShared.Input.KeybindChord | public .ctor(UnityEngine.KeyCode key, APIShared.Input.KeybindModifiers modifiers = (APIShared.Input.KeybindModifiers)0)
+APIShared.Input.KeybindChord | public APIShared.Input.KeybindModifiers Modifiers { get; }
+APIShared.Input.KeybindChord | public UnityEngine.KeyCode Key { get; }
+APIShared.Input.KeybindChord | public bool Equals(APIShared.Input.KeybindChord other)
+APIShared.Input.KeybindChord | public override bool Equals(object obj)
+APIShared.Input.KeybindChord | public override int GetHashCode()
+APIShared.Input.KeybindModifiers | public enum APIShared.Input.KeybindModifiers : int
+APIShared.Input.KeybindModifiers | Alt = 1
+APIShared.Input.KeybindModifiers | Control = 2
+APIShared.Input.KeybindModifiers | None = 0
+APIShared.Input.KeybindModifiers | Shift = 4
+APIShared.Input.ModKeybindOptions | public static class APIShared.Input.ModKeybindOptions
+APIShared.Input.ModKeybindOptions | public static bool GetEnabled(Noesis.DependencyObject element)
+APIShared.Input.ModKeybindOptions | public static readonly Noesis.DependencyProperty EnabledProperty
+APIShared.Input.ModKeybindOptions | public static void SetEnabled(Noesis.DependencyObject element, bool enabled)
+APIShared.Input.ModKeybindRegistration | public sealed class APIShared.Input.ModKeybindRegistration
+APIShared.Input.ModKeybindRegistration | public .ctor(string ownerGuid, string id, string modName, System.Func<string> displayName, APIShared.Input.KeybindChord defaultBinding, System.Func<APIShared.Input.KeybindChord> read, System.Action<APIShared.Input.KeybindChord> write, System.Func<APIShared.Input.KeybindChord, bool> accepts, System.Func<bool> canEdit, System.Func<bool> canExecute, System.Action execute)
+APIShared.Input.ModKeybindRegistration | public APIShared.Input.KeybindChord Current { get; }
+APIShared.Input.ModKeybindRegistration | public APIShared.Input.KeybindChord Default { get; }
+APIShared.Input.ModKeybindRegistration | public bool CanEdit { get; }
+APIShared.Input.ModKeybindRegistration | public bool TrySet(APIShared.Input.KeybindChord chord)
+APIShared.Input.ModKeybindRegistration | public string DisplayName { get; }
+APIShared.Input.ModKeybindRegistration | public string Id { get; }
+APIShared.Input.ModKeybindRegistration | public string ModName { get; }
+APIShared.Input.ModKeybindRegistration | public string OwnerGuid { get; }
+APIShared.Input.ModKeybinds | public static class APIShared.Input.ModKeybinds
+APIShared.Input.ModKeybinds | public static System.Collections.Generic.IReadOnlyList<APIShared.Input.ModKeybindRegistration> Registrations { get; }
+APIShared.Input.ModKeybinds | public static bool BeginCapture(APIShared.Input.ModKeybindRegistration registration, System.Func<bool> isActive, System.Action finished = null)
+APIShared.Input.ModKeybinds | public static bool HasConflict(APIShared.Input.ModKeybindRegistration registration)
+APIShared.Input.ModKeybinds | public static bool IsCapturing(APIShared.Input.ModKeybindRegistration registration)
+APIShared.Input.ModKeybinds | public static bool TryCapture(Noesis.RoutedEventArgs args)
+APIShared.Input.ModKeybinds | public static bool TryRegister(APIShared.Input.ModKeybindRegistration registration, out string reason)
+APIShared.Input.ModKeybinds | public static event System.Action Changed
+APIShared.Input.ModKeybinds | public static string Format(APIShared.Input.KeybindChord chord)
+APIShared.Input.ModKeybinds | public static void CancelCapture(APIShared.Input.ModKeybindRegistration registration)
+APIShared.Input.ModKeybinds | public static void NotifyBindingChanged()
 APIShared.Lobby.LobbyChatMessage | public sealed class APIShared.Lobby.LobbyChatMessage
 APIShared.Lobby.LobbyChatMessage | public bool IsSystemMessage { get; }
 APIShared.Lobby.LobbyChatMessage | public string Message { get; }
@@ -1544,6 +1603,13 @@ APIShared.LordSkin | Unknown = 0
 APIShared.LordSkins | public static class APIShared.LordSkins
 APIShared.LordSkins | public static bool TryGetForPlayer(int playerId, out APIShared.LordSkin skin)
 APIShared.LordSkins | public static bool TryGetFromMaterial(SHCDESE.Interop.GM material, out APIShared.LordSkin skin)
+APIShared.Maps.MapLoadDecision | public struct APIShared.Maps.MapLoadDecision
+APIShared.Maps.MapLoadDecision | public static APIShared.Maps.MapLoadDecision Allow()
+APIShared.Maps.MapLoadDecision | public static APIShared.Maps.MapLoadDecision Reject(string reason)
+APIShared.Maps.MapLoadDecision | public static APIShared.Maps.MapLoadDecision UseNativeFileName(string name)
+APIShared.Maps.MapLoadPolicy | public static class APIShared.Maps.MapLoadPolicy
+APIShared.Maps.MapLoadPolicy | public const int NativeFileNameLimit = 63
+APIShared.Maps.MapLoadPolicy | public static bool TryRegister(string ownerGuid, System.Func<string, bool, APIShared.Maps.MapLoadDecision> decide, out string diagnostic)
 APIShared.Maps.MultiplayerMapLookup | public static class APIShared.Maps.MultiplayerMapLookup
 APIShared.Maps.MultiplayerMapLookup | public static bool IsAvailable { get; }
 APIShared.Maps.MultiplayerMapLookup | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Maps.MultiplayerMapLookupResult> observer, out string diagnostic)
@@ -1732,6 +1798,10 @@ APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void Re
 APIShared.ModSettings.LobbyModSettingsPresetRegistration | public static void RegisterExternalWorkingCopy(BepInEx.Logging.ManualLogSource log, string storageAssemblyLocation, string modName, string targetGuid, System.Version targetVersion, APIShared.ModSettings.PresetLobbyModSettingsViewModel viewModel)
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public sealed class APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings
 APIShared.ModSettings.LobbyModSettingsPresetRegistration.PreparedExternalSettings | public void Activate(System.Action enable, System.Func<System.Exception, bool> definitelyRejected = null)
+APIShared.ModSettings.LobbyPresetOffers | public static class APIShared.ModSettings.LobbyPresetOffers
+APIShared.ModSettings.LobbyPresetOffers | public static bool GetEnabled(Noesis.DependencyObject element)
+APIShared.ModSettings.LobbyPresetOffers | public static readonly Noesis.DependencyProperty EnabledProperty
+APIShared.ModSettings.LobbyPresetOffers | public static void SetEnabled(Noesis.DependencyObject element, bool enabled)
 APIShared.ModSettings.MissionIndependentAttribute | public sealed class APIShared.ModSettings.MissionIndependentAttribute : System.Attribute
 APIShared.ModSettings.MissionIndependentAttribute | public .ctor()
 APIShared.ModSettings.MissionModSettingsApplicationKind | public enum APIShared.ModSettings.MissionModSettingsApplicationKind : int
@@ -2033,12 +2103,15 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_ModSettingsSearchPanelVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_ModeNoticeVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetDeleteVisibility { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetFolderVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetInlineConfirmationVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetLoadPanelVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetOperationErrorVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetOperationStatusVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetOperationSuccessVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetSavePanelVisibility { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetShareOnlyPickerVisibility { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetShareVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_PresetStatusVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_SettingsSourceVisibility { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public Noesis.Visibility System_TrailSourceNoticeVisibility { get; }
@@ -2052,8 +2125,10 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUti
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_DeletePresetCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_DismissPresetStatusCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_LoadSettingsSourceCommand { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_OpenPresetFolderCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_OpenPresetLoadCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_OpenPresetSaveCommand { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_SharePresetCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public SHCDESE.NoesisUtil.RelayCommand System_ToggleModSettingsSearchCommand { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentMissionPresetSnapshot()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public System.Collections.Generic.Dictionary<string, byte[]> System_CreateCurrentWorkingSnapshot()
@@ -2092,6 +2167,7 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ArePe
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanConfirmPresetSave { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanDeleteSelectedPreset { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanLoadSettingsSource { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_CanSharePreset { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_ConfigurationNeedsRestart()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_HasApplicationBackend { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public bool System_HasDynamicSettings { get; }
@@ -2137,6 +2213,8 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_Mod
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_ModeNoticeText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_OwnConfigurationFingerprint()
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetDeleteText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetFolderHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetFolderText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetInlineCancelText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetInlineConfirmText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetInlineConfirmationMessage { get; }
@@ -2157,6 +2235,10 @@ APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_Pre
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetSaveNameText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetSaveTargetText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetSaveText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareOnlyPickerHelpText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareOnlyPickerText { get; }
+APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetShareText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetStatusDismissText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_PresetStatusText { get; }
 APIShared.ModSettings.PresetLobbyModSettingsViewModel | public string System_SavePersonalPreset(string id, string name, string description, System.Collections.Generic.IEnumerable<APIShared.ModSettings.PresetSaveSelection> selections, bool overwrite)
@@ -2282,6 +2364,9 @@ APIShared.Modifiers.ValueModifierKind | None = 0
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Multiplayer.SimulationAgreement | public static class APIShared.Multiplayer.SimulationAgreement
+APIShared.Multiplayer.SimulationAgreement | public static void Register(string ownerGuid, string featureId, bool required, System.Func<bool> isReady, System.Action<bool> apply)
+APIShared.Multiplayer.SimulationAgreement | public static void ReportFault(string message)
 APIShared.NativeApiState | public enum APIShared.NativeApiState : int
 APIShared.NativeApiState | Pending = 0
 APIShared.NativeApiState | Ready = 1
@@ -3334,6 +3419,7 @@ APIShared.Savegames.SaveLoadDialogContext | public FileHeader Header { get; }
 APIShared.Savegames.SaveLoadDialogContext | public long Generation { get; }
 APIShared.Savegames.SaveLoadDialogContext | public object State { get; set; }
 APIShared.Savegames.SaveLoadDialogContext | public string FileName { get; }
+APIShared.Savegames.SaveLoadDialogContext | public void RejectPreparation(string reason)
 APIShared.Savegames.SaveLoadDialogEvents | public static class APIShared.Savegames.SaveLoadDialogEvents
 APIShared.Savegames.SaveLoadDialogEvents | public static bool IsAvailable { get; }
 APIShared.Savegames.SaveLoadDialogEvents | public static void Register(string ownerGuid, string registrationId, APIShared.Savegames.SaveLoadDialogCallbacks callbacks, int order = 0)

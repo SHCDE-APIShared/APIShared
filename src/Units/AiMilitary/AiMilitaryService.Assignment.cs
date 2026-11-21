@@ -83,7 +83,7 @@ namespace APIShared.Units.AiMilitary
                     Notify(entry, entry.Last);
                     return true;
                 }
-                entry.Pending = true;
+                entry.Pending = true; Enqueue(entry);
                 entry.Last = Result(entry, AiMilitaryAssignmentStatus.Queued, AiMilitaryReason.None, string.Empty);
                 initial = entry.Last;
                 if (!Wake())
@@ -114,6 +114,21 @@ namespace APIShared.Units.AiMilitary
             catch (Exception error) { Report("settlement", error); }
         }
 
+        // Pending work index under the engine monitor: Process visits only queued requests, never
+        // the whole registry of applied units (mass placement keeps every pump proportional to the
+        // pending requests). Every writer of Pending=true enqueues: Request and CompleteNativeLoad
+        // (which covers both raw-restore and map-start entries). Stale entries drop out in Process.
+        private void Enqueue(Tracked entry)
+        {
+            if (entry.InWork) return;
+            entry.InWork = true; pendingWork.Add(entry);
+        }
+        private bool RetireFromWork(Tracked entry)
+        {
+            if (entry.Pending && IsTracked(entry)) return false;
+            entry.InWork = false; return true;
+        }
+
         private bool Wake()
         {
             if (Interlocked.CompareExchange(ref scheduled, 1, 0) != 0) return true;
@@ -133,8 +148,8 @@ namespace APIShared.Units.AiMilitary
             }
             AiMilitaryEngineeringRuntime.Reconcile();
             long processGeneration = generation;
-            var work = new List<Tracked>();
-            foreach (var entry in tracked.Values) if (entry.Pending) work.Add(entry);
+            // Snapshot: completions can submit new requests or end the world during the loop.
+            var work = pendingWork.ToArray();
             foreach (var entry in work)
             {
                 // A completion can end the world or submit another request. Never apply a stale
@@ -153,8 +168,18 @@ namespace APIShared.Units.AiMilitary
                 }
                 Apply(entry, unit);
             }
-            foreach (var entry in tracked.Values) if (entry.Pending) { Wake(); break; }
+            pendingWork.RemoveAll(retireFromWork);
+            if (pendingWork.Count != 0) Wake();
         }
+
+        private string Describe(AiNativeGroup group) =>
+            "Target group " + group.Id + "/" + group.GlobalId + " of player " + group.Owner +
+            (backend.IsCurrent(group) ? " has " + *(short*)(backend.Tribe(group) + 0x5C) + " members." : " is no longer current.");
+
+        // The owner's AI siege state (3C2E0 phase); -1 when the player record is unavailable.
+        private static int SiegeState(int player) =>
+            GamePlayerManagerAPI.Instance.TryGetPlayerResourcesById(player, out GamePlayerResources* resources) && resources != null
+                ? (int)resources->r_AISiegeState : -1;
 
         private void Apply(Tracked entry, GameUnit* unit)
         {
@@ -192,24 +217,72 @@ namespace APIShared.Units.AiMilitary
                     AiMilitaryCatalog.NativeRole(entry.Assignment.Role), -1, out group, out reason))
                 { Finish(entry, AiMilitaryAssignmentStatus.Rejected, AiMilitaryReason.NoAvailableGroup, reason); return; }
                 AiCurrentOrder order;
+                string appliedDetail = string.Empty;
+                bool emptyGroupOrder = false;
                 if (entry.Assignment.Role == AiMilitaryRole.None || entry.Assignment.Role == AiMilitaryRole.SiegeEngineers ||
                     entry.Assignment.Role == AiMilitaryRole.HarassmentEngineers)
                     order = new AiCurrentOrder(AiOrderKind.Idle);
-                else if (!orders.TryGetCurrent(generation, group, out order, out reason))
+                else if (!orders.TryGetCurrent(generation, group, out order, out string ledgerReason))
                 {
                     if (!backend.TryGetInitialOrderForEmptyGroup(entry.Unit.UnitId,
-                        AiMilitaryCatalog.NativeRole(entry.Assignment.Role), -1, group, out order, out reason))
-                    { Finish(entry, AiMilitaryAssignmentStatus.Rejected, AiMilitaryReason.CurrentOrderUnknown, reason); return; }
+                        AiMilitaryCatalog.NativeRole(entry.Assignment.Role), -1, group, out order, out string initialReason))
+                    {
+                        // An occupied group without an observed order: join exactly like a Vanilla
+                        // recruit where the owner's controller provably commands joined members.
+                        // Empty or no longer current groups keep their explicit rejection, except
+                        // castle defense: its groups always come from the storage slots that 2FE20
+                        // visits every pass, and the initial target is absent only where that pass
+                        // itself gives no order now (see TryCastleDefenseTarget).
+                        int siegeState = SiegeState(entry.Player);
+                        if (!AiControllerHandoffPolicy.CommandsJoinedMembers(entry.Assignment.Role, siegeState) ||
+                            !backend.IsCurrent(group) || (*(short*)(backend.Tribe(group) + 0x5C) < 1 &&
+                            entry.Assignment.Role != AiMilitaryRole.CastleDefense))
+                        {
+                            Finish(entry, AiMilitaryAssignmentStatus.Rejected, AiMilitaryReason.CurrentOrderUnknown,
+                                ledgerReason + " Empty-group fallback: " + initialReason + " " + Describe(group));
+                            return;
+                        }
+                        order = new AiCurrentOrder(AiOrderKind.Idle);
+                        appliedDetail = AiControllerHandoffPolicy.Detail(entry.Assignment.Role, siegeState);
+                    }
+                    else emptyGroupOrder = true;
                 }
                 if (!backend.TryAdmit(entry.Unit.UnitId, entry.Unit.GlobalId, group,
                     AiMilitaryCatalog.NativeRole(entry.Assignment.Role), order, out reason))
-                { Finish(entry, AiMilitaryAssignmentStatus.Rejected, AiMilitaryReason.AssignmentFailed, reason); return; }
+                {
+                    // The recruit's own native route (196280) found no path to the initial or recorded
+                    // group order, e.g. a mounted unit on a keep tile or an unconnected wall (castle
+                    // defense, 18.11.2026) or a siege diversion horseman in state 7 (in-game 18.11.2026).
+                    // Vanilla never routes a recruit when it joins (291F0/294B0 write role and membership
+                    // only); the controller of these roles commands the whole group itself (castle
+                    // defense every pass, the others per AiControllerHandoffPolicy), where an unroutable
+                    // member simply stays. The rolled-back recruit therefore joins like a Vanilla recruit
+                    // instead of being rejected. Vetoes and redirects stay rejections.
+                    bool rejoin = backend.LastAdmissionRouteRefused &&
+                        (entry.Assignment.Role == AiMilitaryRole.CastleDefense ||
+                         AiControllerHandoffPolicy.CommandsJoinedMembers(entry.Assignment.Role, SiegeState(entry.Player))) &&
+                        generation == applyGeneration && IsTracked(entry);
+                    string routeReason = reason;
+                    if (!rejoin || !backend.TryAdmit(entry.Unit.UnitId, entry.Unit.GlobalId, group,
+                        AiMilitaryCatalog.NativeRole(entry.Assignment.Role), new AiCurrentOrder(AiOrderKind.Idle), out reason))
+                    {
+                        Finish(entry, AiMilitaryAssignmentStatus.Rejected, AiMilitaryReason.AssignmentFailed,
+                            rejoin ? routeReason + " Vanilla-recruit join failed: " + reason : reason);
+                        return;
+                    }
+                    order = new AiCurrentOrder(AiOrderKind.Idle); emptyGroupOrder = false;
+                    appliedDetail = AiControllerHandoffPolicy.AppliedDetail + " The recruit had no route to the group position.";
+                }
                 if (generation != applyGeneration || !IsTracked(entry)) return;
+                // The group was empty and its only member now carries this initial order, so it is
+                // the group's current order until an observed group command supersedes it. Later
+                // recruits of the same group then receive the same state instead of being rejected.
+                if (emptyGroupOrder) orders.RecordAdmissionOrder(generation, group, order);
                 admitted = true;
                 entry.Protected = entry.Assignment.Role == AiMilitaryRole.None;
                 entry.Private = entry.Protected ? group : default;
                 MarkAdditional(entry.Unit, entry.Assignment.RecruitmentMode == AiRecruitmentMode.Additional);
-                entry.Last = Result(entry, AiMilitaryAssignmentStatus.Applied, AiMilitaryReason.None, string.Empty,
+                entry.Last = Result(entry, AiMilitaryAssignmentStatus.Applied, AiMilitaryReason.None, appliedDetail,
                     new AiGroupRef(group.Id, group.GlobalId, group.Owner));
                 entry.Pending = false; Notify(entry, entry.Last);
             }

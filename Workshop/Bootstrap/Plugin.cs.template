@@ -4,7 +4,6 @@ using BepInEx.Logging;
 using SHCDESE.API.LowLevel;
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Reflection;
 using System.IO;
 
@@ -15,7 +14,6 @@ using System.IO;
 public sealed class WorkshopBootstrap : BaseUnityPlugin
 {
     private static ManualLogSource log;
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBoxW(IntPtr window, string text, string caption, uint type);
     private void Awake()
     {
         log = Logger;
@@ -25,7 +23,8 @@ public sealed class WorkshopBootstrap : BaseUnityPlugin
         APIShared.Localization.UiText.Configure(APIShared.Localization.GameLocale.Current);
         string text = APIShared.Localization.UiText.Get("Bootstrap.Required", "Name", "@@NAME@@", "Minimum", "@@MINIMUM@@");
         log.LogWarning(text);
-        if (MessageBoxW(IntPtr.Zero, text, APIShared.Localization.UiText.Get("Bootstrap.Title"), 0x34) == 6)
+        // Owned by the game window with a free, visible cursor; other programs stay usable.
+        if (APIShared.Presentation.NativeMessageBox.Show(text, APIShared.Localization.UiText.Get("Bootstrap.Title"), 0x34) == 6)
             Process.Start(new ProcessStartInfo("https://steamcommunity.com/sharedfiles/filedetails/?id=@@WORKSHOP@@") { UseShellExecute = true });
     }
 

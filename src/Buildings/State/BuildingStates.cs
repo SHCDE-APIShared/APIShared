@@ -142,18 +142,37 @@ namespace APIShared.Buildings
             if (table == null) return;
             try
             {
-                if (!table.IsOwnerValue(packet.ValueIndex, packet.Value) || !table.Accepts()) return;
+                if (!table.IsOwnerValue(packet.ValueIndex, packet.Value) ||
+                    (packet.AllOfSameType && !table.AllowSameTypeOwnerRequests) || !table.Accepts()) return;
                 var manager = GameBuildingManagerAPI.Instance;
                 if (manager == null || !BuildingAccess.TryGetById(manager, packet.BuildingId, out GameBuilding* building, out _) ||
                     building == null || building->r_AliveState != AliveState.IsAlive || building->r_GlobalId != packet.GlobalId ||
                     !table.AppliesTo(building->r_BuildingType) || building->r_PlayerIdOwner != message.SenderPlayerId)
                     return;
-                table.Memory.Set(packet.BuildingId, packet.GlobalId, packet.ValueIndex, packet.Value);
+                if (packet.AllOfSameType)
+                    ApplySameType(table, manager.GetBuildingsAsSpan(), building->r_BuildingType, message.SenderPlayerId, packet);
+                else
+                    table.Memory.Set(packet.BuildingId, packet.GlobalId, packet.ValueIndex, packet.Value);
             }
             finally
             {
                 // Every peer counts its own serials, so another player's request may carry the same number.
                 if (message.SenderPlayerId == PlayerPerspectiveAPI.GetControlledPlayerId()) table.Acknowledge(packet.Serial);
+            }
+        }
+
+        // The anchor has already been validated. Resolve the rest on the simulation thread so all
+        // peers use the ownership and life state at execution, including suspended workshops.
+        internal static void ApplySameType(BuildingStateTable table, Span<GameBuilding> buildings,
+            eStructs type, int playerId, BuildingStatePacket packet)
+        {
+            int count = Math.Min(buildings.Length, table.Capacity - 1);
+            for (int spanIndex = 0; spanIndex < count; spanIndex++)
+            {
+                ref GameBuilding building = ref buildings[spanIndex];
+                if (building.r_AliveState == AliveState.IsAlive && building.r_GlobalId != 0 &&
+                    building.r_BuildingType == type && building.r_PlayerIdOwner == playerId)
+                    table.Memory.Set(spanIndex + 1, building.r_GlobalId, packet.ValueIndex, packet.Value);
             }
         }
 

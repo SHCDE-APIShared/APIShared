@@ -27,8 +27,6 @@ namespace APIShared.Workshop
         private static string startupPendingItems;
         private static int steamFailureReported;
         private static ConfigEntry<string> disabledOffers;
-        private static readonly WorkshopApplyCoordinator ApplyCoordinator = new WorkshopApplyCoordinator();
-        private static readonly WorkshopShutdownHandoff SettingsHandoff = new WorkshopShutdownHandoff();
         internal static string StateRoot => WorkshopInstallation.StateRoot(Paths.GameRootPath);
         internal static bool IsExternallyManaged => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCDEModManagerLaunchId"));
         internal static void Initialize(BaseUnityPlugin host, ManualLogSource log)
@@ -40,7 +38,6 @@ namespace APIShared.Workshop
             WorkshopPublisherContext.Enqueue = UnityMainThreadDispatch.TryEnqueue;
             WorkshopPublisherContext.Log = Log;
             WorkshopPublisherContext.StateRoot = StateRoot;
-            UnityEngine.Application.quitting += SettingsHandoff.Run;
             steamSubscription = SteamworksR3EventHooks.OnSteamworksInitialized.Observable.Subscribe(e => {
                 if (e.Phase != EventHookPhase.Post) return;
                 try {
@@ -58,15 +55,14 @@ namespace APIShared.Workshop
             });
         }
         internal static void Log(string text) => NativeApiLog.Info(logger, text);
-        internal static bool OffersEnabled(ulong item) => !DisabledOfferIds().Contains(item);
-        internal static void SetOffersEnabled(ulong item, bool enabled)
+        internal static bool OffersEnabled(ulong item) => !WorkshopLocalState.ParseIds(disabledOffers.Value).Contains(item);
+        internal static void SetOffersEnabled(ulong item, bool enabled) => SetId(disabledOffers, item, !enabled);
+
+        private static void SetId(ConfigEntry<string> entry, ulong item, bool present)
         {
-            var ids = DisabledOfferIds();
-            if (enabled ? ids.Remove(item) : ids.Add(item))
-                disabledOffers.Value = string.Join(",", ids.OrderBy(id => id).Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            var ids = WorkshopLocalState.ParseIds(entry.Value);
+            if (present ? ids.Add(item) : ids.Remove(item)) entry.Value = WorkshopLocalState.FormatIds(ids);
         }
-        private static HashSet<ulong> DisabledOfferIds() => new HashSet<ulong>(
-            disabledOffers.Value.Split(',').Select(value => ulong.TryParse(value, out ulong id) ? id : 0).Where(id => id != 0));
         internal static void WriteDiagnostic(WorkshopDiagnosticLevel level, string text)
         {
             // Failure reports are stamped by RuntimeHealth; an own unbracketed stamp would
