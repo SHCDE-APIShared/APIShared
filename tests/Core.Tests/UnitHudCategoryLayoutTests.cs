@@ -1,3 +1,4 @@
+using ApiCompatibility;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -23,9 +24,7 @@ public sealed class UnitHudCategoryLayoutTests
 
     private static Action<string> CompileRenderer()
     {
-        string root = AppContext.BaseDirectory;
-        while (!File.Exists(Path.Combine(root, "APIShared.csproj")))
-            root = Directory.GetParent(root)?.FullName ?? throw new DirectoryNotFoundException("APIShared root");
+        string root = ApiBaselineFiles.RepositoryRoot();
         var source = CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(root,
             "src", "Presentation", "UnitHud", "UnitHudPresentationService.Categories.cs")));
         var renderer = source.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()

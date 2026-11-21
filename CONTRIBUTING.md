@@ -90,6 +90,23 @@ order. Retain byte/layout expectations where they express a native contract.
 Process-wide fixtures must run serially and restore mutated state; tests using
 temporary directories must clean them up.
 
+
+### Tests outside the checkout
+
+When test DLLs run outside the checkout, pass `APISHARED_TEST_SOURCE_ROOT` in the
+launched test process's environment. It must be an absolute path to the matching
+APIShared checkout containing `APIShared.csproj` and both checked-in
+`tests/ApiBaseline/PublicApi.txt` and `Content.PublicApi.txt`. The shared baseline
+helper reads those real inputs; it does not copy or generate replacement data.
+The caller must bind the checkout to the compiled test/source cohort. An invalid
+explicit value fails without falling back to a different ancestor checkout.
+When unset, existing ancestor lookup remains unchanged.
+
+This option is read-only: the helper refuses baseline writes while it is present,
+including with `APISHARED_UPDATE_API_BASELINE=1`. Unset it for the normal
+[baseline-update workflow](docs/API_COMPATIBILITY.md#updating-the-public-baseline).
+Set only the launched child's environment; do not persist user/machine settings.
+
 ### Coverage and limitations
 
 GitHub Actions runs source, metadata and XAML validation and the game-independent
