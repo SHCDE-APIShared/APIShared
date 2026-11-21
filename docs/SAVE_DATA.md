@@ -59,6 +59,93 @@ An exception is isolated and preserves the original record bytes. Consumers whic
 require protection before simulation must independently refuse native initialization
 when preparation or application fails; throwing this callback alone is no load veto.
 
+### Opt-in protected save participants
+
+`client.CriticalSaves` explicitly enrolls an existing versioned record in the shared
+protected writer. Merely obtaining the client does no work. Register and enroll on
+initialized Unity startup, before any world or archive load and outside save/load
+callbacks. The handle must belong to the same exact owner, provide `Prepared`, use
+`SaveGamesAndMaps`, declare `SimulationRelevant`, and own a known marker entry. The
+selected protection floor must be at least the record's declared minimum reader
+and no greater than its current version.
+Select a floor which excludes every historical consumer reader that cannot restore
+the coupled protected state, raising the consumer record version when necessary.
+APIShared can validate the numeric range, not the meaning of an older mod's reader;
+retaining an unknown marker alone never makes that reader safe for downgrade.
+
+```csharp
+var options = new CriticalSaveOptions("critical-save", minimumReaderVersion: 3,
+    prepare: PrepareCheckpoint, release: ReleaseCheckpoint);
+// Set true before enrollment when this record also depends on NativeStorage.
+options.RequiresNativeStorage = false;
+if (!client.CriticalSaves.TryEnroll(handle, options, out var participant, out string reason))
+    Log(reason);
+```
+
+Enrollment snapshots the options, including `Modes` (default
+`SinglePlayerAndEditor`) and `RequiresNativeStorage` (default false). There is no
+multiplayer mode. A required NativeStorage join must be requested before its first
+registration. Any enrolled participant refuses this process's real-multiplayer
+saves, including state-only records; this is an explicit process-lifetime opt-in.
+Saving refuses while a required shared-source join is pending. A false enrollment
+publishes neither participant metadata nor a native mode request. Accepted enrollment
+is permanent even if later shared-source startup fails; that process remains
+blocked until restart/reconfiguration. Enrollments and
+callbacks live for the process, with no unregister, `Dispose` or asynchronous
+cancellation. An enrolled save needs the qualified native writer and owned logical
+save context; enrollment alone cannot manufacture that context.
+Every archived participant also needs a complete readable origin whose positive
+mission association matches the current native world. Zero or mismatched source
+session IDs refuse saving, including state-only cohorts.
+
+An enrolled source reading its original protected marker requires the **exact
+ordered participant configuration**: owner GUID, record identifier, reserved marker
+and reader floor. Adding or removing an enrollment, or changing a marker/floor,
+makes that original passive and blocks saving. This includes adding a participant
+whose record is `NoRecord` in the old archive: the still-present original partners
+reject the changed cohort. No cohort-membership migration is supplied. Retain the
+original participant configuration to load and save its protected archives.
+
+This enforcement requires a registered owner to read an original protected record.
+Removing APIShared or all original providers supplies no such check. A new cohort
+whose members all receive `NoRecord` cannot discover protected entries belonging
+to unregistered removed providers; no protection is promised for that configuration.
+
+`Prepare(context, ref state)` freezes the participant's private checkpoint on the
+save caller's thread under the actual engine monitor and outside registry locks,
+in ordinal owner GUID then identifier order. The ordinary versioned capture must write that checkpoint,
+without writing the reserved marker: the framework injects it. Returning false or
+throwing vetoes destination replacement for this attempt. Every entered preparation
+gets one `Release(context, state)`, even after false, an exception or null state.
+Releases run in reverse order and independently; cleanup failures preserve the
+first failure and any result already committed. Callbacks must finish synchronously
+and must not start another save or load. Context flags and nullable path describe
+the logical factory call, not the native temporary or destination filename.
+
+Inside the exact current `Prepared` callback, call
+`participant.TryReadPreparedProtection(load, out bool protectedRecord, out reason)`.
+It inspects the registry's original envelope before migrations or legacy decoding
+could synthesize a marker. A successful false result includes an absent or
+unprotected record. Marker presence at the reader floor is provenance evidence,
+not complete-cohort confirmation or native-state publication. The receiver cannot
+be reused from `Loaded`, another thread or a later callback. For an actual newly
+created editor world, `client.CriticalSaves.TryConfirmCreatedWorld(participant,
+context, out reason)` accepts only the current `EditorCreated` mission and engine
+boundary; it acknowledges metadata without initializing consumer state.
+
+A protected bundle being prepared or delivered (`Written`) does not prove durable
+replacement. The writer checks the actual archive records before replacement;
+original protected records can be confirmed on a later complete matching load.
+Ordinary versioned registrations and ordinary NativeStorage reader-2/multiplayer
+saving retain their defaults. Requesting shared storage opts that process into
+[its container-3 save policy](NATIVE_STORAGE.md#material-save-policy-compatibility-change).
+No enrollment imports a legacy ledger or retires a consumer's stock/cargo authority.
+Keep private ledgers until a complete lossless consumer migration is verified; no
+Byzantine MED2 migration is enabled here. See the separate opt-in helper in the
+[compiled example](../examples/ThirdPartyMod/SaveDataExample.cs), and the public
+[contracts](../src/Savegames/CriticalSaveContracts.cs) and
+[owner-bound client](../src/Savegames/CriticalSaveClient.cs).
+
 ### Associating archive callbacks with a mission attempt
 
 `VersionedSaveLoad.MissionSessionId` associates an archive window with its mission attempt.
@@ -232,12 +319,13 @@ names; the channel limit allows 64 records with names at their maximum length.
 
 ### Tracked origins and enrolled captures
 
-The registry has an internal opt-in protocol for framework services that must
-relate an existing mod record to a protected state checkpoint. It is not a public
-legacy-stock import or consumer-enrollment API. Ordinary registrations retain
-their public scope, migration, callback and unknown-record behavior. Tracking or
-standalone enrollment alone activates no record schema or native hook. Explicit
-writer joining below opts NativeStorage into its protected container.
+The registry's internal provenance/capture protocol backs the public
+[owner-bound enrollment](#opt-in-protected-save-participants). It relates an
+existing mod record to a protected checkpoint; it does not import legacy stock.
+Ordinary registrations retain their scope, migration, callback and unknown-record
+behavior. Tracking alone activates no record schema or native hook. Public
+critical enrollment explicitly joins the qualified writer, and a requested
+NativeStorage join selects its protected container.
 
 A tracked source binds the exact owner and process-lived registered handle before
 the first archive load. Its origin describes the registry's private original
@@ -271,10 +359,11 @@ frozen bytes and statuses before committing, then dispose on the owning thread.
 Preparation or `Written` alone is not an archive-commit certificate.
 
 NativeStorage keeps its ordinary public registration at current reader 2, with no
-writer enrollment. An internal startup request, made before its first storage
-registration or world, instead selects reader 3, the known reserved marker and a
-process-lifetime writer cohort. No production consumer enables that request yet.
-Tracking or standalone enrollment alone still adds no native save demand.
+writer enrollment. Public critical enrollment with `RequiresNativeStorage`, made
+before its first storage registration or world, instead requests reader 3, the
+known reserved marker and a process-lifetime writer cohort. A pending storage
+requirement refuses saving until the actual join exists. Tracking alone adds no
+native save demand.
 Joined state-only sources do add demand, even without cargo or extended production.
 The cohort uses ordered owner GUID/identifier/marker/floor identities, with arbitrary
 GUIDs supported. A stored marker for an unavailable or different cohort is kept
@@ -301,10 +390,9 @@ retains its existing physical-stock MP path, version selection and unknown-entry
 rules; no opt-in means no forced format bump. An ordinary reader-2 runtime sees
 protected3 as `TooNew`/passive and cannot downgrade it to a legacy record.
 
-This is an internal foundation, not the finished shared enrollment capability.
-An owner-bound public cohort/enrollment contract and an actual lossless consumer
-adapter are the required next slice. This is not legacy import or one-state cutover. Consumers
-must retain private stock/cargo ledgers until every stock, production, payment,
+The public enrollment above supplies participant coordination, not a lossless
+consumer adapter. This is not legacy import or one-state cutover. Consumers must
+retain private stock/cargo ledgers until every stock, production, payment,
 recruitment and load/save authority has a verified lossless migration. In particular,
 the old Byzantine MED2 handler does not read this protected framework record.
 

@@ -147,6 +147,7 @@ namespace APIShared.Economy
             // Retain the exact optional owner across Original. Looking up TLS
             // only afterwards would let a callback-pop hide a failed frame.
             VersionedSaveFactoryFrame factoryFrame = VersionedSaveFactoryFrame.Current;
+            CriticalSavePreparation participants = null;
             bool ownsFactoryFrame = false;
             Exception primary = null;
             WorkerProductionSaveCleanupReport cleanup = default;
@@ -169,11 +170,13 @@ namespace APIShared.Economy
                     if (requirements.Faulted) throw new InvalidOperationException("The production world is faulted.");
                     if (requirements.CriticalCohort)
                     {
+                        CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration);
                         if (preCaptureContext == null) throw new InvalidOperationException("The pre-capture reader is unavailable.");
                         if (!preCaptureContext.TryReadSnapshot(out var logical, out _, out string contextReason))
                             throw new InvalidOperationException(contextReason);
                         factoryFrame = VersionedSaveDataRuntime.BeginCriticalWriterFrame(logical);
                         ownsFactoryFrame = true;
+                        participants = VersionedSaveDataRuntime.BeginParticipantPreparation(logical);
                     }
                     if (requirements.Production)
                     {
@@ -184,7 +187,11 @@ namespace APIShared.Economy
                     if (requirements.Storage) NativeStorageRuntime.Instance.FreezeProductionSave(requirements.CriticalCohort);
                     if (requirements.CriticalCohort)
                     {
-                        VersionedSaveDataRuntime.RequireCriticalWriterReady();
+                        CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration);
+                        if (participants != null && !participants.Prepare())
+                            throw new InvalidOperationException("A critical participant refused preparation.");
+                        participants?.RequireCurrent();
+                        CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration, true);
                         // Reentrant factory dispatch while freezing is an earlier
                         // failure, never permission to enter Original/open a file.
                         factoryFrame.CompleteOwnedPreparation();
@@ -218,7 +225,8 @@ namespace APIShared.Economy
                     if (requirements.Storage) NativeStorageRuntime.Instance.VerifyProductionSaveWritten(temporary);
                     // MoveFileExW replacement commits only the verified complete file. Failed capture,
                     // omitted/stale archive records and append errors leave the old destination intact.
-                    CommitSavedFile(temporary, destination, payload, in nativeIo, requirements, factoryFrame);
+                    CommitSavedFile(temporary, destination, payload, in nativeIo, requirements, factoryFrame,
+                        protectedWorld, protectedGeneration, participants);
                     committed = true;
                     temporary = null;
                 }
@@ -238,7 +246,8 @@ namespace APIShared.Economy
                         requirements.Production ? endProductionCapture : null,
                         requirements.Workshops ? endWorkshopCapture : null,
                         requirements.Storage ? endStorageCapture : null,
-                        ownsFactoryFrame ? (Action)factoryFrame.Dispose : null);
+                        ownsFactoryFrame ? (Action)factoryFrame.Dispose : null,
+                        participants == null ? null : (Action)participants.Dispose);
                     if (temporary != null)
                         try { if (File.Exists(temporary)) File.Delete(temporary); }
                         catch (Exception error)
@@ -273,17 +282,22 @@ namespace APIShared.Economy
 
         internal static WorkerProductionSaveCleanupReport CompleteSaveCleanup(ulong actualWriterResult, bool committed,
             Exception primary, Action restore, Action production, Action workshops, Action storage, Action frame)
+            => CompleteSaveCleanup(actualWriterResult, committed, primary, restore, production, workshops, storage, frame, null);
+
+        internal static WorkerProductionSaveCleanupReport CompleteSaveCleanup(ulong actualWriterResult, bool committed,
+            Exception primary, Action restore, Action production, Action workshops, Action storage, Action frame, Action participants)
         {
-            Exception restoreError = null, productionError = null, workshopError = null, storageError = null, frameError = null;
+            Exception restoreError = null, productionError = null, workshopError = null, storageError = null, frameError = null, participantError = null;
             try { restore?.Invoke(); } catch (Exception error) { restoreError = error; }
+            try { participants?.Invoke(); } catch (Exception error) { participantError = error; }
             try { production?.Invoke(); } catch (Exception error) { productionError = error; }
             try { workshops?.Invoke(); } catch (Exception error) { workshopError = error; }
             try { storage?.Invoke(); } catch (Exception error) { storageError = error; }
             // Frame release is independent of every earlier protection cleanup.
             try { frame?.Invoke(); } catch (Exception error) { frameError = error; }
             return new WorkerProductionSaveCleanupReport(actualWriterResult, committed,
-                primary ?? restoreError ?? productionError ?? workshopError ?? storageError ?? frameError,
-                restoreError, productionError, workshopError, storageError, frameError);
+                primary ?? restoreError ?? participantError ?? productionError ?? workshopError ?? storageError ?? frameError,
+                restoreError, productionError, workshopError, storageError, frameError, participantError);
         }
 
         private static void ReportCleanupProtectionFailure(WorkerProductionSaveCleanupReport report,
@@ -299,6 +313,7 @@ namespace APIShared.Economy
                 "; production=" + DescribeCleanupError(report.ProductionError) +
                 "; workshops=" + DescribeCleanupError(report.WorkshopError) +
                 "; storage=" + DescribeCleanupError(report.StorageError) +
+                "; participants=" + DescribeCleanupError(report.ParticipantError) +
                 "; factoryFrame=" + DescribeCleanupError(report.FactoryFrameError); } catch { }
             try { NativeApiLog.Error(log, detail); } catch { }
             try
@@ -348,6 +363,20 @@ namespace APIShared.Economy
         // a later TLS lookup alone cannot detect an early close or thread hop.
         internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
             WorkerProductionSaveRequirements requirements, VersionedSaveFactoryFrame factoryFrame)
+            => CommitSavedFileCore(temporary, destination, payload, in io, requirements, factoryFrame, false, null, 0, null);
+
+        // Production retains its pre-Original owner through the sink. Archive
+        // bytes alone cannot authorize replacement after callback-driven world
+        // invalidation which occurred before the archive provider saw a new load.
+        internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
+            WorkerProductionSaveRequirements requirements, VersionedSaveFactoryFrame factoryFrame,
+            object world, long generation, CriticalSavePreparation participants)
+            => CommitSavedFileCore(temporary, destination, payload, in io, requirements, factoryFrame,
+                requirements.CriticalCohort, world, generation, participants);
+
+        private static void CommitSavedFileCore(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
+            WorkerProductionSaveRequirements requirements, VersionedSaveFactoryFrame factoryFrame,
+            bool validateOwner, object world, long generation, CriticalSavePreparation participants)
         {
             if (!io.IsComplete) throw new IOException("A native save write was incomplete or the save file could not close successfully.");
             if (!requirements.Transaction || requirements.Faulted) throw new InvalidDataException("No valid frozen save sources authorize file replacement.");
@@ -358,11 +387,16 @@ namespace APIShared.Economy
             }
             else if (payload != null) throw new InvalidDataException("An unexpected production payload cannot label a cargo-only checkpoint.");
             VerifyFactoryCapture(temporary, factoryFrame);
+            if (validateOwner)
+            {
+                participants?.RequireCurrent();
+                CriticalSaveRuntime.RequireCurrentSaveWorld(world, generation, true);
+            }
             Internal.AtomicFileReplacement.Replace(temporary, destination);
         }
 
-        // Dormant until an internal protected transaction owner explicitly opens
-        // a frame. No production enrollment/source selection is enabled here.
+        // Explicit cohort demand opens the owning frame; absent enrollment this
+        // verifier preserves the existing frame-free path.
         // Missing dispatch and SE-swallowed failures must refuse replacement;
         // a successful native return alone cannot certify the frozen records.
         internal static void VerifyFactoryCapture(string temporary, VersionedSaveFactoryFrame frame)
@@ -419,14 +453,15 @@ namespace APIShared.Economy
     {
         internal readonly ulong ActualWriterResult;
         internal readonly bool Committed;
-        internal readonly Exception Primary, RestoreError, ProductionError, WorkshopError, StorageError, FactoryFrameError;
+        internal readonly Exception Primary, RestoreError, ProductionError, WorkshopError, StorageError, FactoryFrameError, ParticipantError;
         internal WorkerProductionSaveCleanupReport(ulong actual, bool committed, Exception primary,
-            Exception restore, Exception production, Exception workshop, Exception storage, Exception factoryFrame = null)
+            Exception restore, Exception production, Exception workshop, Exception storage, Exception factoryFrame = null, Exception participant = null)
         {
             ActualWriterResult = actual; Committed = committed; Primary = primary;
             RestoreError = restore; ProductionError = production; WorkshopError = workshop; StorageError = storage; FactoryFrameError = factoryFrame;
+            ParticipantError = participant;
         }
-        internal bool CleanupFailed => RestoreError != null || ProductionError != null || WorkshopError != null || StorageError != null || FactoryFrameError != null;
+        internal bool CleanupFailed => RestoreError != null || ParticipantError != null || ProductionError != null || WorkshopError != null || StorageError != null || FactoryFrameError != null;
         internal ulong ReturnValue => Committed ? ActualWriterResult : 0;
     }
 

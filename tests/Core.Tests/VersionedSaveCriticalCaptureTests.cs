@@ -2,6 +2,7 @@ using APIShared.Savegames;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Threading;
 
 namespace APIShared.Core.Tests;
@@ -688,7 +689,14 @@ public partial class VersionedSaveDataTests
         var fixture = new CriticalSourceFixture("Critical.Writer.CreatedRevocation");
         Assert.IsTrue(fixture.Extender.Registry.TryJoinCriticalWriterCohort(fixture.Enrollment, out string reason), reason);
         object world = new object();
-        Assert.IsTrue(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 21, out reason), reason);
+        Assert.IsTrue(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 21,
+            out var createdOrigin, out reason), reason);
+        Assert.IsTrue(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 21,
+            out var repeatedOrigin, out reason), reason);
+        Assert.AreSame(createdOrigin, repeatedOrigin, "Idempotent acknowledgement returns the original exact token.");
+        Assert.IsTrue(fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.PreparedSource,
+            null, createdOrigin, world, 21, out var initialLease, out reason), reason);
+        initialLease.Dispose();
         using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
         {
             frame.CompleteOwnedPreparation();
@@ -702,6 +710,9 @@ public partial class VersionedSaveDataTests
         try
         {
             Assert.ThrowsExactly<InvalidOperationException>(() => fixture.Extender.Registry.RequireCriticalWriterReady());
+            Assert.IsFalse(fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.PreparedSource,
+                null, createdOrigin, world, 21, out var revokedLease, out _));
+            Assert.IsNull(revokedLease);
             if (!unload)
                 Assert.IsFalse(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, new object(), 23, out _),
                     "A missing load callback cannot be replaced with created-world authority inside that archive window.");
@@ -715,6 +726,20 @@ public partial class VersionedSaveDataTests
             Assert.AreEqual(1, fixture.Captures, "Revoked authority must fail before recapturing a source.");
         }
         finally { if (!unload) { fixture.Extender.Registry.PrepareLoad(); fixture.Extender.Registry.EndLoad(); } }
+        if (unload)
+        {
+            // A trusted creator may acknowledge a later world. Even equal world/session
+            // values do not make the retained, revoked token current again.
+            Assert.IsTrue(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 21,
+                out var replacementOrigin, out reason), reason);
+            Assert.AreNotSame(createdOrigin, replacementOrigin);
+            Assert.IsFalse(fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.PreparedSource,
+                null, createdOrigin, world, 21, out var staleLease, out _));
+            Assert.IsNull(staleLease);
+            Assert.IsTrue(fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.PreparedSource,
+                null, replacementOrigin, world, 21, out var replacementLease, out reason), reason);
+            replacementLease.Dispose();
+        }
         Assert.IsNull(VersionedSaveFactoryFrame.Current);
     }
 
@@ -951,5 +976,567 @@ public partial class VersionedSaveDataTests
             Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
         }
         Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    private sealed class CriticalParticipantFixture
+    {
+        internal readonly FakeExtender Extender;
+        internal readonly FakeExtender.Mod Mod;
+        internal readonly string Owner;
+        internal CriticalSaveParticipant Participant;
+        internal VersionedSavePreparedOrigin Origin;
+        internal Action DuringCapture;
+        internal int Captures;
+
+        internal CriticalParticipantFixture(string owner, string identifier, FakeExtender extender = null,
+            Action<VersionedSaveDataRegistration> configure = null)
+        {
+            Owner = owner; Extender = extender ?? new FakeExtender();
+            var registration = new VersionedSaveDataRegistration(owner, identifier, 3, 1, new[] { "value", "cutover" }, writer =>
+            {
+                Captures++; DuringCapture?.Invoke(); writer.Write("value", new byte[] { 1 }); return true;
+            }, ignored => { })
+            {
+                Scope = VersionedSaveScope.SaveGamesAndMaps,
+                SimulationRelevant = true,
+                Prepared = load => Participant?.PreparedSource.TryGetCurrent(load, out Origin, out _)
+            };
+            configure?.Invoke(registration);
+            Mod = Extender.Register(registration);
+        }
+
+        internal void Enroll(CriticalSaveOptions options)
+        {
+            Assert.IsTrue(Extender.Registry.TryEnrollCriticalParticipant(Owner, Mod.Handle, options, out Participant, out string reason), reason);
+        }
+
+        internal void LoadAbsent()
+        {
+            Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "participants.sav", 77);
+            Extender.Registry.PrepareLoad(); Extender.Registry.EndLoad();
+        }
+    }
+
+    private static CriticalSaveOptions CriticalParticipantOptions(bool storage = false) => new("cutover", 3,
+        (VersionedSaveContext context, ref object state) => true, (context, state) => { }) { RequiresNativeStorage = storage };
+
+    [TestMethod]
+    [DataRow("foreign-owner")]
+    [DataRow("foreign-handle")]
+    [DataRow("stale-handle")]
+    [DataRow("marker")]
+    [DataRow("reader-low")]
+    [DataRow("reader-high")]
+    [DataRow("scope")]
+    [DataRow("simulation")]
+    [DataRow("prepared")]
+    [DataRow("modes-none")]
+    [DataRow("modes-unknown")]
+    [DataRow("prepare-null")]
+    [DataRow("release-null")]
+    [DataRow("options-null")]
+    public void CriticalParticipantInvalidEnrollmentLeavesTheOrdinaryRecordAndDemandUntouched(string invalid)
+    {
+        const string owner = "unrelated.mod.arbitrary-guid";
+        var fixture = new CriticalParticipantFixture(owner, "Participant.Invalid", configure: registration =>
+        {
+            if (invalid == "scope") registration.Scope = VersionedSaveScope.SaveGames;
+            if (invalid == "simulation") registration.SimulationRelevant = false;
+            if (invalid == "prepared") registration.Prepared = null;
+        });
+        VersionedSaveDataHandle handle = fixture.Mod.Handle;
+        if (invalid == "foreign-handle") handle = new CriticalParticipantFixture(owner, "Participant.Foreign").Mod.Handle;
+        if (invalid == "stale-handle") handle = new VersionedSaveDataHandle(owner, fixture.Mod.Identifier);
+        var options = new CriticalSaveOptions(invalid == "marker" ? "unknown" : "cutover",
+            invalid == "reader-low" ? 0 : invalid == "reader-high" ? 4 : 3,
+            invalid == "prepare-null" ? null : (VersionedSaveContext context, ref object state) => true,
+            invalid == "release-null" ? null : (context, state) => { });
+        if (invalid == "modes-none") options.Modes = CriticalSaveModes.None;
+        if (invalid == "modes-unknown") options.Modes = (CriticalSaveModes)2;
+        if (invalid == "options-null") options = null;
+        string caller = invalid == "foreign-owner" ? "another.mod" : owner;
+        Assert.IsFalse(fixture.Extender.Registry.TryPrepareCriticalParticipant(caller, handle, options, out var plan, out string reason));
+        Assert.IsNull(plan); Assert.IsFalse(string.IsNullOrEmpty(reason));
+        Assert.IsFalse(fixture.Extender.Registry.TryCommitCriticalParticipant(plan, out var rejected, out _));
+        Assert.IsNull(rejected);
+        Assert.IsFalse(fixture.Extender.Registry.TryEnrollCriticalParticipant(caller, handle, options, out rejected, out _));
+        Assert.IsNull(rejected); Assert.IsFalse(fixture.Extender.Registry.HasCriticalWriterDemand);
+        Assert.IsNull(fixture.Extender.Registry.BeginParticipantPreparation(CriticalLogicalContext));
+        Assert.AreEqual(1, fixture.Extender.Handlers.Count); Assert.AreEqual(0, fixture.Captures);
+        CollectionAssert.AreEqual(SaveWith(3, 1, new[] { "value" }, new Dictionary<string, byte[]> { ["value"] = new byte[] { 1 } }),
+            fixture.Mod.SaveCallback(CriticalLogicalContext));
+        Assert.AreEqual(1, fixture.Captures);
+    }
+
+    [TestMethod]
+    public void CriticalParticipantTwoPhaseCommitSnapshotsOptionsAndPublishesWithoutTransportReregistration()
+    {
+        var fixture = new CriticalParticipantFixture("foreign.owner.example", "Participant.Snapshot");
+        int prepares = 0, releases = 0;
+        object expected = new object(), released = null;
+        var options = new CriticalSaveOptions("cutover", 3,
+            (VersionedSaveContext context, ref object state) => { prepares++; state = expected; return true; },
+            (context, state) => { releases++; released = state; });
+        Assert.IsTrue(fixture.Extender.Registry.TryPrepareCriticalParticipant(fixture.Owner, fixture.Mod.Handle, options, out var plan, out string reason), reason);
+        Assert.IsFalse(fixture.Extender.Registry.HasCriticalWriterDemand);
+        options.Modes = CriticalSaveModes.None; options.RequiresNativeStorage = true;
+        var foreign = new FakeExtender();
+        Assert.IsFalse(foreign.Registry.TryCommitCriticalParticipant(plan, out _, out _));
+        Assert.IsFalse(foreign.Registry.HasCriticalWriterDemand);
+        Assert.IsTrue(fixture.Extender.Registry.TryCommitCriticalParticipant(plan, out fixture.Participant, out reason), reason);
+        Assert.AreEqual(fixture.Owner, fixture.Participant.OwnerGuid);
+        Assert.AreEqual(fixture.Mod.Identifier, fixture.Participant.SaveDataIdentifier);
+        Assert.AreSame(fixture.Mod.Handle, fixture.Participant.Handle);
+        Assert.IsFalse(fixture.Participant.RequiresNativeStorage, "The caller's later option mutation cannot introduce a storage requirement.");
+        Assert.IsTrue(fixture.Extender.Registry.HasCriticalWriterDemand);
+        Assert.AreEqual(1, fixture.Extender.Handlers.Count);
+        Assert.IsFalse(fixture.Extender.Registry.TryCommitCriticalParticipant(plan, out _, out _));
+        Assert.IsFalse(fixture.Extender.Registry.TryEnrollCriticalParticipant(fixture.Owner, fixture.Mod.Handle, CriticalParticipantOptions(), out _, out _));
+        fixture.LoadAbsent();
+        var preparation = fixture.Extender.Registry.BeginParticipantPreparation(CriticalLogicalContext);
+        Assert.IsNotNull(preparation);
+        try { Assert.IsTrue(preparation.Prepare()); preparation.RequireCurrent(); }
+        finally { preparation.Dispose(); }
+        Assert.AreEqual(1, prepares); Assert.AreEqual(1, releases); Assert.AreSame(expected, released);
+        Assert.AreEqual(0, fixture.Captures);
+    }
+
+    [TestMethod]
+    public void CriticalParticipantStalePlanRefusesWithoutPublishingAndAFreshPlanCanStillCommit()
+    {
+        var fixture = new CriticalParticipantFixture("third.party.guid", "Participant.Stale");
+        Assert.IsTrue(fixture.Extender.Registry.TryPrepareCriticalParticipant(fixture.Owner, fixture.Mod.Handle,
+            CriticalParticipantOptions(), out var stale, out string reason), reason);
+        _ = new CriticalParticipantFixture("other.owner", "Participant.Other", fixture.Extender);
+        Assert.IsFalse(fixture.Extender.Registry.TryCommitCriticalParticipant(stale, out var rejected, out _));
+        Assert.IsNull(rejected); Assert.IsFalse(fixture.Extender.Registry.HasCriticalWriterDemand);
+        Assert.AreEqual(0, fixture.Captures); Assert.AreEqual(2, fixture.Extender.Handlers.Count);
+        fixture.Enroll(CriticalParticipantOptions());
+        Assert.IsTrue(fixture.Extender.Registry.HasCriticalWriterDemand);
+        Assert.AreEqual(2, fixture.Extender.Handlers.Count);
+    }
+
+    [TestMethod]
+    public void CriticalParticipantEnrollmentCannotReenterOrFollowAnOrdinarySourceSaveAttempt()
+    {
+        var fixture = new CriticalParticipantFixture("arbitrary.producer", "Participant.SaveAttempt");
+        bool accepted = true; string refusal = null;
+        fixture.DuringCapture = () => accepted = fixture.Extender.Registry.TryEnrollCriticalParticipant(fixture.Owner,
+            fixture.Mod.Handle, CriticalParticipantOptions(), out _, out refusal);
+        byte[] bytes = fixture.Mod.SaveCallback(CriticalLogicalContext);
+        Assert.IsFalse(accepted); Assert.IsFalse(string.IsNullOrEmpty(refusal));
+        Assert.AreEqual(1, fixture.Captures); Assert.IsFalse(fixture.Extender.Registry.HasCriticalWriterDemand);
+        CollectionAssert.AreEqual(SaveWith(3, 1, new[] { "value" }, new Dictionary<string, byte[]> { ["value"] = new byte[] { 1 } }), bytes);
+        Assert.IsFalse(fixture.Extender.Registry.TryPrepareCriticalParticipant(fixture.Owner, fixture.Mod.Handle,
+            CriticalParticipantOptions(), out _, out _));
+        Assert.IsFalse(fixture.Extender.Registry.TryEnrollCriticalParticipant(fixture.Owner, fixture.Mod.Handle,
+            CriticalParticipantOptions(), out _, out _));
+        Assert.AreEqual(1, fixture.Extender.Handlers.Count);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalParticipantStorageRequirementCannotCertifyASmallerCohort(bool storageJoined)
+    {
+        var fixture = new CriticalParticipantFixture("independent.storage.consumer", "Participant.NeedsStorage");
+        var storage = new CriticalSourceFixture("framework.storage", fixture.Extender);
+        fixture.Enroll(CriticalParticipantOptions(true));
+        Assert.IsTrue(fixture.Participant.RequiresNativeStorage);
+        if (storageJoined)
+            Assert.IsTrue(fixture.Extender.Registry.TryJoinNativeStorageCriticalSource(storage.Enrollment, out string joinedReason), joinedReason);
+        fixture.LoadAbsent();
+        if (!storageJoined)
+            Assert.ThrowsExactly<InvalidOperationException>(() => fixture.Extender.Registry.RequireCriticalWriterReady());
+        else fixture.Extender.Registry.RequireCriticalWriterReady();
+        using (var preparation = fixture.Extender.Registry.BeginParticipantPreparation(CriticalLogicalContext))
+        {
+            Assert.IsNotNull(preparation); Assert.IsTrue(preparation.Prepare());
+            if (!storageJoined)
+                Assert.ThrowsExactly<InvalidOperationException>(() => preparation.RequireCurrent());
+            else preparation.RequireCurrent();
+            using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+            {
+                frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+                if (!storageJoined)
+                {
+                    Assert.IsNotNull(frame.Failure); Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+                    Assert.AreEqual(0, fixture.Captures); Assert.AreEqual(0, storage.Captures);
+                }
+                else
+                {
+                    Assert.IsNull(frame.Failure);
+                    Assert.IsNotNull(fixture.Mod.SaveCallback(CriticalLogicalContext));
+                    Assert.IsNotNull(storage.Mod.SaveCallback(CriticalLogicalContext));
+                    Assert.IsTrue(frame.TryGetWrittenCapture(out _, out string reason), reason);
+                }
+            }
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    public void CriticalParticipantPreparationPairsEveryEnteredStateAndReleasesInReverseDespiteFailure(int outcome)
+    {
+        var extender = new FakeExtender();
+        var zulu = new CriticalParticipantFixture("z.participant", "Zulu", extender);
+        var alpha = new CriticalParticipantFixture("a.participant", "Alpha", extender);
+        var middle = new CriticalParticipantFixture("m.participant", "Middle", extender);
+        var events = new List<string>();
+        var contexts = new List<VersionedSaveContext>();
+        var released = new List<KeyValuePair<string, object>>();
+        object alphaState = new object(), zuluState = new object(), middleState = outcome == 0 ? null : new object();
+        var primary = new InvalidOperationException("controlled participant preparation failure");
+        var cleanup = new InvalidOperationException("controlled middle release failure");
+        var laterCleanup = new InvalidOperationException("controlled last release failure");
+        zulu.Enroll(new CriticalSaveOptions("cutover", 3,
+            (VersionedSaveContext context, ref object state) => { events.Add("PrepareZ"); contexts.Add(context); state = zuluState; return true; },
+            (context, state) => { events.Add("ReleaseZ"); contexts.Add(context); released.Add(new("Z", state)); }));
+        alpha.Enroll(new CriticalSaveOptions("cutover", 3,
+            (VersionedSaveContext context, ref object state) => { events.Add("PrepareA"); contexts.Add(context); state = alphaState; return true; },
+            (context, state) => { events.Add("ReleaseA"); contexts.Add(context); released.Add(new("A", state)); throw laterCleanup; }));
+        middle.Enroll(new CriticalSaveOptions("cutover", 3,
+            (VersionedSaveContext context, ref object state) =>
+            {
+                events.Add("PrepareM"); contexts.Add(context); state = middleState;
+                if (outcome == 2) throw primary;
+                return outcome != 1;
+            },
+            (context, state) => { events.Add("ReleaseM"); contexts.Add(context); released.Add(new("M", state)); throw cleanup; }));
+        alpha.LoadAbsent();
+        var preparation = extender.Registry.BeginParticipantPreparation(CriticalLogicalContext);
+        Assert.IsNotNull(preparation);
+        bool ready = false; Exception actual = null, currentFailure = null, releaseFailure = null;
+        try { ready = preparation.Prepare(); } catch (Exception error) { actual = error; }
+        try { preparation.RequireCurrent(); } catch (Exception error) { currentFailure = error; }
+        try { preparation.Dispose(); } catch (Exception error) { releaseFailure = error; }
+        preparation.Dispose();
+        Assert.AreEqual(outcome == 0, ready);
+        if (outcome == 2) Assert.AreSame(primary, actual); else Assert.IsNull(actual);
+        if (outcome == 0) Assert.IsNull(currentFailure);
+        else Assert.IsInstanceOfType<InvalidOperationException>(currentFailure);
+        Assert.AreSame(cleanup, releaseFailure);
+        CollectionAssert.AreEqual(outcome == 0 ? new[] { "PrepareA", "PrepareM", "PrepareZ", "ReleaseZ", "ReleaseM", "ReleaseA" } :
+            new[] { "PrepareA", "PrepareM", "ReleaseM", "ReleaseA" }, events);
+        Assert.AreEqual(outcome == 0 ? 3 : 2, released.Count);
+        Assert.AreEqual("A", released[released.Count - 1].Key); Assert.AreSame(alphaState, released[released.Count - 1].Value);
+        int middleIndex = outcome == 0 ? 1 : 0;
+        Assert.AreEqual("M", released[middleIndex].Key); Assert.AreSame(middleState, released[middleIndex].Value);
+        if (outcome == 0) Assert.IsNull(released[middleIndex].Value);
+        if (outcome == 0) Assert.AreSame(zuluState, released[0].Value);
+        foreach (var context in contexts)
+        {
+            Assert.AreEqual(CriticalLogicalContext.IsSaveFile, context.IsSaveFile);
+            Assert.AreEqual(CriticalLogicalContext.IsMapEditorSave, context.IsMapEditorSave);
+            Assert.AreEqual(CriticalLogicalContext.FilePath, context.FilePath);
+        }
+        if (outcome == 2) Assert.AreSame(primary, actual, "Release failure must not replace the owner's retained preparation failure.");
+    }
+
+    [TestMethod]
+    public void CriticalParticipantPreparationCannotRemainCurrentAfterItsCallbackReentersAnArchiveLoad()
+    {
+        var fixture = new CriticalParticipantFixture("reentrant.producer", "Participant.Reentrant");
+        object expected = new object(), released = null; int releases = 0;
+        fixture.Enroll(new CriticalSaveOptions("cutover", 3,
+            (VersionedSaveContext context, ref object state) =>
+            {
+                state = expected; fixture.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "replacement.sav", 78); return true;
+            }, (context, state) => { released = state; releases++; }));
+        fixture.LoadAbsent();
+        var preparation = fixture.Extender.Registry.BeginParticipantPreparation(CriticalLogicalContext);
+        Assert.IsNotNull(preparation);
+        try
+        {
+            Assert.ThrowsExactly<InvalidOperationException>(() => preparation.RequireCurrent());
+            Assert.IsTrue(preparation.Prepare());
+            Assert.ThrowsExactly<InvalidOperationException>(() => preparation.RequireCurrent());
+        }
+        finally
+        {
+            preparation.Dispose();
+            fixture.Extender.Registry.PrepareLoad(); fixture.Extender.Registry.EndLoad();
+        }
+        preparation.Dispose();
+        Assert.AreEqual(1, releases); Assert.AreSame(expected, released); Assert.AreEqual(0, fixture.Captures);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalParticipantCallbacksRunOutsideTheRegistryLock(bool probeDuringRelease)
+    {
+        var fixture = new CriticalParticipantFixture("lock.probe.owner", "Participant.LockProbe");
+        var finished = new ManualResetEvent(false);
+        Thread worker = null; Exception workerFailure = null;
+        bool accepted = true, completedInsideCallback = false, joined = true;
+        Action probe = () =>
+        {
+            worker = new Thread(() =>
+            {
+                try { accepted = fixture.Extender.Registry.TryPrepareCriticalParticipant("another.owner", fixture.Mod.Handle,
+                    CriticalParticipantOptions(), out _, out _); }
+                catch (Exception error) { workerFailure = error; }
+                finally { finished.Set(); }
+            }) { IsBackground = true };
+            worker.Start(); completedInsideCallback = finished.WaitOne(1000);
+        };
+        fixture.Enroll(new CriticalSaveOptions("cutover", 3,
+            (VersionedSaveContext context, ref object state) => { if (!probeDuringRelease) probe(); return true; },
+            (context, state) => { if (probeDuringRelease) probe(); }));
+        fixture.LoadAbsent();
+        try
+        {
+            var preparation = fixture.Extender.Registry.BeginParticipantPreparation(CriticalLogicalContext);
+            Assert.IsNotNull(preparation);
+            try { Assert.IsTrue(preparation.Prepare()); preparation.RequireCurrent(); }
+            finally { preparation.Dispose(); }
+        }
+        finally
+        {
+            if (worker != null) joined = worker.Join(2000);
+            if (joined) finished.Dispose();
+        }
+        Assert.IsTrue(joined); Assert.IsNull(workerFailure); Assert.IsFalse(accepted);
+        Assert.IsTrue(completedInsideCallback, "A bounded independent registry query must complete while this callback is running.");
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalGenerationObserverIsOwnedAndRevokesOriginsOutsideTheRegistryLock(bool probeOnUnload)
+    {
+        var fixture = new CriticalSourceFixture("Critical.GenerationObserver");
+        var observed = new List<long>();
+        var finished = new ManualResetEvent(false);
+        Thread worker = null; Exception workerFailure = null;
+        bool acceptedFromWorker = true, completedInsideCallback = false, joined = true;
+        Action<long> observer = null;
+        observer = generation =>
+        {
+            observed.Add(generation);
+            // The actual generation owner sees BeginLoad's open window. Its
+            // nested unload belongs to that load and must not advance it again.
+            if (observed.Count == 1) fixture.Extender.Registry.Unload();
+            if (observed.Count != (probeOnUnload ? 2 : 1)) return;
+            worker = new Thread(() =>
+            {
+                try { acceptedFromWorker = fixture.Extender.Registry.TryObserveGeneration(observer, out _); }
+                catch (Exception error) { workerFailure = error; }
+                finally { finished.Set(); }
+            }) { IsBackground = true };
+            worker.Start(); completedInsideCallback = finished.WaitOne(1000);
+        };
+        Assert.IsFalse(fixture.Extender.Registry.TryObserveGeneration(null, out _));
+        Assert.IsTrue(fixture.Extender.Registry.TryObserveGeneration(observer, out string reason), reason);
+        Assert.IsTrue(fixture.Extender.Registry.TryObserveGeneration(observer, out reason), reason);
+        Assert.IsFalse(fixture.Extender.Registry.TryObserveGeneration(ignored => { }, out _));
+        Assert.AreEqual(0, observed.Count, "Startup binding must not replay an invented archive generation.");
+        try
+        {
+            fixture.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "observed.sav", 91);
+            Assert.AreEqual(1, observed.Count); Assert.IsTrue(observed[0] > 0);
+            fixture.Extender.Registry.PrepareLoad(); fixture.Extender.Registry.EndLoad();
+            Assert.IsNull(fixture.OriginError); Assert.IsNotNull(fixture.Origin);
+            VersionedSavePreparedOrigin previous = fixture.Origin;
+            Assert.IsTrue(fixture.PreparedSource.TryValidateCompleted(previous, out reason), reason);
+            fixture.Extender.Registry.Unload();
+            Assert.AreEqual(2, observed.Count); Assert.IsTrue(observed[1] > observed[0]);
+            Assert.IsFalse(fixture.PreparedSource.TryValidateCompleted(previous, out _));
+            Assert.IsFalse(fixture.Extender.Registry.TryReadCriticalPreparedMarker(fixture.Enrollment, previous, out _, out _, out _));
+            Assert.IsFalse(fixture.Extender.Registry.TryObserveGeneration(observer, out _),
+                "Even the same delegate cannot reopen startup binding after a source generation began.");
+        }
+        finally
+        {
+            if (worker != null) joined = worker.Join(2000);
+            if (joined) finished.Dispose();
+        }
+        Assert.IsTrue(joined); Assert.IsNull(workerFailure); Assert.IsFalse(acceptedFromWorker);
+        Assert.IsTrue(completedInsideCallback,
+            "The independent bounded generation query must finish while BeginLoad/Unload notifies its owner.");
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalImportCommitLeaseBlocksGenerationReplacementUntilPublicationFinishes(bool worldPublication)
+    {
+        var fixture = new CriticalParticipantFixture("atomic.import.owner", "Participant.AtomicImport");
+        var storage = new CriticalSourceFixture("framework.atomic.storage", fixture.Extender);
+        fixture.Enroll(CriticalParticipantOptions(true));
+        Assert.IsTrue(fixture.Extender.Registry.TryJoinNativeStorageCriticalSource(storage.Enrollment, out string reason), reason);
+        var started = new ManualResetEvent(false);
+        var notified = new ManualResetEvent(false);
+        var finished = new ManualResetEvent(false);
+        int notifications = 0;
+        long observedGeneration = 0;
+        Assert.IsTrue(fixture.Extender.Registry.TryObserveGeneration(generation =>
+        {
+            Interlocked.Exchange(ref observedGeneration, generation);
+            if (Interlocked.Increment(ref notifications) > 1) notified.Set();
+        }, out reason), reason);
+        fixture.LoadAbsent();
+        VersionedSavePreparedOrigin previous = fixture.Origin;
+        Assert.IsNotNull(previous); Assert.AreEqual(1, Volatile.Read(ref notifications));
+        long originalGeneration = Interlocked.Read(ref observedGeneration);
+        object world = new object();
+        long replacementSession = worldPublication ? 77 : 78;
+        CriticalImportCommitLease lease;
+        bool acquired = worldPublication
+            ? fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.Participant.PreparedSource,
+                previous, null, world, 77, out lease, out reason)
+            : fixture.Extender.Registry.TryAcquireCriticalImportCommit(fixture.Participant.PreparedSource,
+                previous, storage.PreparedSource, 77, out lease, out reason);
+        Assert.IsTrue(acquired, reason); Assert.IsNotNull(lease);
+        Exception workerFailure = null;
+        var worker = new Thread(() =>
+        {
+            try
+            {
+                started.Set();
+                fixture.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "replacement.sav", replacementSession);
+                fixture.Extender.Registry.PrepareLoad(); fixture.Extender.Registry.EndLoad();
+            }
+            catch (Exception error) { workerFailure = error; }
+            finally { finished.Set(); }
+        }) { IsBackground = true };
+        bool entered = false, blockedOnMonitor = false, finishedWhileHeld = true, notifiedWhileHeld = true;
+        bool joined = true; long generationWhileHeld = -1;
+        try
+        {
+            worker.Start(); entered = started.WaitOne(1000);
+            // This worker has no wait between its entry signal and BeginLoad.
+            // WaitSleepJoin therefore observes the real contended registry monitor,
+            // rather than treating an unscheduled thread as evidence of exclusion.
+            blockedOnMonitor = SpinWait.SpinUntil(() =>
+                (worker.ThreadState & ThreadState.WaitSleepJoin) != 0 || finished.WaitOne(0), 1000);
+            blockedOnMonitor &= (worker.ThreadState & ThreadState.WaitSleepJoin) != 0;
+            finishedWhileHeld = finished.WaitOne(0); notifiedWhileHeld = notified.WaitOne(0);
+            generationWhileHeld = Interlocked.Read(ref observedGeneration);
+        }
+        finally
+        {
+            lease.Dispose();
+            joined = worker.Join(3000);
+            if (joined) { started.Dispose(); notified.Dispose(); finished.Dispose(); }
+        }
+        Assert.IsTrue(entered); Assert.IsTrue(blockedOnMonitor);
+        Assert.IsFalse(finishedWhileHeld); Assert.IsFalse(notifiedWhileHeld);
+        Assert.AreEqual(originalGeneration, generationWhileHeld);
+        Assert.IsTrue(joined); Assert.IsNull(workerFailure);
+        Assert.AreEqual(2, Volatile.Read(ref notifications));
+        Assert.IsTrue(Interlocked.Read(ref observedGeneration) > originalGeneration);
+        Assert.IsFalse(fixture.Participant.PreparedSource.TryValidateCompleted(previous, out _));
+        CriticalImportCommitLease stale, current;
+        bool staleAccepted = worldPublication
+            ? fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.Participant.PreparedSource,
+                previous, null, world, replacementSession, out stale, out _)
+            : fixture.Extender.Registry.TryAcquireCriticalImportCommit(fixture.Participant.PreparedSource,
+                previous, storage.PreparedSource, replacementSession, out stale, out _);
+        Assert.IsFalse(staleAccepted); Assert.IsNull(stale);
+        if (worldPublication)
+        {
+            // Native capacity can repeatedly ask about an unready retained origin.
+            // Warm and measure the actual rejection entry, without assertions,
+            // formatting or callbacks inside the measured region.
+            for (int i = 0; i < 256; i++)
+                if (fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.Participant.PreparedSource,
+                    previous, null, world, replacementSession, out var warmLease, out _)) warmLease.Dispose();
+            bool unexpected = false;
+            long allocated = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 20000; i++)
+                if (fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.Participant.PreparedSource,
+                    previous, null, world, replacementSession, out var rejectedLease, out _))
+                { unexpected = true; rejectedLease.Dispose(); }
+            allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+            Assert.IsFalse(unexpected); Assert.AreEqual(0L, allocated);
+        }
+        // The world-publication row reuses mission 77 deliberately. Only the actual
+        // replacement origin may publish; an equal session cannot revive the old token.
+        bool currentAccepted = worldPublication
+            ? fixture.Extender.Registry.TryAcquireCriticalWorldPublication(fixture.Participant.PreparedSource,
+                fixture.Origin, null, world, replacementSession, out current, out reason)
+            : fixture.Extender.Registry.TryAcquireCriticalImportCommit(fixture.Participant.PreparedSource,
+                fixture.Origin, storage.PreparedSource, replacementSession, out current, out reason);
+        Assert.IsTrue(currentAccepted, reason); current.Dispose();
+    }
+
+    private static void FaultCriticalPreparedSession(VersionedSaveDataRegistry registry, VersionedSaveDataHandle handle, long session)
+    {
+        const BindingFlags fields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        // A real archive window assigns one ID to every outcome. Deliberately
+        // replace only this actual slot's immutable load metadata to exercise
+        // the all-member guard against an otherwise unreachable inconsistent pair.
+        // No native world, Prepared receiver or separate registry model is forged.
+        var slots = (Array)typeof(VersionedSaveDataRegistry).GetField("slots", fields).GetValue(registry);
+        foreach (object slot in slots)
+        {
+            if (!ReferenceEquals(slot.GetType().GetField("Handle", fields).GetValue(slot), handle)) continue;
+            object outcome = slot.GetType().GetField("PreparedOutcome", fields).GetValue(slot);
+            FieldInfo loadField = outcome.GetType().GetField("Load", fields);
+            var load = (VersionedSaveLoad)loadField.GetValue(outcome);
+            var replacement = new VersionedSaveLoad(load.Status, load.Source, load.FilePath, load.RecordVersion,
+                load.MinimumReaderVersion, load.Entries, load.KeptEntryCount, load.Detail, load.PreparedOrigin, session);
+            loadField.SetValue(outcome, replacement);
+            return;
+        }
+        Assert.Fail("The exact registered slot must exist for this bounded metadata fault injection.");
+    }
+
+    [TestMethod]
+    [DataRow(77L, 77L, true)]
+    [DataRow(0L, 77L, false)]
+    [DataRow(77L, 0L, false)]
+    [DataRow(78L, 77L, false)]
+    [DataRow(77L, 78L, false)]
+    public void CriticalWriterWorldRequiresEveryStateOnlySourceToMatchTheActualPositiveSession(long firstSession, long secondSession, bool allowed)
+    {
+        var extender = new FakeExtender();
+        var first = new CriticalParticipantFixture("state.only.owner.a", "StateOnly.First", extender);
+        var second = new CriticalParticipantFixture("state.only.owner.b", "StateOnly.Second", extender);
+        first.Enroll(CriticalParticipantOptions()); second.Enroll(CriticalParticipantOptions());
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "state-only.sav", 77);
+        extender.Registry.PrepareLoad(); extender.Registry.EndLoad();
+        if (firstSession != 77) FaultCriticalPreparedSession(extender.Registry, first.Mod.Handle, firstSession);
+        if (secondSession != 77) FaultCriticalPreparedSession(extender.Registry, second.Mod.Handle, secondSession);
+        // Readable completed origins retain their established metadata-only
+        // meaning; the demanded native owner adds this exact world-session fence.
+        extender.Registry.RequireCriticalWriterReady();
+        Assert.IsTrue(first.Participant.PreparedSource.TryValidateCompleted(first.Origin, out string reason), reason);
+        Assert.IsTrue(second.Participant.PreparedSource.TryValidateCompleted(second.Origin, out reason), reason);
+        object world = new object();
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        Assert.AreEqual(allowed, extender.Registry.TryValidateCriticalWorld(first.Participant.PreparedSource, world, 77, out reason), reason);
+        Assert.AreEqual(allowed, extender.Registry.TryValidateCriticalWorld(second.Participant.PreparedSource, world, 77, out reason), reason);
+        if (allowed) extender.Registry.RequireCriticalWriterWorld(world, 77);
+        else Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.RequireCriticalWriterWorld(world, 77));
+        Assert.AreEqual(0, first.Captures); Assert.AreEqual(0, second.Captures);
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        extender.Registry.RequireCriticalWriterReady();
+    }
+
+    [TestMethod]
+    public void CriticalWriterWorldRejectsARealUnassociatedArchiveWindowBeforeCapture()
+    {
+        var extender = new FakeExtender();
+        var first = new CriticalParticipantFixture("state.only.unowned.a", "Unassociated.First", extender);
+        var second = new CriticalParticipantFixture("state.only.unowned.b", "Unassociated.Second", extender);
+        first.Enroll(CriticalParticipantOptions()); second.Enroll(CriticalParticipantOptions());
+        // This negative comes from the real registry window, without fault injection.
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "unassociated.sav", 0);
+        extender.Registry.PrepareLoad(); extender.Registry.EndLoad();
+        extender.Registry.RequireCriticalWriterReady();
+        object world = new object();
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.Participant.PreparedSource, world, 77, out _));
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(second.Participant.PreparedSource, world, 77, out _));
+        Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.RequireCriticalWriterWorld(world, 77));
+        Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.RequireCriticalWriterWorld(world, 0));
+        Assert.AreEqual(0, first.Captures); Assert.AreEqual(0, second.Captures);
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        extender.Registry.RequireCriticalWriterReady();
     }
 }

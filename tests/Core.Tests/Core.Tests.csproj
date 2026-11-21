@@ -5,6 +5,7 @@
     <Compile Include="../../src/Economy/Storage/NativeStorageState.cs" Link="Production/NativeStorageState.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Snapshot.cs" Link="Production/NativeStorageState.Snapshot.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Cargo.cs" Link="Production/NativeStorageState.Cargo.cs" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.Import.cs" Link="Production/NativeStorageState.Import.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageBatch.cs" Link="Production/NativeStorageBatch.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Batch.cs" Link="Production/NativeStorageState.Batch.cs" />
   </ItemGroup>
@@ -91,6 +92,8 @@
     <Compile Include="../../src/Savegames/VersionedSaveDataRegistry.cs" Link="Production/VersionedSaveDataRegistry.cs" />
     <Compile Include="../../src/Savegames/VersionedSavePreparedOrigin.cs" Link="Production/VersionedSavePreparedOrigin.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveCriticalCapture.cs" Link="Production/VersionedSaveCriticalCapture.cs" />
+    <Compile Include="../../src/Savegames/CriticalSaveContracts.cs" Link="Production/CriticalSaveContracts.cs" />
+    <Compile Include="../../src/Savegames/CriticalSaveEnrollment.cs" Link="Production/CriticalSaveEnrollment.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveCriticalMarker.cs" Link="Production/VersionedSaveCriticalMarker.cs" />
     <Compile Include="../../src/Savegames/VersionedSaveRecordCodec.cs" Link="Production/VersionedSaveRecordCodec.cs" />
     <Compile Include="../../src/Savegames/SavegameRecordComparison.cs" Link="Production/SavegameRecordComparison.cs" />

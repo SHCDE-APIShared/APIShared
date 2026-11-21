@@ -6,14 +6,19 @@ using APIShared.Events;
 
 namespace APIShared.Savegames
 {
-    /// <summary>Save context reported by the transport, free of Script Extender types.</summary>
-    internal readonly struct VersionedSaveContext
+    /// <summary>Immutable logical save context, free of Script Extender and native state.</summary>
+    /// <remarks>Flags and path identify the owning factory call. They grant no mutation,
+    /// import, thread-dispatch or multiplayer authority. The path may be null.</remarks>
+    public readonly struct VersionedSaveContext
     {
         internal VersionedSaveContext(bool isSaveFile, bool isMapEditorSave, string filePath)
         { IsSaveFile = isSaveFile; IsMapEditorSave = isMapEditorSave; FilePath = filePath; }
-        internal bool IsSaveFile { get; }
-        internal bool IsMapEditorSave { get; }
-        internal string FilePath { get; }
+        /// <summary>Whether this factory is writing a save file.</summary>
+        public bool IsSaveFile { get; }
+        /// <summary>Whether this factory is an editor map save.</summary>
+        public bool IsMapEditorSave { get; }
+        /// <summary>The logical factory path, possibly null; never the native temporary path.</summary>
+        public string FilePath { get; }
     }
 
     // Owns the registrations and the load window. The Script Extender binding
@@ -138,6 +143,8 @@ namespace APIShared.Savegames
 
         internal void BeginLoad(VersionedSaveLoadSource source, string filePath, long missionSessionId)
         {
+            Action<long> observer;
+            long changedGeneration;
             lock (sync)
             {
                 windowOpen = true;
@@ -147,11 +154,15 @@ namespace APIShared.Savegames
                 windowFile = filePath;
                 windowMissionSessionId = missionSessionId > 0 ? missionSessionId : 0;
                 foreach (Slot slot in slots) { slot.Pending = null; slot.ResetMission(); }
+                observer = generationObserver; changedGeneration = generation;
             }
+            observer?.Invoke(changedGeneration);
         }
 
         internal void Unload()
         {
+            Action<long> observer;
+            long changedGeneration;
             lock (sync)
             {
                 if (windowOpen) return; // The game unloads the previous map while loading the next one.
@@ -159,7 +170,9 @@ namespace APIShared.Savegames
                 finalizedLoadGeneration = -1;
                 windowMissionSessionId = 0;
                 foreach (Slot slot in slots) slot.ResetMission();
+                observer = generationObserver; changedGeneration = generation;
             }
+            observer?.Invoke(changedGeneration);
         }
 
         private void Deliver(Slot slot, byte[] data)
@@ -409,6 +422,7 @@ namespace APIShared.Savegames
             List<KeyValuePair<string, byte[]>> unknown;
             lock (sync)
             {
+                sourceSaveAttempted = true;
                 // Saving inside a load window is not a game flow; never write a half-loaded state.
                 loaded = windowOpen ? slot.Pending : slot.LoadedBytes;
                 keep = windowOpen || slot.KeepLoaded;

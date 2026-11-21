@@ -325,17 +325,22 @@ even after lots drain or are discarded. Ordinary unenrolled checkpoints keep the
 exact version-1/reader-1 or version-2/reader-2 envelopes and verification rules.
 
 Ordinary public registration remains current version 2 and does not join a writer
-cohort. An explicit internal request before the first storage registration/world
-instead joins the process-lifetime protected cohort. No production consumer opts in
-yet. Its protected container is version 3/minimum reader 3, with a framework-reserved
+cohort. An explicit owner-bound `client.CriticalSaves.TryEnroll` with
+`RequiresNativeStorage = true` before the first storage registration/world instead
+requests the process-lifetime protected cohort. A false enrollment leaves the
+ordinary default unchanged; accepted enrollment is permanent. Missing or failed
+shared-source startup blocks the required cohort, with no unprotected fallback. Its protected container is version 3/minimum reader 3, with a framework-reserved
 `critical-cohort` entry; the stores bytes remain schema 1 or 2. Older reader 2
 reports `TooNew`, keeps the original bytes and cannot certify or save that cohort.
 Legacy 1/2 records remain readable; cargo history still requires a container and
 minimum reader of at least 2. A missing participant or mismatched protected marker
 keeps the original record passively and blocks replacement. First state publication
 waits for the full matching load pass; early callback reentry cannot activate a
-partially accepted cohort. No additional capacity hook or fallback is installed. See the
-[internal enrollment and compatibility contract](SAVE_DATA.md#tracked-origins-and-enrolled-captures).
+partially accepted cohort. Protected state activation and `IsCurrentWorldReady` also
+require a known single-player/editor world; a real-multiplayer load remains passive
+before stock can be published or exchanged. Ordinary reader-2 multiplayer behavior
+is unchanged. No additional capacity hook or fallback is installed. See the
+[owner-bound enrollment and compatibility contract](SAVE_DATA.md#opt-in-protected-save-participants).
 
 The critical writer freezes physical and cargo state plus version, refuses
 reentrant mutations, verifies capture/status/native I/O/archive bytes, then replaces
@@ -377,9 +382,77 @@ An old stores schema-1 header is not proof of absent virtual occupancy.
 
 Without an enrolled cohort, ordinary schema-1/2 checkpoint bytes and registry unknown
 retention stay exact. Protected opt-in has a material SP/editor scope and reader
-policy despite additive internal signatures; assess it separately from a passing
-API compatibility baseline. Public owner-bound enrollment and an actual consumer's
-lossless adapter are required next, before this foundation is a completed feature.
+policy despite additive public signatures; assess it separately from a passing
+API compatibility baseline. Enrollment prepares each owner's private checkpoint
+and does not migrate its stock, cargo or actor records. An actual consumer's
+lossless adapter and protected cold-load confirmation remain required before
+retiring that private ledger.
+
+## Importing an existing owner ledger
+
+Typed import is an explicit SP/editor migration operation for an owner-bound
+critical participant jointly enrolled with shared NativeStorage. It does not
+change ordinary reader-2 registration or multiplayer behavior. Register the real
+goods and the existing versioned record first; use its LegacyReader and migrations
+to decode old data. From that participant's exact Prepared callback call
+NativeStorageClient.TryPrepareImport with physical allocations and final cargo.
+No old native world is read. Unknown/wrong causal association, NoRecord, passive
+or already protected originals, foreign handles and copied/stale receivers refuse.
+
+Preparation copies bounded values: up to the existing physical-row and cargo-record
+limits, with at most 32 aggregated good/player physical accounts. It publishes no
+stock, cargo or archive bytes, but successful preparation does publish a
+conservative pending-import barrier. Discarding a successful plan does not reopen
+empty capacity: the world stays passive until every current pending plan commits
+or the actual registry advances to a replacement load/unload. Failed preparation
+does not change that metadata. Preparation of the same exact input returns the
+same plan; a changed intent refuses.
+
+At a confirmed matching native world after the complete load pass, hold the actual
+engine monitor and call TryCommitImport. The service checks the exact original
+window as well as the positive mission association, world, all original cohort
+members, live building slot/GlobalId/owner/pool, joint native/virtual capacity and
+current state identities. A mission attempt may contain multiple archive windows;
+the attempt ID alone never authorizes import. Existing allocations needing loss
+reconciliation must be reconciled independently before retry: a refused import
+does not publish activation or maintenance losses.
+
+The entire physical/cargo candidate and receipt are prepared before one publication.
+Refusal leaves shared stock, native gold, original archive and caller state intact.
+Source generation is pinned by an internal registry guard across only preallocated
+assignments (engine, then import metadata, then registry lock). Generation observers
+run after the registry lock is released. Load/unload clears old plans, receipts and
+world references; ignored nested old-world unload does not erase replacement plans.
+
+NativeStorageImportPlan.Cargo exposes creation sequences before commit, so the
+consumer can preallocate its replacement actor state. Those values are not live
+cargo snapshots and cannot mutate a future lot before publication. On success,
+perform only nonthrowing preallocated assignments under the same engine monitor to
+switch every consumer caller to the shared stock and its owner-private actor state.
+No retirement callback runs in the library. Exact retry in the same original
+window/world returns AlreadyApplied without issuing stock or cargo twice.
+There is no in-world undo after success; reload the complete prior archive when
+recovery is needed. Other owners may still be pending, so wait for
+IsCurrentWorldReady before using shared state. Do not fall back to a competing
+private capacity or stock authority while that barrier is closed.
+
+All related private actor records and the single shared all-owner storage record
+must be in the protected cohort. The original destination remains unchanged until
+the existing critical writer verifies and atomically commits all of them. An
+in-memory import, capture bytes or a matching digest alone does not establish a
+durable migration. A later protected original must restore its shared state rather
+than importing retained legacy entries again.
+
+Keep work-in-progress and base productivity inputs in the consumer's actor record;
+only observed final undelivered quantity belongs in imported cargo. Validate actor
+and building lifetime according to the actual producer: a completed batch may
+outlive its worker, and carried goods may outlive their source workshop. Neither
+is market or recruitment stock before deposit. All worker, capacity, load,
+trade and recruitment callers still need one-authority integration tests before
+the old ledger or hooks can retire. An older raw-record consumer cannot interpret
+a new versioned envelope; document that material downgrade limit. This API does
+not establish native route, live coexistence, multiplayer import, UI, audio or
+visual acceptance.
 
 ## Public limits
 

@@ -96,7 +96,7 @@ namespace APIShared.Economy
             // Do not put publication under an ordinary rejection catch. The engine owns
             // the optional direct gold store and the one preallocated physical/ledger commit.
             bool applied = exchanges.TryExchangeBatch(state, batch, current, sequence, readProbe, out status, out reason);
-            if (applied) NativeStorageNativeRuntime.UpdateDemand(state.HasRows);
+            if (applied) PublishCapacityDemand(state.HasRows);
             return applied;
         }
     }

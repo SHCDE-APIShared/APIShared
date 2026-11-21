@@ -59,7 +59,8 @@ namespace APIShared.Economy
             NativeStorageRuntime.Instance.TryGetStock(Key, playerId, out balance, out reason);
         /// <summary>Reads only this good's committed quantity in the exact observed storage.
         /// Requires the caller-held real engine monitor and a confirmed known current world;
-        /// protected multiplayer reads need no native-tick/authenticated-Chore mutation scope.
+        /// ordinary reader-2 multiplayer reads need no native-tick/authenticated-Chore mutation scope.
+        /// Explicitly enrolled protected storage supports activation only in single-player/editor worlds.
         /// Revalidates live slot, unsigned GlobalId, owner, pool and world. Matching staged
         /// restoration may activate; an already-bound query does not reconcile losses or advance
         /// command sequences. A fresh reused/captured store may validly contain zero of this good.
@@ -98,6 +99,8 @@ namespace APIShared.Economy
 
     /// <summary>Owner-bound startup registration and protected native-storage observations.
     /// Obtaining a client installs nothing. Registered services and hooks have process lifetime.</summary>
+    /// <remarks>Explicit critical-save enrollment limits state activation/readiness to known single-player/editor worlds.
+    /// Ordinary reader-2 registrations retain their existing multiplayer observation and authorized mutation paths.</remarks>
     public sealed partial class NativeStorageClient
     {
         private readonly string owner;
