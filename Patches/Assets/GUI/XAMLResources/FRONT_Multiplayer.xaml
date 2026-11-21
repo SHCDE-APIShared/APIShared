@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch xmlns:apiPresetShare="clr-namespace:APIShared.ModSettings;assembly=APIShared">
+  <Operation Type="AddNamespace" AttributeName="apiPresetShare" Value="clr-namespace:APIShared.ModSettings;assembly=APIShared"/>
+  <Operation Type="Replace" XPath="//n:ScrollViewer[@Name='MP_ChatScrollView'][n:TextBlock[@Name='MP_ChatDisplay']]">
+    <Content>
+      <Grid Margin="10,5,10,30" Width="659" Height="225" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <ContentControl Grid.Row="0" apiPresetShare:LobbyPresetOffers.Enabled="True"
+                        HorizontalContentAlignment="Stretch" Padding="0"/>
+        <ScrollViewer Grid.Row="1" Name="MP_ChatScrollView">
+          <TextBlock Name="MP_ChatDisplay" TextAlignment="Left" TextWrapping="Wrap"
+                     Foreground="Black" FontSize="12" VerticalAlignment="Bottom"/>
+        </ScrollViewer>
+      </Grid>
+    </Content>
+  </Operation>
+</Patch>

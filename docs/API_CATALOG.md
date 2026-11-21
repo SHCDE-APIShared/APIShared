@@ -56,6 +56,13 @@ within the same mission and the forward Int32 half-range.
 unit-pair check. Owners publish immutable player, unit type or global ID selectors.
 See [attack target rule integration](THIRD_PARTY_GUIDE.md#attack-target-rules).
 
+## Local input and mod keybinds
+
+`APIShared.Input.InputState` reads physical Unity input, Noesis event modifiers or the
+game's configured action state. `ModKeybinds` registers mod actions and lists them under
+**Mod Keybinds** at the bottom of the game's Hotkeys list. Each action reads and writes its
+own existing local setting. See [mod keybind integration](THIRD_PARTY_GUIDE.md#local-input-and-mod-keybinds).
+
 ## Local troop-command input
 
 `APIShared.Units.TroopCommandInputEvents` reports local command releases with
@@ -305,6 +312,13 @@ manager/size failures but cannot promise an atomic native queue acknowledgement.
 See the [networking guide](THIRD_PARTY_GUIDE.md#multiplayer-actions-and-messages) and
 [compiled example](../examples/ThirdPartyMod/NetworkingExample.cs).
 
+## Multiplayer simulation agreement
+
+`APIShared.Multiplayer.SimulationAgreement` (0.58.2) agrees on whether all peers can
+use each registered simulation feature before the native map load. Required features
+block unequal readiness. Optional features use the Vanilla path for the whole match
+unless every peer is ready. See the [registration contract](THIRD_PARTY_GUIDE.md#agreeing-on-simulation-features).
+
 ## Source map
 
 Start at the linked contract to learn what a consumer may call. Read the service
@@ -332,6 +346,8 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Settings and presets | [View model](../src/ModSettings/Presets/PresetLobbyModSettingsViewModel.cs), [registration](../src/ModSettings/Presets/LobbyModSettingsPresetRegistration.cs), [preset contracts](../src/ModSettings/Presets/ModSettingsPresetContracts.cs), [working sources](../src/ModSettings/Presets/ModSettingsWorkingSources.cs), [dynamic providers](../src/ModSettings/Presets/DynamicPresetSettings.cs) | [Controller](../src/ModSettings/Presets/LobbyPresetController.cs), [storage](../src/ModSettings/Presets/LobbyPresetStorage.cs), [per-player coordination](../src/ModSettings/Lobby/PerPlayerLobbySettingsCoordinator.cs), [application](../src/ModSettings/ModSettingsApplication.cs) | [Personal storage](MOD_SETTINGS.md#personal-files-and-previous-installations), [Settings](../examples/ThirdPartyMod/ExampleSettings.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Settings search / tooltips | [Explicit catalog and live configured states](../src/ModSettings/UI/ModSettingsSearchCatalog.cs), [search, slider neutral values and opt-in numeric TextBox StateValue metadata](../src/ModSettings/UI/ModSettingsSearch.cs), [tooltip sizes](../src/ModSettings/UI/ToolTipPresentation.cs) | Managed catalog snapshots, All/Active/Inactive filtering with mixed-row flags; [focus scrolling](../src/ModSettings/UI/ModSettingsHorizontalFocusScrollGuard.cs) | [Opt-in contract](MOD_SETTINGS.md#explicit-settings-search-support), [standalone search](../examples/ThirdPartyMod/SettingsSearchExample.cs), [XAML](../examples/ThirdPartyMod/Override/ScriptExtenderUI/APISharedExample.xaml) |
 | Personal mission reset | `ModSettingsWorkingSourceKind.Personal`, `ModSettingsWorkingSourceRegistry.PersonalSettingsId` | Copies personal values into the editable Map/Trail context without personal persistence or changing authored source rules | [Reset source contract](MOD_SETTINGS.md#presets-without-serpsmodshost) |
+| Personal preset folder | `PresetLobbyModSettingsViewModel.System_OpenPresetFolderCommand` | Opens the current mod's personal preset directory on demand | [Preset storage and dialog bindings](MOD_SETTINGS.md#personal-files-and-previous-installations) |
+| Multiplayer preset sharing | `PresetLobbyModSettingsViewModel.System_SharePresetCommand` | Offers the selected saved preset to compatible lobby peers for opt-in import | [Dialog bindings](MOD_SETTINGS.md#personal-files-and-previous-installations) |
 | Settings activation presentation | `PresetLobbyModSettingsViewModel.HostSettingsOpacity` / `ClientSettingsOpacity` | Content-only opacity: inactive scopes use 0.65; editing rights and stored values are unchanged | [Settings UI integration](MOD_SETTINGS.md#presets-without-serpsmodshost) |
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](MOD_SETTINGS.md#mission-start-settings-log) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
@@ -354,7 +370,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | In-game tooltip extensions | [Public service](../src/Presentation/Tooltips/TooltipPresentation.cs), [content and positions](../src/Presentation/Tooltips/TooltipContracts.cs) | Shared renderer for buildings, recruitment, siege construction and repair | [Guide](TOOLTIPS.md), [standalone example](../examples/ThirdPartyMod/TooltipExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
-| Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
+| Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md), [installation core](../src/Workshop/Install/WorkshopSafeInstall.cs), [external mod managers](WORKSHOP.md#external-mod-managers-apisharedmodmanagerjson) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
 | Gate access rules | [Passive registry](../src/Pathfinding/GateRoutes/GateAccessRules.cs) | [Provider contracts](GATE_ROUTING.md) | [Gate access](../examples/ThirdPartyMod/GateAccessExample.cs) |
 | Native market queries | [MarketPriceEvents](../src/Economy/MarketPriceEvents.cs) | [Validated native owner](../src/Economy/MarketPriceNativeRuntime.cs) | [Integration guide](THIRD_PARTY_GUIDE.md#sharing-native-market-price-queries) |
 | Native sites | [Contracts](../src/Core/NativeSites/NativeSiteContracts.cs), [registry](../src/Core/NativeSites/NativeSiteRegistry.cs) | [Owner registry](../src/Core/Internal/Native/NativeOwnershipRegistry.cs), [APIShared site catalog](../src/Core/NativeSites/ApiSharedNativeSites.cs), [guide](NATIVE_SITES.md) | [Native sites](../examples/ThirdPartyMod/NativeSiteExample.cs) |
@@ -398,7 +414,7 @@ APIShared places 36 x 34 buttons bottom to top inside Vanilla's `HUD_ObjectivesP
 
 Handles expose `SetVisible`, `SetEnabled`, `SetTooltip`, and `RequestContentRefresh`; the owner capability exposes `SetOwnerActive`. Commands are rechecked against current owner/button/HUD availability and receive the actual Button. Factories and commands execute on the Unity thread outside registry locks; exceptions isolate the entry. HUD replacement recreates visuals. This API does not impose local-troop selection or multiplayer gameplay authorization.
 
-Default popups use the existing modoptions template, including Script Extender resolution scaling and a 60000 ms duration. Empty text suppresses the popup. An optional tooltip factory must return a fresh unattached ToolTip with explicit Style or Template; APIShared sets its Content to the current text and preserves that custom presentation. `RequestContentRefresh` retries factory failures. No screen coordinates or hook lifetimes are exposed.
+Default popups use the shared dark-and-gold template with 14 logical units of text relative to the button. APIShared accounts for the popup and HUD screen transforms independently. Popups have a 60000 ms duration. Empty text suppresses the popup. An optional tooltip factory must return a fresh unattached ToolTip with explicit Style or Template and controls its own sizing. APIShared sets its Content to the current text and closes it when its button is hidden or replaced. `RequestContentRefresh` retries factory failures.
 
 <a id="vanilla-troop-action-slots-and-overflow"></a>
 
@@ -557,7 +573,8 @@ APIShared also owns the load dialog checkbox and remembers its last explicit loc
 choice across saves and process restarts (initially off). Without a usable checkbox,
 automatic loads use current supported settings, subject to saved mission/creator rules.
 [`SaveLoadDialogEvents`](../src/Savegames/SaveLoadDialogEvents.cs) coordinates ordered,
-owner-bound dialog gates and preparation; see the [dialog integration](MOD_SETTINGS.md#loadsave-requester-integration).
+owner-bound dialog gates and preparation. Preparations can reject the current attempt
+with a player-facing reason. See [dialog integration](MOD_SETTINGS.md#loadsave-requester-integration).
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](MOD_SETTINGS.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.
@@ -844,8 +861,12 @@ map packages remain Extender-owned. See [inventory and cleanup](WORKSHOP.md#work
 `ApiShared.ForMod(guid).Workshop` provides package validation, subscription and
 owned-item queries, upload preparation, installation plans and explicit application.
 Steam entry points require initialized Steamworks on Unity. Planning does not
-change installed files; application requires consent and uses a post-exit updater.
-See [Workshop contracts and workflows](WORKSHOP.md).
+change installed files; application requires consent, stages a verified copy and
+returns `AwaitingRestart`: APIShared's preloader swaps the plugin folders at the next
+game start, and the game is no longer closed. Signatures are unchanged; see the
+[compatibility note](WORKSHOP.md#workshop-publishing-and-loose-packages), the
+[keep list](WORKSHOP.md#keep-list-apishared-keeptxt) for player files and
+[Workshop contracts and workflows](WORKSHOP.md).
 
 See [Linux deployment](WORKSHOP.md#linux-paths-and-first-install-repair) for path
 configuration, the separate first-install repair and platform acceptance limits.
@@ -949,6 +970,12 @@ multiplayer map lookup hook. Owner-bound providers can supply a verified local
 `FileHeader` outside Vanilla catalogs; result observers receive the completed
 query. No provider means Vanilla; different claimed header instances fail closed.
 See [integration and lifetime](THIRD_PARTY_GUIDE.md#multiplayer-map-lookup-and-lobby-system-hints).
+
+`APIShared.Maps.MapLoadPolicy` accepts one optional provider for ordinary local Skirmish
+and steam multiplayer matches. A provider can allow the original filename, supply a
+short native filename, or reject a local path with a message. The original path and
+lobby identity remain authoritative. Register on the Unity thread after APIShared's
+`LibraryLoaded` initialization. APIShared uses the original name without a provider.
 
 `APIShared.Lobby.LobbyChatPresentation` registers owner-bound predicates that classify
 received lobby text as a system hint. It preserves the original renderer and never
@@ -1096,7 +1123,8 @@ detection. A factory creates the control per HUD instance; `ShowWhen`, `Opened`,
 
 `APIShared.Buildings.BuildingStates` stores 1 to 12 small values per building identity (ID and
 GlobalId). Owners change values through one tick-synchronous authenticated Chore validated on every
-peer; simulation values are written only by the owning mod. Each table has its own versioned save
+peer, including optional requests for all the sender's buildings of the selected type. Simulation
+values are written only by the owning mod. Each table has its own versioned save
 record and a fixed native layout readable by native code. See [building state](BUILDING_STATE.md).
 
 ## Build-menu availability

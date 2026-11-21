@@ -1,5 +1,6 @@
 #nullable enable
 using APIShared;
+using APIShared.ModSettings;
 using CrusaderDE;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Noesis;
@@ -88,10 +89,57 @@ namespace Core.Tests
             Tick(service); Assert.AreEqual(2, Visible(host).Length);
             var a = Visible(host).Single(x => Equals(x.Content, "a")); var b = Visible(host).Single(x => Equals(x.Content, "b"));
             Assert.AreSame(host.Resources["APISharedHudExtrasTooltipStyle"], ((ToolTip)a.ToolTip!).Style); Assert.AreEqual("Blueprints", ((ToolTip)a.ToolTip!).Content);
-            Assert.AreSame(customStyle, ((ToolTip)b.ToolTip!).Style); Assert.AreEqual(60000, a.Duration);
+            var custom = (ToolTip)b.ToolTip!;
+            Assert.AreSame(customStyle, custom.Style); Assert.AreEqual(60000, a.Duration);
+            Assert.IsFalse(SharedToolTipSizing.GetEnabled(custom));
             standard.SetTooltip("Updated"); Tick(service); Assert.AreEqual("Updated", ((ToolTip)a.ToolTip!).Content);
             standard.SetTooltip(""); Tick(service); Assert.IsNull(a.ToolTip);
             retry.RequestContentRefresh(); Tick(service); Assert.AreEqual(3, Visible(host).Length); Assert.AreEqual(2, calls);
+        }
+        [TestMethod]
+        public void DefaultTooltipFollowsButtonPixelsAndReleasesTheOldHud()
+        {
+            var service = new HudExtrasButtonsService(null);
+            var host = Host();
+            service.Bind("mod").TryRegisterButton(new HudExtrasButtonDefinition("one", new Command(), "Original",
+                _ => new Button { ScreenScaleX = 3, ScreenScaleY = 3 }), out var handle, out _);
+            Tick(service);
+            var button = Visible(host).Single();
+            button.Load();
+            var original = (ToolTip)button.ToolTip!;
+            original.IsOpen = true;
+            original.Load();
+            Assert.AreEqual(42f, original.FontSize);
+            Assert.AreEqual(4.5, original.BorderThickness.Left);
+            Assert.AreSame(button, SharedToolTipSizing.GetReferenceElement(original));
+
+            button.ScreenScaleX = button.ScreenScaleY = 2;
+            host.Resize();
+            Assert.AreEqual(28f, original.FontSize);
+            handle.SetTooltip("Updated");
+            Tick(service);
+            Assert.IsFalse(original.IsOpen);
+            Assert.IsFalse(SharedToolTipSizing.GetEnabled(original));
+            Assert.IsNull(SharedToolTipSizing.GetReferenceElement(original));
+
+            var updated = (ToolTip)button.ToolTip!;
+            updated.Load();
+            updated.IsOpen = true;
+            MainViewModel.Instance!.Show_HUD_Extras = false;
+            Tick(service);
+            Assert.IsFalse(updated.IsOpen);
+            MainViewModel.Instance.Show_HUD_Extras = true;
+            Tick(service);
+            updated.IsOpen = true;
+            Assert.AreEqual(28f, updated.FontSize);
+
+            var replacement = Host();
+            Tick(service);
+            Assert.IsFalse(updated.IsOpen);
+            Assert.IsFalse(SharedToolTipSizing.GetEnabled(updated));
+            Assert.IsNull(button.ToolTip);
+            var newButton = Visible(replacement).Single();
+            Assert.AreSame(newButton, SharedToolTipSizing.GetReferenceElement((ToolTip)newButton.ToolTip!));
         }
         [TestMethod]
         public void HostIsSearchedOnlyWhenTheHudTreeCanHaveChanged()

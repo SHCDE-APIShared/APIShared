@@ -12,6 +12,13 @@ namespace APIShared.Automation
 {
     public sealed partial class AutomationRun
     {
+        // Director.runSimTickTest runs a FramesToProcess backlog without sleeping and EngineInterface.run
+        // holds the monitor per tick, so a zero-timeout TryEnter almost never lands in the gap between
+        // saturated ticks (measured: WaitForTicks(500) took up to 55 s). A timed waiter is woken by the
+        // release instead. Kept short because a blocked Unity thread stops draining Vanilla's six
+        // MemoryBuffers; once all are full, EngineInterface.run skips the tick.
+        private const int TickSampleMonitorTimeoutMs = 10;
+
         /// <summary>Loads a local .sav from the ready main menu. Relative paths use the game's Saves directory.</summary>
         /// <remarks>Calls the normal load path once and waits for a new managed start matching that path.
         /// The existing save-settings policy still applies. Use an unbound step for this transition.</remarks>
@@ -43,8 +50,10 @@ namespace APIShared.Automation
             });
 
         /// <summary>Waits for native map time to advance by at least the requested ticks after the first sample.</summary>
-        /// <remarks>Samples only while this wait is active under the engine monitor. The test deadline still
-        /// applies while paused, when the source is unavailable or when the engine monitor is busy.</remarks>
+        /// <remarks>Samples only while this wait is active under the engine monitor. Each frame's poll waits at
+        /// most 10 ms on Unity for the monitor, so a simulation running
+        /// ticks back-to-back is still sampled between ticks. The test deadline still applies while paused,
+        /// when the source is unavailable or when the engine monitor stays busy.</remarks>
         public AutomationWait WaitForTicks(MissionContext mission, int count)
         {
             if (count <= 0) throw new ArgumentOutOfRangeException(nameof(count));
@@ -53,7 +62,7 @@ namespace APIShared.Automation
             int? first = null;
             return AutomationWait.Until(count + " native map ticks", () => {
                 RequireMission(mission);
-                if (!Monitor.TryEnter(engine)) return false;
+                if (!Monitor.TryEnter(engine, TickSampleMonitorTimeoutMs)) return false;
                 try
                 {
                     if (!SimulationClock.TryGetCurrentTick(mission, out var now)) return false;
