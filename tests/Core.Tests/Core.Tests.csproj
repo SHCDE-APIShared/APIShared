@@ -2,6 +2,8 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Content/APIShared.Content.csproj" />
+    <ProjectReference Include="../../tools/AssemblyMetadata/AssemblyMetadata.csproj" />
+    <PackageReference Include="Mono.Cecil" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.cs" Link="Production/NativeStorageState.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Snapshot.cs" Link="Production/NativeStorageState.Snapshot.cs" />
     <Compile Include="../../src/Economy/Storage/NativeStorageState.Cargo.cs" Link="Production/NativeStorageState.Cargo.cs" />

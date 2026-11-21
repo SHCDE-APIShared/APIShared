@@ -1195,3 +1195,11 @@ indexed into either table. No existing SE cost method is patched. See
 [typed cost access](THIRD_PARTY_GUIDE.md#typed-construction-costs).
 
 Human-only extras, saved payments and exact refunds: [HumanConstructionCosts](HUMAN_CONSTRUCTION_COSTS.md). ConstructionRefundPolicies shares action percentages with optional mods. ConstructionDemolition attributes authenticated custom demolition.
+## Managed assembly audit tool
+
+[AssemblyMetadata](../tools/AssemblyMetadata/README.md) is a game-independent
+.NET 10 developer CLI for hash-bound, bounded metadata and complete selected IL
+reports. Exact type/method filters do not expand to unrelated types or dependency
+assemblies. See its guide for fresh-output, no-resolution and resource contracts;
+[metadata evidence limits](NATIVE_COMPATIBILITY.md#inspecting-managed-dependencies)
+remain separate from runtime/backend qualification.
