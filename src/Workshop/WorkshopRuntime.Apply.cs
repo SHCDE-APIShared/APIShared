@@ -25,7 +25,7 @@ namespace APIShared.Workshop
         internal static Task<string> StageStartupBatchAsync(IReadOnlyList<WorkshopInstallPlan> plans)
         {
             CheckStageable(plans);
-            return Task.Run(() => StagePlansAsync(plans));
+            return Task.Run(() => StagePlansAsync(plans, startup: true));
         }
 
         // Public consumer path (WorkshopClient.ApplyAsync): the plan is the explicit consent.
@@ -71,7 +71,7 @@ namespace APIShared.Workshop
         }
 
         // Every container is staged first. One request then publishes the complete set.
-        private static async Task<string> StagePlansAsync(IReadOnlyList<WorkshopInstallPlan> plans)
+        private static async Task<string> StagePlansAsync(IReadOnlyList<WorkshopInstallPlan> plans, bool startup = false)
         {
             await StagingGate.WaitAsync().ConfigureAwait(false);
             try {
@@ -79,7 +79,7 @@ namespace APIShared.Workshop
                 var staged = new List<ulong>();
                 try {
                     foreach (var plan in plans) {
-                        WorkshopStaging.StagePlan(paths, plan, Log, request: false);
+                        WorkshopStaging.StagePlan(paths, plan, Log, request: false, startup: startup);
                         staged.Add(plan.WorkshopId);
                     }
                     return InstallStaging.PublishBatch(paths, staged);

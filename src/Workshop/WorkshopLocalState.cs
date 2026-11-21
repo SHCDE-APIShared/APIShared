@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using APIShared.Internal;
 
 namespace APIShared.Workshop
 {
@@ -46,6 +47,37 @@ namespace APIShared.Workshop
             return new WorkshopLocalState(difference == null ? WorkshopLocalStatus.Verified : WorkshopLocalStatus.Modified, difference);
         }
 
+        internal static Version ReadInstalledPackageVersion(string game, WorkshopPackage package)
+        {
+            Dictionary<string, object> host = null;
+            // Only declared root manifests can identify the package. Nested child versions
+            // identify their own mods and may follow a completely different version sequence.
+            foreach (string root in package.Roots) {
+                string path = WorkshopPaths.Inside(game, root + "/info.json");
+                Dictionary<string, object> info;
+                try { info = WorkshopPackageCodec.Object(DependencyFreeJson.Parse(File.ReadAllText(path))); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidDataException) { continue; }
+                if (!info.TryGetValue("GUID", out object guid) ||
+                    !string.Equals(guid as string, package.PackageId, StringComparison.OrdinalIgnoreCase)) continue;
+                if (host != null) return null;
+                host = info;
+            }
+            if (host == null) return null;
+            try { return WorkshopPackageCodec.Version(WorkshopPackageCodec.Text(host, "Version")); }
+            catch (InvalidDataException) { return null; }
+        }
+
+        internal static string StartupVersionBlock(WorkshopPackage package, WorkshopReceipt receipt, Version localVersion)
+        {
+            var available = WorkshopPackageCodec.Version(package.Version);
+            var recorded = receipt == null ? null : WorkshopPackageCodec.Version(receipt.Version);
+            if ((localVersion == null || available >= localVersion) && (recorded == null || available >= recorded))
+                return null;
+            return "Skipping older Workshop package at startup: " + package.PackageId +
+                "; local=" + (localVersion?.ToString() ?? "unknown") +
+                "; receipt=" + (receipt?.Version ?? "none") + "; available=" + package.Version + ".";
+        }
+
         // Startup offers (the dialog remains the consent). An unsubscribed receipted installation
         // is removed. A subscribed receipted package is offered when a newer release exists, and
         // also when its delivered files are missing or changed: a clean installation from Steam
@@ -53,15 +85,23 @@ namespace APIShared.Workshop
         // repair: the former external updater was interrupted while installing this item
         // (WorkshopStartup.InspectFormerUpdaterState); a clean installation is offered regardless
         // of disabled offers and of a missing receipt until the files match the package.
-        internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status, bool offersEnabled, bool repair = false)
+        // No automatic offer replaces a newer package on disk or in a receipt.
+        internal static WorkshopAction? StartupAction(WorkshopCatalogItem item, WorkshopLocalStatus status,
+            bool offersEnabled, bool repair = false, Version localVersion = null, Action<string> log = null)
         {
             // Taken over by an external mod manager: APIShared changes nothing for this item.
             if (item.ManagedBy != null) return null;
             // The catalog describes an unsubscribed installation by its receipt version only;
             // it attaches the receipt object to subscribed items alone.
             if (!item.IsSubscribed && item.InstalledVersion != null) return WorkshopAction.Remove;
-            if (repair && item.IsSubscribed && item.CanInstall && item.Package != null && status != WorkshopLocalStatus.Verified) return ManualAction(item);
-            if (!offersEnabled || !item.CanInstall || item.Package == null) return null;
+            bool needsRepair = repair && item.IsSubscribed && status != WorkshopLocalStatus.Verified;
+            if ((!offersEnabled && !needsRepair) || !item.CanInstall || item.Package == null) return null;
+            string versionBlock = StartupVersionBlock(item.Package, item.Receipt, localVersion);
+            if (versionBlock != null) {
+                log?.Invoke(versionBlock);
+                return null;
+            }
+            if (needsRepair) return ManualAction(item);
             // Subscribed, but not installed by APIShared yet: offer the first installation (it also
             // adopts files that already match). Folders owned by other mods block it in planning.
             if (item.Receipt == null) return item.IsSubscribed ? WorkshopAction.Install : (WorkshopAction?)null;
