@@ -20,6 +20,7 @@ on:
           - baseline
           - preparation
           - reader-bindings
+          - purchase-callbacks
 permissions:
   contents: read
 jobs:
@@ -117,6 +118,7 @@ jobs:
             'baseline' { './tools/Validation/PublicExtenderMetadata.2.14.4.json' }
             'preparation' { './tools/Validation/PublicExtenderPreparation.2.14.4.json' }
             'reader-bindings' { './tools/Validation/PublicReaderBindings.2.14.4.json' }
+            'purchase-callbacks' { './tools/Validation/PublicPurchaseCallbacks.2.14.4.json' }
             default { throw 'Unsupported public metadata fixture.' }
           }
           ./tools/Validation/Invoke-PublicExtenderMetadataAudit.ps1 -FixturePath $fixture -ToolAssemblyPath "$env:RUNNER_TEMP/assembly-metadata-tool/AssemblyMetadata.dll" -WorkDirectory "$env:RUNNER_TEMP/public-extender-metadata-work" -OutputDirectory "$env:RUNNER_TEMP/public-extender-metadata-result"

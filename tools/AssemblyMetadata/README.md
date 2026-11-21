@@ -158,6 +158,22 @@ timeout, hash, output, cleanup, retention and metadata-only limitations still ap
 The choice selects fixed repository fixtures; arbitrary fixture paths are not
 accepted by the workflow. Omit it to retain the baseline audit.
 
+### Purchase callbacks profile
+
+Set `public_extender_metadata_fixture=purchase-callbacks`, together with the audit
+enable flag, for the fixed [purchase-tail callback and event
+selections](../Validation/PublicPurchaseCallbacks.2.14.4.json).
+Seven probes read only `SHCDESE.dll` from the same pinned public package, with a
+combined 2.875 MiB report limit. They select resource-subtraction, movement and
+tribe wrappers by the event constructors they call, the event payload/base
+accessors and publisher, and the player/tribe hook registrations. The previously
+inspected unit constructor is not repeated.
+
+These bodies distinguish public argument mutability, cancellation, Pre/Post
+payloads and wrapper return handling. They do not establish observer-library
+exception/ordering policy, successful hook installation, native debit completion
+or transactional recruitment. The JSON remains bounded and metadata-only.
+
 ### Reader bindings profile
 
 Set `public_extender_metadata_fixture=reader-bindings`, together with the audit
