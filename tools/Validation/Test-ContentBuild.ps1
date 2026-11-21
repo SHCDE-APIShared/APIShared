@@ -192,3 +192,6 @@ Test-RejectedPercentRoot 'BuildContentLibrary'
 Test-RejectedPercentRoot 'Restore'
 Write-Host 'PASS: Content incrementality and exact spaces/semicolon routing; percent roots explicitly refused before build/restore.'
 Write-Host "Fixture retained: $fixture"
+# Every native result and assertion above has been checked before success.
+# Expected negative cases must not leak their last exit code to the caller.
+exit 0
