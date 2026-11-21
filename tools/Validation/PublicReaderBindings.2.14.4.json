@@ -42,7 +42,8 @@
         "GetPlayerGold",
         "GetGoodAmount"
       ],
-      "maxOutputBytes": 524288
+      "maxOutputBytes": 524288,
+      "includeNested": false
     },
     {
       "id": "recruitment-global-addresses",
@@ -51,7 +52,8 @@
       "methods": [
         "FindGameGlobals"
       ],
-      "maxOutputBytes": 2097152
+      "maxOutputBytes": 2097152,
+      "includeNested": false
     },
     {
       "id": "process-hook-owner",
@@ -71,7 +73,8 @@
         "c_game_dll_loadmaptoplay_hook_impl",
         "c_game_unload_map_hook_impl"
       ],
-      "maxOutputBytes": 1048576
+      "maxOutputBytes": 1048576,
+      "includeNested": false
     },
     {
       "id": "native-demand-state",
@@ -89,7 +92,8 @@
         "get_Value",
         "set_Value"
       ],
-      "maxOutputBytes": 524288
+      "maxOutputBytes": 524288,
+      "includeNested": false
     },
     {
       "id": "physical-cost-array-read",
@@ -99,7 +103,8 @@
         "GetValue",
         "GetBaseAddress"
       ],
-      "maxOutputBytes": 262144
+      "maxOutputBytes": 262144,
+      "includeNested": false
     }
   ]
 }
