@@ -106,9 +106,17 @@ internal sealed class MetadataInspector(InspectionOptions options)
             methods.Add(new(ReportText(name), ReportText(method.FullName), Token(method.MetadataToken), method.Attributes.ToString(), method.ImplAttributes.ToString(), method.HasBody, body));
         }
         if (type.Interfaces.Count > 256) throw new InvalidDataException("Selected interface census exceeds its bound.");
+        // These getters read ClassLayout/FieldLayout metadata only. They neither
+        // resolve field types nor calculate CLR/native layout. Absence stays null;
+        // a declared zero packing, size or field offset must remain zero.
+        bool hasLayout = type.HasLayoutInfo;
+        string layoutKind = type.IsExplicitLayout ? "Explicit" : type.IsSequentialLayout ? "Sequential" :
+            type.IsAutoLayout ? "Auto" : throw new InvalidDataException("Unrecognized type layout flags.");
         return new(ReportText(type.FullName), type.Attributes.ToString(), type.BaseType == null ? null : ReportText(type.BaseType.FullName),
             type.Interfaces.Select(item => ReportText(item.InterfaceType.FullName)).ToArray(),
-            type.Fields.Select(field => new FieldReport(ReportText(field.Name), ReportText(field.FullName), field.Attributes.ToString())).ToArray(), methods.ToArray());
+            type.Fields.Select(field => new FieldReport(ReportText(field.Name), ReportText(field.FullName), field.Attributes.ToString(),
+                field.HasLayoutInfo ? field.Offset : null)).ToArray(), methods.ToArray(), layoutKind,
+            hasLayout ? type.PackingSize : null, hasLayout ? type.ClassSize : null);
     }
 
     private void CheckBody(Mono.Cecil.Cil.MethodBody body)
@@ -201,8 +209,12 @@ internal sealed class MetadataInspector(InspectionOptions options)
         if (!pe.HasMetadata) throw new BadImageFormatException("Input is not a managed PE image.");
         var metadata = pe.GetMetadataReader();
         if (!metadata.IsAssembly || metadata.TypeDefinitions.Count > TypeLimit || metadata.MethodDefinitions.Count > MethodLimit ||
-            metadata.FieldDefinitions.Count > FieldLimit || metadata.AssemblyFiles.Any(file => metadata.GetAssemblyFile(file).ContainsMetadata))
+            metadata.FieldDefinitions.Count > FieldLimit ||
+            metadata.GetTableRowCount(TableIndex.ClassLayout) > metadata.TypeDefinitions.Count ||
+            metadata.GetTableRowCount(TableIndex.FieldLayout) > metadata.FieldDefinitions.Count ||
+            metadata.AssemblyFiles.Any(file => metadata.GetAssemblyFile(file).ContainsMetadata))
             throw new InvalidDataException("A bounded single-module managed assembly is required.");
+        ValidateLayoutValues(pe, metadata);
         foreach (var handle in metadata.TypeDefinitions)
         {
             var type = metadata.GetTypeDefinition(handle);
@@ -214,6 +226,31 @@ internal sealed class MetadataInspector(InspectionOptions options)
         return metadata;
     }
 
+    // Cecil exposes these unsigned metadata columns through signed getters. Refuse
+    // an unrepresentable present value before a getter could turn it into -1/null.
+    // Table rows are already bounded by the corresponding definition census.
+    private static void ValidateLayoutValues(PEReader pe, MetadataReader metadata)
+    {
+        var reader = pe.GetMetadata().GetReader();
+        int count = metadata.GetTableRowCount(TableIndex.ClassLayout);
+        int start = metadata.GetTableMetadataOffset(TableIndex.ClassLayout);
+        int stride = metadata.GetTableRowSize(TableIndex.ClassLayout);
+        for (int row = 0; row < count; row++)
+        {
+            reader.Offset = checked(start + row * stride);
+            if (reader.ReadUInt16() > short.MaxValue || reader.ReadUInt32() > int.MaxValue)
+                throw new InvalidDataException("Declared class layout exceeds Cecil's signed representation.");
+        }
+        count = metadata.GetTableRowCount(TableIndex.FieldLayout);
+        start = metadata.GetTableMetadataOffset(TableIndex.FieldLayout);
+        stride = metadata.GetTableRowSize(TableIndex.FieldLayout);
+        for (int row = 0; row < count; row++)
+        {
+            reader.Offset = checked(start + row * stride);
+            if (reader.ReadUInt32() > int.MaxValue)
+                throw new InvalidDataException("Declared field offset exceeds Cecil's signed representation.");
+        }
+    }
     private sealed class RejectingResolver : IAssemblyResolver
     {
         public AssemblyDefinition Resolve(AssemblyNameReference name) => throw new InvalidDataException("Dependency resolution is forbidden.");

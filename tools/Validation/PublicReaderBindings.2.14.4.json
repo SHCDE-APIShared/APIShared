@@ -1,0 +1,105 @@
+{
+  "schema": "public-extender-metadata-fixture/1",
+  "release": "2.14.4",
+  "archive": {
+    "url": "https://gitlab.com/api/v4/projects/74440776/packages/generic/shcdese/2.14.4/SHCDESE.zip",
+    "bytes": 60330646,
+    "sha256": "c993c40ea3a74c6fc03d120d0161e8c654cb11ed72509dda2c0e3ca0fc4b80e9"
+  },
+  "assemblies": [
+    {
+      "name": "SHCDESE.dll",
+      "entry": "BepInEx/plugins/000shcdese/SHCDESE.dll",
+      "bytes": 1587200,
+      "sha256": "e1b73d1e64e809ec51b9f2540f8f5dbf5357b5970492c688e9a8a7a8283e7d37"
+    },
+    {
+      "name": "RedBird.Core.dll",
+      "entry": "BepInEx/plugins/000shcdese/RedBird.Core.dll",
+      "bytes": 119296,
+      "sha256": "ee4b036c486077f7d8898ae054f124edde73e6ae1a059e8991c361e2b720d29f"
+    }
+  ],
+  "probes": [
+    {
+      "id": "recruitment-record-layouts",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Interop.GameUnit;SHCDESE.Interop.GameUnitManager;SHCDESE.Interop.GameBuilding;SHCDESE.Interop.GameBuildingManager;SHCDESE.Interop.GamePlayerResources;SHCDESE.Interop.UnitGoodCosts",
+      "includeNested": true,
+      "methods": [
+        "Equals"
+      ],
+      "maxOutputBytes": 2097152
+    },
+    {
+      "id": "player-resource-readers",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.API.GamePlayerManagerAPI",
+      "methods": [
+        ".ctor",
+        "TryGetPlayerResourcesById",
+        "IsPlayerIdValid",
+        "GetPlayerGold",
+        "GetGoodAmount"
+      ],
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "recruitment-global-addresses",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.GameGlobals.GameGlobalsManager",
+      "methods": [
+        "FindGameGlobals"
+      ],
+      "maxOutputBytes": 2097152
+    },
+    {
+      "id": "process-hook-owner",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.NativeHooks.DetourManager",
+      "includeNested": true,
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "save-reset-owners",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkMapLoaderDetours",
+      "methods": [
+        ".ctor",
+        "c_game_dll_savesavegame_hook_impl",
+        "c_game_dll_loadsavegame_hook_impl",
+        "c_game_dll_loadmaptoplay_hook_impl",
+        "c_game_unload_map_hook_impl"
+      ],
+      "maxOutputBytes": 1048576
+    },
+    {
+      "id": "native-demand-state",
+      "assembly": "RedBird.Core.dll",
+      "type": "RedBird.Core.Memory.NativeStateBlock;RedBird.Core.Memory.NativeStateValue`1",
+      "methods": [
+        ".ctor",
+        "AllocateValue",
+        "AllocateFlag",
+        "Dispose",
+        "GetPointer",
+        "GetAddress",
+        "Reserve",
+        "get_Address",
+        "get_Value",
+        "set_Value"
+      ],
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "physical-cost-array-read",
+      "assembly": "RedBird.Core.dll",
+      "type": "RedBird.Core.Memory.Managed.ManagedNativeArray`1",
+      "methods": [
+        "GetValue",
+        "GetBaseAddress"
+      ],
+      "maxOutputBytes": 262144
+    }
+  ]
+}

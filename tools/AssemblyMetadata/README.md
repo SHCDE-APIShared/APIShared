@@ -55,6 +55,32 @@ their metadata tokens. Abstract or external methods have `hasBody: false` and
 `body: null`; no body is invented. This is metadata evidence, not decompilation or
 proof that IL, native ABI, publication lifetime or gameplay behavior is correct.
 
+Types also report `layoutKind` (`Auto`, `Sequential` or `Explicit`), nullable
+`packingSize` and `classSize`; fields report a nullable `offset`. `layoutKind` comes from TypeDef layout flags; the numeric values are declared
+ClassLayout/FieldLayout metadata values, not calculated runtime or marshalled
+layout. Missing records produce null, while a declared zero remains zero. In
+particular, sequential fields without explicit FieldLayout records have null
+offsets; no offsets are inferred from field order, packing, pointer width or types.
+Overlapping explicit offsets are reported unchanged. The reader does not resolve
+field types or load the target to obtain these values. Cecil 0.11.6's
+[type layout getters](https://github.com/jbevain/cecil/blob/0.11.6/Mono.Cecil/TypeDefinition.cs)
+and [field layout getters](https://github.com/jbevain/cecil/blob/0.11.6/Mono.Cecil/FieldDefinition.cs)
+define these metadata-only reads. Present values outside Cecil's signed public
+representations are refused before inspection (packing above 32,767, class size
+or field offset above 2,147,483,647), rather than reported as missing. Layout-table
+row counts are bounded by the corresponding type/field definition counts. These
+checks inspect the whole module's layout tables, including unselected types and
+fields; an unrepresentable row there can refuse an input that the older tool
+accepted for another selection.
+
+The JSON additions are additive within schema 1, while the module-wide numeric preflight narrows accepted inputs as described above. Existing property names and
+meanings remain unchanged, and the existing audit reader accepts extra properties.
+Closed-shape consumers must accept the added properties. Layout consumers must
+check that the properties exist: an older schema-1 report lacking `offset` is not
+evidence that a field has no declared offset. The extra JSON still counts against
+the existing complete-output limit and may make a previously near-limit report
+fail; no report is truncated and no size limit is raised.
+
 | Bound | Limit |
 |---|---|
 | Input bytes | 16 MiB |
@@ -84,13 +110,14 @@ externally bounded jobs when inspecting unfamiliar or malformed inputs.
 
 `tests/Core.Tests/AssemblyMetadataTests.cs` authors small real managed assemblies
 with Cecil and exercises exact/nested selections, overloads, bodyless methods,
-field and call operands, exception regions, unresolved external references,
+field and call operands, explicit/sequential/unset layout metadata, exception regions, unresolved external references,
 filter scan budgets, checksum/PE/size refusals and fresh-output behavior. It runs
 with the ordinary game-independent Core suite and never executes the fixture IL.
 
-This is a new developer tool with no runtime-plugin API, hook, initialization,
-save, dependency-loading or default-behavior change. Its Cecil dependency belongs
-to this tool and the Core test project only. A metadata report cannot replace
+This developer tool does not change runtime-plugin APIs, hooks, initialization,
+saves or dependency loading. The report and input compatibility limits above
+still apply. Its Cecil dependency belongs to this tool and the Core test project
+only. A metadata report cannot replace
 the affected runtime/backend tests described in
 [native compatibility](../../docs/NATIVE_COMPATIBILITY.md).
 
@@ -130,3 +157,17 @@ helpers, and the selected inline-hook generation/lifetime methods. Existing
 timeout, hash, output, cleanup, retention and metadata-only limitations still apply.
 The choice selects fixed repository fixtures; arbitrary fixture paths are not
 accepted by the workflow. Omit it to retain the baseline audit.
+
+### Reader bindings profile
+
+Set `public_extender_metadata_fixture=reader-bindings`, together with the audit
+enable flag, for the fixed [record, resource and lifecycle selections](../Validation/PublicReaderBindings.2.14.4.json).
+This profile reads `SHCDESE.dll` and `RedBird.Core.dll` from the same public package.
+Seven probes have a combined 6.75 MiB report limit: declared record layouts,
+player resource readers, global address setup, process hook ownership, save/reset
+wrappers, native demand storage and the physical-cost array reader.
+
+Layout values describe metadata declarations. Sequential field order and packing
+do not establish computed native offsets. The profile does not prove native
+predicate equivalence, payment, save/reset exclusion, deployment or gameplay.
+The same timeout, checksum, cleanup, retention and metadata-only limits apply.

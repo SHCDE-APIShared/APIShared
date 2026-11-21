@@ -19,6 +19,7 @@ on:
         options:
           - baseline
           - preparation
+          - reader-bindings
 permissions:
   contents: read
 jobs:
@@ -115,6 +116,7 @@ jobs:
           $fixture = switch -CaseSensitive ($env:PUBLIC_EXTENDER_METADATA_FIXTURE) {
             'baseline' { './tools/Validation/PublicExtenderMetadata.2.14.4.json' }
             'preparation' { './tools/Validation/PublicExtenderPreparation.2.14.4.json' }
+            'reader-bindings' { './tools/Validation/PublicReaderBindings.2.14.4.json' }
             default { throw 'Unsupported public metadata fixture.' }
           }
           ./tools/Validation/Invoke-PublicExtenderMetadataAudit.ps1 -FixturePath $fixture -ToolAssemblyPath "$env:RUNNER_TEMP/assembly-metadata-tool/AssemblyMetadata.dll" -WorkDirectory "$env:RUNNER_TEMP/public-extender-metadata-work" -OutputDirectory "$env:RUNNER_TEMP/public-extender-metadata-result"

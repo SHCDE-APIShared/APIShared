@@ -91,6 +91,53 @@ public sealed class AssemblyMetadataTests
     }
 
     [TestMethod]
+    [DataRow(24)]
+    [DataRow(0)]
+    public void DeclaredLayoutMetadataPreservesExplicitOverlapsAndDistinguishesAbsentRecords(int sequentialClassSize)
+    {
+        using var fixture = new MetadataFixture(sequentialClassSize: sequentialClassSize);
+        using var report = fixture.Export("--types",
+            "Fixture.ExplicitLayout;Fixture.SequentialLayout;Fixture.SequentialDefault;Fixture.Selected");
+        Assert.AreEqual(1, report.RootElement.GetProperty("schema").GetInt32(),
+            "Declared layout fields extend the existing report schema without changing its identity.");
+        CollectionAssert.AreEquivalent(new[] { "Fixture.ExplicitLayout", "Fixture.SequentialLayout",
+            "Fixture.SequentialDefault", "Fixture.Selected" }, TypeNames(report));
+        JsonElement[] types = report.RootElement.GetProperty("types").EnumerateArray().ToArray();
+        JsonElement explicitLayout = types.Single(type => type.GetProperty("fullName").GetString() == "Fixture.ExplicitLayout");
+        Assert.AreEqual("Explicit", explicitLayout.GetProperty("layoutKind").GetString());
+        Assert.AreEqual(1, explicitLayout.GetProperty("packingSize").GetInt32());
+        Assert.AreEqual(16, explicitLayout.GetProperty("classSize").GetInt32());
+        JsonElement[] explicitFields = explicitLayout.GetProperty("fields").EnumerateArray().ToArray();
+        CollectionAssert.AreEquivalent(new[] { "Zero", "Overlap", "Tail", "StaticCounter" },
+            explicitFields.Select(field => field.GetProperty("name").GetString()).ToArray());
+        Assert.AreEqual(0, explicitFields.Single(field => field.GetProperty("name").GetString() == "Zero").GetProperty("offset").GetInt32());
+        Assert.AreEqual(0, explicitFields.Single(field => field.GetProperty("name").GetString() == "Overlap").GetProperty("offset").GetInt32());
+        Assert.AreEqual(12, explicitFields.Single(field => field.GetProperty("name").GetString() == "Tail").GetProperty("offset").GetInt32());
+        Assert.AreEqual(JsonValueKind.Null,
+            explicitFields.Single(field => field.GetProperty("name").GetString() == "StaticCounter").GetProperty("offset").ValueKind);
+
+        JsonElement sequential = types.Single(type => type.GetProperty("fullName").GetString() == "Fixture.SequentialLayout");
+        Assert.AreEqual("Sequential", sequential.GetProperty("layoutKind").GetString());
+        Assert.AreEqual(sequentialClassSize == 0 ? 0 : 4, sequential.GetProperty("packingSize").GetInt32());
+        Assert.AreEqual(sequentialClassSize, sequential.GetProperty("classSize").GetInt32(),
+            "A declared zero ClassSize remains a metadata value rather than absence.");
+        Assert.AreEqual(2, sequential.GetProperty("fields").GetArrayLength());
+        Assert.IsTrue(sequential.GetProperty("fields").EnumerateArray().All(field => field.GetProperty("offset").ValueKind == JsonValueKind.Null),
+            "Sequential field offsets are not inferred from packing or runtime alignment.");
+
+        JsonElement defaultLayout = types.Single(type => type.GetProperty("fullName").GetString() == "Fixture.SequentialDefault");
+        Assert.AreEqual("Sequential", defaultLayout.GetProperty("layoutKind").GetString());
+        Assert.AreEqual(JsonValueKind.Null, defaultLayout.GetProperty("packingSize").ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, defaultLayout.GetProperty("classSize").ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, defaultLayout.GetProperty("fields")[0].GetProperty("offset").ValueKind);
+        JsonElement autoLayout = types.Single(type => type.GetProperty("fullName").GetString() == "Fixture.Selected");
+        Assert.AreEqual("Auto", autoLayout.GetProperty("layoutKind").GetString());
+        Assert.AreEqual(JsonValueKind.Null, autoLayout.GetProperty("packingSize").ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, autoLayout.GetProperty("classSize").ValueKind);
+        Assert.IsTrue(autoLayout.GetProperty("fields").EnumerateArray().All(field => field.GetProperty("offset").ValueKind == JsonValueKind.Null));
+    }
+
+    [TestMethod]
     public void CalledMemberFilterUsesActualIlRatherThanTheCallersName()
     {
         using var fixture = new MetadataFixture();
@@ -149,6 +196,9 @@ public sealed class AssemblyMetadataTests
     [DataRow("body-size")]
     [DataRow("output-size")]
     [DataRow("filter-scan")]
+    [DataRow("layout-packing-range")]
+    [DataRow("layout-size-range")]
+    [DataRow("layout-offset-range")]
     public void ContentAndResourceBoundsRefuseBeforePublishingAFreshOutput(string scenario)
     {
         // Nonmatching bodies stay below declaration/per-body limits but together
@@ -160,10 +210,12 @@ public sealed class AssemblyMetadataTests
             using var oversized = new FileStream(fixture.Input, FileMode.Open, FileAccess.Write, FileShare.None);
             oversized.SetLength(16L * 1024 * 1024 + 1);
         }
+        if (scenario.StartsWith("layout-", StringComparison.Ordinal)) PatchLayoutRange(fixture.Input, scenario);
         string expectedInput = MetadataFixture.HashFile(fixture.Input);
         string output = fixture.NewOutput();
         var arguments = fixture.Arguments(output);
         Set(arguments, "--sha256", expectedInput);
+        if (scenario.StartsWith("layout-", StringComparison.Ordinal)) Set(arguments, "--types", "Fixture.ExplicitLayout");
         if (scenario == "wrong-hash") Set(arguments, "--sha256", new string(expectedInput[0] == '0' ? '1' : '0', 64));
         if (scenario == "body-size") arguments.AddRange(new[] { "--max-body-bytes", "1" });
         if (scenario == "output-size") arguments.AddRange(new[] { "--max-output-bytes", "1" });
@@ -196,6 +248,28 @@ public sealed class AssemblyMetadataTests
         return value;
     }
 
+    private static void PatchLayoutRange(string path, string scenario)
+    {
+        // Start with a genuine Cecil-authored PE, then change only a declared
+        // unsigned layout value that Cecil's signed getters cannot represent.
+        byte[] bytes = File.ReadAllBytes(path);
+        using var pe = new System.Reflection.PortableExecutable.PEReader(new MemoryStream(bytes, writable: false));
+        var metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        var table = scenario == "layout-offset-range"
+            ? System.Reflection.Metadata.Ecma335.TableIndex.FieldLayout
+            : System.Reflection.Metadata.Ecma335.TableIndex.ClassLayout;
+        Assert.IsTrue(System.Reflection.Metadata.Ecma335.MetadataReaderExtensions.GetTableRowCount(metadata, table) > 0);
+        int firstRow = pe.PEHeaders.MetadataStartOffset +
+            System.Reflection.Metadata.Ecma335.MetadataReaderExtensions.GetTableMetadataOffset(metadata, table);
+        if (scenario == "layout-packing-range")
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(firstRow, 2), 0x8000);
+        else if (scenario == "layout-size-range")
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(firstRow + 2, 4), 0x80000000u);
+        else
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(firstRow, 4), 0xffffffffu);
+        File.WriteAllBytes(path, bytes);
+    }
+
     private static void Set(List<string> arguments, string option, string value) => arguments[arguments.IndexOf(option) + 1] = value;
 
     private static void AssertRejected(List<string> arguments)
@@ -213,7 +287,7 @@ public sealed class AssemblyMetadataTests
         internal string Input { get; }
         internal string Hash { get; }
 
-        internal MetadataFixture(int filterCandidates = 0)
+        internal MetadataFixture(int filterCandidates = 0, int sequentialClassSize = 24)
         {
             Input = Path.Combine(directory, "fixture.dll");
             try
@@ -278,6 +352,27 @@ public sealed class AssemblyMetadataTests
                 noCall.Body.Instructions.Add(Instruction.Create(OpCodes.Ret));
                 selected.Methods.Add(noCall);
                 selected.Methods.Add(new MethodDefinition("NoBody", MethodAttributes.Public | MethodAttributes.Abstract | MethodAttributes.Virtual, module.TypeSystem.Void));
+                // Author declared layout records directly. Reading these fixtures must
+                // report metadata, not ask the host runtime to lay out or load a type.
+                var valueType = new TypeReference("System", "ValueType", module, module.TypeSystem.CoreLibrary);
+                var explicitLayout = new TypeDefinition("Fixture", "ExplicitLayout",
+                    TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.ExplicitLayout, valueType)
+                { PackingSize = 1, ClassSize = 16 };
+                explicitLayout.Fields.Add(new FieldDefinition("Zero", FieldAttributes.Public, module.TypeSystem.Int32) { Offset = 0 });
+                explicitLayout.Fields.Add(new FieldDefinition("Overlap", FieldAttributes.Public, module.TypeSystem.Int16) { Offset = 0 });
+                explicitLayout.Fields.Add(new FieldDefinition("Tail", FieldAttributes.Public, module.TypeSystem.Byte) { Offset = 12 });
+                explicitLayout.Fields.Add(new FieldDefinition("StaticCounter", FieldAttributes.Public | FieldAttributes.Static, module.TypeSystem.Int32));
+                module.Types.Add(explicitLayout);
+                var sequentialLayout = new TypeDefinition("Fixture", "SequentialLayout",
+                    TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout, valueType)
+                { PackingSize = sequentialClassSize == 0 ? (short)0 : (short)4, ClassSize = sequentialClassSize };
+                sequentialLayout.Fields.Add(new FieldDefinition("First", FieldAttributes.Public, module.TypeSystem.Int32));
+                sequentialLayout.Fields.Add(new FieldDefinition("Second", FieldAttributes.Public, module.TypeSystem.Int16));
+                module.Types.Add(sequentialLayout);
+                var sequentialDefault = new TypeDefinition("Fixture", "SequentialDefault",
+                    TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout, valueType);
+                sequentialDefault.Fields.Add(new FieldDefinition("Unspecified", FieldAttributes.Public, module.TypeSystem.Int32));
+                module.Types.Add(sequentialDefault);
                 assembly.Write(Input);
                 Hash = HashFile(Input);
             }
