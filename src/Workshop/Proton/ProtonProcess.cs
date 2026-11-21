@@ -79,7 +79,7 @@ namespace APIShared.Workshop.Proton
     // reach it. Host programs therefore report through files in an owned run directory and
     // the Process object is never consulted. The protocol behaves the same with a native
     // Linux or Windows Bash in tests. A run cannot be stopped from here; long-running
-    // updaters observe their own cancel files instead.
+    // host helpers observe their own cancel files instead.
     internal sealed class HostRun : IDisposable
     {
         // Fixed program text; every value arrives as a separate argument. $BASH is the

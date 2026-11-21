@@ -82,23 +82,6 @@ namespace APIShared.Workshop
             foreach (var retained in catalog.Where(c => !changed.Contains(c.WorkshopId)))
                 WorkshopBatch.Retained(retained.Package, retained.Receipt, retained.ManifestHash, endState, changesInstalledVersions);
         }
-        private static void CheckBatchSubscriptions(IReadOnlyList<WorkshopInstallPlan> plans, Subscription[] original)
-        {
-            var latest = CheckUnchangedSubscriptions(original);
-            foreach (var plan in plans) {
-                CheckPlanSubscription(plan, latest);
-                if (plan.Package != null) WorkshopSubscriptionOwnership.Verify(latest, plan.WorkshopId, plan.Package);
-            }
-        }
-
-        private static Subscription[] CheckUnchangedSubscriptions(Subscription[] original, bool allowActiveMission = false)
-        {
-            var latest = CheckStartupConditions(allowActiveMission);
-            if (!latest.Select(s => s.Id).OrderBy(id => id).SequenceEqual(original.Select(s => s.Id).OrderBy(id => id)))
-                throw WorkshopDiagnostics.Blocked("Steam subscriptions changed; prepare a new plan.");
-            return latest;
-        }
-
         private static Subscription CheckPlanSubscription(WorkshopInstallPlan plan, Subscription[] subscriptions)
         {
             var item = subscriptions.FirstOrDefault(s => s.Id == plan.WorkshopId);

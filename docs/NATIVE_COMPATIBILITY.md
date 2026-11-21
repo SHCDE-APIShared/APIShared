@@ -32,6 +32,20 @@ other bytes keep the full unique scan. A pattern
 match is not permission to bypass function, layout, overlap or backend validation.
 Game or Extender version numbers alone are not evidence of native compatibility.
 
+### Foreign patches
+
+The site registry only sees owners that register. Before APIShared writes a hook or
+CALL-site patch into CrusaderDE.dll, it compares the live bytes of the span the backend
+will overwrite with the Script Extender's load snapshot (`CrusaderLibraryLoadContext.Region`).
+A difference inside the span is a patch of the Extender or another mod: that service
+stays Vanilla and an Error names the feature, RVA, expected and live bytes and, for a
+`jmp rel32`/`jmp [rip+disp32]`, its target module. A foreign patch directly before or
+behind the span is allowed and not reported (mostly APIShared's own neighbouring hooks). After publication APIShared
+records each span's bytes and compares them again at every mission and editor start;
+a later overwrite by a mod loaded afterwards is logged once per change as an Error
+(`NATIVE_FOREIGN_PATCH_LATE`). APIShared never rewrites or undoes a published span.
+Implementation: `src/Core/Internal/Native/NativeForeignPatchGuard.cs`.
+
 ## Hook backend contracts
 
 The single audited exception is the [Fixes wheat-sale startup correction](FIXES_COMPATIBILITY.md):

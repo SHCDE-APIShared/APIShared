@@ -75,6 +75,8 @@ namespace APIShared.Buildings
         /// again in the executing Chore on every peer, where its result must be identical (for example a
         /// host-synchronized setting). Null accepts requests. Exceptions count as false.</summary>
         public Func<bool> AcceptsOwnerRequests { get; set; }
+        /// <summary>Allows an owner request to target all living buildings of the selected building's type.</summary>
+        public bool AllowSameTypeOwnerRequests { get; set; }
     }
 
     /// <summary>A registered per-building value table: small values per building identity, changed by the
@@ -105,6 +107,7 @@ namespace APIShared.Buildings
             OwnerGuid = registration.OwnerGuid;
             RegistrationId = registration.RegistrationId;
             AcceptsOwnerRequests = registration.AcceptsOwnerRequests;
+            AllowSameTypeOwnerRequests = registration.AllowSameTypeOwnerRequests;
             types = new HashSet<eStructs>(registration.BuildingTypes);
             values = new BuildingStateValue[registration.Values.Count];
             for (int i = 0; i < values.Length; i++) values[i] = registration.Values[i];
@@ -113,6 +116,7 @@ namespace APIShared.Buildings
 
         internal BuildingStateMemory Memory { get; }
         internal Func<bool> AcceptsOwnerRequests { get; }
+        internal bool AllowSameTypeOwnerRequests { get; }
         internal bool LoadedSinceStart;
 
         /// <summary>The registering plugin's GUID.</summary>
@@ -155,20 +159,33 @@ namespace APIShared.Buildings
         /// maximum, a living building with this ID and GlobalId, one of the registered types, and the Chore's
         /// verified sender owns it. Rejections are silent. Requests apply in submission order. A submitted result
         /// only means that the Chore was queued; see <see cref="HasPendingRequest"/>.</remarks>
-        public NetworkSendResult RequestChange(int buildingId, uint globalId, int valueIndex, byte value)
+        public NetworkSendResult RequestChange(int buildingId, uint globalId, int valueIndex, byte value) =>
+            SubmitChange(buildingId, globalId, valueIndex, value, allOfSameType: false);
+
+        /// <summary>Requests the same owner value for all of the sender's living buildings of the
+        /// selected building's type, including the selection. Requires registration opt-in and the
+        /// initialized Unity thread.</summary>
+        /// <remarks>The authenticated Chore revalidates the selected building's identity and owner before
+        /// resolving current targets on every peer in that tick. Uses the same pending acknowledgement
+        /// and submission order as <see cref="RequestChange(int, uint, int, byte)"/>.</remarks>
+        public NetworkSendResult RequestChangeForSameType(int buildingId, uint globalId, int valueIndex, byte value) =>
+            SubmitChange(buildingId, globalId, valueIndex, value, allOfSameType: true);
+
+        private NetworkSendResult SubmitChange(int buildingId, uint globalId, int valueIndex, byte value, bool allOfSameType)
         {
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
                 return ChoreSendPolicy.Result(NetworkSendStatus.Unavailable, "Building state requests require the initialized Unity thread.");
             if (!IsOwnerValue(valueIndex, value) || !BuildingStateMemory.IsValidId(buildingId) || globalId == 0)
                 return ChoreSendPolicy.Result(NetworkSendStatus.Invalid, "Invalid building state request.");
-            if (!Accepts()) return ChoreSendPolicy.Result(NetworkSendStatus.Disabled, "Building state requests are disabled.");
+            if ((allOfSameType && !AllowSameTypeOwnerRequests) || !Accepts())
+                return ChoreSendPolicy.Result(NetworkSendStatus.Disabled, "Building state requests are disabled.");
             int serial = lastSerial == int.MaxValue ? 1 : lastSerial + 1;
             lastSerial = serial;
             // Marked before queueing: the Chore can execute on the simulation thread before Send returns.
             // A failed submission stops waiting altogether, so nothing can stay pending for good.
             Volatile.Write(ref pendingSerial, serial);
             NetworkSendResult result = BuildingStates.Submit(new BuildingStatePacket(OwnerGuid, RegistrationId,
-                buildingId, globalId, valueIndex, value, serial));
+                buildingId, globalId, valueIndex, value, serial, allOfSameType));
             if (!result.Submitted) Interlocked.CompareExchange(ref pendingSerial, 0, serial);
             return result;
         }

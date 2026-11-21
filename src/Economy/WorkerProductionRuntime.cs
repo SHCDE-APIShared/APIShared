@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -37,6 +38,8 @@ namespace APIShared.Economy
         private static long session;
         private static IntPtr auditedImage;
         private static bool initialized,restored,worldNativeLoaded;
+        private static WorkerProductionAdmissionWait admissionWait;
+        private static bool retryingAdmission;
         internal static ulong CurrentCommonDenominator => Volatile.Read(ref activeRules)?.CommonDenominator ?? SavedCommonDenominator();
         internal static bool BaseAvailable => WorkerProductionBonusNativeRuntime.IsAvailable && WorkerProductionYieldContext.IsAvailable && WorkerProductionOutputNativeRuntime.IsAvailable &&
             WorkerProductionStateRuntime.IsAvailable && WorkerProductionWorldSafety.IsAvailable;
@@ -201,15 +204,106 @@ namespace APIShared.Economy
         }
         private static void AgreementChanged()
         {
-            if(session==0 || WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)return;
+            // Refresh publishes intermediate states synchronously. Evaluate the final result once.
+            if(retryingAdmission || session==0 || WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)return;
             lock(WorkerProductionWorldSafety.EngineGate)
             {
                 var context=MissionLifecycleService.ActiveContext;
                 if(context==null || context.SessionId!=session || context.Mode.Kind==GameModeKind.Unknown)return;
                 // Network completion does not release physics before NativeLoaded/Started.
                 if(!worldNativeLoaded)return;
-                if(!TryActivate(context.Mode,true,out string reason) && reason!=null)WorkerProductionWorldSafety.Fault(reason);
+                CompleteAdmission(context);
             }
+        }
+
+        private static void CompleteAdmission(MissionContext context)
+        {
+            if (WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)
+            { CancelAdmissionWait(); return; }
+            if (admissionWait?.Expired == true) { FailAdmissionTimeout(); return; }
+            try
+            {
+                if (TryActivate(context.Mode, true, out string reason))
+                {
+                    CancelAdmissionWait();
+                    return;
+                }
+                if (reason != null)
+                {
+                    CancelAdmissionWait();
+                    WorkerProductionWorldSafety.Fault(reason);
+                }
+                else if (context.Mode.IsRealMultiplayer && admissionWait == null)
+                {
+                    long expectedSession = context.SessionId;
+                    long generation = WorkerProductionWorldSafety.Generation;
+                    admissionWait = new WorkerProductionAdmissionWait(Stopwatch.GetTimestamp, ScheduleAdmissionCheck,
+                        () => CheckAdmission(expectedSession, generation, false),
+                        () => CheckAdmission(expectedSession, generation, true));
+                    admissionWait.Arm();
+                }
+            }
+            catch (Exception error)
+            {
+                CancelAdmissionWait();
+                WorkerProductionWorldSafety.Fault("Production admission failed: " + error.Message);
+            }
+        }
+
+        private static IDisposable ScheduleAdmissionCheck(Action check, TimeSpan delay)
+        {
+            // Use a separate one-shot timer for each scheduled callback. A queued callback
+            // remains bound to its wait object even if the mission ends before dispatch.
+            Action checkUnderGate = () =>
+            {
+                lock (WorkerProductionWorldSafety.EngineGate) check();
+            };
+            Timer timer = null;
+            timer = new Timer(_ =>
+            {
+                if (UnityMainThreadDispatch.TryEnqueue(checkUnderGate)) return;
+                try { timer.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan); }
+                catch (ObjectDisposedException) { }
+            }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            timer.Change(delay, Timeout.InfiniteTimeSpan);
+            return timer;
+        }
+
+        private static bool IsCurrentAdmission(MissionContext context, long expectedSession, long generation) =>
+            context?.SessionId == expectedSession && session == expectedSession &&
+            WorkerProductionWorldSafety.Generation == generation;
+
+        private static bool CheckAdmission(long expectedSession, long generation, bool expired)
+        {
+            var context = MissionLifecycleService.ActiveContext;
+            if (!IsCurrentAdmission(context, expectedSession, generation)) return false;
+            if (WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)
+            { CancelAdmissionWait(); return false; }
+            if (expired) { FailAdmissionTimeout(); return false; }
+            retryingAdmission = true;
+            try { WorkerProductionAgreement.RefreshAdmission(); }
+            finally { retryingAdmission = false; }
+            context = MissionLifecycleService.ActiveContext;
+            if (!IsCurrentAdmission(context, expectedSession, generation)) return false;
+            CompleteAdmission(context);
+            return admissionWait != null;
+        }
+
+        private static void FailAdmissionTimeout()
+        {
+            CancelAdmissionWait();
+            var result = WorkerProductionAgreement.Current;
+            string detail = WorkerProductionAgreement.LastSendFailure;
+            if (string.IsNullOrEmpty(detail)) detail = result.Diagnostic;
+            if (string.IsNullOrEmpty(detail)) detail = result.Ready ? "No matching peer receipt." : result.Code;
+            WorkerProductionWorldSafety.Fault("Multiplayer production agreement timed out after " +
+                WorkerProductionAdmissionWait.TimeoutSeconds + " seconds: " + detail, showMessage: true);
+        }
+
+        private static void CancelAdmissionWait()
+        {
+            admissionWait?.Cancel();
+            admissionWait = null;
         }
         private static void StateChanged()
         {
@@ -229,14 +323,16 @@ namespace APIShared.Economy
                     if(session!=note.Context.SessionId)Begin(note.Context);
                     if(WorkerProductionWorldSafety.IsFaulted)return;
                     if(note.Phase==MissionInitializationPhase.NativeLoaded)worldNativeLoaded=true;
-                    TryActivate(note.Context.Mode,worldNativeLoaded,out string reason);
-                    if(reason!=null)WorkerProductionWorldSafety.Fault(reason);
+                    if (worldNativeLoaded) CompleteAdmission(note.Context);
+                    else if (!TryActivate(note.Context.Mode,false,out string reason) && reason!=null)
+                        WorkerProductionWorldSafety.Fault(reason);
                 }
                 catch(Exception error) { WorkerProductionWorldSafety.Fault("Production initialization rejected: "+error.Message); }
             }
         }
         private static void Begin(MissionContext context)
         {
+            CancelAdmissionWait();
             session=context.SessionId;
             worldNativeLoaded=false;
             WorkerProductionWorldSafety.Admit(session,true);
@@ -285,8 +381,7 @@ namespace APIShared.Economy
                 if(receipt.Length==0 || frozenDescriptor==null || receipt!=frozenDescriptor.Digest())
                 {
                     string code=WorkerProductionAgreement.Current.Code;
-                    if(code=="Pending" || code=="Roster" || code=="Unavailable" || code.Length==0)
-                    {WorkerProductionAgreement.RequestRefresh();return false;}
+                    if(code=="Pending" || code=="Roster" || code=="Unavailable" || code.Length==0)return false;
                     reason="The current multiplayer production rules have no matching peer receipt: "+code;return false;
                 }
             }
@@ -364,8 +459,7 @@ namespace APIShared.Economy
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.ValidateStarted(session);
                 worldNativeLoaded=true;
                 if(WorkerProductionWorldSafety.IsAdmitted)return;
-                if(!WorkerProductionWorldSafety.IsFaulted && !TryActivate(note.Context.Mode,true,out string reason) && reason!=null)
-                    WorkerProductionWorldSafety.Fault(reason);
+                if(!WorkerProductionWorldSafety.IsFaulted)CompleteAdmission(note.Context);
             }
         }
         private static void Ended(MissionLifecycleNotification note)
@@ -373,6 +467,7 @@ namespace APIShared.Economy
             if(session!=note.Context.SessionId)return;
             lock(WorkerProductionWorldSafety.EngineGate)
             {
+                CancelAdmissionWait();
                 bool nextPrepared=selectedPath!=null && !restored &&
                     !string.Equals(selectedPath,frozenSelectionPath,StringComparison.OrdinalIgnoreCase);
                 WorkerProductionWorldSafety.Retire();
