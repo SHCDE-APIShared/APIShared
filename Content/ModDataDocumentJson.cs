@@ -1,3 +1,4 @@
+using ContentJson = APIShared.ContentInternal.DependencyFreeJson;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -50,7 +51,7 @@ namespace APIShared.ModData
             if (maximumNamespaceBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maximumNamespaceBytes));
             if (json == null || Encoding.UTF8.GetByteCount(json) > maximumDocumentBytes)
                 throw new InvalidDataException("The mod-data document is missing or exceeds its byte limit.");
-            var root = Internal.DependencyFreeJson.Parse(json) as Dictionary<string, object>;
+            var root = ContentJson.Parse(json) as Dictionary<string, object>;
             if (root == null) throw new InvalidDataException("The mod-data document root must be an object.");
             var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in root)
@@ -59,7 +60,7 @@ namespace APIShared.ModData
                     throw new InvalidDataException("The mod-data document contains empty or ambiguous GUID namespaces.");
                 if (!(item.Value is Dictionary<string, object>))
                     throw new InvalidDataException("Every mod-data GUID namespace must be an object.");
-                if (Encoding.UTF8.GetByteCount(Compact(Internal.DependencyFreeJson.Serialize(item.Value))) > maximumNamespaceBytes)
+                if (Encoding.UTF8.GetByteCount(Compact(ContentJson.Serialize(item.Value))) > maximumNamespaceBytes)
                     throw new InvalidDataException("The mod-data GUID namespace '" + item.Key + "' exceeds its byte limit.");
             }
             return root;
