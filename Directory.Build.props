@@ -1,4 +1,13 @@
 <Project>
+  <!-- Opt in before Common.props selects the NuGet/project extension directory.
+       SDK projects append their normal Configuration/TFM/RID pivots. Never pass
+       one shared OutputPath or IntermediateOutputPath to a project graph. -->
+  <PropertyGroup Condition="'$(APISharedArtifactsRoot)' != ''">
+    <_APISharedArtifactsRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(APISharedArtifactsRoot)'))</_APISharedArtifactsRoot>
+    <BaseOutputPath>$(_APISharedArtifactsRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(_APISharedArtifactsRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <GameDir Condition="'$(GameDir)' == ''">$(SHCDE_GAME_DIR)</GameDir>

@@ -59,6 +59,22 @@ Explicit environment settings take precedence; missing or invalid references sti
 produce an error before compilation. Direct IDE/MSBuild commands require their own
 environment or properties.
 
+For a direct MSBuild or `dotnet` command that must keep project outputs outside
+the checkout, pass `-p:APISharedArtifactsRoot="D:/build outputs/APIShared"` to
+the outer command. This opt-in root routes each project's `bin` and `obj`
+separately, including Content's nested build and NuGet restore metadata. SDK
+projects retain their Configuration/TFM/RID suffixes; the Framework API uses
+Configuration/TargetFrameworkVersion. Relative roots are anchored at this
+repository's `Directory.Build.props`. Use a distinct root for each checkout or
+concurrent build. Do not combine this option with output/intermediate overrides
+or the SDK's separate `ArtifactsPath`/`UseArtifactsOutput` mode. Without the option,
+existing locations and incremental build rules remain unchanged. This routes
+project artifacts only: set CLI home, package cache, temporary files, test results
+and logs in the launched child's environment or command when those must move too.
+Keep `DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false` and
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` in any child using an isolated CLI home;
+the nested Content process explicitly enforces both defaults.
+
 ## Tests
 
 ### Running tests
@@ -76,7 +92,12 @@ Content tests exercise the public game-independent library and its separate API
 baseline. The Framework-to-SDK build regression can be run on Windows with
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Validation/Test-ContentBuild.ps1 -FixtureDirectory <empty-directory> -MSBuild <MSBuild.exe>`.
 It builds the actual Content target with isolated fixture sources and verifies
-nested edits, additions and removals. Its logs and fixture remain for inspection.
+nested edits, additions and removals, then checks separate isolated roots with
+spaces and with a semicolon/literal percent escape. Both actual project Content
+references must resolve to the newly built DLL, and default output directories
+must remain absent. The delimiter case escapes the outer MSBuild property-list
+input separately from nested child-environment forwarding. Its logs and fixture
+remain for inspection.
 
 With the game and Extender dependencies configured as described in [Setup](#setup):
 

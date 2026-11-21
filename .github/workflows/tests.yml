@@ -29,11 +29,30 @@ jobs:
       - name: Run Content contracts without game assemblies
         if: ${{ !cancelled() }}
         run: dotnet test tests/Content.Tests/Content.Tests.csproj --configuration Release --logger trx --results-directory TestResults
+      - name: Exercise Content builds and artifact routing
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        shell: powershell
+        env:
+          DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: 'false'
+          DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) { throw 'Visual Studio discovery is unavailable.' }
+          $msbuild = @(& $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild/**/Bin/MSBuild.exe') | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0 -or -not $msbuild -or -not (Test-Path -LiteralPath $msbuild -PathType Leaf)) { throw 'Visual Studio MSBuild was not found.' }
+          $fixture = Join-Path $env:RUNNER_TEMP 'api-content-build-fixture'
+          if (Test-Path -LiteralPath $fixture) { throw 'Content fixture must be a fresh owned directory.' }
+          [void][IO.Directory]::CreateDirectory($fixture)
+          ./tools/Validation/Test-ContentBuild.ps1 -FixtureDirectory $fixture -MSBuild $msbuild
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            ${{ runner.temp }}/api-content-build-fixture/**
   workshop-linux:
     runs-on: ubuntu-latest
     steps:
