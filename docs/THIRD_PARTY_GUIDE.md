@@ -1,5 +1,63 @@
 # Third-party integration guide
 
+## Native storage for virtual goods
+
+Use [`ModApiClient.NativeStorage`](NATIVE_STORAGE.md) when custom goods must occupy
+native Armory or Granary capacity and trade against real gold. Register before the
+first world; issue exchanges only in an authorized engine-protected boundary.
+The service owns physical rows, its private ledger and matching save entries.
+Recipes, hauling, art, player authorization and command transport remain consumer
+responsibilities. Existing overlapping private capacity detours must be migrated.
+
+Follow the [NativeStorage save-policy contract](NATIVE_STORAGE.md#material-save-policy-compatibility-change):
+ordinary registrations keep reader 2 and their real-multiplayer path. Explicit
+`client.CriticalSaves` enrollment can request the SP/editor writer cohort and
+reader 3 before the first storage registration. Follow the
+[protected participant workflow](SAVE_DATA.md#opt-in-protected-save-participants).
+Legacy import and private-ledger retirement still require a verified consumer migration.
+
+For a per-building display or withdrawal plan, observe the exact store and call
+the registered good's `TryGetQuantity`; combined virtual occupancy is not that
+good's quantity. Follow the [protected read workflow](NATIVE_STORAGE.md#read-one-good-in-one-store),
+which grants no mutation authority.
+
+For an existing owner ledger, [typed cold import](NATIVE_STORAGE.md#importing-an-existing-owner-ledger)
+stages bounded physical allocations and final cargo from the enrolled record's
+exact `Prepared` delivery. Commit only after the complete matching load under the
+actual engine monitor; all related consumer callers and actor records still need
+a lossless migration before the old ledger retires.
+
+Use `NativeStorageClient.TryExchangeBatch` for an authorized lot spanning several
+stores; looping single-store exchanges cannot make the lot atomic. Retain the
+original snapshots and owner sequence for an in-world retry. See
+[batch bounds, capacity and replay](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+This supplies no legacy-ledger import or consumer-save cutover authority.
+
+## External production cargo
+
+Use the existing `NativeStorageClient` cargo methods when an external producer
+needs framework-owned undelivered quantity. Register the good, verify production,
+create one owner-sequenced lot and save its creation key with the consumer's actor.
+After loading, reacquire the lot by key. Use its `Remaining` as authoritative;
+there is no second consumer cargo balance to subtract after delivery.
+
+Every call requires an SP/editor world and the caller-held engine monitor. The
+consumer proves custody, player authorization and actual arrival; a framework
+receipt does not supply that evidence. Deposit uses exact cargo/destination
+checkpoints, so retain both original snapshots for the latest in-world retry.
+All pre-load snapshots become invalid. Cargo history also adds a qualified save
+requirement, including conservative handling of unreadable passive records.
+See [the cargo workflow and compatibility contract](NATIVE_STORAGE.md#external-production-cargo) and
+[compiled helpers](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
+## Virtual custom goods
+
+For goods outside the native `eGoods` table, use the caller-owned Content
+[`CustomGoodsInventory`](CUSTOM_GOODS.md) for bounded stock, atomic changes,
+retry receipts and reservations. Share one authoritative mission instance; the
+consumer retains native integration, engine locking, lifecycle and peer authority.
+See the [compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 **Contents**
 
 - [Example package requirements](#example-package-requirements)
@@ -939,6 +997,9 @@ APIShared corrects selected Script Extender defects without consumer registratio
 [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md). Save handlers in particular receive
 `SaveContext.IsSaveFile=true` with a null `FilePath` for synchronized native saves, including
 autosaves; branch on the explicit context rather than assuming autosaves are maps.
+The optional [internal early producer](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context)
+pins only explicitly queried normal/editor saves and adds no public consumer query
+or native-save permission. Unqueried ordinary save callbacks retain their existing context.
 
 ## Plugin entry points with optional APIShared
 
@@ -954,6 +1015,26 @@ is ready, and treat `NoRecord` as a new mission. Follow the
 [record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
 format changes, and add a legacy reader when you keep an identifier that already holds data.
 See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
+Consumers coupling early `Prepared` state to mission lifecycle notifications can use
+`VersionedSaveLoad.MissionSessionId`; require the provider build exporting that getter
+and follow its [association contract](SAVE_DATA.md#associating-archive-callbacks-with-a-mission-attempt).
+For a record that must veto incomplete destination replacement, explicitly enroll
+its handle through `client.CriticalSaves` during initialized Unity startup, before
+any world/archive load. Supply private prepare/release callbacks, a known reserved
+marker and its supported reader floor; the record must provide `Prepared`, use
+`SaveGamesAndMaps` and declare `SimulationRelevant`. Request shared NativeStorage
+before its first registration when needed. Follow the authoritative
+[protected participant workflow](SAVE_DATA.md#opt-in-protected-save-participants)
+for same-thread callbacks, original-marker observations, SP/editor limits and
+process lifetime. The compiled example keeps this opt-in separate from ordinary registration.
+
+Keeping an identifier and adding a legacy reader only decodes that record; neither
+it nor critical enrollment atomically transfers stock, cargo or authority to
+another service. Retain private ledgers until a complete lossless migration is
+verified. Continue applying ordinary loaded state at its supported lifecycle
+boundary; do not add a competing native save hook.
+Framework implementation work should follow the
+[managed Trail metadata and limits](SAVE_DATA.md#internal-managed-trail-producer-metadata).
 
 ## Workshop package cleanup
 
@@ -1245,6 +1326,13 @@ GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, Trib
   unit for its own admission rules.
 
 The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
+
+## Native-wallet virtual-good transactions
+
+Use `ModApiClient.GoodsWallet` with an owner-matching `CustomGoodsClient` for a
+checked direct-gold and virtual-stock exchange. Price, control authorization,
+engine context and save/peer coordination remain consumer responsibilities. See
+[wallet usage, atomicity and persistence](GOODS_WALLET.md).
 
 ## Reacting to created and recruited units
 
@@ -2038,6 +2126,14 @@ startup. Use `WithIngredientAmount` to set the cost per charge in the workshop's
 native ingredient. The [weapon workshop guide](WEAPON_PRODUCTION.md) covers the
 registration example, ingredient limits, Shift selection, AI, and requirements
 for multiplayer and saved games.
+
+### Workshop output in shared custom storage
+
+Bind a registered `NativeStoredGood` using `WeaponProductionOptionDefinition.WithStoredOutput`
+to reuse the existing native workshop/template pipeline. The shared producer owner
+coordinates physical custom credit, native cargo debit and the critical save pair.
+Registration ownership, Armory-only routing, current offline/editor admission and
+native accounting limits are in the [workshop guide](WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
 
 ## Huntable prey
 

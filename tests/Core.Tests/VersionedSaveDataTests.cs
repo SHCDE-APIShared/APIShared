@@ -4,8 +4,107 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace APIShared.Core.Tests;
 
 [TestClass]
-public class VersionedSaveDataTests
+public partial class VersionedSaveDataTests
 {
+    [TestMethod]
+    public void ArchiveMissionAssociationReachesEveryOutcomeAndBothDeliveryPhases()
+    {
+        byte[] valid=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{1}});
+        var scenarios=new (VersionedSaveLoadStatus Status,byte[] Record,VersionedSaveLoadSource Source,bool FailingLegacy)[]
+        {
+            (VersionedSaveLoadStatus.Restored,valid,VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.NoRecord,null,VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.OutOfScope,valid,VersionedSaveLoadSource.EditorMap,false),
+            (VersionedSaveLoadStatus.TooNew,SaveWith(2,2,new[]{"value"},new(){["value"]=new byte[]{1}}),VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.Corrupt,valid.Take(valid.Length-1).ToArray(),VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.Unrecognized,new byte[]{1,2,3},VersionedSaveLoadSource.SaveGame,false),
+            (VersionedSaveLoadStatus.MigrationFailed,new byte[]{1,2,3},VersionedSaveLoadSource.SaveGame,true)
+        };
+        foreach(bool prepare in new[]{false,true})
+            foreach(var scenario in scenarios)
+            {
+                var extender=new FakeExtender();
+                var early=new List<VersionedSaveLoad>();
+                var registration=extender.Registration("Mod.Session",1,1,new[]{"value"},Writes(new()));
+                if(prepare)registration.Prepared=early.Add;
+                if(scenario.FailingLegacy)
+                    registration.LegacyReader=(byte[] data,VersionedSaveEntries entries,out int version)=>throw new FormatException("legacy failed");
+                var mod=extender.Register(registration);
+                extender.Registry.BeginLoad(scenario.Source,"same-path",117);
+                if(scenario.Record!=null)mod.Load(scenario.Record);
+                if(prepare){extender.Registry.PrepareLoad();extender.Registry.PrepareLoad();}
+                extender.Registry.EndLoad();
+                VersionedSaveLoad loaded=mod.Loads.Single();
+                Assert.AreEqual(scenario.Status,loaded.Status);
+                Assert.AreEqual(117L,loaded.MissionSessionId);
+                if(prepare)
+                {
+                    Assert.AreEqual(scenario.Status,early.Single().Status);
+                    Assert.AreEqual(117L,early.Single().MissionSessionId);
+                    Assert.AreNotSame(early.Single(),loaded);
+                }
+            }
+    }
+
+    [TestMethod]
+    public void UnknownMissionAssociationAndOldConstructionRemainZeroWithoutChangingSaveBytes()
+    {
+        Assert.AreEqual(0L,new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord,
+            VersionedSaveLoadSource.SaveGame,null,0,0,null,0,string.Empty).MissionSessionId);
+        Assert.AreEqual(0L,new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord,
+            VersionedSaveLoadSource.SaveGame,null,0,0,null,0,string.Empty,null).MissionSessionId);
+        // Compile guard: the pre-existing origin overload accepted an untyped
+        // default. A same-arity value-type overload would make it ambiguous.
+        Assert.AreEqual(0L,new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord,
+            VersionedSaveLoadSource.SaveGame,null,0,0,null,0,string.Empty,default).MissionSessionId);
+        var extender=new FakeExtender();
+        var early=new List<VersionedSaveLoad>();
+        var state=new Dictionary<string,byte[]>{["value"]=new byte[]{7}};
+        var registration=extender.Registration("Mod.Session",1,1,new[]{"value"},Writes(state));
+        registration.Prepared=early.Add;
+        var mod=extender.Register(registration);
+        byte[] before=extender.Save(mod);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,null,19);
+        mod.Load(before);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        Assert.AreEqual(19L,early[0].MissionSessionId);
+        CollectionAssert.AreEqual(before,extender.Save(mod),"Mission metadata must not enter the stored envelope.");
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,null);
+        mod.Load(before);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        Assert.AreEqual(0L,early[1].MissionSessionId);
+        Assert.AreEqual(0L,mod.Loads.Last().MissionSessionId);
+        Assert.AreEqual(19L,early[0].MissionSessionId,"A later window must not change a retained receiver.");
+        CollectionAssert.AreEqual(before,extender.Save(mod));
+    }
+
+    [TestMethod]
+    public void ReentrantArchivePreparationKeepsEachCausalAssociationAndRetiresTheOuterDelivery()
+    {
+        var extender=new FakeExtender();
+        var early=new List<VersionedSaveLoad>();
+        bool nested=false;
+        FakeExtender.Mod mod=null;
+        byte[] outer=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{1}});
+        byte[] inner=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{2}});
+        var registration=extender.Registration("Mod.Session",1,1,new[]{"value"},Writes(new()));
+        registration.Prepared=load=>
+        {
+            early.Add(load);
+            if(nested)return;
+            nested=true;
+            extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,"same-path",202);
+            mod.Load(inner);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        };
+        mod=extender.Register(registration);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame,"same-path",101);
+        mod.Load(outer);extender.Registry.PrepareLoad();extender.Registry.EndLoad();
+        CollectionAssert.AreEqual(new long[]{101,202},early.Select(load=>load.MissionSessionId).ToArray());
+        Assert.AreEqual(202L,mod.Loads.Single().MissionSessionId);
+        CollectionAssert.AreEqual(new byte[]{1},early[0].Entries["value"]);
+        CollectionAssert.AreEqual(new byte[]{2},early[1].Entries["value"]);
+        CollectionAssert.AreEqual(new byte[]{2},mod.Loads.Single().Entries["value"]);
+        Assert.AreEqual(101L,early[0].MissionSessionId);
+    }
+
     [TestMethod]
     public void PreparedMigratesOnceAndPostOwnsIndependentEntryBytes()
     {
@@ -64,12 +163,13 @@ public class VersionedSaveDataTests
         registration.Prepared = _ => throw new InvalidOperationException("consumer rejected preparation");
         var mod = extender.Register(registration);
         byte[] bytes = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } });
-        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav");
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav", 41);
         mod.Load(bytes);
         extender.Registry.PrepareLoad();
         extender.Registry.EndLoad();
         Assert.AreEqual(1, mod.Loads.Count);
         Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
+        Assert.AreEqual(41L,mod.Loads.Single().MissionSessionId);
         CollectionAssert.AreEqual(bytes, extender.Save(mod));
     }
 
@@ -107,6 +207,145 @@ public class VersionedSaveDataTests
         uint crc = ReferenceCrc(bytes);
         bytes[28] = (byte)crc; bytes[29] = (byte)(crc >> 8); bytes[30] = (byte)(crc >> 16); bytes[31] = (byte)(crc >> 24);
         CollectionAssert.AreEqual(bytes, saved);
+    }
+
+    [TestMethod]
+    public void CaptureCanSelectAnOlderSchemaWithoutChangingLaterCaptureDefaults()
+    {
+        var extender = new FakeExtender();
+        var state = new Dictionary<string, byte[]> { ["value"] = new byte[] { 7 } };
+        int recordVersion = 1, minimumReader = 1;
+        bool selectVersion = true;
+        var mod = extender.Register("Mod.Data", 2, 1, new[] { "value" }, writer =>
+        {
+            if (selectVersion) writer.UseVersion(recordVersion, minimumReader);
+            writer.Write("value", state["value"]);
+            return true;
+        });
+
+        byte[] legacy = extender.Save(mod);
+        CollectionAssert.AreEqual(SaveWith(1, 1, new[] { "value" }, state), legacy,
+            "An explicitly selected old schema retains the complete old record bytes, including its checksum.");
+        extender.LoadSave(legacy, mod);
+        Assert.AreEqual(1, mod.Loads.Last().RecordVersion);
+        Assert.AreEqual(1, mod.Loads.Last().MinimumReaderVersion);
+
+        recordVersion = minimumReader = 2;
+        byte[] changedMeaning = extender.Save(mod);
+        CollectionAssert.AreEqual(SaveWith(2, 2, new[] { "value" }, state), changedMeaning);
+        selectVersion = false;
+        CollectionAssert.AreEqual(SaveWith(2, 1, new[] { "value" }, state), extender.Save(mod),
+            "Every capture starts from the registration metadata, independently of earlier choices.");
+    }
+
+    [TestMethod]
+    public void InvalidCaptureVersionsFailWithoutReturningAReplacementRecord()
+    {
+        foreach (var versions in new[] { (0, 1), (-1, 1), (3, 1), (1, 0), (1, -1), (1, 2), (2, 3) })
+        {
+            var extender = new FakeExtender();
+            VersionedSaveWriter retained = null;
+            var mod = extender.Register("Mod.Data", 2, 1, new[] { "value" }, writer =>
+            {
+                retained = writer;
+                writer.Write("value", new byte[] { 9 });
+                writer.UseVersion(versions.Item1, versions.Item2);
+                return true;
+            });
+            Assert.IsNull(extender.Save(mod), "Invalid metadata must not replace the Extender's existing entry.");
+            Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
+            Assert.AreEqual(1L, extender.Registry.CallbackFailures);
+            Assert.ThrowsExactly<InvalidOperationException>(() => retained.UseVersion(1, 1));
+        }
+
+        var floor = new FakeExtender();
+        var floorMod = floor.Register("Mod.Floor", 3, 2, new[] { "value" }, writer =>
+        {
+            writer.UseVersion(2, 1);
+            return true;
+        });
+        Assert.IsNull(floor.Save(floorMod), "A capture cannot lower the registration's minimum reader floor.");
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, floorMod.Handle.LastWriteStatus);
+    }
+
+    [TestMethod]
+    public void SelectedMinimumReaderMakesOldReadersKeepTheRecordWithoutCapture()
+    {
+        var newer = new FakeExtender();
+        var mod = newer.Register("Mod.Data", 2, 1, new[] { "value" }, writer =>
+        {
+            writer.UseVersion(2, 2);
+            writer.Write("value", new byte[] { 7 });
+            return true;
+        });
+        byte[] record = newer.Save(mod);
+        var older = new FakeExtender();
+        int captures = 0;
+        var oldMod = older.Register("Mod.Data", 1, 1, new[] { "value" }, _ => { captures++; return true; });
+        older.LoadSave(record, oldMod);
+        Assert.AreEqual(VersionedSaveLoadStatus.TooNew, oldMod.Loads.Single().Status);
+        Assert.AreEqual(2, oldMod.Loads.Single().RecordVersion);
+        Assert.AreEqual(2, oldMod.Loads.Single().MinimumReaderVersion);
+        Assert.IsTrue(oldMod.Handle.KeepsLoadedRecord);
+        CollectionAssert.AreEqual(record, older.Save(oldMod));
+        Assert.AreEqual(VersionedSaveWriteStatus.KeptLoadedRecord, oldMod.Handle.LastWriteStatus);
+        Assert.AreEqual(0, captures);
+    }
+
+    [TestMethod]
+    public void OlderCaptureSchemaRefusesUnknownEntriesAlreadyMigratedByTheRegistry()
+    {
+        byte[] version1 = SaveWith(1, 1, new[] { "value", "future" },
+            new() { ["value"] = new byte[] { 7 }, ["future"] = new byte[] { 10 } });
+        var extender = new FakeExtender();
+        bool downgrade = true;
+        Action duringCapture = null;
+        var registration = extender.Registration("Mod.Data", 2, 1, new[] { "value" }, writer =>
+        {
+            duringCapture?.Invoke();
+            if (downgrade) writer.UseVersion(1, 1);
+            writer.Write("value", new byte[] { 7 });
+            return true;
+        });
+        registration.AddMigration(1, entries =>
+        {
+            if (entries.TryGet("future", out byte[] value)) entries.Set("future", new byte[] { (byte)(value[0] + 1) });
+        });
+        var mod = extender.Register(registration);
+        extender.LoadSave(version1, mod);
+        Assert.AreEqual(1, mod.Loads.Last().KeptEntryCount);
+        Assert.IsNull(extender.Save(mod), "Returning no replacement lets the Extender retain its existing record.");
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
+
+        downgrade = false;
+        byte[] version2 = extender.Save(mod);
+        var reader = new FakeExtender();
+        int migrations = 0;
+        var readerRegistration = reader.Registration("Mod.Data", 2, 1, new[] { "value", "future" }, Writes(new()));
+        readerRegistration.AddMigration(1, entries =>
+        {
+            migrations++;
+            entries.TryGet("future", out byte[] value);
+            entries.Set("future", new byte[] { (byte)(value[0] + 1) });
+        });
+        var readerMod = reader.Register(readerRegistration);
+        reader.LoadSave(version2, readerMod);
+        Assert.AreEqual(0, migrations, "The retained entry is already at schema 2 and must not migrate twice.");
+        CollectionAssert.AreEqual(new byte[] { 11 }, readerMod.Loads.Single().Entries["future"]);
+
+        byte[] knownOnly = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 7 } });
+        extender.LoadSave(knownOnly, mod);
+        Assert.AreEqual(0, mod.Loads.Last().KeptEntryCount);
+        downgrade = true;
+        CollectionAssert.AreEqual(knownOnly, extender.Save(mod), "Only the latest loaded unknown entries block a downgrade.");
+        duringCapture = () =>
+        {
+            duringCapture = null;
+            extender.LoadSave(version1, mod);
+        };
+        Assert.IsNull(extender.Save(mod), "A load completed inside capture must not bypass the unknown-entry guard.");
+        Assert.AreEqual(1, mod.Loads.Last().KeptEntryCount);
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
     }
 
     [TestMethod]
@@ -463,6 +702,7 @@ public class VersionedSaveDataTests
         var lateMod = late.Register("Mod.Late", 1, 1, known, w => { retained = w; return true; });
         late.Save(lateMod);
         Assert.ThrowsExactly<InvalidOperationException>(() => retained.Write("a", new byte[0]));
+        Assert.ThrowsExactly<InvalidOperationException>(() => retained.UseVersion(1, 1));
     }
 
     [TestMethod]
