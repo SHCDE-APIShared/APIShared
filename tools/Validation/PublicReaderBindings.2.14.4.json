@@ -105,6 +105,26 @@
       ],
       "maxOutputBytes": 262144,
       "includeNested": false
+    },
+    {
+      "id": "cost-storage-tracking",
+      "assembly": "RedBird.Core.dll",
+      "type": "RedBird.Core.Memory.Managed.ManagedNativeArray`1;RedBird.Core.Memory.Managed.ManagedDictionary`2",
+      "includeNested": false,
+      "methods": [
+        ".ctor",
+        "GetValue",
+        "SetValue",
+        "EnsureTracked",
+        "Push",
+        "Pop",
+        "SetBase",
+        "ClearOverrides",
+        "ResetToOriginal",
+        "Dispose",
+        "GetBaseAddress"
+      ],
+      "maxOutputBytes": 524288
     }
   ]
 }

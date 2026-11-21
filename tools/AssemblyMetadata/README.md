@@ -163,9 +163,12 @@ accepted by the workflow. Omit it to retain the baseline audit.
 Set `public_extender_metadata_fixture=reader-bindings`, together with the audit
 enable flag, for the fixed [record, resource and lifecycle selections](../Validation/PublicReaderBindings.2.14.4.json).
 This profile reads `SHCDESE.dll` and `RedBird.Core.dll` from the same public package.
-Seven probes have a combined 6.75 MiB report limit: declared record layouts,
+Eight probes have a combined 7.25 MiB report limit: declared record layouts,
 player resource readers, global address setup, process hook ownership, save/reset
-wrappers, native demand storage and the physical-cost array reader.
+wrappers, native demand storage, the physical-cost array reader and managed cost
+tracking/reset methods. The last selection distinguishes first-write snapshots,
+stack overrides and original-value resets; source-version identity alone is not
+a substitute for those binary method contracts.
 
 Layout values describe metadata declarations. Sequential field order and packing
 do not establish computed native offsets. The profile does not prove native
