@@ -79,6 +79,14 @@ Keep `DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false` and
 `DOTNET_GENERATE_ASPNET_CERTIFICATE=false` in any child using an isolated CLI home;
 the nested Content process explicitly enforces both defaults.
 
+The public [ThirdPartyMod example](examples/ThirdPartyMod/ThirdPartyMod.csproj) and
+[preset consumer](tests/PublicPresetConsumer/APISharedPresetConsumerTests.csproj)
+can build against an extracted package with `-p:ApiSharedDir="C:/path/to/APIShared"`.
+Use the directory containing `APIShared.dll` (and `APIShared.Content.dll` for
+ThirdPartyMod); configure the game and Extender dependencies as above. Without
+this property, both projects use the repository's `BepInEx/plugins/APIShared_Serp`
+directory.
+
 ## Tests
 
 ### Running tests
