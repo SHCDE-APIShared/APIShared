@@ -129,12 +129,14 @@ namespace APIShared.Presentation
                 hook = new NativeDetourBackend(new NativeDetourOptions { AllowedSchemes = DetourScheme.Indirect, FollowJumps = false, FollowCalls = false, SuspendThreadsDuringPatch = NativeStartupPatchWindow.SuspendThreads }).CreateDetour(in request) as NativeDetour<RenderCall>;
                 if (hook == null || hook.IsInstalled || hook.DisplacedByteCount != Entry.Length || hook.Scheme != DetourScheme.Indirect)
                     throw new InvalidOperationException("Visible-map Indirect/10 contract changed.");
+                NativeForeignPatchGuard.RequireUnpatched(hook, "Visible-map rendering");
                 // All callback roots and the original trampoline exist before publication. A failed
                 // publication remains rooted with native demand zero and must never be undone.
                 publicationStarted = true;
                 hook.Enable();
                 NativeIndirectEntry.Validate(hook, target, Entry);
                 bridge.Validate(hook);
+                NativeForeignPatchGuard.Watch(hook, "Visible-map rendering");
                 ready = true;
                 NativeApiLog.Info(log, "Shared visible-map render installed: RVA=0x41D60 span=10 resume=0x41D6A; native demand gate.");
             }

@@ -59,7 +59,7 @@ namespace APISharedTests
                     Assert.IsTrue(underMonitor);
                     Assert.AreEqual("native admission rejected",message);
                     WorkerProductionWorldSafety.Retire();
-                    typeof(WorkerProductionWorldSafety).GetMethod("Terminate",PrivateStatic).Invoke(null,new object[]{generation,301L,message});
+                    typeof(WorkerProductionWorldSafety).GetMethod("Terminate",PrivateStatic).Invoke(null,new object[]{generation,301L,message,false});
                     Assert.AreEqual(1,reports,"A stale stop is suppressed without losing or repeating status.");
                 }
                 finally { WorkerProductionWorldSafety.Faulted-=observer; }

@@ -21,6 +21,9 @@ namespace APIShared.DependencyBootstrap
                 if (listener != null) return;
                 ProbeTrace.Initialize();
                 mode = File.Exists(Path.Combine(BepInEx.Paths.ConfigPath, "APIShared.DependencyBootstrap.disabled")) ? "Disabled" : "Active";
+                // Finish runs before the chainloader opens plugins. Recovery also runs when the
+                // companion was disabled or its runtime removed after an interrupted swap.
+                WorkshopInstallPass.Run(BepInEx.Paths.GameRootPath, mode == "Active");
                 listener = new ReadinessListener(new ReadyGate(OnReady, () => { }, (marker, detail) => ProbeTrace.Error(detail)));
                 Logger.Listeners.Add(listener);
             }

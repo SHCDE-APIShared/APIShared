@@ -110,8 +110,8 @@ Set only the launched child's environment; do not persist user/machine settings.
 ### Coverage and limitations
 
 GitHub Actions runs source, metadata and XAML validation and the game-independent
-Core.Tests and Content.Tests suites on Windows. Additional Linux checks cover Workshop recovery,
-maintenance and shell scripts. See the [CI workflow](.github/workflows/tests.yml)
+Core.Tests and Content.Tests suites on Windows. Additional Linux checks run the Core.Tests
+Workshop installation tests on the native Linux file system and the shell scripts. See the [CI workflow](.github/workflows/tests.yml)
 for the commands. CI does not run installed-game integration or gameplay tests.
 Core.Tests uses the public SharpZipLib package when the installed Extender library
 is unavailable. Release-helper tests simulate GitHub publishing; they do not
@@ -129,6 +129,11 @@ suites, compiles public consumer examples and prepares the plugin and publisher
 packages. It also builds and tests the independent
 [dependency bootstrap](docs/DEPENDENCY_BOOTSTRAP.md); that guide describes its
 package/removal fixtures and remaining game and lifecycle acceptance checks.
+The build step `workshop-install-kills` runs
+`tools/Validation/Test-WorkshopInstall.ps1`, which kills real processes during Workshop
+staging, the preloader swap and its recovery (harness `tests/WorkshopInstall.Harness`);
+run it directly with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Validation/Test-WorkshopInstall.ps1`.
+See [Workshop internal implementation](docs/WORKSHOP.md#interrupted-update-regression).
 Automated build success does not replace those checks.
 
 Compatibility tests compare the compiled public API and internals used by

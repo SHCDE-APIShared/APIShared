@@ -439,6 +439,9 @@ namespace APIShared.ModSettings
             RaiseDerivedAccessOutput(nameof(System_PresetStatusText));
             RaiseDerivedAccessOutput(nameof(System_PresetStatusVisibility));
             RaiseDerivedAccessOutput(nameof(System_CanLoadSettingsSource));
+            RaiseDerivedAccessOutput(nameof(System_PresetShareOnlyPickerVisibility));
+            RaiseDerivedAccessOutput(nameof(System_CanDeleteSelectedPreset));
+            RaiseDerivedAccessOutput(nameof(System_PresetDeleteVisibility));
 #endif
         }
     }

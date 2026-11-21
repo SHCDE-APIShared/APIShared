@@ -1,9 +1,11 @@
 using System;
 using System.Buffers.Binary;
+using System.Linq;
 using APIShared.Buildings;
 using MessagePack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SHCDESE.Interop;
+using SHCDESE.Interop.Enums;
 
 namespace APISharedTests
 {
@@ -164,6 +166,16 @@ namespace APISharedTests
             Assert.AreEqual(packet.ValueIndex, decoded.ValueIndex);
             Assert.AreEqual(packet.Value, decoded.Value);
             Assert.AreEqual(packet.Serial, decoded.Serial);
+            Assert.IsFalse(decoded.AllOfSameType);
+
+            var batch = new BuildingStatePacket(packet.Owner, packet.Id, packet.BuildingId, packet.GlobalId,
+                packet.ValueIndex, packet.Value, packet.Serial, allOfSameType: true);
+            byte[] batchBody = MessagePackSerializer.Serialize(batch);
+            Assert.IsTrue(MessagePackSerializer.Deserialize<BuildingStatePacket>(batchBody).AllOfSameType);
+            Assert.AreEqual((byte)0x98, body[0], "the original single-building packet has eight fields");
+            Assert.AreEqual((byte)1, body[1], "the original protocol remains on the wire");
+            Assert.AreEqual((byte)2, batchBody[1]);
+            CollectionAssert.AreEqual(body.Skip(2).ToArray(), batchBody.Skip(2).ToArray());
 
             foreach (var invalid in new[]
             {
@@ -174,6 +186,37 @@ namespace APISharedTests
                 new BuildingStatePacket("o", "i", 1, 1, 0, 1, 0)
             })
                 Assert.ThrowsExactly<MessagePackSerializationException>(() => MessagePackSerializer.Serialize(invalid));
+        }
+
+        [TestMethod]
+        [TestCategory("BuildingState")]
+        public void SameTypeRequestSetsOnlyLivingOwnedBuildingsAndKeepsSimulationValues()
+        {
+            const eStructs type = eStructs.STRUCT_TANNERS_WORKSHOP;
+            var registration = new BuildingStateRegistration("owner", "id", "Owner.Save", new[] { type },
+                new[]
+                {
+                    new BuildingStateValue("runs", 3, BuildingStateValueAccess.OwnerRequest),
+                    new BuildingStateValue("trip", 1, BuildingStateValueAccess.Simulation)
+                }) { AllowSameTypeOwnerRequests = true };
+            var table = new BuildingStateTable(registration, new BuildingStateMemory(TwoValues));
+            var buildings = new[]
+            {
+                new GameBuilding { r_AliveState = AliveState.IsAlive, r_GlobalId = 11, r_BuildingType = type, r_PlayerIdOwner = 2 },
+                new GameBuilding { r_AliveState = AliveState.IsAlive, r_GlobalId = 12, r_BuildingType = type, r_PlayerIdOwner = 2, r_IsSleeping = 1 },
+                new GameBuilding { r_AliveState = AliveState.IsAlive, r_GlobalId = 13, r_BuildingType = type, r_PlayerIdOwner = 3 },
+                new GameBuilding { r_AliveState = AliveState.NeedsInit, r_GlobalId = 14, r_BuildingType = type, r_PlayerIdOwner = 2 },
+                new GameBuilding { r_AliveState = AliveState.IsAlive, r_GlobalId = 15, r_PlayerIdOwner = 2 }
+            };
+            Assert.IsTrue(table.TrySetFromSimulation(2, 12, 1, 1));
+            BuildingStates.ApplySameType(table, buildings, type, 2,
+                new BuildingStatePacket("owner", "id", 1, 11, 0, 2, 1, allOfSameType: true));
+            Assert.AreEqual((byte)2, table.GetValue(1, 11, 0));
+            Assert.AreEqual((byte)2, table.GetValue(2, 12, 0));
+            Assert.AreEqual((byte)1, table.GetValue(2, 12, 1));
+            Assert.AreEqual((byte)0, table.GetValue(3, 13, 0));
+            Assert.AreEqual((byte)0, table.GetValue(4, 14, 0));
+            Assert.AreEqual((byte)0, table.GetValue(5, 15, 0));
         }
     }
 

@@ -167,6 +167,11 @@ The neutral APIShared agreement coordinator uses the existing message transport
 to exchange protocol/native support, the exact launch-bundle commitment, wire
 mode and sidecar requirements/capabilities. A host/roster-bound challenge and
 receipts qualify a launch; profile changes immediately invalidate that approval.
+Republishing a matching receipt wakes a mission waiting to start, even if the
+lobby status remains Ready throughout the refresh.
+After native loading, a multiplayer mission with a pending receipt retries on
+Unity at most once per second. After 30 seconds it reports the failure and
+terminates the pending mission. The wait belongs to that mission generation.
 Prepared save/map admission also binds the selected production-record digest and required schema.
 Consumers do not implement a second per-player production-readiness protocol.
 Local launch rejections additionally advance `RejectedLocalLaunchSequence` with

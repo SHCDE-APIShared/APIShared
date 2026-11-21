@@ -133,6 +133,15 @@ namespace Core.Tests
             Assert.AreEqual("3", (string)layer.Attribute("Value"));
             var vanillaButtonLayer = patch.Descendants().Single(e => (string)e.Attribute("XPath") == "//n:Button[@Name='ToggleControlGroups']");
             Assert.AreEqual("4", (string)vanillaButtonLayer.Attribute("Value"), "Vanilla Control Groups must stay above the overlapping troop container.");
+            // Vanilla places both page arrows inside the container bounds (x 142-550, y 33-153 of 800x155)
+            // and relies on document order; a lower layer leaves only a few pixels clickable.
+            foreach (string pageButton in new[] { "ButtonTroopPanelPage1", "ButtonTroopPanelPage2" })
+            {
+                var pageLayer = patch.Descendants().Single(e => (string)e.Attribute("XPath") == "//n:Button[@Name='" + pageButton + "']");
+                Assert.AreEqual("Panel.ZIndex", (string)pageLayer.Attribute("AttributeName"));
+                Assert.IsTrue(int.Parse((string)pageLayer.Attribute("Value")) > int.Parse((string)layer.Attribute("Value")),
+                    pageButton + " must stay above the overlapping troop container.");
+            }
             var hostOperation = patch.Elements().Single().Elements().Single(e => e.Descendants().Any(child =>
                 child.Name.LocalName == "Canvas" && child.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == "APISharedTroopActionButtonsHost")));
             Assert.AreEqual("//n:Grid[@Name='TroopSelectionControls']", (string)hostOperation.Attribute("XPath"));

@@ -4,8 +4,8 @@ using System.Linq;
 
 namespace APIShared.Workshop
 {
-    // Pure prospective-state checks, shared by startup preparation and the final
-    // handoff. A rejected dependency update cannot authorize dependent changes.
+    // Pure prospective-state checks, shared by startup preparation and the staging
+    // precheck. A rejected dependency update cannot authorize dependent changes.
     internal static class WorkshopBatch
     {
         internal static Dictionary<string, Version> EndState(IEnumerable<WorkshopInstallPlan> plans, IReadOnlyDictionary<string, Version> installed)
