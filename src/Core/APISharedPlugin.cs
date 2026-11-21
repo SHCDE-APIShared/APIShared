@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.60.2";
+        public const string PluginVersion = "0.61.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -97,6 +97,8 @@ namespace APIShared
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
                 new NativeInitializationStep("map filename policy", () => Maps.MapLoadPolicy.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("typed construction costs", () => Buildings.ConstructionCosts.Initialize(context.ModuleHandle, context.Memory, hash, RuntimeLogger)),
+                new NativeInitializationStep("quarry pile placement", () => Buildings.QuarryPilePlacement.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("path-component refresh", () => Pathfinding.PathComponentRefresh.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("human construction transactions", () => Buildings.HumanConstructionRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("Vanilla Lord message references", () => Presentation.VanillaLordMessages.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("Lord message presentation protocol", () => Presentation.LordMessageRuntime.InitializeNative(hash)),

@@ -480,10 +480,18 @@ APIShared.Buildings.ConstructionCosts | public static bool IsAvailable { get; }
 APIShared.Buildings.ConstructionCosts | public static bool TryGetCurrent(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
 APIShared.Buildings.ConstructionCosts | public static bool TryGetDefault(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
 APIShared.Buildings.ConstructionCosts | public static bool TryGetDisplayCosts(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
+APIShared.Buildings.ConstructionCosts | public static bool TryGetPlayerMaterialStock(int playerId, out APIShared.Buildings.ConstructionMaterialStock stock, out string reason)
 APIShared.Buildings.ConstructionCosts | public static bool TrySetCurrent(APIShared.Buildings.ConstructionCostTarget target, SHCDESE.Interop.eGoods good, int amount, out string reason)
 APIShared.Buildings.ConstructionCosts | public static string UnavailableReason { get; }
 APIShared.Buildings.ConstructionDemolition | public static class APIShared.Buildings.ConstructionDemolition
 APIShared.Buildings.ConstructionDemolition | public static void RunSelfDemolition(int actor, System.Action operation)
+APIShared.Buildings.ConstructionMaterialStock | public struct APIShared.Buildings.ConstructionMaterialStock
+APIShared.Buildings.ConstructionMaterialStock | public int Gold { get; }
+APIShared.Buildings.ConstructionMaterialStock | public long GetAmount(SHCDESE.Interop.eGoods good)
+APIShared.Buildings.ConstructionMaterialStock | public uint Iron { get; }
+APIShared.Buildings.ConstructionMaterialStock | public uint Pitch { get; }
+APIShared.Buildings.ConstructionMaterialStock | public uint Stone { get; }
+APIShared.Buildings.ConstructionMaterialStock | public uint Wood { get; }
 APIShared.Buildings.ConstructionObjectIdentity | public struct APIShared.Buildings.ConstructionObjectIdentity : System.IEquatable<APIShared.Buildings.ConstructionObjectIdentity>
 APIShared.Buildings.ConstructionObjectIdentity | public .ctor(APIShared.Buildings.ConstructionObjectKind kind, int slot, uint globalId)
 APIShared.Buildings.ConstructionObjectIdentity | public APIShared.Buildings.ConstructionObjectKind Kind { get; }
@@ -544,6 +552,12 @@ APIShared.Buildings.HumanConstructionCostRegistration | public void SetCosts(API
 APIShared.Buildings.HumanConstructionCosts | public static class APIShared.Buildings.HumanConstructionCosts
 APIShared.Buildings.HumanConstructionCosts | public static bool TryGetEffectiveCosts(APIShared.Buildings.ConstructionCostTarget target, int playerId, out System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eGoods, int> values)
 APIShared.Buildings.HumanConstructionCosts | public static bool TryRegister(string ownerGuid, string registrationId, string saveDataIdentifier, out APIShared.Buildings.HumanConstructionCostRegistration registration, out string reason)
+APIShared.Buildings.QuarryPilePlacement | public static class APIShared.Buildings.QuarryPilePlacement
+APIShared.Buildings.QuarryPilePlacement | public static bool InitialSearchAvailable { get; }
+APIShared.Buildings.QuarryPilePlacement | public static bool RelocationAvailable { get; }
+APIShared.Buildings.QuarryPilePlacement | public static bool TryFindInitialCandidate(int playerId, int quarryX, int quarryY, System.Func<int, int, bool> permits, out int pileX, out int pileY)
+APIShared.Buildings.QuarryPilePlacement | public static bool TryGetRelocationCandidate(int quarryX, int quarryY, int perimeterIndex, int placementTry, out int pileX, out int pileY)
+APIShared.Buildings.QuarryPilePlacement | public static bool TryWithInitialCandidateFilter(int playerId, int pileX, int pileY, System.Func<bool> placeQuarry)
 APIShared.Commands.GameActionAcceptedEventArgs | public sealed class APIShared.Commands.GameActionAcceptedEventArgs
 APIShared.Commands.GameActionAcceptedEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public int ActionState { get; }
@@ -2607,6 +2621,16 @@ APIShared.Networking.ModNetworkClient | public APIShared.Networking.ChoreChannel
 APIShared.Networking.ModNetworkClient | public APIShared.Networking.MessageChannel<T> RegisterMessage<T>(string registrationId, System.Action<APIShared.Networking.NetworkMessage<T>> receive, APIShared.Networking.MessageChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public bool TryPostPresentation(System.Action presentation)
 APIShared.Networking.ModNetworkClient | public string OwnerGuid { get; }
+APIShared.Networking.NativeReadinessProof | public sealed class APIShared.Networking.NativeReadinessProof
+APIShared.Networking.NativeReadinessProof | public .ctor()
+APIShared.Networking.NativeReadinessProof | public APIShared.Networking.NativeReadinessState Evaluate()
+APIShared.Networking.NativeReadinessProof | public bool TryAccept(ulong senderSteamId, string senderWorldNonce, string worldToken, long attempt, int commandId, int tick)
+APIShared.Networking.NativeReadinessProof | public void Begin(ulong localSteamId, string worldToken, long attempt, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<ulong, string>> peers)
+APIShared.Networking.NativeReadinessProof | public void Clear()
+APIShared.Networking.NativeReadinessState | public enum APIShared.Networking.NativeReadinessState : int
+APIShared.Networking.NativeReadinessState | Mismatch = 2
+APIShared.Networking.NativeReadinessState | Pending = 0
+APIShared.Networking.NativeReadinessState | Ready = 1
 APIShared.Networking.NetworkMessage<T> | public sealed class APIShared.Networking.NetworkMessage<T> where T : class
 APIShared.Networking.NetworkMessage<T> | public T Packet { get; }
 APIShared.Networking.NetworkMessage<T> | public ulong SenderSteamId { get; }
@@ -2658,6 +2682,9 @@ APIShared.Patching.SafeIlHook | public string Id { get; }
 APIShared.Patching.SafeIlHook | public string OwnerGuid { get; }
 APIShared.Patching.SafeTranspiler | public static class APIShared.Patching.SafeTranspiler
 APIShared.Patching.SafeTranspiler | public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> Run(string ownerGuid, string id, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions, System.Func<System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>> transform, BepInEx.Logging.ManualLogSource log, System.Action<bool> outcome = null)
+APIShared.Pathfinding.PathComponentRefresh | public static class APIShared.Pathfinding.PathComponentRefresh
+APIShared.Pathfinding.PathComponentRefresh | public static bool IsAvailable { get; }
+APIShared.Pathfinding.PathComponentRefresh | public static bool TryRefresh(bool force, out bool rebuilt, out string reason)
 APIShared.Pathfinding.PathReachability | public static class APIShared.Pathfinding.PathReachability
 APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult BetweenComponents(int playerId, SHCDESE.Interop.Enums.PathConnectionQueryMode mode, int fromComponent, int toComponent)
 APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult BetweenTiles(int playerId, SHCDESE.Interop.Enums.PathConnectionQueryMode mode, int fromX, int fromY, int toX, int toY)

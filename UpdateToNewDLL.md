@@ -2157,6 +2157,32 @@ both loader extent and payment consumer, the genuine managed field/array/method 
 and installed enum meanings, then rerun alias and sentinel-buffer tests before rebinding.
 
 
+## Shared quarry placement and path-component refresh
+
+Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Initial quarry placement calls `0xBD7A0` from `0x76780` with an expanding perimeter
+and a 2×2 pile. `0xBD7A0` calls `0xC0270` for candidate offsets and `0x77E60`
+for validation, then checks the candidate's path component against that of the main
+quarry. The relocation query calls `0xC0270` with its separately indexed perimeter.
+Preserve and restore manager offsets `+0x31B7D0/+0x31B7D4` and placement scratch around
+queries. The scoped filter uses the Extender-owned synchronous placement Post event
+and can only reject a candidate while its matching operation is active.
+
+PathComponentRefresh calls `0xE49D0` as Win64 `int(context*, int force)` at the live
+entry under the engine monitor. Check the original image against the force/dirty,
+countdown and generation sequence. The SE view must resolve context `0x60AD660`;
+the dirty flag is `+0x6C` and the generation is `+0x74`. A forced call with argument
+one sets dirty, resets the countdown, publishes a new generation, and clears dirty.
+This call-only binding preserves the existing Pathfinding entry detour.
+Unsupported layouts are rejected before binding. Re-audit the original callsites,
+tile bounds, SE event and field contracts, scratch extents and return/generation
+contract before enabling another native hash.
+
+The stock snapshot reads the five fields of the explicit player through the public
+SE player resource accessor. Verify UInt32 wood, stone, iron and pitch, Int32 gold,
+the 1-based actor lookup, and snapshot consistency under the engine monitor.
+
 ## Human construction transaction adapters (2026-11-15)
 
 Reference native SHA256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.

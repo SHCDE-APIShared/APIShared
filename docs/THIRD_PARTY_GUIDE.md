@@ -931,6 +931,18 @@ effect is implied. These rules apply only to authenticated channels.
 The adapter is deliberately tied to audited native layout and loaded SE method
 contracts; see [native update requirements](../UpdateToNewDLL.md#authenticated-chore-context-and-submission).
 
+### Native readiness proofs
+
+Create one `NativeReadinessProof` per outgoing proof stream. Call `Begin` with a
+snapshot of peer Steam identities and world nonces, plus the local identity and
+current token and attempt. Feed `TryAccept` the authenticated transport identity
+and each peer's receipt. A ready result requires every peer to agree with the
+local receipt on both native command ID and scheduled tick. Conflicting receipts
+from one peer mark the attempt as mismatched, even if a later duplicate matches. Clear the proof at
+session end or when outgoing readiness is invalidated. Serialize access with
+your existing protocol lock. Consumers still own channel registration,
+world-token issuance, replay checks and execution receipts.
+
 ### Control-plane messages
 
 `RegisterMessage<T>(id, receive, options)` is for control-plane data and presentation,
@@ -2153,6 +2165,33 @@ Vanilla has no corresponding visual row. -1 is a consumer setting sentinel, not 
 remain operation-time checks. Braziers have only a human-extra-cost identity. Never fall
 back to unchecked SE cost methods when the service rejects a target. Unknown native
 hashes disable this service independently until its table/layout contract is re-audited.
+
+### Construction material stock and quarry piles
+
+While holding the game engine monitor in an active world, use
+`ConstructionCosts.TryGetPlayerMaterialStock(playerId, out stock, out reason)`
+to read the actual builder's wood, stone, iron, pitch and gold. Compare that
+snapshot with `TryGetCurrent` for base affordability. Mission-specific free builds,
+reservations and additional costs are consumer decisions. The stock read works
+on the simulation thread and has no local-viewpoint dependency.
+
+`QuarryPilePlacement.TryFindInitialCandidate` takes the top-left quarry tile
+and a synchronous predicate for eligible pile coordinates. The native search
+applies its own placement and path-component rules in native order.
+`TryGetRelocationCandidate` returns the indexed perimeter candidate for the requested
+attempt. The consumer owns target validation and relocation policy.
+`TryWithInitialCandidateFilter` scopes an allowed pile tile to one synchronous
+construction callback. Check the resulting quarry and pile records after construction.
+Use the same engine monitor for these operations. The callbacks must not yield
+or start another quarry build.
+
+### Refreshing path components
+
+`PathComponentRefresh.TryRefresh(force, out rebuilt, out reason)` requires the
+game engine monitor in an active world. Set `force` only if a consumer has
+changed topology and must publish a new generation even when the game has not
+marked the grid dirty. Otherwise a clean grid returns success with `rebuilt`
+false. After a failed rebuild, skip the dependent operation.
 
 ### Human-only construction extras and refunds
 

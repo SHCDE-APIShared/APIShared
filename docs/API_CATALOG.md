@@ -297,6 +297,9 @@ See the [sender, thread and native prerequisites](THIRD_PARTY_GUIDE.md#authentic
 Register unconditionally on Unity after the Extender's built-in packet registration,
 in the same order on all peers. Explicit MessagePack formatters are required.
 
+`NativeReadinessProof` (0.61.0) evaluates whether the expected peers confirmed the
+same authenticated native command and tick. [Integration guide](THIRD_PARTY_GUIDE.md#native-readiness-proofs)
+
 Channel options accept logical activation, validation, payload limits and diagnostic
 callbacks; message options additionally accept a pure deep-copy callback. Messages
 can target the game, one 1-based player ID, active-lobby peers or a Steam ID.
@@ -356,6 +359,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
 | Coarse reachability | [PathReachability](../src/Pathfinding/Reachability/PathReachability.cs) | Query through Script Extender path components, no hook ([section](#reachability-and-line-of-sight)) | [Guide](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable) |
+| Path-component refresh | [PathComponentRefresh](../src/Pathfinding/Reachability/PathComponentRefresh.cs) | Synchronous native refresh in an active world under the engine monitor (0.61.0) | [Guide](THIRD_PARTY_GUIDE.md#refreshing-path-components) |
 | Line of sight | [Contracts](../src/Sight/LineOfSightContracts.cs), [LineOfSight](../src/Sight/LineOfSight.cs), [sight-blocking buildings](../src/Sight/SightBlockingBuildings.cs) | [Native calls](../src/Sight/LineOfSightNative.cs), [height dispatch owner](../src/Sight/SightBlockingBuildingsNative.cs) | [Guide](LINE_OF_SIGHT.md) |
 | Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs) | [Guide](BUILDING_PANELS.md) |
 | Per-building state | [Contracts](../src/Buildings/State/BuildingStateContracts.cs), [registration](../src/Buildings/State/BuildingStates.cs) | [Native table](../src/Buildings/State/BuildingStateMemory.cs), [request Chore](../src/Buildings/State/BuildingStatePacket.cs) | [Guide](BUILDING_STATE.md) |
@@ -1144,3 +1148,12 @@ indexed into either table. No existing SE cost method is patched. See
 [typed cost access](THIRD_PARTY_GUIDE.md#typed-construction-costs).
 
 Human-only extras, saved payments and exact refunds: [HumanConstructionCosts](HUMAN_CONSTRUCTION_COSTS.md). ConstructionRefundPolicies shares action percentages with optional mods. ConstructionDemolition attributes authenticated custom demolition.
+
+`ConstructionCosts.TryGetPlayerMaterialStock` (0.61.0) snapshots the five live materials
+for an explicit player under the game engine monitor. Its `ConstructionMaterialStock`
+keeps the four physical stocks unsigned and gold signed. Combine it with the live cost
+row for simulation checks independent of the local HUD. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
+
+`APIShared.Buildings.QuarryPilePlacement` (0.61.0) exposes the native candidate query for
+a new quarry, the indexed coordinates used by pile relocation, and a scoped filter for
+one synchronous quarry build. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
