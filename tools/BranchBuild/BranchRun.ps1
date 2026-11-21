@@ -91,6 +91,8 @@ function Export-ApiBranchRunEvidence($Run) {
     if (@(Invoke-BranchGit $root @('ls-files','--others','--exclude-standard')).Count) { throw 'Untracked source retained.' }
     if (Test-ApiBranchRunProtected $Run.State.Repository $root) { throw 'Protected SDK source retained.' }
     # Unknown ignored files are not assumed reproducible merely because Git ignores them.
+    # A run may build an older branch: before 0.57.0 its Workshop suites still write
+    # coordination/readiness/recovery/maintenance-tests, so those names stay listed.
     foreach ($relative in @(Invoke-BranchGit $root @('ls-files','--others','--ignored','--exclude-standard'))) {
         $relative = $relative.Replace('\','/')
         if ($relative -match '(^|/)(bin|obj)/' -or $relative -match '^BepInEx/' -or

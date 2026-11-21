@@ -1,4 +1,5 @@
 using APIShared.Lobby;
+using APIShared.Maps;
 using APIShared.Localization;
 using APIShared.Networking;
 using APIShared.Savegames;
@@ -243,7 +244,7 @@ namespace APIShared
                 var humans = Humans(lobby); ulong local = SteamUser.GetSteamID().m_SteamID;
                 hostId = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
                 if (hostId != local || !humans.Contains(local)) throw new InvalidOperationException("The local host is not the current lobby owner and member.");
-                localPath = Path.GetFullPath(Header(lobby).filePath);
+                localPath = PrepareLocalPath(lobby);
                 if (!File.Exists(localPath))
                     throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", lobby.mapFileName));
                 localRecords = Capture(localPath, out localHash);
@@ -427,13 +428,24 @@ namespace APIShared
         {
             // Compare lobby metadata first; only the matching selection can resolve and capture its local file.
             if (localPath != null) return;
-            localPath = Path.GetFullPath(Header(lobby).filePath);
+            localPath = PrepareLocalPath(lobby);
             if (!File.Exists(localPath))
                 throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", pending.SaveName));
             localRecords = Capture(localPath, out localHash);
             Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
             string mismatch = SavegameRecordComparison.Describe(pending.Records, localRecords, LobbyReadinessSupport.PlayerName(SteamUser.GetSteamID().m_SteamID));
             if (mismatch != null) throw new InvalidDataException(mismatch);
+        }
+
+        private static string PrepareLocalPath(Platform_Multiplayer.MPLobby lobby)
+        {
+            string path = Header(lobby).filePath;
+            if (!lobby.coopTrailGame)
+            {
+                var decision = MapLoadPolicy.Evaluate(path);
+                if (decision.Rejection != null) throw new InvalidDataException(decision.Rejection);
+            }
+            return Path.GetFullPath(path);
         }
 
         private static void CheckFile()
@@ -563,8 +575,9 @@ namespace APIShared
             waitingReasonDirty = true;
         }
         private static void Schedule() => frameWork?.SetContinuous(pending != null && !loading);
-        internal static bool ValidateStart(string path, bool multiplayer)
+        internal static bool ValidateStart(string path, bool multiplayer, bool coop, out string alias)
         {
+            alias = null;
             if (!multiplayer) return true;
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
             { Abort("Map readiness validation requires Unity's main thread."); return false; }
@@ -586,6 +599,12 @@ namespace APIShared
                 if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out _, out string productionReason))
                     throw new InvalidOperationException(productionReason);
                 CheckFile();
+                if (!coop)
+                {
+                    var decision = MapLoadPolicy.Evaluate(path);
+                    if (decision.Rejection != null) throw new InvalidDataException(decision.Rejection);
+                    alias = decision.NativeFileName;
+                }
                 System.Threading.Volatile.Write(ref admission, new NativeAdmissionTicket(localPath, localHash));
                 loading = true; Schedule(); return true;
             }
@@ -634,6 +653,14 @@ namespace APIShared
                 if (ReferenceEquals(pending, transaction)) Abort(reason, notify: true, phase: "native admission");
                 else ReportUnscoped(reason, transaction?.Token);
             })) ReportUnscoped(reason, transaction?.Token);
+        }
+
+        // An admitted start may still fail before the native loader is invoked. In that
+        // case no world owns the published GO and the host must withdraw it.
+        internal static void AbortBeforeMapLoad(string reason)
+        {
+            if (Internal.UnityMainThreadDispatch.IsMainThread) loading = false;
+            Abort(reason);
         }
 
         private static void ReportUnscoped(string reason, string token) => LobbyLaunchStatus.ReportPreparationBlocked(log, reason,

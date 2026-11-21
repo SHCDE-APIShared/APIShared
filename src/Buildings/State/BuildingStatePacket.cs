@@ -4,18 +4,21 @@ using MessagePack.Formatters;
 
 namespace APIShared.Buildings
 {
-    // One owner request for one value of one building identity. The table is named by its
+    // One owner request for one value, anchored to a building identity. The table is named by its
     // owner GUID and registration ID, so registration order never changes its meaning.
     [MessagePackFormatter(typeof(BuildingStatePacketFormatter))]
     internal sealed class BuildingStatePacket
     {
         internal const int Protocol = 1;
+        internal const int SameTypeProtocol = 2;
         internal const int MaximumNameLength = 128;
 
-        internal BuildingStatePacket(string owner, string id, int buildingId, uint globalId, int valueIndex, byte value, int serial)
+        internal BuildingStatePacket(string owner, string id, int buildingId, uint globalId, int valueIndex, byte value, int serial,
+            bool allOfSameType = false)
         {
             Owner = owner; Id = id; BuildingId = buildingId; GlobalId = globalId;
             ValueIndex = valueIndex; Value = value; Serial = serial;
+            AllOfSameType = allOfSameType;
         }
 
         internal string Owner { get; }
@@ -24,6 +27,7 @@ namespace APIShared.Buildings
         internal uint GlobalId { get; }
         internal int ValueIndex { get; }
         internal byte Value { get; }
+        internal bool AllOfSameType { get; }
         // Presentation only: lets the sending peer recognise its own latest request.
         internal int Serial { get; }
 
@@ -41,7 +45,7 @@ namespace APIShared.Buildings
         {
             if (value == null || !value.IsValid) throw new ArgumentException("Invalid building state request.");
             writer.WriteArrayHeader(8);
-            writer.Write(BuildingStatePacket.Protocol);
+            writer.Write(value.AllOfSameType ? BuildingStatePacket.SameTypeProtocol : BuildingStatePacket.Protocol);
             writer.Write(value.Owner);
             writer.Write(value.Id);
             writer.Write(value.BuildingId);
@@ -53,10 +57,14 @@ namespace APIShared.Buildings
 
         public BuildingStatePacket Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
         {
-            if (reader.ReadArrayHeader() != 8 || reader.ReadInt32() != BuildingStatePacket.Protocol)
+            if (reader.ReadArrayHeader() != 8)
+                throw new MessagePackSerializationException("Unsupported building state request.");
+            int protocol = reader.ReadInt32();
+            if (protocol != BuildingStatePacket.Protocol && protocol != BuildingStatePacket.SameTypeProtocol)
                 throw new MessagePackSerializationException("Unsupported building state request.");
             var packet = new BuildingStatePacket(reader.ReadString(), reader.ReadString(), reader.ReadInt32(),
-                reader.ReadUInt32(), reader.ReadInt32(), reader.ReadByte(), reader.ReadInt32());
+                reader.ReadUInt32(), reader.ReadInt32(), reader.ReadByte(), reader.ReadInt32(),
+                protocol == BuildingStatePacket.SameTypeProtocol);
             if (!packet.IsValid) throw new MessagePackSerializationException("Invalid building state request.");
             return packet;
         }

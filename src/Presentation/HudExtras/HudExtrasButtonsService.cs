@@ -1,4 +1,5 @@
 using BepInEx.Logging;
+using APIShared.ModSettings;
 using CrusaderDE;
 using Noesis;
 using SHCDESE.API;
@@ -137,11 +138,17 @@ namespace APIShared
         private void ResetHost()
         {
             Hide();
+            foreach (Visual visual in visuals.Values) visual.ClearTooltip();
             if (host != null) host.Children.Clear();
             visuals.Clear(); host = null; next = null; page = 0;
             nextDiscovery = long.MinValue;
         }
-        private void Hide() { if (host != null) host.Visibility = Visibility.Collapsed; }
+        private void Hide()
+        {
+            if (host == null || host.Visibility == Visibility.Collapsed) return;
+            host.Visibility = Visibility.Collapsed;
+            foreach (Visual visual in visuals.Values) visual.CloseTooltip();
+        }
 
         private void Render(MainViewModel main)
         {
@@ -189,6 +196,8 @@ namespace APIShared
             }
             else if (next != null) next.Visibility = Visibility.Collapsed;
             host.Visibility = shown.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            foreach (Visual visual in visuals.Values)
+                if (!visual.Container.IsVisible) visual.CloseTooltip();
         }
 
         private Style RequireStyle(string name) => host.TryFindResource(name) as Style ??
@@ -198,7 +207,11 @@ namespace APIShared
         {
             if (!visuals.TryGetValue(state.Item, out Visual visual) || visual.Version != state.Version)
             {
-                if (visual != null) host.Children.Remove(visual.Container);
+                if (visual != null)
+                {
+                    visual.ClearTooltip();
+                    host.Children.Remove(visual.Container);
+                }
                 bool created = TryCreateButton(state.Item.Definition.ButtonFactory, context, state.Item.Key, out Button button);
                 if (!created)
                     button = new Button();
@@ -214,21 +227,35 @@ namespace APIShared
             if (visual.Failed || visual.TooltipVersion == state.TooltipVersion) return visual;
             try
             {
-                ToolTipService.SetToolTip(visual.Button, null);
+                visual.ClearTooltip();
                 if (!string.IsNullOrWhiteSpace(state.Tooltip))
                 {
-                    ToolTip tip = state.Item.Definition.TooltipFactory == null
-                        ? new ToolTip { Style = RequireStyle("APISharedHudExtrasTooltipStyle") }
-                        : state.Item.Definition.TooltipFactory(context);
+                    var factory = state.Item.Definition.TooltipFactory;
+                    ToolTip tip = factory == null
+                        ? new ToolTip { Style = RequireStyle("APISharedHudExtrasTooltipStyle"), IsHitTestVisible = false }
+                        : factory(context);
                     if (tip == null || tip.Parent != null || (tip.Style == null && tip.Template == null))
                         throw new InvalidOperationException("Tooltip factory must return a fresh tooltip with an explicit Style or Template.");
                     tip.Content = state.Tooltip;
+                    visual.Tooltip = tip;
+                    visual.OwnsTooltipSizing = factory == null;
+                    if (visual.OwnsTooltipSizing)
+                    {
+                        SharedToolTipSizing.SetReferenceElement(tip, visual.Button);
+                        SharedToolTipSizing.SetReferenceFontSize(tip, 14f);
+                        SharedToolTipSizing.SetEnabled(tip, true);
+                    }
                     ToolTipService.SetToolTip(visual.Button, tip);
                 }
                 ToolTipService.SetShowDuration(visual.Button, 60000);
                 visual.TooltipVersion = state.TooltipVersion;
             }
-            catch (Exception ex) { visual.Failed = true; LogFailure("tooltip " + state.Item.Key, ex); }
+            catch (Exception ex)
+            {
+                visual.Failed = true;
+                LogFailure("tooltip " + state.Item.Key, ex);
+                visual.ClearTooltip();
+            }
             return visual;
         }
 
@@ -282,10 +309,29 @@ namespace APIShared
         private sealed class Visual
         {
             internal readonly Button Button; internal readonly int Version; internal int TooltipVersion = -1; internal bool Failed;
+            // The attached Noesis value alone need not keep the managed sizing registration alive.
+            internal ToolTip Tooltip;
+            internal bool OwnsTooltipSizing;
             // BTN_Building animates Button.Visibility: page and owner gates must live on a parent.
             internal readonly Grid Container = new Grid { Width = HudExtrasButtonLayout.Width, Height = HudExtrasButtonLayout.Height,
                 HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, Visibility = Visibility.Collapsed };
             internal Visual(Button button, int version) { Button = button; Version = version; }
+            internal void CloseTooltip()
+            {
+                if (Tooltip?.IsOpen == true) Tooltip.IsOpen = false;
+            }
+            internal void ClearTooltip()
+            {
+                CloseTooltip();
+                if (OwnsTooltipSizing)
+                {
+                    SharedToolTipSizing.SetEnabled(Tooltip, false);
+                    SharedToolTipSizing.SetReferenceElement(Tooltip, null);
+                }
+                OwnsTooltipSizing = false;
+                Tooltip = null;
+                ToolTipService.SetToolTip(Button, null);
+            }
         }
         private sealed class GuardedCommand : ICommand
         {

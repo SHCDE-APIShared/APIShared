@@ -3,13 +3,93 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.56.0",
+  "Version": "0.60.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.60.1",
+      "Changes": [
+        "Add an opt-in map load policy for mods to supply a short native filename or report a local path limit without changing the selected map."
+      ]
+    },
+    {
+      "Version": "0.60.0",
+      "Changes": [
+        "Add shared input queries and list mod shortcuts at the bottom of the game's Hotkeys list."
+      ]
+    },
+    {
+      "Version": "0.59.1",
+      "Changes": [
+        "Fix multiplayer starts that could leave the host on a black map even after the players agreed on production rules.",
+        "Retry failed production-rule confirmations during multiplayer startup without freezing the game. If the agreement is still missing after 30 seconds, show the reason and cancel the start.",
+        "Keep multiplayer save loading in preparation while simulation confirmations are still arriving. Conflicting rules still cancel the load, and the game checks the agreement again before loading."
+      ]
+    },
+    {
+      "Version": "0.59.0",
+      "Changes": [
+        "Building state tables can opt in to synchronized owner requests for all buildings of the selected type."
+      ]
+    },
+    {
+      "Version": "0.58.3",
+      "Changes": [
+        "Show the specific reason when a mod asks the load/save dialog to wait. Multiplayer save diagnostics distinguish simulation-record hashes from the settings fingerprint."
+      ]
+    },
+    {
+      "Version": "0.58.2",
+      "Changes": [
+        "Check which simulation fixes each player can run before starting a multiplayer match. Optional features turn off for everyone when a player cannot run them, and incompatible fixes are reported before the match starts."
+      ]
+    },
+    {
+      "Version": "0.58.1",
+      "Changes": [
+        "Fix the troop panel returning to an earlier page when Vanilla counts fewer entries than the extended HUD, keeping later pages with your lord or custom unit categories reachable."
+      ]
+    },
+    {
+      "Version": "0.58.0",
+      "Changes": [
+        "Share saved presets with other players in the multiplayer lobby. An offer appears in the chat area and recipients can save a personal copy under a name they choose.",
+        "Preset offers retry briefly until the receiving player confirms receipt. The sender is told when some or all players do not confirm.",
+        "Open the personal preset folder from a preset dialog on Windows or Linux under Proton."
+      ]
+    },
+    {
+      "Version": "0.57.0",
+      "Changes": [
+        "Workshop packages can no longer end up half installed: APIShared prepares a complete, verified copy while you play and installs it at the next game start, before any mod is loaded, by swapping whole mod folders. If the game or the PC is interrupted at any moment, the next start finishes or undoes the installation. The game is no longer closed for an installation, and the external updater window is gone.",
+        "Mod authors can list player files and folders (for example settings) in apishared-keep.txt: they are kept across updates, can be replaced once on purpose with a reset number, and can optionally survive an uninstall ('persist'). Everything else in a mod folder is replaced, so files a mod no longer ships, and whole folders it no longer ships, are removed for players too.",
+        "If an installation by the former updater was interrupted, APIShared offers a clean installation of the affected package at startup until its files are complete again; the former updater's leftover folders are removed.",
+        "If APIShared's preloader (BepInEx/patchers/APIShared.DependencyBootstrap.dll) is missing or disabled, APIShared no longer offers or prepares installations that would never be applied, and says why.",
+        "External mod managers can take Workshop packages over with BepInEx/config/APIShared.ModManager.json: APIShared then never installs, updates, repairs, removes or offers those packages, and discards changes prepared for them earlier.",
+        "Subscribing to a Workshop package is enough: if APIShared has not installed it yet, the startup question now offers its installation (Mod Options → Workshop remains available, and the startup offers can be switched off per package).",
+        "The Workshop question at game start, and the hint of package bootstraps that APIShared is missing, open in front of the game with a visible, free mouse cursor and no longer block other programs.",
+        "Mod Options: the first Workshop button is now 'Check Workshop version…', because it only shows what would change; nothing is installed before you confirm.",
+        "For mod authors: WorkshopClient.ApplyAsync now only stages the change (AwaitingRestart = installed at the next start) and no longer closes the game; it throws when the preloader is unavailable. RemovedFiles lists every file of the affected mod folders that the new version neither ships nor keeps.",
+        "AI troop admission: a troop that cannot walk to its group's current destination (for example a horseman on a wall) now joins every AI group like the AI's own recruits instead of being rejected and removed; before, only castle defense did this."
+      ]
+    },
+    {
+      "Version": "0.56.1",
+      "Changes": [
+        "Conflicts with other mods that change the same spot in the game's code are now detected: the affected APIShared service stays off instead of overwriting the other mod's change, and the log names the conflict. Spots that a mod loaded later overwrites are reported in the log at each game start.",
+        "Keep WaitForTicks sampling native map time while the simulation runs ticks back-to-back; each frame's poll now waits up to 10 ms for the engine monitor instead of starving until the test deadline.",
+        "AI troop admission now also works for existing castle defense, defense patrol, home moat, economy protection and intervention groups whose current order is unknown, for example after loading a save: the unit joins like one of the AI's own recruits, and the AI orders the group on its next regular turn. Other roles still reject such groups explicitly.",
+        "Admitting several troops into the same new AI group (for example harassment or siege groups) no longer rejects every troop after the first: the first troop's starting order now counts as the group's order until the AI commands the group.",
+        "Process many AI troop admissions at once (for example several units placed in one go) without rescanning every already assigned unit.",
+        "AI castle defense admission now sends new troops where the AI itself would (the keep door for mounted units, the guarding position only when the troop can reach it, otherwise the keep), lets a troop that cannot walk to its group's spot join like the AI's own recruits instead of failing, no longer blocks the following troops after one failed placement, and the role is no longer offered for spearmen, macemen and Arabian horse archers when the AI's settings leave no group for them.",
+        "After loading a save, AI troops can again join harassment groups and the AI's siege groups like the AI's own recruits instead of being rejected (during a siege the troop follows its group at the AI's next order; in some siege phases that order only comes with the next phase or the retreat), and spearmen can join castle defense again (APIShared read the AI's group limit from the wrong place).",
+        "Fix the troop panel's page arrows being hard to click: the troop selection area raised for APIShared's buttons covered them except for a few pixels."
+      ]
+    },
     {
       "Version": "0.56.0",
       "Changes": [

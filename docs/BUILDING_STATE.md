@@ -34,6 +34,11 @@ readiness, unconditionally and in the same order on every peer, like a Chore cha
   its maximum, and the building with this ID and GlobalId is alive, of a registered type and owned
   by the Chore's verified sender. Rejections are silent. `AcceptsOwnerRequests` must give the same
   result on every peer (a host-synchronized setting, not a local option).
+- **Same-type owner requests.** With `AllowSameTypeOwnerRequests = true` on the registration,
+  `table.RequestChangeForSameType(buildingId, globalId, index, value)` uses the same Chore and
+  validates the selected building under the same rules. Each peer then sets the value on every
+  living building of that exact type owned by the verified sender at execution. All peers need
+  APIShared 0.59.0 or later for these requests. Single-building requests retain their wire format.
 - **Pending requests.** `HasPendingRequest` stays true until this peer's latest request has been
   executed or rejected, so a slider can stay under the player's hand meanwhile. Call
   `ForgetPendingRequest` when the presentation closes; it does not cancel the request.

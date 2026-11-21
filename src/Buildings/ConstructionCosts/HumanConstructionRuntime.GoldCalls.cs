@@ -14,6 +14,7 @@ namespace APIShared.Buildings
     internal static unsafe partial class HumanConstructionRuntime
     {
         internal const string GoldCallsSite = "Buildings.ConstructionRefundGoldCalls";
+        private const string GoldCallsForeignPatchFeature = "Construction gold refund calls";
         internal static readonly int[] GoldCallRvas = { 0xC4793, 0xC496C };
         private static readonly byte[][] GoldCallBytes = { new byte[] { 0xE8,0x18,0x11,0xFF,0xFF }, new byte[] { 0xE8,0x3F,0x0F,0xFF,0xFF } };
         internal static NativeSiteSpan[] GoldCallSpans() => new[] {
@@ -44,11 +45,14 @@ namespace APIShared.Buildings
                 ulong module=unchecked((ulong)context.ModuleHandle.ToInt64());
                 goldPatches=ConstructionGoldCallPatch.Prepare(new[]{module+(uint)GoldCallRvas[0],module+(uint)GoldCallRvas[1]},
                     GoldCallBytes,goldCallback);
+                // A foreign patch on either CALL refuses both while they are still unpublished.
+                goldPatches.RequireUnpatched(GoldCallsForeignPatchFeature);
                 // Root before the first possible write. A second-write failure must retain the first
                 // relay and callback forever; ready remains false and the bridge simply forwards.
                 goldPublication.Begin(null,null,goldPatches);
                 try { goldPatches.Publish(); goldPublication.Complete(); }
                 catch(Exception error) { goldPublication.Fail(error); throw; }
+                goldPatches.Watch(GoldCallsForeignPatchFeature);
                 NativeApiLog.Info(logger,"CONSTRUCTION_GOLD_CALLS: E8/5 at 0xC4793,0xC496C; near FF25 relays; process lifetime.");
             }
             catch
@@ -113,6 +117,15 @@ namespace APIShared.Buildings
                 original=new[]{(byte[])expected[0].Clone(),(byte[])expected[1].Clone()} };
         }
         private byte[][] original;
+        // Foreign-patch guard over both 5-byte CALL spans: before publication, and once published.
+        internal void RequireUnpatched(string feature)
+        {
+            for(int i=0;i<2;i++) NativeForeignPatchGuard.RequireUnpatched(sites[i],5,"gold CALL "+i,feature);
+        }
+        internal void Watch(string feature)
+        {
+            for(int i=0;i<2;i++) NativeForeignPatchGuard.Watch(sites[i],5,"gold CALL "+i,feature);
+        }
         internal static byte[] EncodeCall(ulong site,ulong target)
         {
             long distance=checked((long)target-(long)site-5);

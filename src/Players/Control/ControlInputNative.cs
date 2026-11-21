@@ -14,6 +14,7 @@ namespace APIShared.PlayerControl
     internal static class ControlInputNative
     {
         internal const int RunTickRva = 0x868F6, DispatcherRva = 0x8D128, ViewRva = NativeViewCell.Rva;
+        private const string ForeignPatchFeature = "Spectator input control";
         // CMOVNE EAX,R12D; MOV [view],EAX; continuation MOVZX R8D,R14B.
         internal static readonly byte[] RunTickWindow = { 0x41, 0x0F, 0x45, 0xC4, 0x89, 0x05, 0x70, 0xD4, 0x85, 0x08,
             0x45, 0x0F, 0xB6, 0xC6 };
@@ -129,6 +130,8 @@ namespace APIShared.PlayerControl
                 dispatcherHook = Create(dispatcher, dispatcherBridge, DispatcherWindow.Length, "APIShared player-control dispatcher input", suspendThreads);
                 runTickBridge.Validate(runTickHook, runTick, RunTickWindow, false);
                 dispatcherBridge.Validate(dispatcherHook, dispatcher, DispatcherWindow, false);
+                NativeForeignPatchGuard.RequireUnpatched(runTickHook, ForeignPatchFeature);
+                NativeForeignPatchGuard.RequireUnpatched(dispatcherHook, ForeignPatchFeature);
             }
             catch
             {
@@ -142,6 +145,8 @@ namespace APIShared.PlayerControl
             dispatcherHook.Enable();
             runTickBridge.Validate(runTickHook, runTick, RunTickWindow);
             dispatcherBridge.Validate(dispatcherHook, dispatcher, DispatcherWindow);
+            NativeForeignPatchGuard.Watch(runTickHook, ForeignPatchFeature);
+            NativeForeignPatchGuard.Watch(dispatcherHook, ForeignPatchFeature);
             ready = true;
             NativeApiLog.Info(log, "PLAYER_CONTROL_INPUT: method=reference-rva; RunTick span=[0x868F6,0x86900) Indirect/10, " +
                 "continuation=movzx r8d,r14b; dispatcher span=[0x8D128,0x8D12E) Indirect/6, continuation=mov [view],eax; " +

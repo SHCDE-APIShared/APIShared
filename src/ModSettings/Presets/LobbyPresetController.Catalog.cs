@@ -282,6 +282,37 @@ namespace APIShared.ModSettings
             return path;
         }
 
+        internal void ImportSharedPresetJson(string json, string name)
+        {
+            PublishedModSettingsPreset imported = ModSettingsPresetJson.Parse(
+                json, "personal:" + targetGuid, "Personal", targetGuid, "");
+            if (!ModSettingsPresetCatalog.MatchesVersion(
+                targetVersion, imported.MinimumTargetVersion, imported.MaximumTargetVersion))
+                throw new InvalidDataException("The preset is incompatible with this mod version.");
+            ValidatePublishedPreset(imported);
+
+            EnsurePersonalDirectory();
+            if (publishedPresets.Count >= ModSettingsPresetCatalog.MaximumPresetsPerTarget ||
+                Directory.EnumerateFiles(personalPresetDirectory, "preset_*.json")
+                    .Take(ModSettingsPresetCatalog.MaximumFilesPerProvider).Count() >=
+                    ModSettingsPresetCatalog.MaximumFilesPerProvider)
+                throw new InvalidDataException("The personal preset catalog is full.");
+
+            // An offered name and ID never select an existing file or working source.
+            imported.Id = Guid.NewGuid().ToString("N");
+            imported.Name = name?.Trim() ?? string.Empty;
+            imported.SourceKind = ModSettingsPresetSourceKind.Personal;
+            imported.SourcePath = Path.Combine(personalPresetDirectory, "preset_" + imported.Id + ".json");
+            string copy = ModSettingsPresetJson.Serialize(targetGuid, imported.Id, imported.Name,
+                imported.Description, imported.MinimumTargetVersion, imported.MaximumTargetVersion, imported.Settings);
+            PublishPresetJson(imported.SourcePath, copy, overwrite: false);
+
+            personalPresetCopies.Add(imported);
+            int index = publishedPresets.FindIndex(preset => preset.SourceKind != ModSettingsPresetSourceKind.Personal ||
+                StringComparer.CurrentCultureIgnoreCase.Compare(preset.Name, imported.Name) > 0);
+            publishedPresets.Insert(index < 0 ? publishedPresets.Count : index, imported);
+        }
+
         public void LogPresetOperationCancelled(string operation, string id)
         {
             LogRoutine(
@@ -369,6 +400,12 @@ namespace APIShared.ModSettings
             ModSettingsPresetCatalog.ValidatePersonalWritePath(
                 isNew ? personalStorageRoot : pluginDirectory,
                 isNew ? personalPresetDirectory : legacyPersonalPresetDirectory, path);
+        }
+
+        internal string PreparePersonalPresetDirectory()
+        {
+            EnsurePersonalDirectory();
+            return personalPresetDirectory;
         }
 
         private void EnsurePersonalDirectory()

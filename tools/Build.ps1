@@ -113,8 +113,9 @@ try {
     Invoke-ApiBuildStep $context 'dependency-bootstrap.csproj' -Category compile -When always -Action {
         Invoke-Tool $msbuild @((Join-Path $root 'bootstrap/APIShared.DependencyBootstrap.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game")
     }
-    Invoke-ApiBuildStep $context 'workshop-process-readiness' -Action {
-        Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkshopReadiness.ps1'), '-ApiAssembly', (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll'))
+    # Real process kills against the safe Workshop installation (swap, preloader recovery, staging).
+    Invoke-ApiBuildStep $context 'workshop-install-kills' -Action {
+        Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkshopInstall.ps1'), '-SwapKills', '60', '-PreloaderKills', '30', '-StageKills', '15')
     }
     if ($NoInstall -eq 0) {
         Invoke-ApiBuildStep $context 'installed-consumer-references' -Category installation -When always -Action {

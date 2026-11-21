@@ -1,4 +1,5 @@
 using APIShared;
+using APIShared.Maps;
 using APIShared.Savegames;
 using MessagePack;
 using System;
@@ -16,11 +17,13 @@ internal static class Program
     private static void Reset(bool solo = false, bool client = false)
     {
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
+        Boundary.DecideMapLoad = null;
         APIShared.Economy.WorkerProductionAgreement.Waiting=APIShared.Economy.WorkerProductionAgreement.Blocked=false;
         APIShared.Economy.WorkerProductionAgreement.Checks=0;
-        Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.SaveVeto = false; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
+        Boundary.MainThread = Boundary.Prepare = Boundary.SendOk = true; Boundary.SaveVeto = Boundary.SaveGuardWaiting = false; Boundary.Local = client ? 2002UL : 2001UL; Boundary.Host = 2001;
         Boundary.MapStarts = Boundary.SaveStarts = Boundary.Captures = Boundary.Popups = Boundary.StartWithdrawals = 0;Boundary.LookupHeader=null;
-        Boundary.Settings = "host-settings"; Boundary.Records = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = Boundary.DuringPrepare = null;
+        Boundary.SaveExchangeChecks = 0;
+        Boundary.Settings = "host-settings"; Boundary.Records = Boundary.SaveRecords = Array.Empty<SavegameRecordDigest>(); Boundary.DuringCapture = Boundary.DuringPrepare = null;
         Boundary.Logs.Clear(); Boundary.Sent.Clear(); Boundary.Broadcast.Clear(); Boundary.LocalChat.Clear();
         Boundary.WaitingBroadcast.Clear(); Boundary.WaitingLocal.Clear();
         Boundary.Presented.Clear();
@@ -31,6 +34,7 @@ internal static class Program
         Platform_Multiplayer.Instance = new Platform_Multiplayer { activeLobby = lobby };
     }
     private static void Start() => Boundary.MapHook.DynamicInvoke(Mp);
+    private static bool ValidateMapStart() => MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true, false, out _);
     private static bool Refresh()
     {
         object[] arguments = { Mp, null, false, false, false };
@@ -44,13 +48,71 @@ internal static class Program
         Metadata = operation == 0 ? packet.Metadata : null
     };
     private static void Receive(SavegameLoadPacket packet, ulong sender = 2002) => Boundary.Receive(new MapRecordReadinessPacket { Value = packet }, sender);
+
+    private static void TestMapLoadPolicy()
+    {
+        const string rejection = "The selected Workshop map exceeds the filename limit.";
+        const string alias = "short-map.map";
+        Reset(solo: true);
+        Boundary.DecideMapLoad = (_, _) => MapLoadDecision.Reject(rejection);
+        Start();
+        Check(Boundary.MapStarts == 0 && Boundary.Captures == 0 && Boundary.Popups == 1 &&
+            Boundary.Logs.Any(message => message.Contains(rejection)), "path veto prevents GO and archive access and reports the reason");
+
+        Reset(solo: true); Start();
+        Boundary.DecideMapLoad = (_, _) => MapLoadDecision.Reject(rejection);
+        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true, false, out var chosen) &&
+            chosen == null && !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true) &&
+            Boundary.StartWithdrawals == 1, "a new path veto after GO withdraws the start and never grants a native ticket");
+
+        Reset(solo: true);
+        string lastPolicyPath = null;
+        bool aliasSupported = false;
+        Boundary.DecideMapLoad = (path, supported) =>
+        {
+            lastPolicyPath = path;
+            aliasSupported = supported;
+            return MapLoadDecision.UseNativeFileName(alias);
+        };
+        Start();
+        Check(Boundary.MapStarts == 1 &&
+            MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true, false, out chosen) && chosen == alias &&
+            MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true),
+            "alias changes only the native basename; the original map remains the admission target");
+        Check(aliasSupported && lastPolicyPath == Boundary.Path, "the provider sees the original local path and hook support");
+        Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Path.Combine(Path.GetDirectoryName(Boundary.Path), alias), true),
+            "a native basename is never a substitute for the verified local path");
+
+        Boundary.MapAliasHookAvailable = false;
+        try
+        {
+            Check(MapLoadPolicy.Evaluate(Boundary.Path).Rejection != null && !aliasSupported,
+                "the broker rejects a replacement filename if the native alias hook is unavailable");
+        }
+        finally { Boundary.MapAliasHookAvailable = true; }
+
+        Boundary.DecideMapLoad = (_, _) => throw new InvalidOperationException("provider should not run for saves");
+        Check(MapLoadPolicy.Evaluate(Path.ChangeExtension(Boundary.Path, ".sav")).Rejection == null,
+            "regular map policy does not evaluate saved games");
+        Boundary.DecideMapLoad = (_, _) => MapLoadDecision.UseNativeFileName("subfolder/wrong.map");
+        Check(MapLoadPolicy.Evaluate(Boundary.Path).Rejection != null, "provider may return only a usable native basename");
+        Boundary.DecideMapLoad = (_, _) => throw new IOException("provider failed");
+        Check(MapLoadPolicy.Evaluate(Boundary.Path).Rejection?.Contains("provider failed") == true,
+            "an exception in the provider becomes a rejection");
+    }
+
     public static void Main()
     {
         SavegameLoadCoordinator.Initialize(null); MapRecordLoadCoordinator.Initialize(null);
+        MapLoadPolicy.Initialize("test native image", new BepInEx.Logging.ManualLogSource());
+        Check(MapLoadPolicy.TryRegister("fixture.map-policy",
+            (path, supported) => Boundary.DecideMapLoad?.Invoke(path, supported) ?? MapLoadDecision.Allow(), out _),
+            "test provider registers for the duration of this process");
+        TestMapLoadPolicy();
         Reset(solo: true); Start();
         Check(Boundary.MapStarts == 1 && Boundary.Captures == 1 && Boundary.Sent.Count == 0, "solo MP captures own map but needs no network echo");
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "GO publication alone never grants a native ticket");
-        Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "solo platform start creates a verified admission ticket");
+        Check(ValidateMapStart(), "solo platform start creates a verified admission ticket");
         Boundary.MainThread = false;
         Check(MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "native admission is independent of Unity/Steam access");
         Boundary.MainThread = true;
@@ -58,17 +120,17 @@ internal static class Program
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "native admission rejects a file changed after platform start");
         MapRecordLoadCoordinator.FinishLoad();
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true) && MapRecordLoadCoordinator.ValidateNativeAdmission("unused", false), "finished ticket cannot be replayed; SP needs none");
-        Reset(solo: true); Start(); Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "worker failure fixture has a native ticket");
+        Reset(solo: true); Start(); Check(ValidateMapStart(), "worker failure fixture has a native ticket");
         Boundary.MainThread = false; MapRecordLoadCoordinator.Abort("native file failure");
         Check(Boundary.Popups == 0 && !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "worker failure revokes the ticket without UI or lobby processing");
         Boundary.MainThread = true; while (Boundary.Presented.Count != 0) Boundary.Presented.Dequeue()();
         Check(Boundary.Popups == 1, "worker failure retires its transaction on the presentation thread");
-        Reset(solo: true); Start(); Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "worker cleanup fixture has a ticket");
+        Reset(solo: true); Start(); Check(ValidateMapStart(), "worker cleanup fixture has a ticket");
         Boundary.MainThread = false; MapRecordLoadCoordinator.FinishLoad();
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "worker cleanup immediately revokes native admission");
         var oldCleanup = Boundary.Presented.Dequeue();
         Boundary.MainThread = true; Reset(solo: true); Start(); oldCleanup();
-        Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "a later cleanup cannot revoke a replacement transaction");
+        Check(ValidateMapStart(), "a later cleanup cannot revoke a replacement transaction");
 
         Reset(); Start(); var request = RequestPacket;
         Check(Boundary.MapStarts == 0 && Boundary.Captures == 1, "even all-empty MP record sets wait for every human peer");
@@ -77,9 +139,9 @@ internal static class Program
         Check(Boundary.MapStarts == 0, "a stale token cannot acknowledge");
         Receive(Reply(request)); Receive(Reply(request));
         Check(Boundary.MapStarts == 1, "matching peers release the actual original exactly once");
-        Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "host native start requires current context and same file");
+        Check(ValidateMapStart(), "host native start requires current context and same file");
         Mp.activeLobby.Aiv = "changed AIV";
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "AIV selection changing after release revokes start");
+        Check(!ValidateMapStart(), "AIV selection changing after release revokes start");
 
         Reset(); Start(); request = RequestPacket;
         var different = Reply(request); different.Records = new[] { Present(1) }; Receive(different);
@@ -111,11 +173,11 @@ internal static class Program
         Check(!Boundary.Sent.OfType<MapRecordReadinessPacket>().Any(), "client ignores a preparation from a non-host transport sender");
         Receive(request, 2001);
         Check(Boundary.Sent.OfType<MapRecordReadinessPacket>().Count(packet => packet.Value.Operation == 1) == 1, "client acknowledges its own current file and matching fingerprint");
-        Check(MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "client may see Vanilla GO before the auxiliary release packet");
+        Check(ValidateMapStart(), "client may see Vanilla GO before the auxiliary release packet");
         MapRecordLoadCoordinator.FinishLoad(); Receive(request, 2001);
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true), "retired preparation cannot be replayed");
+        Check(!ValidateMapStart(), "retired preparation cannot be replayed");
         int announced = Boundary.LocalChat.Count + Boundary.Broadcast.Count;
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.LocalChat.Count + Boundary.Broadcast.Count == announced &&
+        Check(!ValidateMapStart() && Boundary.LocalChat.Count + Boundary.Broadcast.Count == announced &&
             Boundary.StartWithdrawals == 0, "a client reports a start without preparation once per published GO and never writes lobby data");
         // Only the host can withdraw the published GO. The rejected client hides it from its own
         // lobby Update, so Vanilla does not call StartGame again; a new proposal lifts the mask.
@@ -263,11 +325,38 @@ internal static class Program
             "client rejects a v2 host and returns a scoped v2 cancellation");
 
         Reset(solo: true); Start(); Boundary.DuringPrepare = () => Boundary.Settings = "changed at final preparation";
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.Broadcast.Single().Contains("MapCategory.Mods"),
+        Check(!ValidateMapStart() && Boundary.Broadcast.Single().Contains("MapCategory.Mods"),
             "final admission checks the fingerprint after applying configuration");
         Reset(solo: true); Start(); Boundary.Prepare = false;
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.Broadcast.Single().Contains("MapConfigurationWaiting"),
+        Check(!ValidateMapStart() && Boundary.Broadcast.Single().Contains("MapConfigurationWaiting"),
             "pending configuration gets its own start-blocking reason");
+
+        Reset(); Boundary.SaveRecords = new[] { Present(1) }; Save();
+        var saveRequest = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+        var saveReply = Reply(saveRequest);
+        saveReply.Time = saveRequest.Time;
+        saveReply.Records = new[] { Present(2) };
+        Boundary.Receive(saveReply, 2002);
+        string hostRecordHash = Sha256Hex.Format(saveRequest.Records[0].Hash);
+        string peerRecordHash = Sha256Hex.Format(saveReply.Records[0].Hash);
+        string blockedSaveLog = Boundary.Logs.Single(text => text.Contains("SAVE_SETTINGS_LOAD_BLOCKED"));
+        Check(Boundary.SaveStarts == 0 && blockedSaveLog.Contains(saveRequest.Token) &&
+            blockedSaveLog.Contains("role=host") && blockedSaveLog.Contains("phase=peer-comparison") &&
+            blockedSaveLog.Contains(Path.GetFileName(Boundary.Path)) &&
+            blockedSaveLog.Contains("localSaveSha256=" + Sha256Hex.Of(File.ReadAllBytes(Boundary.Path))) &&
+            blockedSaveLog.Contains("expectedSettingsFingerprint=" + saveRequest.Fingerprint) &&
+            blockedSaveLog.Contains("observedSettingsFingerprint=" + saveRequest.Fingerprint) &&
+            blockedSaveLog.Contains("peerSteamId=2002") && blockedSaveLog.Contains("foreign.mod") &&
+            blockedSaveLog.Contains("foreign-record") && blockedSaveLog.Contains("hostState=Present") &&
+            blockedSaveLog.Contains("peerState=Present") &&
+            blockedSaveLog.Contains("hostRecordSha256=" + hostRecordHash) &&
+            blockedSaveLog.Contains("peerRecordSha256=" + peerRecordHash),
+            "save record mismatch logs both stored record hashes separately from matching settings");
+        var saveCancel = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 3);
+        Check(!Boundary.Broadcast.Single().Contains(hostRecordHash) &&
+            !Boundary.Broadcast.Single().Contains(peerRecordHash) &&
+            !saveCancel.Reason.Contains(hostRecordHash) && !saveCancel.Reason.Contains(peerRecordHash),
+            "record hash diagnostics are local and never added to the rejection sent to peers");
 
         Reset(solo: true); Boundary.SaveVeto = true; Save();
         Check(Boundary.SaveStarts == 0 && Boundary.Broadcast.Single().Contains("fixture save veto") &&
@@ -304,7 +393,7 @@ internal static class Program
         Reset(); Start(); request = RequestPacket; Receive(Reply(request));
         var releasedCancel = Reply(request, 3); releasedCancel.Reason = "peer rejection after GO";
         Receive(releasedCancel);
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path, true) && Boundary.Broadcast.Count == 1,
+        Check(!ValidateMapStart() && Boundary.Broadcast.Count == 1,
             "a GO already published for a cancelled map does not log or announce a second rejection");
         Check(Boundary.StartWithdrawals == 1, "the host withdraws its published GO when the released map is cancelled before loading");
 
@@ -355,7 +444,7 @@ internal static class Program
         Check(Boundary.MapStarts==1,"The existing map tick releases GO after production requirements agree");
         APIShared.Economy.WorkerProductionAgreement.Blocked=true;
         int mapProductionChecks=APIShared.Economy.WorkerProductionAgreement.Checks;
-        Check(!MapRecordLoadCoordinator.ValidateStart(Boundary.Path,true) &&
+        Check(!ValidateMapStart() &&
             APIShared.Economy.WorkerProductionAgreement.Checks>mapProductionChecks &&
             !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path,true),
             "Final map production failure prevents creating a native admission ticket");
@@ -384,6 +473,55 @@ internal static class Program
         try{SavegameLoadCoordinator.ValidateStart(Boundary.Path,true);}catch(InvalidOperationException){productionRejected=true;}
         Check(productionRejected && APIShared.Economy.WorkerProductionAgreement.Checks>admittedProductionChecks &&
             !SavegameLoadCoordinator.IsLoadingMultiplayerSave,"Final production rejection revokes admission before native loading");
+
+        void SaveTick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/20-save-load"]();
+        Reset(); Boundary.SaveGuardWaiting = true; Save(); SaveTick();
+        saveRequest = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+        Check(Boundary.SaveExchangeChecks == 1 && Boundary.SaveStarts == 0,
+            "Host drives the simulation exchange before file acknowledgement without repeating it every frame");
+        saveReply = Reply(saveRequest);
+        saveReply.Time = saveRequest.Time;
+        Boundary.Receive(saveReply, 2002);
+        Check(Boundary.SaveStarts == 0 && !Boundary.Sent.OfType<SavegameLoadPacket>().Any(packet => packet.Operation >= 2),
+            "After file acknowledgement, a pending simulation guard retains the host attempt without publishing release or cancellation");
+        Boundary.SaveGuardWaiting = false; SaveTick(); SaveTick();
+        Check(Boundary.SaveStarts == 1 && Boundary.Sent.OfType<SavegameLoadPacket>().Count(packet => packet.Operation == 2) == 1,
+            "The waiting host releases that attempt once after the simulation acknowledgement arrives");
+
+        void BeginWaitingClient()
+        {
+            Reset(client: true);
+            saveRequest.Token = Guid.NewGuid().ToString("N");
+            Boundary.SaveGuardWaiting = true;
+            Boundary.Receive(saveRequest, 2001);
+        }
+        BeginWaitingClient();
+        Check(Boundary.Sent.Count == 0, "A waiting client sends neither a save acknowledgement nor a cancellation");
+        Boundary.SaveGuardWaiting = false; SaveTick(); SaveTick();
+        Check(Boundary.Sent.OfType<SavegameLoadPacket>().Single().Operation == 1,
+            "A later simulation decision releases the client acknowledgement exactly once");
+
+        BeginWaitingClient();
+        Boundary.SaveVeto = true; SaveTick();
+        Check(Boundary.Sent.OfType<SavegameLoadPacket>().Single().Operation == 3,
+            "A confirmed conflict still cancels a waiting save attempt immediately");
+
+        BeginWaitingClient();
+        typeof(SavegameLoadCoordinator).GetField("deadline", BindingFlags.NonPublic | BindingFlags.Static)
+            .SetValue(null, DateTime.UtcNow.AddSeconds(-1));
+        SaveTick(); Boundary.SaveGuardWaiting = false; SaveTick();
+        Check(Boundary.Sent.OfType<SavegameLoadPacket>().Single().Operation == 3 &&
+            Boundary.Logs.Any(text => text.Contains("timed out") && text.Contains("simulation acknowledgement pending")),
+            "An expired save attempt reports the pending stage and cannot acknowledge a late decision");
+
+        Reset(solo: true); Boundary.Path = Path.Combine(AppContext.BaseDirectory, "save-name.sav");
+        File.WriteAllText(Boundary.Path, "valid saved world");
+        Save(); Boundary.SaveGuardWaiting = true;
+        bool waitingRejected = false;
+        try { SavegameLoadCoordinator.ValidateStart(Boundary.Path, true); }
+        catch (InvalidOperationException) { waitingRejected = true; }
+        Check(waitingRejected && !SavegameLoadCoordinator.IsLoadingMultiplayerSave && Boundary.Broadcast.Count == 1,
+            "Loss of a simulation decision after release fails closed at the native boundary");
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
         Console.WriteLine("PASS: " + checks + " production map-readiness checks: all-peer records, authority, immutable native tickets, file changes, selection changes and mutual save/map exclusion.");
     }

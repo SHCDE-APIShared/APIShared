@@ -61,12 +61,15 @@ one optional confirmed selected-Lord callback. It caches no content. ExtendedDat
 retains Lord selection/transport authority and supplies the current verified source;
 its legacy facade adapts results. See [mod data access](docs/MOD_DATA.md).
 
-The separate `bootstrap` project implements the development-only
-[early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md). It does not reference
+The separate `bootstrap` project implements the
+[early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md) and runs the Workshop installation pass
+([safe installation](docs/WORKSHOP.md)) before the chainloader. It does not reference
 the main APIShared assembly; it binds the selected runtime by a validated package
 pair and owns its hooks for process lifetime. It is outside the runtime source glob. Its `src/EarlyEntry` contains the minimal
 listener entry, `src/DependencyCorrection` keeps provider policy and its hook owner
 together, `src/Package` owns pair validation, and `src/Diagnostics` owns tracing.
+`src/Workshop` runs the [Workshop installation pass](docs/WORKSHOP.md#installation-preloader-swap)
+from Finish with the source-linked `src/Workshop/Install/WorkshopSafeInstall.cs`.
 Package/build tools remain under `tools`; isolated tests live under
 `tests/DependencyBootstrap.Tests`. This assembly boundary is required by its earlier
 load phase; it is not a second public APIShared service runtime.
@@ -87,7 +90,7 @@ load phase; it is not a second public APIShared service runtime.
 | Audio | SFX and unit-voice presentation, audited source contexts, prepared voice resources and shared rule events |
 | Presentation | Shared UI presentation and grouped Lord-message audio, video and text replacement |
 | Economy | Shared market/production rules, exact output compilation, admission and validated native ownership |
-| Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
+| Workshop | Steam publishing, receipt-based plans, staging and the preloader installation swap at the next start |
 
 Participant inspection uses the existing lobby registrations and
 `ModSettingsApplication.Endpoints` snapshots. One discovery implementation supplies
@@ -156,6 +159,7 @@ src/
     ViewIdentity/               shared player-view identity core, Save scope and runtime root
     Control/                    spectator input boundaries and the input-actor owner
   Workshop/                     package contracts, file policy, Steam callbacks and UI
+    Install/                    installation core shared with the preloader (staging, swap, recovery)
   Buildings/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
@@ -201,8 +205,8 @@ Folder paths do not change C# namespaces or public API identity.
 
 `src/Workshop/Proton` owns internal Linux/Wine path and process helpers. The independent
 `proton-fix` project source-links those helpers without an APIShared runtime dependency.
-Its manual preloader owns the Extender installation correction; APIShared changes only
-its own updater. See [ownership and lifetime](docs/WORKSHOP.md#independent-linux-first-install-patcher).
+Its manual preloader owns the Extender installation correction. See
+[ownership and lifetime](docs/WORKSHOP.md#independent-linux-first-install-patcher).
 
 ## Deciding what belongs here
 
@@ -445,9 +449,11 @@ Audio owns shared playback interception, source attribution, native source event
 and clip lifetimes. Consumers own their sound policies; native-context availability
 is independent of managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and measurements.
 
-Workshop owns publishing, receipt-based plans and post-exit transactions. Its
-persistent staging integration cleans previous APIShared releases; foreign maps
-remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
+Workshop owns publishing, receipt-based plans and installation. Confirmed changes
+are staged during the session; `src/Workshop/Install` is source-linked into the
+dependency bootstrap, whose preloader swaps whole plugin folders at the next start
+before BepInEx loads plugins. Its persistent staging integration cleans previous
+APIShared releases; foreign maps remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
 
 The load/save requester is also owned by Savegames. Its process-rooted managed hooks
 capture choice availability before Vanilla hides the view. Per-request gates run before
