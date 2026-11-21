@@ -978,7 +978,8 @@ and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cl
 
 ## Loose Workshop packages
 
-Use the shipped external publisher for explicitly declared Payload packages.
+Follow the [first-upload guide](WORKSHOP.md#upload-your-first-mod-to-steam-workshop)
+to package your mod and publish it with the included uploader.
 The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
 bootstrap maps, consent, embedded-copy replacement, the
 [installation at the next game start](WORKSHOP.md#installation-preloader-swap) and

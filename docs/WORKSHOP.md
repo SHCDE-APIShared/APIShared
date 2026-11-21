@@ -4,15 +4,87 @@ This guide is for package authors, consumers of the Workshop capability and
 contributors maintaining its deployment integration. APIShared self-cleanup,
 Extender-managed maps and explicitly declared loose packages are separate paths.
 
+- [Upload your first mod](#upload-your-first-mod-to-steam-workshop)
 - [Public capability](#workshop-publishing-and-loose-packages): ownership, threading and plans.
 - [File inventories](#workshop-package-cleanup): APIShared self-cleanup and schema.
-- [Publishing](#loose-workshop-packages): the external uploader and platform limits.
+- [Loose Workshop packages](#loose-workshop-packages): installation and publisher details.
 - [Package format](#package-format-and-bootstrap): inventory and bootstrap preparation.
 - [Keep list](#keep-list-apishared-keeptxt): player files that survive updates.
 - [Installation (preloader swap)](#installation-preloader-swap): staging, the swap at the next start, recovery and limits.
 - [External mod managers](#external-mod-managers-apisharedmodmanagerjson): let another program take packages over.
 - [Linux paths and first-install repair](#linux-paths-and-first-install-repair): Wine drive mappings and the independent manual patcher.
 - [Internal implementation](#internal-implementation): staging hooks, the installation core, the independent patcher and persistent publishers.
+
+## Upload your first mod to Steam Workshop
+
+Use the APIShared Workshop Publisher to publish a finished SHCDE plugin as a
+Workshop item that players can install through APIShared.
+
+### What you need
+
+- A built mod with its DLL, `info.json` and any files it needs in its plugin folder.
+- The prebuilt publisher from the [APIShared release ZIP](https://github.com/SHCDE-APIShared/APIShared/releases/latest).
+  Extract the complete `BepInEx/tools/APISharedWorkshopPublisher` folder so the
+  launcher and its supporting files stay together. If you already have the
+  complete package installed, look for that folder in your game directory.
+- On Windows, the .NET Framework 4.8.1 runtime and an open Steam client signed in
+  online with the account that will own the item. You can leave the game closed.
+  You do not need SteamCMD, Visual Studio or a separate Steam login for the publisher.
+  For Linux, see [the Proton launcher](#publisher-on-linux).
+
+### Set up the upload folder
+
+Create a folder for this release outside the game installation. Inside it,
+recreate the path your mod will have when installed, starting with `Payload`:
+
+```text
+MyModUpload/
+├── preview.png
+└── Payload/
+    └── BepInEx/
+        └── plugins/
+            └── MyMod/
+                ├── info.json
+                └── MyMod.dll
+```
+
+Copy any resources your mod needs into `MyMod/`, keeping their relative paths.
+Use your real plugin folder name and a stable GUID in `info.json` that matches
+your BepInEx plugin. See the [example info.json](../examples/ThirdPartyMod/info.json)
+for the fields. If your DLL uses APIShared, declare the required version in your
+[plugin and info.json](THIRD_PARTY_GUIDE.md#example-package-requirements).
+Players install APIShared separately, so leave its DLLs and the publisher out of
+`Payload`. Leave out logs and files generated during play. If your mod stores
+player settings inside its plugin folder, add a
+[keep list](#keep-list-apishared-keeptxt) so updates preserve them.
+
+### Run the publisher
+
+1. Double-click `UploadMod.bat` and enter the path to `MyModUpload` when asked for
+   the package folder.
+2. Enter a stable package ID. For a single mod, use its plugin GUID. Enter a
+   numeric version such as `1.0.0`, the minimum APIShared and Script Extender
+   versions needed, and the GUIDs of any additional required mods. Press Enter
+   at the next dependency prompt when you are done. The publisher builds
+   `apishared-workshop.json` and the file inventory in the upload copy. If you
+   supply a prepared manifest, the publisher uses it instead.
+3. Enter `0` to create a new Workshop item, or select the numeric ID of an item
+   you already own to update it. Fill in the title, description, preview image,
+   visibility and optional change note. The default image path is
+   `preview.png` in the upload folder.
+4. Review the package and its file list, then type `UPLOAD` to send it to Steam.
+   If Steam asks you to accept the Workshop agreement, follow the link shown by
+   the publisher.
+
+From a command prompt in the publisher folder, use `UploadMod.bat /validate` to
+check the package without contacting Steam, or `UploadMod.bat /test` to upload a
+private test item with a separate Workshop ID. To publish an update, keep the
+package ID and plugin GUID, raise the package version, update your mod version
+where declared, and select the same Workshop item.
+
+Players need Script Extender and a central APIShared installation. After
+subscribing to your item, they can open **Mod Options → APIShared → Workshop** to
+prepare installation for the next game start.
 
 ## Workshop inventory
 
@@ -54,7 +126,9 @@ The startup dialog lists every change and asks once (**Yes**: prepare these chan
 
 Startup diagnostics use timestamped Info, Warning and Error entries. Warnings explain policy blockers (including every conflicting plugin/asset GUID with its existing path and allowed payload roots, package versions and Workshop ID). Errors identify technical failures with their step and exception details, including unreadable manifests or receipts, staging failures and failed preloader installations. Each startup attempt ends with a result: current, blocked, declined, staging or failed; blocked items and technical failures cannot be reported as current. Staging confirms the decision only, not a committed installation. Repeated Steam initialization does not repeat the decision or its warnings. Pure Script Extender maps remain outside this package catalog.
 
-Authors use `BepInEx/tools/APISharedWorkshopPublisher/UploadMod.bat`, shipped by APIShared outside the plugin scan. No running game or separate Steam password is needed; Steam must be running, signed in and online. The wizard accepts a prepared manifest or generates one from Payload, collects prerequisites/dependencies, offers owned SHCDE items and publishing metadata, validates a private snapshot and requires typing `UPLOAD` before submission. `/validate` skips Steam initialization and publishing, `/test` uses private visibility and account-scoped separate IDs, `/nopause` only suppresses the BAT closing pause; `/cancel` cancels a prompt. Saved settings and immediately persisted item IDs live in LocalApplicationData/APIShared/WorkshopPublisher, scoped by app/account/mode/package. Never add this state to uploaded content.
+The publisher saves settings and Workshop IDs outside the package in LocalApplicationData/APIShared/WorkshopPublisher, scoped by app, account, publishing mode and package. Enter `/cancel` to cancel at a prompt. The `/nopause` option suppresses the closing pause.
+
+### Publisher on Linux
 
 Linux users can run `bash UploadMod-linux.sh`. It uses the existing SHCDE Proton prefix, not a separate uploader. With custom Steam/Proton locations set `STEAM_COMPAT_CLIENT_INSTALL_PATH`, `STEAM_COMPAT_DATA_PATH` (directory containing pfx), and `APISHARED_PROTON` (the selected Proton script). Python 3 is required by Proton; host paths such as `/home/user/My Mod` are translated using the active Wine mappings rather than an assumed Z: drive. This launcher has automated syntax/argument tests; successful real Proton publishing is still required before claiming Linux support.
 
