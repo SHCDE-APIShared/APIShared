@@ -92,6 +92,12 @@ try {
     Invoke-ApiBuildStep $context 'Health.Tests' -Action {
         Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root 'tests/Health.Tests/Health.Tests.csproj'), '--configuration', 'Release')
     }
+    foreach ($suite in @('ConstructionCosts.Tests','HumanConstruction.Tests')) {
+        Invoke-ApiBuildStep $context $suite -Action {
+            Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
+                '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")
+        }
+    }
     foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests')) {
         Invoke-ApiBuildStep $context $suite -Action {
             Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),

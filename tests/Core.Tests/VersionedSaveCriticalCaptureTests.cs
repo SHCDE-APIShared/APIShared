@@ -1477,11 +1477,21 @@ public partial class VersionedSaveDataTests
         {
             if (!ReferenceEquals(slot.GetType().GetField("Handle", fields).GetValue(slot), handle)) continue;
             object outcome = slot.GetType().GetField("PreparedOutcome", fields).GetValue(slot);
-            FieldInfo loadField = outcome.GetType().GetField("Load", fields);
-            var load = (VersionedSaveLoad)loadField.GetValue(outcome);
+            Type outcomeType = outcome.GetType();
+            var load = (VersionedSaveLoad)outcomeType.GetProperty("Load", fields).GetValue(outcome);
             var replacement = new VersionedSaveLoad(load.Status, load.Source, load.FilePath, load.RecordVersion,
                 load.MinimumReaderVersion, load.Entries, load.KeptEntryCount, load.Detail, load.PreparedOrigin, session);
-            loadField.SetValue(outcome, replacement);
+            // Replace the immutable outcome through its constructor, preserving
+            // the record's bytes and retention metadata rather than editing a
+            // compiler-generated backing field.
+            object replacementOutcome = Activator.CreateInstance(outcomeType, fields, null, new[]
+            {
+                (object)replacement,
+                outcomeType.GetProperty("LoadedBytes", fields).GetValue(outcome),
+                outcomeType.GetProperty("Keep", fields).GetValue(outcome),
+                outcomeType.GetProperty("Unknown", fields).GetValue(outcome)
+            }, null);
+            slot.GetType().GetField("PreparedOutcome", fields).SetValue(slot, replacementOutcome);
             return;
         }
         Assert.Fail("The exact registered slot must exist for this bounded metadata fault injection.");

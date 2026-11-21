@@ -67,6 +67,16 @@ namespace APIShared
 }
 namespace APIShared.Simulation { public static class SimulationTickEvents { public static Action<int> Callback;public static bool TryRegister(string owner,string id,Action<int> callback,out string reason,int order=0) { Callback=callback;reason="";return true; } } }
 namespace APIShared.Health { internal static class HealthNativeObserver { internal static Action<int> Callback; internal static void Install(SHCDESE.API.LowLevel.CrusaderLibraryLoadContext context,string hash,Action<int> callback,BepInEx.Logging.ManualLogSource log) { Callback=callback; } } }
+namespace APIShared.Buildings
+{
+    public readonly struct ConstructionCostTarget { public static ConstructionCostTarget FromStructure(SHCDESE.Interop.eStructs type) => default; }
+    public readonly struct ConstructionCostValues { public int Wood => World.Wood; public int Stone => World.Stone; }
+    public static class ConstructionCosts
+    {
+        public static bool TryGetCurrent(ConstructionCostTarget target, out ConstructionCostValues cost, out string reason)
+        { cost = default; reason = string.Empty; return true; }
+    }
+}
 internal static unsafe class World
 {
     internal static readonly APIShared.MissionBoundary Missions=new APIShared.MissionBoundary();
