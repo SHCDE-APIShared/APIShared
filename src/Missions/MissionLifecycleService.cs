@@ -1,4 +1,5 @@
 using APIShared.GameModes;
+using APIShared.Maps;
 using BepInEx.Logging;
 using CrusaderDE;
 using MonoMod.RuntimeDetour;
@@ -78,8 +79,11 @@ namespace APIShared
             internal bool SiegeThatEditor;
             internal bool Multiplayer, Restart, NativeFailed, NativeSucceeded, ManagedSucceeded;
             internal long? RestartedFrom;
+            internal Multiplayer.SimulationAgreement.Attempt SimulationAttempt;
             internal GameModeSnapshot? RestartMode;
             internal EngineInterface.LoadMapReturnData? Data;
+            internal string MapAlias, MapAliasPath;
+            internal string MapAliasFailure;
         }
 
         private MissionLifecycleService(ManualLogSource log)
@@ -92,6 +96,12 @@ namespace APIShared
         // Script Extender and game members this service's own code binds; checked once at creation (issue #7).
         internal static ManagedMemberContract MemberContract() => new ManagedMemberContract()
             .Field(typeof(global::CrusaderDE.MainViewModel), "CurrentScreenNo", typeof(global::Enums.SceneIDS))
+            .Field(typeof(global::CrusaderDE.MainViewModel), "viewModelLoaded", typeof(bool))
+            .Field(typeof(global::CrusaderDE.FRONT_Multiplayer), "coopGame", typeof(bool))
+            .Field(typeof(global::CrusaderDE.FRONT_Multiplayer), "singlePlayerCoop", typeof(bool))
+            .Field(typeof(global::CrusaderDE.FRONT_Multiplayer), "trailMakerMode", typeof(bool))
+            .Field(typeof(global::CrusaderDE.HUD_IngameMenu.RestartSkirmishMapInfo), "selectedHeader", typeof(global::FileHeader))
+            .Field(typeof(global::CrusaderDE.HUD_IngameMenu.RestartSkirmishMapInfo), "customTestMission", typeof(bool))
             .Field(typeof(global::EditorDirector), "instance", typeof(global::EditorDirector))
             .Field(typeof(global::EngineInterface.LoadMapReturnData), "coopMissionID", typeof(int))
             .Field(typeof(global::EngineInterface.LoadMapReturnData), "difficulty_level", typeof(int))
@@ -105,10 +115,17 @@ namespace APIShared
             .Field(typeof(global::EngineInterface.LoadMapReturnData), "skirmishTrailLevel", typeof(int))
             .Field(typeof(global::FatControler), "currentScene", typeof(global::Enums.SceneIDS))
             .Field(typeof(global::FileHeader), "filePath", typeof(string))
+            .Field(typeof(global::FileHeader), "missionMap", typeof(bool))
+            .Field(typeof(global::FileHeader), "skirmishMap", typeof(bool))
             .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnStartMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>))
             .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnUnloadMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>))
             .Method(typeof(global::Platform_Multiplayer), "get_Instance", typeof(global::Platform_Multiplayer))
             .Method(typeof(global::Platform_Multiplayer), "IsGameMemberHost", typeof(bool))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "get_Instance", typeof(global::CrusaderDE.MainViewModel))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "set_Show_BlackOut", typeof(void), typeof(bool))
+            .Method(typeof(global::CrusaderDE.MainViewModel), "InitNewScene", typeof(void), typeof(global::Enums.SceneIDS))
+            .Method(typeof(global::CrusaderDE.HUD_ConfirmationPopup), "ShowConfirmationOKMessage", typeof(void),
+                typeof(string), typeof(Action), typeof(string), typeof(bool))
             .Method(typeof(global::SHCDESE.EventAPI.EventHookBase), "get_Phase", typeof(global::SHCDESE.EventAPI.EventHookPhase))
             .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_bMultiplayerSave", typeof(byte))
             .Method(typeof(global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs), "get_CampaignMapId", typeof(int))
@@ -185,16 +202,26 @@ namespace APIShared
             standalone = Hook<Standalone>(typeof(FRONT_StandaloneMission), nameof(FRONT_StandaloneMission.StartMap), info =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.StandaloneMission), () => standalone(info)));
             skirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), "StartSkirmishGame", (self, info) =>
-                Run(Seed(MissionStartKind.NewGame, GameModeKind.CustomGame), () => skirmish(self, info)));
+            {
+                var operation = Seed(MissionStartKind.NewGame, GameModeKind.CustomGame);
+                if (executing == null && MapLoadPolicy.HasProvider && info == null &&
+                    !FRONT_Multiplayer.coopGame && !self.singlePlayerCoop && !self.trailMakerMode &&
+                    !PrepareLocalMap(operation, LobbySelectedMapHeader.Read(self))) return;
+                Run(operation, () => skirmish(self, info));
+            });
             restartSkirmish = Hook<Skirmish>(typeof(FRONT_Multiplayer), nameof(FRONT_Multiplayer.RestartSkirmishGame), (self, info) =>
             {
                 // Only a ready gameplay mission on the Unity thread is a lifecycle restart. The editor or a
                 // foreign thread starts a tracked new attempt instead of throwing inside Vanilla's path.
+                var operation = new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true };
+                if ((executing == null || executing.Restart) && MapLoadPolicy.HasProvider && info != null &&
+                    !FRONT_Multiplayer.coopGame && !self.singlePlayerCoop && !info.customTestMission &&
+                    !PrepareLocalMap(executing ?? operation, info.selectedHeader)) return;
                 if (IsLifecycleRestart(executing != null, state.Current,
                         Thread.CurrentThread.ManagedThreadId == unityThread))
-                    Restart(() => restartSkirmish(self, info));
+                    Restart(() => restartSkirmish(self, info), operation);
                 else
-                    Run(new Operation { Kind = MissionStartKind.NewGame, Intent = GameModeKind.CustomGame, Restart = true }, () => restartSkirmish(self, info));
+                    Run(operation, () => restartSkirmish(self, info));
             });
             tutorial = Hook<Tutorial>(typeof(HUD_Tutorial), nameof(HUD_Tutorial.StartTutorial), self =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
@@ -203,10 +230,14 @@ namespace APIShared
                 // Vanilla's lobby Update marks itself as loading and hides its panels right after this
                 // call returns, even when nothing started. Like a rejected StartSave, a rejected map
                 // start therefore unwinds that frame; the coordinator withdraws the host's start value.
-                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true))
+                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true, coop > 0, out string alias))
                     throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
-                Run(new Operation { Kind = MissionStartKind.NewGame, Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
-                    Multiplayer = true, File = map?.filePath }, () => multiplayerNew(self, setup, map, coop, mission));
+                var operation = new Operation { Kind = MissionStartKind.NewGame,
+                    Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
+                    Multiplayer = true, File = map?.filePath, MapAliasPath = map?.filePath, MapAlias = alias };
+                Run(operation, () => multiplayerNew(self, setup, map, coop, mission));
+                if (operation.MapAliasFailure != null)
+                    throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
             });
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
@@ -237,7 +268,23 @@ namespace APIShared
             nativeLoad = Hook<NativeLoad>(typeof(EngineInterface), "loadMap", (id, file, dummy, fromSave, type, mission, classic) =>
             {
                 Safe(() => { if (executing != null) { executing.File = file; executing.Campaign = id > 0 ? id : 0; executing.Trail = type; } });
-                return CaptureNative(() => nativeLoad(id, file, dummy, fromSave, type, mission, classic));
+                var op = executing;
+                return CaptureNative(() =>
+                {
+                    if (op?.MapAlias == null || id > 0 || dummy || fromSave || type >= 0 ||
+                        !string.Equals(op.MapAliasPath, file, StringComparison.Ordinal))
+                        return nativeLoad(id, file, dummy, fromSave, type, mission, classic);
+                    if (!MapLoadPolicy.CanAlias)
+                    {
+                        op.MapAliasFailure = "The native map filename hook became unavailable before loading. Filename length " +
+                            System.IO.Path.GetFileName(file).Length + ", native limit " + MapLoadPolicy.NativeFileNameLimit +
+                            " UTF-16 code units. Path: " + file;
+                        if (op.Multiplayer) MapRecordLoadCoordinator.AbortBeforeMapLoad(op.MapAliasFailure);
+                        throw new NativeAdmissionAbort(op.MapAliasFailure);
+                    }
+                    return MapLoadPolicy.RunWithName(file, op.MapAlias,
+                        () => nativeLoad(id, file, dummy, fromSave, type, mission, classic));
+                });
             });
             saveFile = Hook<SaveFile>(typeof(EngineInterface), nameof(EngineInterface.LoadSaveFile), file => CaptureNative(() => saveFile(file)));
             editorFile = Hook<EditorFile>(typeof(EngineInterface), nameof(EngineInterface.LoadMapFile), (file, editor) => CaptureNative(() => editorFile(file, editor)));
@@ -329,6 +376,29 @@ namespace APIShared
         }
 
         private void Run(Operation op, Action original) => Run(op, () => { original(); return true; });
+
+        private bool PrepareLocalMap(Operation operation, FileHeader header)
+        {
+            if (header == null || header.missionMap || header.skirmishMap) return true;
+            var decision = MapLoadPolicy.Evaluate(header.filePath);
+            if (decision.Rejection != null)
+            {
+                ReportLocalMapRejection(log, decision.Rejection);
+                return false;
+            }
+            operation.MapAliasPath = header.filePath;
+            operation.MapAlias = decision.NativeFileName;
+            return true;
+        }
+
+        internal static void ReportLocalMapRejection(ManualLogSource logger, string reason)
+        {
+            Lobby.LobbyLaunchStatus.WriteAttemptError(logger, "MAP_FILE_LOAD_BLOCKED: " + reason, null);
+            if (Internal.UnityMainThreadDispatch.IsMainThread && MainViewModel.viewModelLoaded)
+                try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(Localization.UiText.Get("Savegames.LoadTitle"),
+                    () => { }, reason); }
+                catch (Exception error) { NativeApiLog.Error(logger, "Map load rejection popup unavailable: " + error.Message); }
+        }
         internal sealed class NativeAdmissionAbort : Exception
         { internal NativeAdmissionAbort(string reason) : base(reason) { } }
 
@@ -347,6 +417,7 @@ namespace APIShared
             waiting = null;
             bool normal = false;
             GameModeHelper.BeginModeDecisions();
+            op.SimulationAttempt = Multiplayer.SimulationAgreement.PrepareAttempt(op.RestartedFrom);
             Safe(() => op.Id = state.Begin(Capture(op)));
             try
             {
@@ -358,6 +429,8 @@ namespace APIShared
             finally
             {
                 executing = null;
+                if (op.NativeFailed || !normal)
+                    Multiplayer.SimulationAgreement.Retire(op.Id);
                 Safe(CoopAiStartImportService.NotifyAttemptFinished);
                 if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
                     !op.NativeFailed && op.ManagedSucceeded)
@@ -375,6 +448,16 @@ namespace APIShared
                     SavegameModSettings.FinishLoad();
                 if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null)
                     MapRecordLoadCoordinator.FinishLoad();
+                if (op.MapAliasFailure != null && !op.Multiplayer)
+                {
+                    Safe(() =>
+                    {
+                        if (!MainViewModel.viewModelLoaded) return;
+                        MainViewModel.Instance.Show_BlackOut = false;
+                        MainViewModel.Instance.InitNewScene(Enums.SceneIDS.FrontEnd);
+                    });
+                    ReportLocalMapRejection(log, op.MapAliasFailure);
+                }
             }
         }
 
@@ -459,6 +542,14 @@ namespace APIShared
                 op.NativeFailed=true;
                 Safe(()=>state.CompleteNativeLoad(op.Id,false));
                 throw new NativeAdmissionAbort(productionRejection);
+            }
+            string simulationRejection = op == null ? null : Multiplayer.SimulationAgreement.Admit(Capture(op), op.SimulationAttempt);
+            if (!string.IsNullOrEmpty(simulationRejection))
+            {
+                op.NativeFailed = true;
+                Safe(() => state.CompleteNativeLoad(op.Id, false));
+                Report(new InvalidOperationException(simulationRejection));
+                throw new NativeAdmissionAbort(simulationRejection);
             }
             long nativeGeneration = Units.AiMilitary.AiMilitaryService.Instance.Generation;
             EngineInterface.LoadMapReturnData result;

@@ -47,6 +47,24 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void PreparedSaveDistinguishesPendingInternalReadinessFromARealVeto()
+        {
+            var registry = new LobbyLaunchGuardRegistry(() => { }, () => "failed");
+            bool veto = false;
+            Assert.IsTrue(registry.TryRegisterReadiness("a", "simulation", _ =>
+                new LobbyLaunchGuardResult(LobbyLaunchGuardState.Waiting, "waiting for peer"), out _));
+            Assert.IsTrue(registry.TryRegister("b", "legacy", _ => veto ? "conflict" : null, out _));
+            var context = LobbyLaunchGuardRegistry.PreparedMultiplayerLoadContext(2);
+            Assert.IsTrue(registry.Evaluate(context).Waiting);
+            veto = true;
+            var decision = registry.Evaluate(context);
+            Assert.IsTrue(decision.Blocked);
+            Assert.IsFalse(decision.Waiting);
+            Assert.AreEqual("conflict", decision.Reason);
+            Assert.IsTrue(registry.Evaluate(new LobbyLaunchGuardContext(null, "Play", LobbyLaunchOperation.Start)).Waiting);
+        }
+
+        [TestMethod]
         public void RegistrationWritesDoNotInvalidateAnExecutingSnapshot()
         {
             var registry = new LobbyLaunchGuardRegistry(() => { }, () => "failed");

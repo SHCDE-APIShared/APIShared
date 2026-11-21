@@ -1,0 +1,72 @@
+<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:ui="clr-namespace:APIShared.ModSettings;assembly=APIShared"
+            xmlns:se="clr-namespace:SHCDESE.UI;assembly=SHCDESE">
+  <StackPanel.Resources>
+    <Style x:Key="PresetOfferToolTip" TargetType="{x:Type ToolTip}">
+      <Setter Property="Background" Value="#FF1D1710"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderBrush" Value="#FFF2D48A"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type ToolTip}">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}"
+                    MaxWidth="{TemplateBinding MaxWidth}" CornerRadius="2">
+              <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                         FontSize="{TemplateBinding FontSize}" TextWrapping="Wrap"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </StackPanel.Resources>
+  <ScrollViewer Visibility="{Binding ListVisibility}" MaxHeight="75"
+                HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <ItemsControl ItemsSource="{Binding Offers}" IsEnabled="{Binding CanInteract}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Command="{Binding OpenCommand}" Margin="0,0,2,2" Padding="6,2" HorizontalContentAlignment="Left"
+                  ToolTipService.ShowDuration="60000">
+            <Button.ToolTip>
+              <ToolTip Style="{StaticResource PresetOfferToolTip}" ui:SharedToolTipSizing.Enabled="True" Content="{Binding Help}"/>
+            </Button.ToolTip>
+            <TextBlock Text="{Binding Caption}" FontSize="13" TextTrimming="CharacterEllipsis"/>
+          </Button>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </ScrollViewer>
+  <DockPanel Visibility="{Binding DialogVisibility}" Margin="0,2,0,2" LastChildFill="True">
+    <Button DockPanel.Dock="Right" Content="{Binding CloseLabel}" Command="{Binding CloseCommand}"
+            IsEnabled="{Binding CanInteract}" Padding="6,2" Margin="4,0,0,0" ToolTipService.ShowDuration="60000">
+      <Button.ToolTip>
+        <ToolTip Style="{StaticResource PresetOfferToolTip}" ui:SharedToolTipSizing.Enabled="True" Content="{Binding CloseHelp}"/>
+      </Button.ToolTip>
+    </Button>
+    <Button DockPanel.Dock="Right" Content="{Binding SaveLabel}" Command="{Binding SaveCommand}"
+            IsEnabled="{Binding CanSave}" Padding="6,2" Margin="4,0,0,0" ToolTipService.ShowDuration="60000">
+      <Button.ToolTip>
+        <ToolTip Style="{StaticResource PresetOfferToolTip}" ui:SharedToolTipSizing.Enabled="True" Content="{Binding SaveHelp}"/>
+      </Button.ToolTip>
+    </Button>
+    <TextBlock DockPanel.Dock="Left" Text="{Binding NameLabel}" Foreground="Black" FontSize="13"
+               Margin="4,0,5,0" VerticalAlignment="Center"/>
+    <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" FontSize="13" MaxLength="256"
+             IsEnabled="{Binding CanInteract}" se:KeyboardCaptureBinding.Enabled="True" ToolTipService.ShowDuration="60000">
+      <TextBox.ToolTip>
+        <ToolTip Style="{StaticResource PresetOfferToolTip}" ui:SharedToolTipSizing.Enabled="True" Content="{Binding NameHelp}"/>
+      </TextBox.ToolTip>
+    </TextBox>
+  </DockPanel>
+  <DockPanel Visibility="{Binding StatusVisibility}" Margin="0,0,0,2" LastChildFill="True">
+    <Button DockPanel.Dock="Right" Content="{Binding CloseLabel}" Command="{Binding CloseCommand}"
+            Visibility="{Binding StatusCloseVisibility}" Padding="6,2" Margin="4,0,0,0" ToolTipService.ShowDuration="60000">
+      <Button.ToolTip>
+        <ToolTip Style="{StaticResource PresetOfferToolTip}" ui:SharedToolTipSizing.Enabled="True" Content="{Binding CloseStatusHelp}"/>
+      </Button.ToolTip>
+    </Button>
+    <TextBlock Text="{Binding Status}" Foreground="Black" FontSize="13" TextTrimming="CharacterEllipsis"
+               Margin="4,0,0,0" VerticalAlignment="Center"/>
+  </DockPanel>
+</StackPanel>

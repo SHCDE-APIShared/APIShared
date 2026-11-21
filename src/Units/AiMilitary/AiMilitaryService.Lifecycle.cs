@@ -55,7 +55,7 @@ namespace APIShared.Units.AiMilitary
                 foreach (var entry in tracked.Values) if (entry.Pending) callbacks.Add(entry);
                 callbacks.AddRange(retired);
                 generation++;
-                tracked.Clear(); retired.Clear(); Array.Clear(additional, 0, additional.Length);
+                tracked.Clear(); retired.Clear(); pendingWork.Clear(); Array.Clear(additional, 0, additional.Length);
                 orders?.Clear(generation); backend?.BeginWorld(generation); AiMilitaryQuotaRuntime.Clear(generation);
                 AiMilitaryNativeObservers.BeginWorld();
                 prepared = null; rawRestored = false; rawRestoreFailed = false;

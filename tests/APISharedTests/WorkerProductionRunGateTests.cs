@@ -134,11 +134,20 @@ namespace APISharedTests
                     world.Enabled = mode == 1 ? 0 : 1; world.Admitted = mode == 2 ? 0 : 1;
                     for (int i = 0; i < 2000; i++) world.Boundary.Run(false);
                     int calls = world.Calls;
-                    long before = GC.GetAllocatedBytesForCurrentThread();
-                    for (int i = 0; i < 20000; i++) world.Boundary.Run(false);
-                    long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                    // Best of several samples, as in BrokerAllocationTests: a GC started by another
+                    // thread can shift one thread's allocation accounting by a few KB (observed 4440
+                    // and 4616 bytes in full-suite runs, 0 in isolation). A real per-run allocation
+                    // (20000 runs) makes every sample nonzero, so the guarantee is unchanged.
+                    long allocated = long.MaxValue;
+                    int samples = 0;
+                    for (; samples < 3 && allocated != 0; samples++)
+                    {
+                        long before = GC.GetAllocatedBytesForCurrentThread();
+                        for (int i = 0; i < 20000; i++) world.Boundary.Run(false);
+                        allocated = Math.Min(allocated, GC.GetAllocatedBytesForCurrentThread() - before);
+                    }
                     Assert.AreEqual(0L, allocated, "The actual run boundary must not allocate per run.");
-                    Assert.AreEqual(mode == 2 ? calls : calls + 20000, world.Calls);
+                    Assert.AreEqual(mode == 2 ? calls : calls + 20000 * samples, world.Calls);
                 }
             }
         }

@@ -456,16 +456,17 @@ startup snapshot. APIShared logs a warning on every start with the persisted swi
 enabled. Neither the branch nor Debug/Release compilation enables tracing implicitly.
 
 Info messages are not gated: APIShared keeps their number small at the call sites
-(one-time startup and state markers such as Workshop transaction outcomes), so they
+(one-time startup and state markers such as Workshop installation outcomes), so they
 are available in every player log. Routine and per-use tracing is Debug. Scroll
 tracing additionally needs the caller's `enableScrollDiagnostics` option. Services
 receive a forwarding logger so their direct Debug calls cannot bypass the gate.
 Successful native-site summaries are not constructed without opt-in; refused
 registrations still produce warnings. Warnings, errors, capability failure results
 and recovery evidence remain available.
-Workshop `_APIShared/T/*/diagnostics.txt` contains installation warnings and is
-retained without opt-in, alongside the transaction protocol. The independent
-dependency bootstrap emits only warnings/errors and creates no tracing files.
+Workshop installations performed by the preloader at game start are logged on the
+BepInEx source `APIShared.WorkshopInstall` without opt-in; the plugin reports their
+outcome once from `_APIShared/I/result.txt`. The independent dependency bootstrap
+otherwise emits only warnings/errors and creates no tracing files.
 
 Consumer observation contracts retain their existing behavior: registering an
 `IAivBuildStepObserver`, `IEnemyBridgePathObserver` or temporary gate-route observer
@@ -733,6 +734,8 @@ if (import is ICoopAiStartPreviewCapability preview &&
 Mission settings preparation, personal values, settings participant diagnostics, presets
 without SerpsModsHost, settings search, load/save requesters and settings locked during a
 mission are described in [mod settings integration](MOD_SETTINGS.md).
+For an expected rejection during save selection or confirmation, see
+[load/save requester integration](MOD_SETTINGS.md#loadsave-requester-integration).
 
 ## Optional game-mode permissions
 
@@ -801,6 +804,18 @@ Independent pages can instead own a `ModSettingsModeAvailability`, use `GetState
 for observable row state, and supply `SetPreview(contexts, multiplayer)` or
 `SetMission(snapshot)` on the Unity UI thread. Consumers own policy and localization;
 the built-in compact legend has English and German fallbacks.
+
+## Agreeing on simulation features
+
+Register with `SimulationAgreement.Register` once on the Unity thread at plug-in
+startup. Use the same owner GUID and feature ID on every supported installation.
+Report actual hook availability in a side-effect-free callback. The apply callback
+must publish the supplied activation synchronously without installing or removing hooks.
+A required feature rejects mixed readiness. An optional feature receives `false`
+on all peers when even one peer cannot participate. Use the admitted value for both
+sending and receiving simulation commands for the whole match. When an active
+feature detects a runtime loss, call `SimulationAgreement.ReportFault` to stop the
+world through the shared terminal boundary.
 
 ## Multiplayer actions and messages
 
@@ -963,9 +978,15 @@ and preservation rules are in [Workshop cleanup](WORKSHOP.md#workshop-package-cl
 
 ## Loose Workshop packages
 
-Use the shipped external publisher for explicitly declared Payload packages.
+Follow the [first-upload guide](WORKSHOP.md#upload-your-first-mod-to-steam-workshop)
+to package your mod and publish it with the included uploader.
 The [Workshop guide](WORKSHOP.md) covers publishing, prerequisites, manifests,
-bootstrap maps, consent, embedded-copy replacement, recovery and Windows/Proton limits.
+bootstrap maps, consent, embedded-copy replacement, the
+[installation at the next game start](WORKSHOP.md#installation-preloader-swap) and
+Windows/Proton limits. An update replaces each plugin folder as a whole; if your mod
+keeps player files inside its plugin folder, declare them in a
+[keep list](WORKSHOP.md#keep-list-apishared-keeptxt), or store them below Documents instead.
+`ApplyAsync` stages the change and returns `AwaitingRestart`; the game is not closed.
 
 ## HUD integration
 
@@ -984,7 +1005,8 @@ visibility, enabled state, text or content. APIShared owns layout and paging; yo
 owns command authorization and multiplayer synchronization.
 
 Factories and commands run on the Unity thread and must not block. Troop descriptions
-use Vanilla rollover text; side buttons use the mod-options popup by default.
+use Vanilla rollover text. Side buttons use the shared popup by default. Its text
+follows the button's HUD scale even when Noesis opens it in a separate view.
 See the [catalog](API_CATALOG.md#side-hud-buttons) for layout, refresh, failure,
 tooltip and notification contracts.
 
@@ -2012,7 +2034,41 @@ instead of patching `HUD_Buildings.xaml` and polling the open building: APIShare
 and the detection and calls Opened, Updated and Closed on Unity. Use
 [BuildingStates](BUILDING_STATE.md) for the player's per-building choice behind such a control:
 owner requests are validated and applied on every peer in the same tick, saved with the game and
-readable from managed and native simulation code.
+readable from managed and native simulation code. A table can opt in to applying one owner value
+to all of the sender's living buildings of the selected type.
+
+## Local input and mod keybinds
+
+Use `InputState.PhysicalModifiers` for physical modifier keys, `ReadModifiers` for
+Noesis input events, and `ReadGestureModifiers` for UI gestures that still accept the
+mouse when the keyboard is routed to the game. Use the game-action methods for Vanilla
+actions that players can rebind. Use Script Extender press and release events for
+edge-triggered behavior and query held state inside the relevant gesture callback.
+
+After managed initialization on Unity, register one `ModKeybindRegistration` per action.
+The owner and action IDs are stable. The registration's name and binding readers are called
+on Unity. The edit predicate and normal settings setter control changes, the execution
+predicate controls in-game activation, and the action only requests the existing command.
+The game settings page lists registrations by mod. A mod can also call `BeginCapture` from
+its own editor, pass its visibility predicate, and route active Noesis preview input through
+`TryCapture`. Assignment ends on Escape, lost focus or a closed surface. Call
+`NotifyBindingChanged` for settings changes made outside the shared editor.
+
+For example, a preview overlay with an existing local binding can register:
+
+```csharp
+var shortcut = new ModKeybindRegistration(MyPluginGuid, "toggle-preview", "My Mod",
+    () => Localize("TogglePreview"), new KeybindChord(KeyCode.B),
+    () => settings.PreviewShortcut, chord => settings.PreviewShortcut = chord,
+    chord => chord.Key != KeyCode.Escape, () => settings.CanEditPreviewShortcut,
+    () => preview.CanToggle, preview.Toggle);
+if (!ModKeybinds.TryRegister(shortcut, out string reason)) Log(reason);
+```
+
+The broker reuses the Script Extender input stream. Trigger matches use the exact modifier
+combination and leave Vanilla input available. The editor warns about duplicate chords
+without rewriting either binding. Keep local shortcut settings local and use the mod's
+existing authenticated command path for effects shared in multiplayer.
 
 ## Ally gifts and send-dialog extensions
 
