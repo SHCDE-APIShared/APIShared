@@ -112,3 +112,21 @@ The constructor probe permits 2 MiB; other probes permit 512 KiB each. Missing
 selectors or exceeded limits fail without truncated bodies. Downloads and target
 DLLs are deleted and never uploaded. This is metadata evidence for that package,
 not installed/native ABI, payment, hook activation or gameplay verification.
+
+### Preparation profile
+
+The package/probe counts above describe the default `baseline` profile. Set the
+additional `public_extender_metadata_fixture` choice to `preparation` to inspect
+the fixed [descriptor preparation and inline-hook lifetime selections](../Validation/PublicExtenderPreparation.2.14.4.json).
+The audit still requires `public_extender_metadata_audit=true`.
+
+```text
+gh workflow run tests.yml --ref <published-ref> -f public_extender_metadata_audit=true -f public_extender_metadata_fixture=preparation
+```
+
+This profile reads only `RedBird.X64.dll` from the same pinned public package.
+It exports complete selected descriptor/transaction bodies, including nested
+helpers, and the selected inline-hook generation/lifetime methods. Existing
+timeout, hash, output, cleanup, retention and metadata-only limitations still apply.
+The choice selects fixed repository fixtures; arbitrary fixture paths are not
+accepted by the workflow. Omit it to retain the baseline audit.

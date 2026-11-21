@@ -12,6 +12,13 @@ on:
         description: 'Inspect selected metadata from the pinned official public Extender release (JSON only)'
         type: boolean
         default: false
+      public_extender_metadata_fixture:
+        description: 'Choose the fixed public-package metadata question set'
+        type: choice
+        default: baseline
+        options:
+          - baseline
+          - preparation
 permissions:
   contents: read
 jobs:
@@ -93,6 +100,7 @@ jobs:
       DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: 'false'
       DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
       MSBUILDDISABLENODEREUSE: '1'
+      PUBLIC_EXTENDER_METADATA_FIXTURE: ${{ inputs.public_extender_metadata_fixture || 'baseline' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -103,7 +111,13 @@ jobs:
         run: dotnet build tools/AssemblyMetadata/AssemblyMetadata.csproj --configuration Release --disable-build-servers --maxcpucount:2 -p:UseSharedCompilation=false --output "$env:RUNNER_TEMP/assembly-metadata-tool"
       - name: Audit pinned public Extender metadata
         shell: pwsh
-        run: ./tools/Validation/Invoke-PublicExtenderMetadataAudit.ps1 -ToolAssemblyPath "$env:RUNNER_TEMP/assembly-metadata-tool/AssemblyMetadata.dll" -WorkDirectory "$env:RUNNER_TEMP/public-extender-metadata-work" -OutputDirectory "$env:RUNNER_TEMP/public-extender-metadata-result"
+        run: |
+          $fixture = switch -CaseSensitive ($env:PUBLIC_EXTENDER_METADATA_FIXTURE) {
+            'baseline' { './tools/Validation/PublicExtenderMetadata.2.14.4.json' }
+            'preparation' { './tools/Validation/PublicExtenderPreparation.2.14.4.json' }
+            default { throw 'Unsupported public metadata fixture.' }
+          }
+          ./tools/Validation/Invoke-PublicExtenderMetadataAudit.ps1 -FixturePath $fixture -ToolAssemblyPath "$env:RUNNER_TEMP/assembly-metadata-tool/AssemblyMetadata.dll" -WorkDirectory "$env:RUNNER_TEMP/public-extender-metadata-work" -OutputDirectory "$env:RUNNER_TEMP/public-extender-metadata-result"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
