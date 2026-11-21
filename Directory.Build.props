@@ -7,6 +7,9 @@
     <BaseOutputPath>$(_APISharedArtifactsRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
     <BaseIntermediateOutputPath>$(_APISharedArtifactsRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <!-- Preserve the SDK's source-tree exclusions when switching an existing
+         project to this output root, as its own artifacts mode does. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
   </PropertyGroup>
   <!-- Imported initial targets run before requested Restore/Build/custom targets.
        Refuse unsupported roots explicitly; never reinterpret or redirect them. -->
