@@ -3,7 +3,7 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.61.0",
+  "Version": "0.62.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
@@ -11,7 +11,7 @@
   "NetworkMode": 1,
   "SerpChangelog": [
     {
-      "Version": "0.61.0",
+      "Version": "0.62.0",
       "Changes": [
         "Add a live construction material stock snapshot for an explicitly selected player.",
         "Share quarry pile placement queries, native path-component refresh and multiplayer readiness proof evaluation."

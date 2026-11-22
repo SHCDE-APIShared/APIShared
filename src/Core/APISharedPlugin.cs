@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.61.0";
+        public const string PluginVersion = "0.62.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -108,6 +108,10 @@ namespace APIShared
                     Networking.NativeChoreRuntime.InitializeSubmission(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("shared player-view identity", () =>
                     PlayerViewIdentityRuntime.Instance.Initialize(context, hash, RuntimeLogger)),
+                // Required simulation records use the same protected52B0 owner even when
+                // the optional production-state cohort cannot initialize.
+                new NativeInitializationStep("atomic simulation saves", () =>
+                    Economy.WorkerProductionCriticalSaveRuntime.Initialize(context, hash, RuntimeLogger)),
                 // Validation only: the input hooks are installed on a consumer's registration.
                 new NativeInitializationStep("spectator input control", () =>
                     PlayerControl.ControlInputNative.Prepare(context, hash, RuntimeLogger)),
@@ -130,6 +134,8 @@ namespace APIShared
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
+                new NativeInitializationStep("AI market entry observations", () => Economy.AiMarketNativeRuntime.Initialize(
+                    context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("ally goods transfers", () => Economy.AllyTransfersNative.Initialize(
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("plague heights", () => PlagueHeightService.Initialize(context, hash, RuntimeLogger)),
@@ -176,6 +182,7 @@ namespace APIShared
                 new NativeInitializationStep("sight-blocking buildings", () => Sight.SightBlockingBuildingsNative.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("multiplayer simulation capability agreement", () => Multiplayer.SimulationAgreement.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("multiplayer resync lifecycle", () => Multiplayer.MultiplayerResyncNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.

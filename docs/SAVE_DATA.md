@@ -283,3 +283,37 @@ installed Script Extender handler table and feed the binding the real event argu
 later versions, malformed lists, and digests read from save files built with the Extender's
 own archive class. None of them runs the game; in-game checks are listed under
 [Public limits](#public-limits).
+
+
+## Required atomic simulation records
+
+`VersionedSaveDataRegistration.RequireAtomicWrite` is additive and defaults to false.
+Register opted-in records after native initialization and inspect
+`VersionedSaveData.IsAtomicWriteAvailable`. Registration fails when the shared protected
+writer is unavailable. Existing registrations retain their capture and retention behavior.
+
+For an in-scope save, the existing native writer owner holds the actual engine monitor,
+captures each required record once before creating the temporary native file, and reuses
+the complete frozen record during the Extender archive callback. Capture must be brief:
+copy consumer state under its own lock, in engine-monitor then consumer-lock order.
+Capture must be read-only with respect to simulation and must not issue gameplay calls.
+Never acquire the engine monitor while holding that consumer lock elsewhere. Callbacks
+must not start another save or wait for another thread. The writer verifies complete native
+I/O, archive delivery and exact saved bytes before atomically replacing the destination.
+False/throwing captures, kept unreadable records, stale/omitted archive data and write
+failures reject replacement; they cannot silently retain an earlier required snapshot.
+Empty successful records are valid. No additional work runs per simulation tick.
+
+For early application, `NativeWorldRestoreEvents.TryRegister` shares the existing raw
+restore owner. Register with a stable owner GUID and local ID after native initialization;
+check `IsAvailable` and the returned reason. Participants run after successful raw native
+restoration and existing internal participants, before AI restoration and the first native
+simulation fold, under the actual engine monitor. Order is numeric then ordinal owner/ID.
+Callbacks run outside registration locks, without replay, removal or implicit dispatch.
+A false result or exception rejects native initialization without retrying the original.
+`NativeWorldRestoreContext.Mission` identifies the current pending managed mission and may
+be null; `InvocationId` is local diagnostic identity and must not be persisted or compared
+across peers. Prepare detached bytes in `Prepared`, apply only matching candidates here,
+and avoid applying them again or clearing them in later `Loaded`/mission-start callbacks.
+These events do not synchronize or authorize gameplay. A missing old record may explicitly
+restore empty metadata while leaving existing native state unchanged.

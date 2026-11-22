@@ -817,6 +817,24 @@ sending and receiving simulation commands for the whole match. When an active
 feature detects a runtime loss, call `SimulationAgreement.ReportFault` to stop the
 world through the shared terminal boundary.
 
+## Multiplayer repair boundaries
+
+`MultiplayerResyncEvents` requires 0.62.0. Register both critical callbacks after
+native initialization and before the first world; registrations last for the process.
+They run in order/owner/ID order on the engine-serialized native caller thread,
+outside registry locks. They are not Unity dispatch and have no replay or cancellation.
+Start runs before executed Chore54; completion runs after executed Chore67.
+Serialization and size queries do not notify consumers. A local abort never invents
+a completion callback. Callback exceptions stop the agreed simulation feature.
+
+Use these boundaries to suspend and reset consumer-owned deterministic state on
+every peer. They do not transfer mod state or change native repair data.
+`IsInProgress` is false inside successful completion callbacks so consumers can
+rearm their admitted gates; a failed callback restores the terminal fence. Do not
+start an engine run, load or save from these callbacks. `CheckIntegrity()` is a
+side-effect-free startup/admission probe, not a per-tick query. Combine readiness
+with `SimulationAgreement` for simulation-changing consumers.
+
 ## Multiplayer actions and messages
 
 These networking APIs require APIShared 0.7.0 or later; neither SerpsModsHost nor
@@ -1228,6 +1246,27 @@ For market prices use [MarketPriceModifiers](MARKET_PRICE_MODIFIERS.md) to compo
 per-lot base prices across manual trade, AI, autotrade, HUD and valuation. Existing
 low-level query veto totals remain distinct and compatible. ExtraFeatures' AI
 exception now omits only its own factors, allowing other registered mods to work.
+
+## Observing AI trade and recruitment
+
+`AiMarketEvents` (0.62.0) owns the common native entries for purchase decisions,
+recruitment and actual market buy/sell attempts. Register after LibraryLoaded
+initialization and enable the initially disabled `AiMarketRegistration` logically.
+Never install another hook at those entries. Paired callbacks use immutable value
+contexts and an owner-private numeric token; nested calls retain independent tokens.
+The original runs exactly once with unchanged arguments and return value even when
+an observer fails. A failed Begin has no matching End; a successful Begin always
+receives its paired End, including after logical disabling. Exceptions are isolated
+and optionally reported through the registration's failure callback.
+
+Callbacks execute synchronously on the native caller thread outside registry locks.
+Keep them bounded and do not retain `ProfileRoot`: it is an immediate opaque native
+address. `InvocationId` is local evidence, never a synchronized or persisted identity.
+Observations describe attempts; the consumer must verify actual resource changes.
+Use `CheckIntegrity()` at admission to detect overwritten shared entries, and
+`SimulationAgreement` for any gameplay-changing interpretation. Registrations are
+process-rooted; disabling does not remove executable hooks. Public declarations
+document exact ordering and failure semantics.
 
 ## Sharing native market price queries
 
@@ -1668,6 +1707,20 @@ text and display name are not authenticated gameplay authority.
 
 Vanilla truncates each displayed lobby message at 300 characters. Consumers must
 split longer support reports before sending them and prevent receive/send loops.
+
+### Local lobby system messages
+
+For an informational hint such as a completed Workshop update, call
+`APIShared.Lobby.LobbyLaunchStatus.TryShowLocalSystemMessage(lobbyId, localizedText)`
+on the Unity thread with the Steam lobby ID that the hint belongs to. This renders
+one local system line even when ordinary chat is muted. It uses the normal chat
+notification and leaves the player's chat visibility alone. It returns `false`
+when called outside the specified active Steam lobby, during a mission, before the
+renderer is available, from another thread, or with empty or oversized text.
+Each line must fit Vanilla's 300-character limit. The caller decides when to
+show a line and what to log.
+
+### Lobby launch status
 
 `APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
 For blocking Ready/Start and prepared multiplayer-save admission, `LobbyLaunchGuards` supplies a context whose

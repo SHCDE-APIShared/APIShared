@@ -274,6 +274,9 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Presentation.TroopActionHud` | Shared Vanilla troop-action slots and automatic HUD pages; legacy host visibility/layout coordination | Unity thread; owner-local button IDs; logical activation; independent command/factory failures; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Economy.AiMarketSellPolicies` | Final AI reserve and pre-booking quantity policies, OR-combined native safety | [Contract and example](AI_MARKET_SELL.md); initially disabled; native caller thread; process lifetime |
+| `APIShared.Economy.AiMarketEvents` | Paired native AI purchase-decision, recruitment, buy and sell observations (0.62.0) | Initially disabled registrations; nested caller-private numeric tokens; original exactly once; [guide](THIRD_PARTY_GUIDE.md#observing-ai-trade-and-recruitment) |
+| `APIShared.Multiplayer.MultiplayerResyncEvents` | Critical callbacks at the common executed Vanilla repair boundaries (0.62.0) | Engine-serialized native caller; process lifetime; participant failure is terminal; [guide](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries) |
+| `APIShared.Savegames.NativeWorldRestoreEvents` | Ordered critical callbacks after raw native world restoration, before derived folds (0.62.0) | Engine monitor held; false or exception rejects restoration; [save guide](SAVE_DATA.md) |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
@@ -321,6 +324,10 @@ See the [networking guide](THIRD_PARTY_GUIDE.md#multiplayer-actions-and-messages
 use each registered simulation feature before the native map load. Required features
 block unequal readiness. Optional features use the Vanilla path for the whole match
 unless every peer is ready. See the [registration contract](THIRD_PARTY_GUIDE.md#agreeing-on-simulation-features).
+
+`MultiplayerResyncEvents` (0.62.0) exposes common repair start/completion boundaries.
+It supplies no state transport: consumers decide whether to restore or deterministically
+reset their extra state. See [repair boundaries](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries).
 
 ## Source map
 
@@ -990,6 +997,9 @@ announces deduplicated "please wait", "start blocked" and "ready" lobby messages
 players learn why Start is unavailable. The host is the only sender of automatic
 announcements; lobby members show their own entries locally unless an entry is marked
 `LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.
+`LobbyLaunchStatus.TryShowLocalSystemMessage(lobbyId, text)` also supports an
+informational line for the local player in the active Steam lobby. See the
+[lobby chat guide](THIRD_PARTY_GUIDE.md#local-lobby-system-messages).
 
 ## Lord statistic columns
 

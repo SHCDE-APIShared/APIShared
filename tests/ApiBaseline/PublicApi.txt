@@ -630,6 +630,27 @@ APIShared.CoopAiStartRequest | public bool IsPreview { get; }
 APIShared.CoopAiStartRequest | public int CoopMission { get; }
 APIShared.CoopAiStartRequest | public int CoopTrail { get; }
 APIShared.CoopAiStartRequest | public long AttemptId { get; }
+APIShared.Economy.AiMarketBegin | public delegate long APIShared.Economy.AiMarketBegin(APIShared.Economy.AiMarketContext context)
+APIShared.Economy.AiMarketContext | public struct APIShared.Economy.AiMarketContext
+APIShared.Economy.AiMarketContext | public APIShared.Economy.AiMarketOperation Operation { get; }
+APIShared.Economy.AiMarketContext | public System.IntPtr ProfileRoot { get; }
+APIShared.Economy.AiMarketContext | public int GoodIndex { get; }
+APIShared.Economy.AiMarketContext | public int PlayerId { get; }
+APIShared.Economy.AiMarketContext | public int SignedAmount { get; }
+APIShared.Economy.AiMarketContext | public long InvocationId { get; }
+APIShared.Economy.AiMarketEnd | public delegate void APIShared.Economy.AiMarketEnd(APIShared.Economy.AiMarketContext context, long token, bool completed, int rawResult)
+APIShared.Economy.AiMarketEvents | public static class APIShared.Economy.AiMarketEvents
+APIShared.Economy.AiMarketEvents | public static bool CheckIntegrity()
+APIShared.Economy.AiMarketEvents | public static bool IsAvailable { get; }
+APIShared.Economy.AiMarketEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Economy.AiMarketBegin begin, APIShared.Economy.AiMarketEnd end, out APIShared.Economy.AiMarketRegistration registration, out string diagnostic, int order = 0, System.Action<System.Exception> onFailure = null)
+APIShared.Economy.AiMarketEvents | public static string Diagnostic { get; }
+APIShared.Economy.AiMarketOperation | public enum APIShared.Economy.AiMarketOperation : int
+APIShared.Economy.AiMarketOperation | Buy = 2
+APIShared.Economy.AiMarketOperation | PurchaseDecision = 0
+APIShared.Economy.AiMarketOperation | Recruitment = 1
+APIShared.Economy.AiMarketOperation | Sell = 3
+APIShared.Economy.AiMarketRegistration | public sealed class APIShared.Economy.AiMarketRegistration
+APIShared.Economy.AiMarketRegistration | public void SetEnabled(bool enabled)
 APIShared.Economy.AiMarketSellPolicies | public static class APIShared.Economy.AiMarketSellPolicies
 APIShared.Economy.AiMarketSellPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Economy.AiMarketSellSafety safety, out APIShared.Economy.AiMarketSellRegistration registration, out string error, System.Action<APIShared.Economy.AiMarketSellReserveContext> reserveAdjuster = null, System.Action<APIShared.Economy.AiMarketSellQuantityContext> quantityAdjuster = null, int order = 0)
 APIShared.Economy.AiMarketSellQuantityContext | public sealed class APIShared.Economy.AiMarketSellQuantityContext
@@ -1474,6 +1495,7 @@ APIShared.Lobby.LobbyLaunchStatus | public static class APIShared.Lobby.LobbyLau
 APIShared.Lobby.LobbyLaunchStatus | public static bool IsAnnouncement(string chatText)
 APIShared.Lobby.LobbyLaunchStatus | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyLaunchStatus | public static bool TryRegisterProvider(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchStatusQuery, System.Collections.Generic.IEnumerable<APIShared.Lobby.LobbyLaunchStatusItem>> provider, out string diagnostic)
+APIShared.Lobby.LobbyLaunchStatus | public static bool TryShowLocalSystemMessage(ulong lobbyId, string text)
 APIShared.Lobby.LobbyLaunchStatus | public static void ReportAttempt(string ownerGuid, APIShared.Lobby.LobbyLaunchOperation operation, APIShared.Lobby.LobbyLaunchStatusItem item)
 APIShared.Lobby.LobbyLaunchStatus | public static void RequestRefresh()
 APIShared.Lobby.LobbyLaunchStatusItem | public sealed class APIShared.Lobby.LobbyLaunchStatusItem
@@ -2286,6 +2308,11 @@ APIShared.Modifiers.ValueModifierKind | None = 0
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Multiplayer.MultiplayerResyncEvents | public static class APIShared.Multiplayer.MultiplayerResyncEvents
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool CheckIntegrity()
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool IsAvailable { get; }
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool IsInProgress { get; }
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action started, System.Action completed, out string reason, int order = 0)
 APIShared.Multiplayer.SimulationAgreement | public static class APIShared.Multiplayer.SimulationAgreement
 APIShared.Multiplayer.SimulationAgreement | public static void Register(string ownerGuid, string featureId, bool required, System.Func<bool> isReady, System.Action<bool> apply)
 APIShared.Multiplayer.SimulationAgreement | public static void ReportFault(string message)
@@ -3319,6 +3346,13 @@ APIShared.Savegames.ManagedSaveCompletion | public bool? Result { get; }
 APIShared.Savegames.ManagedSaveCompletion | public string Path { get; }
 APIShared.Savegames.ManagedSaveEvents | public static class APIShared.Savegames.ManagedSaveEvents
 APIShared.Savegames.ManagedSaveEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Savegames.ManagedSaveCall, object> begin, System.Action<APIShared.Savegames.ManagedSaveCompletion, object> end, out string reason, int order = 0)
+APIShared.Savegames.NativeWorldRestoreContext | public struct APIShared.Savegames.NativeWorldRestoreContext
+APIShared.Savegames.NativeWorldRestoreContext | public APIShared.MissionContext Mission { get; }
+APIShared.Savegames.NativeWorldRestoreContext | public long InvocationId { get; }
+APIShared.Savegames.NativeWorldRestoreEvents | public static class APIShared.Savegames.NativeWorldRestoreEvents
+APIShared.Savegames.NativeWorldRestoreEvents | public static bool IsAvailable { get; }
+APIShared.Savegames.NativeWorldRestoreEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Savegames.NativeWorldRestoreContext, bool> callback, out string reason, int order = 0)
+APIShared.Savegames.NativeWorldRestoreEvents | public static long CallbackFailures { get; }
 APIShared.Savegames.SaveLoadDialogCallbacks | public sealed class APIShared.Savegames.SaveLoadDialogCallbacks
 APIShared.Savegames.SaveLoadDialogCallbacks | public .ctor()
 APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext, APIShared.Savegames.SaveLoadDialogOutcome> Closed { get; set; }
@@ -3343,6 +3377,7 @@ APIShared.Savegames.SaveLoadDialogOutcome | Failed = 3
 APIShared.Savegames.SaveLoadDialogOutcome | Replaced = 2
 APIShared.Savegames.VersionedSaveCapture | public delegate bool APIShared.Savegames.VersionedSaveCapture(APIShared.Savegames.VersionedSaveWriter writer)
 APIShared.Savegames.VersionedSaveData | public static class APIShared.Savegames.VersionedSaveData
+APIShared.Savegames.VersionedSaveData | public static bool IsAtomicWriteAvailable { get; }
 APIShared.Savegames.VersionedSaveData | public static bool TryRegister(APIShared.Savegames.VersionedSaveDataRegistration registration, out APIShared.Savegames.VersionedSaveDataHandle handle, out string reason)
 APIShared.Savegames.VersionedSaveData | public static int MaximumEntries { get; }
 APIShared.Savegames.VersionedSaveData | public static int MaximumEntryBytes { get; }
@@ -3363,6 +3398,7 @@ APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.V
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Loaded { get; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Prepared { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Collections.Generic.IReadOnlyList<string> KnownEntries { get; }
+APIShared.Savegames.VersionedSaveDataRegistration | public bool RequireAtomicWrite { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public bool SimulationRelevant { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public int CurrentVersion { get; }
 APIShared.Savegames.VersionedSaveDataRegistration | public int MinimumReaderVersion { get; }

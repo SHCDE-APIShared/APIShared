@@ -38,6 +38,9 @@ namespace APIShared.Economy
         private static long session;
         private static IntPtr auditedImage;
         private static bool initialized,restored,worldNativeLoaded;
+        // This means the common mission admission/run fence is registered, not that
+        // optional production features or their native cohorts are available.
+        internal static bool HasLifecycleOwner => initialized;
         private static WorkerProductionAdmissionWait admissionWait;
         private static bool retryingAdmission;
         internal static ulong CurrentCommonDenominator => Volatile.Read(ref activeRules)?.CommonDenominator ?? SavedCommonDenominator();
