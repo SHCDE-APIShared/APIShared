@@ -3,13 +3,25 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.62.0",
+  "Version": "0.63.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.63.0",
+      "Changes": [
+        "Allow explicitly requested ally transfers to suppress their Vanilla sender and recipient chat messages while preserving manual gifts, resource effects, receipt sounds and AI reactions."
+      ]
+    },
+    {
+      "Version": "0.62.1",
+      "Changes": [
+        "Restart the production-rule agreement when joining a different lobby, even when its rules are unchanged, so an early confirmation request cannot leave the lobby waiting indefinitely."
+      ]
+    },
     {
       "Version": "0.62.0",
       "Changes": [

@@ -697,7 +697,9 @@ APIShared.Economy.AllyTransferPreEventArgs | public int RecipientPlayerId { get;
 APIShared.Economy.AllyTransferPreEventArgs | public int SenderPlayerId { get; }
 APIShared.Economy.AllyTransferRequest | public sealed class APIShared.Economy.AllyTransferRequest
 APIShared.Economy.AllyTransferRequest | public .ctor(int senderId, int recipientId, SHCDESE.Interop.eGoods good, int maximumAmount, int minimumSenderRemaining = 0, int maximumRecipientAmount = 2147483647)
+APIShared.Economy.AllyTransferRequest | public .ctor(int senderId, int recipientId, SHCDESE.Interop.eGoods good, int maximumAmount, int minimumSenderRemaining, int maximumRecipientAmount, bool showVanillaChatMessages)
 APIShared.Economy.AllyTransferRequest | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferRequest | public bool ShowVanillaChatMessages { get; }
 APIShared.Economy.AllyTransferRequest | public int MaximumAmount { get; }
 APIShared.Economy.AllyTransferRequest | public int MaximumRecipientAmount { get; }
 APIShared.Economy.AllyTransferRequest | public int MinimumSenderRemaining { get; }
@@ -724,6 +726,7 @@ APIShared.Economy.AllyTransferStatus | Vetoed = 1
 APIShared.Economy.AllyTransfers | public static class APIShared.Economy.AllyTransfers
 APIShared.Economy.AllyTransfers | public const int MaximumTransferAmount = 32767
 APIShared.Economy.AllyTransfers | public static System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eGoods> SupportedGoods { get; }
+APIShared.Economy.AllyTransfers | public static bool CanSuppressVanillaChatMessages { get; }
 APIShared.Economy.AllyTransfers | public static bool IsAvailable { get; }
 APIShared.Economy.AllyTransfers | public static bool IsSupportedGood(SHCDESE.Interop.eGoods good)
 APIShared.Economy.AllyTransfers | public static bool TryExecute(APIShared.Economy.AllyTransferRequest request, out APIShared.Economy.AllyTransferResult result, out string reason)

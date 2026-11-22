@@ -1063,7 +1063,7 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 
 ## Ally gifts and the goods dialog
 
-`Economy.AllyTransfers` exposes synchronous bounded gifts and physical capacity observations. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
+`Economy.AllyTransfers` exposes synchronous bounded gifts, physical capacity observations, and optional per-request suppression of Vanilla gift chat messages. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
 
 `Presentation.AllyGoodsPanelExtensions` coordinates independent sections beneath the existing send-goods dialog, noninteractive per-ware icon markers and immutable selection contexts. See [dialog extension contract](ALLY_GOODS_PANEL.md).
 

@@ -2401,3 +2401,29 @@ uses the installed RedBird backend and guard pages to execute BOTH detours, veri
 the relocated RIP load/continuations, and reject altered published bytes. Such
 private fixtures are offline tests, never copied-buffer probes at game startup;
 passing them does not establish real multiplayer repair acceptance.
+
+### Optional ally-transfer chat suppression
+
+Native hash `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`Economy.AllyTransferChat` owns the leaf writer entry `1C8D0`, 14 displaced bytes
+`48 63 81 00 5A 27 00 4C 8B D9 4C 8D 14 80`; continuation `1C8DE`.
+The complete 144-byte writer is pinned by `AllyTransferChatAssembly.Body`.
+It stores five Int16 fields in manager+275A08+index*10, index at+275A00.
+The two producer calls in D7AD0 return to D7C80(category10, recipient) and
+D7CB7(category15, sender). A direct-edge scan of executable sections found no
+incoming edge into the displaced span; the writer is one straight-line block.
+Recheck full bytes, producer call targets, physical return addresses, writer ABI
+RCX manager/EDX category/R8 self/R9 other/stack+28 amount/+30 good, and all callers.
+Do not treat the decompiler's candidate function signature as an independent ABI.
+
+One permanent X64InlineHook, exact14-byte displacement, checks process demand
+before invoking a rooted reverse callback. The callback additionally checks TLS
+and the exact producer return/category pair. pushfq+seven volatile GP pushes put
+physical return at savedRSP+64 and original DX at+32; aligned frame144 has shadow32,
+XMM0..5 at32..127 and savedRSP at128. Both restore paths preserve flags, arguments,
+GP/XMM state and stack; only attributed chat entries return before the writer.
+Dormant paths replay all displaced instructions. Validate generated and installed
+stub/jump/padding and watch foreign patches; never unpatch after publication.
+Unknown hashes have no fallback because a prologue cannot establish the producer,
+ring and SE-wrapper attribution contracts. Failure disables only silent requests.
+Run the actual native writer/stub execution tests and SE nested-wrapper tests.

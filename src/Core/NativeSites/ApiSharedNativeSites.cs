@@ -261,6 +261,7 @@ namespace APIShared
             Group(Buildings.HumanConstructionRuntime.GoldCallsSite, Buildings.HumanConstructionRuntime.GoldCallSpans()),
             Group(PlayerControlInput, PlayerControlInputSpans()),
             Group(VisibleMapRender, VisibleMapRenderSpans()),
+            Group(AllyTransferChatNative.Site, AllyTransferChatNative.Spans()),
             Group("Units.AiMilitary.Calls", Units.AiMilitary.Native.AiMilitaryNativeBindings.CallOnlySpans()),
             Group(Units.AiMilitary.Native.AiMilitaryNativeObservers.SiteName, Units.AiMilitary.Native.AiMilitaryNativeObservers.Spans()),
             Group(Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.SiteName, Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.Spans()),

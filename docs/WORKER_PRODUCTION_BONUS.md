@@ -299,6 +299,9 @@ or native availability. Its protocol runs over the existing sender-authenticated
 `MessageChannel`; it is not an ExtraFeatures setting or `[SyncPerPlayer]` report.
 The current authenticated shared lobby snapshot supplies the human roster.
 Challenges and receipts bind the current host, lobby, roster and fresh nonce.
+Changing the authenticated lobby or roster starts a fresh exchange even when the
+rules are identical. A client that adopts the new lobby after an early challenge
+requests another challenge; old lobby tokens never qualify the new exchange.
 They compare native support, resolved launch-bundle digest, native/extended wire
 mode, sidecar capability and required schema, plus the selected archive's production
 record digest. Missing reports never mean an explicitly unavailable service.

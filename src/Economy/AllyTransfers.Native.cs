@@ -41,6 +41,7 @@ namespace APIShared.Economy
         private static int initialized, ready, callFailures;
         // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool IsAvailable => Volatile.Read(ref ready) != 0 && Volatile.Read(ref startupFailure) == null;
+        internal static bool CanSuppressVanillaChatMessages => IsAvailable && AllyTransferChatNative.IsAvailable;
         internal static NativeSiteSpan[] Spans() => new[] {
             new NativeSiteSpan(TransferRva, TransferBytes.Length, NativeSiteMode.CallOnly),
             new NativeSiteSpan(CapacityRva, CapacityBytes.Length, NativeSiteMode.Observe) };
@@ -91,6 +92,8 @@ namespace APIShared.Economy
                 hook = installed;
                 applying = true; // Published; never undo it.
                 Volatile.Write(ref ready, 1);
+                // Optional presentation capability; its failure never disables ordinary gifts.
+                AllyTransferChatNative.Initialize(module, region, pristine, hash, log);
                 NativeApiLog.Info(log, "Ally transfers prepared: SE is native owner at 0xD7AD0; one validated managed Original.Invoke adapter; capacity reference-rva=0xC5AD0.");
             }
             catch (Exception error)
@@ -147,6 +150,7 @@ namespace APIShared.Economy
         private sealed class Backend : IAllyTransfersBackend
         {
             public bool IsReady => IsAvailable;
+            public bool CanSuppressVanillaChatMessages => AllyTransfersNative.CanSuppressVanillaChatMessages;
             public bool AreAlliedLiving(int sender, int recipient) => Living(sender) && Living(recipient) && GamePlayerManagerAPI.Instance.IsPlayerAlliedTo(sender, recipient);
             private static bool Living(int player)
             {
