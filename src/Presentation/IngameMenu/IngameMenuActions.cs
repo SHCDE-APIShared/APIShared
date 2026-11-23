@@ -17,6 +17,8 @@ namespace APIShared.Presentation
         private delegate void Init(HUD_IngameMenu menu);
         private static readonly ManagedInterceptionHook<Init> hook = new ManagedInterceptionHook<Init>();
         private static readonly IngameMenuRegistry registry = new IngameMenuRegistry();
+        private static readonly VanillaMenuOverrides vanillaOverrides = new VanillaMenuOverrides();
+        private static readonly Action<VanillaMenuOverrides.Entry, Exception> overrideFailure = ReportOverride;
         private static readonly object pendingGate = new object();
         private static readonly HashSet<string> pendingOwners = new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<IngameMenuRegistry.Entry> pendingEntries = new HashSet<IngameMenuRegistry.Entry>();
@@ -32,6 +34,42 @@ namespace APIShared.Presentation
             out string reason, int order = 0)
         {
             return TryRegisterCore(ownerGuid, id, state, execute, null, options, out registration, out reason, order);
+        }
+
+        /// <summary>Overrides the enabled state and execution of one existing Vanilla ESC action without adding
+        /// a position claim, replacement button or additional-page entry. Its text, visibility, command and element
+        /// identity remain unchanged. One process-lifetime owner may register each Vanilla row; conflicts reject.</summary>
+        /// <remarks>Register on initialized Unity after the mission-lifecycle capability is available; its shared
+        /// command dispatcher is required, and unavailable registration rejects before changing the menu.
+        /// The provider runs there on opening, invalidation and freshly at
+        /// command execution: null preserves Vanilla, false disables and consumes its command, true enables and
+        /// executes the supplied action. Notify relevant changes through the returned handle, never polling.
+        /// Consumers retain mission, multiplayer authority, confirmation and pause handling. Failed providers disable
+        /// and consume the action; callback failures are isolated and logged once. No retry, replay or unregistration.
+        /// Existing placement registrations remain independent, including an original button moved to the extra page.</remarks>
+        public static bool TryOverrideVanillaAction(string ownerGuid, string id, IngameMenuRow row,
+            Func<bool?> enabled, Action execute, out IngameMenuActionRegistration registration, out string reason)
+        {
+            registration = null;
+            try
+            {
+                RequireUnity();
+                if (registry.Evaluating) { reason = "Register overrides outside a state-provider callback."; return false; }
+                if (!vanillaOverrides.CanRegister(ownerGuid, id, row, enabled, execute, out reason)) return false;
+                foreach (var entry in registry.Entries)
+                    if (entry.Owner == ownerGuid && entry.Id == id)
+                    { reason = "Duplicate menu action: " + ownerGuid + "/" + id; return false; }
+                if (!ApiShared.ForMod(ownerGuid).TryGetMissionLifecycle(out _, out var dispatcher) ||
+                    dispatcher?.State != NativeCapabilityState.Available)
+                { reason = "Vanilla menu command dispatcher unavailable: " + (dispatcher?.Reason ?? "mission lifecycle is not ready"); return false; }
+                EnsureInstalled();
+                vanillaOverrides.Register(ownerGuid, id, row, enabled, execute);
+                registration = new IngameMenuActionRegistration(() => RequestInvalidation(ownerGuid, null));
+                reason = null;
+            }
+            catch (Exception error) { reason = error.Message; return false; }
+            PresentAcceptedRegistration();
+            return true;
         }
 
         /// <summary>Registers an inline custom control with the same placement, conflict and lifetime rules as an action.</summary>
@@ -59,18 +97,27 @@ namespace APIShared.Presentation
             try
             {
                 RequireUnity();
+                if (vanillaOverrides.Evaluating) { reason = "Register actions outside an enabled-provider callback."; return false; }
+                if (vanillaOverrides.HasIdentity(ownerGuid, id)) { reason = "Duplicate menu action: " + ownerGuid + "/" + id; return false; }
                 if (!registry.CanRegister(ownerGuid, id, state, execute, options, out reason)) return false;
-                if (!installed)
-                {
-                    hook.Install(typeof(HUD_IngameMenu), nameof(HUD_IngameMenu.Init), typeof(void), Type.EmptyTypes, OnInit, "ingame-menu");
-                    installed = true;
-                }
+                EnsureInstalled();
                 var entry = registry.Register(ownerGuid, id, state, execute, options, order);
                 entry.CreateContent = createContent;
                 registration = new IngameMenuActionRegistration(() => RequestInvalidation(null, entry));
                 reason = null;
             }
             catch (Exception error) { reason = error.Message; return false; }
+            PresentAcceptedRegistration();
+            return true;
+        }
+        private static void EnsureInstalled()
+        {
+            if (installed) return;
+            hook.Install(typeof(HUD_IngameMenu), nameof(HUD_IngameMenu.Init), typeof(void), Type.EmptyTypes, OnInit, "ingame-menu");
+            installed = true;
+        }
+        private static void PresentAcceptedRegistration()
+        {
             // Presentation failure does not retroactively reject an already accepted permanent registration.
             try
             {
@@ -81,7 +128,6 @@ namespace APIShared.Presentation
                 }
             }
             catch (Exception error) { Report(null, error); }
-            return true;
         }
 
         /// <summary>Thread-safe owner-wide invalidation. Requests coalesce onto
@@ -97,7 +143,7 @@ namespace APIShared.Presentation
             lock (pendingGate)
             {
                 if (entry == null) pendingOwners.Add(owner); else pendingEntries.Add(entry);
-                if (scheduled || (UnityMainThreadDispatch.IsMainThread && registry.Evaluating)) return;
+                if (scheduled || (UnityMainThreadDispatch.IsMainThread && (registry.Evaluating || vanillaOverrides.Evaluating))) return;
                 scheduled = true;
             }
             if (!UnityMainThreadDispatch.TryEnqueue(FlushInvalidations))
@@ -137,7 +183,13 @@ namespace APIShared.Presentation
         private static void OnInit(HUD_IngameMenu menu)
         {
             initializing = true;
-            try { hook.Original(menu); }
+            try
+            {
+                // Not every Vanilla mode rewrites every enabled value (editor Load, for example).
+                // Remove only our owned values first, then let Vanilla set the new mode's baseline.
+                try { vanillaOverrides.RestoreApplied(overrideFailure); }
+                finally { hook.Original(menu); } // Restoration must never suppress the original Init.
+            }
             finally { initializing = false; }
             try
             {
@@ -179,7 +231,7 @@ namespace APIShared.Presentation
             refreshing = true;
             try
             {
-                FlushPending(); CaptureVanilla();
+                FlushPending(); vanillaOverrides.Apply(vanillaButtons, overrideFailure); CaptureVanilla();
                 registry.Evaluate(all, Report);
                 Render(registry.Resolve());
                 return true;
@@ -206,5 +258,26 @@ namespace APIShared.Presentation
             if (entry == null) hostFailureReported = true; else entry.FailureReported = true;
             NativeApiLog.Error(log, "Ingame menu action failed: " + (entry == null ? "layout" : entry.Owner + "/" + entry.Id) + ": " + error);
         }
+        internal static bool TryExecuteVanillaOverride(HUD_IngameMenu view, int function)
+        {
+            var entry = vanillaOverrides.Get(function);
+            if (entry == null) return false;
+            return ExecuteVanillaOverride(entry, view);
+        }
+        // Keep the optional click-validation closure out of the ordinary no-override path.
+        private static bool ExecuteVanillaOverride(VanillaMenuOverrides.Entry entry, HUD_IngameMenu view)
+        {
+            try
+            {
+                RequireUnity();
+                return vanillaOverrides.TryExecute(entry, overrideFailure, () =>
+                    !refreshing && !initializing && MenuVisible() && ReferenceEquals(view, current) &&
+                    ReferenceEquals(view, observedMain.HUDIngameMenu) &&
+                    vanillaButtons[(int)entry.Row]?.IsVisible == true && vanillaButtons[(int)entry.Row].IsEnabled);
+            }
+            catch (Exception error) { VanillaMenuOverrides.ReportFailure(entry, error, overrideFailure); return true; }
+        }
+        private static void ReportOverride(VanillaMenuOverrides.Entry entry, Exception error) =>
+            NativeApiLog.Error(log, "Ingame menu Vanilla override failed: " + entry.Owner + "/" + entry.Id + ": " + error);
     }
 }

@@ -1894,6 +1894,33 @@ control's `FontSize`. `state.Text` labels diagnostics/occupancy rather than repl
 content. Existing button APIs, Vanilla objects and commands are unchanged.
 See `RegisterInlineEditor` in the [menu example](../examples/ThirdPartyMod/IngameMenuExample.cs).
 
+To reuse an original game button instead of adding or displacing an action, call
+`IngameMenuActions.TryOverrideVanillaAction(ownerGuid, id, row, enabled, execute,
+out registration, out reason)`. This applies to any `IngameMenuRow`. It creates no
+placement claim or extra-page entry and retains the existing button's label,
+visibility, style, command binding and identity. The `Func<bool?>` provider returns
+null to keep Vanilla behavior, false to disable and consume the command, or true
+to enable the button and invoke your action instead of Vanilla. It is evaluated
+freshly at the click, including when the visible enabled state has become stale.
+The consumer supplies its own authority/session checks and confirmation/pause flow.
+
+Only one permanent override may own a row. Conflicts and duplicate owner-local IDs
+are rejected without replacing the earlier registration. Providers, commands and
+registration run on initialized Unity. The mission-lifecycle capability must be
+available because its existing menu-command dispatcher owns the interception;
+registration rejects without changing the menu if that prerequisite is unavailable.
+Use the returned handle or owner-wide
+`Invalidate` after relevant changes. Closed-menu and recursive invalidation rules
+are the same as ordinary actions. Provider exceptions disable and consume the
+command; command exceptions are isolated without falling through to Vanilla.
+Failures are logged once per registration, and later events may retry the provider.
+Restoring null removes only the override's own enabled value: later foreign writes
+are preserved. Before each Vanilla `Init`, APIShared removes only its own enabled
+values; Vanilla's subsequent mode-specific writes take precedence, while buttons
+that Vanilla leaves unchanged retain their original baseline. Existing
+placement claims remain independent; if another mod displaces the original button,
+the override still belongs to that original button rather than its replacement.
+
 Rows have stable `IngameMenuRow` names independent of mode-specific visibility.
 Each has Left and Right; Vanilla is the Right fallback. A single visible button
 uses the normal full width; two share a row. A mod can activate a position even

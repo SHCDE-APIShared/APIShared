@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.63.0",
+  "Version": "0.64.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.64.0",
+      "Changes": [
+        "Add a general IngameMenuActions.TryOverrideVanillaAction API for controlling and handling existing Vanilla ESC actions without creating duplicate menu entries.",
+        "Keep original button labels, visibility and element identity; inactive overrides preserve Vanilla commands, with isolated provider and command failures."
+      ]
+    },
     {
       "Version": "0.63.0",
       "Changes": [

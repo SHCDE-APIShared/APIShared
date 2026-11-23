@@ -67,6 +67,7 @@ namespace APIShared
         {
             menuButton = Hook<MenuButton>(typeof(HUD_IngameMenu), "ButtonIngameMenuFunction", (self, function) =>
             {
+                if (Presentation.IngameMenuActions.TryExecuteVanillaOverride(self, function)) return;
                 // Vanilla menu command 5 opens restart confirmation. Only its Yes callback
                 // starts an operation; opening/dismissing the popup has no lifecycle effect.
                 if (function != 5) { menuButton(self, function); return; }

@@ -14,6 +14,7 @@
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/VanillaMenuOverrides.cs" Link="Production/VanillaMenuOverrides.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
