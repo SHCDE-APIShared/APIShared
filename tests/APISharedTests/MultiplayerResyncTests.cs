@@ -13,6 +13,34 @@ namespace APISharedTests
     public sealed class MultiplayerResyncTests
     {
         [TestMethod]
+        public void HunterHistoryUsesTheRepairedHuntersTargetEvenAfterTheCorpseIsGone()
+        {
+            byte[] bytes;
+            using (var stream = new System.IO.MemoryStream())
+            {
+                using var writer = new System.IO.BinaryWriter(stream, System.Text.Encoding.UTF8, true);
+                writer.Write(2);
+                writer.Write((ushort)7);
+                writer.Write(101u);
+                writer.Write(121u);
+                writer.Write(51);
+                writer.Write((ushort)8);
+                writer.Write(102u);
+                writer.Write(122u);
+                writer.Write(51);
+                writer.Flush();
+                bytes = stream.ToArray();
+            }
+            var rows = APIShared.Wildlife.HuntablePreyRuntime.PrepareButcheredForRepair(bytes,
+                (id, hunter, corpse) => id == 7 && hunter == 101 && corpse == 121);
+            Assert.AreEqual(1, rows.Length);
+            Assert.AreEqual(51, rows[0].PreyType);
+            bytes[18] = 7; // duplicate Hunter slot
+            Assert.ThrowsExactly<System.IO.InvalidDataException>(() =>
+                APIShared.Wildlife.HuntablePreyRuntime.PrepareButcheredForRepair(bytes, (_, _, _) => true));
+        }
+
+        [TestMethod]
         public void ResyncWireKeepsIdentityAndRejectsOversizedAndUnalignedChunks()
         {
             var hello = new MultiplayerResyncDataPacket(MultiplayerResyncDataPacket.Kind.Hello,

@@ -870,6 +870,10 @@ A changed roster, an exceeded transfer deadline or a provider failure stops
 the agreed world through the existing terminal boundary. The guarantee
 requires the supported native image and matching gameplay packages.
 
+Use the owning service's existing integration for
+[per-building tables](BUILDING_STATE.md#usage) and
+[butchered Hunter prey](HUNTING.md#missions-and-multiplayer).
+
 #### Early capture for frozen records
 
 `TryRegisterEarlyCapture` (0.67.0) captures the host record after the
@@ -1292,6 +1296,8 @@ meaning, including the absolute coefficient in fear `SetMultiplier`. Read the
 For maximum HP, register `HealthModifiers` after `LibraryLoaded` and enable
 immutable contributions at synchronized mission boundaries. APIShared captures
 the completed native basis and freezes each generation after one application.
+Policies used in real multiplayer should opt into the shared repair ledger via
+`HealthModifiers.TryEnableMultiplayerResync` during `LibraryLoaded`.
 See [the health contract](HEALTH.md) for save migration, category ownership,
 limits, linked siege towers and the [compiled example](../examples/ThirdPartyMod/HealthExample.cs).
 

@@ -21,6 +21,7 @@ these stages while retaining their own safety and legacy contracts.
 
 `APIShared.Health.HealthModifiers` coordinates initialization-only unit/building
 HP, process-rooted policy handles, saved original bases and linked siege towers.
+From 0.69.0, `TryEnableMultiplayerResync` opts the shared HP ledger into repair.
 See [health lifetime, migration and safety](HEALTH.md).
 `APIShared.Economy.MarketPriceModifiers` composes native per-lot base prices,
 including Human/AI contextual policies. See [market composition](MARKET_PRICE_MODIFIERS.md).
@@ -382,6 +383,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Line of sight | [Contracts](../src/Sight/LineOfSightContracts.cs), [LineOfSight](../src/Sight/LineOfSight.cs), [sight-blocking buildings](../src/Sight/SightBlockingBuildings.cs) | [Native calls](../src/Sight/LineOfSightNative.cs), [height dispatch owner](../src/Sight/SightBlockingBuildingsNative.cs) | [Guide](LINE_OF_SIGHT.md) |
 | Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs) | [Guide](BUILDING_PANELS.md) |
 | Per-building state | [Contracts](../src/Buildings/State/BuildingStateContracts.cs), [registration](../src/Buildings/State/BuildingStates.cs) | [Native table](../src/Buildings/State/BuildingStateMemory.cs), [request Chore](../src/Buildings/State/BuildingStatePacket.cs) | [Guide](BUILDING_STATE.md) |
+| Host repair of private gameplay state | [Per-building state](BUILDING_STATE.md#usage), [butchered Hunter prey](HUNTING.md#missions-and-multiplayer) | [Resync contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair) | Optional, since 0.69.0 |
 | Build-menu availability | [Rules](../src/Buildings/BuildMenu/BuildMenuAvailability.cs) | [Native wrapper owner](../src/Buildings/BuildMenu/BuildMenuAvailabilityRuntime.cs) | [Guide](BUILD_MENU.md) |
 | Chicken population | [Modifiers](../src/Wildlife/ChickenPopulation.cs) | [Native bridge owner](../src/Wildlife/ChickenPopulationRuntime.cs) | [Guide](CHICKENS.md) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | â€” |

@@ -422,6 +422,7 @@ APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSend
 APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChangeForSameType(int buildingId, uint globalId, int valueIndex, byte value)
 APIShared.Buildings.BuildingStateTable | public bool AppliesTo(SHCDESE.Interop.eStructs buildingType)
 APIShared.Buildings.BuildingStateTable | public bool HasPendingRequest { get; }
+APIShared.Buildings.BuildingStateTable | public bool TryRegisterMultiplayerResync(out string reason)
 APIShared.Buildings.BuildingStateTable | public bool TrySetFromSimulation(int buildingId, uint globalId, int valueIndex, byte value)
 APIShared.Buildings.BuildingStateTable | public byte GetValue(int buildingId, uint globalId, int valueIndex)
 APIShared.Buildings.BuildingStateTable | public int Capacity { get; }
@@ -1283,6 +1284,7 @@ APIShared.Health.HealthModifierHandle | public bool IsEnabled { get; }
 APIShared.Health.HealthModifierHandle | public void SetEnabled(bool value)
 APIShared.Health.HealthModifiers | public static class APIShared.Health.HealthModifiers
 APIShared.Health.HealthModifiers | public static bool IsAvailable { get; }
+APIShared.Health.HealthModifiers | public static bool TryEnableMultiplayerResync(out string reason)
 APIShared.Health.HealthModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Health.HealthModifierHandle handle, out string reason, int order = 0)
 APIShared.Health.HealthModifiers | public static bool TryRegisterLegacyBasisProvider(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthLegacyBasis[]> provider, out string reason, int order = 0)
 APIShared.Health.HealthModifiers | public static string UnavailableReason { get; }
@@ -4026,6 +4028,7 @@ APIShared.Wildlife.HunterMeatYield | public int HunterUnitId { get; }
 APIShared.Wildlife.HunterMeatYield | public int PreyType { get; }
 APIShared.Wildlife.HunterMeatYield | public int VanillaBaseAmount { get; }
 APIShared.Wildlife.HunterMeatYieldEvents | public static class APIShared.Wildlife.HunterMeatYieldEvents
+APIShared.Wildlife.HunterMeatYieldEvents | public static bool TryEnableMultiplayerResync(out string reason)
 APIShared.Wildlife.HunterMeatYieldEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Wildlife.HunterMeatYield> handler, out string reason, int order = 0)
 APIShared.Wildlife.HunterTargetCandidate | public struct APIShared.Wildlife.HunterTargetCandidate
 APIShared.Wildlife.HunterTargetCandidate | public bool IsHuntable { get; }
