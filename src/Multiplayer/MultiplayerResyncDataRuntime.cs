@@ -18,13 +18,15 @@ namespace APIShared.Multiplayer
         internal sealed class Record
         {
             internal Record(string owner, string id, int schema, int maximum,
-                Func<byte[]> capture, Func<ReadOnlyMemory<byte>, object> prepare, Action<object> commit)
+                Func<byte[]> capture, Func<ReadOnlyMemory<byte>, object> prepare, Action<object> commit, bool captureAtStart)
             {
                 Owner = owner; Id = id; Schema = schema; Maximum = maximum;
                 Capture = capture; Prepare = prepare; Commit = commit;
+                CaptureAtStart = captureAtStart;
             }
             internal readonly string Owner, Id;
             internal readonly int Schema, Maximum;
+            internal readonly bool CaptureAtStart;
             internal readonly Func<byte[]> Capture;
             internal readonly Func<ReadOnlyMemory<byte>, object> Prepare;
             internal readonly Action<object> Commit;
@@ -75,6 +77,7 @@ namespace APIShared.Multiplayer
         private static MessageChannel<MultiplayerResyncDataPacket> channel;
         private static ManualLogSource log;
         private static bool frozen;
+        private static int earlyRecordCount;
         private static string manifestDigest;
         private static World observedWorld;
         private static long repairNumber;
@@ -121,6 +124,7 @@ namespace APIShared.Multiplayer
                     !SimulationAgreement.TryRegisterResyncCohort(FreezeManifest, MultiplayerResyncData.CheckIntegrity,
                         ApplyAgreement, out reason)) return false;
                 Providers.Add(record);
+                if (record.CaptureAtStart) earlyRecordCount++;
             }
             reason = string.Empty;
             return true;
@@ -149,11 +153,17 @@ namespace APIShared.Multiplayer
                 using (var writer = new BinaryWriter(stream, Encoding.UTF8))
                 {
                     writer.Write(Protocol);
+                    uint earlyMask = 0;
+                    int slot = 0;
                     foreach (var provider in Providers)
                     {
                         writer.Write(provider.Owner); writer.Write(provider.Id);
                         writer.Write(provider.Schema); writer.Write(provider.Maximum);
+                        if (provider.CaptureAtStart) earlyMask |= 1u << slot;
+                        slot++;
                     }
+                    // Default-only cohorts retain their existing agreement digest.
+                    if (earlyMask != 0) writer.Write(earlyMask);
                     writer.Flush();
                     manifestDigest = BitConverter.ToString(Hash(stream.ToArray())).Replace("-", "").ToLowerInvariant();
                 }
@@ -189,7 +199,13 @@ namespace APIShared.Multiplayer
                 var attempt = current = new Attempt(world, ++repairNumber, Providers.Count);
                 try
                 {
-                    if (!attempt.IsHost) attempt.Local = Capture();
+                    if (!attempt.IsHost)
+                        attempt.Local = CaptureRecords(Providers, new byte[Providers.Count][], earlyOnly: false);
+                    else if (earlyRecordCount != 0)
+                    {
+                        attempt.Records = CaptureRecords(Providers, new byte[Providers.Count][], earlyOnly: true);
+                        if (earlyRecordCount == Providers.Count) SetManifest(attempt);
+                    }
                 }
                 catch (Exception error) { Fail(attempt, "Could not capture pre-repair data: " + error.Message); }
             }
@@ -223,6 +239,8 @@ namespace APIShared.Multiplayer
                     if (attempt.Deadline != 0 && now >= attempt.Deadline)
                     { Fail(attempt, "Timed out waiting for the resync data transfer."); return; }
                     if (attempt.IsHost) return;
+                    if (attempt.Deadline == 0 && MultiplayerResyncNativeRuntime.IsNativeClientReady)
+                        SetDeadline(attempt, now);
                     if (attempt.Manifest == null)
                     {
                         if (now >= attempt.NextHello)
@@ -234,8 +252,6 @@ namespace APIShared.Multiplayer
                                     Send(attempt, attempt.World.Host, attempt.Nonce, Kind.Hello);
                             });
                         }
-                        if (attempt.Deadline == 0 && MultiplayerResyncNativeRuntime.IsNativeClientReady)
-                            SetDeadline(attempt, now);
                     }
                     if (attempt.Records == null || attempt.ReceiveIndex >= 0 || attempt.Prepared != null ||
                         !MultiplayerResyncNativeRuntime.IsNativeClientReady) return;
@@ -243,7 +259,7 @@ namespace APIShared.Multiplayer
                     QueueUnity(attempt, () =>
                     {
                         if (!Live(attempt)) return;
-                        // A successful send is acted on by the host only after this monitor is released.
+                        // A local Chore67 cannot observe the attempt before this assignment.
                         attempt.ReadySubmitted = Send(attempt, attempt.World.Host, attempt.Nonce, Kind.Ready, body: attempt.ManifestHash);
                         if (attempt.ReadySubmitted) SetDeadline(attempt, Stopwatch.GetTimestamp());
                     });
@@ -275,23 +291,20 @@ namespace APIShared.Multiplayer
                     if (!MultiplayerResyncNativeRuntime.IsNativeHost ||
                         !MultiplayerResyncDataNativeRuntime.NativeRosterMatches(manager, attempt.PlayerMask))
                     { Fail(attempt, "The native host or repair roster changed."); return false; }
-                    if (attempt.Records == null)
+                    if (attempt.Prepared == null)
                     {
                         SetDeadline(attempt, Stopwatch.GetTimestamp());
-                        attempt.Records = Capture();
+                        attempt.Records = CaptureRecords(Providers, attempt.Records ?? new byte[Providers.Count][], earlyOnly: false);
                         attempt.Prepared = Prepare(attempt.Records);
-                        attempt.Manifest = EncodeManifest(attempt.Records);
-                        attempt.ManifestHash = Hash(attempt.Manifest);
-                        QueueUnity(attempt, () =>
+                        if (attempt.Manifest == null)
                         {
-                            if (!Live(attempt)) return;
-                            foreach (var peer in attempt.Peers)
-                                if (peer.Value.Nonce != 0)
-                                    Send(attempt, peer.Key, peer.Value.Nonce, Kind.Manifest, body: attempt.Manifest);
-                            UpdateRosterProof(attempt);
-                        });
+                            SetManifest(attempt);
+                            QueueUnity(attempt, () => AdvertiseManifest(attempt));
+                        }
+                        else
+                            StartDeferredWindows(attempt);
                     }
-                    if (!attempt.RosterVerified) return false;
+                    if (!Live(attempt) || !attempt.RosterVerified) return false;
                     foreach (var peer in attempt.Peers.Values) if (!peer.Ready) return false;
                     if (!NativeChoreContext.HasFreeQueueSlot(manager))
                     { Fail(attempt, "The host Chore queue is full at resync completion."); return false; }
@@ -376,14 +389,15 @@ namespace APIShared.Multiplayer
         private static void SetDeadline(Attempt attempt, long now) =>
             attempt.Deadline = now + TransferTimeoutSeconds * Stopwatch.Frequency;
 
-        private static byte[][] Capture()
+        internal static byte[][] CaptureRecords(IReadOnlyList<Record> providers, byte[][] records, bool earlyOnly)
         {
-            var records = new byte[Providers.Count][];
             for (int i = 0; i < records.Length; i++)
             {
-                byte[] bytes = Providers[i].Capture();
-                if (bytes == null || bytes.Length > Providers[i].Maximum)
-                    throw new InvalidDataException("Resync provider exceeded its declared bound: " + Providers[i].Id);
+                var provider = providers[i];
+                if (records[i] != null || earlyOnly && !provider.CaptureAtStart) continue;
+                byte[] bytes = provider.Capture();
+                if (bytes == null || bytes.Length > provider.Maximum)
+                    throw new InvalidDataException("Resync provider exceeded its declared bound: " + provider.Id);
                 records[i] = (byte[])bytes.Clone();
             }
             return records;

@@ -2315,6 +2315,7 @@ APIShared.Multiplayer.MultiplayerResyncData | public static class APIShared.Mult
 APIShared.Multiplayer.MultiplayerResyncData | public static bool CheckIntegrity()
 APIShared.Multiplayer.MultiplayerResyncData | public static bool IsAvailable { get; }
 APIShared.Multiplayer.MultiplayerResyncData | public static bool TryRegister<TPrepared>(string ownerGuid, string recordId, int schemaVersion, int maximumBytes, System.Func<byte[]> capture, System.Func<System.ReadOnlyMemory<byte>, TPrepared> prepare, System.Action<TPrepared> commit, out string reason)
+APIShared.Multiplayer.MultiplayerResyncData | public static bool TryRegisterEarlyCapture<TPrepared>(string ownerGuid, string recordId, int schemaVersion, int maximumBytes, System.Func<byte[]> capture, System.Func<System.ReadOnlyMemory<byte>, TPrepared> prepare, System.Action<TPrepared> commit, out string reason)
 APIShared.Multiplayer.MultiplayerResyncEvents | public static class APIShared.Multiplayer.MultiplayerResyncEvents
 APIShared.Multiplayer.MultiplayerResyncEvents | public static bool CheckIntegrity()
 APIShared.Multiplayer.MultiplayerResyncEvents | public static bool IsAvailable { get; }

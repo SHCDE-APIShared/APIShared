@@ -870,6 +870,24 @@ A changed roster, an exceeded transfer deadline or a provider failure stops
 the agreed world through the existing terminal boundary. The guarantee
 requires the supported native image and matching gameplay packages.
 
+#### Early capture for frozen records
+
+`TryRegisterEarlyCapture` (0.67.0) captures the host record after the
+`MultiplayerResyncEvents` start callbacks, before executed Chore54. Choose it
+for a private record whose writers are already suspended and whose canonical
+bytes stay valid through the repair. For example, a mod can capture frozen
+wall deposit history early and filter it against the repaired grid in
+`prepare`. Use ordinary `TryRegister` for snapshots that read changing or
+repaired native state. Use the same registration mode on every peer.
+
+When every record opts in, the host can advertise the manifest during the
+Vanilla repair. Clients with matching bytes can validate against their
+repaired world and confirm readiness while the host waits for Vanilla's
+acknowledgements. If a client requests changed bytes early, the host holds
+the request until its native completion gate. With a mix of early and
+ordinary records, the host captures opted-in records at repair start and
+sends the combined manifest at the completion gate.
+
 ## Multiplayer actions and messages
 
 These networking APIs require APIShared 0.7.0 or later; neither SerpsModsHost nor

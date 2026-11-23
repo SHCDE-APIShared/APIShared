@@ -49,6 +49,41 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void HostSnapshotsOnlyOptedInRecordsAtStartAndNeverRecapturesThemAtRelease()
+        {
+            byte[] history = { 17 };
+            int earlyCaptures = 0, lateCaptures = 0;
+            var providers = new[]
+            {
+                new MultiplayerResyncDataRuntime.Record("mod", "early", 1, 1,
+                    () => { earlyCaptures++; return history; }, _ => null, _ => { }, true),
+                new MultiplayerResyncDataRuntime.Record("mod", "late", 1, 1,
+                    () => { lateCaptures++; return new[] { history[0] }; }, _ => null, _ => { }, false)
+            };
+            var records = MultiplayerResyncDataRuntime.CaptureRecords(providers, new byte[2][], earlyOnly: true);
+            Assert.AreEqual(1, earlyCaptures);
+            Assert.AreEqual(0, lateCaptures);
+            Assert.IsNull(records[1]);
+
+            history[0] = 42;
+            MultiplayerResyncDataRuntime.CaptureRecords(providers, records, earlyOnly: false);
+            Assert.AreEqual(1, earlyCaptures);
+            Assert.AreEqual(1, lateCaptures);
+            CollectionAssert.AreEqual(new byte[] { 17 }, records[0]);
+            CollectionAssert.AreEqual(new byte[] { 42 }, records[1]);
+        }
+
+        [TestMethod]
+        public void EarlyRequestCannotSendPayloadBeforeHostPreparesAtTheNativeGate()
+        {
+            int window = MultiplayerResyncDataPacket.ChunkBytes * MultiplayerResyncDataPacket.Window;
+            int recordLength = window + 1;
+            Assert.AreEqual(0, MultiplayerResyncDataRuntime.GetHostWindowEnd(false, recordLength, 0));
+            Assert.AreEqual(window, MultiplayerResyncDataRuntime.GetHostWindowEnd(true, recordLength, 0));
+            Assert.AreEqual(recordLength, MultiplayerResyncDataRuntime.GetHostWindowEnd(true, recordLength, window));
+        }
+
+        [TestMethod]
         public void OnlyExecutedEntryPhaseStartsAndCompletesAndCompletionCanRearmConsumers()
         {
             var events = new List<string>();

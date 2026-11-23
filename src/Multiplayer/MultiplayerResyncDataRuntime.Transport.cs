@@ -66,7 +66,7 @@ namespace APIShared.Multiplayer
                     return;
                 case Kind.Request:
                 case Kind.Progress:
-                    if (attempt.Records == null || packet.Index >= attempt.Records.Length || peer.Ready)
+                    if (attempt.Manifest == null || packet.Index >= attempt.Records.Length || peer.Ready)
                         throw new InvalidDataException("Unexpected record transfer request or progress.");
                     break;
                 default:
@@ -95,15 +95,57 @@ namespace APIShared.Multiplayer
                 }
             }
 
-            int end = Math.Min(record.Length, peer.Acknowledged + Window * ChunkBytes);
+            SendWindow(attempt, sender, peer);
+        }
+
+        private static void SendWindow(Attempt attempt, ulong recipient, Peer peer)
+        {
+            byte[] record = attempt.Records[peer.Index];
+            int end = GetHostWindowEnd(attempt.Prepared != null, record.Length, peer.Acknowledged);
             while (peer.Sent < end && Live(attempt))
             {
                 int length = Math.Min(ChunkBytes, end - peer.Sent);
-                if (!Send(attempt, sender, peer.Nonce, Kind.Chunk, packet.Index, peer.Sent,
+                if (!Send(attempt, recipient, peer.Nonce, Kind.Chunk, peer.Index, peer.Sent,
                     record.AsSpan(peer.Sent, length).ToArray())) return;
                 peer.Sent += length;
                 attempt.TransferredBytes += length;
             }
+        }
+
+        // Early requests are remembered without competing with native repair payloads.
+        internal static int GetHostWindowEnd(bool hostPrepared, int length, int acknowledged) =>
+            hostPrepared ? Math.Min(length, acknowledged + Window * ChunkBytes) : 0;
+
+        private static void StartDeferredWindows(Attempt attempt)
+        {
+            foreach (var peer in attempt.Peers.Values)
+            {
+                if (peer.Index < 0) continue;
+                QueueUnity(attempt, () => SendDeferredWindows(attempt));
+                return;
+            }
+            if (!attempt.RosterVerified) QueueUnity(attempt, () => UpdateRosterProof(attempt));
+        }
+
+        private static void SendDeferredWindows(Attempt attempt)
+        {
+            foreach (var entry in attempt.Peers)
+                if (entry.Value.Index >= 0 && entry.Value.Sent == 0)
+                    SendWindow(attempt, entry.Key, entry.Value);
+        }
+
+        private static void SetManifest(Attempt attempt)
+        {
+            attempt.Manifest = EncodeManifest(attempt.Records);
+            attempt.ManifestHash = Hash(attempt.Manifest);
+        }
+
+        private static void AdvertiseManifest(Attempt attempt)
+        {
+            foreach (var peer in attempt.Peers)
+                if (peer.Value.Nonce != 0)
+                    Send(attempt, peer.Key, peer.Value.Nonce, Kind.Manifest, body: attempt.Manifest);
+            if (Live(attempt)) UpdateRosterProof(attempt);
         }
 
         internal static bool IsExpectedProgress(int length, int sent, int acknowledged, int offset) =>
@@ -148,7 +190,8 @@ namespace APIShared.Multiplayer
             attempt.ManifestHash = Hash(manifest);
             attempt.Records = records;
             attempt.Local = null;
-            SetDeadline(attempt, Stopwatch.GetTimestamp());
+            // An early manifest can arrive while Vanilla still has substantial repair work.
+            if (attempt.Deadline != 0) SetDeadline(attempt, Stopwatch.GetTimestamp());
             RequestNext(attempt);
         }
 

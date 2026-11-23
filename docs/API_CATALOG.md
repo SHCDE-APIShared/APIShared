@@ -334,6 +334,9 @@ host-authoritative restoration before Vanilla releases a repair. Matching
 local records are reused and changed records are transferred in bounded
 windows. See [the provider contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair).
 
+`TryRegisterEarlyCapture` (0.67.0) opts a frozen record into early host
+capture. See [when to use early capture](THIRD_PARTY_GUIDE.md#early-capture-for-frozen-records).
+
 ## Source map
 
 Start at the linked contract to learn what a consumer may call. Read the service

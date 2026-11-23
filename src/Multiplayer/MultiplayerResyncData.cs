@@ -22,13 +22,34 @@ namespace APIShared.Multiplayer
         /// </remarks>
         public static bool TryRegister<TPrepared>(string ownerGuid, string recordId, int schemaVersion,
             int maximumBytes, Func<byte[]> capture, Func<ReadOnlyMemory<byte>, TPrepared> prepare,
-            Action<TPrepared> commit, out string reason)
+            Action<TPrepared> commit, out string reason) =>
+            Register(ownerGuid, recordId, schemaVersion, maximumBytes, capture, prepare, commit, false, out reason);
+
+        /// <summary>Registers a record whose authoritative bytes are already frozen at executed repair start.</summary>
+        /// <remarks>
+        /// Use this on all peers only if capture reads a private snapshot that remains identical through native
+        /// repair, such as metadata whose writers are suspended by the resync Started callback. Use
+        /// <see cref="TryRegister{TPrepared}"/> when capture depends on repaired tiles, units or other changing state.
+        /// Host capture runs after Started and before Vanilla executes Chore54, under the engine monitor. Client
+        /// capture has the same timing as ordinary registration. Each peer prepares against its repaired world and
+        /// publishes only at the existing completion gate. Capture, prepare and commit follow the threading,
+        /// ownership and failure contract of ordinary registration.
+        /// The host can advertise the manifest early when every registered record uses early capture.
+        /// </remarks>
+        public static bool TryRegisterEarlyCapture<TPrepared>(string ownerGuid, string recordId, int schemaVersion,
+            int maximumBytes, Func<byte[]> capture, Func<ReadOnlyMemory<byte>, TPrepared> prepare,
+            Action<TPrepared> commit, out string reason) =>
+            Register(ownerGuid, recordId, schemaVersion, maximumBytes, capture, prepare, commit, true, out reason);
+
+        private static bool Register<TPrepared>(string ownerGuid, string recordId, int schemaVersion,
+            int maximumBytes, Func<byte[]> capture, Func<ReadOnlyMemory<byte>, TPrepared> prepare,
+            Action<TPrepared> commit, bool captureAtStart, out string reason)
         {
             if (capture == null || prepare == null || commit == null)
             { reason = "Capture, prepare and commit callbacks are required."; return false; }
             return MultiplayerResyncDataRuntime.TryRegister(new MultiplayerResyncDataRuntime.Record(
                 ownerGuid, recordId, schemaVersion, maximumBytes, capture, bytes => prepare(bytes),
-                value => commit((TPrepared)value)), out reason);
+                value => commit((TPrepared)value), captureAtStart), out reason);
         }
     }
 }

@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.66.0",
+  "Version": "0.67.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.67.0",
+      "Changes": [
+        "Add opt-in early multiplayer resync capture for records that stay frozen through repair. Matching records can be confirmed while Vanilla is still resynchronizing."
+      ]
+    },
     {
       "Version": "0.66.0",
       "Changes": [
