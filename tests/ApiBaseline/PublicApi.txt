@@ -2982,6 +2982,7 @@ APIShared.Presentation.IngameMenuActionInfo | public sealed class APIShared.Pres
 APIShared.Presentation.IngameMenuActionInfo | public APIShared.Presentation.IngameMenuActionState State { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool HasState { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool IsEffective { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool IsSuppressed { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool IsVanilla { get; }
 APIShared.Presentation.IngameMenuActionInfo | public string Id { get; }
 APIShared.Presentation.IngameMenuActionInfo | public string OwnerGuid { get; }
@@ -3006,6 +3007,7 @@ APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.
 APIShared.Presentation.IngameMenuActions | public static bool TryOverrideVanillaAction(string ownerGuid, string id, APIShared.Presentation.IngameMenuRow row, System.Func<bool?> enabled, System.Action execute, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegisterContent(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Func<APIShared.Presentation.IngameMenuContentContext, Noesis.Control> createContent, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegisterVanillaSuppression(string ownerGuid, string id, APIShared.Presentation.IngameMenuRow row, System.Func<bool> shouldSuppress, out string reason)
 APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
 APIShared.Presentation.IngameMenuContentContext | public sealed class APIShared.Presentation.IngameMenuContentContext
 APIShared.Presentation.IngameMenuContentContext | public Noesis.FrameworkElement Menu { get; }

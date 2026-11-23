@@ -164,6 +164,50 @@ namespace Core.Tests
             Assert.AreSame(command, original.Command); Assert.AreEqual(400d, menu.Names["LayoutRoot"].Height);
         }
         [TestMethod]
+        public void SuppressedOriginalLeavesBothPagesAndReturnsWithTheSameBindingAndCommand()
+        {
+            var menu = Menu();
+            var registry = new IngameMenuRegistry();
+            bool suppress = false, replace = false;
+            const IngameMenuRow row = IngameMenuRow.QuitMission;
+            var original = Original(menu, "ButtonQuitMission");
+            var command = original.Command;
+            var template = original.Template;
+            registry.RegisterSuppression("hide", "quit", row, () => suppress);
+            Add(registry, "replacement", () => replace ? new IngameMenuActionState("Replace", true, true) : null,
+                new IngameMenuActionOptions(row, IngameMenuSlot.Right, replaceVanilla: true));
+            IngameMenuActions.TestAttach(menu, registry);
+            var mainRow = (Grid)original.Parent!;
+            var extraPageLink = ((StackPanel)menu.Names["LeftPanel"]).Children.OfType<Button>().Single();
+
+            replace = true;
+            IngameMenuActions.TestInvalidate("mod");
+            IngameMenuActions.TestPage(true);
+            Assert.AreEqual(Visibility.Visible, extraPageLink.Visibility);
+            Assert.AreNotSame(mainRow, original.Parent);
+            Assert.IsTrue(original.IsVisible);
+
+            suppress = true;
+            IngameMenuActions.TestInvalidate("hide");
+            Assert.AreEqual(Visibility.Collapsed, extraPageLink.Visibility);
+            Assert.IsFalse(original.IsVisible);
+            Assert.AreEqual(Visibility.Collapsed, original.Parent!.Visibility);
+            Assert.AreEqual("Replace", PropEx.GetTextCentre(mainRow.Children.OfType<Button>().Single()));
+
+            replace = false;
+            IngameMenuActions.TestInvalidate("mod");
+            Assert.AreEqual(Visibility.Collapsed, mainRow.Visibility);
+            Assert.IsFalse(original.IsVisible);
+
+            suppress = false;
+            IngameMenuActions.TestInvalidate("hide");
+            Assert.AreSame(original, mainRow.Children.Single());
+            Assert.IsTrue(original.IsVisible);
+            Assert.AreSame(command, original.Command);
+            Assert.AreSame(template, original.Template);
+            Assert.AreEqual("ButtonQuitMission", original.CommandParameter);
+        }
+        [TestMethod]
         public void GeometryEventsDoNotPollProvidersAndRecreatedHudDetachesTheOldView()
         {
             int calls = 0; var menu = Menu(); var registry = new IngameMenuRegistry();

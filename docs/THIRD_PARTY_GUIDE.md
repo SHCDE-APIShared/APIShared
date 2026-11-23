@@ -1956,6 +1956,22 @@ that Vanilla leaves unchanged retain their original baseline. Existing
 placement claims remain independent; if another mod displaces the original button,
 the override still belongs to that original button rather than its replacement.
 
+With APIShared 0.66.0 or later, hide an original button on both pages by calling
+`IngameMenuActions.TryRegisterVanillaSuppression(ownerGuid, id, row, shouldSuppress, out reason)`
+on initialized Unity outside menu callbacks. Identify the button with `IngameMenuRow`
+and use an ID unique across your menu registrations. Each registration lasts until
+process exit. Any provider returning true hides the original. When all providers
+return false, its current game-mode visibility and ordinary placement apply.
+Suppression affects local presentation. Mod controls can still occupy the row,
+and the original retains its bindings, command and any registered override.
+
+Providers run at menu opening, on return from a dialog, during menu action
+revalidation and on owner invalidation while open. Call `IngameMenuActions.Invalidate(ownerGuid)`
+after relevant changes. Provider exceptions count as false for that evaluation
+and are logged once per registration. Cached occupancy shows the original claim's
+last observed `State` and reports suppression separately via `IsSuppressed`.
+See `RegisterHelpSuppression` in the [menu example](../examples/ThirdPartyMod/IngameMenuExample.cs).
+
 Rows have stable `IngameMenuRow` names independent of mode-specific visibility.
 Each has Left and Right; Vanilla is the Right fallback. A single visible button
 uses the normal full width; two share a row. A mod can activate a position even
@@ -1993,7 +2009,8 @@ state and effective ownership. Before first evaluation HasState can be false;
 closed-menu snapshots can be stale. Queries do not read native state or call mods.
 
 `new IngameMenuActionOptions()` registers exclusively for the additional-actions
-page. Every visible displaced mod or Vanilla action also appears there, once.
+page. Visible displaced mod actions and visible, unsuppressed displaced Vanilla
+actions also appear there once.
 Entries sort by order, ordinal owner GUID, then action ID. Invisible actions take
 no space; disabled actions remain listed. The extra-page button appears before
 Resume only while the page has entries. Both pages support bounded scrolling and

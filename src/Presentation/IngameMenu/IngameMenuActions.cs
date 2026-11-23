@@ -36,6 +36,32 @@ namespace APIShared.Presentation
             return TryRegisterCore(ownerGuid, id, state, execute, null, options, out registration, out reason, order);
         }
 
+        /// <summary>Registers a process-lifetime condition that omits one original ESC button from both pages.
+        /// Any true condition suppresses the original. When all conditions are false, its ordinary placement resumes.</summary>
+        /// <remarks>Register on initialized Unity, outside menu callbacks, with your mod GUID and a stable ID
+        /// unique across menu registrations of that owner. The provider runs on Unity at opening, owner invalidation
+        /// while open and menu action revalidation. Notify relevant changes with <see cref="Invalidate(string)"/>.
+        /// A provider failure is logged once and counts as false for that evaluation. Suppression affects local
+        /// presentation only. It leaves other mods' controls, Vanilla commands and gameplay authority intact.</remarks>
+        public static bool TryRegisterVanillaSuppression(string ownerGuid, string id, IngameMenuRow row,
+            Func<bool> shouldSuppress, out string reason)
+        {
+            try
+            {
+                RequireUnity();
+                if (refreshing || initializing || vanillaOverrides.Evaluating)
+                { reason = "Register suppression outside menu initialization and refresh callbacks."; return false; }
+                if (!registry.CanRegisterSuppression(ownerGuid, id, row, shouldSuppress, out reason)) return false;
+                if (vanillaOverrides.HasIdentity(ownerGuid, id))
+                { reason = "Duplicate menu action: " + ownerGuid + "/" + id; return false; }
+                EnsureInstalled();
+                registry.RegisterSuppression(ownerGuid, id, row, shouldSuppress);
+            }
+            catch (Exception error) { reason = error.Message; return false; }
+            PresentAcceptedRegistration();
+            return true;
+        }
+
         /// <summary>Overrides the enabled state and execution of one existing Vanilla ESC action without adding
         /// a position claim, replacement button or additional-page entry. Its text, visibility, command and element
         /// identity remain unchanged. One process-lifetime owner may register each Vanilla row; conflicts reject.</summary>
@@ -56,9 +82,8 @@ namespace APIShared.Presentation
                 RequireUnity();
                 if (registry.Evaluating) { reason = "Register overrides outside a state-provider callback."; return false; }
                 if (!vanillaOverrides.CanRegister(ownerGuid, id, row, enabled, execute, out reason)) return false;
-                foreach (var entry in registry.Entries)
-                    if (entry.Owner == ownerGuid && entry.Id == id)
-                    { reason = "Duplicate menu action: " + ownerGuid + "/" + id; return false; }
+                if (registry.HasIdentity(ownerGuid, id))
+                { reason = "Duplicate menu action: " + ownerGuid + "/" + id; return false; }
                 if (!ApiShared.ForMod(ownerGuid).TryGetMissionLifecycle(out _, out var dispatcher) ||
                     dispatcher?.State != NativeCapabilityState.Available)
                 { reason = "Vanilla menu command dispatcher unavailable: " + (dispatcher?.Reason ?? "mission lifecycle is not ready"); return false; }
@@ -252,7 +277,7 @@ namespace APIShared.Presentation
             }
             catch (Exception error) { Report(entry, error); }
         }
-        private static void Report(IngameMenuRegistry.Entry entry, Exception error)
+        private static void Report(IngameMenuRegistry.Registration entry, Exception error)
         {
             if (entry == null ? hostFailureReported : entry.FailureReported) return;
             if (entry == null) hostFailureReported = true; else entry.FailureReported = true;
