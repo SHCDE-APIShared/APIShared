@@ -741,7 +741,15 @@ For an expected rejection during save selection or confirmation, see
 
 For a same-mission restart, wrap the complete preparation and loading action in
 `MissionRestart.Run(ownerGuid, action)` on the Unity thread. This requires a ready
-gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
+gameplay mission. For a direct multiplayer reload in its retained Steam lobby, call
+`MissionRestart.TryValidateMultiplayerMap` on every peer before acknowledging the
+restart. Supply the actual `StartGame` arguments. This read-only check requires a
+completed new-map start, the same participants and launch configuration, and the
+unchanged locally confirmed map. The consumer owns commit coordination. APIShared
+revalidates the committed load and retires its authorization with that attempt.
+A new lobby uses normal map readiness.
+
+The dedicated Skirmish restart and the confirmed in-game menu
 restart already use this boundary; opening or cancelling confirmation does not.
 Nested calls share one attempt. Other launches must use their normal entry points.
 Restart authorization retains the source's Customize provenance,

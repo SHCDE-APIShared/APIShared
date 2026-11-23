@@ -9,6 +9,13 @@ namespace APIShared
         /// its managed preparation. Not a permission to change settings or a multiplayer transport.</summary>
         public static bool IsInProgress => MissionLifecycleService.RestartInProgress;
 
+        /// <summary>Checks a direct same-lobby map restart against the current completed mission.
+        /// Call on Unity before confirming a synchronized restart. The check neither reserves a
+        /// launch nor sends packets. Run and the map loader validate again at commitment.</summary>
+        public static bool TryValidateMultiplayerMap(EngineInterface.MultiplayerSetupData setup,
+            FileHeader map, int coopTrail, int coopMission, out string reason) =>
+            MissionLifecycleService.TryValidateMultiplayerRestart(setup, map, coopTrail, coopMission, out reason);
+
         /// <summary>Runs the complete restart action once on the Unity thread, after linking the ready
         /// source session to a new attempt and before publishing its End. Nested restart calls share
         /// that attempt. Delayed multiplayer completion remains owned by the mission lifecycle.</summary>

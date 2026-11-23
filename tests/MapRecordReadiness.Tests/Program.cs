@@ -113,6 +113,7 @@ internal static class Program
         Check(Boundary.MapStarts == 1 && Boundary.Captures == 1 && Boundary.Sent.Count == 0, "solo MP captures own map but needs no network echo");
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "GO publication alone never grants a native ticket");
         Check(ValidateMapStart(), "solo platform start creates a verified admission ticket");
+        var sourceFile = MapRecordLoadCoordinator.CurrentAdmission;
         Boundary.MainThread = false;
         Check(MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "native admission is independent of Unity/Steam access");
         Boundary.MainThread = true;
@@ -120,6 +121,14 @@ internal static class Program
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "native admission rejects a file changed after platform start");
         MapRecordLoadCoordinator.FinishLoad();
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true) && MapRecordLoadCoordinator.ValidateNativeAdmission("unused", false), "finished ticket cannot be replayed; SP needs none");
+        Check(!MapRecordLoadCoordinator.MatchesFile(sourceFile, Boundary.Path),
+            "a source mission cannot confirm a changed map file for a later restart");
+        Reset(solo: true); Start(); Check(ValidateMapStart(), "restart fixture obtains a confirmed source file");
+        sourceFile = MapRecordLoadCoordinator.CurrentAdmission;
+        MapRecordLoadCoordinator.FinishLoad();
+        Check(MapRecordLoadCoordinator.MatchesFile(sourceFile, Boundary.Path) &&
+            !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true),
+            "a completed mission can verify its original file without reviving the consumed lobby admission");
         Reset(solo: true); Start(); Check(ValidateMapStart(), "worker failure fixture has a native ticket");
         Boundary.MainThread = false; MapRecordLoadCoordinator.Abort("native file failure");
         Check(Boundary.Popups == 0 && !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "worker failure revokes the ticket without UI or lobby processing");

@@ -1644,6 +1644,7 @@ APIShared.MissionPlayStateReadyNotification | public APIShared.MissionContext Co
 APIShared.MissionPlayStateReadyNotification | public bool IsReplay { get; }
 APIShared.MissionRestart | public static class APIShared.MissionRestart
 APIShared.MissionRestart | public static bool IsInProgress { get; }
+APIShared.MissionRestart | public static bool TryValidateMultiplayerMap(EngineInterface.MultiplayerSetupData setup, FileHeader map, int coopTrail, int coopMission, out string reason)
 APIShared.MissionRestart | public static void Run(string ownerGuid, System.Action restart)
 APIShared.MissionStartKind | public enum APIShared.MissionStartKind : int
 APIShared.MissionStartKind | EditorCreated = 2

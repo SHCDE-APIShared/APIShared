@@ -59,10 +59,24 @@ namespace APIShared
         private static NativeAdmissionTicket admission;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
-        private sealed class NativeAdmissionTicket
+        internal sealed class NativeAdmissionTicket
         {
             internal readonly string Path, Hash;
             internal NativeAdmissionTicket(string path, string hash) { Path = path; Hash = hash; }
+        }
+        internal static NativeAdmissionTicket CurrentAdmission =>
+            System.Threading.Volatile.Read(ref admission);
+        internal static bool HasPendingPreparation => pending != null;
+
+        internal static bool MatchesFile(NativeAdmissionTicket ticket, string path)
+        {
+            if (ticket == null || string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                return string.Equals(Path.GetFullPath(path), ticket.Path, StringComparison.OrdinalIgnoreCase) &&
+                    Hash(ticket.Path) == ticket.Hash;
+            }
+            catch { return false; }
         }
 
         internal static void Initialize(ManualLogSource logger)
@@ -624,13 +638,7 @@ namespace APIShared
         {
             if (!multiplayer) return true;
             var ticket = System.Threading.Volatile.Read(ref admission);
-            if (ticket == null) return false;
-            try
-            {
-                return string.Equals(Path.GetFullPath(path), ticket.Path, StringComparison.OrdinalIgnoreCase) &&
-                    Hash(ticket.Path) == ticket.Hash && ReferenceEquals(ticket, System.Threading.Volatile.Read(ref admission));
-            }
-            catch { return false; }
+            return MatchesFile(ticket, path) && ReferenceEquals(ticket, CurrentAdmission);
         }
         internal static bool CancelSelection()
         {
