@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using APIShared.Multiplayer;
+using MessagePack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using RedBird.Abstractions.Hooks;
 using RedBird.Backends.NativeX64;
@@ -11,6 +12,42 @@ namespace APISharedTests
     [TestClass, DoNotParallelize]
     public sealed class MultiplayerResyncTests
     {
+        [TestMethod]
+        public void ResyncWireKeepsIdentityAndRejectsOversizedAndUnalignedChunks()
+        {
+            var hello = new MultiplayerResyncDataPacket(MultiplayerResyncDataPacket.Kind.Hello,
+                10, 11, 12, 13, 14, -1, 0, Array.Empty<byte>());
+            var copy = MessagePackSerializer.Deserialize<MultiplayerResyncDataPacket>(MessagePackSerializer.Serialize(hello));
+            Assert.AreEqual(hello.Operation, copy.Operation);
+            Assert.AreEqual(hello.Lobby, copy.Lobby);
+            Assert.AreEqual(hello.Round, copy.Round);
+            Assert.AreEqual(hello.Epoch, copy.Epoch);
+            Assert.AreEqual(hello.Repair, copy.Repair);
+            Assert.AreEqual(hello.Nonce, copy.Nonce);
+            Assert.AreEqual(0, copy.Body.Length);
+
+            byte[] RawChunk(int offset, int size) => MessagePackSerializer.Serialize(new object[] {
+                1, (int)MultiplayerResyncDataPacket.Kind.Chunk, 10UL, 11L, 12L, 13L, 14UL, 0, offset, new byte[size]
+            });
+            int bound = MultiplayerResyncDataPacket.ChunkBytes;
+            Assert.ThrowsExactly<MessagePackSerializationException>(() =>
+                MessagePackSerializer.Deserialize<MultiplayerResyncDataPacket>(RawChunk(0, bound + 1)));
+            Assert.ThrowsExactly<MessagePackSerializationException>(() =>
+                MessagePackSerializer.Deserialize<MultiplayerResyncDataPacket>(RawChunk(1, bound)));
+            Assert.AreEqual(bound, MessagePackSerializer.Deserialize<MultiplayerResyncDataPacket>(RawChunk(bound, bound)).Body.Length);
+        }
+
+        [TestMethod]
+        public void CumulativeProgressCannotAdvanceAcrossAnUnsentOrPartialWindow()
+        {
+            int window = MultiplayerResyncDataPacket.ChunkBytes * MultiplayerResyncDataPacket.Window;
+            Assert.IsFalse(MultiplayerResyncDataRuntime.IsExpectedProgress(2 * window, window, 0, 2 * window));
+            Assert.IsFalse(MultiplayerResyncDataRuntime.IsExpectedProgress(2 * window, window, 0, window / 2));
+            Assert.IsTrue(MultiplayerResyncDataRuntime.IsExpectedProgress(2 * window, window, 0, window));
+            Assert.IsFalse(MultiplayerResyncDataRuntime.IsExpectedProgress(2 * window, 2 * window, window, window));
+            Assert.IsTrue(MultiplayerResyncDataRuntime.IsExpectedProgress(window + 7, window + 7, window, window + 7));
+        }
+
         [TestMethod]
         public void OnlyExecutedEntryPhaseStartsAndCompletesAndCompletionCanRearmConsumers()
         {

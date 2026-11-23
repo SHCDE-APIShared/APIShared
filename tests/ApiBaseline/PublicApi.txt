@@ -2311,6 +2311,10 @@ APIShared.Modifiers.ValueModifierKind | None = 0
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Multiplayer.MultiplayerResyncData | public static class APIShared.Multiplayer.MultiplayerResyncData
+APIShared.Multiplayer.MultiplayerResyncData | public static bool CheckIntegrity()
+APIShared.Multiplayer.MultiplayerResyncData | public static bool IsAvailable { get; }
+APIShared.Multiplayer.MultiplayerResyncData | public static bool TryRegister<TPrepared>(string ownerGuid, string recordId, int schemaVersion, int maximumBytes, System.Func<byte[]> capture, System.Func<System.ReadOnlyMemory<byte>, TPrepared> prepare, System.Action<TPrepared> commit, out string reason)
 APIShared.Multiplayer.MultiplayerResyncEvents | public static class APIShared.Multiplayer.MultiplayerResyncEvents
 APIShared.Multiplayer.MultiplayerResyncEvents | public static bool CheckIntegrity()
 APIShared.Multiplayer.MultiplayerResyncEvents | public static bool IsAvailable { get; }

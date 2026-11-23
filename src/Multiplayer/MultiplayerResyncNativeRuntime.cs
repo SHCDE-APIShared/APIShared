@@ -33,6 +33,11 @@ namespace APIShared.Multiplayer
         private static int initialized, healthy;
         private static bool runGuardReady;
         internal static bool IsAvailable => publication.IsReady && runGuardReady && Volatile.Read(ref healthy) != 0;
+        internal static bool IsDataAvailable => IsAvailable && MultiplayerResyncDataNativeRuntime.IsReady;
+        internal static bool IsNativeHost => MultiplayerResyncDataNativeRuntime.IsHost;
+        internal static bool IsNativeClientReady => MultiplayerResyncDataNativeRuntime.IsClientReady;
+        internal static int NativeRepairState => MultiplayerResyncDataNativeRuntime.RepairState;
+        internal static bool CheckDataIntegrity() => CheckIntegrity() && MultiplayerResyncDataNativeRuntime.CheckIntegrity();
         internal static NativeSiteSpan[] Spans() => new[] {
             new NativeSiteSpan(StartRva, StartEntry.Length, NativeSiteMode.Exclusive),
             new NativeSiteSpan(CompleteRva, CompleteEntry.Length, NativeSiteMode.Exclusive)
@@ -97,6 +102,8 @@ namespace APIShared.Multiplayer
                 publication.RollbackUnpublished(candidate, () => { if (claimed) ApiSharedNativeSites.Release(sites, SiteName); });
                 throw;
             }
+            try { MultiplayerResyncDataNativeRuntime.Initialize(context, hash, logger); }
+            catch (Exception error) { NativeApiLog.Error(log, "RESYNC_DATA_NATIVE_UNAVAILABLE: " + error); }
         }
         private static void OnInitializing(MissionLifecycleNotification note)
         {
@@ -111,19 +118,53 @@ namespace APIShared.Multiplayer
         }
         private static void GuardRun()
         {
-            if (module == IntPtr.Zero || !MultiplayerResyncEvents.Registry.IsInProgress) return;
-            MultiplayerResyncEvents.Registry.ValidateNativeState(Marshal.ReadInt32(module + RepairStateRva));
+            if (module == IntPtr.Zero) return;
+            if (MultiplayerResyncEvents.Registry.IsInProgress)
+                MultiplayerResyncEvents.Registry.ValidateNativeState(Marshal.ReadInt32(module + RepairStateRva));
+            if (MultiplayerResyncDataNativeRuntime.IsReady && MultiplayerResyncDataRuntime.HasActiveAttempt)
+                try { MultiplayerResyncDataRuntime.OnEngineRun(); }
+                catch (Exception error) { ReportFault(error); }
         }
         private static void OnStart()
         {
             int phase = Marshal.ReadInt32(module + TransferPhaseRva);
             if (IsAvailable) MultiplayerResyncEvents.Registry.Start(phase);
+            if (phase == 0 && MultiplayerResyncDataRuntime.HasActiveAttempt)
+            {
+                try
+                {
+                    if (!MultiplayerResyncDataNativeRuntime.HoldsEngineMonitor || !CheckDataIntegrity())
+                    {
+                        NativeForeignPatchGuard.Recheck();
+                        throw new InvalidOperationException("Native resync data start reached an unexpected engine context or changed hook.");
+                    }
+                    MultiplayerResyncDataRuntime.OnNativeStart();
+                    if (Economy.WorkerProductionWorldSafety.IsFaulted) return;
+                }
+                catch (Exception error) { ReportFault(error); return; }
+            }
             start.Original();
         }
         private static void OnComplete()
         {
             int phase = Marshal.ReadInt32(module + TransferPhaseRva); // PACK mutates the global phase itself.
+            bool elected = phase == 0 && MultiplayerResyncDataRuntime.HasActiveAttempt;
+            if (elected)
+            {
+                if (Economy.WorkerProductionWorldSafety.IsFaulted) return;
+                try
+                {
+                    if (!MultiplayerResyncDataNativeRuntime.HasAuthorizedCompletion ||
+                        !MultiplayerResyncDataNativeRuntime.HoldsEngineMonitor)
+                        throw new InvalidOperationException("Native resync completion bypassed the shared release gate.");
+                    if (!MultiplayerResyncDataRuntime.BeforeNativeComplete()) return;
+                }
+                catch (Exception error) { ReportFault(error); return; }
+            }
             complete.Original();
+            if (elected)
+                try { MultiplayerResyncDataRuntime.OnNativeCompleted(); }
+                catch (Exception error) { ReportFault(error); return; }
             if (IsAvailable) MultiplayerResyncEvents.Registry.Complete(phase);
         }
         internal static void ReportFault(Exception error)

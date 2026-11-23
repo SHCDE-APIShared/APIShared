@@ -835,6 +835,41 @@ start an engine run, load or save from these callbacks. `CheckIntegrity()` is a
 side-effect-free startup/admission probe, not a per-tick query. Combine readiness
 with `SimulationAgreement` for simulation-changing consumers.
 
+### Host-authoritative mod data during repair
+
+`MultiplayerResyncData` requires APIShared 0.65.0. Register each record once
+on the Unity thread after native initialization. Use the same owner GUID, record
+ID, schema version and declared maximum on every peer. The first resolved
+multiplayer lobby closes registration for the process. Use a gameplay
+package with `NetworkMode=1`. Active records form one required cohort in the
+multiplayer simulation agreement. Check the return value from registration and
+include readiness in your gameplay feature admission.
+
+1. `capture` returns a deterministic byte snapshot. Return an empty array for
+   an inactive record. The client captures at executed repair start and the
+   host captures after Vanilla reaches the repair completion boundary.
+2. `prepare` validates the host bytes against the locally repaired world and
+   builds a private replacement. Prepare all state here and keep simulation
+   unchanged until commit.
+3. `commit` publishes the prepared state. This callback must be short,
+   non-allocating and non-throwing. Rearm any suspended simulation hooks in the
+   existing `MultiplayerResyncEvents` completion callback.
+
+These callbacks run on the native caller thread under the engine monitor.
+Keep Unity APIs, nested engine runs, saves and loads out of the callbacks.
+Registration is retained for the process. Use your own mission lifecycle to
+scope state and your own save record for persistence. The service accepts up
+to 32 records, 1 MiB per record and 4 MiB of declared capacity across records.
+
+The host sends record lengths and SHA-256 digests on Steam's reliable
+channel. Clients reuse matching local bytes and request whole changed records
+in bounded windows. The host waits for every admitted human peer to finish
+preparing before it publishes its own replacements and releases Vanilla's
+completion command. Each client publishes just before executing that command.
+A changed roster, an exceeded transfer deadline or a provider failure stops
+the agreed world through the existing terminal boundary. The guarantee
+requires the supported native image and matching gameplay packages.
+
 ## Multiplayer actions and messages
 
 These networking APIs require APIShared 0.7.0 or later; neither SerpsModsHost nor

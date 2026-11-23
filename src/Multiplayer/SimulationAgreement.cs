@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -29,7 +30,8 @@ namespace APIShared.Multiplayer
         {
             internal string Enabled, Roster;
             internal ulong[] Peers;
-            internal ulong Lobby, Local;
+            internal IReadOnlyDictionary<int, ulong> LobbyPlayers;
+            internal ulong Lobby, Host, Local;
             internal long Round;
         }
 
@@ -38,6 +40,37 @@ namespace APIShared.Multiplayer
             internal Receipt Decision;
             internal long Epoch, Session;
             internal int Faulted;
+            internal bool ResyncCohortEnabled;
+            internal AdmittedResyncWorld ResyncWorld;
+        }
+
+        internal sealed class AdmittedResyncWorld
+        {
+            internal AdmittedResyncWorld(Attempt attempt, Dictionary<int, ulong> players, string digest)
+            {
+                var decision = attempt.Decision;
+                Lobby = decision.Lobby;
+                Round = decision.Round;
+                Epoch = attempt.Epoch;
+                Host = decision.Host;
+                Local = decision.Local;
+                Peers = new ReadOnlyDictionary<int, ulong>(players);
+                HostPlayerId = players.Single(peer => peer.Value == Host).Key;
+                LocalPlayerId = players.Single(peer => peer.Value == Local).Key;
+                Session = attempt.Session;
+                ManifestDigest = digest;
+            }
+
+            internal ulong Lobby { get; }
+            internal long Round { get; }
+            internal long Epoch { get; }
+            internal ulong Host { get; }
+            internal ulong Local { get; }
+            internal IReadOnlyDictionary<int, ulong> Peers { get; }
+            internal int HostPlayerId { get; }
+            internal int LocalPlayerId { get; }
+            internal long Session { get; }
+            internal string ManifestDigest { get; }
         }
 
         private static readonly List<Feature> Features = new List<Feature>();
@@ -53,6 +86,10 @@ namespace APIShared.Multiplayer
         private static bool rejectedDecision;
         private static Receipt proposal, accepted;
         private static Attempt world;
+        private static bool manifestCaptured;
+        private static Feature resyncCohort;
+        private static Func<string> freezeResyncManifest;
+        private static string resyncDigest;
 
         /// <summary>
         /// Registers a process-lifetime feature on the Unity thread during plug-in startup.
@@ -69,10 +106,38 @@ namespace APIShared.Multiplayer
             if (isReady == null) throw new ArgumentNullException(nameof(isReady));
             if (apply == null) throw new ArgumentNullException(nameof(apply));
             string key = ownerGuid + "/" + featureId;
-            if (Features.Count == 32 || Features.Any(item => item.Key == key))
+            if (Features.Count == 32 || Features.Any(item => item.Key == key) ||
+                key.StartsWith(SimulationAgreementPolicy.ResyncCohortKeyPrefix, StringComparison.Ordinal))
                 throw new InvalidOperationException("Simulation feature registration refused: " + key);
             Features.Add(new Feature { Key = key, Required = required, Ready = isReady, Apply = apply });
             Features.Sort((left, right) => string.CompareOrdinal(left.Key, right.Key));
+        }
+
+        internal static bool TryRegisterResyncCohort(Func<string> freezeManifestDigest, Func<bool> isReady,
+            Action<bool> apply, out string reason)
+        {
+            if (!UnityMainThreadDispatch.IsMainThread || freezeManifestDigest == null || isReady == null || apply == null)
+            {
+                reason = "Resync cohort registration requires the Unity thread and all callbacks.";
+                return false;
+            }
+            if (manifestCaptured || resyncCohort != null || Features.Count == 32)
+            {
+                reason = "The simulation agreement cannot admit another resync cohort.";
+                return false;
+            }
+            resyncCohort = new Feature
+            {
+                Key = SimulationAgreementPolicy.ResyncCohortKeyPrefix,
+                Required = true,
+                Ready = () => resyncDigest != null && isReady(),
+                Apply = apply
+            };
+            freezeResyncManifest = freezeManifestDigest;
+            Features.Add(resyncCohort);
+            Features.Sort((left, right) => string.CompareOrdinal(left.Key, right.Key));
+            reason = null;
+            return true;
         }
 
         /// <summary>
@@ -120,6 +185,27 @@ namespace APIShared.Multiplayer
         private static string CaptureManifest() => string.Join(";", Features.Select(item =>
             item.Key + "=" + (item.Required ? "r" : "o") + (item.Ready() ? "1" : "0")));
 
+        // Freeze only when a resolved multiplayer roster can actually capture a manifest.
+        private static void FreezeResyncCohort()
+        {
+            if (manifestCaptured) return;
+            manifestCaptured = true;
+            if (resyncCohort == null) return;
+            try
+            {
+                string digest = freezeResyncManifest();
+                if (!SimulationAgreementPolicy.IsResyncDigest(digest))
+                    throw new InvalidOperationException("Invalid resync cohort manifest digest.");
+                resyncDigest = digest;
+            }
+            catch (Exception error)
+            {
+                NativeApiLog.Error(log, "Could not freeze the multiplayer resync manifest: " + error);
+            }
+            resyncCohort.Key += resyncDigest ?? new string('0', 64);
+            freezeResyncManifest = null;
+        }
+
         private static void Observe(LobbyStateSnapshot snapshot)
         {
             if (snapshot == null || !snapshot.LobbyId.HasValue && snapshot.PreserveForMapTransition) return;
@@ -129,7 +215,7 @@ namespace APIShared.Multiplayer
 
         private static void Refresh()
         {
-            if (Features.Count == 0 || channel == null) return;
+            if (channel == null) return;
             ulong currentHost = 0, currentSelf = 0;
             string key = "";
             if (roster?.LobbyId != null && !roster.HasUnresolvedPlayers && roster.Error.Length == 0 &&
@@ -140,7 +226,9 @@ namespace APIShared.Multiplayer
                     key = string.Join(",", roster.Players.OrderBy(item => item.Key).Select(item =>
                         item.Key.ToString(CultureInfo.InvariantCulture) + ":" + item.Value.ToString(CultureInfo.InvariantCulture)));
             }
-            string manifest = CaptureManifest();
+            if (key.Length != 0) FreezeResyncCohort();
+            if (Features.Count == 0) return;
+            string manifest = key.Length != 0 || resyncCohort == null ? CaptureManifest() : "";
             bool rosterChanged = key != rosterKey || currentHost != host || currentSelf != self ||
                 roster?.LobbyId != observedLobby;
             if (rosterChanged || manifest != localManifest)
@@ -241,11 +329,7 @@ namespace APIShared.Multiplayer
                 return new LobbyLaunchGuardResult(waiting ? LobbyLaunchGuardState.Waiting : LobbyLaunchGuardState.Rejected, reason);
             if (!allowMissing && Reports.Count != roster.Players.Count)
                 return Waiting("Waiting for all players to report simulation capabilities.");
-            proposal = new Receipt
-            {
-                Lobby = roster.LobbyId.Value, Local = self, Roster = rosterKey, Round = round,
-                Enabled = enabled, Peers = roster.Players.Values.ToArray()
-            };
+            proposal = CreateReceipt(enabled);
             Acknowledged.Add(self);
             DeferRetry();
             foreach (ulong peer in proposal.Peers)
@@ -315,13 +399,15 @@ namespace APIShared.Multiplayer
                 { rejectedDecision = true; return; }
                 rejectedDecision = false;
                 if (Send(host, SimulationAgreementPacket.Acknowledge, round, packet.Data))
-                    accepted = new Receipt
-                    {
-                        Lobby = roster.LobbyId.Value, Local = self, Roster = rosterKey, Round = round,
-                        Enabled = packet.Data, Peers = roster.Players.Values.ToArray()
-                    };
+                    accepted = CreateReceipt(packet.Data);
             }
         }
+
+        private static Receipt CreateReceipt(string enabled) => new Receipt
+        {
+            Lobby = roster.LobbyId.Value, Host = host, Local = self, Roster = rosterKey, Round = round,
+            Enabled = enabled, LobbyPlayers = roster.Players, Peers = roster.Players.Values.ToArray()
+        };
 
         private static bool Send(ulong peer, int operation, long epoch, string data, Receipt receipt = null)
         {
@@ -362,6 +448,7 @@ namespace APIShared.Multiplayer
                     return "Local simulation capability readiness changed after the multiplayer agreement.";
                 var enabled = new HashSet<string>(decision.Enabled.Split(';'), StringComparer.Ordinal);
                 foreach (var feature in Features) feature.Apply(enabled.Contains(feature.Key));
+                attempt.ResyncCohortEnabled = resyncCohort != null && enabled.Contains(resyncCohort.Key);
             }
             catch (Exception error)
             {
@@ -372,6 +459,72 @@ namespace APIShared.Multiplayer
             Volatile.Write(ref world, attempt);
             consumedRound = decision.Round;
             return null;
+        }
+
+        // Native callbacks read a managed publication only. The cohort is already required
+        // during the window before Vanilla makes the final slot mapping visible on Unity.
+        internal static bool IsResyncCohortAdmitted => Volatile.Read(ref world)?.ResyncCohortEnabled == true;
+
+        internal static AdmittedResyncWorld GetAdmittedResyncWorld()
+        {
+            var active = Volatile.Read(ref world);
+            if (active == null || Volatile.Read(ref active.Faulted) != 0) return null;
+            return Volatile.Read(ref active.ResyncWorld);
+        }
+
+        internal static bool IsAdmittedResyncWorldCurrent(AdmittedResyncWorld snapshot) =>
+            snapshot != null && ReferenceEquals(snapshot, GetAdmittedResyncWorld());
+
+        internal static AdmittedResyncWorld TryBindAdmittedResyncWorld()
+        {
+            if (!UnityMainThreadDispatch.IsMainThread) return null;
+            var active = Volatile.Read(ref world);
+            if (active == null || !active.ResyncCohortEnabled || Volatile.Read(ref active.Faulted) != 0) return null;
+            var bound = Volatile.Read(ref active.ResyncWorld);
+            if (bound != null) return bound;
+
+            // A loaded save can change native player slots after admission. Bind the Steam
+            // identities from the receipt to Vanilla's active game roster only after remapping.
+            Platform_Multiplayer platform = Platform_Multiplayer.Instance;
+            if (!HasLiveResyncRoster(platform) ||
+                !PlayerIdentityHelper.TryCaptureHumanRoster(out var players, out _) ||
+                players.Count != active.Decision.LobbyPlayers.Count) return null;
+            foreach (ulong steamId in players.Values)
+                if (!active.Decision.Peers.Contains(steamId)) return null;
+            var candidate = new AdmittedResyncWorld(active, players, resyncDigest);
+            if (!MatchesLiveResyncRoster(platform, candidate) ||
+                !ReferenceEquals(active, Volatile.Read(ref world)) || Volatile.Read(ref active.Faulted) != 0) return null;
+            Volatile.Write(ref active.ResyncWorld, candidate);
+            return IsAdmittedResyncWorldCurrent(candidate) ? candidate : null;
+        }
+
+        internal static bool VerifyLiveResyncRoster(AdmittedResyncWorld snapshot)
+        {
+            if (!UnityMainThreadDispatch.IsMainThread || !IsAdmittedResyncWorldCurrent(snapshot)) return false;
+            Platform_Multiplayer platform = Platform_Multiplayer.Instance;
+            return HasLiveResyncRoster(platform) && MatchesLiveResyncRoster(platform, snapshot);
+        }
+
+        private static bool HasLiveResyncRoster(Platform_Multiplayer platform) =>
+            Platform_Multiplayer.MPGameActive && platform != null &&
+            platform.GetActiveLobby() == null && platform.gameMembers != null;
+
+        private static bool MatchesLiveResyncRoster(Platform_Multiplayer platform, AdmittedResyncWorld snapshot)
+        {
+            if (platform.IsHost != (snapshot.Local == snapshot.Host)) return false;
+            int seenSlots = 0, matched = 0;
+            foreach (var member in platform.gameMembers)
+            {
+                if (member == null || member.kicked || member.skirmishAI) continue;
+                if (!snapshot.Peers.TryGetValue(member.playerID, out ulong steamId) || steamId != member.steamID ||
+                    member.isHost != (steamId == snapshot.Host) || member.isSelf != (steamId == snapshot.Local))
+                    return false;
+                int slot = 1 << (member.playerID - PlayerSlots.FirstPlayerId);
+                if ((seenSlots & slot) != 0) return false;
+                seenSlots |= slot;
+                matched++;
+            }
+            return matched == snapshot.Peers.Count;
         }
 
         internal static void Retire(long sessionId = 0)

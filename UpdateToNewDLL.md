@@ -2402,6 +2402,31 @@ the relocated RIP load/continuations, and reject altered published bytes. Such
 private fixtures are offline tests, never copied-buffer probes at game startup;
 passing them does not establish real multiplayer repair acceptance.
 
+#### Multiplayer resync data
+
+`Multiplayer.ResyncData` independently owns the five-byte host release CALL
+at `281B5 E8 D6 B7 FF FF` and the six-byte receive entry at `23F10
+48 89 5C 24 20 57`. Validate the surrounding host argument setup and
+continuation, the live near relay and the receive trampoline. Preserve the
+CALL continuation and the receive function's six Win64 arguments.
+
+The host scheduler reaches the same CALL after real acknowledgements and
+after synthesized acknowledgements of kicked peers. Check the manager's
+eight human slots and kick bytes against the admitted roster before release.
+AI registrations are stored separately. `23990` queues Chore67 for delivery
+before executing it locally, so the host must publish the prepared state
+before calling it. `23F10` receives the authenticated sender mapped by the
+managed Steam path. Gate native Chores 54, 55 and 67 there before allocation.
+Chore55 installs the repaired data and moves the client to state 3. The client
+can prepare in state 3 or 4 and commits immediately before executed Chore67.
+It must reject completion without successful preparation or with a full queue.
+
+Both boundaries use the canonical engine monitor. The reliable side channel
+runs on Unity and carries bytes only. The engine stays fenced if the elected
+roster changes, transfer fails or Vanilla resets repair state locally without
+an authorized completion. Run the offline native fixtures on an update, then
+verify the complete interaction on two peers.
+
 ### Optional ally-transfer chat suppression
 
 Native hash `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.

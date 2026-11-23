@@ -329,6 +329,11 @@ unless every peer is ready. See the [registration contract](THIRD_PARTY_GUIDE.md
 It supplies no state transport: consumers decide whether to restore or deterministically
 reset their extra state. See [repair boundaries](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries).
 
+`MultiplayerResyncData` (0.65.0) registers versioned simulation records for
+host-authoritative restoration before Vanilla releases a repair. Matching
+local records are reused and changed records are transferred in bounded
+windows. See [the provider contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair).
+
 ## Source map
 
 Start at the linked contract to learn what a consumer may call. Read the service
