@@ -2871,6 +2871,19 @@ APIShared.PlayerPerspectiveChangeReason | Selected = 0
 APIShared.PlayerPerspectiveChangeReason | Uncertain = 2
 APIShared.Presentation.AllyGoodsAdornmentRegistration | public sealed class APIShared.Presentation.AllyGoodsAdornmentRegistration
 APIShared.Presentation.AllyGoodsAdornmentRegistration | public void RequestRefresh()
+APIShared.Presentation.AllyGoodsFooterRegistration | public sealed class APIShared.Presentation.AllyGoodsFooterRegistration
+APIShared.Presentation.AllyGoodsFooterRegistration | public void RequestContentRefresh()
+APIShared.Presentation.AllyGoodsFooterRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.AllyGoodsFooterRegistration | public void SetVisible(bool visible)
+APIShared.Presentation.AllyGoodsPanelAnchorRole | public enum APIShared.Presentation.AllyGoodsPanelAnchorRole : int
+APIShared.Presentation.AllyGoodsPanelAnchorRole | Footer = 2
+APIShared.Presentation.AllyGoodsPanelAnchorRole | FooterBackground = 3
+APIShared.Presentation.AllyGoodsPanelAnchorRole | GoodsFrame = 1
+APIShared.Presentation.AllyGoodsPanelAnchorRole | None = 0
+APIShared.Presentation.AllyGoodsPanelAnchors | public static class APIShared.Presentation.AllyGoodsPanelAnchors
+APIShared.Presentation.AllyGoodsPanelAnchors | public static APIShared.Presentation.AllyGoodsPanelAnchorRole GetRole(Noesis.DependencyObject element)
+APIShared.Presentation.AllyGoodsPanelAnchors | public static readonly Noesis.DependencyProperty RoleProperty
+APIShared.Presentation.AllyGoodsPanelAnchors | public static void SetRole(Noesis.DependencyObject element, APIShared.Presentation.AllyGoodsPanelAnchorRole role)
 APIShared.Presentation.AllyGoodsPanelContext | public sealed class APIShared.Presentation.AllyGoodsPanelContext
 APIShared.Presentation.AllyGoodsPanelContext | public SHCDESE.Interop.eGoods? Good { get; }
 APIShared.Presentation.AllyGoodsPanelContext | public bool HasSelection { get; }
@@ -2884,7 +2897,9 @@ APIShared.Presentation.AllyGoodsPanelContext | public int? Amount { get; }
 APIShared.Presentation.AllyGoodsPanelContext | public long PanelGeneration { get; }
 APIShared.Presentation.AllyGoodsPanelExtensions | public static class APIShared.Presentation.AllyGoodsPanelExtensions
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryGetContext(out APIShared.Presentation.AllyGoodsPanelContext context)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterFooterControl(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsFooterRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterGoodsAdornment(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, SHCDESE.Interop.eGoods, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsAdornmentRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, APIShared.Presentation.AllyGoodsSectionPlacement placement, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TrySubscribeContext(string ownerGuid, string registrationId, System.Action<APIShared.Presentation.AllyGoodsPanelContext> changed, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public sealed class APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding : SHCDESE.NoesisUtil.INoesisElementBindingAware
@@ -2892,7 +2907,12 @@ APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public .ctor()
 APIShared.Presentation.AllyGoodsSectionContext | public sealed class APIShared.Presentation.AllyGoodsSectionContext
 APIShared.Presentation.AllyGoodsSectionContext | public APIShared.Presentation.AllyGoodsPanelContext Selection { get; }
 APIShared.Presentation.AllyGoodsSectionContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.AllyGoodsSectionPlacement | public enum APIShared.Presentation.AllyGoodsSectionPlacement : int
+APIShared.Presentation.AllyGoodsSectionPlacement | GoodsDialogBottom = 1
+APIShared.Presentation.AllyGoodsSectionPlacement | PanelRootBottom = 0
 APIShared.Presentation.AllyGoodsSectionRegistration | public sealed class APIShared.Presentation.AllyGoodsSectionRegistration
+APIShared.Presentation.AllyGoodsSectionRegistration | public bool TryGetLayoutAvailability(out string reason)
+APIShared.Presentation.AllyGoodsSectionRegistration | public event System.Action LayoutAvailabilityChanged
 APIShared.Presentation.AllyGoodsSectionRegistration | public void RequestContentRefresh()
 APIShared.Presentation.AllyGoodsSectionRegistration | public void SetEnabled(bool enabled)
 APIShared.Presentation.AllyGoodsSectionRegistration | public void SetVisible(bool visible)

@@ -41,10 +41,21 @@ namespace APIShared.Presentation
         public static bool TryRegisterSection(string ownerGuid, string registrationId,
             Func<AllyGoodsSectionContext, FrameworkElement> factory, out AllyGoodsSectionRegistration registration,
             out string reason, int order = 0)
+            => TryRegisterSection(ownerGuid, registrationId, factory, AllyGoodsSectionPlacement.PanelRootBottom,
+                out registration, out reason, order);
+
+        /// <summary>Registers an explicitly placed section. PanelRootBottom preserves the legacy root-height
+        /// anchor. GoodsDialogBottom requires explicit unambiguous goods-frame/footer roles and starts directly
+        /// below the visible goods frame. Groups retain independent owner/order sorting; legacy sections start
+        /// below the original root or the end of anchored sections, whichever is lower. Thread, ownership,
+        /// failure isolation and lifetime are identical to the original overload.</summary>
+        public static bool TryRegisterSection(string ownerGuid, string registrationId,
+            Func<AllyGoodsSectionContext, FrameworkElement> factory, AllyGoodsSectionPlacement placement,
+            out AllyGoodsSectionRegistration registration, out string reason, int order = 0)
         {
             registration = null;
             if (!EnsureInitialized(out reason)) return false;
-            if (!registry.TryRegister(ownerGuid, registrationId, factory, order, out var entry, out reason)) return false;
+            if (!registry.TryRegister(ownerGuid, registrationId, factory, placement, order, out var entry, out reason)) return false;
             registration = new AllyGoodsSectionRegistration(entry, Invalidate); dirty = true; return true;
         }
 
@@ -123,7 +134,7 @@ namespace APIShared.Presentation
         private static void OnGuiChecks(PresentationPostEventArgs args)
         {
             if (!args.OriginalCompleted || !UnityMainThreadDispatch.IsMainThread) return;
-            if (registry.Entries.Length == 0 && observers.Length == 0 && adornmentRegistry.Entries.Length == 0) return;
+            if (registry.Entries.Length == 0 && observers.Length == 0 && adornmentRegistry.Entries.Length == 0 && !HasFooterControls) return;
             try
             {
                 var next = Capture();
@@ -141,14 +152,23 @@ namespace APIShared.Presentation
                     return;
                 }
                 UpdateAdornments(next);
-                if (blocked) return;
-                if (registry.Entries.Length == 0) return;
-                if (!next.IsSendMode) { Collapse(); return; }
-                if (!ResolveLayout()) return;
-                if (dirty) Rebuild(next);
-                Layout();
+                if (!next.IsSendMode)
+                {
+                    Collapse(); SetSectionAvailability(false, "The goods dialog is not open.");
+                    UpdateFooter(next); return;
+                }
+                if (registry.Entries.Length == 0 && !HasFooterControls) return;
+                if (!ResolveLayout()) { SetSectionAvailability(false, "The goods root is unavailable."); UpdateFooter(next); return; }
+                if (!blocked)
+                {
+                    if (dirty) Rebuild(next);
+                    Layout();
+                }
+                else SetSectionAvailability(false, "Another UI owner controls the goods root height.");
+                UpdateFooter(next);
             }
-            catch (Exception error) { Collapse(); Report("presentation", error); }
+            catch (Exception error)
+            { Collapse(); SetSectionAvailability(false, "The goods layout could not be updated."); Report("presentation", error); }
         }
         private static void Invoke(Observer observer, AllyGoodsPanelContext context)
         {
@@ -161,7 +181,7 @@ namespace APIShared.Presentation
             if (layout != null) return true;
             var main = MainViewModel.viewModelLoaded ? MainViewModel.Instance : null;
             var root = main?.HUDAlliesPanel?.FindName("LayoutRoot") as Grid;
-            if (root == null || !ReferenceEquals(host.Parent, root) || float.IsNaN((float)root.Height) || root.Height <= 0)
+            if (root == null || !ReferenceEquals(host.Parent, root) || !AllyGoodsPanelLayoutPolicy.Finite((float)root.Height) || root.Height <= 0)
             {
                 blocked = true; Report("layout-contract", new InvalidOperationException(
                     "The ally-goods host is not attached to the expected fixed-height LayoutRoot; foreign layout is preserved."));
@@ -181,26 +201,7 @@ namespace APIShared.Presentation
             dirty = true; return true;
         }
         private static void Rebuild(AllyGoodsPanelContext context)
-        {
-            dirty = false;
-            sections.Children.Clear();
-            foreach (var entry in registry.Entries)
-            {
-                if (!entry.Visible) continue;
-                if (!visuals.TryGetValue(entry, out var visual) || visual.Revision != entry.Revision)
-                {
-                    visual = new Visual(entry.Revision); visuals[entry] = visual;
-                    if (TryCreate(entry, new AllyGoodsSectionContext(host, context), out var element))
-                        visual.Container = new ContentControl { Content = element };
-                }
-                if (visual.Container == null) continue;
-                if (visual.Container.Parent != null)
-                { Report("section-parent:" + entry.Owner + "/" + entry.Id, new InvalidOperationException("Section control is already attached.")); continue; }
-                visual.Container.IsEnabled = entry.Enabled;
-                visual.Container.Margin = new Thickness(0, sections.Children.Count == 0 ? 0 : 8, 0, 0);
-                sections.Children.Add(visual.Container);
-            }
-        }
+            => RebuildSections(context);
         internal static bool TryCreate(AllyGoodsSectionEntry entry, AllyGoodsSectionContext context, out FrameworkElement element)
         {
             element = null;
@@ -214,31 +215,13 @@ namespace APIShared.Presentation
             catch (Exception error) { element = null; Report("factory:" + entry.Owner + "/" + entry.Id, error); return false; }
         }
         private static void Layout()
-        {
-            if (sections.Children.Count == 0) { Collapse(); return; }
-            if (Math.Abs((float)layout.Height - appliedHeight) > 0.1f)
-            {
-                host.Visibility = Visibility.Collapsed; blocked = true;
-                Report("layout-owner", new InvalidOperationException("Another UI owner changed the root height; extension layout is suspended.")); return;
-            }
-            float available = 0;
-            if (viewport.ActualHeight > 0)
-            {
-                var bounds = layout.TransformToAncestor(viewport).TransformBounds(new Rect(0, 0, 1, 1));
-                available = AllyGoodsContextPolicy.AvailableHeight((float)viewport.ActualHeight,
-                    (float)bounds.Y, (float)bounds.Height, baseHeight);
-            }
-            float desired = (float)sections.DesiredSize.Height + 22;
-            float height = AllyGoodsContextPolicy.ExtensionHeight(desired <= 22 ? 128 : desired, available);
-            if (height <= 0) { Collapse(); return; }
-            host.Height = height; host.Visibility = Visibility.Visible;
-            appliedHeight = baseHeight + height; layout.Height = appliedHeight;
-        }
+            => LayoutSections();
         private static void Collapse()
         {
             if (host != null) { host.Visibility = Visibility.Collapsed; host.Height = 0; }
+            CollapseAnchored();
             // Only restore our own value; a foreign writer's change is never overwritten.
-            if (layout != null && Math.Abs((float)layout.Height - appliedHeight) < 0.1f)
+            if (layout != null && AllyGoodsPanelLayoutPolicy.OwnsHeight((float)layout.Height, appliedHeight))
             { layout.Height = baseHeight; appliedHeight = baseHeight; }
         }
         private static void BindHost(FrameworkElement element)
@@ -253,8 +236,11 @@ namespace APIShared.Presentation
         private static void OnHostUnloaded(object sender, RoutedEventArgs args) => Detach();
         private static void Detach()
         {
+            DetachFooter();
             DetachAdornments();
             Collapse();
+            DetachAnchored();
+            SetSectionAvailability(false, "The goods host was unloaded.");
             if (host != null) host.Unloaded -= OnHostUnloaded;
             if (surface != null && host != null) host.Children.Remove(surface);
             host = null; layout = null; viewport = null; sections = null; surface = null;
@@ -268,7 +254,18 @@ namespace APIShared.Presentation
         /// <summary>Extender binding receiver. Consumers register sections instead of constructing this type.</summary>
         public sealed class HostBinding : INoesisElementBindingAware
         {
-            void INoesisElementBindingAware.OnNoesisElementBound(FrameworkElement element) => BindHost(element);
+            private FrameworkElement bound;
+            void INoesisElementBindingAware.OnNoesisElementBound(FrameworkElement element)
+            {
+                if (!ReferenceEquals(bound, element))
+                {
+                    if (bound != null) bound.Loaded -= Loaded;
+                    bound = element; bound.Loaded += Loaded;
+                }
+                BindHost(element);
+            }
+            private void Loaded(object sender, RoutedEventArgs args)
+            { if (ReferenceEquals(sender, bound)) BindHost(bound); }
         }
         private sealed class Visual
         {

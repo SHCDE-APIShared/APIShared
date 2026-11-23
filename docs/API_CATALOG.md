@@ -337,6 +337,10 @@ windows. See [the provider contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod
 `TryRegisterEarlyCapture` (0.67.0) opts a frozen record into early host
 capture. See [when to use early capture](THIRD_PARTY_GUIDE.md#early-capture-for-frozen-records).
 
+The [internal session](../src/Multiplayer/MultiplayerResyncDataSession.cs) owns
+the same repair state machine used by the native adapters and multi-peer tests.
+It has no consumer-specific record interpretation or reset policy.
+
 ## Source map
 
 Start at the linked contract to learn what a consumer may call. Read the service
@@ -1073,7 +1077,7 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 
 `Economy.AllyTransfers` exposes synchronous bounded gifts, physical capacity observations, and optional per-request suppression of Vanilla gift chat messages. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
 
-`Presentation.AllyGoodsPanelExtensions` coordinates independent sections beneath the existing send-goods dialog, noninteractive per-ware icon markers and immutable selection contexts. See [dialog extension contract](ALLY_GOODS_PANEL.md).
+`Presentation.AllyGoodsPanelExtensions` coordinates sections below the visible goods frame or the legacy menu root, compact footer controls with shared overflow, noninteractive per-ware icon markers and immutable selection contexts. Explicit layout roles preserve foreign controls; section registrations expose layout availability independently of gameplay authority. See [dialog extension contract](ALLY_GOODS_PANEL.md).
 
 ## Worker production bonus
 

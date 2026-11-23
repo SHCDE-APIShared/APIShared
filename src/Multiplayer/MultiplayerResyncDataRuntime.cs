@@ -4,15 +4,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
 using APIShared.Internal;
 using APIShared.Networking;
 using BepInEx.Logging;
 using static APIShared.Multiplayer.MultiplayerResyncDataPacket;
-using World = APIShared.Multiplayer.SimulationAgreement.AdmittedResyncWorld;
 
 namespace APIShared.Multiplayer
 {
+    // Process-lifetime adapters and registration. All repair flow is the same
+    // instantiable session implementation exercised by the multi-peer fixtures.
     internal static partial class MultiplayerResyncDataRuntime
     {
         internal sealed class Record
@@ -32,65 +32,43 @@ namespace APIShared.Multiplayer
             internal readonly Action<object> Commit;
         }
 
-        private sealed class Attempt
-        {
-            internal Attempt(World world, long repair, int recordCount)
-            {
-                World = world; Repair = repair; IsHost = world.Host == world.Local;
-                foreach (int slot in world.Peers.Keys) PlayerMask |= 1 << slot;
-                if (IsHost)
-                {
-                    Peers = new Dictionary<ulong, Peer>();
-                    foreach (ulong steam in world.Peers.Values)
-                        if (steam != world.Local) Peers.Add(steam, new Peer(recordCount));
-                }
-                else Nonce = NewNonce();
-            }
-            internal readonly World World;
-            internal readonly long Repair;
-            internal readonly bool IsHost;
-            internal readonly ulong Nonce;
-            internal readonly Dictionary<ulong, Peer> Peers;
-            internal readonly int PlayerMask;
-            internal byte[][] Local, Records;
-            internal byte[] Manifest, ManifestHash;
-            internal object[] Prepared;
-            internal long Deadline, NextHello;
-            internal bool RosterVerified, ReadySubmitted, Released, Committed;
-            internal string Fault;
-            internal int ReceiveIndex = -1, Received;
-            internal int RequestedRecords, TransferredBytes;
-        }
-
-        private sealed class Peer
-        {
-            internal Peer(int recordCount) { Delivered = new bool[recordCount]; }
-            internal readonly bool[] Delivered;
-            internal ulong Nonce;
-            internal bool Ready;
-            internal int Index = -1, Sent, Acknowledged;
-        }
-
         private static readonly object Gate = new object();
         private static readonly List<Record> Providers = new List<Record>();
-        private const int TransferTimeoutSeconds = 90;
         private static MessageChannel<MultiplayerResyncDataPacket> channel;
         private static ManualLogSource log;
         private static bool frozen;
-        private static int earlyRecordCount;
         private static string manifestDigest;
-        private static World observedWorld;
-        private static long repairNumber;
-        private static int bindQueued;
-        private static volatile Attempt current;
-
+        private static MultiplayerResyncDataSession session;
         internal static bool IsAvailable => channel != null && MultiplayerResyncNativeRuntime.IsDataAvailable;
-        // An elected world must reject a completion even when its local attempt was never opened.
+        // An elected world rejects completion even before its local attempt has opened.
         internal static bool HasActiveAttempt => SimulationAgreement.IsResyncCohortAdmitted;
 
         internal static void Initialize(ManualLogSource logger)
         {
             log = logger;
+            session = new MultiplayerResyncDataSession(Providers, new MultiplayerResyncDataSession.Services
+            {
+                GetWorld = SimulationAgreement.GetAdmittedResyncWorld,
+                BindWorld = SimulationAgreement.TryBindAdmittedResyncWorld,
+                IsWorldCurrent = SimulationAgreement.IsAdmittedResyncWorldCurrent,
+                VerifyRoster = SimulationAgreement.VerifyLiveResyncRoster,
+                IsCohortAdmitted = () => HasActiveAttempt,
+                IsFaulted = () => Economy.WorkerProductionWorldSafety.IsFaulted,
+                IsHost = () => MultiplayerResyncNativeRuntime.IsNativeHost,
+                IsClientReady = () => MultiplayerResyncNativeRuntime.IsNativeClientReady,
+                HoldsEngineMonitor = () => MultiplayerResyncDataNativeRuntime.HoldsEngineMonitor,
+                NativeRepairState = () => MultiplayerResyncNativeRuntime.NativeRepairState,
+                NativeRosterMatches = MultiplayerResyncDataNativeRuntime.NativeRosterMatches,
+                HasFreeQueueSlot = NativeChoreContext.HasFreeQueueSlot,
+                Timestamp = Stopwatch.GetTimestamp,
+                Frequency = Stopwatch.Frequency,
+                NewNonce = NewNonce,
+                EnqueueUnity = UnityMainThreadDispatch.TryEnqueue,
+                Send = (recipient, packet) => channel.SendToSteamPeer(packet, recipient),
+                UnderEngineMonitor = RunUnderEngineMonitor,
+                ReportFault = reason => SimulationAgreement.ReportFault("Multiplayer resync data: " + reason),
+                Completed = Completed
+            });
             channel = ApiShared.ForMod(APISharedPlugin.PluginGuid).Network.RegisterMessage<MultiplayerResyncDataPacket>(
                 "multiplayer-resync-data-v1", Receive, new MessageChannelOptions<MultiplayerResyncDataPacket>
                 {
@@ -99,7 +77,6 @@ namespace APIShared.Multiplayer
                     IsEnabled = () => HasActiveAttempt
                 });
         }
-
         internal static bool TryRegister(Record record, out string reason)
         {
             if (!UnityMainThreadDispatch.IsMainThread || !MultiplayerResyncData.CheckIntegrity())
@@ -124,7 +101,6 @@ namespace APIShared.Multiplayer
                     !SimulationAgreement.TryRegisterResyncCohort(FreezeManifest, MultiplayerResyncData.CheckIntegrity,
                         ApplyAgreement, out reason)) return false;
                 Providers.Add(record);
-                if (record.CaptureAtStart) earlyRecordCount++;
             }
             reason = string.Empty;
             return true;
@@ -172,294 +148,33 @@ namespace APIShared.Multiplayer
             }
         }
 
-        private static void ApplyAgreement(bool enabled)
+        private static void ApplyAgreement(bool enabled) => session?.Reset();
+        internal static void OnNativeStart() => session?.OnNativeStart();
+        internal static void OnEngineRun() => session?.OnEngineRun();
+        internal static bool AllowHostCompletion(long manager) => session?.AllowHostCompletion(manager) ?? !HasActiveAttempt;
+        internal static bool AllowRemoteRepairPacket(int sender) => session?.AllowRemoteRepairPacket(sender) == true;
+        internal static bool AllowRemoteCompletion(long manager, int sender) => session?.AllowRemoteCompletion(manager, sender) ?? !HasActiveAttempt;
+        internal static bool BeforeNativeComplete() => session?.BeforeNativeComplete() ?? !HasActiveAttempt;
+        internal static void OnNativeCompleted() => session?.OnNativeCompleted();
+        internal static byte[][] CaptureRecords(IReadOnlyList<Record> providers, byte[][] records, bool earlyOnly) =>
+            MultiplayerResyncDataSession.CaptureRecords(providers, records, earlyOnly);
+        private static void RunUnderEngineMonitor(Action action)
         {
-            lock (Gate)
-            {
-                current = null;
-                observedWorld = null;
-                repairNumber = 0;
-            }
+            lock (Economy.WorkerProductionWorldSafety.EngineGate) action();
         }
-
-        internal static void OnNativeStart()
-        {
-            var world = SimulationAgreement.GetAdmittedResyncWorld();
-            if (world == null)
-            {
-                if (HasActiveAttempt) Fail(null, "The admitted player slots could not be bound before native repair.");
-                return;
-            }
-            lock (Gate)
-            {
-                if (current != null && ReferenceEquals(current.World, world))
-                { Fail(current, "A new native repair overlapped an unfinished repair."); return; }
-                if (!ReferenceEquals(observedWorld, world))
-                { observedWorld = world; repairNumber = 0; }
-                var attempt = current = new Attempt(world, ++repairNumber, Providers.Count);
-                try
-                {
-                    if (!attempt.IsHost)
-                        attempt.Local = CaptureRecords(Providers, new byte[Providers.Count][], earlyOnly: false);
-                    else if (earlyRecordCount != 0)
-                    {
-                        attempt.Records = CaptureRecords(Providers, new byte[Providers.Count][], earlyOnly: true);
-                        if (earlyRecordCount == Providers.Count) SetManifest(attempt);
-                    }
-                }
-                catch (Exception error) { Fail(attempt, "Could not capture pre-repair data: " + error.Message); }
-            }
-        }
-
-        internal static void OnEngineRun()
-        {
-            if (SimulationAgreement.GetAdmittedResyncWorld() == null)
-            {
-                if (!Economy.WorkerProductionWorldSafety.IsFaulted &&
-                    Interlocked.Exchange(ref bindQueued, 1) == 0 &&
-                    !UnityMainThreadDispatch.TryEnqueue(BindWorldOnUnity))
-                    Volatile.Write(ref bindQueued, 0);
-                return;
-            }
-            if (current == null) return;
-            lock (Gate)
-            {
-                var attempt = current;
-                if (attempt?.Fault != null && SimulationAgreement.IsAdmittedResyncWorldCurrent(attempt.World))
-                {
-                    ReportFault(attempt.Fault);
-                    return;
-                }
-                if (!Live(attempt) || attempt.Committed) return;
-                try
-                {
-                    if (MultiplayerResyncNativeRuntime.NativeRepairState == 0)
-                    { Fail(attempt, "Vanilla aborted the repair before shared data committed."); return; }
-                    long now = Stopwatch.GetTimestamp();
-                    if (attempt.Deadline != 0 && now >= attempt.Deadline)
-                    { Fail(attempt, "Timed out waiting for the resync data transfer."); return; }
-                    if (attempt.IsHost) return;
-                    if (attempt.Deadline == 0 && MultiplayerResyncNativeRuntime.IsNativeClientReady)
-                        SetDeadline(attempt, now);
-                    if (attempt.Manifest == null)
-                    {
-                        if (now >= attempt.NextHello)
-                        {
-                            attempt.NextHello = now + Stopwatch.Frequency;
-                            QueueUnity(attempt, () =>
-                            {
-                                if (Live(attempt) && attempt.Manifest == null)
-                                    Send(attempt, attempt.World.Host, attempt.Nonce, Kind.Hello);
-                            });
-                        }
-                    }
-                    if (attempt.Records == null || attempt.ReceiveIndex >= 0 || attempt.Prepared != null ||
-                        !MultiplayerResyncNativeRuntime.IsNativeClientReady) return;
-                    attempt.Prepared = Prepare(attempt.Records);
-                    QueueUnity(attempt, () =>
-                    {
-                        if (!Live(attempt)) return;
-                        // A local Chore67 cannot observe the attempt before this assignment.
-                        attempt.ReadySubmitted = Send(attempt, attempt.World.Host, attempt.Nonce, Kind.Ready, body: attempt.ManifestHash);
-                        if (attempt.ReadySubmitted) SetDeadline(attempt, Stopwatch.GetTimestamp());
-                    });
-                }
-                catch (Exception error) { Fail(attempt, "Could not prepare repaired mod data: " + error.Message); }
-            }
-        }
-
-        private static void BindWorldOnUnity()
-        {
-            try { SimulationAgreement.TryBindAdmittedResyncWorld(); }
-            finally { Volatile.Write(ref bindQueued, 0); }
-        }
-
-        internal static bool AllowHostCompletion(long manager)
-        {
-            if (!HasActiveAttempt) return true;
-            lock (Gate)
-            {
-                var attempt = current;
-                if (attempt == null)
-                {
-                    Fail(null, "Vanilla reached host completion without an opened repair.");
-                    return false;
-                }
-                if (!Live(attempt) || !attempt.IsHost || attempt.Released) return false;
-                try
-                {
-                    if (!MultiplayerResyncNativeRuntime.IsNativeHost ||
-                        !MultiplayerResyncDataNativeRuntime.NativeRosterMatches(manager, attempt.PlayerMask))
-                    { Fail(attempt, "The native host or repair roster changed."); return false; }
-                    if (attempt.Prepared == null)
-                    {
-                        SetDeadline(attempt, Stopwatch.GetTimestamp());
-                        attempt.Records = CaptureRecords(Providers, attempt.Records ?? new byte[Providers.Count][], earlyOnly: false);
-                        attempt.Prepared = Prepare(attempt.Records);
-                        if (attempt.Manifest == null)
-                        {
-                            SetManifest(attempt);
-                            QueueUnity(attempt, () => AdvertiseManifest(attempt));
-                        }
-                        else
-                            StartDeferredWindows(attempt);
-                    }
-                    if (!Live(attempt) || !attempt.RosterVerified) return false;
-                    foreach (var peer in attempt.Peers.Values) if (!peer.Ready) return false;
-                    if (!NativeChoreContext.HasFreeQueueSlot(manager))
-                    { Fail(attempt, "The host Chore queue is full at resync completion."); return false; }
-                    // Vanilla queues the outgoing Chore 67 before executing it locally.
-                    // Publish the prepared host state while the queue is still untouched.
-                    Commit(attempt);
-                    attempt.Released = true;
-                    return true;
-                }
-                catch (Exception error) { Fail(attempt, "Could not prepare host resync data: " + error.Message); return false; }
-            }
-        }
-
-        internal static bool AllowRemoteRepairPacket(int sender)
-        {
-            var world = SimulationAgreement.GetAdmittedResyncWorld() ??
-                SimulationAgreement.TryBindAdmittedResyncWorld();
-            if (world == null)
-            {
-                Fail(null, "The admitted player slots could not be bound before a native repair packet.");
-                return false;
-            }
-            return world.Host != world.Local && sender == world.HostPlayerId;
-        }
-
-        internal static bool AllowRemoteCompletion(long manager, int sender)
-        {
-            if (!HasActiveAttempt) return true;
-            lock (Gate)
-            {
-                var world = SimulationAgreement.GetAdmittedResyncWorld();
-                var attempt = current;
-                if (world == null) return false;
-                if (sender != world.HostPlayerId) return false;
-                if (Live(attempt) && !attempt.IsHost && attempt.ReadySubmitted && !attempt.Committed &&
-                    NativeChoreContext.HasFreeQueueSlot(manager)) return true;
-                Fail(attempt, "The host completion arrived without a prepared local snapshot or free Chore slot.");
-                return false;
-            }
-        }
-
-        internal static bool BeforeNativeComplete()
-        {
-            if (!HasActiveAttempt) return true;
-            lock (Gate)
-            {
-                var attempt = current;
-                if (!Live(attempt) || attempt.Prepared == null ||
-                    !(attempt.IsHost ? attempt.Released : attempt.ReadySubmitted))
-                { Fail(attempt, "Native resync completion was not admitted."); return false; }
-                if (attempt.IsHost) return attempt.Committed;
-                if (attempt.Committed) return false;
-                try
-                {
-                    Commit(attempt);
-                    return true;
-                }
-                catch (Exception error)
-                { Fail(attempt, "Resync data commit failed: " + error.Message); return false; }
-            }
-        }
-
-        private static void Commit(Attempt attempt)
-        {
-            for (int i = 0; i < Providers.Count; i++) Providers[i].Commit(attempt.Prepared[i]);
-            attempt.Committed = true;
-        }
-
-        internal static void OnNativeCompleted()
-        {
-            Attempt completed;
-            lock (Gate)
-            {
-                completed = current;
-                if (completed?.Committed != true) return;
-                current = null;
-            }
-            NativeApiLog.Info(log, $"RESYNC_DATA_COMPLETED repair={completed.Repair} records={Providers.Count} " +
-                $"requestedRecords={completed.RequestedRecords} transferredBytes={completed.TransferredBytes}");
-        }
-
-        private static void SetDeadline(Attempt attempt, long now) =>
-            attempt.Deadline = now + TransferTimeoutSeconds * Stopwatch.Frequency;
-
-        internal static byte[][] CaptureRecords(IReadOnlyList<Record> providers, byte[][] records, bool earlyOnly)
-        {
-            for (int i = 0; i < records.Length; i++)
-            {
-                var provider = providers[i];
-                if (records[i] != null || earlyOnly && !provider.CaptureAtStart) continue;
-                byte[] bytes = provider.Capture();
-                if (bytes == null || bytes.Length > provider.Maximum)
-                    throw new InvalidDataException("Resync provider exceeded its declared bound: " + provider.Id);
-                records[i] = (byte[])bytes.Clone();
-            }
-            return records;
-        }
-
-        private static object[] Prepare(byte[][] bytes)
-        {
-            var replacement = new object[Providers.Count];
-            for (int i = 0; i < replacement.Length; i++) replacement[i] = Providers[i].Prepare(bytes[i]);
-            return replacement;
-        }
-
+        private static void Completed(long repair, int records, int requested, int transferred) =>
+            NativeApiLog.Info(log, $"RESYNC_DATA_COMPLETED repair={repair} records={records} " +
+                $"requestedRecords={requested} transferredBytes={transferred}");
         private static byte[] Hash(byte[] bytes)
         {
             using (var sha = SHA256.Create()) return sha.ComputeHash(bytes);
         }
-
         private static ulong NewNonce()
         {
             var bytes = new byte[sizeof(ulong)];
             using (var rng = RandomNumberGenerator.Create())
                 do { rng.GetBytes(bytes); } while (BitConverter.ToUInt64(bytes, 0) == 0);
             return BitConverter.ToUInt64(bytes, 0);
-        }
-
-        private static bool Live(Attempt attempt) => attempt != null && ReferenceEquals(attempt, current) &&
-            attempt.Fault == null && SimulationAgreement.IsAdmittedResyncWorldCurrent(attempt.World);
-
-        private static void Fail(Attempt attempt, string reason)
-        {
-            if (attempt != null)
-            {
-                if (!Live(attempt)) return;
-                attempt.Fault = reason;
-            }
-            if (MultiplayerResyncDataNativeRuntime.HoldsEngineMonitor)
-            {
-                ReportFault(reason);
-                return;
-            }
-            // Receive holds Gate. Reporting synchronously would take the engine monitor
-            // in the opposite order to the native guards.
-            UnityMainThreadDispatch.TryEnqueue(() =>
-            {
-                lock (Economy.WorkerProductionWorldSafety.EngineGate)
-                    if (attempt != null && SimulationAgreement.IsAdmittedResyncWorldCurrent(attempt.World))
-                        ReportFault(reason);
-            });
-        }
-
-        private static void ReportFault(string reason) =>
-            SimulationAgreement.ReportFault("Multiplayer resync data: " + reason);
-
-        private static void QueueUnity(Attempt attempt, Action action)
-        {
-            if (!UnityMainThreadDispatch.TryEnqueue(() =>
-            {
-                lock (Gate)
-                    if (Live(attempt))
-                        try { action(); }
-                        catch (Exception error) { Fail(attempt, error.Message); }
-            })) Fail(attempt, "The Unity transport dispatcher is unavailable.");
         }
     }
 }

@@ -47,7 +47,7 @@ namespace APIShared.Multiplayer
         {
             if (Interlocked.Exchange(ref initialized, 1) != 0) { publication.ThrowIfUnavailable(); return; }
             log = logger;
-            if (hash != Economy.AiMarketNativeRuntime.AuditedHash)
+            if (hash != ApiSharedRuntime.SupportedHash)
                 throw new InvalidOperationException("Resync lifecycle requires the audited native image.");
             if (!Economy.WorkerProductionWorldSafety.IsAvailable || !Economy.WorkerProductionRuntime.HasLifecycleOwner)
                 throw new InvalidOperationException("Resync lifecycle requires the terminal engine safety boundary and mission admission owner.");
