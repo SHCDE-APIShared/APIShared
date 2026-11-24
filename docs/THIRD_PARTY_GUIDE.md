@@ -1792,7 +1792,22 @@ show a line and what to log.
 `APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
 For blocking Ready/Start and prepared multiplayer-save admission, `LobbyLaunchGuards` supplies a context whose
 `RequiresPeerAgreement` distinguishes the exact Vanilla local Play/Coop branches
-from fresh network lobbies. Prepared saves run the same guards after settings and
+from fresh network lobbies. The additive `PreparedSave` snapshot identifies an
+SDK-owned selected-save attempt; it is null for ordinary buttons. Typed readiness
+registrations may return `Waiting` while peer data arrives, or `Rejected` for an
+invalid attempt. Existing string registrations retain their rejection behavior.
+See [prepared-save lifetime](SAVE_DATA.md#prepared-multiplayer-save-lifetime).
+
+`LobbyActionEvents.TryRegisterObserver` observes commands through the same permanent
+button hook. Register on Unity with your own owner GUID and stable ID. Notifications
+contain the lobby, command, Ready before/after, and whether the existing original
+hook chain was invoked. They do not prove physical user input or a successful game
+start. To preserve manual Unready, mark your own synchronous automatic command,
+then stop its intent on an observed `Ready` true-to-false transition outside that
+scope. Settings/map resets are not button notifications. Observer exceptions are
+isolated; nested observer commands execute normally without recursive observation.
+
+Prepared saves run the same guards after settings and
 fingerprint validation at host release, client acknowledgement and final start;
 their `HostLoadGame` context has a null lobby receiver, and only a freshly validated
 solo-host roster bypasses peer agreement. In-game MP flags are not lobby evidence. See the

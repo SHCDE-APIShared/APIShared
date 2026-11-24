@@ -601,6 +601,13 @@ automatic loads use current supported settings, subject to saved mission/creator
 [`SaveLoadDialogEvents`](../src/Savegames/SaveLoadDialogEvents.cs) coordinates ordered,
 owner-bound dialog gates and preparation. Preparations can reject the current attempt
 with a player-facing reason. See [dialog integration](MOD_SETTINGS.md#loadsave-requester-integration).
+`APIShared.Savegames.MultiplayerSavePreparation` exposes immutable, owner-observed
+progress of the existing multiplayer load attempt. Typed
+`APIShared.Lobby.LobbyLaunchGuards.TryRegisterReadiness` callbacks distinguish pending
+requirements from invalid attempts; the coordinator alone releases a checked load.
+See [prepared-save lifetime and admission](SAVE_DATA.md#prepared-multiplayer-save-lifetime).
+`APIShared.Lobby.LobbyActionEvents` observes local lobby commands, including actual
+Ready-to-Unready transitions, without a competing hook or another invocation.
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](MOD_SETTINGS.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.

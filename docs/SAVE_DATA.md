@@ -155,6 +155,45 @@ thrown into the game or the Extender.
   multiplayer save loads, map and campaign starts, editor loads and saves are pending
   in-game checks, as is the multiplayer record comparison with two players.
 
+## Prepared multiplayer save lifetime
+
+`APIShared.Savegames.MultiplayerSavePreparation` observes the existing save-load
+coordinator; it does not initiate a second load or send another protocol. Register
+an owner-bound observer on Unity during initialization. The current snapshot is
+immutable and may be retained or read from another thread. Notifications and
+optional current-state replay run on Unity, outside registry locks, in deterministic
+priority/owner/ID order; observer failures are isolated.
+
+Each snapshot identifies the SDK attempt, revision, lobby/host, local role, detached
+human roster, native save name/checksum/time, and this computer's checked local path
+and SHA-256. The latter is **not** a checksum to compare with another computer's
+whole save. Original native save checks and declared-record comparison remain in
+force. `Preparing` is published before the first readiness evaluation, including
+solo hosts that can proceed synchronously from the original call.
+
+The subsequent phases are `Acknowledged`, `Released`, `NativeLoading` and `Ended`.
+Not every peer reaches every phase. End reasons distinguish cancellation,
+replacement, timeout, rejection and ordinary scope completion. Scope completion is
+not evidence that a mission started: use the mission lifecycle and advancing native
+ticks for that. `Current` is cleared when an operation ends; queued callbacks can
+already observe a newer operation, so always match operation ID and revision.
+
+Use `LobbyLaunchGuards.TryRegisterReadiness` to return a typed `Ready`, `Waiting` or
+`Rejected` result. Waiting preserves the existing bounded save preparation, before
+client acknowledgement and host release. Final native admission remains strict.
+For ordinary buttons a waiting result still blocks that click. Existing string
+guards keep their original rejection semantics. The guard's optional `PreparedSave`
+snapshot supplies this same checked provenance and is null for ordinary buttons.
+
+A dialog preparation that publishes consumer data should keep an immutable local
+candidate bound to the selected file. Transfer it to the matching SDK attempt from
+`Preparing`, not from `AttemptFinished`: a solo host may have progressed further
+before the dialog callback returns. Discard untransferred candidates on failed
+attempts. On cancellation/replacement/timeout, withdraw only the ending operation's
+temporary overlays. After mission ownership transfers, stale preparation cleanup
+must not restore data over the new mission. Dialog `Confirmed` means its original
+callback returned, not that multiplayer loading or simulation completed.
+
 ## Multiplayer record comparison
 
 Set `SimulationRelevant = true` on a registration whose record holds simulation state that

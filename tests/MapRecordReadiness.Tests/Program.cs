@@ -40,7 +40,9 @@ internal static class Program
         object[] arguments = { Mp, null, false, false, false };
         return (bool)Boundary.RefreshHook.DynamicInvoke(arguments);
     }
-    private static void Save() => Boundary.SaveHook.DynamicInvoke(Mp, "save-name");
+    // Vanilla's selected save name is the basename of its real local file. The
+    // production coordinator now rechecks that same identity after observers run.
+    private static void Save() => Boundary.SaveHook.DynamicInvoke(Mp, Path.GetFileNameWithoutExtension(Boundary.Path));
     private static void Tick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/21-map-record-readiness"]();
     private static SavegameLoadPacket Reply(SavegameLoadPacket packet, int operation = 1) => new SavegameLoadPacket {
         Version = packet.Version, Operation = operation, Lobby = packet.Lobby, Token = packet.Token, SaveName = packet.SaveName, Checksum = packet.Checksum,

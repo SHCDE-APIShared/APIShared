@@ -1478,6 +1478,14 @@ APIShared.Input.ModKeybinds | public static event System.Action Changed
 APIShared.Input.ModKeybinds | public static string Format(APIShared.Input.KeybindChord chord)
 APIShared.Input.ModKeybinds | public static void CancelCapture(APIShared.Input.ModKeybindRegistration registration)
 APIShared.Input.ModKeybinds | public static void NotifyBindingChanged()
+APIShared.Lobby.LobbyActionEvents | public static class APIShared.Lobby.LobbyActionEvents
+APIShared.Lobby.LobbyActionEvents | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Lobby.LobbyActionNotification> observer, out string diagnostic, int order = 0)
+APIShared.Lobby.LobbyActionNotification | public sealed class APIShared.Lobby.LobbyActionNotification
+APIShared.Lobby.LobbyActionNotification | public bool OriginalInvoked { get; }
+APIShared.Lobby.LobbyActionNotification | public bool ReadyAfter { get; }
+APIShared.Lobby.LobbyActionNotification | public bool ReadyBefore { get; }
+APIShared.Lobby.LobbyActionNotification | public string Command { get; }
+APIShared.Lobby.LobbyActionNotification | public ulong LobbyId { get; }
 APIShared.Lobby.LobbyChatMessage | public sealed class APIShared.Lobby.LobbyChatMessage
 APIShared.Lobby.LobbyChatMessage | public bool IsSystemMessage { get; }
 APIShared.Lobby.LobbyChatMessage | public string Message { get; }
@@ -1487,12 +1495,26 @@ APIShared.Lobby.LobbyChatPresentation | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyChatPresentation | public static bool TryRegisterSystemMessageRule(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyChatMessage, bool> rule, out string diagnostic)
 APIShared.Lobby.LobbyLaunchGuardContext | public sealed class APIShared.Lobby.LobbyLaunchGuardContext
 APIShared.Lobby.LobbyLaunchGuardContext | public APIShared.Lobby.LobbyLaunchOperation Operation { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public APIShared.Savegames.MultiplayerSavePreparationSnapshot PreparedSave { get; }
 APIShared.Lobby.LobbyLaunchGuardContext | public CrusaderDE.FRONT_Multiplayer Lobby { get; }
 APIShared.Lobby.LobbyLaunchGuardContext | public bool RequiresPeerAgreement { get; }
 APIShared.Lobby.LobbyLaunchGuardContext | public string Command { get; }
+APIShared.Lobby.LobbyLaunchGuardResult | public struct APIShared.Lobby.LobbyLaunchGuardResult
+APIShared.Lobby.LobbyLaunchGuardResult | public .ctor(APIShared.Lobby.LobbyLaunchGuardState state, string reason)
+APIShared.Lobby.LobbyLaunchGuardResult | public readonly APIShared.Lobby.LobbyLaunchGuardState State
+APIShared.Lobby.LobbyLaunchGuardResult | public readonly string Reason
+APIShared.Lobby.LobbyLaunchGuardResult | public static APIShared.Lobby.LobbyLaunchGuardResult Ready { get; }
+APIShared.Lobby.LobbyLaunchGuardResult | public static APIShared.Lobby.LobbyLaunchGuardResult Rejected(string reason)
+APIShared.Lobby.LobbyLaunchGuardResult | public static APIShared.Lobby.LobbyLaunchGuardResult Waiting(string reason)
+APIShared.Lobby.LobbyLaunchGuardState | public enum APIShared.Lobby.LobbyLaunchGuardState : int
+APIShared.Lobby.LobbyLaunchGuardState | Ready = 0
+APIShared.Lobby.LobbyLaunchGuardState | Rejected = 2
+APIShared.Lobby.LobbyLaunchGuardState | Waiting = 1
 APIShared.Lobby.LobbyLaunchGuards | public static class APIShared.Lobby.LobbyLaunchGuards
 APIShared.Lobby.LobbyLaunchGuards | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, string> guard, out string diagnostic, int order = 0)
+APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegisterReadiness(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, APIShared.Lobby.LobbyLaunchGuardResult> guard, out string diagnostic)
+APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegisterReadiness(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, APIShared.Lobby.LobbyLaunchGuardResult> guard, out string diagnostic, int order)
 APIShared.Lobby.LobbyLaunchOperation | public enum APIShared.Lobby.LobbyLaunchOperation : int
 APIShared.Lobby.LobbyLaunchOperation | Ready = 0
 APIShared.Lobby.LobbyLaunchOperation | Start = 1
@@ -3380,6 +3402,37 @@ APIShared.Savegames.ManagedSaveCompletion | public bool? Result { get; }
 APIShared.Savegames.ManagedSaveCompletion | public string Path { get; }
 APIShared.Savegames.ManagedSaveEvents | public static class APIShared.Savegames.ManagedSaveEvents
 APIShared.Savegames.ManagedSaveEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Savegames.ManagedSaveCall, object> begin, System.Action<APIShared.Savegames.ManagedSaveCompletion, object> end, out string reason, int order = 0)
+APIShared.Savegames.MultiplayerSavePreparation | public static class APIShared.Savegames.MultiplayerSavePreparation
+APIShared.Savegames.MultiplayerSavePreparation | public static APIShared.Savegames.MultiplayerSavePreparationSnapshot Current { get; }
+APIShared.Savegames.MultiplayerSavePreparation | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Savegames.MultiplayerSavePreparationSnapshot> observer, out string diagnostic, bool replayCurrent = true, int order = 0)
+APIShared.Savegames.MultiplayerSavePreparationEndReason | public enum APIShared.Savegames.MultiplayerSavePreparationEndReason : int
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Cancelled = 1
+APIShared.Savegames.MultiplayerSavePreparationEndReason | None = 0
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Rejected = 4
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Replaced = 2
+APIShared.Savegames.MultiplayerSavePreparationEndReason | ScopeFinished = 5
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Timeout = 3
+APIShared.Savegames.MultiplayerSavePreparationPhase | public enum APIShared.Savegames.MultiplayerSavePreparationPhase : int
+APIShared.Savegames.MultiplayerSavePreparationPhase | Acknowledged = 1
+APIShared.Savegames.MultiplayerSavePreparationPhase | Ended = 4
+APIShared.Savegames.MultiplayerSavePreparationPhase | NativeLoading = 3
+APIShared.Savegames.MultiplayerSavePreparationPhase | Preparing = 0
+APIShared.Savegames.MultiplayerSavePreparationPhase | Released = 2
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public sealed class APIShared.Savegames.MultiplayerSavePreparationSnapshot
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public APIShared.Savegames.MultiplayerSavePreparationEndReason EndReason { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public APIShared.Savegames.MultiplayerSavePreparationPhase Phase { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public System.Collections.Generic.IReadOnlyList<ulong> HumanPeers { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public bool IsHost { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public int Checksum { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public int Time { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public long Revision { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string Detail { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string LocalHash { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string LocalPath { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string OperationId { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string SaveName { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public ulong HostId { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public ulong LobbyId { get; }
 APIShared.Savegames.NativeWorldRestoreContext | public struct APIShared.Savegames.NativeWorldRestoreContext
 APIShared.Savegames.NativeWorldRestoreContext | public APIShared.MissionContext Mission { get; }
 APIShared.Savegames.NativeWorldRestoreContext | public long InvocationId { get; }
