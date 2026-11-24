@@ -255,6 +255,52 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void ClientIgnoresHostReleaseArrivingAfterNativeLoadingStarted()
+        {
+            // Vanilla starts clients through the "start" lobby value, unordered with the P2P release.
+            // A release after ValidateStart must not move the phase backwards and abort the running load.
+            var flags = BindingFlags.Static | BindingFlags.NonPublic;
+            string[] fields = { "pending", "preparingDelivered", "hostId", "attemptHost", "localSavePath", "localSaveHash",
+                "released", "loading", "deadline" };
+            var previous = fields.ToDictionary(name => name, name => typeof(SavegameLoadCoordinator).GetField(name, flags).GetValue(null));
+            var state = MultiplayerSavePreparation.State; Assert.IsNull(state.Current);
+            Action<string, object> set = (name, value) => typeof(SavegameLoadCoordinator).GetField(name, flags).SetValue(null, value);
+            Func<string, object> get = name => typeof(SavegameLoadCoordinator).GetField(name, flags).GetValue(null);
+            var publish = typeof(SavegameLoadCoordinator).GetMethod("PublishPreparingCore", flags);
+            var advance = typeof(SavegameLoadCoordinator).GetMethod("PublishPhase", flags);
+            var release = typeof(SavegameLoadCoordinator).GetMethod("ApplyHostRelease", flags);
+            Action<bool> prepareClient = loading =>
+            {
+                set("pending", new SavegameLoadPacket { Token = Operation, Lobby = 10, SaveName = "MySave", Checksum = 123, Time = 456 });
+                set("hostId", 1UL); set("attemptHost", false); set("localSavePath", @"C:\save.sav"); set("localSaveHash", "local-only-hash");
+                set("released", false); set("loading", loading);
+                Assert.AreEqual(true, publish.Invoke(null, new object[] { new ulong[] { 1, 2 }, null }));
+                Assert.AreEqual(true, advance.Invoke(null, new object[] { MultiplayerSavePreparationPhase.Acknowledged }));
+                if (loading) Assert.AreEqual(true, advance.Invoke(null, new object[] { MultiplayerSavePreparationPhase.NativeLoading }));
+            };
+            try
+            {
+                prepareClient(true);
+                var proposal = get("pending");
+                release.Invoke(null, null);
+                Assert.AreSame(proposal, get("pending"), "A late release retired the running load.");
+                Assert.AreEqual(MultiplayerSavePreparationPhase.NativeLoading, state.Current.Phase);
+                Assert.AreEqual(true, get("loading"));
+                state.End(Operation, MultiplayerSavePreparationEndReason.ScopeFinished, null);
+
+                prepareClient(false);
+                release.Invoke(null, null);
+                Assert.AreEqual(MultiplayerSavePreparationPhase.Released, state.Current.Phase, "An ordinary release no longer advances the client.");
+                Assert.AreEqual(true, get("released"));
+            }
+            finally
+            {
+                if (state.Current != null) state.End(state.Current.OperationId, MultiplayerSavePreparationEndReason.ScopeFinished, null);
+                foreach (var pair in previous) set(pair.Key, pair.Value);
+            }
+        }
+
+        [TestMethod]
         public void NestedCleanupBoundariesClearCurrentImmediatelyAndFlushBeforeReturning()
         {
             var state = new MultiplayerSavePreparationState(_ => { });

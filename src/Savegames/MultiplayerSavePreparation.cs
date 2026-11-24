@@ -13,7 +13,8 @@ namespace APIShared.Savegames
         Preparing,
         /// <summary>This client submitted its readiness acknowledgement to the host.</summary>
         Acknowledged,
-        /// <summary>The host released this preparation to the ordinary native loader.</summary>
+        /// <summary>The host released this preparation to the ordinary native loader. A client can go from
+        /// Acknowledged directly to NativeLoading when Vanilla's start arrives before the host's release.</summary>
         Released,
         /// <summary>Final local native-start admission succeeded; mission initialization can still fail.</summary>
         NativeLoading,

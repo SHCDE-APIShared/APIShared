@@ -372,6 +372,10 @@ namespace APIShared.Economy
             if(!frozenBundle.CanStart || frozenDescriptor.LocalFailure!=null)
                 throw new InvalidOperationException("Production rules/save requirements are invalid: "+frozenDescriptor.LocalFailure);
             startingDigest=frozenDescriptor.Digest();
+            // Reviewed 2026-11-24, intentionally kept: compare with the source's starting digest, not its admitted one.
+            // A provider value recommitted after the source's Begin would make this differ and refuse the restart;
+            // providers publish on settings changes, which are locked during missions. Refusing is fail-safe;
+            // accepting the admitted digest instead would weaken the agreement check.
             if(restartApproval!=null && restartApproval.StartingDigest!=startingDigest)
                 throw new InvalidOperationException("The multiplayer restart production rules or map records differ from the confirmed source mission.");
             bool extended=frozenBundle.RequiresExtendedWire || selectedRequirement.RequiresExtended || frozenWeaponCatalog.HasOptions;

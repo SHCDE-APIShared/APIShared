@@ -505,6 +505,9 @@ namespace APIShared.Multiplayer
             return HasLiveResyncRoster(platform) && MatchesLiveResyncRoster(platform, snapshot);
         }
 
+        // Reviewed 2026-11-24, intentionally kept: no binding while a lobby is still active. CastlePlanner keeps
+        // the lobby during castle selection, but also keeps the game paused, so no desync repair can occur before
+        // it leaves the lobby and binding succeeds.
         private static bool HasLiveResyncRoster(Platform_Multiplayer platform) =>
             Platform_Multiplayer.MPGameActive && platform != null &&
             platform.GetActiveLobby() == null && platform.gameMembers != null;

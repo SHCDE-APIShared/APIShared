@@ -72,6 +72,8 @@ namespace APIShared.Presentation
         /// executes the supplied action. Notify relevant changes through the returned handle, never polling.
         /// Consumers retain mission, multiplayer authority, confirmation and pause handling. Failed providers disable
         /// and consume the action; callback failures are isolated and logged once. No retry, replay or unregistration.
+        /// If APIShared cannot take over a menu's layout (logged as an error), that menu stays Vanilla: the override
+        /// neither changes the button nor intercepts its command, and the provider is not called.
         /// Existing placement registrations remain independent, including an original button moved to the extra page.</remarks>
         public static bool TryOverrideVanillaAction(string ownerGuid, string id, IngameMenuRow row,
             Func<bool?> enabled, Action execute, out IngameMenuActionRegistration registration, out string reason)
@@ -286,7 +288,7 @@ namespace APIShared.Presentation
         internal static bool TryExecuteVanillaOverride(HUD_IngameMenu view, int function)
         {
             var entry = vanillaOverrides.Get(function);
-            if (entry == null) return false;
+            if (entry == null || IsRejectedView(view)) return false;
             return ExecuteVanillaOverride(entry, view);
         }
         // Keep the optional click-validation closure out of the ordinary no-override path.

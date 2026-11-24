@@ -104,6 +104,8 @@ namespace APIShared.Presentation
             BuildingPanelPresenterEntry presenter = null;
             foreach (BuildingPanelPresenterEntry entry in registry.Presenters)
                 if (entry.Owner == context.PresenterOwnerGuid && entry.Id == context.PresenterRegistrationId) { presenter = entry; break; }
+            // Only the ID is compared here; a reused ID of a destroyed building is rejected by the request's
+            // GlobalId in BuildingActions.TryExecute.
             if (presenter == null || !TryQuery(presenter, out int shown, out int acting) ||
                 shown != context.BuildingId || acting != context.ActingPlayerId)
             { reason = "The presenter no longer shows this building."; return false; }

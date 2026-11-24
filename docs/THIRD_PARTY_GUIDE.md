@@ -1985,6 +1985,9 @@ null to keep Vanilla behavior, false to disable and consume the command, or true
 to enable the button and invoke your action instead of Vanilla. It is evaluated
 freshly at the click, including when the visible enabled state has become stale.
 The consumer supplies its own authority/session checks and confirmation/pause flow.
+If APIShared cannot take over a menu's layout (for example after a game update; the
+error is logged), that menu stays Vanilla: the override neither changes the button
+nor intercepts its command, and the provider is not called.
 
 Only one permanent override may own a row. Conflicts and duplicate owner-local IDs
 are rejected without replacing the earlier registration. Providers, commands and

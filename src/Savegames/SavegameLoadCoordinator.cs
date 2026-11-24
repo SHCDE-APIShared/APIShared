@@ -277,13 +277,18 @@ namespace APIShared
                 deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
                 PublishPreparingCore(Humans(lobby), Tick);
             }
-            else if (pending?.Token == packet.Token && packet.Operation == 2)
-            {
-                if (released) return;
-                deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
-                released = true;
-                PublishPhase(MultiplayerSavePreparationPhase.Released);
-            }
+            else if (pending?.Token == packet.Token && packet.Operation == 2) ApplyHostRelease();
+        }
+
+        // Vanilla starts clients through the "start" lobby value, which is not ordered with this
+        // P2P release. Once ValidateStart admitted the native load (NativeLoading), a late release
+        // is implied and must not move the phase backwards, which would abort the running load.
+        private static void ApplyHostRelease()
+        {
+            if (released || loading) return;
+            deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
+            released = true;
+            PublishPhase(MultiplayerSavePreparationPhase.Released);
         }
 
         private static bool IsCurrentProposal(SavegameLoadPacket proposal, long generation) =>

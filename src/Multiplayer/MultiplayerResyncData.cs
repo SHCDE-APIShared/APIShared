@@ -11,7 +11,8 @@ namespace APIShared.Multiplayer
         /// <summary>Checks the live shared hooks for startup or multiplayer admission.</summary>
         public static bool CheckIntegrity() => IsAvailable && MultiplayerResyncNativeRuntime.CheckDataIntegrity();
 
-        /// <summary>Registers one required, versioned record on the Unity thread after native initialization and before multiplayer admission.</summary>
+        /// <summary>Registers one required, versioned record on the Unity thread after native initialization and before
+        /// the first multiplayer lobby roster of this process resolves; registration then closes for the process.</summary>
         /// <remarks>
         /// Register the same records on all peers. Capture returns a private canonical byte array, including an
         /// empty array for inactive data. Prepare validates host bytes against the repaired world and returns

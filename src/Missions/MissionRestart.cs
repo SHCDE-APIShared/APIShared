@@ -25,7 +25,8 @@ namespace APIShared
         /// immutable ReplacementContext to transfer their existing state, and clean up on failure/end.</remarks>
         /// <exception cref="ArgumentException">The owner GUID is blank.</exception>
         /// <exception cref="ArgumentNullException">The action is null.</exception>
-        /// <exception cref="InvalidOperationException">The service/thread/source is unavailable.</exception>
+        /// <exception cref="InvalidOperationException">The service/thread/source is unavailable, or a direct
+        /// multiplayer map restart did not finish loading (its source mission has already ended).</exception>
         public static void Run(string ownerGuid, Action restart)
         {
             if (string.IsNullOrWhiteSpace(ownerGuid)) throw new ArgumentException("A restart requires an owner GUID.", nameof(ownerGuid));

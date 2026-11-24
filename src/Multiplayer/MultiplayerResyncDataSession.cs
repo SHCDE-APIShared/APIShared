@@ -235,6 +235,9 @@ namespace APIShared.Multiplayer
             }
         }
 
+        // Reviewed 2026-11-24, intentionally kept: a repair needs a desync detected over several admitted ticks,
+        // by which time the engine-run bind has happened. An unbound world faults instead of dropping the packet,
+        // because a dropped packet would let Vanilla repair without the shared records.
         internal bool AllowRemoteRepairPacket(int sender)
         {
             var world = services.GetWorld() ??
@@ -334,6 +337,8 @@ namespace APIShared.Multiplayer
         private bool Live(Attempt attempt) => attempt != null && ReferenceEquals(attempt, current) &&
             attempt.Fault == null && services.IsWorldCurrent(attempt.World);
 
+        // Fail(null, ...) must be called while holding the engine monitor: the deferred path below reports
+        // only for a live attempt. Every current null caller runs inside the native guards.
         private void Fail(Attempt attempt, string reason)
         {
             if (attempt != null)

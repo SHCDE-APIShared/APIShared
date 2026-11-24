@@ -334,6 +334,25 @@ namespace Core.Tests
             Assert.AreEqual(2, executions);
         }
         [TestMethod]
+        public void RejectedLayoutKeepsVanillaDispatchOnlyForThatUnchangedView()
+        {
+            // A menu whose layout contract is rejected stays Vanilla, so overrides must not swallow its commands.
+            var registry = new IngameMenuRegistry();
+            var foreign = Menu(); var moved = Original(foreign, "ButtonLoad");
+            ((StackPanel)foreign.Names["LeftPanel"]).Children.Remove(moved); new StackPanel().Children.Add(moved);
+            Assert.ThrowsExactly<InvalidOperationException>(() => IngameMenuActions.TestAttach(foreign, registry));
+            Assert.IsTrue(IngameMenuActions.IsRejectedView(foreign));
+            var missing = Menu(); missing.Resources.Remove("APISharedMenuTooltipStyle");
+            Assert.ThrowsExactly<InvalidOperationException>(() => IngameMenuActions.TestAttach(missing, registry));
+            Assert.IsTrue(IngameMenuActions.IsRejectedView(missing));
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(foreign), "Only the last attempted view is rejected.");
+            var accepted = Menu();
+            IngameMenuActions.TestAttach(accepted, registry);
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(accepted));
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(missing), "A replaced view keeps the stale-view consumption.");
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(null!));
+        }
+        [TestMethod]
         public void CustomContextRejectsEffectiveDisableBeforeAndAfterProviderRevalidation()
         {
             var menu = Menu(); var registry = new IngameMenuRegistry();

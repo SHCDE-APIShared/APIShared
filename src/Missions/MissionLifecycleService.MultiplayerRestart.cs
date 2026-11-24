@@ -152,6 +152,9 @@ namespace APIShared
                     throw new InvalidOperationException("No confirmed source map is available for this multiplayer restart.");
                 if (!outer.HasRestartProductionApproval)
                     throw new InvalidOperationException("The source mission has no confirmed production configuration.");
+                // Reviewed 2026-11-24, intentionally kept: a rejection here comes after Run's Begin ended the
+                // source mission. Consumers pre-check with MissionRestart.TryValidateMultiplayerMap on the same
+                // Unity call, so only arguments that differ from the pre-check reach this; failing is the safe outcome.
                 outer.RestartSourceMap.CheckArguments(args, true);
                 file = outer.RestartSourceMap.File;
                 var decision = coop > 0 ? MapLoadDecision.Allow() : MapLoadPolicy.Evaluate(map.filePath);

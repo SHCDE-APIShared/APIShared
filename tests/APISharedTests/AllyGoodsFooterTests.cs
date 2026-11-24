@@ -24,10 +24,20 @@ namespace APISharedTests
                 {
                     Assert.IsFalse(instruction.OpCode == OpCodes.Newobj || instruction.OpCode == OpCodes.Newarr ||
                         instruction.OpCode == OpCodes.Box, "Allocation before the dormant footer return: " + instruction);
-                    if (instruction.OpCode == OpCodes.Ret) { returned = true; break; }
+                    if (IsReturn(instruction)) { returned = true; break; }
                 }
                 Assert.IsTrue(returned);
             }
+        }
+
+        // Debug builds compile an early return as a jump to one shared ret at the method end; Release emits ret inline.
+        private static bool IsReturn(Instruction instruction)
+        {
+            if (instruction.OpCode == OpCodes.Ret) return true;
+            if (instruction.OpCode != OpCodes.Br && instruction.OpCode != OpCodes.Br_S) return false;
+            var target = instruction.Operand as Instruction;
+            while (target != null && target.OpCode == OpCodes.Nop) target = target.Next;
+            return target?.OpCode == OpCodes.Ret;
         }
 
         [TestMethod]
