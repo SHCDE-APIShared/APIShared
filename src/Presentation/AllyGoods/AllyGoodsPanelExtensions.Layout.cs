@@ -73,6 +73,8 @@ namespace APIShared.Presentation
                 BorderBrush = new SolidColorBrush(Color.FromArgb(255, 242, 212, 138)), BorderThickness = new Thickness(1),
                 Padding = new Thickness(10), Child = new ScrollViewer { Content = anchoredSections,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+            standardAnchoredBackground = anchoredSurface.Background; standardAnchoredBorder = anchoredSurface.BorderBrush;
+            standardAnchoredPadding = anchoredSurface.Padding; standardAnchoredBorderThickness = anchoredSurface.BorderThickness;
             anchoredHost = new Grid { Height = 0, Visibility = Visibility.Collapsed,
                 HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top };
             anchoredHost.Children.Add(anchoredSurface); layout.Children.Add(anchoredHost);
@@ -104,7 +106,8 @@ namespace APIShared.Presentation
                 if (visual.Container.Parent != null && !ReferenceEquals(visual.Container.Parent, panel))
                 { Report("section-parent:" + entry.Owner + "/" + entry.Id, new InvalidOperationException("Section control is already attached elsewhere.")); continue; }
                 visual.Container.IsEnabled = entry.Enabled;
-                visual.Container.Margin = new Thickness(0, desired.Count == 0 ? 0 : 8, 0, 0);
+                float spacing = placement == AllyGoodsSectionPlacement.GoodsDialogBottom ? surfaceFrameOptions?.SectionSpacing ?? 8 : 8;
+                visual.Container.Margin = new Thickness(0, desired.Count == 0 ? 0 : spacing, 0, 0);
                 desired.Add(visual.Container);
             }
             // Preserve unchanged controls/focus. Hiding one owner never unloads every
@@ -148,17 +151,29 @@ namespace APIShared.Presentation
             bool marked = needsMarked && TryGetGoodsBottom(out goodsBottom, out reason);
             bool showGoods = marked && anchoredSections != null && anchoredSections.Children.Count != 0;
             bool showLegacy = sections.Children.Count != 0;
+            var presentation = PrepareFramePresentation(showGoods);
+            SetFrameSurface(presentation?.Options);
+            float goodsDesired = showGoods ? DesiredAnchoredHeight(presentation?.Options) : 0;
             if (!AllyGoodsPanelLayoutPolicy.TryCompose(baseHeight, goodsBottom, viewportBottom,
-                showGoods ? DesiredSectionHeight(anchoredSections) : 0, showGoods,
-                showLegacy ? DesiredSectionHeight(sections) : 0, showLegacy, out var plan))
+                goodsDesired, showGoods, showLegacy ? DesiredSectionHeight(sections) : 0, showLegacy,
+                presentation?.Options, out var plan))
             { Collapse(); SetSectionAvailability(false, "The goods layout geometry is unavailable."); return; }
+            if (!ApplyFramePresentation(presentation, plan))
+            {
+                RestoreFramePresentation(); frameBlocked = true; presentation = null; SetFrameSurface(null);
+                if (!AllyGoodsPanelLayoutPolicy.TryCompose(baseHeight, goodsBottom, viewportBottom,
+                    showGoods ? DesiredSectionHeight(anchoredSections) : 0, showGoods,
+                    showLegacy ? DesiredSectionHeight(sections) : 0, showLegacy, out plan))
+                { Collapse(); SetSectionAvailability(false, "The goods layout geometry is unavailable."); return; }
+            }
             // Include hidden sections, but account for preceding anchored content
             // when reporting whether legacy sections have any remaining space.
             foreach (var entry in registry.Entries)
             {
                 bool ownMarked = entry.Placement == AllyGoodsSectionPlacement.GoodsDialogBottom;
                 float start = ownMarked ? goodsBottom : plan.LegacyTop;
-                bool available = (!ownMarked || marked) && viewportBottom - start - 8 > 0;
+                float reserve = ownMarked && presentation != null ? presentation.Options.VisualOverflow.Bottom + presentation.Options.ViewportMargin : 8;
+                bool available = (!ownMarked || marked) && viewportBottom - start - reserve > 0;
                 entry.SetLayoutAvailability(available, ownMarked && !marked ? reason : "There is no remaining space for this section.", layoutObserverFailed);
             }
             if (anchoredHost != null)
@@ -173,13 +188,20 @@ namespace APIShared.Presentation
         }
         private static void CollapseAnchored()
         {
+            RestoreFramePresentation(); SetFrameSurface(null);
             if (anchoredHost != null) { anchoredHost.Visibility = Visibility.Collapsed; anchoredHost.Height = 0; }
         }
         private static void DetachAnchored()
         {
+            DetachFramePresentation();
             if (anchoredHost != null && layout != null) layout.Children.Remove(anchoredHost);
             anchoredHost = null; anchoredSections = null; anchoredSurface = null;
             goodsFrame = footerBackground = null; footerAnchor = null; markedResolved = false; markedFailure = null;
+        }
+        private static float DesiredAnchoredHeight(AllyGoodsFrameOptions options)
+        {
+            if (options == null) return DesiredSectionHeight(anchoredSections);
+            return (float)anchoredSections.DesiredSize.Height + options.ContentPadding.Top + options.ContentPadding.Bottom;
         }
     }
 }

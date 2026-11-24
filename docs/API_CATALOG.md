@@ -1087,7 +1087,7 @@ save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 
 `Economy.AllyTransfers` exposes synchronous bounded gifts, physical capacity observations, and optional per-request suppression of Vanilla gift chat messages. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
 
-`Presentation.AllyGoodsPanelExtensions` coordinates sections below the visible goods frame or the legacy menu root, compact footer controls with shared overflow, noninteractive per-ware icon markers and immutable selection contexts. Explicit layout roles preserve foreign controls; section registrations expose layout availability independently of gameplay authority. See [dialog extension contract](ALLY_GOODS_PANEL.md).
+`Presentation.AllyGoodsPanelExtensions` coordinates sections below the visible goods frame or the legacy menu root, opt-in shared frame presentations with consumer-supplied decoration and metrics, compact footer controls with shared overflow, noninteractive per-ware icon markers and immutable selection contexts. Explicit layout roles preserve foreign controls; section registrations expose layout availability independently of gameplay authority. See [dialog extension contract](ALLY_GOODS_PANEL.md).
 
 ## Worker production bonus
 

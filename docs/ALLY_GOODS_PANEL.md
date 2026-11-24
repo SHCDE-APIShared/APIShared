@@ -1,7 +1,7 @@
 # Ally goods dialog extensions
 
 `APIShared.Presentation.AllyGoodsPanelExtensions` provides independent sections below
-Vanilla's **Send goods** dialog, compact footer controls and noninteractive markers
+Vanilla's **Send goods** dialog, optional shared frame presentations, compact footer controls and noninteractive markers
 on its goods icons. It retains the existing goods selection, amount
 buttons, commands, names, DataContexts and other mods' controls. This is UI only;
 it does not send gifts or authorize gameplay actions.
@@ -50,6 +50,72 @@ are isolated. Layout may still be unavailable before the first completed GUI
 layout pass. A footer launcher can use this notification to disable itself and
 present its own localized explanation without submitting an edit or game command.
 The compiled example shows this pattern.
+
+## Registering a frame presentation
+
+An optional frame presentation supplies the shared decoration for the marked goods
+frame and `GoodsDialogBottom` sections. It is a separate registration, not a style
+or background attached privately to one owner's section:
+
+    var options = new AllyGoodsFrameOptions(
+        new Thickness(10, 8, 10, 8), // contentPadding
+        new Thickness(3),          // visualOverflow
+        200,                       // maximumExtensionHeight
+        8,                         // viewportMargin
+        8);                        // sectionSpacing
+    if (!AllyGoodsPanelExtensions.TryRegisterFramePresentation(MyGuid, "details-frame",
+        context => CreateFreshFrameDecoration(context), options,
+        out var frame, out string reason))
+        Log(reason);
+    else
+        frame.SetEnabled(detailsExpanded);
+
+Register on the initialized Unity thread after readiness. The registration starts
+disabled. `SetEnabled` selects whether this owner participates; it does not toggle
+sections or grant gameplay permission. `RequestContentRefresh` recreates the
+decoration and explicitly retries a failed factory. Registrations last until
+process exit and have their own owner-local ID namespace.
+
+Enabled profiles sort by ascending order, ordinal GUID and ID. The first enabled
+profile supplies the common goods-anchored presentation for all contributors.
+It is used only while that group has visible content.
+There is no fallback to a later profile if its factory fails. In that case the
+original frame and existing standard section geometry remain available; retry
+explicitly or disable the selected profile. No active presentation preserves the
+existing standard rendering and layout. This opt-in does not apply new styles or
+content metrics to `PanelRootBottom`; its subsequent placement still clears the
+goods-anchored presentation, including declared bottom overflow. Footer controls
+and gameplay remain independent.
+
+`AllyGoodsFrameContext` exposes the attached `Host`, marked `OriginalFrame`, and
+factory-time `Selection`. Return a fresh unattached noninteractive decoration;
+APIShared supplies its bounds and disables interaction. Do not move native
+controls into it, retain the host across HUD recreation, or modify the original
+frame. Successful and failed factory results are cached per HUD and profile until
+explicit content refresh or host replacement. They are not recomputed for every
+ware/recipient change. The compiled example checks a fresh context's
+`PanelGeneration` against the factory snapshot before creating its decoration.
+Returning null explicitly declines the current layout and is cached by the same
+retry policy, keeping the standard presentation.
+
+`AllyGoodsFrameOptions` is immutable and has no implicit layout defaults. Pass
+content padding, visual overflow, maximum extension height, viewport margin and
+section spacing explicitly. All thickness components and scalar values must be
+finite and nonnegative; maximum extension height must be positive. Content
+padding belongs inside the shared extension scroll surface; section spacing is
+the vertical gap between its section containers. Visual overflow
+declares decoration outside the assigned frame bounds on all four sides; its bottom allowance is
+also reserved when computing viewport room and subsequent legacy placement.
+The consumer supplies its own colors, templates, assets and metric values;
+APIShared supplies no Vanilla style key or color palette for this path.
+
+The original frame keeps its position and dimensions. APIShared can temporarily
+own only its opacity while the joined decoration is active, and restores the
+owned opacity when it stops. An existing opacity binding or incompatible frame
+prevents joining: the original display and standard geometry remain unchanged.
+Consumer factories must never change that opacity themselves or overwrite
+foreign bindings. Rendering, clipping and popup coexistence still require game
+acceptance; a successful factory or compile is not a rendering test.
 
 ## Registering footer controls
 
@@ -163,7 +229,10 @@ of the original root height and the end of the goods-anchored group. For example
 with a 484-high menu root and an unchanged 320-high goods frame, a new anchored
 section starts at 320 while a legacy section starts at least at 484.
 
-Each group scrolls within the remaining viewport and its 260-unit maximum. The
+Without an active frame presentation, each group scrolls within the remaining
+viewport and its existing 260-unit maximum. An active profile supplies explicit
+goods-anchored content metrics and an extension limit; legacy placement retains
+its existing contract. The
 runtime extends the original root only as far as needed and restores its original
 height when extensions close, provided no foreign writer has changed its owned
 value. It never reduces a taller original root or manually measures unattached

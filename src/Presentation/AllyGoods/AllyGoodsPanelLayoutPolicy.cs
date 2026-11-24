@@ -26,13 +26,24 @@ namespace APIShared.Presentation
         }
         internal static bool TryCompose(float rootHeight, float goodsBottom, float localViewportBottom,
             float goodsDesired, bool goodsVisible, float legacyDesired, bool legacyVisible, out AllyGoodsPanelLayoutPlan result)
+            => TryCompose(rootHeight, goodsBottom, localViewportBottom, goodsDesired, goodsVisible,
+                legacyDesired, legacyVisible, null, out result);
+
+        internal static bool TryCompose(float rootHeight, float goodsBottom, float localViewportBottom,
+            float goodsDesired, bool goodsVisible, float legacyDesired, bool legacyVisible,
+            AllyGoodsFrameOptions frame, out AllyGoodsPanelLayoutPlan result)
         {
             result = default;
             if (!Finite(rootHeight) || rootHeight <= 0 || !Finite(localViewportBottom) ||
                 goodsVisible && (!Finite(goodsBottom) || goodsBottom < 0 || goodsBottom > rootHeight + 0.1f)) return false;
-            float goodsHeight = goodsVisible ? AllyGoodsContextPolicy.ExtensionHeight(goodsDesired,
-                Math.Max(0, localViewportBottom - goodsBottom - 8)) : 0;
-            float goodsEnd = goodsVisible ? goodsBottom + goodsHeight : 0;
+            float margin = frame?.ViewportMargin ?? 8;
+            float overflow = frame?.VisualOverflow.Bottom ?? 0;
+            float maximum = frame?.MaximumExtensionHeight ?? 260;
+            float desired = !Finite(goodsDesired) || goodsDesired <= 0 ? maximum : goodsDesired;
+            float available = Math.Max(0, localViewportBottom - goodsBottom - overflow - margin);
+            float goodsHeight = !goodsVisible ? 0 : frame == null ? AllyGoodsContextPolicy.ExtensionHeight(goodsDesired, available) :
+                Math.Max(0, Math.Min(Math.Min(desired, maximum), available));
+            float goodsEnd = goodsVisible && goodsHeight > 0 ? goodsBottom + goodsHeight + overflow : 0;
             float legacyTop = Math.Max(rootHeight, goodsEnd);
             float legacyHeight = legacyVisible ? AllyGoodsContextPolicy.ExtensionHeight(legacyDesired,
                 Math.Max(0, localViewportBottom - legacyTop - 8)) : 0;

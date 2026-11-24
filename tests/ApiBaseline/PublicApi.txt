@@ -2900,6 +2900,20 @@ APIShared.Presentation.AllyGoodsFooterRegistration | public sealed class APIShar
 APIShared.Presentation.AllyGoodsFooterRegistration | public void RequestContentRefresh()
 APIShared.Presentation.AllyGoodsFooterRegistration | public void SetEnabled(bool enabled)
 APIShared.Presentation.AllyGoodsFooterRegistration | public void SetVisible(bool visible)
+APIShared.Presentation.AllyGoodsFrameContext | public sealed class APIShared.Presentation.AllyGoodsFrameContext
+APIShared.Presentation.AllyGoodsFrameContext | public APIShared.Presentation.AllyGoodsPanelContext Selection { get; }
+APIShared.Presentation.AllyGoodsFrameContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.AllyGoodsFrameContext | public Noesis.FrameworkElement OriginalFrame { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public sealed class APIShared.Presentation.AllyGoodsFrameOptions
+APIShared.Presentation.AllyGoodsFrameOptions | public .ctor(Noesis.Thickness contentPadding, Noesis.Thickness visualOverflow, float maximumExtensionHeight, float viewportMargin, float sectionSpacing)
+APIShared.Presentation.AllyGoodsFrameOptions | public Noesis.Thickness ContentPadding { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public Noesis.Thickness VisualOverflow { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public float MaximumExtensionHeight { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public float SectionSpacing { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public float ViewportMargin { get; }
+APIShared.Presentation.AllyGoodsFrameRegistration | public sealed class APIShared.Presentation.AllyGoodsFrameRegistration
+APIShared.Presentation.AllyGoodsFrameRegistration | public void RequestContentRefresh()
+APIShared.Presentation.AllyGoodsFrameRegistration | public void SetEnabled(bool enabled)
 APIShared.Presentation.AllyGoodsPanelAnchorRole | public enum APIShared.Presentation.AllyGoodsPanelAnchorRole : int
 APIShared.Presentation.AllyGoodsPanelAnchorRole | Footer = 2
 APIShared.Presentation.AllyGoodsPanelAnchorRole | FooterBackground = 3
@@ -2923,6 +2937,7 @@ APIShared.Presentation.AllyGoodsPanelContext | public long PanelGeneration { get
 APIShared.Presentation.AllyGoodsPanelExtensions | public static class APIShared.Presentation.AllyGoodsPanelExtensions
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryGetContext(out APIShared.Presentation.AllyGoodsPanelContext context)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterFooterControl(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsFooterRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterFramePresentation(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsFrameContext, Noesis.FrameworkElement> factory, APIShared.Presentation.AllyGoodsFrameOptions options, out APIShared.Presentation.AllyGoodsFrameRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterGoodsAdornment(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, SHCDESE.Interop.eGoods, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsAdornmentRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, APIShared.Presentation.AllyGoodsSectionPlacement placement, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)

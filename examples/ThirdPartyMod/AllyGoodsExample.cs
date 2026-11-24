@@ -26,6 +26,23 @@ namespace ThirdPartyMod
             { log(reason); return; }
             section.SetVisible(false);
 
+            // Optional shared decoration. Colors and every layout metric belong
+            // to this example consumer, not to APIShared's presentation policy.
+            var frameOptions = new AllyGoodsFrameOptions(
+                new Thickness(10, 8, 10, 8), new Thickness(3), 200, 8, 8);
+            if (!AllyGoodsPanelExtensions.TryRegisterFramePresentation(owner, "quantity-frame", context =>
+            {
+                if (context.OriginalFrame == null ||
+                    !AllyGoodsPanelExtensions.TryGetContext(out var current) ||
+                    current.PanelGeneration != context.Selection.PanelGeneration)
+                    throw new InvalidOperationException("The goods HUD changed before frame creation.");
+                // APIShared positions this fresh noninteractive decoration. Never
+                // reparent, resize or change the opacity of context.OriginalFrame.
+                return new Border { Background = new SolidColorBrush(Color.FromArgb(255, 38, 38, 38)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(255, 160, 160, 160)),
+                    BorderThickness = new Thickness(1) };
+            }, frameOptions, out var framePresentation, out reason)) log(reason);
+
             Action updateLauncher = () => {
                 bool available = section.TryGetLayoutAvailability(out _);
                 if (launcher == null) return;
@@ -45,6 +62,9 @@ namespace ThirdPartyMod
                     if (!AllyGoodsPanelExtensions.TryGetContext(out var current) || !current.IsSendMode ||
                         !section.TryGetLayoutAvailability(out _)) return;
                     expanded = !expanded; section.SetVisible(expanded);
+                    // Initially disabled: opt in only while these details are open.
+                    // Another enabled owner's earlier profile can take precedence.
+                    framePresentation?.SetEnabled(expanded);
                     update(current); updateLauncher();
                 };
                 AttachLauncherTooltip(launcher);
