@@ -175,7 +175,14 @@ namespace APIShared
             op.MapAlias = alias;
             op.MapArguments = args;
             op.ConfirmedMapFile = file;
-            Run(op, () => multiplayerNew(platform, setup, map, coop, mission));
+            Run(op, () =>
+            {
+                var receipt = ScriptExtenderFixes.LobbyStartPacketRuntime.BeginNativeStart(platform, op.Id);
+                bool returnedNormally = false;
+                try { multiplayerNew(platform, setup, map, coop, mission); returnedNormally = true; }
+                finally { Safe(() => ScriptExtenderFixes.LobbyStartPacketRuntime.EndNativeStart(receipt,
+                    returnedNormally && op.NativeSucceeded && !op.NativeFailed)); }
+            });
             if (op.MapAliasFailure != null)
                 throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
         }

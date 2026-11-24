@@ -218,11 +218,11 @@ namespace APIShared.Presentation
             => LayoutSections();
         private static void Collapse()
         {
-            if (host != null) { host.Visibility = Visibility.Collapsed; host.Height = 0; }
+            if (host != null) { SetLayoutVisibility(host, Visibility.Collapsed); SetLayoutHeight(host, 0); }
             CollapseAnchored();
             // Only restore our own value; a foreign writer's change is never overwritten.
             if (layout != null && AllyGoodsPanelLayoutPolicy.OwnsHeight((float)layout.Height, appliedHeight))
-            { layout.Height = baseHeight; appliedHeight = baseHeight; }
+            { SetLayoutHeight(layout, baseHeight); appliedHeight = baseHeight; }
         }
         private static void BindHost(FrameworkElement element)
         {

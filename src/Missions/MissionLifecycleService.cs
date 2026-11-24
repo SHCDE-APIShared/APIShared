@@ -255,8 +255,15 @@ namespace APIShared
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
                 SavegameModSettings.BeginLoad(map?.filePath, true);
-                Run(new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true },
-                    () => multiplayerSave(self, setup, map));
+                var operation = new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true };
+                Run(operation, () =>
+                {
+                    var receipt = ScriptExtenderFixes.LobbyStartPacketRuntime.BeginNativeStart(self, operation.Id);
+                    bool returnedNormally = false;
+                    try { multiplayerSave(self, setup, map); returnedNormally = true; }
+                    finally { Safe(() => ScriptExtenderFixes.LobbyStartPacketRuntime.EndNativeStart(receipt,
+                        returnedNormally && operation.NativeSucceeded && !operation.NativeFailed)); }
+                });
             });
             multiplayerInit = Hook<MultiplayerInit>(typeof(EngineInterface), nameof(EngineInterface.initMultiplayerGame), (skirmishGame, restart, coop, mission, test, custom, extreme) =>
             {

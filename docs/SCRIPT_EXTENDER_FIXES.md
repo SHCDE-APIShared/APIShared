@@ -12,6 +12,7 @@ contracts follow from it.
 - [Lord media and custom AI slots](#lord-media-and-custom-ai-slots)
 - [Lord script diagnostics](#lord-script-diagnostics)
 - [Lobby mismatch dialog](#lobby-mismatch-dialog)
+- [Lobby start packets](#lobby-start-packets)
 - [Popularity display](#popularity-display)
 - [UU-ImGUI shutdown](#uu-imgui-shutdown)
 - [Interpolation event reuse](#interpolation-event-reuse)
@@ -126,6 +127,37 @@ a complete comparison. The original SE reason remains in the log and is shown wh
 no complete explanatory comparison is available. The localized title "Different mods"
 describes mod-list differences without claiming an incompatibility diagnosis. Text uses
 the [APIShared catalogs](THIRD_PARTY_GUIDE.md#apishared-interface-language). Consumer lobby-chat warnings are not affected.
+
+## Lobby start packets
+
+The Extender drains gameplay channel 2 while the lobby is open to receive custom
+mod packets. Its original lobby receiver releases early Vanilla packets without
+passing them to Vanilla. A faster peer can already have sent the initial seed,
+acknowledgement or saved-player mapping while the other peer is still loading.
+Losing these one-shot packets can leave that peer on the connection screen.
+This race also exists when players manually leave a match and load from a new
+lobby; it does not require an in-game loading mod.
+
+APIShared preserves these handshake packets at the existing Extender drain and
+delivers them through Vanilla's normal message processor after this computer's
+corresponding start has loaded its new participant list. The buffer belongs to
+one authenticated map/save preparation and lobby, with bounded copied payloads
+and sender checks. A failed or replaced attempt discards its buffer. Old player
+objects and old lobby packets are not reused for another match.
+
+This covers SDK-prepared lobby map/save starts. Direct in-mission restarts using
+an existing source-mission approval retain their existing path. Vanilla's wire
+packets contain no preparation token: buffering scopes already received packets,
+but does not add a new wire identity for distinguishing an arbitrarily delayed
+old packet from a new packet sent by the same peer.
+
+Custom packets retain the original Extender path. This correction introduces no
+second Steam receiver, changes no save eligibility or gameplay settings, and
+does not force the simulation to start. Vanilla still owns its seed, player
+remapping, acknowledgements and final synchronized start. Installation validates
+the relevant managed IL and member contracts; an unsupported contract logs a
+failure and leaves that correction inactive. Hooks remain installed until process
+exit. A game restart is required after updating the package.
 
 ## Popularity display
 

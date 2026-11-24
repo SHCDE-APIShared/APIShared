@@ -68,6 +68,30 @@ namespace APIShared
             System.Threading.Volatile.Read(ref admission);
         internal static bool HasPendingPreparation => pending != null;
 
+        // Read-only authority for the shared lobby-packet staging service. A published
+        // start can precede its P2P release; it still needs this authenticated proposal.
+        // This rare handshake query performs no archive/header or file access.
+        internal static bool TryGetLobbyPacketAdmission(out string token, out ulong lobbyId,
+            out ulong authenticatedHostId, out IReadOnlyList<ulong> humanPeers)
+        {
+            token = null; lobbyId = authenticatedHostId = 0; humanPeers = null;
+            if (!Internal.UnityMainThreadDispatch.IsMainThread || !initialized || pending == null) return false;
+            var proposal = pending;
+            var lobby = owner?.activeLobby;
+            if (lobby == null || !ReferenceEquals(lobby, Platform_Multiplayer.Instance?.activeLobby) ||
+                lobby.id.m_SteamID != proposal.Lobby || lobby.isHost != attemptHost ||
+                SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID != hostId) return false;
+            try
+            {
+                ulong[] humans = Humans(lobby);
+                if (string.Join(",", humans) != proposal.Roster) return false;
+                token = proposal.Token; lobbyId = proposal.Lobby; authenticatedHostId = hostId;
+                humanPeers = Array.AsReadOnly(humans);
+                return true;
+            }
+            catch (InvalidOperationException) { return false; }
+        }
+
         internal static bool MatchesFile(NativeAdmissionTicket ticket, string path)
         {
             if (ticket == null || string.IsNullOrEmpty(path)) return false;

@@ -35,7 +35,7 @@ namespace APIShared.Presentation
                 foreach (var visual in footerVisuals)
                 {
                     bool visible = visual.Element.Visibility != Visibility.Collapsed;
-                    visual.Container.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                    SetLayoutVisibility(visual.Container, visible ? Visibility.Visible : Visibility.Collapsed);
                     if (!visible) continue;
                     any = true;
                     if (!footerOverflowing)
@@ -54,15 +54,15 @@ namespace APIShared.Presentation
                 if (footerOverflowing && !overflow)
                 { footerProbe = true; SetFooterMode(false); HideFooter(); return; }
                 SetFooterMode(overflow);
-                footerScroll.MaxWidth = Math.Min(360, available);
+                SetLayoutMaxWidth(footerScroll, Math.Min(360, available));
                 float popupHeight = 240;
                 if (footerViewport != null && footerViewport.ActualHeight > 0)
                 {
                     var unit = footerOwner.TransformToAncestor(footerViewport).TransformBounds(new Rect(0, 0, 1, 1));
                     if (unit.Height > 0) popupHeight = Math.Max(18, Math.Min(240, footerViewport.ActualHeight / unit.Height - 32));
                 }
-                footerScroll.MaxHeight = popupHeight;
-                footerHost.Visibility = Visibility.Visible;
+                SetLayoutMaxHeight(footerScroll, popupHeight);
+                SetLayoutVisibility(footerHost, Visibility.Visible);
                 ApplyFooterPopupScale();
             }
             finally { footerLayoutBusy = false; }

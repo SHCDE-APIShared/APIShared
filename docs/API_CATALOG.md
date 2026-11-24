@@ -1082,7 +1082,8 @@ taken from an AI group. Opt-in, simulation state, hash-bound. See the
 
 APIShared corrects selected Script Extender defects without consumer registration, for example
 save-only record persistence in synchronized saves and the classification of multiplayer
-save/editor loads. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
+save/editor loads, and early Vanilla handshake preservation during prepared lobby
+starts. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
 
 ## Ally gifts and the goods dialog
 

@@ -129,7 +129,7 @@ namespace APIShared.Presentation
             foreach (var visual in footerVisuals)
             {
                 var control = visual.Container;
-                control.Visibility = visual.Element.Visibility == Visibility.Collapsed ? Visibility.Collapsed : Visibility.Visible;
+                SetLayoutVisibility(control, visual.Element.Visibility == Visibility.Collapsed ? Visibility.Collapsed : Visibility.Visible);
                 if (index < destination.Children.Count && ReferenceEquals(destination.Children[index], control)) { index++; continue; }
                 if (control.Parent is Panel previous) previous.Children.Remove(control);
                 destination.Children.Insert(index++, control);
@@ -142,8 +142,8 @@ namespace APIShared.Presentation
             bool changed = footerOverflowing != overflow;
             footerOverflowing = overflow;
             if (changed) { footerPopup.IsOpen = false; SynchronizeFooterChildren(); }
-            footerInline.Visibility = overflow ? Visibility.Collapsed : Visibility.Visible;
-            footerMore.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
+            SetLayoutVisibility(footerInline, overflow ? Visibility.Collapsed : Visibility.Visible);
+            SetLayoutVisibility(footerMore, overflow ? Visibility.Visible : Visibility.Collapsed);
         }
         private static void OnFooterLayoutUpdated(object sender, Noesis.EventArgs args)
         {
@@ -153,8 +153,8 @@ namespace APIShared.Presentation
         }
         private static void HideFooter()
         {
-            if (footerPopup != null) footerPopup.IsOpen = false;
-            if (footerHost != null) footerHost.Visibility = Visibility.Hidden;
+            if (footerPopup != null && footerPopup.IsOpen) footerPopup.IsOpen = false;
+            if (footerHost != null) SetLayoutVisibility(footerHost, Visibility.Hidden);
         }
         private static void OnFooterMore(object sender, RoutedEventArgs args)
         {

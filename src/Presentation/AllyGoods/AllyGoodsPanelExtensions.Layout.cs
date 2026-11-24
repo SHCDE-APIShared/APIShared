@@ -105,9 +105,9 @@ namespace APIShared.Presentation
                 if (visual.Container == null) continue;
                 if (visual.Container.Parent != null && !ReferenceEquals(visual.Container.Parent, panel))
                 { Report("section-parent:" + entry.Owner + "/" + entry.Id, new InvalidOperationException("Section control is already attached elsewhere.")); continue; }
-                visual.Container.IsEnabled = entry.Enabled;
+                if (visual.Container.IsEnabled != entry.Enabled) visual.Container.IsEnabled = entry.Enabled;
                 float spacing = placement == AllyGoodsSectionPlacement.GoodsDialogBottom ? surfaceFrameOptions?.SectionSpacing ?? 8 : 8;
-                visual.Container.Margin = new Thickness(0, desired.Count == 0 ? 0 : spacing, 0, 0);
+                SetLayoutMargin(visual.Container, new Thickness(0, desired.Count == 0 ? 0 : spacing, 0, 0));
                 desired.Add(visual.Container);
             }
             // Preserve unchanged controls/focus. Hiding one owner never unloads every
@@ -178,18 +178,19 @@ namespace APIShared.Presentation
             }
             if (anchoredHost != null)
             {
-                anchoredHost.Margin = new Thickness(0, plan.GoodsTop, 0, 0);
-                anchoredHost.Height = plan.GoodsHeight;
-                anchoredHost.Visibility = plan.GoodsHeight > 0 ? Visibility.Visible : Visibility.Collapsed;
+                SetLayoutMargin(anchoredHost, new Thickness(0, plan.GoodsTop, 0, 0));
+                SetLayoutHeight(anchoredHost, plan.GoodsHeight);
+                SetLayoutVisibility(anchoredHost, plan.GoodsHeight > 0 ? Visibility.Visible : Visibility.Collapsed);
             }
-            host.Margin = new Thickness(0, plan.LegacyTop, 0, 0);
-            host.Height = plan.LegacyHeight; host.Visibility = plan.LegacyHeight > 0 ? Visibility.Visible : Visibility.Collapsed;
-            appliedHeight = plan.RootHeight; layout.Height = appliedHeight;
+            SetLayoutMargin(host, new Thickness(0, plan.LegacyTop, 0, 0));
+            SetLayoutHeight(host, plan.LegacyHeight);
+            SetLayoutVisibility(host, plan.LegacyHeight > 0 ? Visibility.Visible : Visibility.Collapsed);
+            appliedHeight = plan.RootHeight; SetLayoutHeight(layout, appliedHeight);
         }
         private static void CollapseAnchored()
         {
             RestoreFramePresentation(); SetFrameSurface(null);
-            if (anchoredHost != null) { anchoredHost.Visibility = Visibility.Collapsed; anchoredHost.Height = 0; }
+            if (anchoredHost != null) { SetLayoutVisibility(anchoredHost, Visibility.Collapsed); SetLayoutHeight(anchoredHost, 0); }
         }
         private static void DetachAnchored()
         {
@@ -203,5 +204,19 @@ namespace APIShared.Presentation
             if (options == null) return DesiredSectionHeight(anchoredSections);
             return (float)anchoredSections.DesiredSize.Height + options.ContentPadding.Top + options.ContentPadding.Bottom;
         }
+        // Read the live target every time. Comparing a cached desired value instead
+        // would hide foreign changes; geometry/ownership checks remain in the callers.
+        private static void SetLayoutMargin(FrameworkElement element, Thickness value)
+        { if (element.Margin != value) element.Margin = value; }
+        private static void SetLayoutHeight(FrameworkElement element, float value)
+        { if (element.Height != value) element.Height = value; }
+        private static void SetLayoutWidth(FrameworkElement element, float value)
+        { if (element.Width != value) element.Width = value; }
+        private static void SetLayoutMaxHeight(FrameworkElement element, float value)
+        { if (element.MaxHeight != value) element.MaxHeight = value; }
+        private static void SetLayoutMaxWidth(FrameworkElement element, float value)
+        { if (element.MaxWidth != value) element.MaxWidth = value; }
+        private static void SetLayoutVisibility(FrameworkElement element, Visibility value)
+        { if (element.Visibility != value) element.Visibility = value; }
     }
 }

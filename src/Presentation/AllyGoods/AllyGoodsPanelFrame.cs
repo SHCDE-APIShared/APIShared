@@ -91,7 +91,7 @@ namespace APIShared.Presentation
             float spacing = options?.SectionSpacing ?? 8;
             for (int index = 0; index < anchoredSections.Children.Count; index++)
                 if (anchoredSections.Children[index] is FrameworkElement child)
-                    child.Margin = new Thickness(0, index == 0 ? 0 : spacing, 0, 0);
+                    SetLayoutMargin(child, new Thickness(0, index == 0 ? 0 : spacing, 0, 0));
         }
         private static bool ApplyFramePresentation(AllyGoodsFrameEntry entry, AllyGoodsPanelLayoutPlan plan)
         {
@@ -108,17 +108,17 @@ namespace APIShared.Presentation
                 while (index < layout.Children.Count && !ReferenceEquals(layout.Children[index], goodsFrame)) index++;
                 layout.Children.Insert(index, visual);
             }
-            visual.Margin = new Thickness(bounds.X, bounds.Y, 0, 0);
-            visual.Width = bounds.Width; visual.Height = plan.GoodsTop + plan.GoodsHeight - bounds.Y;
+            SetLayoutMargin(visual, new Thickness(bounds.X, bounds.Y, 0, 0));
+            SetLayoutWidth(visual, bounds.Width); SetLayoutHeight(visual, plan.GoodsTop + plan.GoodsHeight - bounds.Y);
             if (frameLease == null) frameLease = new AllyGoodsFrameOpacityLease(new FrameOpacityTarget(goodsFrame));
             if (!frameLease.TryAcquire()) return false;
-            visual.Visibility = Visibility.Visible; return true;
+            SetLayoutVisibility(visual, Visibility.Visible); return true;
         }
         private static bool RestoreFramePresentation()
         {
             try
             {
-                if (selectedFrame?.Visual != null) selectedFrame.Visual.Visibility = Visibility.Collapsed;
+                if (selectedFrame?.Visual != null) SetLayoutVisibility(selectedFrame.Visual, Visibility.Collapsed);
                 frameLease?.Release(); frameLease = null; return true;
             }
             catch (Exception error)

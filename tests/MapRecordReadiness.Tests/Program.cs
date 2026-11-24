@@ -162,6 +162,105 @@ internal static class Program
         finally { enabled = false; Reset(solo: true); }
     }
 
+    private static void TestManualRepeatedLoadsWithoutConsumer()
+    {
+        // This fixture links only SDK coordinators and controlled external game/Steam
+        // boundaries. There is no restart/testmod consumer or worker barrier in it.
+        foreach (bool client in new[] { false, true })
+        {
+            string previousToken = null;
+            string originalHash = null, originalFingerprint = null;
+            var retainedPlatform = new Platform_Multiplayer();
+            for (int iteration = 0; iteration < 3; iteration++)
+            {
+                Reset(client: client);
+                retainedPlatform.activeLobby = Mp.activeLobby;
+                Platform_Multiplayer.Instance = retainedPlatform;
+                Mp.activeLobby.id = new Steamworks.CSteamID((ulong)(100 + iteration + (client ? 10 : 0)));
+                string hash = Sha256Hex.Of(File.ReadAllBytes(Boundary.Path));
+                string fingerprint = SavegameModSettings.CaptureHostFingerprint();
+                if (iteration == 0) { originalHash = hash; originalFingerprint = fingerprint; }
+                Check(ReferenceEquals(Mp, retainedPlatform) && hash == originalHash && fingerprint == originalFingerprint,
+                    "manual repeated loads retain the same Platform singleton, unchanged save bytes and identical host fingerprint");
+                SavegameLoadPacket proposal;
+                if (client)
+                {
+                    proposal = new SavegameLoadPacket { Operation = 0, Lobby = Mp.activeLobby.id.m_SteamID,
+                        Token = Guid.NewGuid().ToString("N"), SaveName = Path.GetFileNameWithoutExtension(Boundary.Path),
+                        Checksum = 1, Time = 2, Fingerprint = SavegameModSettings.CaptureHostFingerprint(), Roster = "2001,2002" };
+                    Boundary.Receive(proposal, 2001);
+                    Check(Boundary.Sent.OfType<SavegameLoadPacket>().Count(packet => packet.Operation == 1) == 1,
+                        "manual client load acknowledges the selected save in every fresh lobby");
+                    if (iteration % 2 == 0)
+                    { var release = Reply(proposal, 2); release.Time = proposal.Time; Boundary.Receive(release, 2001); }
+                }
+                else
+                {
+                    Save(); proposal = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+                    var acknowledgement = Reply(proposal); acknowledgement.Time = proposal.Time;
+                    Boundary.Receive(acknowledgement, 2002);
+                    Check(Boundary.SaveStarts == 1, "manual host save releases once in every fresh lobby");
+                }
+                Check(proposal.Token != previousToken && MultiplayerSavePreparation.Current?.OperationId == proposal.Token,
+                    "same-file manual reload owns a fresh operation rather than a stale scope");
+                SavegameLoadCoordinator.ValidateStart(Boundary.Path, true);
+                if (client && iteration % 2 != 0)
+                { var release = Reply(proposal, 2); release.Time = proposal.Time; Boundary.Receive(release, 2001); }
+                Check(SavegameLoadCoordinator.IsLoadingMultiplayerSave &&
+                    MultiplayerSavePreparation.Current?.Phase == MultiplayerSavePreparationPhase.NativeLoading,
+                    "repeated manual save passes native admission, including late client release");
+                SavegameLoadCoordinator.FinishLoad();
+                Check(!SavegameLoadCoordinator.IsLoadingMultiplayerSave && MultiplayerSavePreparation.Current == null &&
+                    APIShared.Economy.WorkerProductionAgreement.PreparedDataPath == null,
+                    "normal manual load completion retires only its preparation and production path");
+                var late = client ? proposal : Reply(proposal); late.Time = proposal.Time;
+                Boundary.Receive(late, client ? 2001UL : 2002UL);
+                Check(MultiplayerSavePreparation.Current == null, "late packets cannot resurrect a completed manual save");
+                previousToken = proposal.Token;
+            }
+
+            // A normal new game after the same-file load sequence still needs all
+            // record, peer, production and final immutable file admission checks.
+            Reset();
+            if (!client) { retainedPlatform.activeLobby = Mp.activeLobby; Platform_Multiplayer.Instance = retainedPlatform; }
+            Start();
+            var mapProposal = Reply(RequestPacket, 0);
+            if (client)
+            {
+                mapProposal.Token = Guid.NewGuid().ToString("N"); // Another process has its own retired-token set.
+                Reset(client: true); retainedPlatform.activeLobby = Mp.activeLobby; Platform_Multiplayer.Instance = retainedPlatform;
+                Receive(mapProposal, 2001); Receive(Reply(mapProposal, 2), 2001);
+            }
+            else Receive(Reply(mapProposal));
+            Check(ReferenceEquals(Mp, retainedPlatform) && ValidateMapStart() && MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true),
+                "normal new game remains admissible after repeated manual save loads without any consumer");
+            MapRecordLoadCoordinator.FinishLoad();
+        }
+    }
+
+    private static void TestMapLobbyPacketAuthority()
+    {
+        Reset();
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _),
+            "handshake staging has no authority before a coordinated map request");
+        Start(); int captures = Boundary.Captures;
+        Check(MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out string token, out ulong lobby, out ulong host, out var humans) &&
+            token == RequestPacket.Token && lobby == Mp.activeLobby.id.m_SteamID && host == 2001 && humans.SequenceEqual(new ulong[] { 2001, 2002 }) &&
+            Boundary.Captures == captures && Boundary.MapStarts == 0,
+            "map handshake authority is a detached authenticated pending proposal even before P2P release, without archive access");
+        Boundary.Host = 2002;
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "owner migration invalidates map packet authority");
+        Boundary.Host = 2001; Mp.activeLobby.members[1].dummyToBeKicked = true;
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _) && humans[1] == 2002,
+            "changing roster invalidates packet authority without mutating an already captured roster");
+        Mp.activeLobby.members[1].dummyToBeKicked = false; Mp.activeLobby.id = new Steamworks.CSteamID(100);
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "different lobby cannot inherit a pending map token");
+        Mp.activeLobby.id = new Steamworks.CSteamID(99); Boundary.MainThread = false;
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "packet authority is not inspected from a worker");
+        Boundary.MainThread = true; MapRecordLoadCoordinator.FinishLoad();
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "retired map token cannot authorize staged lobby packets");
+    }
+
     private static void TestMapLoadPolicy()
     {
         const string rejection = "The selected Workshop map exceeds the filename limit.";
@@ -644,6 +743,8 @@ internal static class Program
         Check(waitingRejected && !SavegameLoadCoordinator.IsLoadingMultiplayerSave && Boundary.Broadcast.Count == 1,
             "Loss of a simulation decision after release fails closed at the native boundary");
         TestSavePreparingDispatch();
+        TestManualRepeatedLoadsWithoutConsumer();
+        TestMapLobbyPacketAuthority();
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
         Console.WriteLine("PASS: " + checks + " production map-readiness checks: all-peer records, authority, immutable native tickets, file changes, selection changes and mutual save/map exclusion.");
     }
