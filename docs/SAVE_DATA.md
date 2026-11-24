@@ -169,7 +169,14 @@ human roster, native save name/checksum/time, and this computer's checked local 
 and SHA-256. The latter is **not** a checksum to compare with another computer's
 whole save. Original native save checks and declared-record comparison remain in
 force. `Preparing` is published before the first readiness evaluation, including
-solo hosts that can proceed synchronously from the original call.
+solo hosts that can proceed synchronously from the original call. The coordinator
+waits until all `Preparing` observers have returned before its first evaluation.
+A synchronous tick requested by an observer cannot bypass that delivery boundary.
+If an observer starts another save, that operation's entry continuation runs after
+the queued notifications, outside observer dispatch; it does not wait for a render
+frame. Subsequent `Released` and `NativeLoading` observers still finish synchronously
+before admission is revalidated or the ordinary native loader is invoked. Cancelled
+or replaced operations cannot execute an already queued entry continuation.
 
 The subsequent phases are `Acknowledged`, `Released`, `NativeLoading` and `Ended`.
 Not every peer reaches every phase. End reasons distinguish cancellation,

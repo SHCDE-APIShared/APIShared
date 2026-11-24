@@ -118,8 +118,10 @@ namespace APIShared.Savegames
         private readonly object gate = new object();
         private Observer[] observers = Array.Empty<Observer>();
         private readonly Queue<Action> notifications = new Queue<Action>();
+        private readonly Queue<Action> continuations = new Queue<Action>();
         private MultiplayerSavePreparationSnapshot current;
         private bool dispatching;
+        private bool runningContinuations;
         private int notificationBoundaries;
         private long revision;
         internal MultiplayerSavePreparationState(Action<Exception> report) { this.report = report; }
@@ -138,6 +140,7 @@ namespace APIShared.Savegames
         internal IDisposable DeferNotifications()
         { notificationBoundaries++; return new NotificationBoundary(this); }
         internal MultiplayerSavePreparationSnapshot Current => Volatile.Read(ref current);
+        internal bool CanDeliverSynchronously => !dispatching && notificationBoundaries == 0;
         internal bool TryRegister(string owner, string id, Action<MultiplayerSavePreparationSnapshot> callback,
             out string diagnostic, bool replay = true, int order = 0)
         {
@@ -156,11 +159,19 @@ namespace APIShared.Savegames
             if (replay && snapshot != null) Dispatch(snapshot, new[] { entry });
             return true;
         }
-        internal bool Begin(MultiplayerSavePreparationSnapshot snapshot)
+        internal bool Begin(MultiplayerSavePreparationSnapshot snapshot) => Begin(snapshot, null);
+        internal bool Begin(MultiplayerSavePreparationSnapshot snapshot, Action afterPreparingDelivered)
         {
             if (snapshot == null || Current != null) throw new InvalidOperationException("A save preparation is already active or missing.");
             var next = snapshot.With(++revision, MultiplayerSavePreparationPhase.Preparing);
-            Volatile.Write(ref current, next); Dispatch(next, observers);
+            Volatile.Write(ref current, next);
+            // This queue is distinct from observer notifications: admission must run
+            // outside notification dispatch so later phase observers stay synchronous.
+            if (afterPreparingDelivered != null)
+                continuations.Enqueue(() => {
+                    if (Current?.OperationId == next.OperationId) afterPreparingDelivered();
+                });
+            Dispatch(next, observers);
             return Current?.OperationId == next.OperationId;
         }
         internal bool Advance(string operation, MultiplayerSavePreparationPhase phase)
@@ -198,6 +209,24 @@ namespace APIShared.Savegames
             dispatching = true;
             try { while (notifications.Count != 0) notifications.Dequeue()(); }
             finally { dispatching = false; }
+            DrainContinuations();
+        }
+        private void DrainContinuations()
+        {
+            if (runningContinuations || !CanDeliverSynchronously) return;
+            runningContinuations = true;
+            try
+            {
+                while (continuations.Count != 0 && CanDeliverSynchronously)
+                {
+                    // Dispatch remains allowed while a continuation runs. Released and
+                    // NativeLoading observers must finish before their caller proceeds.
+                    try { continuations.Dequeue()(); }
+                    catch (Exception error) { try { report?.Invoke(error); } catch { } }
+                    Drain();
+                }
+            }
+            finally { runningContinuations = false; }
         }
     }
 }

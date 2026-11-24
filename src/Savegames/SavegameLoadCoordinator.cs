@@ -38,6 +38,7 @@ namespace APIShared
         private static string attempt, observedFingerprint;
         private static bool attemptHost;
         private static long requestGeneration;
+        private static SavegameLoadPacket preparingDelivered;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
         // The map coordinator's lobby-refresh observer hides the start value of a rejected attempt.
@@ -90,7 +91,6 @@ namespace APIShared
 
         private static void Request(Platform_Multiplayer self, string name)
         {
-            long generation = ++requestGeneration;
             if (self.activeLobby?.isHost != true) { original(self, name); return; }
             if (!MapRecordLoadCoordinator.CancelSelection())
             { ShowBlocked("A confirmed multiplayer map is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true, name); return; }
@@ -99,6 +99,10 @@ namespace APIShared
                 if (pending.SaveName == name) return; // Repeated button callback, not another load.
                 if (released || loading)
                 { ShowBlocked("A confirmed multiplayer save is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true, name); return; }
+            }
+            long generation = ++requestGeneration;
+            if (pending != null)
+            {
                 Abort("Selected save changed.", notify: true, showError: false, endReason: MultiplayerSavePreparationEndReason.Replaced);
                 if (generation != requestGeneration) return;
             }
@@ -134,12 +138,18 @@ namespace APIShared
                 agreement = new SavegameLoadAgreement(pending.Token, fingerprint, humans.Where(x => x != local), records);
                 deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
                 acknowledged = false; released = false; loading = false;
-                if (!PublishPreparing(humans)) return;
-                SavegameModSettings.PublishPreparedHostValues();
-                if (!agreement.Ready) Send(pending);
-                Tick(); // Solo host: no network echo, no artificial delay.
+                var proposal = pending;
+                PublishPreparingCore(humans, () => {
+                    SavegameModSettings.PublishPreparedHostValues();
+                    if (!IsCurrentProposal(proposal, generation)) return;
+                    if (!agreement.Ready) Send(proposal);
+                    if (IsCurrentProposal(proposal, generation)) Tick();
+                }); // Solo host: resumes synchronously, without a frame or network echo.
             }
-            catch (Exception error) { Abort(error.Message, phase: "request", saveName: name); }
+            catch (Exception error)
+            {
+                if (generation == requestGeneration) Abort(error.Message, phase: "request", saveName: name);
+            }
             finally { ScheduleWaitingCheck(); }
         }
 
@@ -179,8 +189,13 @@ namespace APIShared
 
         private static void Receive(NetworkMessage<SavegameLoadPacket> message)
         {
+            long generation = requestGeneration;
             try { ReceiveCore(message); }
-            catch (Exception error) { Abort(error.Message, phase: "receive"); }
+            catch (Exception error)
+            {
+                if (pending != null ? pending.Token == message.Packet?.Token : generation == requestGeneration)
+                    Abort(error.Message, phase: "receive");
+            }
         }
 
         private static void ReceiveCore(NetworkMessage<SavegameLoadPacket> message)
@@ -260,29 +275,46 @@ namespace APIShared
                 // state, so a previous single-player session or different local settings do not count.
                 localRecords = VersionedSaveDataRuntime.CaptureSimulationDigests(localSavePath);
                 deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
-                if (!PublishPreparing(Humans(lobby))) return;
-                Tick();
+                PublishPreparingCore(Humans(lobby), Tick);
             }
             else if (pending?.Token == packet.Token && packet.Operation == 2)
             {
-                if (!released) deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
+                if (released) return;
+                deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
                 released = true;
                 PublishPhase(MultiplayerSavePreparationPhase.Released);
             }
         }
 
-        private static bool PublishPreparing(ulong[] humans)
+        private static bool IsCurrentProposal(SavegameLoadPacket proposal, long generation) =>
+            ReferenceEquals(pending, proposal) && generation == requestGeneration &&
+            MultiplayerSavePreparation.Current?.OperationId == proposal.Token;
+        private static bool PublishPreparingCore(ulong[] humans, Action continuation)
         {
             var proposal = pending;
             if (proposal == null) return false;
+            long generation = requestGeneration;
+            preparingDelivered = null;
             var snapshot = new MultiplayerSavePreparationSnapshot(proposal.Token, 0, proposal.Lobby, hostId,
                 attemptHost, humans, proposal.SaveName, proposal.Checksum, proposal.Time, localSavePath,
                 localSaveHash, MultiplayerSavePreparationPhase.Preparing);
-            return MultiplayerSavePreparation.State.Begin(snapshot) && ReferenceEquals(pending, proposal);
+            return MultiplayerSavePreparation.State.Begin(snapshot, () => {
+                if (!IsCurrentProposal(proposal, generation)) return;
+                preparingDelivered = proposal;
+                try { continuation?.Invoke(); }
+                catch (Exception error)
+                {
+                    if (IsCurrentProposal(proposal, generation))
+                        Abort(error.Message, phase: "prepared-continuation", saveName: proposal.SaveName);
+                }
+                finally { ScheduleWaitingCheck(); }
+            }) && ReferenceEquals(pending, proposal);
         }
         private static bool PublishPhase(MultiplayerSavePreparationPhase phase)
         {
             var proposal = pending;
+            if (proposal != null && !MultiplayerSavePreparation.State.CanDeliverSynchronously)
+                throw new InvalidOperationException("Save admission cannot advance inside a preparation observer or cleanup boundary.");
             return proposal != null && MultiplayerSavePreparation.State.Advance(proposal.Token, phase) &&
                 ReferenceEquals(pending, proposal);
         }
@@ -306,7 +338,8 @@ namespace APIShared
 
         private static void Tick()
         {
-            if (pending == null || loading) return;
+            if (pending == null || loading || !ReferenceEquals(preparingDelivered, pending) ||
+                !MultiplayerSavePreparation.State.CanDeliverSynchronously) return;
             var tickProposal = pending;
             try
             {
@@ -452,7 +485,8 @@ namespace APIShared
         }
         private static void ValidateAdmissionScope(SavegameLoadPacket proposal, string path)
         {
-            if (proposal == null || !ReferenceEquals(pending, proposal) ||
+            if (proposal == null || !ReferenceEquals(pending, proposal) || !ReferenceEquals(preparingDelivered, proposal) ||
+                !MultiplayerSavePreparation.State.CanDeliverSynchronously ||
                 owner?.activeLobby?.id.m_SteamID != proposal.Lobby || Roster(owner.activeLobby) != proposal.Roster ||
                 SteamMatchmaking.GetLobbyOwner(owner.activeLobby.id).m_SteamID != hostId ||
                 !string.Equals(Path.GetFullPath(path), localSavePath, StringComparison.OrdinalIgnoreCase) ||
@@ -548,7 +582,7 @@ namespace APIShared
                 rejectedNativeLobby = lobby;
                 rejectedNativePath = localSavePath;
             }
-            pending = null; agreement = null; record = null; owner = null;
+            pending = null; preparingDelivered = null; agreement = null; record = null; owner = null;
             localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
             nextExchangeCheck = 0;
@@ -621,7 +655,7 @@ namespace APIShared
             string endedOperation = pending?.Token;
             nextExchangeCheck = 0;
             if (pending != null) retired.Add(pending.Token);
-            pending = null; agreement = null; record = null; owner = null;
+            pending = null; preparingDelivered = null; agreement = null; record = null; owner = null;
             attempt = observedFingerprint = waitingReason = announcedWaiting = null;
             rejectedNativeLobby = null; rejectedNativePath = null;
             try

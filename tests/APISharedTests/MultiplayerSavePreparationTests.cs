@@ -60,6 +60,46 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void ReentrantContinuationsRunOutsideNotificationsAndLaterPhaseObserversStaySynchronous()
+        {
+            var errors = new List<Exception>(); var state = new MultiplayerSavePreparationState(errors.Add);
+            var events = new List<string>();
+            const string next = "11234567890123456789012345678901";
+            state.TryRegister("A", "Observe", snapshot => {
+                events.Add(snapshot.OperationId == Operation ? "A:" + snapshot.Phase : "B:" + snapshot.Phase);
+                if (snapshot.OperationId == Operation && snapshot.Phase == MultiplayerSavePreparationPhase.Preparing)
+                {
+                    state.End(Operation, MultiplayerSavePreparationEndReason.Cancelled, null);
+                    state.Begin(Snapshot(next), () => {
+                        events.Add("B:continue safe=" + state.CanDeliverSynchronously);
+                        state.Advance(next, MultiplayerSavePreparationPhase.Released); events.Add("B:after release");
+                        state.Advance(next, MultiplayerSavePreparationPhase.NativeLoading); events.Add("B:after native admission");
+                    });
+                }
+            }, out _);
+            state.Begin(Snapshot(), () => events.Add("stale A continuation"));
+            CollectionAssert.AreEqual(new[] { "A:Preparing", "A:Ended", "B:Preparing", "B:continue safe=True",
+                "B:Released", "B:after release", "B:NativeLoading", "B:after native admission" }, events);
+            Assert.AreEqual(0, errors.Count);
+        }
+
+        [TestMethod]
+        public void CancelledQueuedContinuationIsSkippedAndContinuationExceptionsDoNotEscapeOlderCall()
+        {
+            var errors = new List<Exception>(); var state = new MultiplayerSavePreparationState(errors.Add);
+            int continued = 0;
+            state.TryRegister("A", "Cancel", snapshot => {
+                if (snapshot.Phase == MultiplayerSavePreparationPhase.Preparing)
+                    state.End(snapshot.OperationId, MultiplayerSavePreparationEndReason.Cancelled, null);
+            }, out _);
+            state.Begin(Snapshot(), () => continued++);
+            Assert.AreEqual(0, continued); Assert.IsNull(state.Current);
+            var isolated = new MultiplayerSavePreparationState(errors.Add);
+            isolated.Begin(Snapshot(), () => { throw new InvalidOperationException("continuation failure"); });
+            Assert.AreEqual(1, errors.Count); Assert.AreEqual("continuation failure", errors[0].Message);
+        }
+
+        [TestMethod]
         public void ReentrantTerminalClearsCurrentAndCannotRetireReplacement()
         {
             var state = new MultiplayerSavePreparationState(_ => { }); var events = new List<string>();
@@ -96,7 +136,7 @@ namespace APISharedTests
             // Execute the coordinator's actual publication boundary without opening Unity,
             // reading Steam, or replacing its implementation with a fixture model.
             var flags = BindingFlags.Static | BindingFlags.NonPublic;
-            string[] fields = { "pending", "hostId", "attemptHost", "localSavePath", "localSaveHash" };
+            string[] fields = { "pending", "preparingDelivered", "hostId", "attemptHost", "localSavePath", "localSaveHash" };
             var previous = fields.ToDictionary(name => name, name => typeof(SavegameLoadCoordinator).GetField(name, flags).GetValue(null));
             bool enabled = true, replace = false, replaceNative = false;
             var state = MultiplayerSavePreparation.State;
@@ -117,13 +157,13 @@ namespace APISharedTests
                 }
             }, out _, replay: false);
             Action<string, object> set = (name, value) => typeof(SavegameLoadCoordinator).GetField(name, flags).SetValue(null, value);
-            var publish = typeof(SavegameLoadCoordinator).GetMethod("PublishPreparing", flags);
+            var publish = typeof(SavegameLoadCoordinator).GetMethod("PublishPreparingCore", flags);
             var advance = typeof(SavegameLoadCoordinator).GetMethod("PublishPhase", flags);
             try
             {
                 set("pending", new SavegameLoadPacket { Token = Operation, Lobby = 10, SaveName = "MySave", Checksum = 123, Time = 456 });
                 set("hostId", 1UL); set("attemptHost", true); set("localSavePath", @"C:\save.sav"); set("localSaveHash", "local-only-hash");
-                Assert.AreEqual(true, publish.Invoke(null, new object[] { new ulong[] { 1, 2 } }));
+                Assert.AreEqual(true, publish.Invoke(null, new object[] { new ulong[] { 1, 2 }, null }));
                 Assert.AreEqual(Operation, state.Current.OperationId); Assert.AreEqual("local-only-hash", state.Current.LocalHash);
                 Assert.AreEqual(true, advance.Invoke(null, new object[] { MultiplayerSavePreparationPhase.Released }));
                 Assert.AreEqual(MultiplayerSavePreparationPhase.Released, state.Current.Phase);
@@ -135,7 +175,7 @@ namespace APISharedTests
                 replaceNative = false; state.End(state.Current.OperationId, MultiplayerSavePreparationEndReason.Cancelled, "fixture");
                 set("pending", new SavegameLoadPacket { Token = Operation, Lobby = 10, SaveName = "MySave", Checksum = 123, Time = 456 });
                 replace = true;
-                Assert.AreEqual(false, publish.Invoke(null, new object[] { new ulong[] { 1 } }), "Coordinator continued after its proposal was replaced by an observer.");
+                Assert.AreEqual(false, publish.Invoke(null, new object[] { new ulong[] { 1 }, null }), "Coordinator continued after its proposal was replaced by an observer.");
                 Assert.IsNull(state.Current);
             }
             finally
@@ -181,7 +221,7 @@ namespace APISharedTests
         public void SameProposalDoesNotAdmitLobbyDestroyedByReleaseObserver()
         {
             var flags = BindingFlags.Static | BindingFlags.NonPublic;
-            string[] fields = { "pending", "owner", "hostId", "attemptHost", "localSavePath", "localSaveHash" };
+            string[] fields = { "pending", "preparingDelivered", "owner", "hostId", "attemptHost", "localSavePath", "localSaveHash" };
             var previous = fields.ToDictionary(name => name, name => typeof(SavegameLoadCoordinator).GetField(name, flags).GetValue(null));
             var state = MultiplayerSavePreparation.State; Assert.IsNull(state.Current);
             bool enabled = true;
@@ -197,7 +237,7 @@ namespace APISharedTests
                 var proposal = new SavegameLoadPacket { Token = Operation, Lobby = 10, SaveName = "MySave" };
                 set("pending", proposal); set("owner", owner); set("hostId", 1UL); set("attemptHost", true);
                 set("localSavePath", @"C:\save.sav"); set("localSaveHash", "local-only-hash");
-                Assert.AreEqual(true, typeof(SavegameLoadCoordinator).GetMethod("PublishPreparing", flags).Invoke(null, new object[] { new ulong[] { 1 } }));
+                Assert.AreEqual(true, typeof(SavegameLoadCoordinator).GetMethod("PublishPreparingCore", flags).Invoke(null, new object[] { new ulong[] { 1 }, null }));
                 Assert.AreEqual(true, typeof(SavegameLoadCoordinator).GetMethod("PublishPhase", flags).Invoke(null,
                     new object[] { MultiplayerSavePreparationPhase.Released }));
                 Assert.AreSame(proposal, typeof(SavegameLoadCoordinator).GetField("pending", flags).GetValue(null));
