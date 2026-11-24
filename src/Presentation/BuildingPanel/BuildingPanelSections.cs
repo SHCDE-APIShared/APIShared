@@ -30,6 +30,10 @@ namespace APIShared.Presentation
     /// callback or condition hides it until the panel shows another context. Each failure is logged once.
     /// Registrations last for the process; no polling of its own is needed by a consumer. After the mission
     /// ends, Closed is delivered at the next in-game GUI check.</para>
+    /// <para>Since 0.73.0 a presenter (<see cref="TryRegisterPresenter"/>) can show the panel for another building, for
+    /// example another player's building for a spectator or foreign-control mod. While it reports one, sections see that
+    /// building with <see cref="BuildingPanelContext.IsPresented"/> and the acting player, and route owner actions through
+    /// <see cref="TrySubmitAction"/> to <see cref="Buildings.BuildingActions"/>.</para>
     /// </remarks>
     public static class BuildingPanelSections
     {
@@ -65,6 +69,58 @@ namespace APIShared.Presentation
             if (!EnsureInitialized(out _)) return false;
             try { context = Read(MainViewModel.viewModelLoaded ? MainViewModel.Instance : null); return true; }
             catch (Exception error) { Report("context", error); return false; }
+        }
+
+        /// <summary>Since 0.73.0: registers a presenter on the initialized Unity thread after Script Extender readiness: a mod
+        /// that shows Vanilla's building panel for another building than the local player's own selection. While it
+        /// reports a building and the building HUD is shown, every section sees that building in its context, with
+        /// <see cref="BuildingPanelContext.ActingPlayerId"/> set to the player the presenter acts for. False with a reason
+        /// for invalid or duplicate options or unavailable game members.</summary>
+        /// <remarks>Report no building while the presenter's panel is closed. Registrations last for the process.</remarks>
+        public static bool TryRegisterPresenter(BuildingPanelPresenterOptions options, out string reason)
+        {
+            if (!EnsureInitialized(out reason)) return false;
+            return registry.TryRegisterPresenter(options, out reason);
+        }
+
+        /// <summary>Since 0.73.0: Unity thread: a section's control asks to run a registered
+        /// <see cref="Buildings.BuildingActions">building action</see> on a presented panel's building. The request goes to
+        /// the presenter that still shows this building, which executes it through its own authorized path.</summary>
+        /// <remarks>Only presented panels are routed: for Vanilla's own selection the action's mod uses its own path (for
+        /// example its own Chore). The action must be registered and apply to the building's type.</remarks>
+        /// <param name="context">The context of the section's current showing.</param>
+        /// <param name="actionOwnerGuid">GUID of the mod that registered the action.</param>
+        /// <param name="actionId">The action's owner-local ID.</param>
+        /// <param name="argument">Action-defined value.</param>
+        /// <param name="reason">Why the request was not accepted.</param>
+        public static bool TrySubmitAction(BuildingPanelContext context, string actionOwnerGuid, string actionId, int argument,
+            out string reason)
+        {
+            if (!UnityMainThreadDispatch.IsMainThread) { reason = "Building panel actions require the initialized Unity thread."; return false; }
+            if (context == null || !context.IsPresented)
+            { reason = "Only a presented building panel routes actions; use the action's own path for the local selection."; return false; }
+            if (!Buildings.BuildingActions.AppliesTo(actionOwnerGuid, actionId, context.BuildingType))
+            { reason = "No building action " + actionOwnerGuid + "/" + actionId + " applies to " + context.BuildingType + "."; return false; }
+            BuildingPanelPresenterEntry presenter = null;
+            foreach (BuildingPanelPresenterEntry entry in registry.Presenters)
+                if (entry.Owner == context.PresenterOwnerGuid && entry.Id == context.PresenterRegistrationId) { presenter = entry; break; }
+            if (presenter == null || !TryQuery(presenter, out int shown, out int acting) ||
+                shown != context.BuildingId || acting != context.ActingPlayerId)
+            { reason = "The presenter no longer shows this building."; return false; }
+            var request = new Buildings.BuildingActionRequest(actionOwnerGuid, actionId, context.ActingPlayerId, context.BuildingId,
+                context.GlobalId, argument);
+            try
+            {
+                if (presenter.Submit(request, out reason)) { reason = ""; return true; }
+                reason = string.IsNullOrEmpty(reason) ? "The presenter refused the action." : reason;
+                return false;
+            }
+            catch (Exception error)
+            {
+                Report("submit/" + presenter.Owner + "/" + presenter.Id, error);
+                reason = "The presenter failed to submit the action.";
+                return false;
+            }
         }
 
         private static bool EnsureInitialized(out string reason)
@@ -225,23 +281,47 @@ namespace APIShared.Presentation
         }
 
         // The building of the open panel, or null. Reused while unchanged, so a new instance marks a change.
-        private static unsafe BuildingPanelContext Read(MainViewModel main)
+        // A presenter's building takes precedence over Vanilla's own selection while the building HUD is shown.
+        private static BuildingPanelContext Read(MainViewModel main)
         {
-            EngineInterface.PlayState state = main?.HUDmain != null && main.HUDBuildingPanel != null && main.Show_HUD_Building
-                ? GameData.Instance?.lastGameState : null;
+            if (main?.HUDmain == null || main.HUDBuildingPanel == null || !main.Show_HUD_Building) return current = null;
+            foreach (BuildingPanelPresenterEntry presenter in registry.Presenters)
+                if (TryQuery(presenter, out int presented, out int acting))
+                    return current = Context(presented, acting, presenter);
+            EngineInterface.PlayState state = GameData.Instance?.lastGameState;
             if (state == null || state.in_structure <= 0 || !BuildingPanelSectionPolicy.IsBuildingSubMode(state.app_sub_mode))
                 return current = null;
-            GameBuildingManagerAPI manager = GameBuildingManagerAPI.Instance;
-            if (manager == null || !BuildingAccess.TryGetById(manager, state.in_structure, out GameBuilding* building, out _) ||
-                building == null || building->r_AliveState != AliveState.IsAlive || building->r_GlobalId == 0)
-                return current = null;
+            return current = Context(state.in_structure, 0, null);
+        }
 
-            int id = state.in_structure, owner = building->r_PlayerIdOwner;
+        private static unsafe BuildingPanelContext Context(int id, int acting, BuildingPanelPresenterEntry presenter)
+        {
+            GameBuildingManagerAPI manager = GameBuildingManagerAPI.Instance;
+            if (manager == null || !BuildingAccess.TryGetById(manager, id, out GameBuilding* building, out _) ||
+                building == null || building->r_AliveState != AliveState.IsAlive || building->r_GlobalId == 0)
+                return null;
+
+            int owner = building->r_PlayerIdOwner;
             uint globalId = building->r_GlobalId;
             eStructs type = building->r_BuildingType;
             int local = PlayerPerspectiveAPI.GetControlledPlayerId(), viewed = PlayerPerspectiveAPI.GetViewedPlayerId();
-            if (current != null && current.Same(id, globalId, type, owner, local, viewed, generation)) return current;
-            return current = new BuildingPanelContext(id, globalId, type, owner, local, viewed, generation);
+            if (presenter == null) acting = local;
+            string presenterOwner = presenter?.Owner, presenterId = presenter?.Id;
+            if (current != null && current.Same(id, globalId, type, owner, local, viewed, generation, acting, presenterOwner, presenterId))
+                return current;
+            return new BuildingPanelContext(id, globalId, type, owner, local, viewed, generation, acting, presenterOwner, presenterId);
+        }
+
+        private static bool TryQuery(BuildingPanelPresenterEntry presenter, out int buildingId, out int actingPlayerId)
+        {
+            try
+            {
+                if (presenter.Query(out buildingId, out actingPlayerId) && buildingId > 0 && actingPlayerId > 0) return true;
+            }
+            catch (Exception error) { Report("presenter/" + presenter.Owner + "/" + presenter.Id, error); }
+            buildingId = 0;
+            actingPlayerId = 0;
+            return false;
         }
 
         private static void SetVisible(FrameworkElement element, bool visible)

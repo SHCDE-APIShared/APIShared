@@ -406,6 +406,29 @@ APIShared.Buildings.BuildMenuAvailabilityRule | public string OwnerGuid { get; }
 APIShared.Buildings.BuildMenuAvailabilityRule | public string RegistrationId { get; }
 APIShared.Buildings.BuildMenuAvailabilityRule | public void ClearAll()
 APIShared.Buildings.BuildMenuAvailabilityRule | public void SetEnabled(bool value)
+APIShared.Buildings.BuildingActionExecutor | public delegate bool APIShared.Buildings.BuildingActionExecutor(APIShared.Buildings.BuildingActionRequest request, out string reason)
+APIShared.Buildings.BuildingActionOptions | public sealed class APIShared.Buildings.BuildingActionOptions
+APIShared.Buildings.BuildingActionOptions | public .ctor(string ownerGuid, string actionId, System.Collections.Generic.IEnumerable<SHCDESE.Interop.eStructs> buildingTypes, APIShared.Buildings.BuildingActionExecutor execute)
+APIShared.Buildings.BuildingActionOptions | public APIShared.Buildings.BuildingActionExecutor Execute { get; }
+APIShared.Buildings.BuildingActionOptions | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
+APIShared.Buildings.BuildingActionOptions | public string ActionId { get; }
+APIShared.Buildings.BuildingActionOptions | public string OwnerGuid { get; }
+APIShared.Buildings.BuildingActionRequest | public sealed class APIShared.Buildings.BuildingActionRequest
+APIShared.Buildings.BuildingActionRequest | public .ctor(string actionOwnerGuid, string actionId, int actingPlayerId, int buildingId, uint buildingGlobalId, int argument)
+APIShared.Buildings.BuildingActionRequest | public int ActingPlayerId { get; }
+APIShared.Buildings.BuildingActionRequest | public int Argument { get; }
+APIShared.Buildings.BuildingActionRequest | public int BuildingId { get; }
+APIShared.Buildings.BuildingActionRequest | public override string ToString()
+APIShared.Buildings.BuildingActionRequest | public string ActionId { get; }
+APIShared.Buildings.BuildingActionRequest | public string ActionOwnerGuid { get; }
+APIShared.Buildings.BuildingActionRequest | public uint BuildingGlobalId { get; }
+APIShared.Buildings.BuildingActions | public static class APIShared.Buildings.BuildingActions
+APIShared.Buildings.BuildingActions | public static bool AppliesTo(string ownerGuid, string actionId, SHCDESE.Interop.eStructs buildingType)
+APIShared.Buildings.BuildingActions | public static bool IsRegistered(string ownerGuid, string actionId)
+APIShared.Buildings.BuildingActions | public static bool TryExecute(APIShared.Buildings.BuildingActionRequest request, out string reason)
+APIShared.Buildings.BuildingActions | public static bool TryGetActionByKey(int key, out string ownerGuid, out string actionId)
+APIShared.Buildings.BuildingActions | public static bool TryRegister(APIShared.Buildings.BuildingActionOptions options, out string reason)
+APIShared.Buildings.BuildingActions | public static int GetActionKey(string ownerGuid, string actionId)
 APIShared.Buildings.BuildingGeometry | public static class APIShared.Buildings.BuildingGeometry
 APIShared.Buildings.BuildingGeometry | public static bool TryGetSquareFootprintCenter(int beginX, int beginY, int gridSize, out int centerX, out int centerY)
 APIShared.Buildings.BuildingStateRegistration | public sealed class APIShared.Buildings.BuildingStateRegistration
@@ -2974,15 +2997,29 @@ APIShared.Presentation.AllyPanelButtonPreEventArgs | public sealed class APIShar
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public CrusaderDE.HUD_AlliesPanel Panel { get; }
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public bool TryClaim(System.Action<APIShared.Presentation.AllyPanelButtonInvocation> execute)
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public string Button { get; }
+APIShared.Presentation.BuildingPanelActionSubmit | public delegate bool APIShared.Presentation.BuildingPanelActionSubmit(APIShared.Buildings.BuildingActionRequest request, out string reason)
 APIShared.Presentation.BuildingPanelContext | public sealed class APIShared.Presentation.BuildingPanelContext
 APIShared.Presentation.BuildingPanelContext | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Presentation.BuildingPanelContext | public bool CanActAsOwner { get; }
 APIShared.Presentation.BuildingPanelContext | public bool IsOwnedByLocalPlayer { get; }
+APIShared.Presentation.BuildingPanelContext | public bool IsPresented { get; }
+APIShared.Presentation.BuildingPanelContext | public int ActingPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public int BuildingId { get; }
 APIShared.Presentation.BuildingPanelContext | public int LocalPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public int OwnerPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public int ViewedPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public long PanelGeneration { get; }
+APIShared.Presentation.BuildingPanelContext | public string PresenterOwnerGuid { get; }
+APIShared.Presentation.BuildingPanelContext | public string PresenterRegistrationId { get; }
 APIShared.Presentation.BuildingPanelContext | public uint GlobalId { get; }
+APIShared.Presentation.BuildingPanelPresentationQuery | public delegate bool APIShared.Presentation.BuildingPanelPresentationQuery(out int buildingId, out int actingPlayerId)
+APIShared.Presentation.BuildingPanelPresenterOptions | public sealed class APIShared.Presentation.BuildingPanelPresenterOptions
+APIShared.Presentation.BuildingPanelPresenterOptions | public .ctor(string ownerGuid, string registrationId, APIShared.Presentation.BuildingPanelPresentationQuery query, APIShared.Presentation.BuildingPanelActionSubmit submit)
+APIShared.Presentation.BuildingPanelPresenterOptions | public APIShared.Presentation.BuildingPanelActionSubmit Submit { get; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public APIShared.Presentation.BuildingPanelPresentationQuery Query { get; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public int Order { get; set; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public string RegistrationId { get; }
 APIShared.Presentation.BuildingPanelSectionEventArgs | public sealed class APIShared.Presentation.BuildingPanelSectionEventArgs
 APIShared.Presentation.BuildingPanelSectionEventArgs | public APIShared.Presentation.BuildingPanelContext Context { get; }
 APIShared.Presentation.BuildingPanelSectionEventArgs | public Noesis.FrameworkElement Content { get; }
@@ -3007,6 +3044,8 @@ APIShared.Presentation.BuildingPanelSectionRegistration | public string Registra
 APIShared.Presentation.BuildingPanelSections | public static class APIShared.Presentation.BuildingPanelSections
 APIShared.Presentation.BuildingPanelSections | public static bool TryGetContext(out APIShared.Presentation.BuildingPanelContext context)
 APIShared.Presentation.BuildingPanelSections | public static bool TryRegister(APIShared.Presentation.BuildingPanelSectionOptions options, out APIShared.Presentation.BuildingPanelSectionRegistration registration, out string reason)
+APIShared.Presentation.BuildingPanelSections | public static bool TryRegisterPresenter(APIShared.Presentation.BuildingPanelPresenterOptions options, out string reason)
+APIShared.Presentation.BuildingPanelSections | public static bool TrySubmitAction(APIShared.Presentation.BuildingPanelContext context, string actionOwnerGuid, string actionId, int argument, out string reason)
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }

@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.72.1",
+  "Version": "0.73.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.73.0",
+      "Changes": [
+        "Add building actions and building panel presenters: mods can name the owner commands behind their building panel controls, and a mod that shows another player's building panel (for example a spectator tool) makes other mods' sections appear there and receives their actions."
+      ]
+    },
     {
       "Version": "0.72.1",
       "Changes": [

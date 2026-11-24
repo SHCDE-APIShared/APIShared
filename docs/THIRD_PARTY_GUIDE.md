@@ -2226,7 +2226,9 @@ and the detection and calls Opened, Updated and Closed on Unity. Use
 [BuildingStates](BUILDING_STATE.md) for the player's per-building choice behind such a control:
 owner requests are validated and applied on every peer in the same tick, saved with the game and
 readable from managed and native simulation code. A table can opt in to applying one owner value
-to all of the sender's living buildings of the selected type.
+to all of the sender's living buildings of the selected type. Register a control's owner commands
+as [building actions](BUILDING_PANELS.md#presenters-and-building-actions) so that spectator and
+foreign-control mods that present another player's panel can use it without reflection.
 
 ## Local input and mod keybinds
 
