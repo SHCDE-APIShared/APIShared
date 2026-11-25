@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using TestAssert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
 namespace APISharedTests
 {
@@ -146,6 +147,63 @@ namespace APISharedTests
         [TestMethod]
         [TestCategory("Diagnostics")]
         public void VerifyAivBuildStepBroker() => TestAivBuildStepBroker();
+
+        [TestMethod]
+        [TestCategory("Diagnostics")]
+        [DataRow(true, false)]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        public void AivIsolatesUnformattableCallbackFailures(bool failBegin, bool originalThrows)
+        {
+            using var log = new BepInEx.Logging.ManualLogSource("AIV callback isolation test");
+            var reports = new List<string>();
+            log.LogEvent += (_, entry) =>
+            {
+                if (entry.Level == BepInEx.Logging.LogLevel.Error)
+                    reports.Add((string)entry.Data);
+                throw new InvalidOperationException("injected log listener failure");
+            };
+            var service = new AivBuildStepService(ApiSharedRuntime.SupportedHash, log);
+            var trace = new List<string>();
+            var failure = new UnformattableCallbackException();
+            string badOwner = failBegin ? "a.bad" : "z.bad";
+            string goodOwner = failBegin ? "z.good" : "a.good";
+            Assert(service.Bind(badOwner).TryRegisterObserver("case",
+                new RecordingAivObserver("bad", trace, failBegin, !failBegin, failure), out _), "failing observer registered");
+            Assert(service.Bind(goodOwner).TryRegisterObserver("case",
+                new RecordingAivObserver("good", trace), out _), "healthy observer registered");
+
+            var context = new AivBuildStepContext(1, 2, 3, 0, 0);
+            var originalFailure = new InvalidOperationException("injected original failure");
+            int Original()
+            {
+                trace.Add("original");
+                if (originalThrows) throw originalFailure;
+                return 12;
+            }
+
+            string payload = originalThrows ? "False:0" : "True:12";
+            string[] expected = failBegin
+                ? new[] { "begin:bad", "begin:good", "original", "complete:good:" + payload }
+                : new[] { "begin:good", "begin:bad", "original", "complete:bad:" + payload, "complete:good:" + payload };
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                trace.Clear();
+                if (originalThrows)
+                    TestAssert.AreSame(originalFailure,
+                        TestAssert.Throws<InvalidOperationException>(
+                            () => service.DispatchForTest(context, Original)));
+                else
+                    Assert(service.DispatchForTest(context, Original) == 12, "return the original result");
+                AssertSequenceEqual(trace.ToArray(), expected, "preserve every expected callback and original call");
+            }
+
+            Assert(failure.FormatAttempts == 0, "diagnostics must not call exception overrides");
+            string phase = failBegin ? "begin" : "completion";
+            Assert(reports.Count == 1 && reports[0].Contains(badOwner + ":case:" + phase) &&
+                reports[0].Contains(typeof(UnformattableCallbackException).FullName),
+                "report the correct callback failure only once despite a throwing log listener");
+        }
 
         private static void TestAivBuildStepBroker()
         {

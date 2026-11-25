@@ -84,6 +84,30 @@ resource operations without a paired sender/recipient; gold gifts write balances
 directly and do not pass through those events. Market-price events are valuations,
 not gifts or market transactions. No second owner is added to these existing hooks.
 
+## Optional Vanilla chat messages
+
+The original six-argument `AllyTransferRequest` constructor remains available and
+retains Vanilla chat messages. The explicit seven-argument overload adds the final
+`showVanillaChatMessages` Boolean. Set it to `false` to suppress both the sender's
+and recipient's Vanilla goods-transfer chat entries for this exact service call.
+`AllyTransfers.CanSuppressVanillaChatMessages` reports this separate capability.
+An unsupported silent request is rejected before any resource mutation; it never
+falls back to an ordinary noisy gift. Ordinary requests remain available when
+only chat suppression is unavailable.
+
+Suppression applies only while the attributed original primitive is executing.
+Extender/shared Pre and Post observers, nested foreign/manual transfers, other
+chat categories and other callers keep their original behavior. No localized
+message matching or delayed queue filtering is used. The native writer does not
+advance its ring index for a suppressed entry. Transfer receipts, inventories,
+statistics, recipient reaction timers, sound and AI responses are unchanged.
+In particular, silent gifts still participate in Vanilla's existing recipient
+reaction throttle; this option controls the chat entries, not that throttle.
+
+The caller owns synchronization and persistence of its preference. Every peer
+must execute the same request option. Existing callers need no changes and
+continue with messages enabled.
+
 ## Native update evidence and limitations
 
 Evidence was rechecked on 2026-11-04 against the installed canonical DLL SHA-256

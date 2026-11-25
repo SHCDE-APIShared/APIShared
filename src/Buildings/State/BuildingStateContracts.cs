@@ -136,6 +136,13 @@ namespace APIShared.Buildings
         /// <summary>Process-lifetime address of entry 0; never freed or moved.</summary>
         public ulong NativeAddress => Memory.Address;
 
+        /// <summary>Opts this table into host-authoritative synchronization during a native multiplayer repair.</summary>
+        /// <remarks>Call once on the initialized Unity thread before multiplayer admission, identically on
+        /// every peer. The table keeps its native address and local request tracking. Only values whose
+        /// building, owner and type match the repaired world are retained. This option requires a matching
+        /// gameplay package and a supported resync service. Use failure to gate the dependent MP feature.</remarks>
+        public bool TryRegisterMultiplayerResync(out string reason) => BuildingStates.TryRegisterResync(this, out reason);
+
         /// <summary>Whether the owner of a building of this type may request changes.</summary>
         public bool AppliesTo(eStructs buildingType) => types.Contains(buildingType);
 

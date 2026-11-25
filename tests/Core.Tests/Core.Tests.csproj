@@ -14,6 +14,7 @@
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/VanillaMenuOverrides.cs" Link="Production/VanillaMenuOverrides.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
@@ -63,6 +64,7 @@
     <Compile Include="../../src/Networking/NetworkPacketContracts.cs" Link="Production/NetworkPacketContracts.cs" />
     <Compile Include="../../src/Networking/ChoreSendPolicy.cs" Link="Production/ChoreSendPolicy.cs" />
     <Compile Include="../../src/Networking/PacketReceivePolicy.cs" Link="Production/PacketReceivePolicy.cs" />
+    <Compile Include="../../src/Networking/NativeReadinessProof.cs" Link="Production/NativeReadinessProof.cs" />
 
     <Compile Include="../../src/Core/Events/InterceptionEvent.cs" Link="Production/InterceptionEvent.cs" />
     <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />

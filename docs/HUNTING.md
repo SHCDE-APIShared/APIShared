@@ -133,6 +133,13 @@ HunterMeatYieldEvents.TryRegister(pluginGuid, "meat", yield =>
 
 ## Missions and multiplayer
 
+`HunterMeatYieldEvents.TryEnableMultiplayerResync` (0.69.0) adds the shared
+butchered-prey record to the host-authoritative repair cohort. Call it on Unity
+during startup on every peer. Multiple consumers share the same registration.
+Check its result before admitting yield customizations in multiplayer. During
+repair, the Hunter's target GlobalId validates the row even after the corpse has
+vanished. The existing save record is unchanged.
+
 - Each mission freezes the catalog during initialization. Registrations and
   `TrySetEnabled` take effect at the next mission.
 - Custom types are active only where the mission mode allows custom gameplay mods,

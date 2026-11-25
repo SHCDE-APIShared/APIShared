@@ -72,6 +72,36 @@ namespace APIShared.Lobby
             if (!UnityMainThreadDispatch.TryEnqueue(Refresh)) Interlocked.Exchange(ref refreshQueued, 0);
         }
 
+        /// <summary>Shows one local system message in the specified active Steam lobby.</summary>
+        /// <remarks>Call on the Unity thread after initialization and outside a mission. Returns false if the
+        /// lobby changed, local rendering is unavailable, or the text is empty or longer than Vanilla's 300
+        /// character limit after flattening line breaks. This call uses Vanilla's normal chat notification and
+        /// does not send network messages, record launch status or deduplicate calls. The caller owns timing and
+        /// repeat suppression. Rendering failures are logged and return false.</remarks>
+        public static bool TryShowLocalSystemMessage(ulong lobbyId, string text)
+        {
+            if (!IsAvailable || !UnityMainThreadDispatch.IsMainThread || lobbyId == 0) return false;
+            try
+            {
+                return TryGetLobby(out ulong currentLobbyId, out _, out var view) &&
+                    TryRenderLocalSystemMessage(lobbyId, currentLobbyId, text,
+                        line => LobbyChatPresentation.TryShowLocal(view, line));
+            }
+            catch (Exception error)
+            {
+                Report(false, "LOBBY_LOCAL_SYSTEM_CHAT_FAILED: " + error, null);
+                return false;
+            }
+        }
+
+        internal static bool TryRenderLocalSystemMessage(ulong expectedLobbyId, ulong currentLobbyId,
+            string text, Func<string, bool> render)
+        {
+            if (expectedLobbyId == 0 || expectedLobbyId != currentLobbyId || string.IsNullOrWhiteSpace(text)) return false;
+            string line = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            return line.Length <= 300 && render(line);
+        }
+
         /// <summary>Reports a Ready/Start command the owner has just rejected.</summary>
         /// <remarks>Call it where the command was rejected, normally the Unity thread; other threads are marshalled.
         /// The entry is always logged as an error. In an active lobby the rejecting player sends it to the whole lobby

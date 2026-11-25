@@ -258,3 +258,4 @@ ModKeybinds.ResetHelp=Stellt das Standardkürzel dieser Aktion wieder her.
 ModKeybinds.Capture=Taste oder Maustaste drücken. Esc bricht ab.
 ModKeybinds.Unassigned=Nicht belegt
 ModKeybinds.Conflict=Dieses Kürzel ist auch einer anderen Aktion zugewiesen.
+AllyGoods.More=Mehr...

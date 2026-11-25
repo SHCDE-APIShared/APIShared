@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using BepInEx.Logging;
 using APIShared.Internal;
+using SHCDESE.API;
+using SHCDESE.GameGlobals;
 using SHCDESE.Interop;
 
 namespace APIShared.Buildings
@@ -37,6 +39,55 @@ namespace APIShared.Buildings
         /// <summary>Reads live base costs, without mission-specific free-building rules.</summary>
         public static bool TryGetCurrent(ConstructionCostTarget target, out ConstructionCostValues values, out string reason) =>
             TryRead(target, false, out values, out reason);
+
+        /// <summary>Reads the live stock of the five native construction materials for a 1-based player ID.</summary>
+        /// <remarks>Supports simulation callers and UI callers holding the engine monitor. Call in a
+        /// serialized game context during an active mission. The immutable copy has no native lifetime
+        /// dependency and does not incorporate a viewed player, free-building rules or pending orders.</remarks>
+        /// <returns>False with a default snapshot if the ID, native layout or player resources are unavailable.</returns>
+        public static bool TryGetPlayerMaterialStock(int playerId, out ConstructionMaterialStock stock, out string reason)
+        {
+            stock = default;
+            if (!ValidPlayerId(playerId))
+            {
+                reason = "A valid 1-based player ID is required.";
+                return false;
+            }
+            if (!IsAvailable)
+            {
+                reason = unavailableReason;
+                return false;
+            }
+            if (GameGlobalsManager.Instance.GamePlayerManagerVA == 0)
+            {
+                reason = "The native player manager is unavailable.";
+                return false;
+            }
+            return TryReadPlayerMaterialStock(GamePlayerManagerAPI.Instance, playerId, out stock, out reason);
+        }
+
+        internal static unsafe bool TryReadPlayerMaterialStock(GamePlayerManagerAPI players, int playerId,
+            out ConstructionMaterialStock stock, out string reason)
+        {
+            stock = default;
+            if (!ValidPlayerId(playerId))
+            {
+                reason = "A valid 1-based player ID is required.";
+                return false;
+            }
+            if (players == null || !players.TryGetPlayerResourcesById(playerId, out GamePlayerResources* resources) ||
+                resources == null)
+            {
+                reason = "The player's native resources are unavailable.";
+                return false;
+            }
+            stock = new ConstructionMaterialStock(resources->r_TotalGoodsWoodPlanks, resources->r_TotalGoodsStoneBlocks,
+                resources->r_TotalGoodsIronIngots, resources->r_TotalGoodsPitchRaw, resources->r_TotalGoodsGold);
+            reason = string.Empty;
+            return true;
+        }
+
+        private static bool ValidPlayerId(int playerId) => (uint)(playerId - 1) < GamePlayerManagerAPI.MAX_PLAYERS;
 
         /// <summary>Changes one nonnegative native material cost in both native and visual tables.</summary>
         /// <returns>False without mutation for unsupported target/good, negative amount, unavailable service,

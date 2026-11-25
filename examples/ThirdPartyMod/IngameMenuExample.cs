@@ -36,6 +36,12 @@ namespace ThirdPartyMod
                 }, new IngameMenuActionOptions(), out inlineRegistration, out string reason)) log(reason);
         }
         private static IngameMenuActionRegistration inlineRegistration;
+        internal static void RegisterHelpSuppression(string ownerGuid, Func<bool> hideHelp, Action<string> log)
+        {
+            // Call IngameMenuActions.Invalidate(ownerGuid) when the setting or session state changes.
+            if (!IngameMenuActions.TryRegisterVanillaSuppression(ownerGuid, "hide-vanilla-help", IngameMenuRow.Help,
+                hideHelp, out string reason)) log(reason);
+        }
         // Invoke from the mod's actual state-change event, not an Update/OnTick loop.
         internal static void OnAvailabilityChanged(bool value)
         {
