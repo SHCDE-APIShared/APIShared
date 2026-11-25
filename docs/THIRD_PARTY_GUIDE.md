@@ -847,8 +847,10 @@ with `SimulationAgreement` for simulation-changing consumers.
 
 `MultiplayerResyncData` requires APIShared 0.65.0. Register each record once
 on the Unity thread after native initialization. Use the same owner GUID, record
-ID, schema version and declared maximum on every peer. The first resolved
-multiplayer lobby closes registration for the process. Use a gameplay
+ID, schema version and declared maximum on every peer. The owner GUID and record
+ID each accept 1 to 96 ASCII letters, digits, periods, underscores or hyphens.
+Use `auto-send-rules` for a feature prefix, since `/` is outside that character set.
+The first resolved multiplayer lobby closes registration for the process. Use a gameplay
 package with `NetworkMode=1`. Active records form one required cohort in the
 multiplayer simulation agreement. Check the return value from registration and
 include readiness in your gameplay feature admission.
