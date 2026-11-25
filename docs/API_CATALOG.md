@@ -1,5 +1,18 @@
 # API catalog
 
+## Effective native unit moves
+
+`APIShared.Units.UnitMoveEvents` supplies final effective move arguments, private
+native-result receipts and guarded single-wrapper calls, preserving independent
+nested orders. See [unit-move ownership, origin, lifetime and result contracts](UNIT_MOVES.md).
+
+## Effective world mutations
+
+`APIShared.WorldMutations.WorldMutationEvents` shares effective native construction,
+editor terrain, moat work and demolition observations, consumer-private invocation
+receipts, outer batches and world generations. See [source, thread, lifetime and
+caller-boundary contracts](WORLD_MUTATIONS.md).
+
 ## AI military admission
 
 `ModApiClient.TryGetAiMilitary` exposes semantic military roles, invocation-scoped

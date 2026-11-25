@@ -257,6 +257,8 @@ namespace APIShared
             Group(PlayerViewIdentitySite, PlayerViewIdentitySpans()),
             Group(PlayerViewNetwork, PlayerViewNetworkSpans()),
             Group(MapperCamera, MapperCameraSpans()),
+            Group("WorldMutation.MoatDig", WorldMutations.WorldMutationRuntime.MoatSpans(false)),
+            Group("WorldMutation.MoatFill", WorldMutations.WorldMutationRuntime.MoatSpans(true)),
             Group(Buildings.HumanConstructionRuntime.DecorationSite, Buildings.HumanConstructionRuntime.DecorationSpans()),
             Group(Buildings.HumanConstructionRuntime.DisbandSite, Buildings.HumanConstructionRuntime.DisbandSpans()),
             Group(Buildings.HumanConstructionRuntime.GoldCallsSite, Buildings.HumanConstructionRuntime.GoldCallSpans()),

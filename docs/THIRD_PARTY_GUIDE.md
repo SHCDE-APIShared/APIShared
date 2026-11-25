@@ -8,6 +8,8 @@
 - [Extending APIShared](#extending-apishared)
 - [Declaring native hook sites](#declaring-native-hook-sites)
 - [APIShared interface language](#apishared-interface-language)
+- [Effective native unit moves](UNIT_MOVES.md)
+- [Effective world mutations](WORLD_MUTATIONS.md)
 - [Native simulation ticks](#native-simulation-ticks)
 - [Managed engine-run boundaries](#managed-engine-run-boundaries)
 - [Demand-driven engine readback](#demand-driven-engine-readback)

@@ -2452,3 +2452,71 @@ stub/jump/padding and watch foreign patches; never unpatch after publication.
 Unknown hashes have no fallback because a prologue cannot establish the producer,
 ring and SE-wrapper attribution contracts. Failure disables only silent requests.
 Run the actual native writer/stub execution tests and SE nested-wrapper tests.
+
+## Effective world-mutation moat work
+
+Owner: `WorldMutations.WorldMutationRuntime`; consumer contract:
+[effective world mutations](docs/WORLD_MUTATIONS.md). Native reference SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+
+| Helper | RVA | Body length | SHA-256 | Entry / displacement |
+| --- | --- | --- | --- | --- |
+| Dig moat task | 0x639C0 | 323 | `7E25A104B7BCB3C8CE462AB396F637F052F548C8B03900C67E80DE974702445C` | `48 89 5C 24 18 56` / 6 |
+| Fill moat task | 0x69470 | 237 | `F9E2EAEB9B1F1C53D33D402BF419D4459699BB2A3B3EB572F24A7404F1342AE5` | `48 89 6C 24 10 48 89 74 24 18` / 10 |
+
+Both use Win64 integer ABI `(tileManager pointer, signed int taskSlot)` and return
+0/1 through EAX. The managed bridge returns the integral result unchanged. Full
+function/caller re-audit is required on native updates: prove exact task arguments,
+return width, every entry instruction, absence of interior branches into displaced
+bytes, helper side effects and surrounding actor-frame writes. Current-unit globals
+must not be treated as a universal actor identity (fill also has a Chore caller).
+
+The Indirect-only backend disables jump/call following, bounds scans to the audited
+function length and verifies the six/ten-byte live patch/trampoline. Each displaced
+span is registered Exclusive as `WorldMutation.MoatDig` / `WorldMutation.MoatFill`.
+Revalidate before publication and on mission/editor start; foreign modification
+fails the source closed without reverting published hooks. The first continuation
+instruction is outside the claim; an independent adjacent hook remains allowed.
+
+Managed world adapters also require rechecking each actual SE delegate signature,
+root Original getter, mirror-generated Original getter and whole outer exception
+regions. Construction/terminal removal must continue through the existing cost
+owner's final original; do not add competing native entries. AIV keeps the existing
+51790 owner and must enclose the whole original including cleanup and tail call.
+Run `WorldMutationTests`, `WorldMutationWrapperTests`, `WorldMutationNativeTests`
+and affected existing construction/AIV/native-site tests. A normal return or batch
+end never proves semantic mutation success or universal permission to write state.
+## Final native unit-move observations
+
+Owner: `Units.AiMilitary.Orders.AiMilitaryOrderBroker`, shared publicly through
+[UnitMoveEvents](docs/UNIT_MOVES.md). Native reference SHA-256 remains
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Native 0x196280 remains SE-owned: never add a competing entry detour. The audited
+native outcome is 0/1; preserve the SE Int64 delegate return unchanged.
+
+Validate the actual `BulkUnitDetours.c_game_unit_issueorder_movehere_delegate` and
+static `_hook_impl`: `(NativePointer<GameUnitManager>, Int32, Int32, Int32, Int32)`
+returning Int64, with one original delegate Invoke/getter. Validate the existing
+owner transformation and outer scope including all RET/branch/EH paths before
+publication. Legacy Post currently reconstructs its event arguments from the
+initial wrapper unit/XY and may replace the result: neither is authoritative.
+Capture effective arguments/native result at the existing Original call instead.
+
+Keep the independent UnitMove owner publication and public lifecycle readiness
+separate from optional AI feature readiness. Preserve AI Before/After receipts,
+world/identity guards and group-dispatch behavior. Outer frame identity must bind
+before Pre and remain through Post/finally, so unrelated nested commands do not
+inherit the guarded caller or get redirected/vetoed by it. A failed later SafeIlHook
+rebuild must disable public guarded admission without unpatching published hooks.
+Check SE native-handle Success, NativeDetour.IsInstalled and exact module+0x196280
+TargetAddress before publication and guarded admission: its ContinueOnError setup
+does not make the managed wrapper proof sufficient by itself.
+RedBird's sealed NativeDetour<T> generates readonly byte[] `_patchBytes` before
+installation and pads it to DisplacedByteCount. Validate that field/type/readonly
+contract once (5..64 bytes), clone its expected bytes, compare the live entry and
+nonzero PointerSlot to HookEntryPointAddress, and latch+Error on loss. No live-byte
+snapshot may approve itself. Recheck the private backend contract on SDK updates;
+unknown shapes fail closed. Never remove or restore a published SE patch.
+Re-run real-wrapper `UnitMoveEventsTests`, `AiMilitaryBrokerTests` and the unchanged
+`AiRecruitOrders.Tests` native-result/admission contracts; verify dormant allocation
+cost separately from the extender's own event-argument allocations.

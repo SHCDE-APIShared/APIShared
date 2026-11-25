@@ -30,7 +30,24 @@ namespace APIShared.Units.AiMilitary.Orders
         [ThreadStatic] private static int groupDispatch;
         // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool IsReady => System.Threading.Volatile.Read(ref ready) != 0;
-        private static int ready;
+        private static int ready,unitMoveReady;
+        private static Patching.SafeIlHook unitMoveHook;
+        internal static bool IsUnitMoveReady=>System.Threading.Volatile.Read(ref unitMoveReady)!=0;
+        internal static bool IsUnitMoveApplied=>IsUnitMoveReady && unitMoveHook!=null && unitMoveHook.IsApplied;
+        internal static void InitializeUnitMove(ManualLogSource logger,string hash)
+        {
+            if(hash!=ApiSharedRuntime.SupportedHash)throw new InvalidOperationException("Unit-move Original requires the audited native hash.");
+            if(IsUnitMoveReady)return;
+            log=logger;
+            var method=typeof(BulkUnitDetours).GetMethod("c_game_unit_issueorder_movehere_hook_impl");
+            if(method==null)throw new MissingMethodException("The installed SE unit-move wrapper is missing.");
+            if(!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid,"APIShared.AiMilitary.Effective."+method.Name,
+                method,TransformUnitMove,log,out var hook,out string failure))
+                throw new InvalidOperationException("Effective unit-move observation unavailable: "+failure);
+            lock(Hooks)Hooks.Add(hook);
+            unitMoveHook=hook;
+            System.Threading.Volatile.Write(ref unitMoveReady,1);
+        }
         internal static void EnterGroupDispatch() => groupDispatch++;
         internal static void ExitGroupDispatch() => groupDispatch--;
 
@@ -40,6 +57,7 @@ namespace APIShared.Units.AiMilitary.Orders
             Func<int, int, bool> onAssignmentAllowed = null, Func<long, long, long> onCreatedReturn = null)
         {
             if (IsReady) return;
+            InitializeUnitMove(logger,ApiSharedRuntime.SupportedHash);
             log = logger; moved = onMove; targeted = onTarget; individualMove = onIndividualMove;
             created = onCreated;
             assignmentAllowed = onAssignmentAllowed;
@@ -47,7 +65,6 @@ namespace APIShared.Units.AiMilitary.Orders
             var edits = new[] {
                 Tuple.Create(typeof(BulkTribeDetours).GetMethod("c_game_tribe_issueorder_movehere_hook_impl"), (ILContext.Manipulator)TransformMove),
                 Tuple.Create(typeof(BulkTribeDetours).GetMethod("c_game_tribe_issueorder_withtarget_hook_impl"), (ILContext.Manipulator)TransformTarget),
-                Tuple.Create(typeof(BulkUnitDetours).GetMethod("c_game_unit_issueorder_movehere_hook_impl"), (ILContext.Manipulator)TransformUnitMove),
                 Tuple.Create(typeof(BulkUnitDetours).GetMethod("c_game_unit_spawn_ex_hook_impl"), (ILContext.Manipulator)TransformCreate),
                 Tuple.Create(typeof(BulkTribeDetours).GetMethod("c_game_unit_assign_tribe_hook_impl"), (ILContext.Manipulator)TransformAssign),
                 Tuple.Create(typeof(BulkTribeDetours).GetMethod("c_game_create_new_tribe_hook_impl"), (ILContext.Manipulator)TransformTribeCreate)
@@ -102,12 +119,24 @@ namespace APIShared.Units.AiMilitary.Orders
         }
         internal static void TransformUnitMove(ILContext il)
         {
+            ValidateUnitMoveAbi();
             var cursor = new ILCursor(il);
             cursor.Goto(FindOriginalInvoke(il, typeof(BulkUnitDetours.c_game_unit_issueorder_movehere_delegate)), MoveType.Before);
             cursor.Remove();
             cursor.EmitDelegate<Func<BulkUnitDetours.c_game_unit_issueorder_movehere_delegate,
                 NativePointer<GameUnitManager>, int, int, int, int, long>>(InvokeUnitMove);
             GuardReturns(il);
+            UnitMoveWrapper.AddScope(il);
+        }
+        internal static void ValidateUnitMoveAbi()
+        {
+            var expected=new[]{typeof(NativePointer<GameUnitManager>),typeof(int),typeof(int),typeof(int),typeof(int)};
+            var invoke=typeof(BulkUnitDetours.c_game_unit_issueorder_movehere_delegate).GetMethod("Invoke");
+            var wrapper=typeof(BulkUnitDetours).GetMethod("c_game_unit_issueorder_movehere_hook_impl");
+            if(wrapper==null || !wrapper.IsStatic || invoke.ReturnType!=typeof(long) || wrapper.ReturnType!=typeof(long) ||
+                !invoke.GetParameters().Select(p=>p.ParameterType).SequenceEqual(expected) ||
+                !wrapper.GetParameters().Select(p=>p.ParameterType).SequenceEqual(expected))
+                throw new InvalidOperationException("Effective unit-move native/SE ABI changed.");
         }
         internal static void TransformCreate(ILContext il)
         {
@@ -213,12 +242,21 @@ namespace APIShared.Units.AiMilitary.Orders
         private static long InvokeUnitMove(BulkUnitDetours.c_game_unit_issueorder_movehere_delegate original,
             NativePointer<GameUnitManager> manager, int unit, int x, int y, int extra)
         {
-            if (!AiUnitMoveReceipts.Before(unit, x, y, extra)) return 0;
-            long result = original(manager, unit, x, y, extra);
-            AiUnitMoveReceipts.After(result);
-            if (IsReady && groupDispatch == 0 && !AiUnitMoveReceipts.IsActive)
-                try { individualMove?.Invoke(unit); } catch (Exception error) { Report(error); }
-            return result;
+            if (!AiUnitMoveReceipts.Before(unit, x, y, extra))
+            {UnitMoveRuntime.OwnerRejected(unit,x,y,extra);return 0;}
+            bool admitted=UnitMoveRuntime.Before(unit,x,y,extra,out var observation);
+            bool invoked=false,returned=false;long result=0;Exception failure=null;
+            try
+            {
+                if(!admitted || observation!=null && (!AiRecruitMutationReceipts.IsCurrentWorld || !AiRecruitMutationReceipts.IsRecruitIdentityCurrent))return 0;
+                invoked=true;result=original(manager,unit,x,y,extra);returned=true;
+                AiUnitMoveReceipts.After(result);
+                if (IsReady && groupDispatch == 0 && !AiUnitMoveReceipts.IsActive)
+                    try { individualMove?.Invoke(unit); } catch (Exception error) { Report(error); }
+                return result;
+            }
+            catch(Exception error){failure=error;throw;}
+            finally{UnitMoveRuntime.Complete(observation,invoked,returned,result,failure);}
         }
         private static long InvokeCreate(BulkUnitDetours.c_game_unit_spawn_ex_delegate original,
             NativePointer<GameUnitManager> manager, int owner, int color, int x, int y, int height, eChimps type)

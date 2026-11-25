@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.73.3";
+        public const string PluginVersion = "0.74.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -148,6 +148,7 @@ namespace APIShared
                 new NativeInitializationStep("enemy building proximity", () => Buildings.EnemyProximityPolicies.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native peace-time state", () => Simulation.PeaceTimeState.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("attack target rules", () => Units.AttackTargetRuleNative.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("effective unit-move Original owner", () => Units.AiMilitary.Orders.AiMilitaryOrderBroker.InitializeUnitMove(RuntimeLogger, hash)),
                 new NativeInitializationStep("military AI assignment", () =>
                     Units.AiMilitary.AiMilitaryService.Instance.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production state", () => Economy.WorkerProductionStateRuntime.Initialize(context, hash, RuntimeLogger)),
@@ -190,6 +191,8 @@ namespace APIShared
                 new NativeInitializationStep("interpolate event reuse", () => ScriptExtenderFixes.InterpolateEventReuseRuntime.Initialize(Config, RuntimeLogger)),
                 new NativeInitializationStep("lobby preset sharing", () => ModSettings.PresetShareService.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("multiplayer resync data channel", () => Multiplayer.MultiplayerResyncDataRuntime.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("effective world-mutation observations", () => WorldMutations.WorldMutationRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("effective unit-move observations", () => Units.UnitMoveRuntime.Initialize(context, hash, RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));

@@ -26,6 +26,8 @@ namespace APIShared.Buildings
         private static readonly List<Patching.SafeIlHook> hooks = new List<Patching.SafeIlHook>();
         private static ManualLogSource log;
         private static bool ready;
+        internal static bool HasBuildOriginalBoundary { get; private set; }
+        internal static bool HasRemovalOriginalBoundary { get; private set; }
         [ThreadStatic] private static BuildFrame building;
         [ThreadStatic] private static RefundFrame refund;
         [ThreadStatic] private static DemolitionFrame demolition;
@@ -49,6 +51,7 @@ namespace APIShared.Buildings
             {
                 InitializeRefundInterceptor(assembly);
                 Install(assembly, "BulkBuildingDetours", "c_game_player_build_structure_hook_impl", "c_game_player_build_structure_delegate", Operation.Build);
+                HasBuildOriginalBoundary = true;
                 Install(assembly, "BulkBuildingDetours", "c_game_building_spawn_hook_impl", "c_game_building_spawn_delegate", Operation.SpawnBuilding);
                 Install(assembly, "BulkUnitDetours", "c_game_unit_spawn_ex_hook_impl", "c_game_unit_spawn_ex_delegate", Operation.SpawnUnit);
                 Install(assembly, "BulkProjectileDetours", "c_game_projectile_spawn_hook_impl", "c_game_projectile_spawn_delegate", Operation.SpawnDecoration);
@@ -59,6 +62,7 @@ namespace APIShared.Buildings
                 Install(assembly, BuildingRemovalNativeContracts.ExtenderAdapter.OwnerTypeName,
                     BuildingRemovalNativeContracts.ExtenderAdapter.ReleaseBuildingSlotCallbackName,
                     BuildingRemovalNativeContracts.ExtenderAdapter.ReleaseBuildingSlotDelegateName, Operation.ReleaseBuildingSlot);
+                HasRemovalOriginalBoundary = true;
                 Install(assembly, "BulkUnitDetours", "c_game_unit_delete_hook_impl", "c_game_unit_delete_hook_delegate", Operation.RetireUnit);
                 Install(assembly, "BulkPlayerDetours", "c_game_player_add_resources_hook_impl", "c_game_player_add_resources_delegate", Operation.AddResource);
                 InitializeDecorationRemoval(context, hash, logger);
@@ -128,6 +132,10 @@ namespace APIShared.Buildings
                 lock (this)
                 {
                     if (ReferenceEquals(original, prior)) return replacement;
+                    Delegate effectiveOriginal = operation == Operation.Build
+                        ? WorldMutations.WorldMutationRuntime.WrapOriginal(original, type, WorldMutations.WorldMutationSource.BuildStructure) :
+                        operation == Operation.ReleaseBuildingSlot
+                        ? WorldMutations.WorldMutationRuntime.WrapOriginal(original, type, WorldMutations.WorldMutationSource.BuildingRemoval) : original;
                     var invoke = type.GetMethod("Invoke");
                     var parameters = invoke.GetParameters().Select(p => Expression.Parameter(p.ParameterType, p.Name)).ToArray();
                     Expression interested = Expression.Call(typeof(HumanConstructionRuntime), nameof(Interested), null, Expression.Constant(operation));
@@ -139,9 +147,9 @@ namespace APIShared.Buildings
                             Expression.Equal(parameters[6], Expression.Constant(eChimps.CHIMP_TYPE_BALLISTA))), interested);
                     var boxed = Expression.NewArrayInit(typeof(object), parameters.Select(p => Expression.Convert(p, typeof(object))));
                     var dispatch = Expression.Call(typeof(HumanConstructionRuntime), nameof(Dispatch), null,
-                        Expression.Constant(operation), Expression.Constant(original, typeof(Delegate)), boxed);
+                        Expression.Constant(operation), Expression.Constant(effectiveOriginal, typeof(Delegate)), boxed);
                     Expression slow = invoke.ReturnType == typeof(void) ? (Expression)Expression.Block(dispatch, Expression.Empty()) : Expression.Convert(dispatch, invoke.ReturnType);
-                    var body = Expression.Condition(interested, slow, Expression.Invoke(Expression.Constant(original, type), parameters));
+                    var body = Expression.Condition(interested, slow, Expression.Invoke(Expression.Constant(effectiveOriginal, type), parameters));
                     replacement = Expression.Lambda(type, body, parameters).Compile(); prior = original;
                     return replacement;
                 }
