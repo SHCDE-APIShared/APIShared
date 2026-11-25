@@ -124,6 +124,30 @@ namespace APISharedTests
         [TestCategory("GameState")]
         public void VerifyLobbyStateCapability() => TestLobbyStateCapability();
 
+        [TestMethod]
+        [TestCategory("GameState")]
+        public void LobbyObserverFailureDoesNotInterruptQueuedPublications()
+        {
+            LobbyStateSnapshot Snapshot(ulong id) => new LobbyStateSnapshot(id, null, false, 0, false, "", "");
+            var service = new LobbyStateService(null, () => Snapshot(1));
+            var failure = new UnformattableCallbackException();
+            var seen = new List<ulong?>();
+            Assert(service.Bind("a").TryRegisterObserver("fails", snapshot =>
+            {
+                if (snapshot.LobbyId != 2) return;
+                service.System_TestPublish(Snapshot(3));
+                throw failure;
+            }, out _), "failing lobby observer registered");
+            Assert(service.Bind("b").TryRegisterObserver("healthy", snapshot => seen.Add(snapshot.LobbyId), out _),
+                "healthy lobby observer registered");
+
+            seen.Clear();
+            service.System_TestPublish(Snapshot(2));
+            service.System_TestPublish(Snapshot(4));
+            Assert(seen.SequenceEqual(new ulong?[] { 2, 3, 4 }), "deliver current, queued and later lobby snapshots in order");
+            Assert(failure.FormatAttempts == 0, "lobby diagnostics must not call exception overrides");
+        }
+
         private static void TestLobbyStateCapability()
         {
             var source = new Dictionary<int, ulong> { [1] = 1001UL };

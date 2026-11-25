@@ -120,11 +120,32 @@ eligible. An existing Lord without a valid imported record remains untouched,
 including after resaving; a positively observed new Lord initialization can supply
 a new native basis. This eligibility is saved explicitly; no reverse-division guess exists.
 
+## Multiplayer repair
+
+From APIShared 0.69.0, a consumer that contributes health policies in real
+multiplayer calls `HealthModifiers.TryEnableMultiplayerResync(out reason)` on the
+Unity thread during `LibraryLoaded`, before admission. All peers in an opted-in
+lobby require the shared `health-ledger` record. Several consumers can enable
+the same registration. If registration fails, keep the policy inactive in real
+multiplayer. Health policy registration and offline behavior are independent.
+
+Late host capture preserves original bases, completed generations, pending
+initializations and linked siege-proxy bookkeeping after the native due list.
+The client validates rows against the repaired slot, GlobalId and type. It
+publishes the prepared ledger without changing current or maximum HP. Unmatched
+rows are discarded. The existing `APIShared.Health.v1` save format is preserved.
+
+The maximum wire size is 681,928 bytes, covering 9,999 unit slots and 3,999
+building slots. Each can hold 33 basis bytes, one completion byte and 13 pending
+bytes. The bound includes a six-byte completion row for every possible proxy
+and 28 bytes of framing. The actual record is sparse.
+
 ## Verification limits
 
 The production-source health fixture checks initialization, freeze, injuries,
 death, generation reuse, pending saves, repeated loads, legacy exclusion, corrupt
-data, dormant provenance, excluded and dormant tower proxies, repair limits and
+data, dormant provenance, excluded and dormant tower proxies, repaired wounded
+replacements through save and reload, mismatched repair identities, repair limits and
 the linked tower bound. Backend tests validate the private
 Indirect/10 detour and full continuation against the canonical native image.
 These tests do not replace real new-game, spectator, editor, save-selection and

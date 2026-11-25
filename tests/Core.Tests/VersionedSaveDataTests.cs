@@ -7,6 +7,60 @@ namespace APIShared.Core.Tests;
 public class VersionedSaveDataTests
 {
     [TestMethod]
+    public void RequiredAtomicRecordFreezesOnceAndArchiveMustActuallyRequestIt()
+    {
+        var extender = new FakeExtender();
+        int calls = 0, value = 4;
+        var registration = extender.Registration("Mod.Atomic", 1, 1, new[] { "state" }, writer =>
+        { calls++; writer.Write("state", new byte[] { (byte)value }); return true; });
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        Assert.IsNull(extender.Save(mod), "A required record cannot capture outside the protected writer.");
+        Assert.AreEqual(0, calls);
+        var frozen = extender.Registry.BeginAtomicSave(new VersionedSaveContext(true, false, "test.sav"));
+        try
+        {
+            Assert.AreEqual(1, calls);
+            Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(frozen));
+            value = 9;
+            byte[] first = extender.Save(mod), second = extender.Save(mod);
+            Assert.AreEqual(1, calls, "SE serialization must reuse the pre-writer snapshot.");
+            CollectionAssert.AreEqual(first, second);
+            CollectionAssert.AreEqual(frozen.Records["Mod.Atomic"], first);
+            first[0] ^= 1;
+            CollectionAssert.AreEqual(frozen.Records["Mod.Atomic"], second, "Transport cannot mutate the frozen proof.");
+            VersionedSaveDataRegistry.RequireAtomicDelivered(frozen);
+            Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.BeginAtomicSave(new VersionedSaveContext(true, false, "nested.sav")));
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+        Assert.IsNull(extender.Save(mod));
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    public void RequiredAtomicFailuresAndEditorScopeNeverReuseOldGameplaySnapshot()
+    {
+        var extender = new FakeExtender();
+        bool accept = false;
+        var registration = extender.Registration("Mod.AtomicFailure", 1, 1, new[] { "state" }, writer => accept);
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        var gameplay = new VersionedSaveContext(true, false, "save.sav");
+        Assert.IsTrue(extender.Registry.RequiresAtomicWrite(gameplay));
+        Assert.IsFalse(extender.Registry.RequiresAtomicWrite(new VersionedSaveContext(false, true, "editor.map")));
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(gameplay));
+        accept = true;
+        var frozen = extender.Registry.BeginAtomicSave(gameplay);
+        try { Assert.IsNotNull(extender.Save(mod)); }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+        // An unreadable newer record must fail a fresh required save, preserving its source bytes.
+        byte[] tooNew = SaveWith(2, 2, new[] { "state" }, new() { ["state"] = new byte[] { 2 } });
+        extender.LoadSave(tooNew, mod);
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(gameplay));
+        Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
+    }
+
+    [TestMethod]
     public void PreparedMigratesOnceAndPostOwnsIndependentEntryBytes()
     {
         var extender = new FakeExtender();
@@ -736,7 +790,7 @@ public class VersionedSaveDataTests
                 registration.CurrentVersion, registration.MinimumReaderVersion, registration.KnownEntries, registration.Capture,
                 load => { mod.Loads.Add(load); registration.Loaded(load); })
             { Scope = registration.Scope, LegacyReader = registration.LegacyReader,
-                SimulationRelevant = registration.SimulationRelevant, Prepared = registration.Prepared };
+                SimulationRelevant = registration.SimulationRelevant, RequireAtomicWrite = registration.RequireAtomicWrite, Prepared = registration.Prepared };
             foreach (var step in registration.Migrations) observed.AddMigration(step.Key, step.Value);
             pendingRegistration = mod;
             Assert.IsTrue(Registry.TryRegister(observed, out var handle, out string reason), reason);
