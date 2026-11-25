@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.73.3",
+  "Version": "0.73.4",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.73.4",
+      "Changes": [
+        "Keep AI build steps, map rendering, lobby updates, and unit HUD interactions running when a mod callback fails and its exception cannot be formatted."
+      ]
+    },
     {
       "Version": "0.73.3",
       "Changes": [

@@ -291,14 +291,21 @@ namespace APIShared
 
         private void LogCallbackFailure(Registration registration, string phase, Exception ex)
         {
-            string key = registration.OwnerGuid + ":" + registration.RegistrationId + ":" + phase;
-            lock (sync)
+            try
             {
-                if (!loggedFailures.Add(key))
-                    return;
+                string key = registration.OwnerGuid + ":" + registration.RegistrationId + ":" + phase;
+                lock (sync)
+                {
+                    if (!loggedFailures.Add(key))
+                        return;
+                }
+
+                // Exception formatting can execute code from the observer.
+                NativeApiLog.Error(log,
+                    $"AIV build-step observer {key} failed and was isolated; " +
+                    $"Vanilla and other observers continue: {ex.GetType().FullName}");
             }
-            NativeApiLog.Error(log,
-                $"AIV build-step observer {key} failed and was isolated; Vanilla and other observers continue: {ex}");
+            catch (Exception) { /* Diagnostics must not interrupt Vanilla or other observers. */ }
         }
 
         private NativeCapabilityDiagnostic Available(string reason) =>
