@@ -16,6 +16,7 @@ namespace APIShared
             Network = new Networking.ModNetworkClient(ownerGuid);
             Workshop = new Workshop.WorkshopClient(ownerGuid);
             Ui = new Presentation.UiWorkClient(ownerGuid);
+            UnitIdentities = new Units.UnitIdentityClient(ownerGuid);
         }
 
         /// <summary>The exact GUID used for acquisitions and owner-local registrations; never a display name.</summary>
@@ -26,6 +27,8 @@ namespace APIShared
         public Workshop.WorkshopClient Workshop { get; }
         /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
         public Presentation.UiWorkClient Ui { get; }
+        /// <summary>Owner-bound custom troop identity registration and exact-unit queries; no native hooks or subscriptions are installed by acquisition.</summary>
+        public Units.UnitIdentityClient UnitIdentities { get; }
         /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>
         public Automation.AutomationClient Automation => new Automation.AutomationClient(this);
         /// <summary>Global publication state, independent of individual capability availability.</summary>
