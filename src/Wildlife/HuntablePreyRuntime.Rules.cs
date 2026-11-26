@@ -146,6 +146,16 @@ namespace APIShared.Wildlife
         // Only records of living Hunters that still hold the butchered corpse as target can matter.
         private static bool CaptureButchered(VersionedSaveWriter writer)
         {
+            writer.Write(ButcheredEntry, EncodeButcheredHistory(MatchesSavedHunter));
+            return true;
+        }
+
+        private static bool MatchesSavedHunter(int id, uint hunterGlobal, uint corpseGlobal) =>
+            UnitAccess.TryGetById(id, out GameUnit* hunter, out _) && hunter->r_UnitChimp == eChimps.CHIMP_TYPE_HUNTER &&
+            hunter->r_GlobalId == hunterGlobal && hunter->r_AI_ContextTargetUnitGlobalId == corpseGlobal;
+
+        private static byte[] EncodeButcheredHistory(Func<int, uint, uint, bool> matches)
+        {
             using (var data = new MemoryStream())
             using (var output = new BinaryWriter(data))
             {
@@ -154,8 +164,7 @@ namespace APIShared.Wildlife
                 for (int id = 1; id < HunterNativeSites.UnitCapacity; id++)
                 {
                     if (!HunterNativeSites.TryGetButchered(id, out uint hunterGlobal, out uint corpseGlobal, out int type) ||
-                        !UnitAccess.TryGetById(id, out GameUnit* hunter, out _) || hunter->r_UnitChimp != eChimps.CHIMP_TYPE_HUNTER ||
-                        hunter->r_GlobalId != hunterGlobal || hunter->r_AI_ContextTargetUnitGlobalId != corpseGlobal)
+                        !matches(id, hunterGlobal, corpseGlobal))
                         continue;
                     output.Write((ushort)id); output.Write(hunterGlobal); output.Write(corpseGlobal); output.Write(type);
                     count++;
@@ -164,9 +173,8 @@ namespace APIShared.Wildlife
                 data.Position = 0;
                 output.Write(count);
                 output.Flush();
-                writer.Write(ButcheredEntry, data.ToArray());
+                return data.ToArray();
             }
-            return true;
         }
 
         private static void OnButcheredLoaded(VersionedSaveLoad load)

@@ -451,9 +451,153 @@ internal sealed class SourceModel
         Require(!methods.Any(m => Lifecycle.Contains(m.Identifier.ValueText)), "Unit voice process hooks acquired lifecycle teardown.");
         return allowed;
     }
+    // Exact CALL-site writer provenance. Backend tests execute E8/relay ABI and partial failure;
+    // this guard only permits the single startup writer once its call chain/barrier is proved.
+    internal HashSet<InvocationExpressionSyntax> ConstructionGoldCallAllowances()
+    {
+        var allowed = new HashSet<InvocationExpressionSyntax>();
+        var patchParts = Parts("ConstructionGoldCallPatch").ToArray();
+        if (patchParts.Length == 0) return allowed;
+        var runtimeParts = Parts("HumanConstructionRuntime").ToArray();
+        var methods = runtimeParts.SelectMany(p => p.Members).OfType<MethodDeclarationSyntax>().ToArray();
+        var initializer = methods.SingleOrDefault(m => m.Identifier.ValueText == "InitializeGoldRefundCalls");
+        var entry = methods.SingleOrDefault(m => m.Identifier.ValueText == "Initialize");
+        Require(initializer?.Body != null && initializer.Modifiers.Any(SyntaxKind.PrivateKeyword) &&
+            initializer.Modifiers.Any(SyntaxKind.StaticKeyword) && entry?.Body != null,
+            "Gold CALL publication lost its private startup initializer.");
+        var guards = initializer.Body.Statements.OfType<IfStatementSyntax>().Where(i =>
+            i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any()).ToArray();
+        static IEnumerable<ExpressionSyntax> OrTerms(ExpressionSyntax condition) => Unwrap(condition) is BinaryExpressionSyntax binary && binary.IsKind(SyntaxKind.LogicalOrExpression)
+            ? OrTerms(binary.Left).Concat(OrTerms(binary.Right)) : new[]{Unwrap(condition)};
+        Require(guards.Any(g => ReferenceEquals(g, initializer.Body.Statements.First()) &&
+            OrTerms(g.Condition).Any(n => Not(n,"NativeStartupPatchWindow.IsOpen")) &&
+            OrTerms(g.Condition).Any(n => Different(n,"hash","ApiSharedRuntime.SupportedHash")) &&
+            OrTerms(g.Condition).Any(n => n is BinaryExpressionSyntax compare && compare.IsKind(SyntaxKind.NotEqualsExpression) &&
+                Unwrap(compare.Left) is InvocationExpressionSyntax checksum && IsCall(checksum,"ApiSharedRuntime","ComputeSha256") &&
+                checksum.ArgumentList.Arguments.Any(a => Text(a.Expression).StartsWith("context.Memory.Slice(",StringComparison.Ordinal)) &&
+                Unwrap(compare.Right) is LiteralExpressionSyntax literal && literal.Token.ValueText.Length==64)),
+            "Gold CALL publication requires startup-window, image identity and function-byte guards before work.");
+        static bool ByteGuard(ForStatementSyntax loop) => loop.Statement is IfStatementSyntax check &&
+            Unwrap(check.Condition) is PrefixUnaryExpressionSyntax not && not.IsKind(SyntaxKind.LogicalNotExpression) &&
+            Unwrap(not.Operand) is InvocationExpressionSyntax equal && Name(equal)=="SequenceEqual" &&
+            equal.Expression is MemberAccessExpressionSyntax access && Text(access.Expression)=="context.Memory.Slice(GoldCallRvas[i],5)" &&
+            equal.ArgumentList.Arguments.Count==1 && Text(equal.ArgumentList.Arguments[0].Expression)=="GoldCallBytes[i]" &&
+            check.Statement is ThrowStatementSyntax && loop.Declaration?.Variables.Count==1 &&
+            Text(loop.Declaration.Variables[0])=="i=0" &&
+            (Text(loop.Condition!)=="i<GoldCallRvas.Length" || Text(loop.Condition!)=="i<2") &&
+            loop.Incrementors.Count==1 && Text(loop.Incrementors[0])=="i++";
+        Require(initializer.Body.Statements.OfType<ForStatementSyntax>().Any(ByteGuard),
+            "Both gold CALL instruction snapshots must be checked before publication.");
+        var all = Roots.SelectMany(Calls).ToArray();
+        static MethodDeclarationSyntax? Containing(InvocationExpressionSyntax call) => call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        static bool Direct(InvocationExpressionSyntax call) => !call.Ancestors().Any(n => n is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax);
+        void OnlyDirectCaller(MethodDeclarationSyntax method, MethodDeclarationSyntax caller)
+        {
+            var calls = all.Where(c => Target(c)==method).ToArray();
+            Require(calls.Length==1 && Containing(calls[0])==caller && Direct(calls[0]),
+                "Gold CALL writer acquired a late, repeated or deferred caller: "+method.Identifier);
+            bool RefersTo(IdentifierNameSyntax reference)
+            {
+                SyntaxNode expression=reference.Parent is MemberAccessExpressionSyntax member && member.Name==reference ? member : reference;
+                var info=Semantic(reference.SyntaxTree).GetSymbolInfo(expression);
+                return (info.Symbol==null ? info.CandidateSymbols : info.CandidateSymbols.Add(info.Symbol))
+                    .OfType<IMethodSymbol>().Any(symbol=>symbol.DeclaringSyntaxReferences.Any(r=>r.GetSyntax()==method));
+            }
+            foreach(var reference in Roots.SelectMany(r=>r.DescendantNodes().OfType<IdentifierNameSyntax>()).Where(n=>n.Identifier.ValueText==method.Identifier.ValueText && RefersTo(n)))
+                Require(reference.Parent is InvocationExpressionSyntax direct && direct.Expression==reference ||
+                    reference.Parent is MemberAccessExpressionSyntax access && access.Parent is InvocationExpressionSyntax member && member.Expression==access,
+                    "Gold CALL publisher escaped as a method group.");
+        }
+        OnlyDirectCaller(initializer,entry);
+        var patchMethods=patchParts.SelectMany(p=>p.Members).OfType<MethodDeclarationSyntax>().ToArray();
+        var writes=patchParts.SelectMany(Calls).Where(c=>IsCall(c,"CodePatch","Write")).ToArray();
+        Require(writes.Length==1,"Gold CALL patch requires exactly one audited writer.");
+        var writer=writes[0];var publisher=Containing(writer);
+        Require(publisher?.Body!=null && publisher.Identifier.ValueText=="Publish" &&
+            !publisher.Modifiers.Any(SyntaxKind.StaticKeyword) &&
+            writer.ArgumentList.Arguments.Count==2 && Text(writer.ArgumentList.Arguments[0].Expression)=="sites[i]" &&
+            Text(writer.ArgumentList.Arguments[1].Expression)=="calls[i]",
+            "Gold CALL writer escaped its prepared pair publisher.");
+        OnlyDirectCaller(publisher,initializer);
+        var publishCall=all.Single(c=>Target(c)==publisher);
+        Require(publishCall.Expression is MemberAccessExpressionSyntax,"Gold CALL publication must use its process-held candidate.");
+        string candidate=Text(((MemberAccessExpressionSyntax)publishCall.Expression).Expression);
+        var fields=runtimeParts.SelectMany(p=>p.Members).OfType<FieldDeclarationSyntax>().ToArray();
+        Require(fields.Any(f=>f.Modifiers.Any(SyntaxKind.StaticKeyword) && Text(f.Declaration.Type)=="ConstructionGoldCallPatch" &&
+            f.Declaration.Variables.Any(v=>v.Identifier.ValueText==candidate)),"Gold CALL candidate lost its process root.");
+        var begin=Calls(initializer).Where(c=>Name(c)=="Begin" && c.ArgumentList.Arguments.Count==3 &&
+            Text(c.ArgumentList.Arguments[2].Expression)==candidate).ToArray();
+        Require(begin.Length==1 && Direct(begin[0]) && begin[0].SpanStart<publishCall.SpanStart &&
+            begin[0].Expression is MemberAccessExpressionSyntax,"Gold CALL publication barrier must root the candidate before writing.");
+        string gate=Text(((MemberAccessExpressionSyntax)begin[0].Expression).Expression);
+        Require(fields.Any(f=>f.Modifiers.Any(SyntaxKind.StaticKeyword) && f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) &&
+            Text(f.Declaration.Type)=="NativeHookPublicationState" && f.Declaration.Variables.Any(v=>v.Identifier.ValueText==gate)),
+            "Gold CALL publication requires a process-held immutable publication gate.");
+        var publishTry=publishCall.Ancestors().OfType<TryStatementSyntax>().FirstOrDefault();
+        Require(publishTry!=null && publishTry.Block.Statements.Count==2 &&
+            begin[0].Parent is ExpressionStatementSyntax beginStatement && beginStatement.Parent==publishTry.Parent &&
+            beginStatement.SpanStart<publishTry.SpanStart &&
+            publishTry.Block.Statements[0].Span.Contains(publishCall.Span) &&
+            Calls(publishTry.Block.Statements[1]).Any(c=>Text(c.Expression)==gate+".Complete") &&
+            publishTry.Catches.Count==1 && Calls(publishTry.Catches[0]).Any(c=>Text(c.Expression)==gate+".Fail") &&
+            publishTry.Catches[0].Block.Statements.Last() is ThrowStatementSyntax,
+            "Gold CALL second-write failure must retain a failed publication, never roll it back.");
+        var prepares=Calls(initializer).Where(c=>IsCall(c,"ConstructionGoldCallPatch","Prepare")).ToArray();
+        Require(prepares.Length==1 && Direct(prepares[0]) && prepares[0].SpanStart<begin[0].SpanStart &&
+            prepares[0].Parent is AssignmentExpressionSyntax assign && Text(assign.Left)==candidate,
+            "Gold CALL preparation must complete before its publication barrier.");
+        Require(initializer.Body.Statements.OfType<ForStatementSyntax>().Any(loop=>loop.SpanStart<prepares[0].SpanStart && ByteGuard(loop)),
+            "Gold CALL byte guards moved behind preparation/publication.");
+        // Only the unpublished-cleanup callback may clear rooted fields. There is no native
+        // undo/dispose path in this feature, including either write's exception path.
+        foreach(var assignment in runtimeParts.SelectMany(p=>p.DescendantNodes().OfType<AssignmentExpressionSyntax>()).Where(a=>Text(a.Left)==candidate))
+            Require(assignment.Right==prepares[0] || assignment.Ancestors().OfType<InvocationExpressionSyntax>().Any(c=>
+                Text(c.Expression)==gate+".RollbackUnpublished"),"Published gold CALL root can be reset.");
+        foreach(var call in patchParts.SelectMany(Calls).Concat(Calls(initializer)))
+            Require(Name(call) is not ("Disable" or "Undo" or "Dispose" or "Free" or "VirtualFree"),"Published gold CALL relay acquired teardown.");
+        Require(!patchMethods.Any(m=>Lifecycle.Contains(m.Identifier.ValueText)),"Gold CALL publisher acquired lifecycle teardown.");
+        allowed.Add(writer);return allowed;
+    }
+    // The host barrier changes one CALL during the same retained publication as the receive detour.
+    internal HashSet<InvocationExpressionSyntax> ResyncDataCallAllowances()
+    {
+        var allowed = new HashSet<InvocationExpressionSyntax>();
+        var parts = Parts("MultiplayerResyncDataNativeRuntime").ToArray();
+        if (parts.Length == 0) return allowed;
+        var writers = parts.SelectMany(Calls).Where(call => IsCall(call, "CodePatch", "Write")).ToArray();
+        Require(writers.Length == 1, "Resync data requires exactly one host CALL writer.");
+        var writer = writers[0];
+        var initializer = writer.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        static IEnumerable<ExpressionSyntax> OrTerms(ExpressionSyntax condition) =>
+            Unwrap(condition) is BinaryExpressionSyntax binary && binary.IsKind(SyntaxKind.LogicalOrExpression)
+                ? OrTerms(binary.Left).Concat(OrTerms(binary.Right)) : new[] { Unwrap(condition) };
+        Require(initializer?.Identifier.ValueText == "Initialize" &&
+            initializer.Body?.Statements.FirstOrDefault() is IfStatementSyntax startup && startup.Statement is ThrowStatementSyntax &&
+            OrTerms(startup.Condition).Any(n => Not(n, "NativeStartupPatchWindow.IsOpen")) &&
+            OrTerms(startup.Condition).Any(n => Different(n, "hash", "ApiSharedRuntime.SupportedHash")),
+            "Resync data CALL must be guarded by startup-window and image checks.");
+        var callback = writer.Ancestors().OfType<AnonymousFunctionExpressionSyntax>().FirstOrDefault();
+        Require(callback?.Parent is ArgumentSyntax argument && argument.Parent is ArgumentListSyntax arguments &&
+            arguments.Arguments.Count == 5 && arguments.Arguments[4] == argument &&
+            arguments.Parent is InvocationExpressionSyntax publish && IsCall(publish, "NativeHookPublication", "Enable") &&
+            !publish.Ancestors().Any(node => node is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax) &&
+            callback.Block is BlockSyntax block && block.Statements.Count == 3 &&
+            Text(block.Statements[0]) == "NativeIndirectEntry.VerifyBytes(module+HostCallRva,HostCall);" &&
+            block.Statements[1] is ExpressionStatementSyntax writeStatement && writeStatement.Expression == writer &&
+            Text(block.Statements[2]) == "ValidatePublished();" &&
+            writer.ArgumentList.Arguments.Count == 2 &&
+            Text(writer.ArgumentList.Arguments[0].Expression) == "Address(module+HostCallRva)" &&
+            Text(writer.ArgumentList.Arguments[1].Expression) == "patchedCall",
+            "Resync data CALL must be verified and written within retained startup publication to the same address.");
+        allowed.Add(writer);
+        return allowed;
+    }
+
     internal void CheckHooks()
     {
         var unitVoiceAllowances = UnitVoiceHookAllowances();
+        var goldCallAllowances = ConstructionGoldCallAllowances();
+        var resyncCallAllowances = ResyncDataCallAllowances();
         var audioMethods = Parts("SoundRuntime").SelectMany(t => t.Members).OfType<MethodDeclarationSyntax>().ToArray();
         var audioFlags = Parts("SoundRuntime").SelectMany(t => t.Members).OfType<FieldDeclarationSyntax>()
             .Where(f => f.Declaration.Type is PredefinedTypeSyntax p && p.Keyword.IsKind(SyntaxKind.BoolKeyword))
@@ -480,7 +624,7 @@ internal sealed class SourceModel
             bool preparedNativeCode = owner is "PlagueNativeCode" or "ProductionGoodsReceivedNativeCode";
             if (name is "VirtualProtect" or "FlushInstructionCache" || IsCall(call, "CodePatch", "Write") ||
                 owner == "ProductionGoodsReceivedNativeCode" && IsCall(call, "Marshal", "Copy"))
-                Require(owner == "FixesWheatMemory" ||
+                Require(owner == "FixesWheatMemory" || goldCallAllowances.Contains(call) || resyncCallAllowances.Contains(call) ||
                     (preparedNativeCode && call.Ancestors().OfType<ConstructorDeclarationSyntax>().Any()),
                     "Executable writer outside an audited preparation boundary: " + call.GetLocation().GetLineSpan());
             // These two named preparation boundaries allocate private RW memory, write it

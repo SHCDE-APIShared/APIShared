@@ -55,6 +55,25 @@ namespace APISharedTests
             Assert.IsTrue(local.All(LobbyLaunchStatus.IsAnnouncement));
         }
 
+        [TestMethod]
+        public void LocalSystemMessageOnlyRendersValidTextForTheExpectedLobby()
+        {
+            var lines = new List<string>();
+            bool Render(string line)
+            {
+                lines.Add(line);
+                return true;
+            }
+
+            Assert.IsFalse(LobbyLaunchStatus.TryRenderLocalSystemMessage(42, 43, "stale hint", Render));
+            Assert.IsFalse(LobbyLaunchStatus.TryRenderLocalSystemMessage(0, 0, "no lobby", Render));
+            Assert.IsFalse(LobbyLaunchStatus.TryRenderLocalSystemMessage(42, 42, "\r\n", Render));
+            Assert.IsFalse(LobbyLaunchStatus.TryRenderLocalSystemMessage(42, 42, new string('a', 301), Render));
+            Assert.IsTrue(LobbyLaunchStatus.TryRenderLocalSystemMessage(42, 42, " Update\nready ", Render));
+            CollectionAssert.AreEqual(new[] { "Update ready" }, lines);
+            Assert.IsFalse(LobbyLaunchStatus.TryRenderLocalSystemMessage(42, 42, "unavailable", _ => false));
+        }
+
         // Host perspective: the host is the only participant that announces "ready".
         private static IReadOnlyList<LobbyLaunchAnnouncement> Observe(LobbyLaunchAnnouncementState state, double seconds,
             params LobbyLaunchStatusItem[] items) => state.Observe("lobby", items, Start.AddSeconds(seconds), true, out _);

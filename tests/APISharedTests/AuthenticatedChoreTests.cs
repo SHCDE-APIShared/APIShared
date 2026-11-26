@@ -57,7 +57,10 @@ namespace APISharedTests
             };
             int opcode = 106;
             Func<IntPtr, int> read = p => ints[p.ToInt64()];
-            Func<IntPtr, byte> readByte = p => { Assert.AreEqual(entry + 8, p.ToInt64()); return (byte)opcode; };
+            Func<IntPtr, byte> readByte = p => {
+                if (p.ToInt64() == entry + 9) return 1;
+                Assert.AreEqual(entry + 8, p.ToInt64()); return (byte)opcode;
+            };
             Assert.IsTrue(NativeChoreContext.TryRead(manager, read, readByte, out var context));
             Assert.AreEqual(3, context.Sender); Assert.AreEqual(300000017, context.CommandId); Assert.AreEqual(100, context.ScheduledTick);
             ints[manager + 0x36FA4C] = 2;
@@ -73,6 +76,38 @@ namespace APISharedTests
             int commandReads = 0;
             Func<IntPtr, int> racing = p => p.ToInt64() == entry + 12 && ++commandReads == 2 ? 300000018 : ints[p.ToInt64()];
             Assert.IsFalse(NativeChoreContext.TryRead(manager, racing, readByte, out _));
+        }
+
+        [TestMethod]
+        public void NativeAttributionRequiresAnUnchangedActivePendingState()
+        {
+            const long manager = 0x1000, entry = manager + 0xB0BF8;
+            var ints = new Dictionary<long, int> {
+                [manager + 0x84CCC] = 0, [manager + 0x84CC8] = 0,
+                [entry + 4] = 1, [entry + 12] = 100000001, [entry] = 7,
+                [manager + 0x36FA4C] = 1
+            };
+            // No field cursor or payload-size entry is supplied. Legitimate effect
+            // and Post callbacks can observe fully transferred fields; attribution
+            // must not impose a universal cursor-zero or payload-size condition.
+            Func<IntPtr, int> read = p => ints[p.ToInt64()];
+            foreach (byte opcode in new byte[] { 29, 42, 69, 75, 97, 106 })
+            {
+                foreach (byte state in new byte[] { 0, 1, 2, 9, 10, 11, 127, 255 })
+                {
+                    Func<IntPtr, byte> bytes = p => p.ToInt64() == entry + 8 ? opcode :
+                        p.ToInt64() == entry + 9 ? state : throw new InvalidOperationException("Unexpected field read.");
+                    bool expected = unchecked((sbyte)state) != 0 && unchecked((sbyte)state) < 10;
+                    Assert.AreEqual(expected, NativeChoreContext.TryRead(manager, read, bytes, out _, opcode),
+                        "Pending state follows the native signed-byte predicate: opcode=" + opcode + " state=" + state);
+                }
+                int stateReads = 0;
+                Func<IntPtr, byte> finishing = p => p.ToInt64() == entry + 8 ? opcode :
+                    p.ToInt64() == entry + 9 ? (byte)(stateReads++ == 0 ? 1 : 10) :
+                    throw new InvalidOperationException("Unexpected field read.");
+                Assert.IsFalse(NativeChoreContext.TryRead(manager, read, finishing, out _, opcode),
+                    "Completion during attribution must invalidate the captured command.");
+            }
         }
 
         [TestMethod]

@@ -6,7 +6,27 @@ $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 . (Join-Path $root 'tools/PublisherPackage.ps1')
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$fixture=Join-Path $root ('.local/bootstrap-package-tests/'+[guid]::NewGuid().ToString('N'))
+$fixtureId=[guid]::NewGuid().ToString('N')
+$fixtureBase=Join-Path $root '.local/bootstrap-package-tests'
+$fixture=Join-Path $fixtureBase $fixtureId
+# Removes only this run's fixture and deletes links (the junction case below) without following them.
+function Remove-OwnFixture {
+    $full=[IO.Path]::GetFullPath($fixture).TrimEnd('\','/')
+    if($full -cne [IO.Path]::GetFullPath((Join-Path $fixtureBase $fixtureId)).TrimEnd('\','/') -or $fixtureId -cnotmatch '^[0-9a-f]{32}$'){throw 'Unsafe bootstrap fixture cleanup path.'}
+    if(-not [IO.Directory]::Exists($full)){return}
+    if([IO.File]::GetAttributes($full) -band [IO.FileAttributes]::ReparsePoint){throw 'Linked bootstrap fixture root.'}
+    function Remove-Tree([IO.DirectoryInfo]$Directory){
+        foreach($entry in $Directory.GetFileSystemInfos()){
+            if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){
+                if($entry -is [IO.DirectoryInfo]){[IO.Directory]::Delete($entry.FullName,$false)}else{[IO.File]::Delete($entry.FullName)}
+            }elseif($entry -is [IO.DirectoryInfo]){Remove-Tree $entry}
+            else{$entry.IsReadOnly=$false;$entry.Delete()}
+        }
+        $Directory.Delete()
+    }
+    Remove-Tree ([IO.DirectoryInfo]::new($full))
+}
+try {
 $stage=Join-Path $fixture 'package'
 $plugin=Join-Path $stage 'BepInEx/plugins/APIShared_Serp'
 function Write-TestFile($Path,$Text){[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path))|Out-Null;[IO.File]::WriteAllText($Path,$Text)}
@@ -108,4 +128,4 @@ $linked=Join-Path $fixture 'linked';[IO.Directory]::CreateDirectory((Join-Path $
 $null=New-Item -ItemType Junction -Path (Join-Path $linked 'BepInEx/patchers') -Target (Join-Path $stage 'BepInEx/patchers')
 Reject {& $remove -GameDir $linked -PackageRoot $stage -Apply} 'linked removal target preserved'
 if($PackageRoot){Assert-ApiBootstrapPair $PackageRoot;Check $true 'built package pair verified'}
-Write-Host "Bootstrap package/removal fixtures retained: $fixture"
+} finally { Remove-OwnFixture }
