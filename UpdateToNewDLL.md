@@ -1836,7 +1836,7 @@ first huntable-prey registration with own-player prey (only before the first mis
 per-type table (set at mission activation, cleared at its end). Any other hash, snapshot or live byte
 difference (for example an older ImprovedHunters that patched the same spans), a changed continuation,
 a backend span other than 14 bytes, a stub that differs from the expected bytes, or an arrow gate block
-whose SHA-256 differs from `C3BCA2C9â€¦AE225F` refuses the install; the registration is then Unsupported.
+whose SHA-256 differs from `C3BCA2C9Ã¢â‚¬Â¦AE225F` refuses the install; the registration is then Unsupported.
 
 - Query `0x18AFD8` `66 83 BB F6 FD FF FF 00 0F 85 F7 00 00 00` (`cmp word[rbx-0x20A],0; jne 0x18B0DD`),
   continuation `0F B7 83 EE FD FF FF` (the Script Extender's type hook starts there). RBX = candidate
@@ -2282,12 +2282,12 @@ user's language-folder inventory:
 | Ordinary counters | `0x2AD370` | Per-bank counters inside each row |
 | Arabic engineer ordinary bank | `0x2B0EB0` | 42 pointers |
 | Engineer special actions | `0x2B09B0` | 40 rows, stride32; count, European/Arabic pointers, counter |
-| General table unit subset | `0x2B1000` | Only indices65â€“76, strings at stride1000 |
+| General table unit subset | `0x2B1000` | Only indices65Ã¢â‚¬â€œ76, strings at stride1000 |
 | Male civilian comments | `0x2D7E50` | 126 slots at stride32, including intentional Null slots |
 | Female civilian comments | `0x2D8E50` | Same layout |
 
-The general-table unit subset is `Healer_Heal1â€“4`, `Sapper_Sap1â€“4`, and
-`Demolisher_Sap1â€“4`. The remaining general table and arbitrary calls to generic
+The general-table unit subset is `Healer_Heal1Ã¢â‚¬â€œ4`, `Sapper_Sap1Ã¢â‚¬â€œ4`, and
+`Demolisher_Sap1Ã¢â‚¬â€œ4`. The remaining general table and arbitrary calls to generic
 speech helpers are adviser/dialogue paths outside this API.
 
 The observation contains 919 distinct non-Null native asset names. That count is
@@ -2415,6 +2415,32 @@ both loader extent and payment consumer, the genuine managed field/array/method 
 and installed enum meanings, then rerun alias and sentinel-buffer tests before rebinding.
 
 
+## Shared quarry placement and path-component refresh
+
+Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Initial quarry placement calls `0xBD7A0` from `0x76780` with an expanding perimeter
+and a 2Ã—2 pile. `0xBD7A0` calls `0xC0270` for candidate offsets and `0x77E60`
+for validation, then checks the candidate's path component against that of the main
+quarry. The relocation query calls `0xC0270` with its separately indexed perimeter.
+Preserve and restore manager offsets `+0x31B7D0/+0x31B7D4` and placement scratch around
+queries. The scoped filter uses the Extender-owned synchronous placement Post event
+and can only reject a candidate while its matching operation is active.
+
+PathComponentRefresh calls `0xE49D0` as Win64 `int(context*, int force)` at the live
+entry under the engine monitor. Check the original image against the force/dirty,
+countdown and generation sequence. The SE view must resolve context `0x60AD660`;
+the dirty flag is `+0x6C` and the generation is `+0x74`. A forced call with argument
+one sets dirty, resets the countdown, publishes a new generation, and clears dirty.
+This call-only binding preserves the existing Pathfinding entry detour.
+Unsupported layouts are rejected before binding. Re-audit the original callsites,
+tile bounds, SE event and field contracts, scratch extents and return/generation
+contract before enabling another native hash.
+
+The stock snapshot reads the five fields of the explicit player through the public
+SE player resource accessor. Verify UInt32 wood, stone, iron and pitch, Int32 gold,
+the 1-based actor lookup, and snapshot consistency under the engine monitor.
+
 ## Human construction transaction adapters (2026-11-15)
 
 Reference native SHA256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
@@ -2540,3 +2566,147 @@ hashes or conflicting callsite bytes make this construction adapter unavailable.
 No pattern fallback is claimed for these hash-bound function/CFG contracts.
 Update acceptance must execute the same native ABI/relay path, failure/dormancy,
 nested callbacks and actual SE wrapper behavior, not only inspect instruction bytes.
+
+
+## Required atomic save records and public pre-fold restore participants
+
+Reference DLL SHA256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
+The additive `VersionedSaveDataRegistration.RequireAtomicWrite` path reuses the
+existing protected writer and critical transaction described above. It adds no
+native patch. `PlayerViewSaveScope` remains the sole owner of52B0/10, ABI
+`ulong(archive, sections, byte mapSave)`, success1/failure0. Re-audit all three
+callers86F80,13030 and816B0, the actual engine monitor, participant-identity scope,
+SE archive append and the existing1DDB94/1DBB20 write/close observers together.
+CriticalSave is initialized independently of optional production-sidecar admission;
+required records must remain usable when no production extension is active.
+
+At protected writer entry, reject ANY nested writer before scope/availability
+fast returns: an outer gameplay save can invoke an out-of-scope map export through
+a foreign archive callback. The nested call must not run Original or alter the
+outer path/I/O proof; its failure remains sticky until the outer commit rejects.
+Capture required complete records once under the actual engine monitor before
+native file creation. Hold no registration lock across consumer capture; consumer
+locks follow engine-monitor then consumer-lock order. Capture is simulation-read-only.
+SE serialization receives cloned frozen bytes and marks delivery. Require every
+in-scope required record to be delivered and to match its exact encoded bytes in
+the written archive before atomic destination replacement. False/throwing capture,
+kept unreadable records, omission, stale archive data, short writes or failed close
+must preserve the old destination. Restore complete native path/selector and clear
+thread snapshots/I/O activity in finally; never reset a containing transaction.
+Default non-opt-in registrations retain their prior capture/retention behavior.
+
+`NativeWorldRestoreEvents` shares the existing `Units.AiMilitary.WorldAndOrders`
+owner of87D0/10; entry bytes48895C24204889542410, ABI `int(archive, sections)`.
+No new87D0 hook is permitted. After a successful raw return1, internal participants
+run first, public ordered participants next, and AI restoration/folds afterwards.
+A false result or isolated exception returns the audited native failure0 before
+71670/CDE60 initialization; re-audit all three failure continuations on updates.
+The public dispatcher holds the actual engine monitor and publishes the pending
+managed MissionContext plus a process-local invocation ID. Decode only detached
+candidates in VersionedSaveData.Prepared; apply matching candidates here, and do
+not clear/reapply them in later Loaded or MissionStarted callbacks. NoRecord may
+restore empty metadata without rewriting old native requests. These are file-restore
+boundaries, not multiplayer in-memory repair completion or a state transport.
+
+Evidence: VersionedSaveDataTests exercises single capture, frozen-byte isolation,
+required delivery, nesting, editor scope and unreadable records. WorkerProductionStateTests
+checks missing/stale required archives leave the destination unchanged, fresh records
+commit, and cross-scope nested writers never call Original. NativeWorldRestoreEventsTests
+checks ordering, duplicate/refused registration, veto and isolated exception behavior.
+These CLI fixtures do not establish real-game save/load/MP acceptance.
+
+## Multiplayer repair lifecycle boundaries
+
+On the same audited image, `Multiplayer.ResyncLifecycle` exclusively owns the
+actual no-argument void Chore handlers15170/10 (Chore54) and16E40/6 (Chore67).
+Exact entry bytes are `4883EC288B05723E5E08` and `48897C241855` respectively.
+Use permanent NativeX64 Indirect detours with FollowJumps=false and actual live-span
+checks.15170's ten bytes include `sub rsp,28h` plus a RIP-relative EAX load: its
+original operand must resolve to transfer-phase global85F8FEC. Validate relocation
+of that exact operand and the continuation1517A, not merely a copied byte prefix.
+16E40's six ordinary bytes continue at16E46. Published FF25 slots, padding, displaced
+length, trampoline instructions, original continuation and callback roots remain
+validated for process lifetime. Never replace either handler with PACK/SIZE caller
+observations or a UI resync-panel event; re-audit host28160 and the handler CFG.
+
+Only phase0 captured at HANDLER ENTRY means execution. Started runs BEFORE the
+executed Chore54 Original, so consumer metadata resets precede repair checksums.
+Completed runs AFTER executed Chore67 Original, using its saved entry phase: PACK
+phase1 itself changes the global phase to0, so reading phase only after return
+would falsely resume consumers during serialization. Phase1 PACK and phase2 SIZE
+must publish neither boundary. Originals execute once; consumer callback exceptions
+are contained and report a terminal agreed-world fault, never a retry or local resume.
+Registration snapshots are ordered and callbacks execute outside registry locks.
+Initialization also requires the common mission admission owner (not optional
+production cohorts): its earlier lifecycle observer closes the run gate before
+these registry world transitions. Partial admission-owner initialization must leave
+resync unavailable. Critical failures always latch the terminal engine guard,
+including worlds without a registered SimulationAgreement feature; that service
+additionally notifies an admitted roster when its receipt exists.
+
+The engine-run Pre and Post guard checks repair-state global85750CC while repair
+is in progress. A local escape to native state0 without common executed Chore67 is
+terminal: retain the logical fence, report the fault once, and do NOT synthesize
+Completed. Failed completion also restores the fence. World retirement clears state
+only for its matching local mission; those local IDs are not compared across peers.
+The agreed consumer policy may clear its own metadata on all peers at both common
+boundaries while leaving native requests untouched; this is not transfer of sidecars.
+
+MultiplayerResyncTests covers entry-phase gating, PACK's misleading post-phase,
+ordered/idempotent start and completion, callback failure, terminal local abort,
+world retirement and two independent peer ledgers. Its private executable fixture
+uses the installed RedBird backend and guard pages to execute BOTH detours, verify
+the relocated RIP load/continuations, and reject altered published bytes. Such
+private fixtures are offline tests, never copied-buffer probes at game startup;
+passing them does not establish real multiplayer repair acceptance.
+
+#### Multiplayer resync data
+
+`Multiplayer.ResyncData` independently owns the five-byte host release CALL
+at `281B5 E8 D6 B7 FF FF` and the six-byte receive entry at `23F10
+48 89 5C 24 20 57`. Validate the surrounding host argument setup and
+continuation, the live near relay and the receive trampoline. Preserve the
+CALL continuation and the receive function's six Win64 arguments.
+
+The host scheduler reaches the same CALL after real acknowledgements and
+after synthesized acknowledgements of kicked peers. Check the manager's
+eight human slots and kick bytes against the admitted roster before release.
+AI registrations are stored separately. `23990` queues Chore67 for delivery
+before executing it locally, so the host must publish the prepared state
+before calling it. `23F10` receives the authenticated sender mapped by the
+managed Steam path. Gate native Chores 54, 55 and 67 there before allocation.
+Chore55 installs the repaired data and moves the client to state 3. The client
+can prepare in state 3 or 4 and commits immediately before executed Chore67.
+It must reject completion without successful preparation or with a full queue.
+
+Both boundaries use the canonical engine monitor. The reliable side channel
+runs on Unity and carries bytes only. The engine stays fenced if the elected
+roster changes, transfer fails or Vanilla resets repair state locally without
+an authorized completion. Run the offline native fixtures on an update, then
+verify the complete interaction on two peers.
+
+### Optional ally-transfer chat suppression
+
+Native hash `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+`Economy.AllyTransferChat` owns the leaf writer entry `1C8D0`, 14 displaced bytes
+`48 63 81 00 5A 27 00 4C 8B D9 4C 8D 14 80`; continuation `1C8DE`.
+The complete 144-byte writer is pinned by `AllyTransferChatAssembly.Body`.
+It stores five Int16 fields in manager+275A08+index*10, index at+275A00.
+The two producer calls in D7AD0 return to D7C80(category10, recipient) and
+D7CB7(category15, sender). A direct-edge scan of executable sections found no
+incoming edge into the displaced span; the writer is one straight-line block.
+Recheck full bytes, producer call targets, physical return addresses, writer ABI
+RCX manager/EDX category/R8 self/R9 other/stack+28 amount/+30 good, and all callers.
+Do not treat the decompiler's candidate function signature as an independent ABI.
+
+One permanent X64InlineHook, exact14-byte displacement, checks process demand
+before invoking a rooted reverse callback. The callback additionally checks TLS
+and the exact producer return/category pair. pushfq+seven volatile GP pushes put
+physical return at savedRSP+64 and original DX at+32; aligned frame144 has shadow32,
+XMM0..5 at32..127 and savedRSP at128. Both restore paths preserve flags, arguments,
+GP/XMM state and stack; only attributed chat entries return before the writer.
+Dormant paths replay all displaced instructions. Validate generated and installed
+stub/jump/padding and watch foreign patches; never unpatch after publication.
+Unknown hashes have no fallback because a prologue cannot establish the producer,
+ring and SE-wrapper attribution contracts. Failure disables only silent requests.
+Run the actual native writer/stub execution tests and SE nested-wrapper tests.

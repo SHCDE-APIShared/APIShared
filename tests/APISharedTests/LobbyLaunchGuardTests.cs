@@ -188,16 +188,27 @@ namespace APISharedTests
                         tick[fingerprint - 1].OpCode == Mono.Cecil.Cil.OpCodes.Ldc_I4_1,
                         "Admission must follow launch preparation and its fresh decisive fingerprint.");
                 }
-                int finalGuard = start.FindIndex(instruction => Call(instruction, coordinator.FullName, "RequirePreparedLaunchGuards"));
+                // Admission is shared now: follow the compiled helper, rather than
+                // requiring its checks to remain inlined in ValidateStart.
+                var admission = coordinator.Methods.Single(method => method.Name == "ValidatePreparedAdmission").Body.Instructions.ToList();
+                int finalGuard = admission.FindIndex(instruction => Call(instruction, coordinator.FullName, "RequirePreparedLaunchGuards"));
                 int loading = start.FindIndex(instruction => instruction.OpCode == Mono.Cecil.Cil.OpCodes.Stsfld &&
                     instruction.Operand is Mono.Cecil.FieldReference field && field.Name == "loading");
-                int finalPrepare = start.FindLastIndex(instruction => Call(instruction, typeof(APIShared.ModSettings.ModSettingsApplication).FullName, "PrepareLaunch"));
-                int finalFingerprint = start.FindLastIndex(instruction => Call(instruction, typeof(SavegameModSettings).FullName, "CaptureHostFingerprint"));
-                Assert.IsTrue(finalPrepare >= 0 && finalFingerprint > finalPrepare && finalGuard > finalFingerprint && loading > finalGuard,
-                    "ValidateStart must recheck guards before entering native loading, even after host/client admission.");
+                int finalPrepare = admission.FindIndex(instruction => Call(instruction, typeof(APIShared.ModSettings.ModSettingsApplication).FullName, "PrepareLaunch"));
+                int finalFingerprint = admission.FindLastIndex(finalGuard, instruction => Call(instruction, coordinator.FullName, "RequireUnchangedFingerprint"));
+                Assert.IsTrue(finalPrepare >= 0 && finalFingerprint > finalPrepare && finalGuard > finalFingerprint,
+                    "Shared admission must recheck guards after application and a fresh decisive fingerprint.");
+                var fingerprintBody = coordinator.Methods.Single(method => method.Name == "RequireUnchangedFingerprint").Body.Instructions;
+                Assert.IsTrue(fingerprintBody.Any(instruction => Call(instruction, typeof(SavegameModSettings).FullName, "CaptureHostFingerprint")) &&
+                    fingerprintBody.Any(instruction => instruction.OpCode == Mono.Cecil.Cil.OpCodes.Throw));
+                int firstAdmission = start.FindIndex(instruction => Call(instruction, coordinator.FullName, "ValidatePreparedAdmission"));
+                int lastAdmission = start.FindLastIndex(instruction => Call(instruction, coordinator.FullName, "ValidatePreparedAdmission"));
+                int observation = start.FindIndex(instruction => Call(instruction, coordinator.FullName, "PublishPhase"));
+                Assert.IsTrue(firstAdmission >= 0 && loading > firstAdmission && observation > loading && lastAdmission > observation,
+                    "Native admission must check before loading and again after external observers.");
                 var rejection = startBody.ExceptionHandlers.Single(handler =>
                     handler.HandlerType == Mono.Cecil.Cil.ExceptionHandlerType.Catch &&
-                    start.IndexOf(handler.TryStart) <= finalGuard && start.IndexOf(handler.TryEnd) > finalGuard);
+                    start.IndexOf(handler.TryStart) <= firstAdmission && start.IndexOf(handler.TryEnd) > lastAdmission);
                 var cleanup = start.Skip(start.IndexOf(rejection.HandlerStart))
                     .Take(start.IndexOf(rejection.HandlerEnd) - start.IndexOf(rejection.HandlerStart)).ToList();
                 Assert.IsTrue(cleanup.Any(instruction => Call(instruction, coordinator.FullName, "Abort")) &&

@@ -25,7 +25,7 @@ public partial class VersionedSaveDataTests
         internal byte Value = 1;
         internal string OriginError;
 
-        internal CriticalSourceFixture(string identifier, FakeExtender extender = null)
+        internal CriticalSourceFixture(string identifier, FakeExtender extender = null, bool requireAtomicWrite = false)
         {
             Extender = extender ?? new FakeExtender();
             var registration = new VersionedSaveDataRegistration("owner", identifier, 3, 1, new[] { "value", "cutover" }, writer =>
@@ -41,6 +41,7 @@ public partial class VersionedSaveDataTests
                 if (!PreparedSource.TryGetCurrent(load, out Origin, out string reason)) OriginError = reason;
                 DuringPrepared?.Invoke(load);
             };
+            registration.RequireAtomicWrite = requireAtomicWrite;
             Mod = Extender.Register(registration);
             Assert.IsTrue(Extender.Registry.TryTrackPreparedSource("owner", Mod.Handle, out var prepared, out string detail), detail);
             PreparedSource = prepared;
@@ -63,6 +64,149 @@ public partial class VersionedSaveDataTests
 
         internal bool Freeze(out VersionedSaveCriticalCapture capture, out string reason, int maximumBytes = 4096) =>
             Extender.Registry.TryFreezeCriticalRecords(new[] { Record() }, CriticalLogicalContext, maximumBytes, out capture, out reason);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void OwnedCriticalAtomicSnapshotCannotBorrowAClosedOrReplacementBundle(bool replace)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Atomic.Lifetime", requireAtomicWrite: true); fixture.Load();
+        var frame = VersionedSaveFactoryFrame.BeginOwnedPreparation(context => FreezeForFactory(fixture, context));
+        VersionedSaveCriticalCapture replacement = null;
+        try
+        {
+            frame.CompleteOwnedPreparation(); frame.PrepareOwnedCapture(CriticalLogicalContext);
+            var atomic = fixture.Extender.Registry.BeginAtomicSave(CriticalLogicalContext);
+            try
+            {
+                frame.Dispose();
+                if (replace) replacement = FreezeForFactory(fixture, CriticalLogicalContext);
+                Assert.IsNull(fixture.Mod.SaveCallback(CriticalLogicalContext),
+                    "Equal bytes/context cannot replace the exact critical bundle retained at atomic preparation.");
+                Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(atomic));
+                Assert.AreEqual(replace ? 2 : 1, fixture.Captures);
+            }
+            finally { fixture.Extender.Registry.EndAtomicSave(atomic); }
+        }
+        finally { replacement?.Dispose(); frame.Dispose(); }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void OwnedCriticalPreCaptureCannotSubstituteForTheActualFactoryObservation()
+    {
+        var fixture = new CriticalSourceFixture("Critical.Atomic.MissingFactory", requireAtomicWrite: true); fixture.Load();
+        int preparations = 0;
+        using (var frame = VersionedSaveFactoryFrame.BeginOwnedPreparation(context =>
+        { preparations++; return FreezeForFactory(fixture, context); }))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.PrepareOwnedCapture(CriticalLogicalContext);
+            var atomic = fixture.Extender.Registry.BeginAtomicSave(CriticalLogicalContext);
+            try
+            {
+                Assert.AreEqual(1, preparations); Assert.AreEqual(1, fixture.Captures);
+                Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Mod.Handle.LastWriteStatus,
+                    "Early critical and atomic preparation must not claim transport delivery.");
+                Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(atomic));
+                Assert.IsNotNull(fixture.Mod.SaveCallback(CriticalLogicalContext));
+                VersionedSaveDataRegistry.RequireAtomicDelivered(atomic);
+                Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _),
+                    "Even actual record delivery cannot replace the missing real SaveContext factory observation.");
+                Assert.IsNotNull(frame.Failure);
+                Assert.AreEqual(1, preparations); Assert.AreEqual(1, fixture.Captures);
+            }
+            finally { fixture.Extender.Registry.EndAtomicSave(atomic); }
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        Assert.IsTrue(fixture.Freeze(out var next, out string reason), reason); next.Dispose();
+    }
+
+    [TestMethod]
+    public void OwnedCriticalPreCaptureReusesOneBundleAndRetainsOnceOnlyAtomicTransport()
+    {
+        var fixture = new CriticalSourceFixture("Critical.Atomic.Once", requireAtomicWrite: true); fixture.Load();
+        int preparations = 0;
+        using (var frame = VersionedSaveFactoryFrame.BeginOwnedPreparation(context =>
+        { preparations++; return FreezeForFactory(fixture, context); }))
+        {
+            frame.CompleteOwnedPreparation(); frame.PrepareOwnedCapture(CriticalLogicalContext);
+            fixture.Value = 9;
+            var atomic = fixture.Extender.Registry.BeginAtomicSave(CriticalLogicalContext);
+            try
+            {
+                Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Mod.Handle.LastWriteStatus);
+                frame.Capture(CriticalLogicalContext);
+                Assert.IsNull(frame.Failure);
+                Assert.AreEqual(1, preparations); Assert.AreEqual(1, fixture.Captures,
+                    "Real factory observation must reuse the owned prepared bundle without repeating consumers.");
+                byte[] bytes = fixture.Mod.SaveCallback(CriticalLogicalContext);
+                Assert.IsNotNull(bytes);
+                CollectionAssert.AreEqual(atomic.Records[fixture.Mod.Handle.SaveDataIdentifier], bytes);
+                VersionedSaveDataRegistry.RequireAtomicDelivered(atomic);
+                Assert.IsTrue(frame.TryGetWrittenCapture(out var written, out string reason), reason);
+                Assert.IsTrue(written.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+                Assert.IsNull(fixture.Mod.SaveCallback(CriticalLogicalContext),
+                    "The atomic fast path must preserve the critical source's once-only transport contract.");
+                Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(atomic));
+                Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+                Assert.AreEqual(1, preparations); Assert.AreEqual(1, fixture.Captures);
+            }
+            finally { fixture.Extender.Registry.EndAtomicSave(atomic); }
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void OwnedCriticalPreCaptureRefusesADifferentActualFactoryContext(bool differentScope)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Atomic.Context", requireAtomicWrite: true); fixture.Load();
+        using (var frame = VersionedSaveFactoryFrame.BeginOwnedPreparation(context => FreezeForFactory(fixture, context)))
+        {
+            frame.CompleteOwnedPreparation(); frame.PrepareOwnedCapture(CriticalLogicalContext);
+            var atomic = fixture.Extender.Registry.BeginAtomicSave(CriticalLogicalContext);
+            try
+            {
+                var other = differentScope ? new VersionedSaveContext(false, true, CriticalLogicalContext.FilePath) :
+                    new VersionedSaveContext(true, false, "another-destination.sav");
+                frame.Capture(other);
+                Assert.IsNotNull(frame.Failure);
+                Assert.IsNull(fixture.Mod.SaveCallback(other));
+                Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+                Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(atomic));
+                Assert.AreEqual(1, fixture.Captures);
+            }
+            finally { fixture.Extender.Registry.EndAtomicSave(atomic); }
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void OwnedCriticalPreCaptureRejectsEarlyOrRepeatedPreparationWithoutRetry(bool completed)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Atomic.Preparation", requireAtomicWrite: true); fixture.Load();
+        int preparations = 0;
+        using (var frame = VersionedSaveFactoryFrame.BeginOwnedPreparation(context =>
+        { preparations++; return FreezeForFactory(fixture, context); }))
+        {
+            if (completed)
+            {
+                frame.CompleteOwnedPreparation(); frame.PrepareOwnedCapture(CriticalLogicalContext);
+            }
+            var failure = Assert.ThrowsExactly<InvalidOperationException>(() => frame.PrepareOwnedCapture(CriticalLogicalContext));
+            Assert.AreSame(failure, frame.Failure);
+            frame.Capture(CriticalLogicalContext);
+            Assert.AreSame(failure, frame.Failure);
+            Assert.AreEqual(completed ? 1 : 0, preparations);
+            Assert.AreEqual(completed ? 1 : 0, fixture.Captures);
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
     }
 
     [TestMethod]

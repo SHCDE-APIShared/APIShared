@@ -45,6 +45,38 @@ Register once after Script Extender readiness on the initialized Unity thread, f
   command executes, for example in a Chore (see [Building state](BUILDING_STATE.md)).
 - `TryGetContext` reads the open building of any type on Unity, without a registration.
 
+## Presenters and building actions
+
+Requires APIShared 0.73.0 or later. Some mods show Vanilla's building panel for another building
+than the local player's own selection, for example another player's building in a spectator tool
+or a foreign-control mod. Such a mod registers a presenter, and every section then works on that
+building as well, without knowing the presenting mod:
+
+    BuildingPanelSections.TryRegisterPresenter(new BuildingPanelPresenterOptions(MyGuid, "panel",
+        (out int building, out int acting) => TryGetShownBuilding(out building, out acting),
+        (BuildingActionRequest request, out string reason) => QueueAuthorizedExecution(request, out reason)), out string reason);
+
+- **Query.** Runs on Unity at every GUI check while sections exist and reports the shown building
+  and the player the presenter acts for (normally its owner). Report nothing while your panel is
+  closed. The first presenter in order (`Order`, then ordinal owner GUID and ID) that reports a
+  building owns the panel; its building replaces Vanilla's selection in every section's context.
+- **Context.** A presented context has `IsPresented`, `PresenterOwnerGuid`/`PresenterRegistrationId`
+  and `ActingPlayerId`; `CanActAsOwner` says whether that player owns the building.
+  `IsOwnedByLocalPlayer` keeps meaning the locally controlled player. For Vanilla's own selection
+  `ActingPlayerId` is the local player.
+- **Actions.** A section that offers owner controls registers each command once as a
+  `BuildingActions` action (owner GUID, action ID, building types, executor). On a presented panel
+  its control calls `BuildingPanelSections.TrySubmitAction(context, guid, actionId, argument, ...)`;
+  APIShared hands the request to the presenter, which runs it through its own authorized path (an
+  authenticated Chore on every peer, or a single-player engine action) ending in
+  `BuildingActions.TryExecute`. That call validates the building (alive, same GlobalId, one of the
+  action's types, owned by the acting player) and runs the executor. Any other mod may also call
+  `TryExecute` itself from deterministic simulation code. For Vanilla's own selection a section
+  keeps its own path, for example its own Chore.
+- **Compact transports.** A presenter whose Chore carries only numbers sends
+  `BuildingActions.GetActionKey(owner, actionId)` (FNV-1a, the same in every process) and resolves
+  it on each peer with `TryGetActionByKey`, which refuses unknown and ambiguous keys.
+
 ## Limits
 
 - Unity thread only. Callbacks, conditions and factories are isolated: a failure is logged once

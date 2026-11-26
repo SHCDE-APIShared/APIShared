@@ -6,6 +6,11 @@ namespace APIShared.Multiplayer
 {
     internal static class SimulationAgreementPolicy
     {
+        internal const string ResyncCohortKeyPrefix = "APIShared_Serp/resync-data-v1.";
+
+        internal static bool IsResyncDigest(string digest) => digest != null && digest.Length == 64 &&
+            digest.All(c => c >= '0' && c <= '9' || c >= 'a' && c <= 'f');
+
         internal static bool TryDecide(string local, IEnumerable<string> reports, out string enabled, out string reason)
             => TryDecide(local, reports, out enabled, out reason, out _);
 
@@ -16,6 +21,11 @@ namespace APIShared.Multiplayer
             waiting = false;
             reason = "Players reported different simulation capability registrations.";
             if (!TryParse(local, out var own)) return false;
+            if (own.Any(pair => IsResyncCohort(pair.Key) && pair.Value != "r1"))
+            {
+                reason = "The required multiplayer resync data service is unavailable.";
+                return false;
+            }
             var states = new List<Dictionary<string, string>>();
             bool missing = false;
             foreach (string report in reports)
@@ -55,8 +65,13 @@ namespace APIShared.Multiplayer
                 foreach (string key in enabled.Split(';'))
                     if (!own.TryGetValue(key, out string state) || state[1] != '1' || !selected.Add(key))
                         return false;
-            return own.All(pair => pair.Value[0] != 'r' || (pair.Value[1] == '1') == selected.Contains(pair.Key));
+            return own.All(pair => IsResyncCohort(pair.Key)
+                ? selected.Contains(pair.Key)
+                : pair.Value[0] != 'r' || (pair.Value[1] == '1') == selected.Contains(pair.Key));
         }
+
+        private static bool IsResyncCohort(string key) =>
+            key.StartsWith(ResyncCohortKeyPrefix, StringComparison.Ordinal);
 
         private static bool TryParse(string manifest, out Dictionary<string, string> entries)
         {
@@ -70,7 +85,9 @@ namespace APIShared.Multiplayer
                     (entry[assignment + 2] != '0' && entry[assignment + 2] != '1') || entries.Count == 32)
                     return false;
                 string key = entry.Substring(0, assignment);
-                if (entries.ContainsKey(key)) return false;
+                if (entries.ContainsKey(key) || IsResyncCohort(key) &&
+                    (entry[assignment + 1] != 'r' || !IsResyncDigest(key.Substring(ResyncCohortKeyPrefix.Length))))
+                    return false;
                 entries.Add(key, entry.Substring(assignment + 1));
             }
             return entries.Count != 0;

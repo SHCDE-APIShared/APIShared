@@ -196,6 +196,9 @@ namespace APIShared.Economy
             if(next!=rosterKey)
             {
                 rosterKey=next;token="";round.Reset("",Array.Empty<ulong>());committed=false;
+                // A new lobby/roster needs a fresh hello even when its production rules
+                // are unchanged. The host's first challenge can precede our observation.
+                localDigest="";
                 lastSendFailure=null;
             }
             Refresh();

@@ -114,20 +114,22 @@ namespace APIShared.Economy
         // ulong native return ABI and never install another52B0 detour.
         internal static ulong RunWriter(IntPtr archive, IntPtr sections, byte map, PlayerViewSaveScope.WriterCall original)
         {
+            // Nested no-demand writers must not bypass the retained outer transaction.
+            if (saving) return Failed("Nested protected save rejected; the previous save remains untouched.");
+            bool requiredRecords = VersionedSaveDataRuntime.RequiresAtomicWrite(map != 0);
             bool externalCargo = NativeStorageRuntime.Instance.HasExternalCargoSaveDemand ||
                 NativeStorageRuntime.Instance.HasUnreadyArchiveSaveDemand;
             bool criticalCohort = VersionedSaveDataRuntime.HasCriticalWriterDemand;
             if (!IsAvailable)
             {
-                if (!externalCargo && !criticalCohort) return original(archive, sections, map);
+                if (!externalCargo && !criticalCohort && !requiredRecords) return original(archive, sections, map);
                 sequence++; lastFailed = false;
                 return Failed("Enrolled storage/cargo saving requires the available verified critical writer.");
             }
             var requirements = new WorkerProductionSaveRequirements(WorkerProductionStateRuntime.IsExtended,
                 WorkerProductionWorldSafety.IsFaulted, WeaponProductionRuntime.HasStoredOutputDemand, externalCargo,
-                criticalCohort, criticalCohort && NativeStorageRuntime.Instance.HasCriticalWriterEnrollment);
+                criticalCohort, criticalCohort && NativeStorageRuntime.Instance.HasCriticalWriterEnrollment, requiredRecords);
             sequence++; lastFailed = false;
-            if (saving) return Failed("Nested production save rejected; the previous save remains untouched.");
             if (!requirements.Transaction) return original(archive, sections, map);
             return RunTransaction(archive, sections, map, original, requirements);
         }
@@ -148,6 +150,8 @@ namespace APIShared.Economy
             // only afterwards would let a callback-pop hide a failed frame.
             VersionedSaveFactoryFrame factoryFrame = VersionedSaveFactoryFrame.Current;
             CriticalSavePreparation participants = null;
+            VersionedSaveDataRegistry.AtomicSnapshot required = null;
+            VersionedSaveContext logicalContext = default;
             bool ownsFactoryFrame = false;
             Exception primary = null;
             WorkerProductionSaveCleanupReport cleanup = default;
@@ -164,7 +168,8 @@ namespace APIShared.Economy
             {
                 try
                 {
-                    if (!System.Threading.Monitor.IsEntered(WorkerProductionWorldSafety.EngineGate))
+                    object engineMonitor = Internal.EngineMonitor.Current;
+                    if (engineMonitor == null || !System.Threading.Monitor.IsEntered(engineMonitor))
                         throw new InvalidOperationException("Critical saving requires the actual engine monitor.");
                     // A fault is rejected before capture or ANY native file open/truncation.
                     if (requirements.Faulted) throw new InvalidOperationException("The production world is faulted.");
@@ -172,11 +177,11 @@ namespace APIShared.Economy
                     {
                         CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration);
                         if (preCaptureContext == null) throw new InvalidOperationException("The pre-capture reader is unavailable.");
-                        if (!preCaptureContext.TryReadSnapshot(out var logical, out _, out string contextReason))
+                        if (!preCaptureContext.TryReadSnapshot(out logicalContext, out _, out string contextReason))
                             throw new InvalidOperationException(contextReason);
-                        factoryFrame = VersionedSaveDataRuntime.BeginCriticalWriterFrame(logical);
+                        factoryFrame = VersionedSaveDataRuntime.BeginCriticalWriterFrame(logicalContext);
                         ownsFactoryFrame = true;
-                        participants = VersionedSaveDataRuntime.BeginParticipantPreparation(logical);
+                        participants = VersionedSaveDataRuntime.BeginParticipantPreparation(logicalContext);
                     }
                     if (requirements.Production)
                     {
@@ -202,6 +207,18 @@ namespace APIShared.Economy
                     int end = chars.IndexOf('\0');
                     if (end <= 0) throw new InvalidDataException("The native destination path is missing or unterminated.");
                     string destination = Path.GetFullPath(new string(chars.Slice(0, end).ToArray()));
+                    if (requirements.AtomicRecords)
+                    {
+                        // Atomic-required callbacks run before file creation. An enrolled
+                        // cohort prepares once here and still requires the real factory
+                        // dispatch/transport inside Original; early capture is no delivery.
+                        if (requirements.CriticalCohort) factoryFrame.PrepareOwnedCapture(logicalContext);
+                        required = requirements.CriticalCohort
+                            ? VersionedSaveDataRuntime.BeginAtomicSave(logicalContext)
+                            : VersionedSaveDataRuntime.BeginAtomicSave(map != 0, destination);
+                        if (required == null) throw new InvalidOperationException("The required atomic record registry is unavailable.");
+                        RequireAtomicSaveEpoch(protectedWorld, protectedGeneration);
+                    }
                     string folder = Path.GetDirectoryName(destination);
                     temporary = Path.Combine(folder, ".wp-" + Guid.NewGuid().ToString("N") + ".tmp");
                     if (temporary.Length >= PathCapacity) throw new PathTooLongException("The native temporary save path exceeds its UTF-16 slot.");
@@ -221,12 +238,13 @@ namespace APIShared.Economy
                     actualWriterResult = result;
                     if (result != 1 || lastFailed) throw new IOException("Native saving returned failure or attempted a nested save.");
                     if (requirements.Production) WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
+                    VersionedSaveDataRegistry.RequireAtomicDelivered(required);
                     if (requirements.Workshops) WeaponProductionRuntime.VerifySaveWritten(temporary);
                     if (requirements.Storage) NativeStorageRuntime.Instance.VerifyProductionSaveWritten(temporary);
                     // MoveFileExW replacement commits only the verified complete file. Failed capture,
                     // omitted/stale archive records and append errors leave the old destination intact.
                     CommitSavedFile(temporary, destination, payload, in nativeIo, requirements, factoryFrame,
-                        protectedWorld, protectedGeneration, participants);
+                        protectedWorld, protectedGeneration, participants, required);
                     committed = true;
                     temporary = null;
                 }
@@ -245,7 +263,11 @@ namespace APIShared.Economy
                     cleanup = CompleteSaveCleanup(actualWriterResult, committed, primary, restore,
                         requirements.Production ? endProductionCapture : null,
                         requirements.Workshops ? endWorkshopCapture : null,
-                        requirements.Storage ? endStorageCapture : null,
+                        required == null && !requirements.Storage ? null : (Action)(() =>
+                        {
+                            try { VersionedSaveDataRuntime.EndAtomicSave(required); }
+                            finally { if (requirements.Storage) EndStorageCapture(); }
+                        }),
                         ownsFactoryFrame ? (Action)factoryFrame.Dispose : null,
                         participants == null ? null : (Action)participants.Dispose);
                     if (temporary != null)
@@ -352,6 +374,14 @@ namespace APIShared.Economy
         internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io)
             => CommitSavedFile(temporary, destination, payload, in io, new WorkerProductionSaveRequirements(true, false, false, false));
 
+        // Preserve the upstream atomic-record test/verification entry without changing
+        // the existing four-argument production-payload contract.
+        internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
+            VersionedSaveDataRegistry.AtomicSnapshot required)
+            => CommitSavedFileCore(temporary, destination, payload, in io,
+                new WorkerProductionSaveRequirements(payload != null, false, false, false, false, false, required != null),
+                VersionedSaveFactoryFrame.Current, false, null, 0, null, required);
+
         // Cargo-only worlds intentionally have no extended worker-production sidecar. Storage
         // verification has already checked its frozen pair; require a production payload only
         // when that source participated in this transaction. Never synthesize an empty record.
@@ -370,13 +400,15 @@ namespace APIShared.Economy
         // invalidation which occurred before the archive provider saw a new load.
         internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
             WorkerProductionSaveRequirements requirements, VersionedSaveFactoryFrame factoryFrame,
-            object world, long generation, CriticalSavePreparation participants)
+            object world, long generation, CriticalSavePreparation participants,
+            VersionedSaveDataRegistry.AtomicSnapshot required = null)
             => CommitSavedFileCore(temporary, destination, payload, in io, requirements, factoryFrame,
-                requirements.CriticalCohort, world, generation, participants);
+                requirements.CriticalCohort, world, generation, participants, required, requirements.AtomicRecords);
 
         private static void CommitSavedFileCore(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
             WorkerProductionSaveRequirements requirements, VersionedSaveFactoryFrame factoryFrame,
-            bool validateOwner, object world, long generation, CriticalSavePreparation participants)
+            bool validateOwner, object world, long generation, CriticalSavePreparation participants,
+            VersionedSaveDataRegistry.AtomicSnapshot required = null, bool validateAtomicEpoch = false)
         {
             if (!io.IsComplete) throw new IOException("A native save write was incomplete or the save file could not close successfully.");
             if (!requirements.Transaction || requirements.Faulted) throw new InvalidDataException("No valid frozen save sources authorize file replacement.");
@@ -386,13 +418,23 @@ namespace APIShared.Economy
                 VerifySavedPayload(temporary, payload);
             }
             else if (payload != null) throw new InvalidDataException("An unexpected production payload cannot label a cargo-only checkpoint.");
+            VersionedSaveDataRegistry.RequireAtomicDelivered(required);
+            VerifyRequiredRecords(temporary, required);
             VerifyFactoryCapture(temporary, factoryFrame);
             if (validateOwner)
             {
                 participants?.RequireCurrent();
                 CriticalSaveRuntime.RequireCurrentSaveWorld(world, generation, true);
             }
+            if (validateAtomicEpoch) RequireAtomicSaveEpoch(world, generation);
             Internal.AtomicFileReplacement.Replace(temporary, destination);
+        }
+        private static void RequireAtomicSaveEpoch(object world, long generation)
+        {
+            // Raw restores/resync may replace native state without a registry load.
+            // Equality is a retained epoch check, not invented native availability.
+            if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld) || generation != WorkerProductionWorldSafety.Generation)
+                throw new InvalidOperationException("The native save world changed during required atomic capture.");
         }
 
         // Explicit cohort demand opens the owning frame; absent enrollment this
@@ -428,6 +470,19 @@ namespace APIShared.Economy
                     }
             }
             catch (Exception error) { frame.RecordFailure(error); throw; }
+        }
+        internal static void VerifyRequiredRecords(string path, VersionedSaveDataRegistry.AtomicSnapshot required)
+        {
+            if (required == null || required.Records.Count == 0) return;
+            if (!MapArchive.TryLoad(path, out MapArchive archive))
+                throw new InvalidDataException("The required mod archive is missing or damaged.");
+            using (archive)
+                foreach (var record in required.Records)
+                {
+                    byte[] actual = archive.TryReadBinaryFile("_SE_ModData_" + record.Key + ".msgpack", true);
+                    if (actual == null || !actual.AsSpan().SequenceEqual(record.Value))
+                        throw new InvalidDataException("The required save record is missing or stale: " + record.Key);
+                }
         }
         internal static void VerifySavedPayload(string path, byte[] expected)
         {
@@ -467,14 +522,18 @@ namespace APIShared.Economy
 
     internal readonly struct WorkerProductionSaveRequirements
     {
-        internal readonly bool Production, Workshops, Storage, Faulted, CriticalCohort;
-        internal bool Transaction => Production || Storage || Faulted || CriticalCohort;
+        internal readonly bool Production, Workshops, Storage, Faulted, CriticalCohort, AtomicRecords;
+        internal bool Transaction => Production || Storage || Faulted || CriticalCohort || AtomicRecords;
         internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo)
             : this(extended, faulted, storedOutput, externalCargo, false, false) { }
         internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo,
             bool criticalCohort, bool criticalStorage)
+            : this(extended, faulted, storedOutput, externalCargo, criticalCohort, criticalStorage, false) { }
+        internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo,
+            bool criticalCohort, bool criticalStorage, bool atomicRecords)
         {
-            Production = extended; Workshops = extended || storedOutput;
+            AtomicRecords = atomicRecords;
+            Production = extended; Workshops = extended || storedOutput || atomicRecords;
             Storage = storedOutput || externalCargo || criticalStorage; Faulted = faulted; CriticalCohort = criticalCohort;
         }
     }

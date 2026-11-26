@@ -17,13 +17,16 @@ public sealed class WorkshopPackageTests
     [TestCleanup] public void Cleanup() { Assert.IsTrue(Path.GetFullPath(fixture).StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)); Directory.Delete(fixture, true); }
     private void Write(string directory, string path, string text) { string target = WorkshopPaths.Inside(directory, path); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.WriteAllText(target, text); }
     private string Read(string path) { string target = WorkshopPaths.Inside(Game, path); return File.Exists(target) ? File.ReadAllText(target) : "<missing>"; }
-    private WorkshopPackage Package(string version = "1.0.0", params string[] extras)
+    private WorkshopPackage Package(string version = "1.0.0", params string[] extras) =>
+        PackageWithId("ExamplePackage", version, extras);
+
+    private WorkshopPackage PackageWithId(string packageId, string version, params string[] extras)
     {
         Write(Source, "Payload/" + Root + "/info.json", "{\"GUID\":\"ExampleGuid\",\"Version\":\"" + version + "\",\"Manifest\":1}");
         Write(Source, "Payload/" + Root + "/Example.dll", "payload " + version);
         foreach (string extra in extras) Write(Source, "Payload/" + Root + "/" + extra, "shipped " + extra);
         var files = WorkshopPaths.Enumerate(Path.Combine(Source, "Payload")).Select(path => new WorkshopFile(path.Substring(Path.Combine(Source, "Payload").Length + 1).Replace('\\', '/'), new FileInfo(path).Length, WorkshopInventory.Hash(path))).ToArray();
-        Write(Source, WorkshopPackage.ManifestFileName, WorkshopPackageCodec.Write(new { SchemaVersion = 1, PackageId = "ExamplePackage", Version = version, MinimumAPISharedVersion = "0.7.1", Roots = new[] { Root }, Files = files }));
+        Write(Source, WorkshopPackage.ManifestFileName, WorkshopPackageCodec.Write(new { SchemaVersion = 1, PackageId = packageId, Version = version, MinimumAPISharedVersion = "0.7.1", Roots = new[] { Root }, Files = files }));
         var package = WorkshopPackageCodec.Read(File.ReadAllText(Path.Combine(Source, WorkshopPackage.ManifestFileName))); WorkshopPaths.Verify(package, Source); return package;
     }
     // Removes a shipped file from the source payload (the next Package() call rebuilds the manifest).
@@ -37,6 +40,33 @@ public sealed class WorkshopPackageTests
         return InstallSwap.Apply(paths, plan.WorkshopId, _ => { });
     }
     private WorkshopInstallPlan Plan(WorkshopAction action, ulong id = 123) => WorkshopInstallation.Prepare("owner", Game, id, action == WorkshopAction.Remove ? null! : Source, action);
+
+    [TestMethod]
+    public void StartupStagingRejectsANewerLocalVersionAfterTheOffer()
+    {
+        var package = PackageWithId("ExampleGuid", "1.0.38");
+        Install(Plan(WorkshopAction.Install));
+        var receipt = WorkshopInstallation.ReadReceipt(Game, 123);
+        Write(Game, Root + "/Example.dll", "changed payload");
+        var item = new WorkshopCatalogItem { Package = package, Receipt = receipt, IsSubscribed = true, CanInstall = true };
+        var offer = WorkshopLocalState.StartupAction(item, WorkshopLocalState.Inspect(Game, item).Status,
+            true, localVersion: WorkshopLocalState.ReadInstalledPackageVersion(Game, package));
+        Assert.AreEqual(WorkshopAction.Reinstall, offer);
+        var plan = Plan(offer!.Value);
+        Write(Game, Root + "/info.json", WorkshopPackageCodec.Write(new { GUID = "ExampleGuid", Version = "1.0.39" }));
+
+        var paths = new InstallPaths(Game);
+        var error = Assert.ThrowsExactly<InvalidOperationException>(
+            () => WorkshopStaging.StagePlan(paths, plan, _ => { }, request: false, startup: true));
+        Assert.AreEqual(WorkshopDiagnosticLevel.Warning, WorkshopDiagnostics.Level(error));
+        StringAssert.Contains(error.Message, "local=1.0.39");
+        Assert.IsFalse(Directory.Exists(paths.Container(123)));
+        Assert.IsFalse(InstallStaging.Pending(paths, 123));
+        Assert.AreEqual("1.0.38", WorkshopInstallation.ReadReceipt(Game, 123).Version);
+
+        WorkshopStaging.StagePlan(paths, plan, _ => { });
+        Assert.IsTrue(InstallStaging.Pending(paths, 123), "an explicit manual replacement keeps its existing behavior");
+    }
 
     [TestMethod] public void LegacyReleasesShareValidationButStillRejectUnsafeEntries()
     {

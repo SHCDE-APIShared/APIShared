@@ -558,10 +558,46 @@ internal sealed class SourceModel
         Require(!patchMethods.Any(m=>Lifecycle.Contains(m.Identifier.ValueText)),"Gold CALL publisher acquired lifecycle teardown.");
         allowed.Add(writer);return allowed;
     }
+    // The host barrier changes one CALL during the same retained publication as the receive detour.
+    internal HashSet<InvocationExpressionSyntax> ResyncDataCallAllowances()
+    {
+        var allowed = new HashSet<InvocationExpressionSyntax>();
+        var parts = Parts("MultiplayerResyncDataNativeRuntime").ToArray();
+        if (parts.Length == 0) return allowed;
+        var writers = parts.SelectMany(Calls).Where(call => IsCall(call, "CodePatch", "Write")).ToArray();
+        Require(writers.Length == 1, "Resync data requires exactly one host CALL writer.");
+        var writer = writers[0];
+        var initializer = writer.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        static IEnumerable<ExpressionSyntax> OrTerms(ExpressionSyntax condition) =>
+            Unwrap(condition) is BinaryExpressionSyntax binary && binary.IsKind(SyntaxKind.LogicalOrExpression)
+                ? OrTerms(binary.Left).Concat(OrTerms(binary.Right)) : new[] { Unwrap(condition) };
+        Require(initializer?.Identifier.ValueText == "Initialize" &&
+            initializer.Body?.Statements.FirstOrDefault() is IfStatementSyntax startup && startup.Statement is ThrowStatementSyntax &&
+            OrTerms(startup.Condition).Any(n => Not(n, "NativeStartupPatchWindow.IsOpen")) &&
+            OrTerms(startup.Condition).Any(n => Different(n, "hash", "ApiSharedRuntime.SupportedHash")),
+            "Resync data CALL must be guarded by startup-window and image checks.");
+        var callback = writer.Ancestors().OfType<AnonymousFunctionExpressionSyntax>().FirstOrDefault();
+        Require(callback?.Parent is ArgumentSyntax argument && argument.Parent is ArgumentListSyntax arguments &&
+            arguments.Arguments.Count == 5 && arguments.Arguments[4] == argument &&
+            arguments.Parent is InvocationExpressionSyntax publish && IsCall(publish, "NativeHookPublication", "Enable") &&
+            !publish.Ancestors().Any(node => node is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax) &&
+            callback.Block is BlockSyntax block && block.Statements.Count == 3 &&
+            Text(block.Statements[0]) == "NativeIndirectEntry.VerifyBytes(module+HostCallRva,HostCall);" &&
+            block.Statements[1] is ExpressionStatementSyntax writeStatement && writeStatement.Expression == writer &&
+            Text(block.Statements[2]) == "ValidatePublished();" &&
+            writer.ArgumentList.Arguments.Count == 2 &&
+            Text(writer.ArgumentList.Arguments[0].Expression) == "Address(module+HostCallRva)" &&
+            Text(writer.ArgumentList.Arguments[1].Expression) == "patchedCall",
+            "Resync data CALL must be verified and written within retained startup publication to the same address.");
+        allowed.Add(writer);
+        return allowed;
+    }
+
     internal void CheckHooks()
     {
         var unitVoiceAllowances = UnitVoiceHookAllowances();
         var goldCallAllowances = ConstructionGoldCallAllowances();
+        var resyncCallAllowances = ResyncDataCallAllowances();
         var audioMethods = Parts("SoundRuntime").SelectMany(t => t.Members).OfType<MethodDeclarationSyntax>().ToArray();
         var audioFlags = Parts("SoundRuntime").SelectMany(t => t.Members).OfType<FieldDeclarationSyntax>()
             .Where(f => f.Declaration.Type is PredefinedTypeSyntax p && p.Keyword.IsKind(SyntaxKind.BoolKeyword))
@@ -588,7 +624,7 @@ internal sealed class SourceModel
             bool preparedNativeCode = owner is "PlagueNativeCode" or "ProductionGoodsReceivedNativeCode";
             if (name is "VirtualProtect" or "FlushInstructionCache" || IsCall(call, "CodePatch", "Write") ||
                 owner == "ProductionGoodsReceivedNativeCode" && IsCall(call, "Marshal", "Copy"))
-                Require(owner == "FixesWheatMemory" || goldCallAllowances.Contains(call) ||
+                Require(owner == "FixesWheatMemory" || goldCallAllowances.Contains(call) || resyncCallAllowances.Contains(call) ||
                     (preparedNativeCode && call.Ancestors().OfType<ConstructorDeclarationSyntax>().Any()),
                     "Executable writer outside an audited preparation boundary: " + call.GetLocation().GetLineSpan());
             // These two named preparation boundaries allocate private RW memory, write it

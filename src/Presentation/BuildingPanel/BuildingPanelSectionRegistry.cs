@@ -27,6 +27,39 @@ namespace APIShared.Presentation
             reason = "";
             return true;
         }
+
+        private BuildingPanelPresenterEntry[] presenters = Array.Empty<BuildingPanelPresenterEntry>();
+        internal BuildingPanelPresenterEntry[] Presenters => presenters;
+
+        internal bool TryRegisterPresenter(BuildingPanelPresenterOptions options, out string reason)
+        {
+            if (options == null || string.IsNullOrWhiteSpace(options.OwnerGuid) || string.IsNullOrWhiteSpace(options.RegistrationId) ||
+                options.Query == null || options.Submit == null)
+            { reason = "Options with a nonempty owner GUID, presenter ID, query and submit callback are required."; return false; }
+            if (OrderedRegistrations.Contains(presenters, BuildingPanelPresenterEntry.Key, options.OwnerGuid, options.RegistrationId))
+            { reason = "Duplicate building panel presenter: " + options.OwnerGuid + "/" + options.RegistrationId; return false; }
+            presenters = OrderedRegistrations.WithAdded(presenters, new BuildingPanelPresenterEntry(options), BuildingPanelPresenterEntry.Key);
+            reason = "";
+            return true;
+        }
+    }
+
+    // Unity-thread presenter registration: the first one in order that reports a building owns the panel.
+    internal sealed class BuildingPanelPresenterEntry
+    {
+        internal readonly string Owner, Id;
+        internal readonly int Order;
+        internal readonly BuildingPanelPresentationQuery Query;
+        internal readonly BuildingPanelActionSubmit Submit;
+
+        internal BuildingPanelPresenterEntry(BuildingPanelPresenterOptions options)
+        {
+            Owner = options.OwnerGuid; Id = options.RegistrationId; Order = options.Order;
+            Query = options.Query; Submit = options.Submit;
+        }
+
+        internal static readonly Func<BuildingPanelPresenterEntry, RegistrationKey> Key =
+            entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
     }
 
     // Unity-thread state of one section for the currently bound building HUD.

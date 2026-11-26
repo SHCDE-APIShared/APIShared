@@ -154,7 +154,7 @@ namespace APISharedTests
                     Assert.AreEqual(hostHasRecord ? GameModeLaunchVariant.RestoredCustomizedSave : GameModeLaunchVariant.Standard, variant);
                 }
                 if (abort) coordinator.GetMethod("Abort", flags).Invoke(null,
-                    new object[] { "fixture cancelled", false, false, "fixture", Type.Missing, Type.Missing });
+                    new object[] { "fixture cancelled", false, false, "fixture", Type.Missing, Type.Missing, Type.Missing });
                 else SavegameLoadCoordinator.FinishLoad();
                 Assert.IsFalse(SavegameLoadCoordinator.IsLoadingMultiplayerSave);
                 // A subsequent ordinary load retains the original file binding.
