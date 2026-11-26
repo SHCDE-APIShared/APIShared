@@ -1303,8 +1303,9 @@ GameAction, Presentation, market query and sound brokers share one
 [registry](../src/Core/Events/InterceptionEvent.cs). Without active registrations a
 site calls its original before creating args. An observed call creates its public
 Pre args, one Post args per Post registration, a rollback checkpoint per Pre callback
-and owner-State storage only when a Pre has a matching Post or Accepted. Post
-factories are static and receive an explicit value-type context. Presentation sites
+and private owner-State storage only after a successful Pre supplies non-null
+State for its matching Post, Accepted or final validator. Null State needs no
+owner array. Post factories are static and receive an explicit value-type context. Presentation sites
 pass their receiver to an original delegate created once per site, so no caller
 creates a closure or delegate per call. Public args are not pooled; observers may
 retain them.
@@ -1327,10 +1328,11 @@ closure in the fixture. "Public args" allocates only the objects listed above.
 | Presentation GuiChecks, Pre | 288 | 160 | 104 |
 | Presentation GuiChecks, Pre + Post | 440 | 248 | 192 |
 
-The remaining 56 bytes are the registry's per-call invocation object. An IL test
-rejects closures, delegates, arrays and boxing in the observed caller paths. Each
-additional Post registration adds its Post args; mixed active and dormant internal
-registrations add a filtered snapshot array.
+In those historical measurements, the remaining 56 bytes were the registry's
+per-call invocation object. An IL test rejects closures, delegates, arrays and
+boxing in the observed caller paths. Each additional Post registration adds its
+Post args; that revision also allocated a filtered snapshot for mixed active and
+dormant internal registrations.
 
 Execution time was compared A/B on the same host against 07089d1, with the same
 test entry points in both builds and the GuiChecks site closure reproduced in the
@@ -1350,6 +1352,34 @@ the best run in ns per call; every run was faster after the change.
 Timing is indicative and not asserted; the host also ran unrelated work (21 to 51%
 CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
+
+#### Lazy private State storage
+
+The registry retains a fresh invocation and public event arguments. It allocates
+its private owner-State array only when a successful Pre supplies non-null State
+for a paired consumer. Failed Pre changes still roll back; null and non-null
+states remain registration-private through final validation, Accepted and Post.
+Later calls cannot change retained completion arguments.
+
+The linked-source [Core regression](../tests/Core.Tests/InterceptionEventTests.cs)
+compares one Pre-only registration with null and non-null paired State after 256
+warm-up calls. In a bounded managed .NET 10 run of 4,096 calls, the original passed
+9/10 tests, failing only the new null-state allocation assertion; the candidate
+passed 10/10. The Pre-only control allocated 491,520 bytes in both variants. Null
+paired State fell from 622,592 to 491,520 bytes; non-null paired State remained
+622,592 bytes. A live one-owner `object[]` control allocated 131,072 bytes, matching
+the 32 bytes saved per qualifying call on that host without assuming pointer size.
+
+This measures the linked registry, not the three compiled production dispatch
+paths. The new [BrokerAllocationTests](../tests/APISharedTests/BrokerAllocationTests.cs)
+comparison for those paths has not run. The actual loaded CLR patch was not
+independently qualified; Unity/Mono, GUI timing and FPS remain outside the result.
+No execution-time improvement is claimed.
+
+Deferring allocation can move an `OutOfMemoryException` from before Pre callbacks
+to after a successful Pre. Storage allocation remains outside callback exception
+isolation, so such a failure is not reported as a failing handler. No allocation
+pressure or exhaustion-timing equivalence is claimed.
 
 ## Staged values and health
 
