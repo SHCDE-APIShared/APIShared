@@ -1296,6 +1296,47 @@ Successful Pre vetoes remain sticky; notification order is ascending order follo
 by ordinal owner GUID and ID. Failed Pre changes are rolled back. State is private
 to each registration, and registrations added during a call start on the next call.
 
+### Market UI actions
+
+The market and shared extended-features actions use the same registration and
+Pre/Post contract. Consumers need an APIShared release that exports these members;
+the original brokers' 0.6.0 minimum does not include these additions.
+
+| Operation | Managed method on `CrusaderDE.MainViewModel` |
+| --- | --- |
+| `MarketSelectGoods` | `ButtonNewTradeGoodsType(object)` |
+| `MarketCycleGoods` | `ButtonCycleTradeGoodsType(object)` |
+| `MarketBuySell` | `ButtonBuySell(object)` |
+| `MarketChangeTradeType` | `ButtonNewTradeType(object)` |
+| `ExtendedFeaturesAction` | `ButtonExtendedFeaturesFunction(object)` |
+
+Every method returns `void`. `Instance` and `ViewModel` refer to the exact receiver;
+`OriginalParameter` preserves its original object, including null, without parsing
+or conversion. `Parameter` supplies the final object to Vanilla or the selected
+replacement. Interpret button strings and current panel state in the consumer.
+`ExtendedFeaturesAction` observes the whole shared extended-features method,
+including calls outside the market. Consumers must establish market context themselves.
+Keep receiver and panel references invocation-local.
+
+Register once during Unity startup. Registration installs only that requested
+managed site, owned by APIShared for the process lifetime. With no notification
+demand, the hook passes through to its original without creating event arguments.
+No market settings, stock model, IDs or price/native hooks are installed by these
+operations. The consumer owns activation, navigation and deterministic multiplayer
+commands; managed completion does not prove that a trade was accepted.
+
+For an owned action, assign `Replacement` in Pre instead of performing it during
+the callback. It receives the final parameter after all Pre callbacks; a sticky
+veto suppresses it and Vanilla. Failed callbacks roll back argument changes, and
+last successful replacement assignment wins. Post receives the registration's own
+State after normal completion, veto, or an original/replacement exception. Use
+`WasReplaced` and `CompletionException` when cleaning up; `OriginalCompleted` is
+false for a replacement. Exceptions from the original or replacement propagate
+after Post and do not retry Vanilla. Nested notification calls retain original
+passthrough. See the [compiled replacement example](../examples/ThirdPartyMod/InterceptionExample.cs).
+
+### Validating final command inputs
+
 Use `GameActionEvents.TryRegisterWithFinalValidation` when a policy must verify
 that the final payload still matches the original request after other mods' Pre
 callbacks. The validator receives read-only original and final arguments and the
@@ -1332,8 +1373,9 @@ GameAction, Presentation, market query and sound brokers share one
 [registry](../src/Core/Events/InterceptionEvent.cs). Without active registrations a
 site calls its original before creating args. An observed call creates its public
 Pre args, one Post args per Post registration, a rollback checkpoint per Pre callback
-and owner-State storage only when a Pre has a matching Post or Accepted. Post
-factories are static and receive an explicit value-type context. Presentation sites
+and private owner-State storage only after a successful Pre supplies non-null
+State for its matching Post, Accepted or final validator. Null State needs no
+owner array. Post factories are static and receive an explicit value-type context. Presentation sites
 pass their receiver to an original delegate created once per site, so no caller
 creates a closure or delegate per call. Public args are not pooled; observers may
 retain them.
@@ -1356,10 +1398,11 @@ closure in the fixture. "Public args" allocates only the objects listed above.
 | Presentation GuiChecks, Pre | 288 | 160 | 104 |
 | Presentation GuiChecks, Pre + Post | 440 | 248 | 192 |
 
-The remaining 56 bytes are the registry's per-call invocation object. An IL test
-rejects closures, delegates, arrays and boxing in the observed caller paths. Each
-additional Post registration adds its Post args; mixed active and dormant internal
-registrations add a filtered snapshot array.
+In those historical measurements, the remaining 56 bytes were the registry's
+per-call invocation object. An IL test rejects closures, delegates, arrays and
+boxing in the observed caller paths. Each additional Post registration adds its
+Post args; that revision also allocated a filtered snapshot for mixed active and
+dormant internal registrations.
 
 Execution time was compared A/B on the same host against 07089d1, with the same
 test entry points in both builds and the GuiChecks site closure reproduced in the
@@ -1379,6 +1422,34 @@ the best run in ns per call; every run was faster after the change.
 Timing is indicative and not asserted; the host also ran unrelated work (21 to 51%
 CPU). Unity's Mono runtime and garbage collector and real callbacks are outside
 these measurements; no FPS change is implied.
+
+#### Lazy private State storage
+
+The registry retains a fresh invocation and public event arguments. It allocates
+its private owner-State array only when a successful Pre supplies non-null State
+for a paired consumer. Failed Pre changes still roll back; null and non-null
+states remain registration-private through final validation, Accepted and Post.
+Later calls cannot change retained completion arguments.
+
+The linked-source [Core regression](../tests/Core.Tests/InterceptionEventTests.cs)
+compares one Pre-only registration with null and non-null paired State after 256
+warm-up calls. In a bounded managed .NET 10 run of 4,096 calls, the original passed
+9/10 tests, failing only the new null-state allocation assertion; the candidate
+passed 10/10. The Pre-only control allocated 491,520 bytes in both variants. Null
+paired State fell from 622,592 to 491,520 bytes; non-null paired State remained
+622,592 bytes. A live one-owner `object[]` control allocated 131,072 bytes, matching
+the 32 bytes saved per qualifying call on that host without assuming pointer size.
+
+This measures the linked registry, not the three compiled production dispatch
+paths. The new [BrokerAllocationTests](../tests/APISharedTests/BrokerAllocationTests.cs)
+comparison for those paths has not run. The actual loaded CLR patch was not
+independently qualified; Unity/Mono, GUI timing and FPS remain outside the result.
+No execution-time improvement is claimed.
+
+Deferring allocation can move an `OutOfMemoryException` from before Pre callbacks
+to after a successful Pre. Storage allocation remains outside callback exception
+isolation, so such a failure is not reported as a failing handler. No allocation
+pressure or exhaustion-timing equivalence is claimed.
 
 ## Staged values and health
 
@@ -1445,6 +1516,14 @@ cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
 
+For per-setting price explanations, create a typed request with
+`MarketPriceModifiers.CreateStatusQuery` and pass it to
+`APIShared.Modifiers.ValueModifiers.TryGetStatus`. The immutable result includes
+the cached shared/AI base-price projection, the current shared-table observation
+with its comparison value, ordered contributions and applied bounds. Keep
+formatting and localization in the consumer. See the
+[status, thread and lifetime contract](MARKET_PRICE_MODIFIERS.md#read-only-composition-status).
+
 ## Ordering units taken from AI groups
 
 `GameTribeManagerAPI.IssueMoveHereCommand` and Vanilla's other group moves silently skip a member
@@ -1472,6 +1551,16 @@ GameTribeManagerAPI.Instance.IssueMoveHereCommand(ownTribe, x, y, false, 1, Trib
   unit for its own admission rules.
 
 The native contract is in [UpdateToNewDLL](../UpdateToNewDLL.md#group-move-exclusion-mark).
+
+## Shared troop variant identities
+
+Use `ModApiClient.UnitIdentities` for owner-local identity on an exact native
+carrier, instead of private cross-mod identity readers. The service retains native
+pending-recruitment evidence and separates live simulation queries from immutable
+presentation snapshots. It creates no troop, purchase, native type or art. See
+[the identity guide](UNIT_IDENTITIES.md) and the
+[compiled example](../examples/ThirdPartyMod/UnitIdentityExample.cs) for mutation
+context, world lifetime, save preservation and multiplayer limits.
 
 ## Native-wallet virtual-good transactions
 

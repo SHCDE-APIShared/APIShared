@@ -16,6 +16,7 @@ namespace APIShared
             Network = new Networking.ModNetworkClient(ownerGuid);
             Workshop = new Workshop.WorkshopClient(ownerGuid);
             Ui = new Presentation.UiWorkClient(ownerGuid);
+            UnitIdentities = new Units.UnitIdentityClient(ownerGuid);
             GoodsWallet = new Economy.GoodsWalletClient(ownerGuid);
         }
 
@@ -27,6 +28,8 @@ namespace APIShared
         public Workshop.WorkshopClient Workshop { get; }
         /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
         public Presentation.UiWorkClient Ui { get; }
+        /// <summary>Owner-bound custom troop identity registration and exact-unit queries; no native hooks or subscriptions are installed by acquisition.</summary>
+        public Units.UnitIdentityClient UnitIdentities { get; }
         /// <summary>Owner-bound native pooled storage, separate virtual goods and coordinated gold exchanges.
         /// Startup registration installs shared capacity owners; no work starts by obtaining this client.</summary>
         public Economy.NativeStorageClient NativeStorage => new Economy.NativeStorageClient(OwnerGuid);

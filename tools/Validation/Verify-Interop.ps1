@@ -38,6 +38,7 @@ $expected = @{
     # Formation speech consumes these audited tile and leader fields (GameUnit/GameTribe layout).
     'GameUnit.r_CurrentPositionTileId' = 'System.UInt32|208|4'
     'GameUnit.r_IsKilledByProjectile' = 'System.UInt16|668|2'
+    'GameUnit.r_TransformIntoUnitOfType' = 'SHCDESE.Interop.eChimps|710|2'
     'GameUnit.r_TribeId' = 'System.UInt16|724|2'
     'GameUnit.r_AttackMoveToTargetTileX' = 'System.UInt16|728|2'
     'GameUnit.r_AttackMoveToTargetTileY' = 'System.UInt16|730|2'
