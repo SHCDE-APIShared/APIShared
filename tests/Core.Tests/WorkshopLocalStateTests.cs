@@ -5,6 +5,71 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 public sealed class WorkshopLocalStateTests
 {
     [TestMethod]
+    public void StartupRepairsNeverReplaceANewerPackageOnDiskOrInTheReceipt()
+    {
+        string game = Path.Combine(Path.GetTempPath(), "WorkshopLocalVersion-" + Guid.NewGuid().ToString("N"));
+        const string root = "BepInEx/plugins/SerpsMods_Serp";
+        const string relative = root + "/Locales/ar.txt";
+        string file = Path.Combine(game, relative);
+        void WriteHost(string path, string guid, string version)
+        {
+            string fullPath = Path.Combine(game, path, "info.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            File.WriteAllText(fullPath, WorkshopPackageCodec.Write(new { GUID = guid, Version = version }));
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        try {
+            File.WriteAllText(file, "release 1.0.38");
+            var previous = new WorkshopReceipt {
+                Version = "1.0.38", Files = new[] { new WorkshopFile(relative, new FileInfo(file).Length, WorkshopInventory.Hash(file)) }
+            };
+            var package = new WorkshopPackage { PackageId = "SerpsMods_Serp", Version = "1.0.38", Roots = new[] { root } };
+            var item = new WorkshopCatalogItem { IsSubscribed = true, CanInstall = true, Package = package, Receipt = previous };
+            WriteHost(root, package.PackageId, "1.0.39");
+            WriteHost(root + "/Mods/Example", "Example", "99.0.0");
+            File.WriteAllText(file, "release 1.0.39");
+            Assert.AreEqual(WorkshopLocalStatus.Modified, WorkshopLocalState.Inspect(game, item).Status);
+
+            string diagnostic = null!;
+            WorkshopAction? Offer(bool enabled = true, bool repair = false) => WorkshopLocalState.StartupAction(
+                item, WorkshopLocalStatus.Modified, enabled, repair,
+                WorkshopLocalState.ReadInstalledPackageVersion(game, package), message => diagnostic = message);
+
+            Assert.IsNull(Offer());
+            StringAssert.Contains(diagnostic, "local=1.0.39");
+            StringAssert.Contains(diagnostic, "receipt=1.0.38");
+            StringAssert.Contains(diagnostic, "available=1.0.38");
+            Assert.IsNull(Offer(enabled: false, repair: true));
+            item.Receipt = null;
+            Assert.IsNull(Offer(), "first-install offers also protect a newer manual install");
+            item.Receipt = previous;
+
+            package.Version = "1.0.40";
+            Assert.AreEqual(WorkshopAction.Update, Offer(), "a nested child with a higher version is ignored");
+            package.Version = "1.0.38";
+            WriteHost(root, package.PackageId, "1.0.38");
+            Assert.AreEqual(WorkshopAction.Reinstall, Offer());
+            Assert.AreEqual(WorkshopAction.Reinstall, Offer(enabled: false, repair: true));
+
+            const string otherRoot = "BepInEx/plugins/OtherRoot";
+            package.Roots = new[] { root, otherRoot };
+            WriteHost(otherRoot, package.PackageId, "1.0.99");
+            Assert.IsNull(WorkshopLocalState.ReadInstalledPackageVersion(game, package), "two matching root GUIDs are ambiguous");
+            WriteHost(root, package.PackageId, "invalid");
+            WriteHost(otherRoot, "OtherMod", "99.0.0");
+            Assert.AreEqual(WorkshopAction.Reinstall, Offer(), "an invalid host version falls back to the receipt");
+            package.Version = "1.0.37";
+            Assert.IsNull(Offer(), "the receipt alone also prevents an automatic downgrade");
+            Assert.AreEqual(WorkshopAction.Downgrade, WorkshopLocalState.ManualAction(item));
+            item.Receipt = null;
+            Assert.AreEqual(WorkshopAction.Install, Offer(), "a package without a known installed version can still be installed");
+        } finally {
+            Directory.Delete(game, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void OnlyIntactReceiptedPackagesCanOfferAnUpdateAtStartup()
     {
         string game = Path.Combine(Path.GetTempPath(), "WorkshopLocalState-" + Guid.NewGuid().ToString("N"));

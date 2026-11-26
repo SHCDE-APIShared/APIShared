@@ -14,14 +14,11 @@ using SHCDESE.Interop.Enums;
 namespace APIShared.Health
 {
     // Process root. No MonoBehaviour, timer, per-frame observer, owner watcher or repeating world scan.
-    internal static unsafe class HealthRuntime
+    internal static unsafe partial class HealthRuntime
     {
         internal const string ArchiveId = "APIShared.Health.v1";
         private static readonly object Sync = new object();
-        private static readonly Dictionary<long,HealthRecord> Records = new Dictionary<long,HealthRecord>();
-        private static readonly Dictionary<int,Pending> Units = new Dictionary<int,Pending>();
-        private static readonly Dictionary<int,Pending> Buildings = new Dictionary<int,Pending>();
-        private static readonly HashSet<long> Applied = new HashSet<long>();
+        private static Ledger ledger = new Ledger();
         private static readonly List<int> Completed = new List<int>();
         private static IMissionLifecycleCapability missions;
         private static IDisposable buildingCreated;
@@ -29,9 +26,6 @@ namespace APIShared.Health
         private static MissionContext mission;
         private static byte[] archiveBytes;
         private static object archiveSource;
-        private static bool prepared, scanned, fullBasis, legacyLords, malformed;
-        private static bool trackingHistory;
-        private static uint generation;
         private static int available;
         private static string unavailable = "APIShared health initialization has not completed.";
         private static int reportedFailures;
@@ -40,7 +34,7 @@ namespace APIShared.Health
         // Once a mission owns original bases, disabling policies must not leave its archive
         // stale. The native observer reads only this cached flag, never the archive itself.
         internal static bool IsObserving => IsAvailable && mission != null &&
-            (Volatile.Read(ref trackingHistory) || HealthModifiers.HasDemand);
+            (Volatile.Read(ref ledger).IsTracking || HealthModifiers.HasDemand);
 
         internal static void Initialize(CrusaderLibraryLoadContext context,string hash,ManualLogSource log)
         {
@@ -74,7 +68,7 @@ namespace APIShared.Health
             lock (Sync)
             {
                 Reset(); mission=notification.Context;
-                Volatile.Write(ref trackingHistory,mission.IsSave && archiveBytes != null &&
+                Volatile.Write(ref ledger.Tracking,mission.IsSave && archiveBytes != null &&
                     ReferenceEquals(archiveSource,GameMapArchiveManagerAPI.Instance.GetMapArchive()));
             }
         }
@@ -85,19 +79,17 @@ namespace APIShared.Health
         }
         private static void Reset()
         {
-            mission=null; prepared=false; scanned=false; fullBasis=false; legacyLords=false; malformed=false;
-            Volatile.Write(ref trackingHistory,false);
-            generation=0; Records.Clear(); Units.Clear(); Buildings.Clear(); Applied.Clear(); Completed.Clear();
+            mission=null; ledger = new Ledger(); Completed.Clear();
         }
         private static void BufferArchive(byte[] bytes,LoadContext context)
         { lock (Sync) { archiveBytes=bytes; archiveSource=GameMapArchiveManagerAPI.Instance.GetMapArchive(); } }
         private static void ClearArchive() { lock (Sync) { archiveBytes=null; archiveSource=null; } }
 
-        private static void Prepare()
+        private static void Prepare(Ledger state)
         {
-            if (prepared || mission == null) return;
-            prepared=true; fullBasis=!mission.IsSave;
-            Volatile.Write(ref trackingHistory,true);
+            if (state.Prepared || mission == null) return;
+            state.Prepared=true; state.FullBasis=!mission.IsSave;
+            Volatile.Write(ref state.Tracking,true);
             if (!mission.IsSave) { archiveBytes=null; archiveSource=null; return; }
             byte[] bytes=ReferenceEquals(archiveSource,GameMapArchiveManagerAPI.Instance.GetMapArchive()) ? archiveBytes : null;
             archiveBytes=null; archiveSource=null;
@@ -105,13 +97,13 @@ namespace APIShared.Health
             {
                 try
                 {
-                    HealthSaveState state=HealthSaveState.Decode(bytes);
-                    fullBasis=state.FullBasis; legacyLords=state.LegacyLords;
-                    foreach (var record in state.Records)
-                    { Records.Add(record.Key,record); generation=Math.Max(generation,record.Generation); }
+                    HealthSaveState saved=HealthSaveState.Decode(bytes);
+                    state.FullBasis=saved.FullBasis; state.LegacyLords=saved.LegacyLords;
+                    foreach (var record in saved.Records)
+                    { state.Records.Add(record.Key,record); state.Generation=Math.Max(state.Generation,record.Generation); }
                 }
                 catch (Exception error)
-                { malformed=true; fullBasis=false; legacyLords=false; Records.Clear(); Report("archive",error); }
+                { state.Malformed=true; state.FullBasis=false; state.LegacyLords=false; state.Records.Clear(); Report("archive",error); }
                 return;
             }
             // Only explicit original maxima are accepted from older consumer archives.
@@ -121,34 +113,34 @@ namespace APIShared.Health
                 try { values=provider.Read(); }
                 catch (Exception error) { Report("migration " + provider.Owner + "/" + provider.Id,error); continue; }
                 if (values == null) continue;
-                legacyLords=true;
+                state.LegacyLords=true;
                 foreach (var value in values)
                 {
                     if (value.Maximum == 0 || !UnitAccess.TryGetById(value.UnitId,out GameUnit* unit,out _) ||
                         unit->r_GlobalId != value.GlobalId || value.GlobalId == 0 || unit->r_UnitChimp != eChimps.CHIMP_TYPE_LORD) continue;
-                    var record=NewRecord(HealthObjectKind.Unit,value.UnitId,value.GlobalId,(int)unit->r_UnitChimp,value.Maximum);
-                    Records[record.Key]=record;
+                    var record=NewRecord(state,HealthObjectKind.Unit,value.UnitId,value.GlobalId,(int)unit->r_UnitChimp,value.Maximum);
+                    state.Records[record.Key]=record;
                 }
             }
-            if (!legacyLords) NativeApiLog.Info(logger,"Shared HP inactive for this legacy save: no original HP archive; new categories require a new game.");
+            if (!state.LegacyLords) NativeApiLog.Info(logger,"Shared HP inactive for this legacy save: no original HP archive; new categories require a new game.");
         }
 
-        private static void ScanOnce()
+        private static void ScanOnce(Ledger state)
         {
-            if (scanned) return; scanned=true;
+            if (state.Scanned) return; state.Scanned=true;
             var units=GameUnitManagerAPI.Instance.GetUnitsAsSpan();
             for (int spanIndex=0;spanIndex<units.Length;spanIndex++)
             {
                 ref GameUnit unit=ref units[spanIndex];
                 if ((unit.r_AliveState == AliveState.IsAlive || unit.r_AliveState == AliveState.NeedsInit) && unit.r_GlobalId != 0)
-                    Queue(Units,spanIndex+1,unit.r_GlobalId,(int)unit.r_UnitChimp,HealthInitializationReason.MissionStart,0);
+                    Queue(state.Units,spanIndex+1,unit.r_GlobalId,(int)unit.r_UnitChimp,HealthInitializationReason.MissionStart,0);
             }
             var buildings=GameBuildingManagerAPI.Instance.GetBuildingsAsSpan();
             for (int spanIndex=0;spanIndex<buildings.Length;spanIndex++)
             {
                 ref GameBuilding building=ref buildings[spanIndex];
                 if ((building.r_AliveState == AliveState.IsAlive || building.r_AliveState == AliveState.NeedsInit) && building.r_GlobalId != 0)
-                    Queue(Buildings,spanIndex+1,building.r_GlobalId,(int)building.r_BuildingType,HealthInitializationReason.MissionStart,0);
+                    Queue(state.Buildings,spanIndex+1,building.r_GlobalId,(int)building.r_BuildingType,HealthInitializationReason.MissionStart,0);
             }
         }
         private static void OnTypeInitialized(int id)
@@ -158,10 +150,11 @@ namespace APIShared.Health
                 if (!IsObserving || !UnitAccess.TryGetById(id,out GameUnit* unit,out _) || unit->r_GlobalId == 0) return;
                 // Import saved generations before assigning a fresh one. Otherwise an early
                 // same-type initialization could collide with a still-buffered saved record.
-                Prepare(); if (malformed) return;
+                Ledger state = Volatile.Read(ref ledger);
+                Prepare(state); if (state.Malformed) return;
                 long key=HealthRecord.KeyFor(HealthObjectKind.Unit,id);
-                Records.Remove(key); Applied.Remove(key);
-                Queue(Units,id,unit->r_GlobalId,(int)unit->r_UnitChimp,HealthInitializationReason.TypeInitialized,NextGeneration());
+                state.Records.Remove(key); state.Applied.Remove(key);
+                Queue(state.Units,id,unit->r_GlobalId,(int)unit->r_UnitChimp,HealthInitializationReason.TypeInitialized,NextGeneration(state));
             }
         }
         private static void OnBuildingCreated(BuildingSpawnEventArgs args)
@@ -171,9 +164,10 @@ namespace APIShared.Health
             {
                 int id=(int)args.ReturnValue;
                 if (!TryBuilding(id,out GameBuilding* building) || building->r_GlobalId == 0) return;
-                Prepare(); if (malformed) return;
-                long key=HealthRecord.KeyFor(HealthObjectKind.Building,id); Records.Remove(key); Applied.Remove(key);
-                Queue(Buildings,id,building->r_GlobalId,(int)building->r_BuildingType,HealthInitializationReason.Created,NextGeneration());
+                Ledger state = Volatile.Read(ref ledger);
+                Prepare(state); if (state.Malformed) return;
+                long key=HealthRecord.KeyFor(HealthObjectKind.Building,id); state.Records.Remove(key); state.Applied.Remove(key);
+                Queue(state.Buildings,id,building->r_GlobalId,(int)building->r_BuildingType,HealthInitializationReason.Created,NextGeneration(state));
             }
         }
         private static void Queue(Dictionary<int,Pending> queue,int id,uint global,int type,HealthInitializationReason reason,uint serial)
@@ -182,54 +176,53 @@ namespace APIShared.Health
             if (serial == 0 && queue.ContainsKey(id)) return;
             queue[id]=new Pending { Id=id,Global=global,Type=type,Reason=reason,Generation=serial };
         }
-        private static uint NextGeneration()
+        private static uint NextGeneration(Ledger state)
         {
-            if (generation == uint.MaxValue) throw new InvalidOperationException("HP initialization generation exhausted.");
-            return ++generation;
+            if (state.Generation == uint.MaxValue) throw new InvalidOperationException("HP initialization generation exhausted.");
+            return ++state.Generation;
         }
-        private static HealthRecord NewRecord(HealthObjectKind kind,int id,uint global,int type,uint basis) =>
-            new HealthRecord { Kind=kind,Id=id,GlobalId=global,Type=type,Basis=basis,AppliedMaximum=basis,Generation=NextGeneration() };
+        private static HealthRecord NewRecord(Ledger state,HealthObjectKind kind,int id,uint global,int type,uint basis) =>
+            new HealthRecord { Kind=kind,Id=id,GlobalId=global,Type=type,Basis=basis,AppliedMaximum=basis,Generation=NextGeneration(state) };
 
         private static void Tick(int tick)
         {
             if (!IsAvailable || mission == null) return;
             bool applyPolicies=HealthModifiers.HasDemand;
-            if (!Volatile.Read(ref trackingHistory) && !applyPolicies) return;
+            if (!Volatile.Read(ref ledger).IsTracking && !applyPolicies) return;
             lock (Sync)
             {
                 if (mission == null) return;
-                Prepare(); if (malformed) return; ScanOnce();
+                Ledger state = Volatile.Read(ref ledger);
+                Prepare(state); if (state.Malformed) return; ScanOnce(state);
                 // One demand sample selects both paths. Provenance-only processing cannot
                 // turn into an HP write if a handle changes while work is being completed.
-                if (applyPolicies)
-                { Process(Units,ApplyUnit); Process(Buildings,ApplyBuilding); }
-                else
-                { Process(Units,CaptureUnitOnly); Process(Buildings,CaptureBuildingOnly); }
+                Process(state.Units,state,ProcessUnit,applyPolicies);
+                Process(state.Buildings,state,ProcessBuilding,applyPolicies);
             }
         }
-        private static void Process(Dictionary<int,Pending> queue,Func<Pending,bool> apply)
+        private static void Process(Dictionary<int,Pending> queue,Ledger state,Func<Ledger,Pending,bool,bool> apply,bool applyPolicies)
         {
             Completed.Clear();
             foreach (var item in queue)
             {
-                try { if (apply(item.Value)) Completed.Add(item.Key); }
+                try { if (apply(state,item.Value,applyPolicies)) Completed.Add(item.Key); }
                 catch (Exception error) { Completed.Add(item.Key); Report("object initialization",error); }
             }
             foreach (int id in Completed) queue.Remove(id);
         }
 
-        private static HealthRecord Capture(HealthObjectKind kind,Pending pending,uint actualMaximum)
+        private static HealthRecord Capture(Ledger state,HealthObjectKind kind,Pending pending,uint actualMaximum)
         {
             long key=HealthRecord.KeyFor(kind,pending.Id);
-            if (Records.TryGetValue(key,out var record) && record.GlobalId == pending.Global && record.Type == pending.Type &&
+            if (state.Records.TryGetValue(key,out var record) && record.GlobalId == pending.Global && record.Type == pending.Type &&
                 (pending.Generation == 0 || record.Generation == pending.Generation))
                 return record;
             // A valid legacy archive does not prove a basis for every existing Lord.
             // Only a positively observed new initialization may supply a fresh missing basis.
-            if (!fullBasis && !(legacyLords && pending.Generation != 0 && kind == HealthObjectKind.Unit &&
+            if (!state.FullBasis && !(state.LegacyLords && pending.Generation != 0 && kind == HealthObjectKind.Unit &&
                 (eChimps)pending.Type == eChimps.CHIMP_TYPE_LORD)) return null;
             if (actualMaximum == 0) return null;
-            record=NewRecord(kind,pending.Id,pending.Global,pending.Type,actualMaximum);
+            record=NewRecord(state,kind,pending.Id,pending.Global,pending.Type,actualMaximum);
             if (pending.Generation != 0) record.Generation=pending.Generation;
             if (kind == HealthObjectKind.Unit && (eChimps)pending.Type == eChimps.CHIMP_TYPE_SIEGE_TOWER)
             {
@@ -239,7 +232,7 @@ namespace APIShared.Health
                 if (proxy <= 0 || proxy > short.MaxValue) throw new InvalidOperationException("Unsafe prospective siege-tower building basis.");
                 record.ProxyBasis=(uint)proxy;
             }
-            Records[key]=record; return record;
+            state.Records[key]=record; return record;
         }
         private static HealthModifierContext Context(HealthRecord record,int player,HealthInitializationReason reason) =>
             new HealthModifierContext(record.Kind,record.Id,record.GlobalId,player,
@@ -247,19 +240,17 @@ namespace APIShared.Health
                 record.Kind == HealthObjectKind.Unit ? (eChimps)record.Type : default(eChimps),
                 record.Kind == HealthObjectKind.Building ? (eStructs)record.Type : default(eStructs),record.Basis,
                 mission.IsSave && reason == HealthInitializationReason.MissionStart ? HealthInitializationReason.SaveLoaded : reason);
-        private static bool ApplyUnit(Pending pending) => ProcessUnit(pending,true);
-        private static bool CaptureUnitOnly(Pending pending) => ProcessUnit(pending,false);
-        private static bool ProcessUnit(Pending pending,bool applyPolicies)
+        private static bool ProcessUnit(Ledger state,Pending pending,bool applyPolicies)
         {
             long key=HealthRecord.KeyFor(HealthObjectKind.Unit,pending.Id);
             if (!UnitAccess.TryGetById(pending.Id,out GameUnit* unit,out _) || unit->r_GlobalId != pending.Global || (int)unit->r_UnitChimp != pending.Type) return true;
             if (unit->r_AliveState == AliveState.NeedsInit) return false;
-            if (!UnitAccess.IsReallyAlive(unit) || unit->r_CurrentHealth == 0 || unit->r_MaxHealth == 0 || Applied.Contains(key)) return true;
-            HealthRecord record=Capture(HealthObjectKind.Unit,pending,unit->r_MaxHealth); if (record == null) return true;
+            if (!UnitAccess.IsReallyAlive(unit) || unit->r_CurrentHealth == 0 || unit->r_MaxHealth == 0 || state.IsApplied(key,pending.Global)) return true;
+            HealthRecord record=Capture(state,HealthObjectKind.Unit,pending,unit->r_MaxHealth); if (record == null) return true;
             if (!applyPolicies)
             {
                 record.AppliedMaximum=unit->r_MaxHealth; record.ProxyMaximum=0;
-                Applied.Add(key); return true;
+                state.Applied[key]=pending.Global; return true;
             }
             uint maximum=HealthModifiers.Evaluate(Context(record,unit->r_ControllableForPlayerId,pending.Reason),HealthArithmetic.UnitMaximum,out bool contributed);
             if (!contributed)
@@ -268,7 +259,7 @@ namespace APIShared.Health
                 // A saved proxy target belongs to a previously applied policy. None must
                 // not let that target rewrite a later deployed proxy independently.
                 record.AppliedMaximum=unit->r_MaxHealth; record.ProxyMaximum=0;
-                Applied.Add(key); return true;
+                state.Applied[key]=pending.Global; return true;
             }
             if (unit->r_UnitChimp == eChimps.CHIMP_TYPE_SIEGE_TOWER)
             {
@@ -286,16 +277,14 @@ namespace APIShared.Health
             ushort percent=HealthArithmetic.Percentage(current,maximum);
             unit->r_MaxHealth=maximum; unit->r_CurrentHealth=current;
             unit->r_CurrentHealthPercentage=percent; unit->r_HealthBarBlocks=(uint)(percent/10);
-            record.AppliedMaximum=maximum; Applied.Add(key); return true;
+            record.AppliedMaximum=maximum; state.Applied[key]=pending.Global; return true;
         }
-        private static bool ApplyBuilding(Pending pending) => ProcessBuilding(pending,true);
-        private static bool CaptureBuildingOnly(Pending pending) => ProcessBuilding(pending,false);
-        private static bool ProcessBuilding(Pending pending,bool applyPolicies)
+        private static bool ProcessBuilding(Ledger state,Pending pending,bool applyPolicies)
         {
             long key=HealthRecord.KeyFor(HealthObjectKind.Building,pending.Id);
             if (!TryBuilding(pending.Id,out GameBuilding* building) || building->r_GlobalId != pending.Global || (int)building->r_BuildingType != pending.Type) return true;
             if (building->r_AliveState == AliveState.NeedsInit) return false;
-            if (building->r_AliveState != AliveState.IsAlive || building->r_CurrentHealth <= 0 || building->r_MaxHealth == 0 || Applied.Contains(key)) return true;
+            if (building->r_AliveState != AliveState.IsAlive || building->r_CurrentHealth <= 0 || building->r_MaxHealth == 0 || state.IsApplied(key,pending.Global)) return true;
             if (building->r_BuildingType == eStructs.STRUCT_SIEGE_TOWER)
             {
                 // Audited reciprocal links: building +0x110/+0x114, unit +0x334/+0x364.
@@ -305,23 +294,23 @@ namespace APIShared.Health
                     tower->r_UnitChimp != eChimps.CHIMP_TYPE_SIEGE_TOWER) return true;
                 if (tower->r_LinkedProductionBuildingId != pending.Id || tower->r_LinkedProductionBuildingGlobalId != building->r_GlobalId) return false;
                 long unitKey=HealthRecord.KeyFor(HealthObjectKind.Unit,unitId);
-                if (!Records.TryGetValue(unitKey,out var paired) || paired.GlobalId != tower->r_GlobalId || !Applied.Contains(unitKey))
-                    return Units.ContainsKey(unitId) ? false : true;
+                if (!state.Records.TryGetValue(unitKey,out var paired) || paired.GlobalId != tower->r_GlobalId || !state.IsApplied(unitKey,tower->r_GlobalId))
+                    return state.Units.ContainsKey(unitId) ? false : true;
                 // Keep waiting for the unit's completed generation above, even when dormant.
                 // Otherwise activation before NeedsInit finishes could strand this proxy.
-                if (!applyPolicies) { Applied.Add(key); return true; }
+                if (!applyPolicies) { state.Applied[key]=pending.Global; return true; }
                 if (paired.ProxyMaximum == 0) return true;
                 uint value=HealthArithmetic.ScaleCurrent((uint)building->r_CurrentHealth,building->r_MaxHealth,paired.ProxyMaximum);
-                building->r_MaxHealth=(ushort)paired.ProxyMaximum; building->r_CurrentHealth=(short)value; Applied.Add(key); return true;
+                building->r_MaxHealth=(ushort)paired.ProxyMaximum; building->r_CurrentHealth=(short)value; state.Applied[key]=pending.Global; return true;
             }
-            HealthRecord record=Capture(HealthObjectKind.Building,pending,building->r_MaxHealth); if (record == null) return true;
+            HealthRecord record=Capture(state,HealthObjectKind.Building,pending,building->r_MaxHealth); if (record == null) return true;
             if (!applyPolicies)
-            { record.AppliedMaximum=building->r_MaxHealth; Applied.Add(key); return true; }
+            { record.AppliedMaximum=building->r_MaxHealth; state.Applied[key]=pending.Global; return true; }
             uint maximum=HealthModifiers.Evaluate(Context(record,building->r_PlayerIdOwner,pending.Reason),BuildingLimit(building->r_BuildingType),out bool contributed);
-            if (!contributed) { record.AppliedMaximum=building->r_MaxHealth; Applied.Add(key); return true; }
+            if (!contributed) { record.AppliedMaximum=building->r_MaxHealth; state.Applied[key]=pending.Global; return true; }
             uint current=HealthArithmetic.ScaleCurrent((uint)building->r_CurrentHealth,building->r_MaxHealth,maximum);
             building->r_MaxHealth=(ushort)maximum; building->r_CurrentHealth=(short)current;
-            record.AppliedMaximum=maximum; Applied.Add(key); return true;
+            record.AppliedMaximum=maximum; state.Applied[key]=pending.Global; return true;
         }
         private static uint BuildingLimit(eStructs type)
         {
@@ -341,23 +330,24 @@ namespace APIShared.Health
             lock (Sync)
             {
                 if (!IsObserving) return null;
-                Prepare(); if (malformed) return null; ScanOnce();
+                Ledger state = Volatile.Read(ref ledger);
+                Prepare(state); if (state.Malformed) return null; ScanOnce(state);
                 // An early dormant resave must commit completed fresh generations too.
                 // Never use the applying wrappers from the save callback.
                 if (!HealthModifiers.HasDemand)
-                { Process(Units,CaptureUnitOnly); Process(Buildings,CaptureBuildingOnly); }
+                { Process(state.Units,state,ProcessUnit,false); Process(state.Buildings,state,ProcessBuilding,false); }
                 // Saving captures pending completed bases but NEVER mutates native HP.
-                foreach (var item in Units)
+                foreach (var item in state.Units)
                     if (UnitAccess.TryGetById(item.Key,out GameUnit* unit,out _) && unit->r_GlobalId == item.Value.Global &&
                         (int)unit->r_UnitChimp == item.Value.Type && unit->r_CurrentHealth > 0 &&
                         (UnitAccess.IsReallyAlive(unit) || unit->r_AliveState == AliveState.NeedsInit))
-                        Capture(HealthObjectKind.Unit,item.Value,unit->r_MaxHealth);
-                foreach (var item in Buildings)
+                        Capture(state,HealthObjectKind.Unit,item.Value,unit->r_MaxHealth);
+                foreach (var item in state.Buildings)
                     if (TryBuilding(item.Key,out GameBuilding* building) && building->r_GlobalId == item.Value.Global &&
                         (int)building->r_BuildingType == item.Value.Type && building->r_CurrentHealth > 0 && building->r_BuildingType != eStructs.STRUCT_SIEGE_TOWER)
-                        Capture(HealthObjectKind.Building,item.Value,building->r_MaxHealth);
-                var result=new HealthSaveState { FullBasis=fullBasis,LegacyLords=legacyLords };
-                foreach (var record in Records.Values)
+                        Capture(state,HealthObjectKind.Building,item.Value,building->r_MaxHealth);
+                var result=new HealthSaveState { FullBasis=state.FullBasis,LegacyLords=state.LegacyLords };
+                foreach (var record in state.Records.Values)
                 {
                     bool valid=record.Kind == HealthObjectKind.Unit ?
                         UnitAccess.TryGetById(record.Id,out GameUnit* unit,out _) && unit->r_GlobalId == record.GlobalId && (int)unit->r_UnitChimp == record.Type && unit->r_CurrentHealth > 0 :
@@ -378,6 +368,18 @@ namespace APIShared.Health
             internal int Id,Type;
             internal uint Global,Generation;
             internal HealthInitializationReason Reason;
+        }
+
+        private sealed class Ledger
+        {
+            internal readonly Dictionary<long,HealthRecord> Records = new Dictionary<long,HealthRecord>();
+            internal readonly Dictionary<int,Pending> Units = new Dictionary<int,Pending>();
+            internal readonly Dictionary<int,Pending> Buildings = new Dictionary<int,Pending>();
+            internal readonly Dictionary<long,uint> Applied = new Dictionary<long,uint>();
+            internal bool Prepared, Scanned, FullBasis, LegacyLords, Malformed, Tracking;
+            internal uint Generation;
+            internal bool IsTracking => Volatile.Read(ref Tracking);
+            internal bool IsApplied(long key,uint globalId) => Applied.TryGetValue(key,out uint applied) && applied == globalId;
         }
     }
 }

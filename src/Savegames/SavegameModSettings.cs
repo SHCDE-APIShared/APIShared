@@ -288,14 +288,17 @@ namespace APIShared
         /// <summary>Discards an unconsumed load-dialog choice after cancellation or failure.</summary>
         public static void CancelLoadChoice()
         {
-            if (!SavegameLoadCoordinator.CancelSelection()) return;
-            ReleaseUnstartedPreparation();
-            lock (Sync)
+            using (Savegames.MultiplayerSavePreparation.State.DeferNotifications())
             {
-                chosenPath = null;
-                chosenCurrent = null;
-                useChosenCurrent = false;
-                legacyChoice = false;
+                if (!SavegameLoadCoordinator.CancelSelection()) return;
+                ReleaseUnstartedPreparation();
+                lock (Sync)
+                {
+                    chosenPath = null;
+                    chosenCurrent = null;
+                    useChosenCurrent = false;
+                    legacyChoice = false;
+                }
             }
         }
 
@@ -364,16 +367,19 @@ namespace APIShared
 
         internal static void FinishLoad()
         {
-            if (!preparedTransferred) ReleaseUnstartedPreparation();
-            else ClearPreparation();
-            SavegameLoadCoordinator.FinishLoad();
-            lock (Sync)
+            using (Savegames.MultiplayerSavePreparation.State.DeferNotifications())
             {
-                loaded = null;
-                chosenCurrent = null;
-                chosenPath = null;
-                useChosenCurrent = false;
-                legacyChoice = false;
+                if (!preparedTransferred) ReleaseUnstartedPreparation();
+                else ClearPreparation();
+                SavegameLoadCoordinator.FinishLoad();
+                lock (Sync)
+                {
+                    loaded = null;
+                    chosenCurrent = null;
+                    chosenPath = null;
+                    useChosenCurrent = false;
+                    legacyChoice = false;
+                }
             }
         }
 

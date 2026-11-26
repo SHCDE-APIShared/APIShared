@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><StartupObject>Program</StartupObject><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><NuGetAudit>false</NuGetAudit></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/ScriptExtenderFixes/LobbyPackets/LobbyStartPacketRuntime.cs" Link="Production/LobbyStartPacketRuntime.cs" />
+    <Compile Include="../../src/ScriptExtenderFixes/LobbyPackets/LobbyStartPacketQueue.cs" Link="Production/LobbyStartPacketQueue.cs" />
+  </ItemGroup>
+</Project>

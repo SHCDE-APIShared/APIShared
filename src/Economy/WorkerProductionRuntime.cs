@@ -26,6 +26,8 @@ namespace APIShared.Economy
         private static WorkerProductionLaunchBundle frozenBundle;
         private static WorkerProductionLaunchBundle observedBundleReference;
         private static WorkerProductionAgreementDescriptor frozenDescriptor;
+        private static RestartAgreement restartApproval;
+        private static string startingDigest, admittedDigest;
         private static WeaponProductionCatalog frozenWeaponCatalog;
         // Huntable prey shares this mission owner and its peer agreement; it has no save record.
         private static Wildlife.HuntablePreyCatalog frozenHuntingCatalog;
@@ -38,6 +40,25 @@ namespace APIShared.Economy
         private static long session;
         private static IntPtr auditedImage;
         private static bool initialized,restored,worldNativeLoaded;
+        // This means the common mission admission/run fence is registered, not that
+        // optional production features or their native cohorts are available.
+        internal static bool HasLifecycleOwner => initialized;
+        internal sealed class RestartAgreement
+        {
+            internal readonly string StartingDigest, AdmittedDigest;
+            internal RestartAgreement(string startingDigest, string admittedDigest)
+            { StartingDigest = startingDigest; AdmittedDigest = admittedDigest; }
+        }
+
+        internal static bool TryCaptureRestartApproval(long sourceSession, out RestartAgreement approval)
+        {
+            approval=null;
+            if(!initialized)return true;
+            if(session!=sourceSession || !WorkerProductionWorldSafety.IsAdmitted ||
+                WorkerProductionWorldSafety.IsFaulted || admittedDigest==null)return false;
+            approval=new RestartAgreement(startingDigest,admittedDigest);
+            return true;
+        }
         private static WorkerProductionAdmissionWait admissionWait;
         private static bool retryingAdmission;
         internal static ulong CurrentCommonDenominator => Volatile.Read(ref activeRules)?.CommonDenominator ?? SavedCommonDenominator();
@@ -334,6 +355,8 @@ namespace APIShared.Economy
         {
             CancelAdmissionWait();
             session=context.SessionId;
+            restartApproval=MissionLifecycleService.RestartProductionApproval(session);
+            admittedDigest=null;
             worldNativeLoaded=false;
             WorkerProductionWorldSafety.Admit(session,true);
             WorkerProductionModifiers.ClearRuntimeFault();
@@ -356,6 +379,13 @@ namespace APIShared.Economy
             frozenDescriptor=CaptureDescriptor();frozenSelectionPath=selectedPath;
             if(!frozenBundle.CanStart || frozenDescriptor.LocalFailure!=null)
                 throw new InvalidOperationException("Production rules/save requirements are invalid: "+frozenDescriptor.LocalFailure);
+            startingDigest=frozenDescriptor.Digest();
+            // Reviewed 2026-11-24, intentionally kept: compare with the source's starting digest, not its admitted one.
+            // A provider value recommitted after the source's Begin would make this differ and refuse the restart;
+            // providers publish on settings changes, which are locked during missions. Refusing is fail-safe;
+            // accepting the admitted digest instead would weaken the agreement check.
+            if(restartApproval!=null && restartApproval.StartingDigest!=startingDigest)
+                throw new InvalidOperationException("The multiplayer restart production rules or map records differ from the confirmed source mission.");
             bool extended=frozenBundle.RequiresExtendedWire || selectedRequirement.RequiresExtended || frozenWeaponCatalog.HasOptions;
             if((extended || frozenBundle.NeedsFullBackend) && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
             Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
@@ -377,9 +407,17 @@ namespace APIShared.Economy
             if(storedOutputReason != null) { reason=storedOutputReason;return false; }
             if(mode.IsRealMultiplayer)
             {
-                string receipt=WorkerProductionAgreement.ApprovedDescriptorDigest;
+                // The first startup may recommit a legacy provider at a later initialization
+                // checkpoint. Require the same early and final rules without a fresh lobby round.
+                string receipt=restartApproval==null ? WorkerProductionAgreement.ApprovedDescriptorDigest :
+                    requireKnown ? restartApproval.AdmittedDigest : restartApproval.StartingDigest;
                 if(receipt.Length==0 || frozenDescriptor==null || receipt!=frozenDescriptor.Digest())
                 {
+                    if(restartApproval!=null)
+                    {
+                        if(requireKnown)reason="The multiplayer restart production rules differ from the admitted source mission.";
+                        return false;
+                    }
                     string code=WorkerProductionAgreement.Current.Code;
                     if(code=="Pending" || code=="Roster" || code=="Unavailable" || code.Length==0)return false;
                     reason="The current multiplayer production rules have no matching peer receipt: "+code;return false;
@@ -390,8 +428,12 @@ namespace APIShared.Economy
             Wildlife.HuntablePreyRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods);
             if(requireKnown&&!ProductionGoodsReceived.Admit(session,mode,out reason))return false;
             reason=null;
-            if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 || candidate.HasFearChanges ||
-                WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
+            if(requireKnown)
+            {
+                WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 || candidate.HasFearChanges ||
+                    WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
+                if(mode.IsRealMultiplayer)admittedDigest=frozenDescriptor.Digest();
+            }
             return true;
         }
         internal static bool ValidateRestoredState(out string reason)
@@ -476,7 +518,7 @@ namespace APIShared.Economy
                 Wildlife.HuntablePreyRuntime.EndWorld();
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.EndWorld(session);
                 else WorkerProductionStateStore.Clear();
-                session=0;restored=false;
+                session=0;restored=false;restartApproval=null;startingDigest=admittedDigest=null;
                 Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
                 if(WorkerProductionBonusNativeRuntime.IsAvailable)WorkerProductionBonusNativeRuntime.PublishPercent(50);
                 frozenBundle=null;frozenDescriptor=null;frozenSelectionPath=null;frozenWeaponCatalog=null;frozenHuntingCatalog=null;

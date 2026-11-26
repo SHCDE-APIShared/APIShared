@@ -37,7 +37,8 @@ namespace APIShared
             if (source == null || source.IsEditor)
                 throw new InvalidOperationException("Restart requires a ready gameplay mission.");
             // Begin before any caller preparation can unload the source or reload a sidecar.
-            Run(new Operation
+            var sourceMap = completedMapSession == source.SessionId ? completedMap : null;
+            var operation = new Operation
             {
                 Kind = MissionStartKind.NewGame, Intent = source.Mode.Kind,
                 File = source.FilePath, Name = source.MapName, Restart = true,
@@ -45,8 +46,16 @@ namespace APIShared
                 Campaign = source.Mode.CampaignMapId, Trail = source.Mode.EventTrailType,
                 CoopTrail = source.Mode.CoopTrailId > 0 ? source.Mode.CoopTrailId : (int?)null,
                 MissionIndex = source.MissionIndex, Size = source.MapSize, Difficulty = source.Difficulty,
-                MapAlias = prepared?.MapAlias, MapAliasPath = prepared?.MapAliasPath
-            }, action);
+                MapAlias = prepared?.MapAlias, MapAliasPath = prepared?.MapAliasPath,
+                RestartSourceMap = sourceMap,
+            };
+            if (sourceMap != null)
+                operation.HasRestartProductionApproval =
+                    Economy.WorkerProductionRuntime.TryCaptureRestartApproval(source.SessionId, out operation.RestartProductionApproval);
+            Run(operation, action);
+            if (operation.DirectMultiplayerRestart && (operation.NativeFailed || !operation.NativeSucceeded ||
+                (state.Current?.SessionId != operation.Id && !ReferenceEquals(waiting, operation))))
+                throw new InvalidOperationException(operation.RestartFailure ?? "The multiplayer restart did not finish loading.");
         }
 
         internal enum ConfirmedRestart { Vanilla, Stale, Lifecycle }
@@ -67,6 +76,7 @@ namespace APIShared
         {
             menuButton = Hook<MenuButton>(typeof(HUD_IngameMenu), "ButtonIngameMenuFunction", (self, function) =>
             {
+                if (Presentation.IngameMenuActions.TryExecuteVanillaOverride(self, function)) return;
                 // Vanilla menu command 5 opens restart confirmation. Only its Yes callback
                 // starts an operation; opening/dismissing the popup has no lifecycle effect.
                 if (function != 5) { menuButton(self, function); return; }

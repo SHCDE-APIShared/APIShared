@@ -65,4 +65,28 @@ public sealed class SimulationAgreementTests
         Assert.IsFalse(SimulationAgreementPolicy.Accepts("world=r1", decision));
         Assert.IsFalse(SimulationAgreementPolicy.Accepts("world=r0", "world"));
     }
+
+    [TestMethod]
+    public void ResyncCohortRequiresTheSameReadyManifestOnEveryPeer()
+    {
+        const string legacy = "world=r1";
+        string cohortKey = SimulationAgreementPolicy.ResyncCohortKeyPrefix + new string('a', 64);
+        string ready = legacy + ";" + cohortKey + "=r1";
+        string unavailable = legacy + ";" + cohortKey + "=r0";
+        string different = legacy + ";" + SimulationAgreementPolicy.ResyncCohortKeyPrefix + new string('b', 64) + "=r1";
+
+        Assert.IsFalse(SimulationAgreementPolicy.TryDecide(ready, new[] { ready, null },
+            out _, out _, out bool waiting));
+        Assert.IsTrue(waiting);
+        Assert.IsFalse(SimulationAgreementPolicy.TryDecide(ready, new[] { ready, legacy }, out _, out _));
+        Assert.IsFalse(SimulationAgreementPolicy.TryDecide(ready, new[] { ready, different }, out _, out _));
+        Assert.IsFalse(SimulationAgreementPolicy.TryDecide(unavailable, new[] { unavailable, unavailable }, out _, out _));
+        Assert.IsFalse(SimulationAgreementPolicy.Accepts(unavailable, "world"));
+
+        Assert.IsTrue(SimulationAgreementPolicy.TryDecide(ready, new[] { ready, ready }, out string enabled, out _));
+        Assert.AreEqual(cohortKey + ";world", enabled);
+        Assert.IsTrue(SimulationAgreementPolicy.Accepts(ready, enabled));
+        Assert.IsFalse(SimulationAgreementPolicy.Accepts(legacy, enabled));
+        Assert.IsFalse(SimulationAgreementPolicy.Accepts(ready, "world"));
+    }
 }

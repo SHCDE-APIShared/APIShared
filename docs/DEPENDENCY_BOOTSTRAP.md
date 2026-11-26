@@ -134,7 +134,8 @@ into an isolated desktop executable: early type boundaries, listener behavior,
 real DMD transformations, stack/control-flow preservation, negative contracts,
 inventory rules, original SE comparisons and partial-copy pair checks.
 `Test-DependencyBootstrapPackage.ps1` exercises actual ZIP and manual-removal code
-against retained local fixtures; Core.Tests exercises the actual map validator.
+against a local fixture that it removes after each run, on success and on failure;
+Core.Tests exercises the actual map validator.
 No test invokes Chainloader.Start, installs runtime hooks, or starts Steam/the game.
 The Workshop installation pass is covered by the installation-core tests listed under
 [Workshop internal implementation](WORKSHOP.md#interrupted-update-regression).

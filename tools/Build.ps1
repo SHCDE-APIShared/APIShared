@@ -98,7 +98,7 @@ try {
                 '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")
         }
     }
-    foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests')) {
+    foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests','LobbyStartPackets.Tests')) {
         Invoke-ApiBuildStep $context $suite -Action {
             Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
                 '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")

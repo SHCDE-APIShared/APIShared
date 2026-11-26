@@ -156,9 +156,14 @@ namespace APIShared
 
         private void LogCallbackFailure(string area, Exception ex)
         {
-            lock (sync)
-                if (!loggedCallbackFailures.Add(area)) return;
-            NativeApiLog.Error(log, $"Unit HUD {area} failed closed; unaffected Vanilla presentation remains active: {ex}");
+            try
+            {
+                lock (sync)
+                    if (!loggedCallbackFailures.Add(area)) return;
+                NativeApiLog.Error(log,
+                    $"Unit HUD {area} failed closed; unaffected Vanilla presentation remains active: {ex.GetType().FullName}");
+            }
+            catch (Exception) { /* Diagnostics must not interrupt HUD callbacks or cleanup. */ }
         }
     }
 }

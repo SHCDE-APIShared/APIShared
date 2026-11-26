@@ -71,5 +71,42 @@ namespace APISharedTests
             Assert.IsFalse(new BuildingPanelContext(7, 100, eStructs.STRUCT_TANNERS_WORKSHOP, 0, 0, 2, 1).IsOwnedByLocalPlayer,
                 "a spectator without a controlled player owns nothing");
         }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void PresentedContextsActForThePresentersPlayerWithoutLocalOwnership()
+        {
+            var own = new BuildingPanelContext(7, 100, eStructs.STRUCT_GATE_MAIN, 2, 2, 2, 1);
+            Assert.IsFalse(own.IsPresented);
+            Assert.AreEqual(2, own.ActingPlayerId, "Vanilla's own selection acts for the local player");
+            Assert.IsTrue(own.CanActAsOwner);
+            var presented = new BuildingPanelContext(7, 100, eStructs.STRUCT_GATE_MAIN, 3, 0, 3, 1, 3, "spectator", "gates");
+            Assert.IsTrue(presented.IsPresented);
+            Assert.IsTrue(presented.CanActAsOwner);
+            Assert.IsFalse(presented.IsOwnedByLocalPlayer, "presenting grants no local ownership");
+            Assert.IsFalse(new BuildingPanelContext(7, 100, eStructs.STRUCT_GATE_MAIN, 3, 2, 3, 1, 4, "spectator", "gates").CanActAsOwner);
+            Assert.IsTrue(presented.Same(7, 100, eStructs.STRUCT_GATE_MAIN, 3, 0, 3, 1, 3, "spectator", "gates"));
+            Assert.IsFalse(presented.Same(7, 100, eStructs.STRUCT_GATE_MAIN, 3, 0, 3, 1, 3, "relay", "gates"),
+                "another presenter starts a new showing");
+        }
+
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void PresentersKeepAStableOrderAndRejectInvalidOrDuplicateIdentities()
+        {
+            BuildingPanelPresentationQuery none = (out int building, out int acting) => { building = acting = 0; return false; };
+            BuildingPanelActionSubmit refuse = (APIShared.Buildings.BuildingActionRequest request, out string reason) => { reason = "no"; return false; };
+            var registry = new BuildingPanelSectionRegistry();
+            Assert.IsFalse(registry.TryRegisterPresenter(null, out _));
+            Assert.IsFalse(registry.TryRegisterPresenter(new BuildingPanelPresenterOptions("o", "p", none, null), out _));
+            Assert.IsFalse(registry.TryRegisterPresenter(new BuildingPanelPresenterOptions("o", " ", none, refuse), out _));
+            Assert.IsTrue(registry.TryRegisterPresenter(new BuildingPanelPresenterOptions("z", "panel", none, refuse), out _));
+            Assert.IsTrue(registry.TryRegisterPresenter(new BuildingPanelPresenterOptions("a", "panel", none, refuse), out _));
+            Assert.IsTrue(registry.TryRegisterPresenter(new BuildingPanelPresenterOptions("z", "early", none, refuse) { Order = -1 }, out _));
+            Assert.IsFalse(registry.TryRegisterPresenter(new BuildingPanelPresenterOptions("a", "panel", none, refuse), out string reason));
+            StringAssert.Contains(reason, "Duplicate");
+            CollectionAssert.AreEqual(new[] { "z/early", "a/panel", "z/panel" },
+                registry.Presenters.Select(entry => entry.Owner + "/" + entry.Id).ToArray());
+        }
     }
 }
