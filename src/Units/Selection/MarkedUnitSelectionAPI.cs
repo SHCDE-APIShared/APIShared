@@ -198,7 +198,11 @@ namespace APIShared
 
         private static readonly Func<bool, int> RunWithConsumers = RunWithSelectionAndReadbacks;
         private static readonly Func<bool, int> RunWithTroopInput =
-            mpFrameSkip => Units.TroopCommandInputEvents.Run(mpFrameSkip, RunWithConsumers);
+            // A pre-run observer can detect that Vanilla already left its repair state.
+            // Independent of Enabled, like the run gate's post-run fault check; Fault() always enables the guard.
+            // Check again before touching Vanilla, while the admission monitor is held.
+            mpFrameSkip => Economy.WorkerProductionWorldSafety.IsFaulted ? 0 :
+                Units.TroopCommandInputEvents.Run(mpFrameSkip, RunWithConsumers);
 
         private static int RunOriginal(bool mpFrameSkip) =>
             Simulation.EngineRunEvents.Invoke(mpFrameSkip, RunWithTroopInput);

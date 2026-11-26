@@ -28,15 +28,17 @@ namespace APIShared
 
         /// <summary>Accepts a current peer's confirmation only when its declared simulation records
         /// match the host's. A stale or foreign confirmation is ignored without a mismatch; a current
-        /// one with different records returns false and the explanation to show every player.</summary>
+        /// one with different records returns false and the explanation to show every player.
+        /// The digest details belong only in the host's local log.</summary>
         internal bool Accept(ulong sender, string token, string fingerprint,
-            IReadOnlyList<Savegames.SavegameRecordDigest> peerRecords, string peerName, out string mismatch)
+            IReadOnlyList<Savegames.SavegameRecordDigest> peerRecords, string peerName, out string mismatch,
+            List<string> logDetails = null)
         {
             mismatch = null;
             if (!expected.Contains(sender) || Token != token || FingerprintValue != fingerprint) return false;
             if (!Savegames.SavegameRecordComparison.IsValid(peerRecords))
             { mismatch = peerName + " sent an invalid list of saved simulation records."; return false; }
-            mismatch = Savegames.SavegameRecordComparison.Describe(records, peerRecords, peerName);
+            mismatch = Savegames.SavegameRecordComparison.Describe(records, peerRecords, peerName, logDetails);
             if (mismatch != null) return false;
             accepted.Add(sender); return true;
         }

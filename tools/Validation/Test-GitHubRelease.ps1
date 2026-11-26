@@ -186,6 +186,7 @@ exit $LASTEXITCODE
     Write-Fixture $upload ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'Upload-Workshop.ps1')))
     Write-Fixture (Join-Path $driverDirectory 'WorkshopChangelog.ps1') ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'WorkshopChangelog.ps1')))
     Write-Fixture (Join-Path $driverDirectory 'SteamWorkshopHistory.ps1') ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'SteamWorkshopHistory.ps1')))
+    Write-Fixture (Join-Path $driverDirectory 'WorkshopPublisherScope.ps1') ([IO.File]::ReadAllText((Join-Path ([IO.Path]::GetDirectoryName($driverSource)) 'WorkshopPublisherScope.ps1')))
     Write-Fixture (Join-Path $driverDirectory 'WorkshopConfiguration.ps1') @'
 function Get-WorkshopConfiguration {
     $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
@@ -196,7 +197,7 @@ function Get-WorkshopConfiguration {
 function Get-WorkshopFolder($Config,$Target,$Test) { return (Join-Path $Config.Root 'content') }
 function Assert-WorkshopPreparation {
     if ($env:APISHARED_RELEASE_TEST_CASE -eq 'proof') { throw 'Prepared file changed: APIShared.map' }
-    return @{Version=$env:APISHARED_RELEASE_TEST_TAG.Substring('APIShared/v'.Length);ReleaseNotes='Fixture';ReleaseTag='fixture';Files=@(@{Path='APIShared.map'})}
+    return @{Version=$env:APISHARED_RELEASE_TEST_TAG.Substring('APIShared/v'.Length);ReleaseNotes='Fixture';ReleaseTag='fixture';MainSource=@{};Files=@(@{Path='APIShared.map'})}
 }
 function Assert-WorkshopPublisherBuild {}
 function Get-WorkshopStateRoot($Config,$Test) { return (Join-Path $Config.Root 'state') }

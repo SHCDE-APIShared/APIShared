@@ -11,13 +11,18 @@ namespace APIShared.Presentation
         internal AllyGoodsSectionEntry[] Entries => entries;
         internal bool TryRegister(string owner, string id, Func<AllyGoodsSectionContext, FrameworkElement> factory,
             int order, out AllyGoodsSectionEntry entry, out string reason)
+            => TryRegister(owner, id, factory, AllyGoodsSectionPlacement.PanelRootBottom, order, out entry, out reason);
+        internal bool TryRegister(string owner, string id, Func<AllyGoodsSectionContext, FrameworkElement> factory,
+            AllyGoodsSectionPlacement placement, int order, out AllyGoodsSectionEntry entry, out string reason)
         {
             entry = null;
             if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || factory == null)
             { reason = "A nonempty owner GUID, section ID and factory are required."; return false; }
+            if (placement != AllyGoodsSectionPlacement.PanelRootBottom && placement != AllyGoodsSectionPlacement.GoodsDialogBottom)
+            { reason = "Unknown ally-goods section placement."; return false; }
             if (OrderedRegistrations.Contains(entries, AllyGoodsSectionEntry.Key, owner, id))
             { reason = "Duplicate ally-goods section: " + owner + "/" + id; return false; }
-            entry = new AllyGoodsSectionEntry(owner, id, order, factory);
+            entry = new AllyGoodsSectionEntry(owner, id, order, factory, placement);
             entries = OrderedRegistrations.WithAdded(entries, entry, AllyGoodsSectionEntry.Key); reason = ""; return true;
         }
     }
@@ -26,10 +31,27 @@ namespace APIShared.Presentation
         internal readonly string Owner, Id;
         internal readonly int Order;
         internal readonly Func<AllyGoodsSectionContext, FrameworkElement> Factory;
+        internal readonly AllyGoodsSectionPlacement Placement;
         internal bool Visible = true, Enabled = true;
+        internal bool LayoutAvailable;
+        internal string LayoutReason = "The goods dialog is not open.";
+        internal Action LayoutChanged;
         internal int Revision;
         internal AllyGoodsSectionEntry(string owner, string id, int order, Func<AllyGoodsSectionContext, FrameworkElement> factory)
-        { Owner = owner; Id = id; Order = order; Factory = factory; }
+            : this(owner, id, order, factory, AllyGoodsSectionPlacement.PanelRootBottom) { }
+        internal AllyGoodsSectionEntry(string owner, string id, int order, Func<AllyGoodsSectionContext, FrameworkElement> factory,
+            AllyGoodsSectionPlacement placement)
+        { Owner = owner; Id = id; Order = order; Factory = factory; Placement = placement; }
+        internal void SetLayoutAvailability(bool available, string reason, Action<Exception> failed)
+        {
+            reason = available ? string.Empty : reason ?? "The goods layout is unavailable.";
+            if (LayoutAvailable == available && LayoutReason == reason) return;
+            LayoutAvailable = available; LayoutReason = reason;
+            var subscribers = LayoutChanged;
+            if (subscribers == null) return;
+            foreach (Action subscriber in subscribers.GetInvocationList())
+                try { subscriber(); } catch (Exception error) { failed(error); }
+        }
         internal static readonly Func<AllyGoodsSectionEntry, RegistrationKey> Key = entry => new RegistrationKey(entry.Owner, entry.Id, entry.Order);
     }
     internal static class AllyGoodsContextPolicy

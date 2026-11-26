@@ -77,7 +77,9 @@ try {
     $results = Join-Path $root '.local/test-results'
     foreach ($project in @('Content.Tests/Content.Tests.csproj','PopularityDisplay.Tests/PopularityDisplay.Tests.csproj','Core.Tests/Core.Tests.csproj','APISharedTests/APISharedTests.csproj','LobbyModSettingsPresetTests/LobbyModSettingsPresetTests.csproj')) {
         Invoke-ApiBuildStep $context $project -Cacheable:($project -ne 'APISharedTests/APISharedTests.csproj') -Action {
-            Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', 'trx', '--results-directory', $results)
+            # Keep one current result per suite instead of another timestamped history.
+            $resultName=[IO.Path]::GetFileNameWithoutExtension($project)+'.trx'
+            Invoke-Tool 'dotnet' @('test', (Join-Path $root ('tests/' + $project)), '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender", '--logger', ('trx;LogFileName='+$resultName), '--results-directory', $results)
         }
     }
     foreach ($suite in @('AiMarketSell.NativeTests','PlagueHeight.NativeTests','AiMilitary.NativeTests','WorkerProductionBonus.NativeTests')) {
@@ -90,7 +92,13 @@ try {
     Invoke-ApiBuildStep $context 'Health.Tests' -Action {
         Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root 'tests/Health.Tests/Health.Tests.csproj'), '--configuration', 'Release')
     }
-    foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests')) {
+    foreach ($suite in @('ConstructionCosts.Tests','HumanConstruction.Tests')) {
+        Invoke-ApiBuildStep $context $suite -Action {
+            Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
+                '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")
+        }
+    }
+    foreach ($suite in @('AiRecruitOrders.Tests','AiMilitary.AttackTests','MapRecordReadiness.Tests','LobbyStartPackets.Tests')) {
         Invoke-ApiBuildStep $context $suite -Action {
             Invoke-Tool 'dotnet' @('run', '--project', (Join-Path $root ("tests/$suite/$suite.csproj")),
                 '--configuration', 'Release', "-p:GameDir=$game", "-p:ExtenderDir=$extender")
@@ -105,8 +113,9 @@ try {
     Invoke-ApiBuildStep $context 'dependency-bootstrap.csproj' -Category compile -When always -Action {
         Invoke-Tool $msbuild @((Join-Path $root 'bootstrap/APIShared.DependencyBootstrap.csproj'), '/t:Rebuild', '/p:Configuration=Release', "/p:GameDir=$game")
     }
-    Invoke-ApiBuildStep $context 'workshop-process-readiness' -Action {
-        Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkshopReadiness.ps1'), '-ApiAssembly', (Join-Path $root 'BepInEx/plugins/APIShared_Serp/APIShared.dll'))
+    # Real process kills against the safe Workshop installation (swap, preloader recovery, staging).
+    Invoke-ApiBuildStep $context 'workshop-install-kills' -Action {
+        Invoke-Tool 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'tools/Validation/Test-WorkshopInstall.ps1'), '-SwapKills', '60', '-PreloaderKills', '30', '-StageKills', '15')
     }
     if ($NoInstall -eq 0) {
         Invoke-ApiBuildStep $context 'installed-consumer-references' -Category installation -When always -Action {

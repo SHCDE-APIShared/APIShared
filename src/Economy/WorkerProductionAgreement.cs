@@ -97,6 +97,7 @@ namespace APIShared.Economy
         private static WorkerProductionAgreementResult current=new WorkerProductionAgreementResult("Unavailable");
         private static string rosterKey="",token="",localDigest="",preparedPath;
         private static string approvedDescriptorDigest="";
+        private static string lastSendFailure;
         private static ulong host,localId;
         private static bool initialized,committed;
         private static int posted;
@@ -104,6 +105,8 @@ namespace APIShared.Economy
         internal static WorkerProductionAgreementResult Current => Volatile.Read(ref current);
         internal static string ApprovedDescriptorDigest => Volatile.Read(ref approvedDescriptorDigest);
         internal static string PreparedDataPath => preparedPath;
+        internal static string LastSendFailure => lastSendFailure;
+        internal static void RefreshAdmission() => Refresh();
 
         internal static void Initialize(ManualLogSource logger,Func<WorkerProductionAgreementDescriptor> captureDescriptor,
             Action<string> onSelectedSaveChanged=null)
@@ -185,7 +188,14 @@ namespace APIShared.Economy
             if(!value.LobbyId.HasValue && value.PreserveForMapTransition)return;
             roster=value;
             string next=RosterKey(value);
-            if(next!=rosterKey){rosterKey=next;token="";round.Reset("",Array.Empty<ulong>());committed=false;}
+            if(next!=rosterKey)
+            {
+                rosterKey=next;token="";round.Reset("",Array.Empty<ulong>());committed=false;
+                // A new lobby/roster needs a fresh hello even when its production rules
+                // are unchanged. The host's first challenge can precede our observation.
+                localDigest="";
+                lastSendFailure=null;
+            }
             Refresh();
         }
         private static string RosterKey(LobbyStateSnapshot value)
@@ -265,19 +275,29 @@ namespace APIShared.Economy
                 // Submission can fail before the remote channel is ready. Invalidate
                 // this round so the next existing input/guard event retries a challenge
                 // or hello instead of leaving a permanently pending, unsent receipt.
+                lastSendFailure=sent.Reason;
                 localDigest="";committed=false;SetResult("Unavailable",sent.Reason);
                 throw new InvalidOperationException(sent.Reason);
             }
         }
         private static void SetResult(string code,string diagnostic="")
         {
-            Volatile.Write(ref approvedDescriptorDigest,string.IsNullOrEmpty(code)&&rosterKey.Length!=0?localDigest:"");
-            var previous=Current;if(previous.Code==code && previous.Diagnostic==diagnostic)return;
-            Volatile.Write(ref current,new WorkerProductionAgreementResult(code,diagnostic));
-            WorkerProductionModifiers.UpdatePeerReadiness(code,diagnostic);
+            string receipt = string.IsNullOrEmpty(code) && rosterKey.Length != 0 ? localDigest : "";
+            if (receipt.Length != 0) lastSendFailure = null;
+            string previousReceipt = Interlocked.Exchange(ref approvedDescriptorDigest, receipt);
+            var previous = Current;
+            bool statusChanged = previous.Code != code || previous.Diagnostic != diagnostic;
+            // Refresh can restore a receipt after mission initialization saw it cleared,
+            // while the lobby still shows the previous Ready result.
+            if (!statusChanged && previousReceipt == receipt) return;
+            if (statusChanged)
+            {
+                Volatile.Write(ref current, new WorkerProductionAgreementResult(code, diagnostic));
+                WorkerProductionModifiers.UpdatePeerReadiness(code, diagnostic);
+            }
             foreach(Action callback in Changed?.GetInvocationList()??Array.Empty<Delegate>())
                 try{callback();}catch(Exception error){try{NativeApiLog.Error(log,"Production agreement observer: "+error);}catch{}}
-            LobbyLaunchStatus.RequestRefresh();
+            if (statusChanged) LobbyLaunchStatus.RequestRefresh();
         }
     }
 }

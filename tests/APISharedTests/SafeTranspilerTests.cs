@@ -69,5 +69,85 @@ namespace APISharedTests
             Assert.AreEqual(12, Failing(1)); Assert.AreEqual(21, Failing(0));
             Assert.AreEqual(before + 2, postfixRuns, "The postfix of the same patch operation still runs.");
         }
+
+        [TestMethod]
+        public void SuccessfulEditsPreserveSharedMetadataAliasesWithoutChangingTheInput()
+        {
+            var input = MetadataInstructions(out Label originalTarget, out Label replacement);
+            int outcomes = 0;
+            var result = SafeTranspiler.Run(Owner, "metadata-success", input, code =>
+            {
+                var edited = code.ToList();
+                ((Label[])edited[0].operand)[0] = replacement;
+                edited[2].blocks[0].catchType = typeof(Exception);
+                return edited;
+            }, null, applied => { Assert.IsTrue(applied); outcomes++; }).ToList();
+
+            Assert.AreEqual(originalTarget, ((Label[])input[0].operand)[0]);
+            Assert.AreEqual(typeof(InvalidOperationException), input[2].blocks[0].catchType);
+            Assert.AreNotSame(input[0].operand, result[0].operand);
+            Assert.AreSame(result[0].operand, result[1].operand, "Two switches can deliberately share one target array.");
+            Assert.AreEqual(replacement, ((Label[])result[1].operand)[0]);
+            Assert.AreNotSame(input[2].blocks[0], result[2].blocks[0]);
+            Assert.AreSame(result[2].blocks[0], result[3].blocks[0]);
+            Assert.AreEqual(typeof(Exception), result[3].blocks[0].catchType);
+            Assert.AreEqual(originalTarget, result[0].labels[0], "Copy the target array, never the label identities.");
+            Assert.AreNotSame(input[0].labels, result[0].labels);
+            Assert.AreEqual(1, outcomes);
+        }
+
+        [TestMethod]
+        public void LazyFailureRestoresSharedSwitchAndExceptionMetadataAndReportsOnce()
+        {
+            var input = MetadataInstructions(out Label originalTarget, out Label replacement);
+            int outcomes = 0; bool? appliedOutcome = null;
+            IEnumerable<CodeInstruction> Fail(IEnumerable<CodeInstruction> code)
+            {
+                var edited = code.ToList();
+                yield return edited[0]; // The failure must be caught during enumeration, too.
+                ((Label[])edited[0].operand)[0] = replacement;
+                edited[2].blocks[0].blockType = ExceptionBlockType.BeginFinallyBlock;
+                edited[2].blocks[0].catchType = typeof(Exception);
+                throw new InvalidOperationException("planned lazy failure");
+            }
+            var result = SafeTranspiler.Run(Owner, "metadata-failure", input, Fail, null,
+                applied => { outcomes++; appliedOutcome = applied; throw new Exception("outcome callback failure"); }).ToList();
+
+            for (int i = 0; i < input.Count; i++) Assert.AreSame(input[i], result[i]);
+            Assert.AreEqual(originalTarget, ((Label[])result[0].operand)[0]);
+            Assert.AreEqual(ExceptionBlockType.BeginCatchBlock, result[2].blocks[0].blockType);
+            Assert.AreEqual(typeof(InvalidOperationException), result[2].blocks[0].catchType);
+            Assert.AreSame(result[0].operand, result[1].operand);
+            Assert.AreSame(result[2].blocks[0], result[3].blocks[0]);
+            Assert.AreEqual(1, outcomes); Assert.AreEqual(false, appliedOutcome);
+        }
+
+        [TestMethod]
+        public void ExactCatchMetadataAndSuccessfulResultSurviveAnOutcomeFailure()
+        {
+            var input = MetadataInstructions(out _, out _);
+            input[2].blocks[0].catchType = null;
+            int outcomes = 0;
+            var result = SafeTranspiler.Run(Owner, "metadata-outcome", input, code => code, null,
+                applied => { outcomes++; throw new Exception("outcome callback failure"); }).ToList();
+            Assert.IsNull(result[2].blocks[0].catchType, "The Harmony constructor substitutes object for null; copying must retain the exact field.");
+            Assert.AreNotSame(input[2].blocks[0], result[2].blocks[0]);
+            Assert.AreEqual(1, outcomes);
+        }
+
+        private static List<CodeInstruction> MetadataInstructions(out Label first, out Label second)
+        {
+            var generator = new DynamicMethod("MetadataLabels", typeof(void), Type.EmptyTypes).GetILGenerator();
+            first = generator.DefineLabel(); second = generator.DefineLabel();
+            var targets = new[] { first };
+            var block = new ExceptionBlock(ExceptionBlockType.BeginCatchBlock, typeof(InvalidOperationException));
+            var instructions = new List<CodeInstruction> {
+                new CodeInstruction(OpCodes.Switch, targets), new CodeInstruction(OpCodes.Switch, targets),
+                new CodeInstruction(OpCodes.Nop), new CodeInstruction(OpCodes.Nop)
+            };
+            instructions[0].labels.Add(first);
+            instructions[2].blocks.Add(block); instructions[3].blocks.Add(block);
+            return instructions;
+        }
     }
 }

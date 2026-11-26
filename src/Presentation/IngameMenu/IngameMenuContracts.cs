@@ -110,8 +110,11 @@ namespace APIShared.Presentation
     public sealed class IngameMenuActionInfo
     {
         internal IngameMenuActionInfo(string owner, string id, bool vanilla, bool known,
-            IngameMenuActionState state, bool effective)
-        { OwnerGuid = owner; Id = id; IsVanilla = vanilla; HasState = known; State = state; IsEffective = effective; }
+            IngameMenuActionState state, bool effective, bool suppressed)
+        {
+            OwnerGuid = owner; Id = id; IsVanilla = vanilla; HasState = known;
+            State = state; IsEffective = effective; IsSuppressed = suppressed;
+        }
         /// <summary>Owning mod GUID, or the reserved APIShared.Vanilla identity.</summary>
         public string OwnerGuid { get; }
         /// <summary>Owner-local action identity.</summary>
@@ -120,10 +123,12 @@ namespace APIShared.Presentation
         public bool IsVanilla { get; }
         /// <summary>Whether a state has been observed. Before the first opening it may be unknown.</summary>
         public bool HasState { get; }
-        /// <summary>Last presentation, or null when unknown or explicitly empty.</summary>
+        /// <summary>Last observed state before suppression, or null when unknown or explicitly empty.</summary>
         public IngameMenuActionState State { get; }
         /// <summary>Whether this claim currently wins its requested slot.</summary>
         public bool IsEffective { get; }
+        /// <summary>Whether a last-evaluated rule suppresses this Vanilla action on both menu pages.</summary>
+        public bool IsSuppressed { get; }
     }
 
     /// <summary>Immutable slot snapshot with registered claims in precedence order, including hidden claims.</summary>

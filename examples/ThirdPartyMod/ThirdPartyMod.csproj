@@ -41,11 +41,13 @@
     <Compile Include="WorkshopExample.cs" />
     <Compile Include="SoundExample.cs" />
     <Compile Include="UnitVoiceExample.cs" />
+    <Compile Include="UnitIdentityExample.cs" />
     <Compile Include="LordMessageExample.cs" />
     <Compile Include="PopularityExample.cs" />
     <Compile Include="BuildingTooltipExample.cs" />
     <Compile Include="PathfindingReplacementExample.cs" />
     <Compile Include="SaveDataExample.cs" />
+    <Compile Include="CustomGoodsExample.cs" />
     <Compile Include="ModDataExample.cs" />
     <Compile Include="WeaponProductionExample.cs" />
   </ItemGroup>

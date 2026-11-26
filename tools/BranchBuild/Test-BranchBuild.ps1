@@ -21,7 +21,7 @@ try {
     Git-Fixture @('init','-b','main')
     Git-Fixture @('config','user.name','APIShared branch fixture')
     Git-Fixture @('config','user.email','fixture@example.invalid')
-    Write-BranchText (Join-Path $repo '.gitignore') ".release-output/`r`nBepInEx/`r`n"
+    Write-BranchText (Join-Path $repo '.gitignore') ".release-output/`r`nBepInEx/`r`n.local/`r`n"
     Write-BranchText (Join-Path $repo 'info.json') '{"GUID":"APIShared_Serp","Version":"1.0.0"}'
     Write-BranchText (Join-Path $repo 'source.txt') 'API_MAIN_COMMIT'
     Write-BranchText (Join-Path $repo 'build.bat') @'
@@ -43,6 +43,11 @@ if ($env:API_BRANCH_FIXTURE_FAIL -eq '1') { exit 7 }
 $package = Join-Path $root 'BepInEx/plugins/APIShared_Serp'
 [void][IO.Directory]::CreateDirectory($package)
 [IO.File]::WriteAllText((Join-Path $package 'APIShared.dll'),$source)
+$mode = 'full'
+if (Get-Command Get-ApiBuildTestMode -ErrorAction SilentlyContinue) { $mode = Get-ApiBuildTestMode 'build.bat' $DriverArguments }
+$evidence = Join-Path $root '.local'
+[void][IO.Directory]::CreateDirectory($evidence)
+[IO.File]::WriteAllText((Join-Path $evidence 'build-proof.json'),(@{TestMode=$mode} | ConvertTo-Json))
 if ($NoInstall) { exit 0 }
 $destination = Join-Path $game 'BepInEx\plugins\APIShared_Serp'
 $toolTarget = Join-Path $game 'BepInEx/tools/APISharedWorkshopPublisher'
@@ -54,9 +59,12 @@ exit 0
 '@
     Write-BranchText (Join-Path $repo 'tools/WorkshopUploader/build.bat') "@echo off`r`ntype `"%~dp0..\..\source.txt`"`r`nexit /b %ERRORLEVEL%`r`n"
     # Boundary double: lifecycle tests do not rebuild the real SDK. The real proof contract
-    # has its own suite; this fixture rejects changed source/output and represents full evidence.
+    # has its own suite; this fixture rejects changed output AND reduced evidence. Keeping
+    # the selected mode here catches accidental SDK promotion after a successful reduced build.
     Write-BranchText (Join-Path $repo 'tools/BuildProof.ps1') @'
 function Assert-ApiBuildProof([string]$Root) {
+    $proof=[IO.File]::ReadAllText((Join-Path $Root '.local/build-proof.json'))|ConvertFrom-Json
+    if ($proof.TestMode -cne 'full') { throw 'Fixture SDK requires full checks.' }
     $text=[IO.File]::ReadAllText((Join-Path $Root 'source.txt'))
     $package=Join-Path $Root 'BepInEx/plugins/APIShared_Serp/APIShared.dll'
     if (-not [IO.File]::Exists($package) -or [IO.File]::ReadAllText($package) -cne $text) { throw 'Fixture SDK output changed.' }
@@ -106,8 +114,28 @@ function Assert-ApiBuildProof([string]$Root) {
     Git-Fixture @('add','.')
     Git-Fixture @('commit','-m','Mode-aware build fixture')
     foreach ($mode in @('full','quick','none')) {
-        $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause','/noinstall',"/tests:$mode") 0
-        Assert-Fixture ($output -match "TEST_MODE=$mode") 'Committed branch lost test mode'
+        foreach ($keep in @($false,$true)) {
+            # Explicit install selection prevents full-SDK cache reuse: exercise each child build.
+            $arguments = @('/branch:develop','/nopause','/noinstall','/install:dev',"/tests:$mode")
+            if ($keep) { $arguments += '/keepsource' }
+            $output = Run-Fixture 'build.bat' $arguments 0
+            Assert-Fixture ($output -match "TEST_MODE=$mode") 'Committed branch lost test mode'
+            $last = @(Get-ChildItem -LiteralPath (Join-Path $repo '.release-output/branch-builds/develop') -Filter '*.lifecycle.json' -File | Sort-Object Name)[-1]
+            $built = [IO.File]::ReadAllText($last.FullName)|ConvertFrom-Json
+            $expectedPhase = if ($mode -eq 'full' -and -not $keep) { 'sdk-ready' } else { 'retained' }
+            Assert-Fixture ($built.Phase -ceq $expectedPhase) "Wrong successful lifecycle for tests:$mode keepsource:$keep"
+            $builtPackage = Join-Path $built.Root 'BepInEx/plugins/APIShared_Serp/APIShared.dll'
+            Assert-Fixture ([IO.File]::ReadAllText($builtPackage) -ceq 'API_DEVELOP_COMMIT') 'Successful output was removed'
+            $proof = [IO.File]::ReadAllText((Join-Path $built.Root '.local/build-proof.json'))|ConvertFrom-Json
+            Assert-Fixture ($proof.TestMode -ceq $mode) 'Fixture evidence lost selected mode'
+            Assert-Fixture ((Get-BranchHash $plugin) -ceq $pluginHash -and (Get-BranchHash $publisher) -ceq $publisherHash) 'Reduced/no-install build changed main installation'
+        }
+    }
+    foreach ($mode in @('quick','none')) {
+        $output = Run-Fixture 'build.bat' @('/branch:develop','/nopause',"/tests:$mode") 0
+        Assert-Fixture ($output -match "TEST_MODE=$mode") 'Installing branch lost reduced mode'
+        Assert-Fixture ([IO.File]::ReadAllText((Join-Path $game 'BepInEx/plugins/APIShared_Serp_dev/fixture.txt')) -ceq 'API_DEVELOP_COMMIT') 'Reduced development installation failed'
+        Assert-Fixture ((Get-BranchHash $plugin) -ceq $pluginHash -and (Get-BranchHash $publisher) -ceq $publisherHash) 'Reduced development build changed main installation'
     }
 
     # Exercise production lifecycle helpers with real temporary Git worktrees.
@@ -197,6 +225,7 @@ function Assert-ApiBuildProof([string]$Root) {
     $null=New-BranchSource $repo 'develop' $cache.Root
     $text=[IO.File]::ReadAllText((Join-Path $cache.Root 'source.txt'))
     Write-BranchText (Join-Path $cache.Root 'BepInEx/plugins/APIShared_Serp/APIShared.dll') $text
+    Write-BranchText (Join-Path $cache.Root '.local/build-proof.json') '{"TestMode":"full"}'
     Write-BranchText ($cache.Root+'.build.json') '{"BuildToolOverrides":[]}'
     $cache.State.OwnerPid=2147483647;Set-ApiBranchRunPhase $cache 'sdk-ready';$cache.Lease.Dispose()
     $reused=Find-ReusableApiBranchRun $repo 'develop'

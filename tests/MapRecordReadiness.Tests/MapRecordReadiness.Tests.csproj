@@ -4,6 +4,7 @@
   <ItemGroup>
     <Reference Include="MessagePack"><HintPath>$(ExtenderDir)/MessagePack.dll</HintPath></Reference>
     <Reference Include="MessagePack.Annotations"><HintPath>$(ExtenderDir)/MessagePack.Annotations.dll</HintPath></Reference>
+    <Compile Include="../../src/Maps/MapLoadPolicy.cs" Link="Production/MapLoadPolicy.cs"/>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.cs" Link="Production/MapRecordLoadCoordinator.cs"/>
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.LobbySnapshot.cs" Link="Production/MapRecordLoadCoordinator.LobbySnapshot.cs"/>
     <Compile Include="../../src/GameModes/CustomizedLaunchOrigins.cs" Link="Production/CustomizedLaunchOrigins.cs"/>
@@ -11,6 +12,7 @@
     <Compile Include="../../src/Savegames/MapRecordLoadCoordinator.BlockDiagnostics.cs" Link="Production/MapRecordLoadCoordinator.BlockDiagnostics.cs"/>
     <Compile Include="../../src/Lobby/LobbySelectedMapHeader.cs" Link="Production/LobbySelectedMapHeader.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadCoordinator.cs" Link="Production/SavegameLoadCoordinator.cs"/>
+    <Compile Include="../../src/Savegames/MultiplayerSavePreparation.cs" Link="Production/MultiplayerSavePreparation.cs"/>
     <Compile Include="../../src/Savegames/LobbyReadinessSupport.cs" Link="Production/LobbyReadinessSupport.cs"/>
     <Compile Include="../../src/Savegames/BoundedTokenSet.cs" Link="Production/BoundedTokenSet.cs"/>
     <Compile Include="../../src/Savegames/SavegameLoadAgreement.cs" Link="Production/SavegameLoadAgreement.cs"/>

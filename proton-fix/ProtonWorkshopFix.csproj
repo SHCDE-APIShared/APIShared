@@ -17,7 +17,6 @@
     <Compile Include="..\src\Workshop\Proton\WinePathInterop.cs"><Link>Proton\WinePathInterop.cs</Link></Compile>
     <Compile Include="..\src\Workshop\Proton\ProtonPaths.cs"><Link>Proton\ProtonPaths.cs</Link></Compile>
     <Compile Include="..\src\Workshop\Proton\ProtonProcess.cs"><Link>Proton\ProtonProcess.cs</Link></Compile>
-    <Compile Include="..\src\Workshop\Proton\ProtonConfiguration.cs"><Link>Proton\ProtonConfiguration.cs</Link></Compile>
     <EmbeddedResource Include="Assets\extender-updater.sh"><LogicalName>APIShared.ProtonWorkshopFix.extender-updater.sh</LogicalName></EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

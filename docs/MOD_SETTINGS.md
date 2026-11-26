@@ -468,6 +468,34 @@ to Documents and preserves old JSON files. Explicit deletion removes personal co
 of the selected identity from both directories and reports partial failures.
 Bundled and external provider presets remain read-only in their original locations.
 
+The **Open folder** action in the save and load dialogs opens the mod's personal
+`Presets` directory in the desktop file manager. APIShared creates the directory
+on demand. On Linux under Wine or Proton, APIShared resolves the prefix's path
+and hands it to the desktop's `xdg-open`.
+
+To add the action to an existing dialog, bind `System_OpenPresetFolderCommand`,
+`System_PresetFolderText` and `System_PresetFolderHelpText`. Bind visibility to
+`System_PresetFolderVisibility` with `FallbackValue=Collapsed` so older APIShared
+builds hide the button.
+
+In a supported multiplayer lobby, **Share** offers the preset selected in the
+load dialog to compatible human players. The offer appears in the lobby chat
+area. A player can open it, choose a name and request a personal copy. The
+sender transfers the preset only to that player after the request. APIShared
+uses a bounded retry until each eligible lobby peer acknowledges the offer and
+reports when some or all peers have not confirmed receipt. A fresh request made
+immediately after a previous download receives a retry message. Preset sharing
+is limited to the lobby and to 64 KiB of preset JSON.
+
+Bind the Share button to `System_SharePresetCommand`,
+`System_CanSharePreset` and `System_PresetShareVisibility`. Use
+`System_PresetShareText` and `System_PresetShareHelpText` for the label and
+tooltip. On pages where certain players cannot apply presets, provide the
+`System_PresetShareOnlyPickerVisibility` entry point with
+`System_OpenPresetLoadCommand`. Keep Load and Delete gated by their existing
+permissions. Use `FallbackValue=Collapsed` for the sharing visibility
+bindings to preserve older APIShared installations.
+
 When no Documents working file exists, APIShared loads the previous plugin-local
 `.msgpack` and writes the validated/migrated state to Documents, retaining the original.
 A present but corrupt or inaccessible new file does not fall back to stale installation
@@ -559,6 +587,12 @@ callback returned, not that the mission initialized successfully. Use the missio
 lifecycle for the latter. A rejected confirmation keeps its request/selection and
 restores the requester view; it does not invoke the original action.
 
+For an expected preparation rejection, call `context.RejectPreparation(reason)`
+synchronously from `Prepare` and return. Supply a non-empty, localized player-facing
+reason when translations are available. The first reason wins. APIShared stops later
+preparation, runs attempt cleanup and displays that reason. The next confirmation
+starts with no rejection reason. Unexpected preparation exceptions are logged.
+
 Do not install another requester hook. Vanilla hides the requester before invoking
 its confirmation callback; APIShared captures checkbox availability before that hide.
 An installed ExtendedData plugin must advertise the shared dialog integration with
@@ -605,6 +639,102 @@ A mod that stores settings of such a class in its own format calls
 `ModSettingsMigration.MigrateStoredSnapshot(settings, stored)` on the raw stored values,
 before merging them with defaults. Renames cannot be applied to a merged snapshot, because
 it no longer tells a stored value from a default.
+The helper gives a converter its own dictionary and byte buffers, preserving the input
+comparer and null values. In-place conversion and a rejected conversion leave the raw
+stored data unchanged; the converter's returned dictionary is used as-is. Without a
+converter, an unchanged snapshot can be returned directly, so the result is not a
+general-purpose deep copy of the input.
+
+### Converting missing stored values before defaults
+
+Implement `IModSettingsStoredSnapshotMigration` when a conversion needs to distinguish
+an omitted property from an explicitly selected value. APIShared calls
+`System_MigrateStoredSnapshot(Dictionary<string, byte[]>)` after declared renames and
+source/Player selection, before adding missing defaults or applying setters. Its input
+and buffers are detached; the helper also detaches the returned values. Keep every
+input key. Add only properties belonging to the same settings endpoint.
+
+Use `ContainsKey`, not a comparison against a default: explicit null, empty values and
+explicitly selected ModDefault/creator Mode0 values are present and remain authoritative.
+The converter must be pure, deterministic and idempotent, without live settings, UI,
+file or native-state access. An unrecognized legacy representation must not invent data.
+
+Personal schema1/2/3 values, working/published presets and prepared save/Map/Trail
+sources use this opt-in contract. Published policies are resolved for the selected
+properties first; newly derived values are represented as Fixed when overwriting that
+preset. Defaults, exports and authenticated host values received by clients do not
+run an extra conversion. Added properties pass the regular type, scope and host checks
+before application and fingerprinting.
+
+Trail-rule capture for opted-in endpoints keeps rules sparse: it records selected
+Player/Fixed fields and authorized derived Fixed fields, without synthesizing new
+Mode0 rules for omitted properties. It reads no live settings; Player selections
+appear as presence-only null markers during that fixed-value conversion and retain
+their Player mode. Existing explicit Mode0 rules in saved data remain authoritative.
+
+Direct controller entry converts raw mission input. API-owned prepared entry uses
+an endpoint-bound single-use token so a normalized host/source snapshot is not
+converted again. Nested fresh working operations do not inherit that exemption.
+
+A failed conversion rejects that snapshot before its setters and persistence. A
+previously applied independent snapshot is retained. Converter failures do not classify
+a valid personal file as corrupt or replace it with defaults.
+
+Custom stored-format readers call `ModSettingsMigration.MigrateRawStoredSnapshot`
+before their default merge. This new contract does not invoke the older
+`IModSettingsSnapshotMigration` callback. That callback and
+`ModSettingsMigration.MigrateStoredSnapshot` retain their established semantics;
+prepared save loads can run the old mission conversion after the raw conversion and
+default merge. Endpoints that do not opt in retain their existing behavior.
+
+## Moving mission settings between mods
+
+APIShared 0.51.0 extends the existing migration pipeline with explicit owner moves.
+The destination mod registers `ModSettingsMigration.RegisterModMove(ownerGuid,
+registrationId, definition)` during initialization, before any mission preparation.
+`ModSettingsModMove` names the source and destination GUIDs, typed `ModSettingMove`
+entries, optional copied auxiliary settings and fixed scalar destination defaults.
+The registering owner must equal the destination. Registration is process-lived;
+identical owner/id declarations are idempotent. Conflicts, ambiguous claims and cycles
+throw without publishing the new declaration. Deterministically ordered chains are
+supported; one declaration owns each destination.
+
+A moved property in stored values or author rules is positive evidence of the old
+configuration. Rules retained while their owner is uninstalled still migrate even
+without stored values. A source GUID or a copied activation setting alone is
+insufficient. Mission values retain their validated wire representation, including
+enum names and JSON doubles for float settings. An explicit destination in
+saved values or author rules wins as a whole, including a disabled or empty entry.
+Moved properties leave the detached effective source even when an explicit target
+wins; copied settings remain there. This canonical cleanup prevents an empty target
+which a later codec/pruning pass omits from resurrecting obsolete source values.
+Defaults are applied before actual source values and rules. Fixed author values stay
+fixed; Player rules resolve against the destination owner's current personal/host
+settings. This is an intentional ownership change, not a historical-source alias.
+No personal settings file is imported by this API.
+
+Save preparation applies owner moves after wire validation but before matching
+participants, then applies the existing property renames and snapshot conversions.
+Required conversion errors refuse preparation; they do not select current settings
+as an invalid-record fallback. Choosing current settings still uses current values,
+subject to the existing author rules. A strict Trail resets saved values before
+applying author rules, so a newly introduced destination feature which must stay off
+needs a fixed false destination default, not only a saved false value.
+
+Map/Trail consumers call `ModSettingsMigration.MigrateMissionDocument(document)`
+before provider validation, pruning or caching author/reset sources. It returns a
+detached schema-3 document; it never rewrites the source file. `MissionModSettingsSession`
+also applies the migration before provider matching. Its existing supplied-document
+update contract remains in effect. Consumers must keep the migrated author document,
+not substitute a snapshot of materialized live values. On subsequent ordinary writes,
+the canonical destination entries are saved. Wire formats and unrelated missing-mod
+disabled behavior are unchanged.
+
+For example, when moving a group of boolean settings, mark the group's actual
+properties as moved, copy its shared old `EnableMod` only as an auxiliary setting,
+and provide false defaults for unrelated new destination features. Do not mark the
+master switch as the sole trigger: a modern save intentionally created without the
+destination mod can legitimately contain that same source master switch.
 
 ## Locking an individual setting during a mission
 

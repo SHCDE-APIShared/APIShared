@@ -112,7 +112,7 @@ namespace APIShared.Economy
             }
         }
 
-        internal static void Fault(string diagnostic)
+        internal static void Fault(string diagnostic, bool showMessage = false)
         {
             object gate = EngineGate;
             if (gate == null) throw new InvalidOperationException("Production world safety is unavailable: " + diagnostic);
@@ -122,7 +122,7 @@ namespace APIShared.Economy
                 Volatile.Write(ref *(int*)((byte*)native + GuardEnabledOffset), 1);
                 if (!IsFaulted) Volatile.Write(ref *(int*)native, 100);
                 NotifyFault();
-                QueueTermination();
+                QueueTermination(showMessage);
             }
         }
 
@@ -186,7 +186,7 @@ namespace APIShared.Economy
                     try { callback(reason); } catch (Exception error) { Report(error); }
         }
 
-        private static void QueueTermination()
+        private static void QueueTermination(bool showMessage = false)
         {
             if (Interlocked.Exchange(ref notificationQueued, 1) != 0) return;
             long expectedGeneration = Generation;
@@ -194,11 +194,11 @@ namespace APIShared.Economy
             string message = reason;
             NativeApiLog.Error(log, "WORKER_PRODUCTION_WORLD_BLOCKED: " + message);
             // Dispatch must not depend on SimulationWorkPump: subsequent runs are blocked.
-            if (!UnityMainThreadDispatch.TryEnqueue(() => Terminate(expectedGeneration, expectedSession, message)))
+            if (!UnityMainThreadDispatch.TryEnqueue(() => Terminate(expectedGeneration, expectedSession, message, showMessage)))
                 Interlocked.Exchange(ref notificationQueued, 0); // Remain blocked; a later observation retries delivery.
         }
 
-        private static void Terminate(long expectedGeneration, long expectedSession, string message)
+        private static void Terminate(long expectedGeneration, long expectedSession, string message, bool showMessage)
         {
             if (Generation != expectedGeneration || !IsFaulted || session != expectedSession) return;
             // A stale callback can never stop a replacement mission. stopGameSim invokes
@@ -206,6 +206,10 @@ namespace APIShared.Economy
             if (MissionLifecycleService.ActiveContext?.SessionId != expectedSession) return;
             try { EditorDirector.instance?.stopGameSim(false); }
             catch (Exception error) { Report(error); } // The terminal latch remains closed.
+            var current = MissionLifecycleService.ActiveContext;
+            if (!showMessage || current != null && current.SessionId != expectedSession) return;
+            try { HUD_ConfirmationPopup.ShowConfirmationOKMessage(Localization.UiText.Get("Savegames.LoadTitle"), () => { }, message); }
+            catch (Exception error) { Report(error); }
         }
 
         private static void Report(Exception error)

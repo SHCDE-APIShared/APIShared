@@ -21,18 +21,29 @@ namespace APIShared
         /// step already do; a one-way connection no longer fails the route and triggers the full-map repair.
         /// A null or empty owner is rejected with <see cref="ArgumentException"/>.</remarks>
         public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled)
+            => SetWeightedReconstructionEnabled(ownerGuid, enabled, ignoreGoodsyardWallFlag: false);
+
+        /// <summary>Publishes weighted reconstruction with an optional correction for stockpile wall flags.</summary>
+        /// <remarks>When <paramref name="ignoreGoodsyardWallFlag"/> is true, a nonordinary fallback requires
+        /// at least one endpoint with IsWall and without GoodsyardRelated. Stockpile flags alone cannot authorize
+        /// climbing; a genuine wall at the other endpoint remains sufficient. Ordinary connections are unchanged.
+        /// The weighted builder must enforce the same rule in its search. The two-argument overload retains its
+        /// existing raw-IsWall behavior. Only the registered weighted-builder owner may change this policy;
+        /// activation is process-wide, synchronous and changes aligned data, never published hook code.</remarks>
+        public static void SetWeightedReconstructionEnabled(string ownerGuid, bool enabled, bool ignoreGoodsyardWallFlag)
         {
             if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));
             lock (Sync)
             {
                 if (!string.Equals(weightedOwner, ownerGuid, StringComparison.Ordinal))
                     throw new InvalidOperationException("Only the registered weighted builder can change its reconstruction policy.");
-                PublishFlags(enabled ? flags | 1 : flags & ~1);
+                int weightedFlags = enabled ? 1 | (ignoreGoodsyardWallFlag ? 4 : 0) : 0;
+                PublishFlags((flags & ~5) | weightedFlags);
             }
         }
 
         /// <summary>Enables or disables the registered experiment's gatehouse endpoint rule without repatching code.</summary>
-        /// <remarks>Also enables the reconstruction connection rule described at <see cref="SetWeightedReconstructionEnabled"/>.</remarks>
+        /// <remarks>Also enables the reconstruction connection rule described at <see cref="SetWeightedReconstructionEnabled(string, bool)"/>.</remarks>
         public static void SetDirectGatehouseClimbing(string ownerGuid, bool enabled)
         {
             if (string.IsNullOrEmpty(ownerGuid)) throw new ArgumentException("Owner GUID required.", nameof(ownerGuid));

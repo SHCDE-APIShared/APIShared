@@ -26,6 +26,9 @@ world-end rejection. Editor declarations report `Declared` synchronously instead
 Callbacks are exception-isolated and can run on the simulation caller. Dispatch
 presentation work to the UI thread. A callback may end the world; retain neither
 native pointers nor assumptions about the next callback's world.
+`Complete` closes capture before invoking callbacks: units created by a completion
+callback are ordinary placements unless that callback opens its own nested scope.
+The original captured units remain protected until the enclosing scope is disposed.
 
 `RequestAssignment` accepts a free existing unit or this consumer's protected unit.
 It refuses arbitrary already-managed troops and units claimed by another owner.
@@ -74,9 +77,50 @@ Moving/patrolling/attacking recruits get their own route. Strategic work selects
 fresh eligible job and reserves it only after successful setup; paths and jobs are
 never copied from a leader.
 
-A genuinely empty newly allocated group can use its verified initial order. An
-existing group's unknown, expired or incompatible order is rejected explicitly;
-there is no wait until its next AI command. Strategic intent additionally checks
+A genuinely empty newly allocated group can use its verified initial order. That
+initial order then counts as the group's current order until an observed group
+command replaces it, so later recruits of the same group, including the other units
+of one multi-unit placement, receive the same state for every role. When an
+existing group has no observed current order (for example after loading a save), the
+defensive roles `CastleDefense`, `DefensePatrol`, `HomeMoat`, `EconomyProtection` and
+`Intervention`, `Harassment`, and the siege roles while the owner's AI is not besieging
+(siege state 0) admit the recruit exactly like Vanilla admits its own recruits:
+membership and role only. The owner's next regular AI pass then orders the group;
+its native group move sends only members that are not already at their post, so
+existing members receive nothing new. The `Applied` result carries a non-empty
+`Detail` in this case.
+
+`CastleDefense` follows Vanilla's controller for the group's storage slot. The first
+recruit of an empty group receives the position that the next AI pass would choose:
+the keep entrance area for the first fallback group, the keep door for the second
+(mounted units use it), and otherwise the group's AIV guarding position if it is
+reachable from the recruit, else the keep. Where that pass gives no order now (for
+example during a defensive alert), the recruit joins like a Vanilla recruit with a
+non-empty `Detail`; a failed own route is handled as described below. `GetOptions` reports castle defense as
+unavailable (`InvalidGroupCount`) for spearmen, macemen and Arabian horse archers when
+the AIV has positions for their class but the AIC `max_mobile_groups` is not positive,
+because Vanilla's allocator then has no group for them. A failed admission into an
+empty group leaves that group exactly as it was, so it remains usable for later
+recruits. A patrol recruit can therefore wait up to the AIC patrol
+delay, and an economy-protection or intervention group below its AIC strength
+receives no order, as in Vanilla. A harassment recruit waits for the group's next order,
+which can follow a target-cache interval, like a Vanilla recruit. Engineers of both
+pools and `None` never need a group order. Siege recruits also join like Vanilla
+recruits in every siege state. Outside a siege the AI orders them on its next turn.
+During a siege its siege controller orders idle members within a few passes for
+storm groups while approaching and attacking (siege states 3-5), shock groups from
+state 4, and moat, assassin, diversion, cover, reserve and wall groups in the main
+assault (state 5). In every other siege phase the recruit waits, and its
+`Detail` says so, until the AI's next group
+order at its next siege phase, its retreat or its return home. Vanilla stops siege
+recruitment during a siege, so this wait has no Vanilla counterpart except scripted
+mission spawns. For every role whose AI controller commands joined members in this
+way (all of the above), a recruit whose own route to the group's current order fails
+in the game's pathfinder (for example a horseman on a wall or keep tile) joins like a
+Vanilla recruit with a non-empty `Detail` instead of being rejected. Like a Vanilla
+member without a route, it stays in place until a later group order can route it. Otherwise an unknown, expired or
+incompatible order of an existing group is rejected explicitly; there is no wait
+until its next AI command. Strategic intent additionally checks
 the current siege phase, target identities, AIC, group storage identity and native
 task-list ownership. Unsupported transitions and exhausted/unreachable tasks fail
 without changing existing members. A failed fresh placement removes that captured
