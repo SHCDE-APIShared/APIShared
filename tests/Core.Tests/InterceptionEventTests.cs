@@ -159,4 +159,84 @@ public class InterceptionEventTests
         Assert.IsTrue(events.TryRegister("b", "two", _ => { }, null, out _));
         Assert.AreEqual(2, installs);
     }
+
+    [TestMethod]
+    public void NullAndLatePrivateStatesRemainPairedAcrossFailureAndRetainedResults()
+    {
+        var events = new InterceptionEvent<Input, Output>();
+        object marker = new object();
+        bool supplyState = true;
+        int accepted = 0, validated = 0;
+        var retained = new List<Output>();
+        events.TryRegister("a", "null", a => a.Value = 2,
+            p => retained.Add(p), out _, accepted: (a, state) => {
+                Assert.IsNull(state); accepted++;
+                var nested = events.Begin(new Input());
+                nested.Complete(nested.Pre, Post);
+            }, finalValidation: (a, state) => { Assert.IsNull(state); validated++; return true; });
+        events.TryRegister("b", "late", a => a.State = supplyState ? marker : null,
+            p => retained.Add(p), out _, accepted: (a, state) => {
+                Assert.AreSame(supplyState ? marker : null, state); accepted++;
+            }, finalValidation: (a, state) => {
+                Assert.AreSame(supplyState ? marker : null, state); validated++; return true;
+            });
+        events.TryRegister("c", "failed", a => { a.State = marker; a.Value = 99; throw new InvalidOperationException(); },
+            p => { Assert.IsNull(p.State); retained.Add(p); }, out _,
+            accepted: (a, state) => { Assert.IsNull(state); accepted++; },
+            finalValidation: (a, state) => { Assert.IsNull(state); validated++; return true; });
+        for (int call = 0; call < 2; call++)
+        {
+            supplyState = call == 0;
+            var invocation = events.Begin(new Input());
+            invocation.ValidateFinalInputs();
+            invocation.NotifyAccepted(); invocation.NotifyAccepted();
+            invocation.Complete(invocation.Pre, Post); invocation.Complete(invocation.Pre, Post);
+            Assert.AreEqual(2, invocation.Pre.Value);
+            Assert.Throws<InvalidOperationException>(() => invocation.Pre.State = marker);
+        }
+        Assert.AreEqual(6, accepted); Assert.AreEqual(6, validated);
+        Assert.AreEqual(2L, events.CallbackFailures);
+        Assert.AreEqual(6, retained.Count);
+        Assert.AreSame(marker, retained[1].State, "Later null-state calls must not alter a retained completion.");
+        foreach (int index in new[] { 0, 2, 3, 4, 5 }) Assert.IsNull(retained[index].State);
+        foreach (Output output in retained) Assert.AreEqual(2, output.Value);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static long AllocatedByRepeatedCalls(Action call)
+    {
+        for (int index = 0; index < 256; index++) call();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 4096; index++) call();
+        long after = GC.GetAllocatedBytesForCurrentThread();
+        return after - before;
+    }
+
+    [TestMethod]
+    public void NullPairedStateDoesNotAllocatePrivateStorage()
+    {
+        object marker = new object();
+        var preOnly = new InterceptionEvent<Input, Output>();
+        var pairedNull = new InterceptionEvent<Input, Output>();
+        var pairedState = new InterceptionEvent<Input, Output>();
+        Action<Input, object> accepted = (args, state) => { };
+        preOnly.TryRegister("bench", "one", args => { }, null, out _);
+        pairedNull.TryRegister("bench", "one", args => { }, null, out _, accepted: accepted);
+        pairedState.TryRegister("bench", "one", args => args.State = marker, null, out _, accepted: accepted);
+        void Invoke(InterceptionEvent<Input, Output> registry)
+        {
+            var invocation = registry.Begin(new Input());
+            invocation.NotifyAccepted();
+            invocation.Complete(invocation.Pre, Post);
+        }
+        long preBytes = AllocatedByRepeatedCalls(() => Invoke(preOnly));
+        long nullBytes = AllocatedByRepeatedCalls(() => Invoke(pairedNull));
+        long stateBytes = AllocatedByRepeatedCalls(() => Invoke(pairedState));
+        long arrayBytes = AllocatedByRepeatedCalls(() => GC.KeepAlive(new object[1]));
+        Console.WriteLine("BROKER_PRIVATE_STATE_ALLOC iterations=4096 pre={0} null={1} state={2} arrayControl={3}",
+            preBytes, nullBytes, stateBytes, arrayBytes);
+        Assert.IsTrue(arrayBytes > 0, "The explicit one-owner array allocation control must allocate.");
+        Assert.AreEqual(preBytes, nullBytes, "NULL_PRIVATE_STATE_STORAGE_REGRESSION: null paired State needs no private storage allocation.");
+        Assert.AreEqual(arrayBytes, stateBytes - nullBytes, "Non-null paired State retains one invocation-private owner array.");
+    }
 }

@@ -800,6 +800,7 @@ APIShared.Economy.MarketPriceModifierContext | public int OriginalBasePrice { ge
 APIShared.Economy.MarketPriceModifierHandle | public sealed class APIShared.Economy.MarketPriceModifierHandle
 APIShared.Economy.MarketPriceModifierHandle | public void SetEnabled(bool enabled)
 APIShared.Economy.MarketPriceModifiers | public static class APIShared.Economy.MarketPriceModifiers
+APIShared.Economy.MarketPriceModifiers | public static APIShared.Modifiers.ValueModifierStatusQuery CreateStatusQuery(SHCDESE.Interop.eGoods good, APIShared.Economy.MarketPriceDirection direction, bool isAIPlayer)
 APIShared.Economy.MarketPriceModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Economy.MarketPriceModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Economy.MarketPriceModifierHandle handle, out string reason, int order = 0)
 APIShared.Economy.MarketPriceModifiers | public static long CallbackFailures { get; }
 APIShared.Economy.MarketPriceModifiers | public static void Refresh()
@@ -1809,6 +1810,7 @@ APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
 APIShared.ModApiClient | public APIShared.Savegames.CriticalSaveClient CriticalSaves { get; }
+APIShared.ModApiClient | public APIShared.Units.UnitIdentityClient UnitIdentities { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -2451,6 +2453,10 @@ APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSiz
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float FontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float MaximumWidth { get; }
+APIShared.Modifiers.ValueModifierBounds | public struct APIShared.Modifiers.ValueModifierBounds
+APIShared.Modifiers.ValueModifierBounds | public bool WasClamped { get; }
+APIShared.Modifiers.ValueModifierBounds | public decimal Maximum { get; }
+APIShared.Modifiers.ValueModifierBounds | public decimal Minimum { get; }
 APIShared.Modifiers.ValueModifierCalculator | public static class APIShared.Modifiers.ValueModifierCalculator
 APIShared.Modifiers.ValueModifierCalculator | public static decimal Calculate(decimal baseline, System.Collections.Generic.IEnumerable<APIShared.Modifiers.ValueModifierContribution> orderedContributions, decimal minimumValue, decimal maximumValue)
 APIShared.Modifiers.ValueModifierContribution | public struct APIShared.Modifiers.ValueModifierContribution
@@ -2460,13 +2466,34 @@ APIShared.Modifiers.ValueModifierContribution | public decimal Value { get; }
 APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution Factor(decimal factor, APIShared.Modifiers.ValueModifierStage stage = (APIShared.Modifiers.ValueModifierStage)0)
 APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution FixedValue(decimal value)
 APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution None { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public struct APIShared.Modifiers.ValueModifierContributionStatus
+APIShared.Modifiers.ValueModifierContributionStatus | public APIShared.Modifiers.ValueModifierContribution Contribution { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public bool ProviderFailed { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public bool SupersededByFixedValue { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public int Order { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public string OwnerGuid { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public string RegistrationId { get; }
 APIShared.Modifiers.ValueModifierKind | public enum APIShared.Modifiers.ValueModifierKind : int
 APIShared.Modifiers.ValueModifierKind | Factor = 1
 APIShared.Modifiers.ValueModifierKind | FixedValue = 2
 APIShared.Modifiers.ValueModifierKind | None = 0
+APIShared.Modifiers.ValueModifierObservation | public struct APIShared.Modifiers.ValueModifierObservation
+APIShared.Modifiers.ValueModifierObservation | public bool DiffersFromReference { get; }
+APIShared.Modifiers.ValueModifierObservation | public decimal ReferenceValue { get; }
+APIShared.Modifiers.ValueModifierObservation | public decimal Value { get; }
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Modifiers.ValueModifierStatus | public sealed class APIShared.Modifiers.ValueModifierStatus
+APIShared.Modifiers.ValueModifierStatus | public APIShared.Modifiers.ValueModifierBounds? Bounds { get; }
+APIShared.Modifiers.ValueModifierStatus | public APIShared.Modifiers.ValueModifierObservation? Observation { get; }
+APIShared.Modifiers.ValueModifierStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Modifiers.ValueModifierContributionStatus> Contributions { get; }
+APIShared.Modifiers.ValueModifierStatus | public decimal BaselineValue { get; }
+APIShared.Modifiers.ValueModifierStatus | public decimal ResolvedValue { get; }
+APIShared.Modifiers.ValueModifierStatus | public decimal? ExternalFixedValue { get; }
+APIShared.Modifiers.ValueModifierStatusQuery | public abstract class APIShared.Modifiers.ValueModifierStatusQuery
+APIShared.Modifiers.ValueModifiers | public static class APIShared.Modifiers.ValueModifiers
+APIShared.Modifiers.ValueModifiers | public static bool TryGetStatus(APIShared.Modifiers.ValueModifierStatusQuery query, out APIShared.Modifiers.ValueModifierStatus status, out string reason)
 APIShared.Multiplayer.MultiplayerResyncData | public static class APIShared.Multiplayer.MultiplayerResyncData
 APIShared.Multiplayer.MultiplayerResyncData | public static bool CheckIntegrity()
 APIShared.Multiplayer.MultiplayerResyncData | public static bool IsAvailable { get; }
@@ -3363,7 +3390,12 @@ APIShared.Presentation.PresentationEvents | public static bool TryRegister(APISh
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)
 APIShared.Presentation.PresentationOperation | public enum APIShared.Presentation.PresentationOperation : int
 APIShared.Presentation.PresentationOperation | BuildingRollover = 1
+APIShared.Presentation.PresentationOperation | ExtendedFeaturesAction = 11
 APIShared.Presentation.PresentationOperation | GuiChecks = 0
+APIShared.Presentation.PresentationOperation | MarketBuySell = 9
+APIShared.Presentation.PresentationOperation | MarketChangeTradeType = 10
+APIShared.Presentation.PresentationOperation | MarketCycleGoods = 8
+APIShared.Presentation.PresentationOperation | MarketSelectGoods = 7
 APIShared.Presentation.PresentationOperation | RechargeSiegeAmmo = 6
 APIShared.Presentation.PresentationOperation | RecruitmentEnter = 2
 APIShared.Presentation.PresentationOperation | RecruitmentLeave = 3
@@ -4129,6 +4161,18 @@ APIShared.Units.TroopCommandInput | public int X { get; }
 APIShared.Units.TroopCommandInput | public int Y { get; }
 APIShared.Units.TroopCommandInputEvents | public static class APIShared.Units.TroopCommandInputEvents
 APIShared.Units.TroopCommandInputEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Units.TroopCommandInput> callback, out string reason, int order = 0)
+APIShared.Units.UnitIdentityClient | public sealed class APIShared.Units.UnitIdentityClient
+APIShared.Units.UnitIdentityClient | public bool IsCurrentWorldReady { get; }
+APIShared.Units.UnitIdentityClient | public bool TryGet(int unitId, uint globalId, out APIShared.Units.UnitIdentitySnapshot identity)
+APIShared.Units.UnitIdentityClient | public bool TryGetLive(int unitId, uint globalId, out APIShared.Units.UnitIdentitySnapshot identity)
+APIShared.Units.UnitIdentityClient | public bool TryRegisterVariant(string variantId, int nativeType, out APIShared.Units.UnitVariantRegistration registration, out string reason)
+APIShared.Units.UnitIdentitySnapshot | public struct APIShared.Units.UnitIdentitySnapshot
+APIShared.Units.UnitIdentitySnapshot | public bool IsPendingRecruitment { get; }
+APIShared.Units.UnitIdentitySnapshot | public int NativeType { get; }
+APIShared.Units.UnitIdentitySnapshot | public int UnitId { get; }
+APIShared.Units.UnitIdentitySnapshot | public string OwnerGuid { get; }
+APIShared.Units.UnitIdentitySnapshot | public string VariantId { get; }
+APIShared.Units.UnitIdentitySnapshot | public uint GlobalId { get; }
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4
@@ -4151,6 +4195,13 @@ APIShared.Units.UnitSettledNotification | public int PlayerId { get; }
 APIShared.Units.UnitSettledNotification | public int SimulationTick { get; }
 APIShared.Units.UnitSettledNotification | public int TicksObserved { get; }
 APIShared.Units.UnitSettledNotification | public int UnitId { get; }
+APIShared.Units.UnitVariantRegistration | public sealed class APIShared.Units.UnitVariantRegistration
+APIShared.Units.UnitVariantRegistration | public System.Collections.Generic.IReadOnlyList<APIShared.Units.UnitIdentitySnapshot> GetMembers()
+APIShared.Units.UnitVariantRegistration | public bool TryMark(int unitId, uint globalId, out string reason)
+APIShared.Units.UnitVariantRegistration | public bool TryUnmark(int unitId, uint globalId, out string reason)
+APIShared.Units.UnitVariantRegistration | public int NativeType { get; }
+APIShared.Units.UnitVariantRegistration | public string OwnerGuid { get; }
+APIShared.Units.UnitVariantRegistration | public string VariantId { get; }
 APIShared.Wildlife.ChickenPopulationContext | public struct APIShared.Wildlife.ChickenPopulationContext
 APIShared.Wildlife.ChickenPopulationContext | public .ctor(int playerId, int vanillaTarget, int currentChickens)
 APIShared.Wildlife.ChickenPopulationContext | public int CurrentChickens { get; }

@@ -73,7 +73,10 @@ HP, process-rooted policy handles, saved original bases and linked siege towers.
 From 0.69.0, `TryEnableMultiplayerResync` opts the shared HP ledger into repair.
 See [health lifetime, migration and safety](HEALTH.md).
 `APIShared.Economy.MarketPriceModifiers` composes native per-lot base prices,
-including Human/AI contextual policies. See [market composition](MARKET_PRICE_MODIFIERS.md).
+including Human/AI contextual policies. Use its typed query factory with
+`APIShared.Modifiers.ValueModifiers.TryGetStatus` to read immutable contribution
+provenance, the resolved value, applied bounds and a separate observation.
+See [market composition and read-only status](MARKET_PRICE_MODIFIERS.md#read-only-composition-status).
 
 Local mapper-selection camera policies are available through
 `APIShared.Presentation.MapperSelectionCameraEvents`: ordered owner-bound Pre/Post
@@ -838,10 +841,13 @@ concrete, including assigning 1000 itself. Reservations must use final Post valu
 and retain the consumer's observed-unit reconciliation.
 
 [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) owns named
-GUI-check, building-rollover, recruitment/troop-panel hover and siege-ammo button
-sites: `GuiChecks`, `BuildingRollover`, `RecruitmentEnter`, `RecruitmentLeave`,
-`TroopPanelEnter`, `TroopPanelLeave` and `RechargeSiegeAmmo`. GUI checks also run
-while paused. Pre can replace a button parameter or veto
+GUI-check, building-rollover, recruitment/troop-panel hover, siege-ammo, market
+button and shared extended-features sites. The original operations are `GuiChecks`, `BuildingRollover`,
+`RecruitmentEnter`, `RecruitmentLeave`, `TroopPanelEnter`, `TroopPanelLeave` and
+`RechargeSiegeAmmo`. Appended operations are `MarketSelectGoods`,
+`MarketCycleGoods`, `MarketBuySell`, `MarketChangeTradeType` and
+`ExtendedFeaturesAction`; see the [method and parameter contracts](THIRD_PARTY_GUIDE.md#market-ui-actions).
+GUI checks also run while paused. Pre can replace a button parameter or veto
 the complete managed call. Post reports normal completion, veto or original
 exception; the original exception is rethrown after callbacks. Use
 `OriginalCompleted` before augmenting Vanilla writes and State for cleanup even when
@@ -913,6 +919,14 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Exact troop identities
+
+`ModApiClient.UnitIdentities` registers owner-local variants on existing native
+carriers and marks exact slot/UInt32 GlobalId instances, including native-confirmed
+pending peasants. Live simulation reads, immutable presentation/member snapshots,
+world retirement and one versioned simulation save record are shared. See
+[identity ownership, authority and persistence](UNIT_IDENTITIES.md).
 
 ## Native gold and virtual goods
 
