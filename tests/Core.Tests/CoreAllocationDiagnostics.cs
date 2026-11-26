@@ -28,7 +28,7 @@ internal sealed class CoreAllocationDiagnostics : EventSource
     private static object? metadata;
     private static string? destination;
     private static bool prepared, completed;
-    private static AllocationControl? controlSink;
+    private static AllocationControl[]? controlSink;
 
     [ModuleInitializer]
     [NonEvent]
@@ -56,10 +56,14 @@ internal sealed class CoreAllocationDiagnostics : EventSource
         internal long Before, After;
     }
 
-    // A distinct escaping type makes the allocating trace control identifiable.
-    internal sealed class AllocationControl
+    // The array itself is a distinct, reference-free sampled type. Its fixed
+    // 128-byte element and 32,768 elements make exactly 4 MiB of payload, plus
+    // array overhead. This post-measurement control validates sampled capture;
+    // it does not prove coverage or exact byte accounting in earlier windows.
+    [StructLayout(LayoutKind.Sequential, Size = 128)]
+    internal struct AllocationControl
     {
-        internal readonly byte[] Bytes = new byte[128];
+        public long Marker;
     }
 
     [Event(1, Level = EventLevel.Informational)]
@@ -134,7 +138,7 @@ internal sealed class CoreAllocationDiagnostics : EventSource
             environment,
             providerEnabledAtPrepare = Log.IsEnabled(),
             descendantStartupTracingRemoved = true,
-            controlType = typeof(AllocationControl).FullName
+            controlType = typeof(AllocationControl[]).FullName
         };
         Log.Begin(0, Environment.CurrentManagedThreadId);
         Log.End(0, 0, 0);
@@ -163,7 +167,8 @@ internal sealed class CoreAllocationDiagnostics : EventSource
             // unchanged strict assertion. Otherwise it follows the ratio interval.
             Log.Begin(3, Environment.CurrentManagedThreadId);
             long before = GC.GetAllocatedBytesForCurrentThread();
-            controlSink = new AllocationControl();
+            controlSink = new AllocationControl[32768];
+            controlSink[0].Marker = 1;
             long after = GC.GetAllocatedBytesForCurrentThread();
             Log.End(3, before, after);
             GC.KeepAlive(controlSink);
@@ -186,7 +191,7 @@ internal sealed class CoreAllocationDiagnostics : EventSource
                 runtimeVersion = Environment.Version.ToString(),
                 processArchitecture = RuntimeInformation.ProcessArchitecture.ToString(),
                 runtimeModules = GetMetadataProperty("runtimeModules"),
-                controlType = typeof(AllocationControl).FullName,
+                controlType = typeof(AllocationControl[]).FullName,
                 windows = rows,
                 prepared = metadata
             }, new JsonSerializerOptions { WriteIndented = true });

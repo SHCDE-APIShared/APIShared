@@ -6,8 +6,9 @@ param(
     [string]$GateToken
 )
 
-# One hosted attribution operation. This is deliberately not a general build runner,
-# a profiler installed in Core, or a way to turn a passing diagnostic into a fix.
+# One hosted sampled-correlation operation. Allocation ticks supply partial hints,
+# never exact allocation accounting or a cause/fix claim from a passing test. This is
+# not a general build runner or a profiler installed in Core.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or $env:RUNNER_OS -ne 'Windows' -or $env:GITHUB_ACTIONS -ne 'true' -or
@@ -24,7 +25,9 @@ $dotnet = $null
 if (-not $GuardProbeOnly) { $dotnet = (Get-Command dotnet.exe -CommandType Application -ErrorAction Stop).Source }
 $sdkVersion = '10.0.404'
 $runtimeVersion = '10.0.15'
-$traceProvider = 'Microsoft-Windows-DotNETRuntime:432b0098:5,APIShared-CoreAllocationDiagnostics:ffffffffffffffff:5'
+# Normal GCAllocationTick event 10 + existing type/JIT/stack metadata. Neither
+# legacy high/low all-object keyword is enabled; no exact-byte reconciliation.
+$traceProvider = 'Microsoft-Windows-DotNETRuntime:410b0099:5,APIShared-CoreAllocationDiagnostics:ffffffffffffffff:5'
 
 function Write-Json([string]$Path, [object]$Value) {
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($Value | ConvertTo-Json -Depth 14) + "`r`n")
@@ -108,6 +111,8 @@ if ($Worker) {
     $targetResult = $null
     $suiteCounters = $null
     $validatedCohort = $null
+    $validatedSampleReport = $null
+    $matchingResolvedSampleCount = $null
     $buildRoot = Join-Path $output 'artifacts'
     $toolOutput = Join-Path $output 'trace-tool'
     $sourceBefore = $null
@@ -242,7 +247,7 @@ if ($Worker) {
         # extra warm-up, success retry, or conditional assertion is introduced.
         $testArguments = @('test', $coreProject, '--configuration', 'Release', '--no-build', '--no-restore',
             '--logger', 'trx', '--results-directory', (Join-Path $output 'TestResults'), '--settings', $settingsPath,
-            '--diag', (Join-Path $output 'vstest.diag.log'), "-p:APISharedArtifactsRoot=$buildRoot", '-p:CoreAllocationDiagnostics=true',
+            "-p:APISharedArtifactsRoot=$buildRoot", '-p:CoreAllocationDiagnostics=true',
             '-p:RuntimeFrameworkVersion=10.0.15', '-p:RollForward=Disable', '-p:TargetLatestRuntimePatch=false')
         $testExit = Invoke-DotNet 'core-test' $testArguments
         $binaryAfter = @($cohortNames | ForEach-Object { Get-Pin (Join-Path $coreDirectory $_) })
@@ -293,16 +298,36 @@ if ($Worker) {
         if (-not (Test-Path -LiteralPath $trace) -or (Get-OpenLength $trace) -gt 128MB) { throw 'The exact testhost trace is missing or over budget.' }
         $reportExit = Invoke-DotNet 'trace-report' @('exec', '--fx-version', $runtimeVersion, $tool,
             '--trace', $trace, '--cohort', $cohortPath, '--output', (Join-Path $output 'allocation-report.json'))
-        if ($reportExit -ne 0) { throw 'Trace attribution is incomplete; preserve the original test result.' }
+        if ($reportExit -ne 0) { throw 'The sampled pipeline is unqualified; preserve the original test result.' }
+        $sampleReportPath = Join-Path $output 'allocation-report.json'
+        if (-not (Test-Path -LiteralPath $sampleReportPath) -or (Get-OpenLength $sampleReportPath) -gt 4MB) {
+            throw 'Missing or unbounded sampled correlation report.'
+        }
+        $sampleReport = Get-Content -LiteralPath $sampleReportPath -Raw | ConvertFrom-Json
+        if ($sampleReport.schema -cne 'allocation-sample-correlation/1' -or
+            $sampleReport.pipelineStatus -cne 'QUALIFIED_SAMPLED_PIPELINE' -or
+            $sampleReport.status -notin 'PARTIAL_CANDIDATE_HINT','INCONCLUSIVE') {
+            throw 'Report success did not qualify the sampled pipeline.'
+        }
+        $countProperty = $sampleReport.PSObject.Properties['matchingResolvedSampleCount']
+        if ($null -eq $countProperty -or ($countProperty.Value -isnot [int] -and $countProperty.Value -isnot [long]) -or
+            $countProperty.Value -lt 0 -or $countProperty.Value -gt 512) { throw 'Unknown matching resolved sample count.' }
+        $matchingResolvedSampleCount = [int]$countProperty.Value
+        if ($sampleReport.policy.MatchingResolvedSampleCount -ne $matchingResolvedSampleCount) { throw 'Sample count mirrors differ.' }
+        $validatedSampleReport = Get-Pin $sampleReportPath
+        # Samples correlate the original counter window; neither their byte amount
+        # nor their absence can account for all allocations or establish the cause.
         if ($targetResult.outcome -ceq 'Passed' -and
             @($cohort.windows | Where-Object { $_.window -in 1,2 -and $_.after -ne $_.before }).Count -eq 0) {
             $status = 'NOT_REPRODUCED'
         }
-        elseif ($testExit -ne 0 -and $target[0].outcome -ceq 'Failed' -and
-            @($cohort.windows | Where-Object { $_.window -in 1,2 -and $_.after -gt $_.before }).Count -gt 0) {
-            $status = 'FAILED_ALLOCATION_WITH_QUALIFIED_TRACE'
+        elseif ($testExit -ne 0 -and $targetResult.outcome -ceq 'Failed' -and
+            @($cohort.windows | Where-Object { $_.window -in 1,2 -and $_.after -gt $_.before }).Count -gt 0 -and
+            $matchingResolvedSampleCount -gt 0 -and $sampleReport.status -ceq 'PARTIAL_CANDIDATE_HINT') {
+            $status = 'PARTIAL_ALLOCATION_SAMPLE_HINT'
         }
-        else { throw 'Another failure is not an attributed occurrence of issue 124.' }
+        # Failed target without a matching resolved sample, or any mismatch, stays
+        # INCONCLUSIVE. A zero sample count is not a zero-allocation observation.
     }
     catch { $failure = [ordered]@{ type = $_.Exception.GetType().FullName; message = $_.Exception.Message } }
     finally {
@@ -317,6 +342,8 @@ if ($Worker) {
         Write-Json (Join-Path $output 'worker-result.json') @{ schema = 'core-allocation-diagnostic-worker/1'; status = $status;
             originalTestExit = $testExit; reportExit = $reportExit; failure = $failure;
             fullSuiteCounters = $suiteCounters; target = $targetResult; cohort = $validatedCohort;
+            sampleReport = $validatedSampleReport; matchingResolvedSampleCount = $matchingResolvedSampleCount;
+            sampledCorrelationOnly = $true; exactAllocationAttribution = $false;
             attributionOnly = $true; productionFix = $false; rerunPerformed = $false }
     }
     # Qualified evidence does not erase a failing test. A passing/incomplete single
@@ -546,7 +573,7 @@ try {
 $ownerStatus = 'INCONCLUSIVE'
 if ($null -ne $workerResult) {
     $statusProperty = $workerResult.PSObject.Properties['status']
-    if ($null -eq $statusProperty -or $statusProperty.Value -notin 'INCONCLUSIVE','NOT_REPRODUCED','FAILED_ALLOCATION_WITH_QUALIFIED_TRACE') {
+    if ($null -eq $statusProperty -or $statusProperty.Value -notin 'INCONCLUSIVE','NOT_REPRODUCED','PARTIAL_ALLOCATION_SAMPLE_HINT') {
         if ($null -eq $errorReason) { $errorReason = 'WORKER_RESULT_STATUS_UNKNOWN' }
     } elseif ($null -eq $errorReason) { $ownerStatus = $statusProperty.Value }
 }
@@ -577,6 +604,7 @@ Write-Json (Join-Path $output 'owner-result.json') @{ schema = 'core-allocation-
         workerSeconds = $operationSeconds; traceReaderSeconds = 110; traceStopBytes = $traceStopBytes;
         maximumAcceptedTraceBytes = $maximumTraceBytes; derivedTraceMiB = 256; outputMiB = 512; logMiB = 4;
         guardProbeLogicalProcessors = $(if ($GuardProbeOnly) { 2 } else { $null }) };
-    guardProbeOnly = $GuardProbeOnly.IsPresent; productionFix = $false; normalCiChanged = $false }
+    guardProbeOnly = $GuardProbeOnly.IsPresent; sampledCorrelationOnly = $true;
+    exactAllocationAttribution = $false; productionFix = $false; normalCiChanged = $false }
 if ($null -ne $raw -and $raw -ne 0) { exit $raw }
 exit 2

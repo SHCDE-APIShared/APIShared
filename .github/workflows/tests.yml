@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       value_modifier_allocation_diagnostic:
-        description: 'One bounded attribution run for issue 124; not a correction or rerun-for-green'
+        description: 'One bounded sampled correlation for issue 124; partial hints only, not a cause or fix claim'
         type: boolean
         default: false
       value_modifier_allocation_guard_probe:
@@ -146,7 +146,7 @@ jobs:
         if: ${{ !inputs.value_modifier_allocation_guard_probe }}
         with:
           dotnet-version: '10.0.404'
-      - name: Run the selected bounded allocation diagnostic
+      - name: Run the selected bounded sampled diagnostic or guard probe
         env:
           ALLOCATION_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           ALLOCATION_GUARD_PROBE_ONLY: ${{ inputs.value_modifier_allocation_guard_probe }}

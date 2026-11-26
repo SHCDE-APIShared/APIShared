@@ -11,6 +11,7 @@ namespace APIShared.AllocationTrace;
 
 // Offline diagnostics only: no target assembly loading, symbols/network lookup,
 // workload substitution, retry, tolerance, or change to the original test exit.
+// Standard event10 ticks supply partial bracket correlations, never exact bytes.
 internal static class Program
 {
     private const long MaxTrace = 128L << 20, MaxDerived = 256L << 20;
@@ -59,6 +60,7 @@ internal static class Program
             cohort = doc.RootElement.Clone();
             evidence.ProcessId = data.ProcessId;
             evidence.ControlType = data.ControlType;
+            evidence.TestPath = data.TestPath;
             evidence.Counters.AddRange(data.Windows);
             conversion.Check = () => CheckBounds(watch, scratch);
             string etlx = Path.Combine(scratch, "capture.etlx");
@@ -114,9 +116,12 @@ internal static class Program
         PolicyResult policy = EvidencePolicy.Evaluate(evidence);
         var report = new
         {
-            schema = "allocation-trace-evidence/1",
-            status = policy.Status,
-            limitation = "Marker brackets are wider than counter spans. Every same-OS-thread legacy object event must reconcile exactly to the counter delta; helper/assert edge events refuse attribution. No row is independently claimed to have occurred inside Calculate. A validated diagnostic does not change the original Core test result.",
+            schema = "allocation-sample-correlation/1",
+            pipelineStatus = policy.Status,
+            status = policy.AttributionStatus,
+            sampledCorrelationOnly = true, exactByteAttribution = false,
+            matchingResolvedSampleCount = policy.MatchingResolvedSampleCount,
+            limitation = "GCAllocationTick samples correlate only to wider marker brackets, not the exact GC counter span. Their accumulated amounts can span prior heap/context allocations and are never summed or assigned wholly to the named object/type/thread. A resolved sample is only a partial candidate hint. No sample cannot exclude the original98352-byte failure. Helper/assert edges, loss, truncation or unknown identities refuse qualification; the strict original test result is retained.",
             identityLimit = "Trace PID, runtime information and module paths join to the helper cohort; reported remote hashes/MVID are data. The owner's separate artifact manifest must bind DLL/PDB/runtime/deps/binlog bytes. Path equality does not prove cryptographic module identity.",
             pins, cohort, traceJoins = joins,
             reader = new { assembly = typeof(TraceLog).Assembly.FullName, location = typeof(TraceLog).Assembly.Location },
@@ -134,7 +139,7 @@ internal static class Program
                 try { JsonSerializer.Serialize(bounded, report, JsonOptions); bytes = bounded.ToArray(); }
                 catch (ReportLimitException)
                 {
-                    bytes = JsonSerializer.SerializeToUtf8Bytes(new { schema = "allocation-trace-evidence/1", status = "INCONCLUSIVE", reason = "REPORT_BYTE_LIMIT" }, JsonOptions);
+                    bytes = JsonSerializer.SerializeToUtf8Bytes(new { schema = "allocation-sample-correlation/1", status = "INCONCLUSIVE", pipelineStatus = "INCONCLUSIVE", matchingResolvedSampleCount = 0, reason = "REPORT_BYTE_LIMIT" }, JsonOptions);
                     policy = policy with { Passed = false, Status = "INCONCLUSIVE" };
                 }
             }
@@ -148,6 +153,10 @@ internal static class Program
             Console.Error.WriteLine("INCONCLUSIVE: report write refused: " + Short(ex.Message, 1024));
             return 2;
         }
+        // Exit0 admits only the sampled pipeline to the owner. Attribution can
+        // still be INCONCLUSIVE with no measured sample. The owner separately
+        // retains the strict TRX/counters and original test exit; it never treats
+        // this CLI code as a correction or a successful diagnostic CI result.
         return policy.Passed ? 0 : 2;
     }
 
@@ -238,22 +247,29 @@ internal static class Program
         {
             if ((++visited & 4095) == 0) CheckBounds(watch, scratch);
             if (visited > MaxEvents) { evidence.Truncated = true; break; }
-            if (e.ProcessID != data.ProcessId || e.ProviderName != RuntimeProvider || (int)e.ID is not (20 or 32)) continue;
-            if (e is not GCSampledObjectAllocationTraceData allocation)
-            { Problem(evidence, "LEGACY_ALLOCATION_DECODER_MISSING"); continue; }
+            if (e.ProcessID != data.ProcessId || e.ProviderName != RuntimeProvider || (int)e.ID != 10) continue;
+            if (e is not GCAllocationTickTraceData allocation || e.Version != 4)
+            { Problem(evidence, "ALLOCATION_TICK_V4_DECODER_MISSING"); continue; }
             int index = (int)e.EventIndex;
             var matches = spans.Where(s => index > s.Start.Index && index < s.End.Index).Take(2).ToArray();
             if (matches.Length == 0) { evidence.OutsideWindows++; continue; }
-            if (matches.Length != 1) { Problem(evidence, "AMBIGUOUS_ALLOCATION_BRACKET"); continue; }
+            if (matches.Length != 1) { Problem(evidence, "AMBIGUOUS_SAMPLE_BRACKET"); continue; }
             var span = matches[0];
             if (e.ThreadID != span.Start.OsThreadId) { evidence.OtherThreads++; continue; }
-            if (!runtimeIds.Contains(allocation.ClrInstanceID)) Problem(evidence, "ALLOCATION_RUNTIME_INSTANCE_NOT_JOINED");
-            if (evidence.Allocations.Count >= 512) { Problem(evidence, "ALLOCATION_ROW_LIMIT"); continue; }
+            if (!runtimeIds.Contains(allocation.ClrInstanceID)) Problem(evidence, "SAMPLE_RUNTIME_INSTANCE_NOT_JOINED");
+            if (evidence.Samples.Count >= 512) { Problem(evidence, "SAMPLE_ROW_LIMIT"); continue; }
             (Frame[] frames, bool complete) = ReadFrames(e);
-            types.TryGetValue((allocation.ClrInstanceID, allocation.TypeID), out string? name);
-            evidence.Allocations.Add(new(e.ProcessID, e.ThreadID, index, e.TimeStampRelativeMSec, span.Start.Window,
-                allocation.ClrInstanceID, Hex(allocation.TypeID), Hex(allocation.Address), allocation.ObjectCountForTypeSample,
-                allocation.TotalSizeForTypeSample, name ?? "", frames, complete));
+            string rawName = allocation.TypeName ?? "";
+            if (rawName.Length > 1024) Problem(evidence, "TYPE_NAME_TRUNCATED");
+            string name = Short(rawName, 1024);
+            if (types.TryGetValue((allocation.ClrInstanceID, allocation.TypeID), out string? mapped))
+            {
+                if (name.Length == 0) name = mapped;
+                else if (name != mapped) Problem(evidence, "SAMPLE_TYPE_NAME_METADATA_MISMATCH");
+            }
+            evidence.Samples.Add(new(e.ProcessID, e.ThreadID, index, e.TimeStampRelativeMSec, span.Start.Window,
+                allocation.ClrInstanceID, Hex(allocation.TypeID), Hex(allocation.Address), (int)allocation.AllocationKind,
+                allocation.HeapIndex, allocation.AllocationAmount64, allocation.ObjectSize, name, frames, complete));
         }
     }
 
@@ -292,7 +308,7 @@ internal static class Program
             throw new InvalidDataException("This diagnostic requires the pinned .NET10.0.15 x64 cohort.");
         _ = Text(root, "processPath", 2048);
         string control = Text(root, "controlType", 256);
-        if (control != "CoreAllocationDiagnostics+AllocationControl") throw new InvalidDataException("Unexpected control identity.");
+        if (control != "CoreAllocationDiagnostics+AllocationControl[]") throw new InvalidDataException("Unexpected control identity.");
         var runtime = new List<string>();
         foreach (JsonElement item in root.GetProperty("runtimeModules").EnumerateArray())
         {
@@ -331,10 +347,13 @@ internal static class Program
             string bits = fields[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? fields[1][2..] : fields[1];
             if (!ulong.TryParse(bits, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong keywords) || fields[2] != "5")
                 throw new InvalidDataException("Startup provider keyword/level evidence.");
-            if (fields[0] == RuntimeProvider) runtime = (keywords & 0x2200000UL) == 0x2200000UL;
+            // This one experimental profile requests event10 and existing resolution
+            // metadata. Reject all-object/probabilistic alternatives rather than
+            // silently treating their events as the same sampling contract.
+            if (fields[0] == RuntimeProvider) runtime = keywords == 0x410b0099UL;
             if (fields[0] == MarkerProvider) markers = true;
         }
-        if (!runtime || !markers) throw new InvalidDataException("Both legacy all-object startup bits and marker provider are required.");
+        if (!runtime || !markers) throw new InvalidDataException("The fixed sampled-GC/stack startup mask and marker provider are required.");
     }
     private static void RejectDuplicateProperties(JsonElement element)
     {
