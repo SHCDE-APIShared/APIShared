@@ -24,6 +24,8 @@ namespace APIShared.Units.AiMilitary
         internal static readonly AiMilitaryService Instance = new AiMilitaryService();
         private readonly Dictionary<int, Tracked> tracked = new Dictionary<int, Tracked>();
         private readonly List<Tracked> retired = new List<Tracked>();
+        private readonly List<Tracked> pendingWork = new List<Tracked>();
+        private readonly Predicate<Tracked> retireFromWork;
         // Exclusive bound of tracked one-based unit IDs: the native unit array has 10000 records
         // (SE GameUnitManager.GameUnitArray; its capacity constant is internal to the extender).
         internal const int UnitIdLimit = 10000;
@@ -44,7 +46,7 @@ namespace APIShared.Units.AiMilitary
         [ThreadStatic] private static int permittedUnit;
         internal long Generation => generation;
 
-        private AiMilitaryService() { process = Process; }
+        private AiMilitaryService() { process = Process; retireFromWork = RetireFromWork; }
 
         internal static bool TryGet(string owner, out IAiMilitaryCapability capability, out NativeCapabilityDiagnostic diagnostic)
         {
@@ -141,6 +143,7 @@ namespace APIShared.Units.AiMilitary
             internal readonly eChimps Type;
             internal readonly AiMilitaryAssignment Assignment;
             internal bool Fresh, Declaration, Pending, Protected;
+            internal bool InWork; // Listed in pendingWork; see AiMilitaryService.Enqueue.
             internal AiInitializationWaitBudget InitializationWait;
             internal AiNativeGroup Private;
             internal AiMilitaryAssignmentResult Last;

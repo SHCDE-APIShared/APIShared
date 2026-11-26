@@ -70,6 +70,8 @@ namespace APIShared.ModSettings
 
         public void EnterMissionPreset(Dictionary<string, byte[]> snapshot, string label, bool editable)
         {
+            bool prepared = ModSettingsMigration.TryConsumePreparedMissionEntry(owner.SettingsTarget);
+            if (!prepared && snapshot != null) snapshot = MigrateStoredSelection(snapshot);
             // Mission preparation: personal edits reach the file before mission values become live.
             FlushPersonalStorage();
             suspendedPublishedPreset = activePublishedPreset;

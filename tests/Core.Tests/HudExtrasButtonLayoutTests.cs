@@ -44,8 +44,15 @@ namespace Core.Tests
             Assert.AreEqual("#FF1D1710", Value("Background"));
             Assert.AreEqual("White", Value("Foreground"));
             Assert.AreEqual("#FFF2D48A", Value("BorderBrush"));
-            Assert.AreEqual("True", Value("seui:ToolTipResolutionScale.Enabled"));
-            Assert.IsTrue(style.Descendants().Any(e => e.Name.LocalName == "TextBlock" && (string?)e.Attribute("TextWrapping") == "Wrap"));
+            Assert.IsFalse(style.Elements().Any(e => ((string?)e.Attribute("Property"))?.EndsWith(":ToolTipResolutionScale.Enabled", StringComparison.Ordinal) == true &&
+                (string?)e.Attribute("Value") == "True"));
+            // The renderer test covers the calculated values. These bindings ensure the visual consumes them.
+            var border = style.Descendants("Border").Single();
+            foreach (string property in new[] { "BorderThickness", "Padding", "MaxWidth" })
+                Assert.AreEqual("{TemplateBinding " + property + "}", (string?)border.Attribute(property));
+            var text = border.Element("TextBlock")!;
+            Assert.AreEqual("{TemplateBinding FontSize}", (string?)text.Attribute("FontSize"));
+            Assert.AreEqual("Wrap", (string?)text.Attribute("TextWrapping"));
         }
     }
 }

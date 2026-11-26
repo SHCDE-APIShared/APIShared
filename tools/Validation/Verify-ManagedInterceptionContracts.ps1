@@ -10,7 +10,8 @@ try {
         @{ Type = 'FatControler'; Name = 'NoesisGUIUpdateChecksInGame'; Static = $false; Result = 'System.Void'; Parameters = @() },
         @{ Type = 'FatControler'; Name = 'ExitApp'; Static = $false; Public = $true; Result = 'System.Void'; Parameters = @() },
         @{ Type = 'CrusaderDE.HUD_Main'; Name = 'UpdateRollover'; Static = $false; Result = 'System.Void'; Parameters = @() }
-    ) + @(foreach ($name in @('ButtonEnterCreateTroop','ButtonLeaveCreateTroop','ButtonTroopPanelMouseEnter','ButtonTroopPanelMouseLeave','ButtonUnitRechargeRock')) {
+    ) + @(foreach ($name in @('ButtonEnterCreateTroop','ButtonLeaveCreateTroop','ButtonTroopPanelMouseEnter','ButtonTroopPanelMouseLeave','ButtonUnitRechargeRock',
+        'ButtonNewTradeGoodsType','ButtonCycleTradeGoodsType','ButtonBuySell','ButtonNewTradeType','ButtonExtendedFeaturesFunction')) {
         @{ Type = 'CrusaderDE.MainViewModel'; Name = $name; Static = $false; Result = 'System.Void'; Parameters = @('System.Object') }
     })
     foreach ($contract in $contracts) {

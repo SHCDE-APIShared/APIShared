@@ -492,10 +492,14 @@ namespace APIShared
                 try { observer.Observer(snapshot); }
                 catch (Exception ex)
                 {
-                    NativeApiLog.Error(
-                        log,
-                        $"Lobby-state observer failed: owner={observer.Owner}, " +
-                        $"registration={observer.Id}, error={ex}");
+                    try
+                    {
+                        NativeApiLog.Error(
+                            log,
+                            $"Lobby-state observer failed: owner={observer.Owner}, " +
+                            $"registration={observer.Id}, error={ex.GetType().FullName}");
+                    }
+                    catch (Exception) { /* Diagnostics must not interrupt publication or its queue. */ }
                 }
             }
         }
