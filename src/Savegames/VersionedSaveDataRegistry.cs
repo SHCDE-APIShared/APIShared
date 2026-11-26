@@ -420,10 +420,10 @@ namespace APIShared.Savegames
             }
             if (slot.RequireAtomicWrite && !freezing)
             {
-                AtomicSnapshot frozen = atomicSnapshot;
-                if (frozen == null || !ReferenceEquals(frozen.Owner, this) || !frozen.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
+                AtomicSnapshot atomic = atomicSnapshot;
+                if (atomic == null || !ReferenceEquals(atomic.Owner, this) || !atomic.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
                     throw new InvalidOperationException("Required record bypassed the protected atomic writer: " + slot.Identifier);
-                frozen.Delivered.Add(slot.Identifier);
+                atomic.Delivered.Add(slot.Identifier);
                 return (byte[])frozenBytes.Clone();
             }
             byte[] loaded;

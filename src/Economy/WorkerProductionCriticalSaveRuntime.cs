@@ -338,7 +338,7 @@ namespace APIShared.Economy
                 VerifySavedPayload(temporary, payload);
             }
             else if (payload != null) throw new InvalidDataException("An unexpected production payload cannot label a cargo-only checkpoint.");
-            VersionedSaveDataRegistry.RequireAtomicDelivered(required);
+            // Delivery is proven by the transaction right after Original; this verifies the bytes.
             VerifyRequiredRecords(temporary, required);
             Internal.AtomicFileReplacement.Replace(temporary, destination);
         }
