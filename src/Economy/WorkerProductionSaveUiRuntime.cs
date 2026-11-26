@@ -17,7 +17,9 @@ namespace APIShared.Economy
     internal static class WorkerProductionSaveUiRuntime
     {
         private static readonly List<ILHook> hooks = new List<ILHook>();
+        private static readonly List<Patching.SafeIlHook> guards = new List<Patching.SafeIlHook>();
         private static ManualLogSource log;
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool IsAvailable { get; private set; }
 
         internal static void Initialize(ManualLogSource logger)
@@ -42,8 +44,15 @@ namespace APIShared.Economy
             bool publishing = false;
             try
             {
-                foreach (var edit in edits) candidates.Add(new ILHook(edit.Item1, edit.Item2,
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.WorkerProduction.SaveOutcome." + edit.Item1.Name }));
+                foreach (var edit in edits)
+                {
+                    // Validated above with the raw edit; MonoMod runs the guarded one on every rebuild.
+                    var guard = Patching.SafeIlHook.Wrap(APISharedPlugin.PluginGuid, "APIShared.WorkerProduction.SaveOutcome." + edit.Item1.Name,
+                        edit.Item1, edit.Item2, log);
+                    lock (guards) guards.Add(guard);
+                    candidates.Add(new ILHook(edit.Item1, guard.Manipulator,
+                        new ILHookConfig { ManualApply = true, ID = guard.Id }));
+                }
                 hooks.AddRange(candidates); publishing = true;
                 foreach (var candidate in candidates) candidate.Apply();
                 // The existing requester broker owns this method and its process lifetime.

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using APIShared.Economy;
 using APIShared.Modifiers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -39,9 +40,12 @@ public sealed class PopularityModifierTests
             Assert.AreEqual(225,FearPopularity.Multiply(25,5)); // legacy six whole points, then *1.5
             Assert.AreEqual(-225,FearPopularity.Multiply(25,-5));
             Assert.AreEqual(0,FearPopularity.Multiply(25,0));
-            long allocated=GC.GetAllocatedBytesForCurrentThread();
-            for(int i=0;i<10000;i++)FearPopularity.Multiply(25,5);
-            Assert.AreEqual(allocated,GC.GetAllocatedBytesForCurrentThread(),"Compiled common-level fear plans allocate nothing per read.");
+            // Warm the full sampling routine: first-use tiered JIT/harness allocations are not
+            // per-read allocations. The neighboring targeted-policy test uses the same warm-up contract.
+            for(int i=0;i<4;i++)MeasureCommonFearReads(out _);
+            long allocated=MeasureCommonFearReads(out int checksum);
+            Assert.AreEqual(225*10000,checksum,"Every sampled read must execute the configured plan.");
+            Assert.AreEqual(0L,allocated,"Compiled common-level fear plans allocate nothing per read.");
             legacy.SetMultiplier(null);
             Assert.AreEqual(375,FearPopularity.Multiply(25,5));
             after.SetMultiplier(null);before.SetMultiplier(null);
@@ -53,6 +57,14 @@ public sealed class PopularityModifierTests
             Assert.ThrowsExactly<ArgumentException>(()=>before.SetLevelModifiers(new Dictionary<int,PopularityModifierValues>{{0,default}}));
             Assert.AreEqual(-50,FearPopularity.MultiplyTargeted(25,3,PopularitySelection.ForKind(1)));
         }finally{before.SetMultiplier(null);legacy.SetMultiplier(null);after.SetMultiplier(null);}
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static long MeasureCommonFearReads(out int checksum)
+    {
+        long before=GC.GetAllocatedBytesForCurrentThread();
+        checksum=0;
+        for(int i=0;i<10000;i++)checksum+=FearPopularity.Multiply(25,5);
+        return GC.GetAllocatedBytesForCurrentThread()-before;
     }
     [TestMethod]
     public void SupersededLegacyOverflowDoesNotDiscardLaterFixedOrStagedFactors()

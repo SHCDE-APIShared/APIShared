@@ -231,6 +231,15 @@ internal static unsafe class Program
         Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(2, 10, 20, 0); AiUnitMoveReceipts.After(0); return 1; }, out _), "Post true cannot mask native failure");
         Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { Check(!AiUnitMoveReceipts.Before(3, 10, 20, 0), "redirected recruit rejected before native mutation"); return 1; }, out _), "redirect has no successful receipt");
         Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => 1, out _), "veto/no original is not success");
+        // Castle defense lets only a genuine native "no route" (one matching Original, raw 0, same
+        // world/identity) join like a Vanilla recruit; vetoes, redirects and successes never qualify.
+        Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(2, 10, 20, 0); AiUnitMoveReceipts.After(0); return 0; }, out _, out bool noRoute) && noRoute,
+            "native route result 0 is reported as a native refusal");
+        Check(AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(2, 10, 20, 0); AiUnitMoveReceipts.After(1); return 1; }, out _, out bool routed) && !routed,
+            "a successful route is no refusal");
+        Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => 0, out _, out bool vetoed) && !vetoed, "a veto is no native refusal");
+        Check(!AiUnitMoveReceipts.TryRun(2, 10, 20, 0, () => { AiUnitMoveReceipts.Before(3, 10, 20, 0); return 0; }, out _, out bool redirected) && !redirected,
+            "a redirect is no native refusal");
         Check(!AiUnitMoveReceipts.IsActive, "thread receipt cleared after invocation");
     }
     private static void LedgerTests(AiMilitaryNativeBackend backend)
@@ -267,5 +276,17 @@ internal static unsafe class Program
         ledger.ObserveAccepted(5, Group, new AiCurrentOrder(AiOrderKind.Hold, 20, 30, moveType: -255), 1);
         ledger.Restore(ledger.Capture(), 6);
         Check(ledger.TryGetCurrent(6, Group, out order, out _) && order.MoveType == -255, "a negative raw move type survives the save roundtrip");
+        // Regression: a second recruit of a group created by an empty-group admission was rejected
+        // (CurrentOrderUnknown) because APIShared's own initial order was not the group's order.
+        ledger.Invalidate(Group);
+        ledger.RecordAdmissionOrder(5, Group, new AiCurrentOrder(AiOrderKind.Idle));
+        Check(!ledger.TryGetCurrent(6, Group, out _, out _), "admission order of another world is ignored");
+        ledger.RecordAdmissionOrder(6, Group, new AiCurrentOrder(AiOrderKind.Idle));
+        Check(ledger.TryGetCurrent(6, Group, out order, out _) && order.Kind == AiOrderKind.Idle, "empty-group admission order becomes the group's order");
+        ledger.Restore(ledger.Capture(), 7);
+        Check(ledger.TryGetCurrent(7, Group, out order, out _) && order.Kind == AiOrderKind.Idle, "admission order survives the save roundtrip");
+        ledger.ObserveAccepted(7, Group, new AiCurrentOrder(AiOrderKind.AttackTile, 20, 30), 1);
+        ledger.RecordAdmissionOrder(7, Group, new AiCurrentOrder(AiOrderKind.Idle));
+        Check(ledger.TryGetCurrent(7, Group, out order, out _) && order.Kind == AiOrderKind.AttackTile, "admission order never overwrites an observed command");
     }
 }

@@ -19,7 +19,7 @@ namespace APIShared.Units.AiMilitary.Orders
     // Mutable Pre runs first; legacy Post timing/arguments/result and the native hook chain stay intact.
     internal static class AiMilitaryOrderBroker
     {
-        private static readonly List<ILHook> Hooks = new List<ILHook>();
+        private static readonly List<Patching.SafeIlHook> Hooks = new List<Patching.SafeIlHook>();
         private static ManualLogSource log;
         private static Action<int, int, int, short, bool, int, long> moved;
         private static Action<int, int, int, int, int, long> targeted;
@@ -28,7 +28,9 @@ namespace APIShared.Units.AiMilitary.Orders
         private static Func<int, int, bool> assignmentAllowed;
         private static Func<long, long, long> createdReturn;
         [ThreadStatic] private static int groupDispatch;
-        internal static bool IsReady { get; private set; }
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
+        internal static bool IsReady => System.Threading.Volatile.Read(ref ready) != 0;
+        private static int ready;
         internal static void EnterGroupDispatch() => groupDispatch++;
         internal static void ExitGroupDispatch() => groupDispatch--;
 
@@ -61,17 +63,15 @@ namespace APIShared.Units.AiMilitary.Orders
                     il.Invoke(edit.Item2); definition.Generate();
                 }
             }
-            // All bodies are validated before publication. Once Apply starts, retain even partial roots.
-            var candidates = new List<ILHook>();
-            try
+            // All bodies are validated before publication. Installed hooks stay rooted even when a later one fails.
+            foreach (var edit in edits)
             {
-                foreach (var edit in edits) candidates.Add(new ILHook(edit.Item1, edit.Item2,
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.AiMilitary.Effective." + edit.Item1.Name }));
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.AiMilitary.Effective." + edit.Item1.Name, edit.Item1, edit.Item2, log,
+                    out var hook, out string failure))
+                    throw new InvalidOperationException("AI effective-order observation unavailable: " + failure);
+                lock (Hooks) Hooks.Add(hook);
             }
-            catch { foreach (var candidate in candidates) candidate.Dispose(); throw; }
-            Hooks.AddRange(candidates);
-            foreach (var candidate in candidates) candidate.Apply();
-            IsReady = true;
+            System.Threading.Volatile.Write(ref ready, 1);
         }
 
         private static Instruction FindOriginalInvoke(ILContext il, Type delegateType)

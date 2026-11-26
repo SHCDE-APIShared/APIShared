@@ -19,7 +19,8 @@ namespace APIShared.Presentation
         private static readonly ManagedInterceptionHook<Add> addHook = new ManagedInterceptionHook<Add>();
         private static readonly ManagedInterceptionHook<UpdateText> updateHook = new ManagedInterceptionHook<UpdateText>();
         private static readonly ManagedInterceptionHook<InitText> initHook = new ManagedInterceptionHook<InitText>();
-        private static ILHook ilHook;
+        private static Patching.SafeIlHook ilHook;
+        private static int ilApplied, managedReady, protocolReady;
         private static FieldInfo slots;
         private static int attempted, confirmed;
         private static long nextInvocation;
@@ -29,14 +30,19 @@ namespace APIShared.Presentation
         [ThreadStatic] private static LordMessageFrame frame;
         [ThreadStatic] private static int renderDepth;
         internal static readonly LordMessageTextBindings TextBindings = new LordMessageTextBindings();
-        internal static string Status => Volatile.Read(ref status) == "Ready" ? Volatile.Read(ref protocolStatus) : Volatile.Read(ref status);
+        // Read per rendered buffer; flags only, so the check allocates nothing.
+        internal static bool IsReady => Volatile.Read(ref managedReady) != 0 && Volatile.Read(ref ilApplied) != 0 && Volatile.Read(ref protocolReady) != 0;
+        internal static string Status => IsReady ? "Ready" : Volatile.Read(ref managedReady) == 0 ? Volatile.Read(ref status) :
+            Volatile.Read(ref ilApplied) == 0 ? "Unavailable: " + (ilHook?.Diagnostic ?? "IL edit missing.") : Volatile.Read(ref protocolStatus);
         // Table-address patterns alone cannot prove the complete record-production/control-flow contract.
         // Until another native identity receives that audit, keep only this broker hash-bound.
         internal static void InitializeNative(string nativeHash)
         {
-            Volatile.Write(ref protocolStatus, string.Equals(nativeHash, NativeLordMessageCatalog.NativeHash, StringComparison.OrdinalIgnoreCase)
-                ? "Ready" : "Unavailable: native Lord presentation protocol has not been audited for this game binary.");
-            if (Status != "Ready") Error("LORD_MESSAGES_NATIVE_PROTOCOL: " + protocolStatus);
+            bool audited = string.Equals(nativeHash, NativeLordMessageCatalog.NativeHash, StringComparison.OrdinalIgnoreCase);
+            Volatile.Write(ref protocolStatus, audited ? "Ready" : "Unavailable: native Lord presentation protocol has not been audited for this game binary.");
+            Volatile.Write(ref protocolReady, audited ? 1 : 0);
+            if (!audited) Error("LORD_MESSAGES_NATIVE_PROTOCOL: " + Volatile.Read(ref protocolStatus));
+            else if (!IsReady) Error("LORD_MESSAGES_UNAVAILABLE: native protocol audited, but " + Status);
             else Info("LORD_MESSAGES_READY: audited native message protocol and permanent Unity presentation hooks ready.");
         }
 
@@ -52,9 +58,15 @@ namespace APIShared.Presentation
                 slots = typeof(OnScreenText).GetField("OSTs", BindingFlags.Instance | BindingFlags.NonPublic);
                 if (slots == null || slots.FieldType != typeof(OnScreenText.OST[]) || slots.IsStatic) throw new MissingFieldException("OST slot contract changed.");
                 ValidatePublicMembers();
-                LordMessageAssets.Initialize();
-                ilHook = new ILHook(method, LordMessageIlContract.Apply, new ILHookConfig { ManualApply = true, ID = "APIShared.LordMessages" });
-                ilHook.Apply(); // Publication roots precede all later optional initialization; never unpatch.
+                string assets = LordMessageAssets.Initialize();
+                if (assets != null) Error("LORD_MESSAGE_MOD_ASSETS_UNAVAILABLE: Vanilla and text replacement remain available; " + assets);
+                // Permanent once applied. A later rebuild of processTestMap that cannot place the edit
+                // keeps every other patch of the method and only pauses Lord messages.
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.LordMessages", method,
+                    LordMessageIlContract.Apply, logger, out ilHook, out string ilFailure))
+                    throw new InvalidOperationException(ilFailure);
+                ilHook.Rebuilt += hook => Volatile.Write(ref ilApplied, hook.IsApplied ? 1 : 0);
+                Volatile.Write(ref ilApplied, ilHook.IsApplied ? 1 : 0);
                 renderHook.Install(typeof(GameMap), "processTestMap", typeof(void),
                     new[] { typeof(short[]), typeof(int), typeof(EngineInterface.PlayState), typeof(byte[]) }, RenderMessages, "LordMessageRender");
                 addHook.Install(typeof(OnScreenText), "addOSTEntry", typeof(void),
@@ -66,6 +78,7 @@ namespace APIShared.Presentation
                     !lifecycle.TryRegisterObserver("Presentation.LordMessages", Reset, Reset, Reset, out diagnostic))
                     throw new InvalidOperationException(diagnostic?.Reason ?? "Mission lifetime unavailable.");
                 Volatile.Write(ref status, "Ready");
+                Volatile.Write(ref managedReady, 1);
                 Info("LORD_MESSAGES_MANAGED_READY: permanent Unity hooks; awaiting independent native protocol validation.");
             }
             catch (Exception error) { Volatile.Write(ref status, "Unavailable: " + error.Message); Error("Lord message presentation unavailable: " + error); }
@@ -120,7 +133,9 @@ namespace APIShared.Presentation
             // A recursive original and any further recursion must not consume the outer IL-site context.
             if (nested) frame = null;
             try {
-                if (!nested && Status == "Ready" && LordMessageEvents.Registry.CanNotify) Begin(records, count, state, LordMessageEvents.Registry);
+                // A buffer without a complete message header can select nothing; skip the frame allocation.
+                if (!nested && IsReady && LordMessageEvents.Registry.CanNotify && LordMessageGroups.HasCandidateHeader(records, count))
+                    Begin(records, count, state, LordMessageEvents.Registry);
                 renderHook.Original(self, records, count, state, radar);
             }
             finally { frame = outer; renderDepth--; }

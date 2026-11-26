@@ -294,7 +294,7 @@ namespace APIShared.Units.AiMilitary.Orders
         private bool TryBuilding(AiCurrentOrder order, out byte* raw, out string reason)
         {
             raw = null; reason = string.Empty;
-            if (!GameBuildingManagerAPI.Instance.TryGetBuildingById(order.TargetId, out GameBuilding* building) || building == null ||
+            if (!BuildingAccess.TryGetById(GameBuildingManagerAPI.Instance, order.TargetId, out GameBuilding* building, out _) || building == null ||
                 building->r_AliveState != AliveState.IsAlive || building->r_GlobalId != order.TargetGlobalId)
             { reason = "The attack building identity is stale."; return false; }
             raw = (byte*)backend.Module + 0x64CCBB0 + order.TargetId * 0x32C;

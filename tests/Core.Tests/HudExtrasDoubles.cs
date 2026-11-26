@@ -18,11 +18,12 @@ namespace Noesis
     public class Style { }
     public partial class FrameworkElement
     {
-        public FrameworkElement? Parent { get; internal set; }
+        private FrameworkElement? parent;
+        public int ParentChanges;
+        public FrameworkElement? Parent { get => parent; internal set { if (!ReferenceEquals(parent, value)) ParentChanges++; parent = value; } }
         public double Width, Height; public Thickness Margin;
         public Visibility Visibility = Visibility.Visible;
-        private bool enabled = true;
-        public bool IsEnabled { get => enabled && (Parent?.IsEnabled ?? true); set => enabled = value; }
+        public bool IsEnabled { get => (bool)GetValue(UIElement.IsEnabledProperty) && (Parent?.IsEnabled ?? true); set => SetValue(UIElement.IsEnabledProperty, value); }
         public bool IsVisible => Visibility == Visibility.Visible && (Parent?.IsVisible ?? true);
         public bool IsHitTestVisible = true;
         public bool IsLoaded { get; internal set; }
@@ -44,10 +45,14 @@ namespace Noesis
         protected override void RemoveItem(int index) { this[index].Parent = null; base.RemoveItem(index); }
         protected override void ClearItems() { foreach (var item in this) item.Parent = null; base.ClearItems(); }
     }
-    public partial class Button : FrameworkElement
+    public class Control : FrameworkElement
     {
-        public object? Content, CommandParameter, ToolTip; public ICommand? Command;
-        public int Duration; public bool ToolTipEnabled = true;
+        public object? ToolTip; public int Duration; public bool ToolTipEnabled = true;
+        public float FontSize = 16;
+    }
+    public partial class Button : Control
+    {
+        public object? Content, CommandParameter; public ICommand? Command;
         public event EventHandler? Click;
         public void Invoke() { Command?.Execute(CommandParameter); Click?.Invoke(this, EventArgs.Empty); }
     }

@@ -164,6 +164,50 @@ namespace Core.Tests
             Assert.AreSame(command, original.Command); Assert.AreEqual(400d, menu.Names["LayoutRoot"].Height);
         }
         [TestMethod]
+        public void SuppressedOriginalLeavesBothPagesAndReturnsWithTheSameBindingAndCommand()
+        {
+            var menu = Menu();
+            var registry = new IngameMenuRegistry();
+            bool suppress = false, replace = false;
+            const IngameMenuRow row = IngameMenuRow.QuitMission;
+            var original = Original(menu, "ButtonQuitMission");
+            var command = original.Command;
+            var template = original.Template;
+            registry.RegisterSuppression("hide", "quit", row, () => suppress);
+            Add(registry, "replacement", () => replace ? new IngameMenuActionState("Replace", true, true) : null,
+                new IngameMenuActionOptions(row, IngameMenuSlot.Right, replaceVanilla: true));
+            IngameMenuActions.TestAttach(menu, registry);
+            var mainRow = (Grid)original.Parent!;
+            var extraPageLink = ((StackPanel)menu.Names["LeftPanel"]).Children.OfType<Button>().Single();
+
+            replace = true;
+            IngameMenuActions.TestInvalidate("mod");
+            IngameMenuActions.TestPage(true);
+            Assert.AreEqual(Visibility.Visible, extraPageLink.Visibility);
+            Assert.AreNotSame(mainRow, original.Parent);
+            Assert.IsTrue(original.IsVisible);
+
+            suppress = true;
+            IngameMenuActions.TestInvalidate("hide");
+            Assert.AreEqual(Visibility.Collapsed, extraPageLink.Visibility);
+            Assert.IsFalse(original.IsVisible);
+            Assert.AreEqual(Visibility.Collapsed, original.Parent!.Visibility);
+            Assert.AreEqual("Replace", PropEx.GetTextCentre(mainRow.Children.OfType<Button>().Single()));
+
+            replace = false;
+            IngameMenuActions.TestInvalidate("mod");
+            Assert.AreEqual(Visibility.Collapsed, mainRow.Visibility);
+            Assert.IsFalse(original.IsVisible);
+
+            suppress = false;
+            IngameMenuActions.TestInvalidate("hide");
+            Assert.AreSame(original, mainRow.Children.Single());
+            Assert.IsTrue(original.IsVisible);
+            Assert.AreSame(command, original.Command);
+            Assert.AreSame(template, original.Template);
+            Assert.AreEqual("ButtonQuitMission", original.CommandParameter);
+        }
+        [TestMethod]
         public void GeometryEventsDoNotPollProvidersAndRecreatedHudDetachesTheOldView()
         {
             int calls = 0; var menu = Menu(); var registry = new IngameMenuRegistry();
@@ -246,6 +290,160 @@ namespace Core.Tests
             second.Load(); second.IsOpen = true;
             visible = false; IngameMenuActions.TestInvalidate("mod");
             Assert.IsNull(button.ToolTip); Assert.IsFalse(second.IsOpen);
+        }
+        [TestMethod]
+        public void CustomContentKeepsIdentityAndAttachmentWhileUnrelatedActionsAreInvalidated()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry(); int creates = 0, executions = 0;
+            IngameMenuContentContext? context = null;
+            var entry = Add(registry, "editor", () => new IngameMenuActionState("Editor", true, true, "Edit the value"));
+            var content = new Control { FontSize = 20 };
+            entry.CreateContent = c => { creates++; context = c; return content; };
+            IngameMenuActions.TestAttach(menu, registry);
+            var parent = content.Parent; int attachments = content.ParentChanges;
+            Assert.AreSame(menu, context!.Menu); Assert.AreEqual(181.25d, content.Width);
+            for (int i = 0; i < 5; i++)
+            {
+                IngameMenuActions.TestInvalidate("other-owner");
+                Assert.IsTrue(context.TryExecute(() => executions++));
+            }
+            Assert.AreEqual(1, creates); Assert.AreEqual(5, executions);
+            Assert.AreSame(parent, content.Parent); Assert.AreEqual(attachments, content.ParentChanges);
+            content.ScreenScaleX = content.ScreenScaleY = 3; content.Load();
+            var tip = (ToolTip)content.ToolTip!; tip.Load(); tip.IsOpen = true;
+            Assert.AreEqual(60f, tip.FontSize); Assert.AreEqual(60000, content.Duration);
+        }
+        [TestMethod]
+        public void CustomContextRejectsDisabledHiddenClosedForeignThreadAndReplacedViews()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry(); bool enabled = true, visible = true;
+            IngameMenuContentContext? context = null; int executions = 0, creates = 0;
+            var entry = Add(registry, "editor", () => new IngameMenuActionState("Editor", visible, enabled));
+            entry.CreateContent = c => { context = c; creates++; return new Control(); };
+            IngameMenuActions.TestAttach(menu, registry); var old = context!;
+            Assert.IsTrue(old.TryExecute(() => executions++));
+            enabled = false; Assert.IsFalse(old.TryExecute(() => executions++));
+            enabled = true; visible = false; Assert.IsFalse(old.TryExecute(() => executions++));
+            visible = true; MainViewModel.Instance!.Show_HUD_IngameMenu = false;
+            Assert.IsFalse(old.TryExecute(() => executions++));
+            MainViewModel.Instance.Show_HUD_IngameMenu = true; IngameMenuActions.TestUnity = false;
+            Assert.IsFalse(old.TryExecute(() => executions++)); IngameMenuActions.TestUnity = true;
+            IngameMenuActions.TestAttach(Menu(), registry);
+            Assert.AreEqual(2, creates); Assert.AreNotSame(old, context);
+            Assert.IsFalse(old.TryExecute(() => executions++)); Assert.IsTrue(context!.TryExecute(() => executions++));
+            Assert.AreEqual(2, executions);
+        }
+        [TestMethod]
+        public void RejectedLayoutKeepsVanillaDispatchOnlyForThatUnchangedView()
+        {
+            // A menu whose layout contract is rejected stays Vanilla, so overrides must not swallow its commands.
+            var registry = new IngameMenuRegistry();
+            var foreign = Menu(); var moved = Original(foreign, "ButtonLoad");
+            ((StackPanel)foreign.Names["LeftPanel"]).Children.Remove(moved); new StackPanel().Children.Add(moved);
+            Assert.ThrowsExactly<InvalidOperationException>(() => IngameMenuActions.TestAttach(foreign, registry));
+            Assert.IsTrue(IngameMenuActions.IsRejectedView(foreign));
+            var missing = Menu(); missing.Resources.Remove("APISharedMenuTooltipStyle");
+            Assert.ThrowsExactly<InvalidOperationException>(() => IngameMenuActions.TestAttach(missing, registry));
+            Assert.IsTrue(IngameMenuActions.IsRejectedView(missing));
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(foreign), "Only the last attempted view is rejected.");
+            var accepted = Menu();
+            IngameMenuActions.TestAttach(accepted, registry);
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(accepted));
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(missing), "A replaced view keeps the stale-view consumption.");
+            Assert.IsFalse(IngameMenuActions.IsRejectedView(null!));
+        }
+        [TestMethod]
+        public void CustomContextRejectsEffectiveDisableBeforeAndAfterProviderRevalidation()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry();
+            IngameMenuContentContext? context = null; int executions = 0;
+            bool disableParentInProvider = false, disableControlInProvider = false;
+            var content = new Control();
+            var entry = Add(registry, "editor", () => {
+                if (disableParentInProvider) content.Parent!.IsEnabled = false;
+                if (disableControlInProvider) content.IsEnabled = false;
+                return new IngameMenuActionState("Editor", true, true);
+            });
+            entry.CreateContent = c => { context = c; return content; };
+            IngameMenuActions.TestAttach(menu, registry);
+            Assert.IsTrue(context!.TryExecute(() => executions++));
+
+            content.IsEnabled = false;
+            Assert.IsFalse(context.TryExecute(() => executions++), "A directly disabled content control cannot execute.");
+            content.IsEnabled = true;
+            content.Parent!.IsEnabled = false;
+            Assert.IsTrue(content.IsVisible);
+            Assert.IsFalse(context.TryExecute(() => executions++), "A disabled ancestor overrides an enabled provider state.");
+            content.Parent.IsEnabled = true;
+
+            disableParentInProvider = true;
+            Assert.IsFalse(context.TryExecute(() => executions++), "Provider revalidation can disable an ancestor.");
+            disableParentInProvider = false; content.Parent.IsEnabled = true;
+            disableControlInProvider = true;
+            Assert.IsFalse(context.TryExecute(() => executions++), "Provider revalidation can disable the control itself.");
+            disableControlInProvider = false; content.IsEnabled = true;
+            Assert.IsTrue(context.TryExecute(() => executions++));
+            Assert.AreEqual(2, executions);
+        }
+        [TestMethod]
+        public void DisplacedContentMovesToAdditionalPageWithoutDuplicationAndContextChecksThePage()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry(); IngameMenuContentContext? context = null;
+            var entry = Add(registry, "editor", () => new IngameMenuActionState("Editor", true, true));
+            var content = new Control(); int creates = 0;
+            entry.CreateContent = c => { creates++; context = c; return content; };
+            IngameMenuActions.TestAttach(menu, registry);
+            Add(registry, "takeover", () => new IngameMenuActionState("Takeover", true, true),
+                new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Left, replaceExisting: true));
+            // Even before repaint the registry's authority supersedes the old slot.
+            Assert.IsFalse(context!.TryExecute(() => { }));
+            IngameMenuActions.TestRefresh(); Assert.IsFalse(context.TryExecute(() => { }));
+            IngameMenuActions.TestPage(true); Assert.IsTrue(context.TryExecute(() => { }));
+            Assert.AreEqual(1, creates); Assert.AreEqual(1, Walk(menu).Count(e => ReferenceEquals(e, content)));
+            Assert.AreEqual(300d, content.Width);
+            IngameMenuActions.TestPage(false); Assert.IsFalse(context.TryExecute(() => { }));
+        }
+        [TestMethod]
+        public void ForeignReparentingCannotAuthorizeAControlOutsideItsBrokerPosition()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry(); IngameMenuContentContext? context = null;
+            var entry = Add(registry, "editor", () => new IngameMenuActionState("Editor", true, true));
+            var content = new Control(); entry.CreateContent = c => { context = c; return content; };
+            IngameMenuActions.TestAttach(menu, registry);
+            ((Panel)content.Parent!).Children.Remove(content); menu.Children.Add(content);
+            Assert.IsTrue(content.IsVisible); Assert.IsFalse(context!.TryExecute(() => Assert.Fail("Foreign placement executed")));
+            IngameMenuActions.TestRefresh(); Assert.IsTrue(context.TryExecute(() => { }));
+        }
+        [TestMethod]
+        public void BrokenContentFactoryRevealsVanillaAndDoesNotAbortOtherEntriesOrRetryEveryRefresh()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry(); int attempts = 0;
+            var entry = Add(registry, "broken", () => new IngameMenuActionState("Broken", true, true),
+                new IngameMenuActionOptions(IngameMenuRow.QuitMission, IngameMenuSlot.Right, replaceVanilla: true));
+            entry.CreateContent = _ => { attempts++; throw new InvalidOperationException("factory failure"); };
+            Add(registry, "working", () => new IngameMenuActionState("Working", true, true));
+            IngameMenuActions.TestAttach(menu, registry);
+            var quit = Original(menu, "ButtonQuitMission"); Assert.IsTrue(quit.IsVisible);
+            Assert.AreEqual(2, ((Grid)quit.Parent!).Children.Count);
+            for (int i = 0; i < 5; i++) IngameMenuActions.TestRefresh();
+            Assert.AreEqual(1, attempts); Assert.AreEqual(1, IngameMenuActions.TestFailures);
+            Assert.IsTrue(registry.GetRow(IngameMenuRow.QuitMission).Right.Current!.IsVanilla);
+        }
+        [TestMethod]
+        public void CustomContentHeightReservesSpaceAndResizeEventsDoNotPollProviders()
+        {
+            var menu = Menu(); var registry = new IngameMenuRegistry(); int calls = 0;
+            var entry = Add(registry, "editor", () => { calls++; return new IngameMenuActionState("Editor", true, true); });
+            var content = new Control { Height = 80 };
+            entry.CreateContent = _ => content;
+            IngameMenuActions.TestAttach(menu, registry);
+            Assert.AreEqual(452d, menu.Names["LayoutRoot"].Height);
+            content.Height = 100; content.Resize();
+            Assert.AreEqual(472d, menu.Names["LayoutRoot"].Height); Assert.AreEqual(1, calls);
+            var fresh = Menu(); entry.CreateContent = _ => new Control { Height = 30 };
+            IngameMenuActions.TestAttach(fresh, registry); double newHeight = fresh.Names["LayoutRoot"].Height;
+            content.Height = 800; content.Resize();
+            Assert.AreEqual(newHeight, fresh.Names["LayoutRoot"].Height);
         }
     }
 }

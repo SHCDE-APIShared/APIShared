@@ -19,11 +19,12 @@ namespace APIShared.Economy
     // this process-owned slot. No extra managed call, allocation or native game hook is added.
     internal static class WorkerProductionYieldContext
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         private static IntPtr originalUnit;
         private static int attempted;
         private static int ready;
         private static string diagnostic = "Original production owner context has not initialized.";
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool IsAvailable => Volatile.Read(ref ready) != 0;
         internal static string Diagnostic => diagnostic;
         internal static ulong OriginalUnitAddress => unchecked((ulong)originalUnit.ToInt64());
@@ -31,7 +32,6 @@ namespace APIShared.Economy
         internal static void InitializeManaged(ManualLogSource log)
         {
             if (Interlocked.Exchange(ref attempted, 1) != 0) return;
-            ILHook candidate = null;
             bool publishing = false;
             try
             {
@@ -47,12 +47,12 @@ namespace APIShared.Economy
                     il.Invoke(transform);
                     definition.Generate();
                 }
-                candidate = new ILHook(target, transform, new ILHookConfig {
-                    ManualApply = true, ID = "APIShared.WorkerProduction.OriginalOwner" });
-                // Root before Apply. Even a failed publication may have exposed the body.
-                hook = candidate;
+                // A false result leaves nothing installed, so the context memory can still be freed.
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.WorkerProduction.OriginalOwner", target, transform, log,
+                    out var installed, out string failure))
+                    throw new InvalidOperationException(failure);
+                hook = installed;
                 publishing = true;
-                candidate.Apply();
                 diagnostic = string.Empty;
                 Volatile.Write(ref ready, 1);
                 NativeApiLog.Info(log, "Worker production original-owner context published for process lifetime.");
@@ -61,7 +61,6 @@ namespace APIShared.Economy
             {
                 if (!publishing)
                 {
-                    candidate?.Dispose();
                     if (originalUnit != IntPtr.Zero) Marshal.FreeHGlobal(originalUnit);
                     originalUnit = IntPtr.Zero;
                 }

@@ -519,6 +519,19 @@ namespace APISharedTests
                 for (int i = 0; i < 5000; i++) render(null, records, 4, state, null);
                 allocated = GC.GetAllocatedBytesForCurrentThread() - before;
                 Assert.AreEqual(0L, allocated, "Ready broker with disabled registrations must retain its allocation-free original path.");
+                // With an enabled registration, a buffer without a complete message header still allocates nothing.
+                var plain = new short[LordMessageGroups.Words * 2]; plain[0] = 5; plain[LordMessageGroups.Words] = -1;
+                Assert.IsTrue(LordMessageEvents.Register(owner, "enabled", pre => Assert.Fail("This buffer has no message group."), null,
+                    out var enabled, out string reason), reason);
+                try
+                {
+                    for (int i = 0; i < 1000; i++) render(null, plain, -1, state, null);
+                    before = GC.GetAllocatedBytesForCurrentThread();
+                    for (int i = 0; i < 5000; i++) render(null, plain, -1, state, null);
+                    allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                    Assert.AreEqual(0L, allocated, "No message header: no frame is allocated.");
+                }
+                finally { enabled.SetEnabled(false); }
                 count = renderCalls;
                 var registry = new InterceptionEvent<LordMessageMutation, LordMessagePostEventArgs>();
                 var frame = LordMessageRuntime.Begin(records, 4, state, registry);
@@ -535,13 +548,23 @@ namespace APISharedTests
         {
             private readonly FieldInfo managed = typeof(LordMessageRuntime).GetField("status", PrivateStatic);
             private readonly FieldInfo protocol = typeof(LordMessageRuntime).GetField("protocolStatus", PrivateStatic);
+            // Readiness is read from allocation-free flags: managed hooks, the current IL edit and the audited protocol.
+            private readonly FieldInfo[] flags = { typeof(LordMessageRuntime).GetField("managedReady", PrivateStatic),
+                typeof(LordMessageRuntime).GetField("ilApplied", PrivateStatic), typeof(LordMessageRuntime).GetField("protocolReady", PrivateStatic) };
             private readonly object oldManaged, oldProtocol;
+            private readonly object[] oldFlags;
             internal RuntimeStatusFixture()
             {
                 oldManaged = managed.GetValue(null); oldProtocol = protocol.GetValue(null);
+                oldFlags = flags.Select(flag => flag.GetValue(null)).ToArray();
                 managed.SetValue(null, "Ready"); protocol.SetValue(null, "Ready");
+                foreach (var flag in flags) flag.SetValue(null, 1);
             }
-            public void Dispose() { managed.SetValue(null, oldManaged); protocol.SetValue(null, oldProtocol); }
+            public void Dispose()
+            {
+                managed.SetValue(null, oldManaged); protocol.SetValue(null, oldProtocol);
+                for (int i = 0; i < flags.Length; i++) flags[i].SetValue(null, oldFlags[i]);
+            }
         }
 
         [TestMethod]

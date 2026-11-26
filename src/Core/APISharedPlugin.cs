@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.47.0";
+        public const string PluginVersion = "0.73.4";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -74,6 +74,9 @@ namespace APIShared
             try
             {
             runtime.RunNativeInitialization(RuntimeLogger,
+                // The Script Extender's unpatched load snapshot, before APIShared's first native patch:
+                // every APIShared span is compared with it before it is written (NativeForeignPatchGuard).
+                new NativeInitializationStep("native foreign-patch guard", () => NativeForeignPatchGuard.Bind(context.Region, RuntimeLogger)),
                 // Binds the image for site registrations before any APIShared or consumer hook claims it.
                 new NativeInitializationStep("native site registry", () => runtime.NativeOwnership.BindModule(
                     context.ModuleHandle.ToInt64(), context.Memory.Length, new ProcessNativeMemory().ReadByte)),
@@ -86,12 +89,18 @@ namespace APIShared
                 new NativeInitializationStep("Extender move failure context", () => ScriptExtenderFixes.MoveCommandFailureRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame settings handler", () => SavegameModSettings.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("map record readiness", () => MapRecordLoadCoordinator.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("Extender lobby start packets", () => ScriptExtenderFixes.LobbyStartPacketRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("savegame load dialog", () => Savegames.SaveLoadDialogEvents.Initialize(Config, RuntimeLogger)),
                 new NativeInitializationStep("multiplayer map lookup", () => Maps.MultiplayerMapLookup.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("lobby system messages", () => Lobby.LobbyChatPresentation.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("map filename policy", () => Maps.MapLoadPolicy.Initialize(hash, RuntimeLogger)),
+                new NativeInitializationStep("typed construction costs", () => Buildings.ConstructionCosts.Initialize(context.ModuleHandle, context.Memory, hash, RuntimeLogger)),
+                new NativeInitializationStep("quarry pile placement", () => Buildings.QuarryPilePlacement.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("path-component refresh", () => Pathfinding.PathComponentRefresh.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("human construction transactions", () => Buildings.HumanConstructionRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("Vanilla Lord message references", () => Presentation.VanillaLordMessages.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("Lord message presentation protocol", () => Presentation.LordMessageRuntime.InitializeNative(hash)),
                 new NativeInitializationStep("worker production world safety", () => Economy.WorkerProductionWorldSafety.Initialize(RuntimeLogger)),
@@ -100,6 +109,10 @@ namespace APIShared
                     Networking.NativeChoreRuntime.InitializeSubmission(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("shared player-view identity", () =>
                     PlayerViewIdentityRuntime.Instance.Initialize(context, hash, RuntimeLogger)),
+                // Required simulation records use the same protected52B0 owner even when
+                // the optional production-state cohort cannot initialize.
+                new NativeInitializationStep("atomic simulation saves", () =>
+                    Economy.WorkerProductionCriticalSaveRuntime.Initialize(context, hash, RuntimeLogger)),
                 // Validation only: the input hooks are installed on a consumer's registration.
                 new NativeInitializationStep("spectator input control", () =>
                     PlayerControl.ControlInputNative.Prepare(context, hash, RuntimeLogger)),
@@ -122,6 +135,8 @@ namespace APIShared
                     context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("AI sell policies", () => Economy.AiMarketSellNativeRuntime.Initialize(
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
+                new NativeInitializationStep("AI market entry observations", () => Economy.AiMarketNativeRuntime.Initialize(
+                    context.ModuleHandle, context.Region, hash, RuntimeLogger)),
                 new NativeInitializationStep("ally goods transfers", () => Economy.AllyTransfersNative.Initialize(
                     context.ModuleHandle, context.Region, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("plague heights", () => PlagueHeightService.Initialize(context, hash, RuntimeLogger)),
@@ -144,9 +159,12 @@ namespace APIShared
                     RuntimeLogger,
                     nativeRegion: context.Region,
                     installAivBuildStep: true)),
+                // Needs the mission lifecycle published above; later APIShared spans are watched as they publish.
+                new NativeInitializationStep("native foreign-patch recheck", () => NativeForeignPatchGuard.SubscribeRecheck(RuntimeLogger)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
                 new NativeInitializationStep("native custom-goods wallet", () => Economy.GoodsWalletNative.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("production goods receipts", () => Economy.ProductionGoodsReceived.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),
                 // Closes on the first mission; inline stubs installed on a consumer's first registration need it.
                 new NativeInitializationStep("native inline patch window", () => NativeInlinePatchWindow.Initialize(RuntimeLogger)),
@@ -157,11 +175,22 @@ namespace APIShared
                 new NativeInitializationStep("hunter event ids", () => ScriptExtenderFixes.HunterEventIdentityRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("huntable prey", () => Wildlife.HuntablePreyRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("herds", () => Wildlife.HerdRuntime.Initialize(context, hash, RuntimeLogger)),
+                // Validation only; their inline stubs install on a consumer's first registration (patch window).
+                new NativeInitializationStep("chicken population", () => Wildlife.ChickenPopulationRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("build-menu availability", () => Buildings.BuildMenuAvailabilityRuntime.Initialize(context, hash, RuntimeLogger)),
+                // Validation only: the sight calls install nothing, the building dispatch hook installs on a
+                // consumer's first registration inside the native inline patch window.
+                new NativeInitializationStep("line of sight", () => Sight.LineOfSightNative.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("sight-blocking buildings", () => Sight.SightBlockingBuildingsNative.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("worker production admission", () => Economy.WorkerProductionRuntime.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("multiplayer simulation capability agreement", () => Multiplayer.SimulationAgreement.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("multiplayer resync lifecycle", () => Multiplayer.MultiplayerResyncNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity display", () => ScriptExtenderFixes.PopularityDisplayRuntime.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("popularity world popup", () => ScriptExtenderFixes.PopularityWorldPopupRuntime.Initialize(hash, RuntimeLogger)),
                 // Managed SE correction; after the Extender has applied its managed detours.
                 new NativeInitializationStep("interpolate event reuse", () => ScriptExtenderFixes.InterpolateEventReuseRuntime.Initialize(Config, RuntimeLogger)),
+                new NativeInitializationStep("lobby preset sharing", () => ModSettings.PresetShareService.Initialize(RuntimeLogger)),
+                new NativeInitializationStep("multiplayer resync data channel", () => Multiplayer.MultiplayerResyncDataRuntime.Initialize(RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));

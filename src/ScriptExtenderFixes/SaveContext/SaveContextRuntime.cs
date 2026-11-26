@@ -20,14 +20,14 @@ namespace APIShared.ScriptExtenderFixes
     internal static class SaveContextRuntime
     {
         [ThreadStatic] private static int synchronizedSaveDepth;
-        private static readonly List<ILHook> hooks = new List<ILHook>();
+        private static readonly List<Patching.SafeIlHook> hooks = new List<Patching.SafeIlHook>();
         private static int attempted;
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool ManagedReady { get; private set; }
 
         internal static void InitializeManaged(ManualLogSource log)
         {
             if (Interlocked.Exchange(ref attempted, 1) != 0) return;
-            var candidates = new List<ILHook>();
             string stage = "validate-methods";
             try
             {
@@ -45,20 +45,20 @@ namespace APIShared.ScriptExtenderFixes
                         context.Invoke(edit.Item2);
                         definition.Generate();
                     }
-                stage = "prepare-hooks";
-                foreach (var edit in edits)
-                    candidates.Add(new ILHook(edit.Item1, edit.Item2, new ILHookConfig {
-                        ManualApply = true, ID = "APIShared.ScriptExtenderFixes.SaveContext." + edit.Item1.Name }));
-                // Root before Apply: even a failed/partial publication must never be undone.
-                hooks.AddRange(candidates);
+                // Published hooks are never undone; a failed installation leaves nothing behind.
                 stage = "publish-hooks";
-                foreach (var hook in candidates) hook.Apply();
+                foreach (var edit in edits)
+                {
+                    if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.ScriptExtenderFixes.SaveContext." + edit.Item1.Name,
+                        edit.Item1, edit.Item2, log, out var hook, out string failure))
+                        throw new InvalidOperationException(failure);
+                    lock (hooks) hooks.Add(hook);
+                }
                 ManagedReady = true;
                 NativeApiLog.Info(log, "SE_SAVE_CONTEXT: managed save factory and map/save load flags corrected; process lifetime.");
             }
             catch (Exception error)
             {
-                if (stage != "publish-hooks") foreach (var candidate in candidates) candidate.Dispose();
                 NativeApiLog.Error(log, "SE_SAVE_CONTEXT: correction unavailable; stage=" + stage +
                     ",extender=" + typeof(GameMapArchiveManagerAPI).Assembly.FullName +
                     "; synchronized saves may omit save-only records; error=" + error);

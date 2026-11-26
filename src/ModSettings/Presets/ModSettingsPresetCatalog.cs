@@ -12,8 +12,8 @@ namespace APIShared.ModSettings
     internal static class ModSettingsPresetCatalog
     {
         internal const long MaximumFileBytes = 8 * 1024 * 1024;
-        private const int MaximumFilesPerProvider = 512;
-        private const int MaximumPresetsPerTarget = 2048;
+        internal const int MaximumFilesPerProvider = 512;
+        internal const int MaximumPresetsPerTarget = 2048;
 
         internal static string ValidateTargetGuid(string targetGuid) =>
             RequireSafePathSegment(targetGuid, "target plugin GUID");
@@ -286,7 +286,7 @@ namespace APIShared.ModSettings
                     throw new InvalidDataException("Preset paths may not traverse reparse points.");
             }
         }
-        private static bool MatchesVersion(Version actual, string minimum, string maximum)
+        internal static bool MatchesVersion(Version actual, string minimum, string maximum)
         {
             if (actual == null) return string.IsNullOrWhiteSpace(minimum) && string.IsNullOrWhiteSpace(maximum);
             Version parsedMinimum = null;

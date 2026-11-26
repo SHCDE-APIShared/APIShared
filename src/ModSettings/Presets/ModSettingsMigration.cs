@@ -29,11 +29,12 @@ namespace APIShared.ModSettings
     }
 
     /// <summary>Brings stored settings into the form of the installed mod version.</summary>
-    /// <remarks>APIShared applies this itself to saves, Trail author rules, personal settings and preset files.
+    /// <remarks>APIShared applies declared renames to saves, Trail author rules, personal settings and preset files.
+    /// Its saved mission snapshot preparation also invokes the optional converter.
     /// A mod that reads stored settings of another settings class from its own format (for example mission
     /// files) calls <see cref="MigrateStoredSnapshot"/> on the raw stored values before merging them with
     /// defaults. Pure and thread-safe apart from the endpoint's own converter, which runs on the caller's thread.</remarks>
-    public static class ModSettingsMigration
+    public static partial class ModSettingsMigration
     {
         // Former name -> current property name. The array keeps the declared precedence (newest former
         // name of a property first); a dictionary alone does not guarantee that order after removals.
@@ -55,8 +56,11 @@ namespace APIShared.ModSettings
         internal static Action<string> ReportProblem;
 
         /// <summary>Applies the declared renames of the settings object's class and then its optional
-        /// <see cref="IModSettingsSnapshotMigration"/> converter. Returns the argument itself when nothing changes;
-        /// the argument is never modified.</summary>
+        /// <see cref="IModSettingsSnapshotMigration"/> converter. Without a converter, returns the argument itself
+        /// when no names change. A converter receives a detached dictionary and byte buffers with the same
+        /// comparer; its result is returned unchanged. This call never modifies the argument or its buffers,
+        /// including when the converter throws. Returned values are not guaranteed to remain independent
+        /// of the argument when no converter runs.</summary>
         /// <exception cref="InvalidDataException">The converter returned null.</exception>
         public static Dictionary<string, byte[]> MigrateStoredSnapshot(object settings, Dictionary<string, byte[]> stored)
         {
@@ -64,9 +68,81 @@ namespace APIShared.ModSettings
             if (stored == null) throw new ArgumentNullException(nameof(stored));
             var result = ApplyRenames(settings.GetType(), stored);
             if (settings is IModSettingsSnapshotMigration migration)
-                result = migration.System_MigrateMissionSnapshot(result) ??
+            {
+                // Converters may update their snapshot in place; even a renamed dictionary still
+                // shares its serialized buffers with the caller until those buffers are copied.
+                var detached = new Dictionary<string, byte[]>(result.Count, result.Comparer);
+                foreach (var entry in result)
+                    detached.Add(entry.Key, entry.Value == null ? null : (byte[])entry.Value.Clone());
+                result = migration.System_MigrateMissionSnapshot(detached) ??
                     throw new InvalidDataException("Settings migration returned nothing: " + settings.GetType().FullName);
+            }
             return result;
+        }
+
+        /// <summary>Applies declared renames and only the optional pre-default stored-value converter.</summary>
+        /// <remarks>Pass selected/authorized stored properties before merging defaults. Does not invoke the
+        /// older IModSettingsSnapshotMigration contract. Without the new interface, retains rename-only
+        /// behavior and may return the input. A converter receives detached buffers; its returned values
+        /// are detached again. Existing keys, including explicit null, must remain present. Errors reject
+        /// this snapshot; the caller must not classify a converter failure as corrupt storage.</remarks>
+        public static Dictionary<string, byte[]> MigrateRawStoredSnapshot(object settings, Dictionary<string, byte[]> stored)
+        {
+            if (settings == null) throw new ArgumentNullException(nameof(settings));
+            if (stored == null) throw new ArgumentNullException(nameof(stored));
+            var renamed = ApplyRenames(settings.GetType(), stored);
+            if (!(settings is IModSettingsStoredSnapshotMigration migration)) return renamed;
+            var input = CopyStoredValues(renamed);
+            var converted = migration.System_MigrateStoredSnapshot(input) ??
+                throw new InvalidDataException("Stored settings migration returned nothing: " + settings.GetType().FullName);
+            foreach (string key in renamed.Keys)
+                if (!converted.ContainsKey(key))
+                    throw new InvalidDataException("Stored settings migration removed an input property: " + key);
+            return CopyStoredValues(converted);
+        }
+
+        private static Dictionary<string, byte[]> CopyStoredValues(Dictionary<string, byte[]> source)
+        {
+            var result = new Dictionary<string, byte[]>(source.Count, source.Comparer);
+            foreach (var entry in source)
+                result.Add(entry.Key, entry.Value == null ? null : (byte[])entry.Value.Clone());
+            return result;
+        }
+
+        // API-owned source preparation has already merged defaults (or accepted authenticated
+        // host values). Preserve normal interface dispatch through consumer overrides, while
+        // allowing exactly that endpoint's next controller Enter to bypass the raw converter.
+        // This is not a callback-wide suppression: working applications still convert normally.
+        [ThreadStatic] private static PreparedMissionEntry preparedMissionEntry;
+
+        internal static IDisposable PrepareMissionEntry(object endpoint)
+        {
+            if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
+            var entry = new PreparedMissionEntry(endpoint, preparedMissionEntry);
+            preparedMissionEntry = entry;
+            return entry;
+        }
+
+        internal static bool TryConsumePreparedMissionEntry(object endpoint)
+        {
+            var entry = preparedMissionEntry;
+            if (entry == null || entry.Consumed || !ReferenceEquals(entry.Endpoint, endpoint)) return false;
+            entry.Consumed = true;
+            return true;
+        }
+
+        // Synchronous same-thread LIFO scopes, disposed by the owning API call's using/finally.
+        private sealed class PreparedMissionEntry : IDisposable
+        {
+            internal readonly object Endpoint;
+            internal bool Consumed;
+            private readonly PreparedMissionEntry previous;
+            internal PreparedMissionEntry(object endpoint, PreparedMissionEntry previous)
+            { Endpoint = endpoint; this.previous = previous; }
+            public void Dispose()
+            {
+                if (ReferenceEquals(preparedMissionEntry, this)) preparedMissionEntry = previous;
+            }
         }
 
         // Moves values stored under former names to their current property names. The same instance is

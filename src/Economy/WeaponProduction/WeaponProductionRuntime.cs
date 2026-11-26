@@ -107,8 +107,8 @@ namespace APIShared.Economy
         {
             building = null;
             var manager = GameBuildingManagerAPI.Instance;
-            return id > 0 && id <= MaxBuildingId && gid != 0 && manager != null && manager.IsValidId(id) &&
-                manager.TryGetBuildingById(id, out building) && building != null &&
+            return id > 0 && id <= MaxBuildingId && gid != 0 && manager != null &&
+                BuildingAccess.TryGetById(manager, id, out building, out _) && building != null &&
                 building->r_GlobalId == gid && building->r_AliveState == AliveState.IsAlive;
         }
 

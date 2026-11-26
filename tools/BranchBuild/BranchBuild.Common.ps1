@@ -339,6 +339,7 @@ function Invoke-SelectedBranchBuild {
         $arguments = @($DriverArguments | Where-Object { $_ -notmatch '^/branch:' })
         if ($arguments -inotcontains '/nopause') { $arguments += '/nopause' }
         if ($env:SHCDE_BRANCH_NOINSTALL -eq '1' -and $arguments -inotcontains '/noinstall') { $arguments += '/noinstall' }
+        if ($selection.PSObject.Properties['Run']) { Set-ApiBranchRunPhase $selection.Run 'building' }
         & $selectedDriver @arguments | Out-Host
         $code = $LASTEXITCODE
         $record = [ordered]@{ SchemaVersion=1; Branch=$Branch; Commit=$selection.Commit; Driver=$Driver; SourceRoot=$selection.Root;

@@ -13,7 +13,7 @@ namespace APIShared.Recruitment
     {
         private static readonly object sync = new object();
         private static Registration[] registrations = Array.Empty<Registration>();
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         private static long failures;
         [ThreadStatic] private static bool notifying;
         /// <summary>Registers a process-lifetime predicate on the Unity startup thread. It is queried synchronously on the GUI-check caller thread for each affected European type. A true contribution bypasses only Vanilla's fixed weapon-stock presentation; all other UI gates survive. Contributions combine by OR and are ordered by ordinal owner/ID. Exceptions mean false, are isolated and counted. Do not mutate UI/world state or issue commands from this predicate. No replay, automatic dispatch or hook teardown. Duplicate identities and changed installed IL return false with a reason.</summary>
@@ -28,21 +28,19 @@ namespace APIShared.Recruitment
                 { reason = "This owner already registered that ID."; return false; }
                 if (hook == null)
                 {
-                    ILHook candidate = null;
                     try
                     {
                         MethodInfo method = typeof(FatControler).GetMethod("NoesisGUIUpdateChecksInGame",
                             BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
                         if (method == null || method.ReturnType != typeof(void)) throw new MissingMethodException("FatControler.NoesisGUIUpdateChecksInGame");
                         RecruitmentMaterialUiIlContract.Validate(method);
-                        candidate = new ILHook(method, context => RecruitmentMaterialUiIlContract.Apply(context, ShouldBypass),
-                            new ILHookConfig { ManualApply = true, ID = "APIShared.Recruitment.MaterialUi" });
-                        candidate.Apply();
-                        hook = candidate;
+                        if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.Recruitment.MaterialUi", method,
+                            context => RecruitmentMaterialUiIlContract.Apply(context, ShouldBypass), null, out var installed, out string failure))
+                            throw new InvalidOperationException(failure);
+                        hook = installed;
                     }
                     catch (Exception ex)
                     {
-                        candidate?.Dispose();
                         reason = "Recruitment material UI unavailable: " + ex.Message;
                         return false;
                     }

@@ -56,6 +56,13 @@
   <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='EngineersCostsText']" AttributeName="apt:TooltipAnchor.Anchor" Value="Recruitment" />
   <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='TunellersCostsText']" AttributeName="apt:TooltipAnchor.Anchor" Value="Recruitment" />
   <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='MonkCostsText']" AttributeName="apt:TooltipAnchor.Anchor" Value="Recruitment" />
+  <!-- Shared host of BuildingPanelSections: laid out like Vanilla's building panels; sections place themselves. -->
+  <Operation Type="InsertAfter" XPath="//n:Grid[@Name='FletchersPanel']">
+    <Content>
+      <Grid x:Name="APISharedBuildingPanelSectionsHost" Width="800" Height="170"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Visibility="Collapsed" />
+    </Content>
+  </Operation>
   <Operation Type="InsertAfter" XPath="//n:Grid[@Name='BlacksmithsPanel']">
     <Content>
       <Grid x:Name="APISharedWeaponProductionPanel" Width="800" Height="170"

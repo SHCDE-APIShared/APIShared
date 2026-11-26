@@ -3,6 +3,9 @@ using System.Collections;
 using System.IO;
 using System.Reflection;
 using System.Linq;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using HarmonyLib;
 using APIShared.Units.AiMilitary;
 using APIShared.Units.AiMilitary.Native;
 using APIShared.Units.AiMilitary.Quota;
@@ -19,6 +22,159 @@ namespace APISharedTests
         private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.NonPublic;
         private const BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
         private static readonly Type Core = typeof(AiMilitaryService);
+        [DataTestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void EditorCompletionSpawnsStayOutsideTheOriginalCaptureAndKeepBothResults(bool callbackThrows)
+        {
+            using (var fixture = new SpawnFixture())
+            lock (fixture.Engine)
+            {
+                var callbacks = new List<int>();
+                var callbackReturns = new List<long>();
+                var scope = fixture.Begin(result =>
+                {
+                    callbacks.Add(result.Unit.UnitId);
+                    fixture.Created(3); // Ordinary same-owner/type placement from a synchronous callback.
+                    callbackReturns.Add(fixture.FilterReturn(3));
+                    if (callbackThrows) throw new InvalidOperationException("isolated callback failure");
+                });
+                try
+                {
+                    fixture.Created(1); fixture.Created(2);
+                    var results = scope.Complete();
+                    CollectionAssert.AreEqual(new[] { 1, 2 }, results.Select(result => result.Unit.UnitId).ToArray());
+                    CollectionAssert.AreEqual(new[] { 1, 2 }, callbacks.ToArray());
+                    CollectionAssert.AreEqual(new[] { 3L, 3L }, callbackReturns.ToArray());
+                    Assert.IsTrue(results.All(result => result.Status == AiMilitaryAssignmentStatus.Declared));
+                    Assert.IsFalse(fixture.IsTracked(3), "Callback placements must not inherit the completed declaration.");
+                }
+                finally { scope.Dispose(); }
+                fixture.AssertNoCapture();
+            }
+        }
+
+        [TestMethod]
+        public void WorldEndFromEditorCompletionRejectsTheRemainingOldWorldCapture()
+        {
+            using (var fixture = new SpawnFixture())
+            lock (fixture.Engine)
+            {
+                var callbacks = new List<AiMilitaryAssignmentResult>();
+                var scope = fixture.Begin(result => {
+                    callbacks.Add(result);
+                    if (callbacks.Count == 1) fixture.EndWorld();
+                    fixture.Created(3);
+                });
+                try
+                {
+                    fixture.Created(1); fixture.Created(2);
+                    var results = scope.Complete();
+                    Assert.AreEqual(2, results.Count); Assert.AreEqual(2, callbacks.Count);
+                    Assert.AreEqual(AiMilitaryAssignmentStatus.Declared, results[0].Status);
+                    Assert.AreEqual(AiMilitaryAssignmentStatus.Rejected, results[1].Status);
+                    Assert.IsFalse(fixture.IsTracked(1)); Assert.IsFalse(fixture.IsTracked(2)); Assert.IsFalse(fixture.IsTracked(3));
+                }
+                finally { scope.Dispose(); }
+                fixture.AssertNoCapture();
+            }
+        }
+
+        [TestMethod]
+        public void CompletingANestedScopeDoesNotCaptureCallbackPlacementsInItsParent()
+        {
+            using (var fixture = new SpawnFixture())
+            lock (fixture.Engine)
+            {
+                var outer = fixture.Begin(_ => { });
+                try
+                {
+                    fixture.Created(1);
+                    var inner = fixture.Begin(_ => fixture.Created(3));
+                    try
+                    {
+                        fixture.Created(2);
+                        var results = inner.Complete();
+                        CollectionAssert.AreEqual(new[] { 2 }, results.Select(result => result.Unit.UnitId).ToArray());
+                    }
+                    finally { inner.Dispose(); }
+                    fixture.Created(4);
+                    var outerResults = outer.Complete();
+                    CollectionAssert.AreEqual(new[] { 1, 4 }, outerResults.Select(result => result.Unit.UnitId).ToArray());
+                    Assert.IsFalse(fixture.IsTracked(3));
+                }
+                finally { outer.Dispose(); }
+                fixture.AssertNoCapture();
+            }
+        }
+
+        // Serial CLI fixture: only the external unit lookup and mode boundaries are substituted.
+        // The real Begin/Complete/Request/Notify/OnCreated/return-filter paths run against owned memory.
+        // No game thread runs here; restore the temporary boundary patches before freeing that memory.
+        private sealed unsafe class SpawnFixture : IDisposable
+        {
+            private static GameUnit* units;
+            private readonly Harmony harmony = new Harmony("APISharedTests.AiSpawnCapture");
+            private readonly object service;
+            private readonly object oldCapture;
+            private readonly byte[] quota;
+            internal readonly object Engine = new object();
+            private static readonly FieldInfo Capture = Core.GetField("capture", Static);
+            internal SpawnFixture()
+            {
+                Assert.IsTrue(units == null);
+                oldCapture = Capture.GetValue(null);
+                Assert.IsNull(oldCapture, "The fixture must not replace an active capture.");
+                Assert.IsFalse(AiMilitaryQuotaRuntime.IsReady, "The CLI fixture must not replace an active game publication.");
+                quota = AiMilitaryQuotaRuntime.Capture();
+                units = (GameUnit*)Marshal.AllocHGlobal(sizeof(GameUnit) * 4);
+                for (int i = 0; i < 4; i++) units[i] = new GameUnit {
+                    r_GlobalId = (uint)(101 + i), r_ControllableForPlayerId = 1,
+                    r_UnitChimp = eChimps.CHIMP_TYPE_ARCHER, r_AliveState = AliveState.IsAlive
+                };
+                service = Activator.CreateInstance(Core, true);
+                Core.GetField("engine", Instance).SetValue(service, Engine);
+                Core.GetField("ready", Instance).SetValue(service, true);
+                try
+                {
+                    Patch(typeof(APIShared.UnitAccess).GetMethods().Single(method => method.Name == "TryGetById" &&
+                        method.GetParameters()[0].ParameterType == typeof(int)), nameof(Lookup));
+                    Patch(typeof(APIShared.GameModes.GameModeHelper).GetMethod("IsMapEditor"), nameof(Editor));
+                    Patch(typeof(APIShared.GameModes.GameModeHelper).GetMethod("IsRealMultiplayer"), nameof(Local));
+                }
+                catch { Dispose(); throw; }
+            }
+            private void Patch(MethodInfo target, string prefix) => harmony.Patch(target,
+                prefix: new HarmonyMethod(typeof(SpawnFixture).GetMethod(prefix, Static)));
+            private static bool Lookup(int unitId, ref GameUnit* unit, ref APIShared.UnitLookupFailure failure, ref bool __result)
+            {
+                __result = unitId >= 1 && unitId <= 4;
+                unit = __result ? units + unitId - 1 : null;
+                failure = __result ? APIShared.UnitLookupFailure.None : APIShared.UnitLookupFailure.OutOfRange;
+                return false;
+            }
+            private static bool Editor(ref bool __result) { __result = true; return false; }
+            private static bool Local(ref bool __result) { __result = false; return false; }
+            internal IAiMilitarySpawnScope Begin(Action<AiMilitaryAssignmentResult> completed)
+            {
+                object[] args = { "fixture-owner", 1, eChimps.CHIMP_TYPE_ARCHER,
+                    new AiMilitaryAssignment(AiMilitaryRole.None, AiRecruitmentMode.Regular), true, false, completed, null, null };
+                Assert.IsTrue((bool)Core.GetMethod("Begin", Instance).Invoke(service, args), args[8]?.ToString());
+                return (IAiMilitarySpawnScope)args[7];
+            }
+            internal void Created(int id) => Core.GetMethod("OnCreated", Instance).Invoke(service, new object[] { id });
+            internal long FilterReturn(long id) => (long)Core.GetMethod("FilterCapturedCreateReturn", Instance).Invoke(service, new object[] { id, id });
+            internal bool IsTracked(int id) => ((IDictionary)Core.GetField("tracked", Instance).GetValue(service)).Contains(id);
+            internal void EndWorld() => Core.GetMethod("ClearWorld", Instance).Invoke(service, null);
+            internal void AssertNoCapture() => Assert.AreSame(oldCapture, Capture.GetValue(null));
+            public void Dispose()
+            {
+                harmony.UnpatchSelf();
+                Capture.SetValue(null, oldCapture);
+                AiMilitaryQuotaRuntime.Restore(quota);
+                Marshal.FreeHGlobal((IntPtr)units); units = null;
+            }
+        }
         [TestMethod]
         public void RecycledCreationCompletionsRunAtTheSafePointOrWorldEndExactlyOnce()
         {

@@ -117,16 +117,10 @@ replace only generic messages must inspect the effective original audio/video
 paths as well as Lord/category; an Extender-authored replacement is not a
 placeholder merely because its Vanilla speech Lord is Rat, Snake, Pig or Wolf.
 
-## Local test consumer
+## Acceptance limits
 
-The workspace's `LordMessageReplacementTest` is an independent public-API consumer.
-It replaces actual generic allied messages of Rat, Snake, Pig and Wolf with
-`Taunt1` audio, video and text of the same Lord. Individual messages remain, as
-do authored Extender media and Wolf's unrelated generic `KillNpc` message. No
-preview, synthetic message, copied game asset or new voice recording is supplied.
-
-The test emits one bounded submission confirmation per replaced Lord/category
-pair. Those confirmations and offline tests do not establish listening/video
-acceptance. Actual messages, queueing, save loading and host/client presentation
-must be checked in the game; the test's deliberately unrelated taunt text is not
-production dialogue for goods or assistance requests.
+Offline tests and a consumer's submission confirmations do not establish
+listening or video acceptance. Check actual messages, queueing, save loading and
+host/client presentation in the game. A consumer that replaces a message with
+another category's text (for example a taunt for a goods request) is a test
+setup, not production dialogue.

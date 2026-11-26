@@ -18,6 +18,7 @@ namespace APIShared.Audio
         private static readonly Dictionary<string, UnitVoiceCue> files = new Dictionary<string, UnitVoiceCue>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<UnitVoiceCue, string> folders = new Dictionary<UnitVoiceCue, string>();
         private static readonly Dictionary<UnitVoiceCue, int> ordinals = new Dictionary<UnitVoiceCue, int>();
+        private static readonly Dictionary<string, string> bankFolders = new Dictionary<string, string>(StringComparer.Ordinal);
 
         static UnitVoiceCatalog()
         {
@@ -32,6 +33,9 @@ namespace APIShared.Audio
                 keys.Add(cue.Key, cue); files.Add(cue.FileName, cue); folders.Add(cue, parts[3].Length == 0 ? null : parts[3]); ordinals.Add(cue, result.Count); result.Add(cue);
             }
             cues = result.ToArray(); view = Array.AsReadOnly(cues);
+            // Every bank keeps all of its routed files in one speech folder (troops or peasants).
+            foreach (var cue in cues)
+                if (folders[cue] != null && !bankFolders.ContainsKey(cue.VoiceBankKey)) bankFolders.Add(cue.VoiceBankKey, folders[cue]);
             var descriptions = new List<UnitVoiceSourceDescriptor>();
             foreach (string key in sourceKeys) descriptions.Add(new UnitVoiceSourceDescriptor(key, DescribeSource(key), UnitVoiceEvidence.NativeAudited));
             sources = descriptions.AsReadOnly();
@@ -91,10 +95,16 @@ namespace APIShared.Audio
             return files.TryGetValue(slash < 0 ? path : path.Substring(slash + 1), out cue);
         }
         internal static string SpeechFolder(UnitVoiceCue cue) => cue != null && folders.TryGetValue(cue, out string value) ? value : null;
+        // The speech folder used by the other files of the cue's bank. A replacement for an intent that
+        // Vanilla never routes plays through it; the folder only selects the path and speech category.
+        internal static string BankSpeechFolder(UnitVoiceCue cue) =>
+            cue != null && bankFolders.TryGetValue(cue.VoiceBankKey, out string value) ? value : null;
         internal static int Ordinal(UnitVoiceCue cue) => cue != null && ordinals.TryGetValue(cue, out int value) ? value : -1;
         internal static bool TryGetOrdinal(int ordinal, out UnitVoiceCue cue)
         { cue = ordinal >= 0 && ordinal < cues.Length ? cues[ordinal] : null; return cue != null; }
 
+        // spear_ladder1-3 (push an enemy ladder off the wall) also fill the pikeman column of the native table,
+        // but only the spearman handler requests that situation (0x143B16), so they stay in the spearman bank.
         // Generated from the hash-bound native tables, not from installed language folders.
         // Null.wav intentionally has no cue: a silent Vanilla branch must remain silent.
         private const string Data = @"aassasin_atks1.wav|assassin|AttackStrong|troops

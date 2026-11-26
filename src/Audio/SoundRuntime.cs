@@ -1,4 +1,6 @@
+using APIShared.Patching;
 using BepInEx.Logging;
+using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using RedBird.Abstractions.Hooks;
 using RedBird.Backends.NativeX64;
@@ -41,9 +43,10 @@ namespace APIShared.Audio
         // DLL_RunTick receives short[14,700,000]. The pending native buffer is
         // even larger; this conservative capacity covers every normal tick.
         internal const int MaxRecords = 14700000 / 21;
+        private const string ForeignPatchFeature = "Audio unit context";
 
         private static SoundRuntime processContext;
-        private static ILHook playbackHook;
+        private static SafeIlHook playbackHook;
         private static ManualLogSource processLog;
         private static int managedAttempted, nativeAttempted, playbackConfirmed;
         private static string playbackStatus = "Pending", contextStatus = "Pending", killStatus = "Pending";
@@ -73,15 +76,23 @@ namespace APIShared.Audio
                 SoundIlContract.Validate(method);
                 // Each service validates independently before publication. Lord-message IL also
                 // recognizes the shared speech adapter, so neither broker steals the other's site.
-                bool voices = UnitVoiceRuntime.ValidatePlayback(method, logger);
-                playbackHook = new ILHook(method, il => {
-                    voices = UnitVoicePlaybackIlContract.ApplyCombined(il, voices, out string reason);
-                    if (reason != null) UnitVoiceRuntime.SetPlaybackFailure(reason);
-                }, new ILHookConfig { ManualApply = true, ID = "APIShared.Audio" });
-                playbackHook.Apply();
-                if (!playbackHook.IsApplied) throw new InvalidOperationException("Audio IL publication incomplete.");
-                Volatile.Write(ref playbackStatus, "Ready");
-                UnitVoiceRuntime.SetPlaybackReady(voices);
+                bool voicesSupported = UnitVoiceRuntime.ValidatePlayback(method, logger);
+                // Every rebuild of processTestMap runs this edit again on fresh IL. Each run decides
+                // the speech part anew, so no earlier run's outcome is carried into a later one.
+                int voicesApplied = 0;
+                string voiceFailure = null;
+                ILContext.Manipulator edit = il =>
+                {
+                    bool voices = UnitVoicePlaybackIlContract.ApplyCombined(il, voicesSupported, out string reason);
+                    Volatile.Write(ref voiceFailure, reason);
+                    Volatile.Write(ref voicesApplied, voices ? 1 : 0);
+                };
+                if (!SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.Audio", method, edit, logger, out playbackHook, out string installFailure))
+                    throw new InvalidOperationException(installFailure);
+                playbackHook.Rebuilt += hook => PublishPlayback(hook.IsApplied && Volatile.Read(ref voicesApplied) != 0,
+                    hook.IsApplied, hook.IsApplied ? Volatile.Read(ref voiceFailure) : hook.Diagnostic);
+                PublishPlayback(playbackHook.IsApplied && Volatile.Read(ref voicesApplied) != 0, playbackHook.IsApplied,
+                    playbackHook.IsApplied ? Volatile.Read(ref voiceFailure) : playbackHook.Diagnostic);
                 Info(logger, "AUDIO_PLAYBACK_READY: permanent GameMap sound events installed.");
             }
             catch (Exception ex)
@@ -90,6 +101,14 @@ namespace APIShared.Audio
                 UnitVoiceRuntime.SetPlaybackFailure(ex.Message);
                 Error(logger, "Audio playback interception unavailable: " + ex);
             }
+        }
+        private static void PublishPlayback(bool voices, bool sounds, string voiceFailure)
+        {
+            Volatile.Write(ref playbackStatus, sounds ? "Ready" : "Unavailable: " + voiceFailure);
+            if (voices) UnitVoiceRuntime.SetPlaybackReady(true);
+            // No new reason: the speech part was rejected at validation, which already reported why.
+            else if (voiceFailure == null) UnitVoiceRuntime.SetPlaybackReady(false);
+            else UnitVoiceRuntime.SetPlaybackFailure(voiceFailure);
         }
         internal static void InitializeNative(CrusaderLibraryLoadContext context, ManualLogSource logger, NativeOwnershipRegistry ownership, string nativeHash)
         {
@@ -181,6 +200,10 @@ namespace APIShared.Audio
                 CreateHooks(Address(context, NativeContract.WrapperRva), Address(context, NativeContract.FlagWrapperRva), Address(context, NativeContract.EmitRva),
                     NativeStartupPatchWindow.SuspendThreads);
                 ValidateHooks(context);
+                // A foreign patch inside a prologue refuses all three before the first write.
+                NativeForeignPatchGuard.RequireUnpatched(wrapperHook, ForeignPatchFeature);
+                NativeForeignPatchGuard.RequireUnpatched(flagWrapperHook, ForeignPatchFeature);
+                NativeForeignPatchGuard.RequireUnpatched(emitHook, ForeignPatchFeature);
             }
             catch { RollbackUnpublished(); throw; }
             publicationStarted = true;
@@ -190,6 +213,9 @@ namespace APIShared.Audio
             if (!wrapperHook.IsInstalled || !flagWrapperHook.IsInstalled || !emitHook.IsInstalled)
                 throw new InvalidOperationException("Hook publication incomplete.");
             ValidateHooks(context);
+            NativeForeignPatchGuard.Watch(wrapperHook, ForeignPatchFeature);
+            NativeForeignPatchGuard.Watch(flagWrapperHook, ForeignPatchFeature);
+            NativeForeignPatchGuard.Watch(emitHook, ForeignPatchFeature);
             SoundContextPolicy.SetReady(true);
             if (killReady) Volatile.Write(ref killStatus, "Ready");
             Info(log, "AUDIO_CONTEXT_READY: 91 soldier source entries; NativeX64/Absolute; wrappers=0x2960..0x296F,0x2990..0x299F (4+3+8),next=mov r9d,r8d; emitter=0x1A41E0..0x1A41EE (4+3+4+3),next=write x; gameId=1-based,stride=0x490,slot1=manager+0xAEC,chimp=+0x8A,state=+0x2BC,tiles=+0xC0/+0xC2; rooted return-address bridges behind native demand guards (wrapper=" + SoundNativeDemand.WrapperValue + ",emitter=" + SoundNativeDemand.EmitterValue + "); melee kill sources=" + (killReady ? SoundSources.Kills.Length.ToString() : "unavailable") + "; inferred situations are not in-game confirmations.");

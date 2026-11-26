@@ -45,6 +45,17 @@ namespace APISharedTests
                             parameter.ParameterType.GetElementType().IsPointer &&
                             parameter.ParameterType.GetElementType().GetElementType() == typeof(SHCDESE.Interop.GameUnit))
                             continue;
+                        if (type == typeof(BuildingAccess) && method.Name == "TryGetById" &&
+                            method.IsStatic && method.ReturnType == typeof(bool) && parameter.Name == "building" &&
+                            parameter.IsOut && parameter.ParameterType == typeof(SHCDESE.Interop.GameBuilding).MakePointerType().MakeByRefType())
+                        {
+                            Type[] signature = method.GetParameters().Select(item => item.ParameterType).ToArray();
+                            Type output = typeof(SHCDESE.Interop.GameBuilding).MakePointerType().MakeByRefType();
+                            Type reason = typeof(BuildingLookupFailure).MakeByRefType();
+                            if (signature.SequenceEqual(new[] { typeof(int), output, reason }) ||
+                                signature.SequenceEqual(new[] { typeof(SHCDESE.API.GameBuildingManagerAPI), typeof(int), output, reason }))
+                                continue;
+                        }
                         if (type == typeof(UnitAccess) && method.Name == "IsReallyAlive" &&
                             method.ReturnType == typeof(bool) && method.GetParameters().Length == 1 &&
                             parameter.Name == "unit" &&
@@ -74,6 +85,15 @@ namespace APISharedTests
         }
         private static bool IsAuditedAiObservationPointer(Type owner, string member, Type actual)
         {
+            // The market broker forwards the unmodified first argument for this synchronous
+            // pair only. AiMarketEventsTests executes all four audited ABIs and unchanged
+            // arguments; consumers validate the profile base before dereferencing it.
+            if (owner == typeof(APIShared.Economy.AiMarketContext) &&
+                (member == "ProfileRoot" || member == "get_ProfileRoot"))
+            {
+                Assert(actual == typeof(IntPtr), "audited immediate AI market profile pointer");
+                return true;
+            }
             // These two immutable native observations deliberately expose only the invocation's
             // manager for immediate diagnostic copying. They expose no invocation/ownership API.
             // Exact member/type exceptions retain the general native-pointer prohibition.

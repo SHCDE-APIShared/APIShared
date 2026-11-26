@@ -13,8 +13,9 @@ namespace APIShared.Units
 {
     internal static class TroopCommandInputHooks
     {
-        private static ILHook selectionHook;
-        private static ILHook runHook;
+        private static Patching.SafeIlHook selectionHook;
+        private static Patching.SafeIlHook runHook;
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool IsReady { get; private set; }
 
         internal static void Initialize(ManualLogSource log)
@@ -28,13 +29,15 @@ namespace APIShared.Units
                     BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(bool) }, null);
                 Validate(selection, TransformSelection);
                 Validate(run, TransformRun);
-                selectionHook = new ILHook(selection, TransformSelection,
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.TroopCommandInput.Selection" });
-                runHook = new ILHook(run, TransformRun,
-                    new ILHookConfig { ManualApply = true, ID = "APIShared.TroopCommandInput.Run" });
                 // Retain both hooks from the first Apply. A partial failure stays dormant.
-                selectionHook.Apply();
-                runHook.Apply();
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.TroopCommandInput.Selection", selection, TransformSelection, log,
+                    out var installedSelection, out string failure))
+                    throw new InvalidOperationException(failure);
+                selectionHook = installedSelection;
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.TroopCommandInput.Run", run, TransformRun, log,
+                    out var installedRun, out failure))
+                    throw new InvalidOperationException(failure);
+                runHook = installedRun;
                 IsReady = true;
             }
             catch (Exception error)

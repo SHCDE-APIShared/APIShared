@@ -33,6 +33,13 @@ namespace APIShared.Economy
             catch(InvalidOperationException ex){unavailable?.Invoke(ex.Message);FearPopularityIl.Apply(il);return false;}
             var fearSites=FearPopularityIl.Sites(il);
             FearPopularityIl.Apply(il);
+            // The player-aware part builds on the fear edit; its failure must keep the fear edit.
+            if(!APIShared.Patching.SafeIlHook.TryEdit(il,value=>ApplyPlayer(value,plan,fearSites),out Exception error))
+            {unavailable?.Invoke("Player-aware popularity edit rolled back: "+error.Message);return false;}
+            return true;
+        }
+        private static void ApplyPlayer(ILContext il,Contract plan,System.Collections.Generic.IEnumerable<Instruction> fearSites)
+        {
             var snapshot=new VariableDefinition(il.Method.Module.ImportReference(typeof(PopularitySelection)));
             il.Body.Variables.Add(snapshot);
             var processor=il.Body.GetILProcessor();
@@ -55,7 +62,6 @@ namespace APIShared.Economy
                 var old=(MethodReference)site.Operand;
                 site.Operand=Method(il,typeof(FearPopularity),old.Name=="MultiplySwapped"?"MultiplySwappedTargeted":"MultiplyTargeted");
             }
-            return true;
         }
     }
 }

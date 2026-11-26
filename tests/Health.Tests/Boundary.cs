@@ -32,6 +32,7 @@ namespace SHCDESE.API
     {
         public static readonly GameBuildingManagerAPI Instance=new GameBuildingManagerAPI();
         public Span<GameBuilding> GetBuildingsAsSpan()=>World.Buildings;
+        public bool IsValidId(int id) => id > 0 && id <= World.Buildings.Length;
         public bool TryGetBuildingById(int id,out GameBuilding* result) { result=id>0&&id<=World.Buildings.Length ? World.BuildingPointer+id-1:null;return result!=null; }
         public int GetDefaultHealth(eStructs type)=>type==eStructs.STRUCT_SIEGE_TOWER ? World.ProxyBasis:1000;
         public int GetWoodCost(eStructs type)=>World.Wood;
@@ -65,7 +66,39 @@ namespace APIShared
     public static unsafe class UnitAccess { public static bool TryGetById(int id,out SHCDESE.Interop.GameUnit* unit,out int failure) { failure=0;unit=id>0&&id<=World.Units.Length ? World.UnitPointer+id-1:null;return unit!=null; } public static bool IsReallyAlive(SHCDESE.Interop.GameUnit* unit)=>unit!=null&&unit->r_AliveState==SHCDESE.Interop.Enums.AliveState.IsAlive&&unit->r_IsKilledByProjectile==0; }
 }
 namespace APIShared.Simulation { public static class SimulationTickEvents { public static Action<int> Callback;public static bool TryRegister(string owner,string id,Action<int> callback,out string reason,int order=0) { Callback=callback;reason="";return true; } } }
+namespace APIShared.Multiplayer
+{
+    internal static class MultiplayerResyncData
+    {
+        internal static Func<byte[]> Capture;
+        internal static Func<ReadOnlyMemory<byte>,object> Prepare;
+        internal static Action<object> Commit;
+        internal static int Registrations, MaximumBytes;
+
+        internal static bool TryRegister<T>(string owner, string id, int version, int maximumBytes,
+            Func<byte[]> capture, Func<ReadOnlyMemory<byte>,T> prepare, Action<T> commit, out string reason)
+        {
+            Registrations++;
+            MaximumBytes = maximumBytes;
+            Capture = capture;
+            Prepare = bytes => prepare(bytes);
+            Commit = value => commit((T)value);
+            reason = string.Empty;
+            return true;
+        }
+    }
+}
 namespace APIShared.Health { internal static class HealthNativeObserver { internal static Action<int> Callback; internal static void Install(SHCDESE.API.LowLevel.CrusaderLibraryLoadContext context,string hash,Action<int> callback,BepInEx.Logging.ManualLogSource log) { Callback=callback; } } }
+namespace APIShared.Buildings
+{
+    public readonly struct ConstructionCostTarget { public static ConstructionCostTarget FromStructure(SHCDESE.Interop.eStructs type) => default; }
+    public readonly struct ConstructionCostValues { public int Wood => World.Wood; public int Stone => World.Stone; }
+    public static class ConstructionCosts
+    {
+        public static bool TryGetCurrent(ConstructionCostTarget target, out ConstructionCostValues cost, out string reason)
+        { cost = default; reason = string.Empty; return true; }
+    }
+}
 internal static unsafe class World
 {
     internal static readonly APIShared.MissionBoundary Missions=new APIShared.MissionBoundary();

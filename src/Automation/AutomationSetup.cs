@@ -173,7 +173,7 @@ namespace APIShared.Automation
             eStructs type, int x, int y, out uint global)
         {
             global = 0;
-            if (!buildings.TryGetBuildingById(id, out GameBuilding* building) || building == null ||
+            if (!BuildingAccess.TryGetById(buildings, id, out GameBuilding* building, out _) || building == null ||
                 building->r_PlayerIdOwner != owner || building->r_BuildingType != type ||
                 building->r_TilePositionXBegin != x || building->r_TilePositionYBegin != y ||
                 (building->r_AliveState != AliveState.NeedsInit && building->r_AliveState != AliveState.IsAlive))

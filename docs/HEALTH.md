@@ -60,6 +60,13 @@ initialized object's maximum. Enablement changes affect future initialization;
 they are not a live HP editor. Consumers decide which types participate and which
 modes are allowed. ExtraFeatures disables all eight HP settings in the editor.
 
+Once a mission owns health history, disabled policies still permit provenance-only
+initialization processing and saving. Completed generations retain their bases
+without evaluating policies or writing native HP; enabling a handle later does
+not apply policies retroactively. An unfinished native initialization still waits
+for completion before its policies are selected. A mission with neither history
+nor enabled policies remains dormant.
+
 ## Safety and siege towers
 
 Positive HP uses midpoint rounding away from zero, then domain bounds. Units are
@@ -75,7 +82,12 @@ tick. An integer binary search selects the largest permitted unit target no
 greater than the request; the proxy is rounded proportionally. Both individual
 bounds and `unit maximum * proxy maximum <= Int32.MaxValue` must hold. A late
 proxy receives the frozen target only after both reciprocal game/global links
-match; it does not rewrite the existing unit. Native damage arithmetic is intact.
+match; it does not rewrite the existing unit. A proxy completing while all policies
+are disabled stays unchanged, including after later enablement. Its unit's already
+applied target remains available in the archive for subsequent loading. A unit
+completed with `None` or disabled policies retains both original bases but clears
+any old applied proxy target, so that target cannot rewrite a later proxy.
+Native damage arithmetic is intact.
 
 ## Save data and migration
 
@@ -86,6 +98,12 @@ these bases. The existing consumer modsettings system chooses saved or current
 settings; this service does not override that choice or divide saved maxima.
 Repeated loading therefore does not compound multipliers. Invalid archives fail
 closed rather than treating already scaled maxima as fresh bases.
+
+Shared history continues to be updated and saved when all handles are disabled,
+including a same-ID/global-ID/type reinitialization before the first tick or an
+early resave. This does not grant new eligibility to legacy saves. A native load
+normalization without an observed new generation never replaces a verified saved
+basis with the current maximum. The archive schema is unchanged.
 
 `TryRegisterLegacyBasisProvider(owner, id, reader, out reason, order)` accepts
 verified `HealthLegacyBasis[]` from a consumer's old save format. A null result
@@ -102,11 +120,33 @@ eligible. An existing Lord without a valid imported record remains untouched,
 including after resaving; a positively observed new Lord initialization can supply
 a new native basis. This eligibility is saved explicitly; no reverse-division guess exists.
 
+## Multiplayer repair
+
+From APIShared 0.69.0, a consumer that contributes health policies in real
+multiplayer calls `HealthModifiers.TryEnableMultiplayerResync(out reason)` on the
+Unity thread during `LibraryLoaded`, before admission. All peers in an opted-in
+lobby require the shared `health-ledger` record. Several consumers can enable
+the same registration. If registration fails, keep the policy inactive in real
+multiplayer. Health policy registration and offline behavior are independent.
+
+Late host capture preserves original bases, completed generations, pending
+initializations and linked siege-proxy bookkeeping after the native due list.
+The client validates rows against the repaired slot, GlobalId and type. It
+publishes the prepared ledger without changing current or maximum HP. Unmatched
+rows are discarded. The existing `APIShared.Health.v1` save format is preserved.
+
+The maximum wire size is 681,928 bytes, covering 9,999 unit slots and 3,999
+building slots. Each can hold 33 basis bytes, one completion byte and 13 pending
+bytes. The bound includes a six-byte completion row for every possible proxy
+and 28 bytes of framing. The actual record is sparse.
+
 ## Verification limits
 
 The production-source health fixture checks initialization, freeze, injuries,
 death, generation reuse, pending saves, repeated loads, legacy exclusion, corrupt
-data, repair limits and the linked tower bound. Backend tests validate the private
+data, dormant provenance, excluded and dormant tower proxies, repaired wounded
+replacements through save and reload, mismatched repair identities, repair limits and
+the linked tower bound. Backend tests validate the private
 Indirect/10 detour and full continuation against the canonical native image.
 These tests do not replace real new-game, spectator, editor, save-selection and
 matching host/client acceptance. Native update details belong in

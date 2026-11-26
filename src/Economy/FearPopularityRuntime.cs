@@ -12,19 +12,23 @@ namespace APIShared.Economy
 {
     internal static class FearPopularityRuntime
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
+        private static int targetedApplied;
+        private static bool targetedAvailable;
         private static ManualLogSource log;
         private static int overflowReported, appliedReported;
+        // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool Available => hook != null;
-        internal static bool TargetedAvailable { get; private set; }
+        internal static bool TargetedAvailable => targetedAvailable;
         internal static string TargetedDiagnostic { get; private set; }
-        internal static string Diagnostic { get; private set; } = "Native initialization has not completed.";
+        private static string diagnostic = "Native initialization has not completed.";
+        internal static string Diagnostic => diagnostic;
         internal static void Initialize(string nativeHash, ManualLogSource logger)
         {
-            if (Available) return;
+            if (hook != null) return;
             log = logger;
             if (nativeHash != "FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2")
-                throw new InvalidOperationException(Diagnostic = "Unsupported native popularity contract.");
+                throw new InvalidOperationException(diagnostic = "Unsupported native popularity contract.");
             try
             {
                 var assembly = typeof(CrusaderLibrary).Assembly;
@@ -42,14 +46,21 @@ namespace APIShared.Economy
                     ValidateSites(target);
                     RememberTarget(assembly, target);
                 }
-                bool targeted=false;
-                hook = new ILHook(target, il=>targeted=PopularityPlayerIl.Apply(il,
-                    reason=>{TargetedDiagnostic=reason;NativeApiLog.Info(log,"POPULARITY_PLAYER_UNAVAILABLE "+reason);}));
-                TargetedAvailable=targeted;
-                if(targeted) NativeApiLog.Info(log,"POPULARITY_PLAYER_READY validated player/resource identity and all declared source reads");
+                if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.FearPopularity", target,
+                    il => Volatile.Write(ref targetedApplied, PopularityPlayerIl.Apply(il,
+                        reason => {
+                            // The validation copy and the real application report the same reason once.
+                            if (TargetedDiagnostic == reason) return;
+                            TargetedDiagnostic = reason; NativeApiLog.Info(log, "POPULARITY_PLAYER_UNAVAILABLE " + reason);
+                        }) ? 1 : 0),
+                    log, out var installed, out string failure))
+                    throw new InvalidOperationException(failure);
+                hook = installed;
+                targetedAvailable = Volatile.Read(ref targetedApplied) != 0;
+                if(TargetedAvailable) NativeApiLog.Info(log,"POPULARITY_PLAYER_READY validated player/resource identity and all declared source reads");
             }
-            catch (Exception ex) { Diagnostic = ex.Message; throw; }
-            Diagnostic = null;
+            catch (Exception ex) { diagnostic = ex.Message; throw; }
+            diagnostic = null;
             // One-time startup marker; the first-use proof (ReportApplied) is Debug only.
             NativeApiLog.Info(log, "FEAR_POPULARITY_READY validated SE coefficient/resource flow retained; rounding=away-from-zero; units=points*25");
         }

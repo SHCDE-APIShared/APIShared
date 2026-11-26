@@ -13,19 +13,51 @@ namespace APISharedTests
         private sealed class World : IAllyTransfersBackend
         {
             internal readonly int[] Stock = new int[9];
-            internal int Free = 1000, Reads, CapacityCalls, Calls, LastAmount;
+            internal int Free = 1000, Reads, CapacityCalls, AllianceCalls, Calls, LastAmount;
             internal bool Ready = true;
+            internal bool ChatSuppressionSupported;
             internal bool AlliedLiving = true;
             internal readonly InterceptionEvent<AllyTransferPreEventArgs, AllyTransferPostEventArgs> Events =
                 new InterceptionEvent<AllyTransferPreEventArgs, AllyTransferPostEventArgs>();
             public bool IsReady => Ready;
-            public bool AreAlliedLiving(int sender, int recipient) => AlliedLiving;
+            public bool CanSuppressVanillaChatMessages => ChatSuppressionSupported;
+            public bool AreAlliedLiving(int sender, int recipient) { AllianceCalls++; return AlliedLiving; }
             public bool TryReadStock(int player, eGoods good, out int amount) { Reads++; amount = Stock[player]; return true; }
             public int GetFreeCapacity(int recipient, eGoods good) { CapacityCalls++; return Free; }
             public AllyTransferResult Execute(AllyTransferRequest request, int amount) =>
                 AllyTransferEvents.DispatchObserved(Events, request.SenderPlayerId, request.RecipientPlayerId, (int)request.Good, amount, Transfer, TryReadStock, true);
             internal void Transfer(int recipient, int good, int amount, int sender)
             { Calls++; LastAmount = amount; Stock[sender] -= amount; Stock[recipient] += amount; Free -= amount; }
+        }
+
+        [TestMethod]
+        public void ExistingConstructorSignatureAndDefaultsKeepVanillaChatEnabled()
+        {
+            var legacy = typeof(AllyTransferRequest).GetConstructor(new[] {
+                typeof(int), typeof(int), typeof(eGoods), typeof(int), typeof(int), typeof(int) });
+            Assert.IsNotNull(legacy, "Already compiled consumers require the original six-argument constructor.");
+            var parameters = legacy.GetParameters();
+            Assert.IsTrue(parameters[4].IsOptional); Assert.AreEqual(0, parameters[4].DefaultValue);
+            Assert.IsTrue(parameters[5].IsOptional); Assert.AreEqual(int.MaxValue, parameters[5].DefaultValue);
+            Assert.IsTrue(new AllyTransferRequest(1, 2, eGoods.STORED_GOLD, 10).ShowVanillaChatMessages);
+            Assert.IsTrue(((AllyTransferRequest)legacy.Invoke(new object[] { 1, 2, eGoods.STORED_GOLD, 10, 0, 100 })).ShowVanillaChatMessages);
+            Assert.IsFalse(new AllyTransferRequest(1, 2, eGoods.STORED_GOLD, 10, 0, 100, false).ShowVanillaChatMessages);
+        }
+
+        [TestMethod]
+        public void UnsupportedSilentRequestFailsBeforeGameReadsWithoutDisablingNormalTransfers()
+        {
+            var world = new World(); world.Stock[1] = 100;
+            var engine = new AllyTransfersEngine(world, () => true);
+            var silent = new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10, 0, int.MaxValue, false);
+            Assert.IsFalse(engine.TryExecute(silent, out var rejected, out _));
+            Assert.AreEqual(AllyTransferStatus.Rejected, rejected.Status);
+            Assert.AreEqual(0, world.Reads); Assert.AreEqual(0, world.CapacityCalls); Assert.AreEqual(0, world.Calls);
+            Assert.AreEqual(0, world.AllianceCalls);
+            Assert.IsTrue(engine.TryExecute(new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10), out _, out _));
+            world.ChatSuppressionSupported = true;
+            Assert.IsTrue(engine.TryExecute(silent, out _, out _));
+            Assert.AreEqual(2, world.Calls);
         }
 
         [TestMethod]

@@ -175,7 +175,7 @@ namespace APIShared.Economy
             if (!TryGetWorker(role, unitId, out worker)) return false;
             int home = worker->r_LinkedProductionBuildingId;
             return home > 0 && home <= WeaponProductionNativeDefinition.MaxBuildingId &&
-                GameBuildingManagerAPI.Instance.TryGetBuildingById(home, out building) && building != null &&
+                BuildingAccess.TryGetById(GameBuildingManagerAPI.Instance, home, out building, out _) && building != null &&
                 building->r_AliveState == AliveState.IsAlive && building->r_BuildingType == role.Building &&
                 building->r_PlayerIdOwner == worker->r_ControllableForPlayerId && building->r_GlobalId != 0 &&
                 building->r_GlobalId == worker->r_LinkedProductionBuildingGlobalId;
@@ -252,11 +252,11 @@ namespace APIShared.Economy
                         Delegate callback = callbacks[i] = Callback(site.Operation);
                         ulong callbackAddress = Address(Marshal.GetFunctionPointerForDelegate(callback));
                         WeaponProductionNativeAssembly.ExpectedStub(site, image, image + NativeInlineStub.PreflightStubOffset,
-                            Address(enabled), Address(buildingDemand), callbackAddress);
+                            Address(enabled), Address(buildingDemand), callbackAddress, ProductionGoodsReceivedNativeRuntime.AdapterAddress);
                         handles[i] = new HookHandle<X64InlineHook>();
                         group.Add(handles[i], image + (uint)site.Rva,
                             (assembler, original, back) => WeaponProductionNativeAssembly.Generate(assembler, original, back,
-                                site, image, Address(enabled), Address(buildingDemand), callbackAddress), site.Bytes.Length);
+                                site, image, Address(enabled), Address(buildingDemand), callbackAddress, ProductionGoodsReceivedNativeRuntime.AdapterAddress), site.Bytes.Length);
                     }
                     var result = group.Commit("Weapon production preparation was incomplete.");
                     ValidatePrepared(false);
@@ -296,7 +296,7 @@ namespace APIShared.Economy
                     Delegate callback = callbacks[i];
                     NativeInlineStub.Verify(handles[i], Address(module + site.Rva), site.Bytes.Length, installed,
                         stub => WeaponProductionNativeAssembly.ExpectedStub(site, Address(module), stub,
-                            Address(enabled), Address(buildingDemand), Address(Marshal.GetFunctionPointerForDelegate(callback))),
+                            Address(enabled), Address(buildingDemand), Address(Marshal.GetFunctionPointerForDelegate(callback)), ProductionGoodsReceivedNativeRuntime.AdapterAddress),
                         check =>
                         {
                             switch (check)

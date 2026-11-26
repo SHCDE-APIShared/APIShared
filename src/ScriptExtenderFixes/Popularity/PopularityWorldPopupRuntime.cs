@@ -7,7 +7,7 @@ namespace APIShared.ScriptExtenderFixes
 {
     internal static class PopularityWorldPopupRuntime
     {
-        private static ILHook hook;
+        private static Patching.SafeIlHook hook;
         private static int attempted;
 
         internal static void Initialize(string nativeHash, ManualLogSource log)
@@ -20,11 +20,10 @@ namespace APIShared.ScriptExtenderFixes
             if (!string.Equals(nativeHash, native, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("World popularity popup skipped: unsupported native mask contract.");
             var target = WorldPopularityIl.FindTarget();
-            hook = new ILHook(target, WorldPopularityIl.Apply,
-                new ILHookConfig { ManualApply = true, ID = "APIShared.WorldPopularityPopup" });
-            // Root before publication; published hooks are never removed or retried.
-            hook.Apply();
-            if (!hook.IsApplied) throw new InvalidOperationException("World popularity popup IL publication incomplete.");
+            // Published hooks are never removed or retried; a failed installation leaves nothing behind.
+            if (!Patching.SafeIlHook.TryInstall(APISharedPlugin.PluginGuid, "APIShared.WorldPopularityPopup", target, WorldPopularityIl.Apply, log,
+                out hook, out string failure))
+                throw new InvalidOperationException("World popularity popup IL publication incomplete: " + failure);
             NativeApiLog.Info(log, "WORLD_POPULARITY_POPUP_READY: masks use the displayed popup snapshot.");
         }
     }

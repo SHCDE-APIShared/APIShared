@@ -39,7 +39,7 @@ namespace APIShared.Presentation
         public static LordMessageAudio FromModAsset(string providerGuid, string relativePath)
         {
             string path = LordMessageAssets.Reference(providerGuid, relativePath);
-            return new LordMessageAudio(LordMessageSourceKind.ModAsset, path, LordMessageAssets.Prepare(path, false));
+            return new LordMessageAudio(LordMessageSourceKind.ModAsset, path, path != null && LordMessageAssets.Prepare(path, false));
         }
     }
 
@@ -61,7 +61,7 @@ namespace APIShared.Presentation
         public static LordMessageVideo FromModAsset(string providerGuid, string relativePath)
         {
             string path = LordMessageAssets.Reference(providerGuid, relativePath);
-            return new LordMessageVideo(LordMessageSourceKind.ModAsset, path, LordMessageAssets.Prepare(path, true));
+            return new LordMessageVideo(LordMessageSourceKind.ModAsset, path, path != null && LordMessageAssets.Prepare(path, true));
         }
     }
 

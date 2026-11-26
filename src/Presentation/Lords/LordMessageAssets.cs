@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Threading;
 using SHCDESE.API;
 
 namespace APIShared.Presentation
@@ -8,15 +9,27 @@ namespace APIShared.Presentation
     {
         private delegate bool Resolve(GameAssetManagerAPI self, string path, out string result);
         private static Resolve audio, video;
-        private static readonly Func<string, string, string> qualify = BindReference();
+        private static Func<string, string, string> qualify;
+        private static int qualifierBound;
+        private static string unavailable;
         // Fixtures replace only the external resource-index boundary, not target validation/composition.
         internal static Func<string, bool, bool> ResourceAvailable;
-        internal static void Initialize()
+        // Only mod assets need these private Extender members. When they change, Vanilla and text
+        // replacement stay available and mod asset references simply report IsReady = false.
+        internal static string Initialize()
         {
-            audio = Bind("TryResolveAudioPath"); video = Bind("TryResolveVideoPath");
-            MethodInfo reference = typeof(GameAssetManagerAPI).GetMethod("CreateModAssetReference", BindingFlags.NonPublic | BindingFlags.Static,
-                null, new[] { typeof(string), typeof(string) }, null);
-            if (reference == null || reference.ReturnType != typeof(string)) throw new MissingMethodException("Extender private asset reference contract changed.");
+            try { audio = Bind("TryResolveAudioPath"); video = Bind("TryResolveVideoPath"); }
+            catch (Exception error) { audio = video = null; unavailable = error.Message; }
+            Qualifier();
+            return unavailable;
+        }
+        private static Func<string, string, string> Qualifier()
+        {
+            if (Volatile.Read(ref qualifierBound) != 0) return qualify;
+            try { qualify = BindReference(); }
+            catch (Exception error) { qualify = null; unavailable = error.Message; }
+            Volatile.Write(ref qualifierBound, 1);
+            return qualify;
         }
         private static Func<string, string, string> BindReference()
         {
@@ -33,6 +46,7 @@ namespace APIShared.Presentation
                 throw new MissingMethodException("Extender Lord message resource resolver changed: " + name);
             return (Resolve)Delegate.CreateDelegate(typeof(Resolve), method);
         }
+        // Null when the Extender's private reference helper is unavailable; argument errors still throw.
         internal static string Reference(string owner, string path)
         {
             if (string.IsNullOrWhiteSpace(owner) || owner.IndexOf('\0') >= 0 || string.IsNullOrWhiteSpace(path) || path.IndexOf('\0') >= 0)
@@ -42,7 +56,8 @@ namespace APIShared.Presentation
                 throw new ArgumentException("Use an owner-private relative resource path.");
             foreach (string part in normalized.Split('/'))
                 if (part.Length == 0 || part == "." || part == "..") throw new ArgumentException("Invalid resource path segment.");
-            return qualify(owner, normalized);
+            var qualifier = Qualifier();
+            return qualifier == null ? null : qualifier(owner, normalized);
         }
         internal static bool CanUse(LordMessageSourceKind kind, string path)
         {

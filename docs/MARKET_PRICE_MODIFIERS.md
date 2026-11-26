@@ -94,6 +94,86 @@ fixed values and After factors remain effective. This intentionally replaces the
 earlier blanket default-price veto, which could erase other mods' AI changes.
 ExtraFeatures currently registers no After factor.
 
+## Read-only composition status
+
+Create a typed request with
+`MarketPriceModifiers.CreateStatusQuery(good, direction, isAIPlayer)` and pass it
+to `ValueModifiers.TryGetStatus` in `APIShared.Modifiers`. This shared entry
+returns a detached `ValueModifierStatus`. The market service owns request
+validation and the lifetime of the data. Call on any thread outside a provider.
+The query may wait for the existing engine monitor. It reads the current cell
+and copies the last completed composition without evaluating providers, adopting
+foreign writes, refreshing prices or changing ownership.
+
+The query returns `false` with a reason and no status for an invalid request,
+outside an initialized and completed mission, before a completed cell
+reconciliation, after that cell's latest failed refresh, or if the table read
+fails. Request creation can precede the mission. Each read samples the current
+mission and a returned status can be retained across refreshes and mission changes.
+
+All market values describe base prices per lot of five:
+
+- `BaselineValue` is the original input used for the completed reconciliation.
+- `ResolvedValue` is the completed result for the requested shared-table or
+  contextual AI projection.
+- `ExternalFixedValue` identifies a previously reconciled foreign fixed input,
+  when present. A later sampled table value leaves that input unchanged.
+- `Observation.Value` samples the shared table now, and
+  `Observation.ReferenceValue` records the shared-table result of the completed
+  reconciliation, even for AI queries. `DiffersFromReference` compares those
+  values without attributing the difference to a particular writer. A reentrant
+  query during an AI helper can sample its temporary substitution.
+- `Contributions` contains the immutable results in registration order. Each
+  entry identifies owner GUID, registration ID, order, contribution and stage.
+  `ProviderFailed` identifies an isolated provider failure that supplied no
+  value. `SupersededByFixedValue` identifies Before factors and fixed
+  contributions replaced by the selected fixed value.
+- `Bounds` is present when safety bounds were applied. It records the inclusive
+  `Minimum` and `Maximum` and whether the rounded result was clamped
+  (`WasClamped`). Baseline and foreign passthrough retain their legacy behavior.
+
+All Before factors multiply the baseline. The last ordered fixed contribution
+replaces that result, with a reconciled external fixed value taking the final
+fixed position. All After factors multiply the selected result, followed by one
+rounding and the final safety clamp where applicable. An identity After factor
+leaves the unbounded foreign passthrough in effect. Query-time clamp inspection
+uses the captured contributions and the shared exact arithmetic.
+
+The AI projection describes the cached helper base price. The observation is
+always a shared-table sample. A concrete query total depends on native quantity
+arithmetic and can still be replaced by a legacy `MarketPriceEvents` veto.
+Formatting and presentation belong to the consumer.
+
+```csharp
+using APIShared.Economy;
+using APIShared.Modifiers;
+
+var query = MarketPriceModifiers.CreateStatusQuery(
+    good, MarketPriceDirection.Buy, isAIPlayer: false);
+if (ValueModifiers.TryGetStatus(query, out var status, out var reason))
+{
+    ShowComposition(status.ResolvedValue, status.Contributions,
+        status.ExternalFixedValue, status.Bounds?.WasClamped ?? false);
+    if (status.Observation is ValueModifierObservation observation)
+    {
+        ShowSettingValue(observation.Value);
+        if (observation.DiffersFromReference)
+            ShowUnreconciledTableValue(observation.Value);
+    }
+}
+else
+    ShowUnavailable(reason);
+```
+
+The example's `Show...` calls represent consumer UI. Query results are
+local explanatory information. Refreshes reuse private trace buffers per cell
+and projection, growing capacity when the provider count grows. The query makes
+detached copies so retaining results cannot affect later refreshes.
+
+The market is the first service supported by the common status API. Future
+APIShared services add a typed factory with their own context, units and
+lifetime. Existing modifier registrations keep their service-specific contracts.
+
 ## Example
 
 Register independent contributions with stable identities, retain the handles,

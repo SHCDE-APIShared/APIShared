@@ -51,7 +51,7 @@ namespace APIShared
             GameBuildingManagerAPI buildings = GameBuildingManagerAPI.Instance;
             GamePlayerManagerAPI players = GamePlayerManagerAPI.Instance;
             if (buildings == null || players == null ||
-                !buildings.TryGetBuildingById(state.in_structure, out GameBuilding* building) || building == null)
+                !BuildingAccess.TryGetById(buildings, state.in_structure, out GameBuilding* building, out _) || building == null)
                 return null;
             int playerId = players.GetLocalPlayerId();
             eStructs type = building->r_BuildingType;
@@ -68,9 +68,11 @@ namespace APIShared
             if (manager == IntPtr.Zero) return null;
             int wood = Marshal.ReadInt32(manager, WoodCostOffset);
             int stone = Marshal.ReadInt32(manager, StoneCostOffset);
-            int baseIron = buildings.GetIronIngotCost(type);
-            int basePitch = buildings.GetRawPitchCost(type);
-            int baseGold = buildings.GetGoldCost(type);
+            if (!Buildings.ConstructionCosts.TryGetCurrent(Buildings.ConstructionCostTarget.FromStructure(type), out var constructionCost, out string costReason))
+                throw new InvalidOperationException("Building repair cost safety unavailable: " + costReason);
+            int baseIron = constructionCost.Iron;
+            int basePitch = constructionCost.Pitch;
+            int baseGold = constructionCost.Gold;
             if (wood < 0 || stone < 0 || baseIron < 0 || basePitch < 0 || baseGold < 0)
                 return null;
             int iron = RepairCost(baseIron, building->r_CurrentHealth, building->r_MaxHealth);

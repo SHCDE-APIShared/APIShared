@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><StartupObject>Program</StartupObject><IsTestProject>false</IsTestProject><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Buildings/ConstructionCosts/HumanConstructionContracts.cs" Link="Production/Contracts.cs" />
+    <Compile Include="../../src/Buildings/ConstructionCosts/HumanConstructionLedger.cs" Link="Production/Ledger.cs" />
+    <Compile Include="../../src/Buildings/ConstructionCosts/HumanConstructionCosts.cs" Link="Production/Costs.cs" />
+    <Compile Include="Boundary.cs" /><Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>
