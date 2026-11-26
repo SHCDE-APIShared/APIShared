@@ -878,6 +878,13 @@ pending peasants. Live simulation reads, immutable presentation/member snapshots
 world retirement and one versioned simulation save record are shared. See
 [identity ownership, authority and persistence](UNIT_IDENTITIES.md).
 
+## Native gold and virtual goods
+
+`ModApiClient.GoodsWallet` exchanges a validated native-gold balance and prepared
+owner-bound virtual stock under the engine/inventory monitors. Exact replay intent,
+world generations and schema-1/schema-2 compatibility are documented in the
+[wallet guide](GOODS_WALLET.md).
+
 ## Unit settlement events
 
 Not in packages up to 0.9.1; check the package you require. [UnitSettledEvents](../src/Units/Settled/UnitSettledEvents.cs)

@@ -1485,6 +1485,13 @@ presentation snapshots. It creates no troop, purchase, native type or art. See
 [compiled example](../examples/ThirdPartyMod/UnitIdentityExample.cs) for mutation
 context, world lifetime, save preservation and multiplayer limits.
 
+## Native-wallet virtual-good transactions
+
+Use `ModApiClient.GoodsWallet` with an owner-matching `CustomGoodsClient` for a
+checked direct-gold and virtual-stock exchange. Price, control authorization,
+engine context and save/peer coordination remain consumer responsibilities. See
+[wallet usage, atomicity and persistence](GOODS_WALLET.md).
+
 ## Reacting to created and recruited units
 
 Use `APIShared.Units.UnitSettledEvents` when your mod changes or records a unit once it

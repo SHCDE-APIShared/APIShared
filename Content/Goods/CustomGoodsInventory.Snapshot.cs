@@ -11,7 +11,7 @@ namespace APIShared.Goods
         /// VersionedSaveData entry. This codec owns no archive/save registration.</summary>
         public const int MaximumSnapshotBytes = 1024 * 1024;
 
-        /// <summary>Returns a private canonical schema-1 byte array containing the catalog,
+        /// <summary>Returns a private canonical byte array (schema 1 until a native-intent transaction is published; schema 2 thereafter) containing the catalog,
         /// balances, active holds and terminal replay receipts, in ordinal identity order.
         /// Capture invokes no callbacks. Wrap these bytes in existing VersionedSaveData;
         /// use SimulationRelevant for gameplay state. That agreement does not synchronize changes.</summary>
@@ -21,7 +21,7 @@ namespace APIShared.Goods
             using (var stream = new MemoryStream())
             using (var writer = new BinaryWriter(stream, new UTF8Encoding(false, true), true))
             {
-                writer.Write(0x31494743); writer.Write(1);
+                writer.Write(0x31494743); writer.Write(state.NativeFormat ? 2 : 1);
                 writer.Write(catalog.Count);
                 var indices = new Dictionary<CustomGoodId, int>();
                 foreach (var entry in catalog)
@@ -49,6 +49,12 @@ namespace APIShared.Goods
                     {
                         writer.Write(indices[change.Good]); writer.Write((byte)change.PlayerId); writer.Write(change.Delta);
                     }
+                    if (state.NativeFormat)
+                    {
+                        byte[] intent = entry.Value.Intent;
+                        writer.Write(intent?.Length ?? 0);
+                        if (intent != null) writer.Write(intent);
+                    }
                 }
                 writer.Flush();
                 if (stream.Length > MaximumSnapshotBytes) throw new InvalidOperationException("Inventory snapshot exceeds its bounded format.");
@@ -56,7 +62,7 @@ namespace APIShared.Goods
             }
         }
 
-        /// <summary>Atomically restores a schema-1 snapshot. Register all its goods first with
+        /// <summary>Atomically restores a schema-1 or schema-2 snapshot. Older readers reject schema 2; preserve such loaded bytes rather than replacing them. Register all its goods first with
         /// matching capacities; additional registered goods start empty. Rejects unknown goods,
         /// mismatched capacities, malformed/noncanonical records, overbooked holds and local bounds.
         /// Failure returns false/reason and preserves state AND existing handle validity.
@@ -73,6 +79,7 @@ namespace APIShared.Goods
             {
                 try
                 {
+                    if (nativeLeaseActive) { reason = "A native exchange is being prepared."; return false; }
                     State next = Decode(owned);
                     var nextEpoch = new object();
                     state = next; epoch = nextEpoch;
@@ -92,10 +99,12 @@ namespace APIShared.Goods
             using (var stream = new MemoryStream(data, false))
             using (var reader = new BinaryReader(stream, new UTF8Encoding(false, true)))
             {
-                RequireSnapshot(reader.ReadInt32() == 0x31494743 && reader.ReadInt32() == 1, "Unknown schema.");
+                RequireSnapshot(reader.ReadInt32() == 0x31494743, "Unknown snapshot signature.");
+                int schema = reader.ReadInt32();
+                RequireSnapshot(schema == 1 || schema == 2, "Unknown schema.");
                 int count = ReadCount(reader, maximumGoods);
                 var goods = new CustomGoodId[count];
-                var next = new State();
+                var next = new State { NativeFormat = schema == 2 };
                 for (int i = 0; i < count; i++)
                 {
                     var good = new CustomGoodId(ReadId(reader, 128), ReadId(reader, 64));
@@ -158,7 +167,18 @@ namespace APIShared.Goods
                             next.Stock[account] = new Stock(stock.Quantity, (int)held);
                         }
                     }
-                    next.Journal.Add(operation, new Receipt(reservation, status, changes));
+                    byte[] intent = null;
+                    if (schema == 2)
+                    {
+                        int length = ReadCount(reader, MaximumNativeIntentBytes);
+                        if (length != 0)
+                        {
+                            RequireSnapshot(!reservation && status == GoodsTransactionStatus.Applied, "Invalid native receipt.");
+                            intent = reader.ReadBytes(length);
+                            RequireSnapshot(intent.Length == length, "Truncated native intent.");
+                        }
+                    }
+                    next.Journal.Add(operation, new Receipt(reservation, status, changes, intent));
                 }
                 RequireSnapshot(stream.Position == stream.Length, "Trailing bytes.");
                 return next;

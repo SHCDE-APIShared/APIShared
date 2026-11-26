@@ -162,6 +162,7 @@ namespace APIShared
                 // Needs the mission lifecycle published above; later APIShared spans are watched as they publish.
                 new NativeInitializationStep("native foreign-patch recheck", () => NativeForeignPatchGuard.SubscribeRecheck(RuntimeLogger)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
+                new NativeInitializationStep("native custom-goods wallet", () => Economy.GoodsWalletNative.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("production goods receipts", () => Economy.ProductionGoodsReceived.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),

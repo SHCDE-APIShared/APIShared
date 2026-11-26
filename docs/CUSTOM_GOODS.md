@@ -94,7 +94,9 @@ binding is cooperative isolation, not access control against malicious plugins.
 
 ### Persistence and mission lifetime
 
-`Capture` returns private canonical schema-1 bytes containing stable good IDs,
+`Capture` returns private canonical bytes (schema 1 for virtual-only generations;
+[the native wallet adapter](GOODS_WALLET.md) introduces schema 2 only after an actual
+native-intent commit) containing stable good IDs,
 capacities, quantities, owner watermarks, active reservations and recent terminal receipts. Ordering
 is ordinal by owner/good/player and owner/operation, independent of registration
 or dictionary enumeration. The fixed bounds keep a snapshot within 1 MiB.
@@ -121,7 +123,9 @@ inventory at mission boundaries; the Content library installs no unload hook.
 Atomicity covers this inventory only. The library never reads or writes native
 gold, equipment, buildings, cargo, workshop output, food, prices or recruit slots.
 A failed native wallet write cannot be rolled back by a virtual-stock transaction.
-Do not advertise `Apply` plus a native payment as an atomic market purchase.
+Do not advertise `Apply` plus a native payment as an atomic market purchase. Use
+the [qualified native wallet adapter](GOODS_WALLET.md) for its documented direct-field
+and prepared-ledger commit boundary.
 
 The capacities are per-good bookkeeping bounds, not physical Armory/Granary
 occupancy. Building deletion, ownership changes, native stock sharing, cargo,
