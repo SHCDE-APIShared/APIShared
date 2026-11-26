@@ -159,10 +159,15 @@ if ($Worker) {
         if ($null -eq $configuration -or $configuration.TargetPlatform -cne 'x64' -or $configuration.MaxCpuCount -ne '1') {
             throw 'The original X64/one-test-process runsettings changed.'
         }
+        # VSTest 18.3 diagnostics formats DOTNET_* environment values as a format
+        # string, so a literal {pid} aborts LaunchHost before the process starts.
+        # This fresh single-assembly profile uses one owned filename; the report
+        # still requires the actual cohort PID/modules/markers and refuses replacement.
+        $tracePath = Join-Path $output 'allocation.nettrace'
         $traceEnvironment = [ordered]@{
             DOTNET_EnableEventPipe = '1'
             DOTNET_EventPipeConfig = $traceProvider
-            DOTNET_EventPipeOutputPath = (Join-Path $output 'allocation-{pid}.nettrace')
+            DOTNET_EventPipeOutputPath = $tracePath
             DOTNET_EventPipeCircularMB = '40'
             DOTNET_EventPipeOutputStreaming = '1'
             DOTNET_EventPipeEnableStackwalk = '1'
@@ -237,7 +242,7 @@ if ($Worker) {
             }
         }
         $validatedCohort = Get-Pin $cohortPath
-        $trace = Join-Path $output ('allocation-' + $cohort.processId + '.nettrace')
+        $trace = $tracePath
         if (-not (Test-Path -LiteralPath $trace) -or (Get-Item -LiteralPath $trace).Length -gt 128MB) { throw 'The exact testhost trace is missing or over budget.' }
         $reportExit = Invoke-DotNet 'trace-report' @('exec', '--fx-version', $runtimeVersion, $tool,
             '--trace', $trace, '--cohort', $cohortPath, '--output', (Join-Path $output 'allocation-report.json'))
