@@ -132,7 +132,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 5
     env:
-      ALLOCATION_RUNNER_ENVIRONMENT: ${{ runner.environment }}
       DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: 'false'
       DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
     steps:
@@ -143,6 +142,8 @@ jobs:
         with:
           dotnet-version: '10.0.404'
       - name: Capture one bounded full-suite allocation occurrence
+        env:
+          ALLOCATION_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         shell: pwsh
         run: ./tools/Validation/Invoke-CoreAllocationDiagnostic.ps1 -OutputDirectory "$env:RUNNER_TEMP/core-allocation-${{ github.run_id }}-${{ github.run_attempt }}"
       - uses: actions/upload-artifact@v7
