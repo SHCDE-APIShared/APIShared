@@ -61,6 +61,8 @@ namespace APIShared.Economy
         internal readonly NativeStorageState.Row[] Rows;
         internal readonly NativeStorageState.CargoLot[] Lots;
         internal readonly byte[] Intent;
+        // Optional typed attachment owned by the existing production service.
+        internal WeaponProductionManufacturingAdoption ManufacturingAdoption;
         internal NativeStorageImportPlan(CriticalSaveParticipant participant, VersionedSavePreparedOrigin origin, long session,
             NativeStorageState.Row[] rows, NativeStorageState.CargoLot[] lots, byte[] intent,
             NativeStorageImportCargo[] cargo)
@@ -107,6 +109,7 @@ namespace APIShared.Economy
         /// Refusal changes no stock, native gold, archive or caller state. Exact retry within the
         /// same original window/world returns AlreadyApplied; another intent conflicts. A new
         /// protected archive must use its shared state, not reimport retained legacy bytes.
+        /// An explicit WeaponProduction manufacturing attachment is validated and published by the same framework owner during this commit; ordinary imports are unchanged.
         /// Prepare replacement actor state first; on success perform only nonthrowing assignments
         /// under this same monitor to route every consumer through shared stock. Other owners may
         /// still have pending imports; wait for IsCurrentWorldReady before using the shared world.

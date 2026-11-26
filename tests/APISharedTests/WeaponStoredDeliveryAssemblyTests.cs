@@ -125,6 +125,24 @@ namespace APISharedTests
             { fixture.Run(); AssertMachineValues(fixture, expectedExit, false, callbackCalls); }
         }
 
+        [TestMethod]
+        [DataRow(1, 0, 1, RefusedExit, 1)]
+        [DataRow(0, 0, 1, RefusedExit, 1)]
+        [DataRow(-1, 0, 1, RefusedExit, 1)]
+        [DataRow(4000, 0, 1, RefusedExit, 1)]
+        [DataRow(1, 0, 0, NativeExit, 0)]
+        [DataRow(0, 0, 0, NativeExit, 0)]
+        public void RetainedStoredCarrierStillRefusesAtArrivalWhenItsHomeDemandIsGone(
+            int nativeHome, int homeDemand, int storedFlag, int expectedExit, int callbackCalls)
+        {
+            RequireWindowsX64();
+            // This executes the exact production gate and callback frame, with a
+            // controlled refusal result. It does not prove native AI reaches this
+            // arrival after demolition or authorize delivery from a lost workshop.
+            using (var fixture = new DecisionFixture(2, false, true, 1, storedFlag,
+                checked((short)nativeHome), checked((byte)homeDemand)))
+            { fixture.Run(); AssertMachineValues(fixture, expectedExit, false, callbackCalls); }
+        }
         private static void AssertMachineValues(DecisionFixture fixture, int expectedExit, bool capturedAccepted, int callbackCalls = 1)
         {
             Assert.AreEqual(expectedExit, fixture.Int32(ExitMarker));
@@ -192,9 +210,9 @@ namespace APISharedTests
                                 i.FlowControl == FlowControl.IndirectBranch), "Refusal must preserve worker state through the exact epilogue.");
                         }
                     }
-                    // Disabled service, invalid unit/building, zero home demand, invalid
+                    // Disabled service, invalid unit, invalid
                     // option index and a non-custom worker each bypass the callback frame.
-                    for (int rejectGuard = 0; rejectGuard < 8; rejectGuard++)
+                    for (int rejectGuard = 0; rejectGuard < 5; rejectGuard++)
                     {
                         DeliveryPath path = Walk(bytes, stub, site, image, rejectGuard, 1);
                         Assert.AreEqual(0, path.Calls.Count);
@@ -636,7 +654,7 @@ namespace APISharedTests
         {
             var path = new DeliveryPath(); var literals = new Dictionary<Register, ulong>();
             ulong ip = origin; int guard = 0, decisionBranch = 0;
-            var guards = new[] { Mnemonic.Je, Mnemonic.Jl, Mnemonic.Jg, Mnemonic.Jl, Mnemonic.Jg, Mnemonic.Je, Mnemonic.Ja, Mnemonic.Jne };
+            var guards = new[] { Mnemonic.Je, Mnemonic.Jl, Mnemonic.Jg, Mnemonic.Ja, Mnemonic.Jne };
             for (int steps = 0; steps < 256; steps++)
             {
                 if (ip == image + (uint)site.Rva + (uint)site.Bytes.Length || ip == image + (uint)site.FooterRva || ip == image + (uint)site.EpilogueRva)
@@ -650,7 +668,7 @@ namespace APISharedTests
                     literals[instruction.Op0Register] = instruction.Immediate64;
                 if (instruction.FlowControl == FlowControl.Call || instruction.FlowControl == FlowControl.IndirectCall)
                 {
-                    Assert.AreEqual(8, guard, "The callback must be gated by all eight demand conditions.");
+                    Assert.AreEqual(5, guard, "The callback must be gated by the enabled, unit and stored-custody conditions.");
                     path.Calls.Add(Target(instruction, bytes, origin, literals));
                     foreach (Register register in new[] { Register.RAX, Register.RCX, Register.RDX, Register.R8, Register.R9, Register.R10, Register.R11 })
                         literals.Remove(register);
@@ -736,7 +754,7 @@ namespace APISharedTests
             private ulong Image => unchecked((ulong)memory.ToInt64());
             private ulong Receipt => Image + ReceiptRva;
 
-            internal DecisionFixture(int decision, bool captureUnit = false, bool directionFlag = false, int? workerOption = null, int storedFlag = 1)
+            internal DecisionFixture(int decision, bool captureUnit = false, bool directionFlag = false, int? workerOption = null, int storedFlag = 1, short nativeHome = 1, byte homeDemand = 1)
             {
                 this.decision = decision; this.captureUnit = captureUnit; demandGate = workerOption.HasValue;
                 IncomingFlags = InitialFlags | (directionFlag ? 0x400UL : 0);
@@ -750,9 +768,9 @@ namespace APISharedTests
                     if (demandGate)
                     {
                         Marshal.WriteInt32(At(EnabledRva), 1);
-                        Marshal.WriteByte(At(HomeDemandRva + 1), 1);
+                        Marshal.WriteByte(At(HomeDemandRva + 1), homeDemand);
                         Marshal.WriteInt32(At(ReceiptRva + MutableCurrentUnit), 1);
-                        Marshal.WriteInt16(At(UnitsRva + 0x490 + 0x990), 1);
+                        Marshal.WriteInt16(At(UnitsRva + 0x490 + 0x990), nativeHome);
                         // Use the actual runtime's row stride. Byte 12 and the 0..31
                         // option domain are independently exercised wire ABI inputs.
                         Marshal.WriteByte(At(WorkerWireRva + WeaponProductionRuntime.WorkerWireBytes + 12), checked((byte)workerOption.Value));

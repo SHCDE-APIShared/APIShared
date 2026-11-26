@@ -27,6 +27,33 @@ namespace APIShared.Economy
                     return StoredDeliveryAdapters[i]?.Ready == true && StoredDeliveryRouteMatches(building);
             return false;
         }
+        // Adoption is rare and must revalidate the already-owned native cohort before
+        // taking custody of a paid legacy job. Published flags alone do not prove that
+        // another component left the generated jumps, stubs and boundaries unchanged.
+        // No hook, actor write or default/native-only admission change occurs here.
+        internal static bool CanAdoptPaidManufacturing(WeaponProductionOption option)
+        {
+            if (option == null || option.StoredOutput == null) return false;
+            for (int i = 0; i < Adapters.Length; i++)
+            {
+                if (WeaponProductionNativeDefinition.Roles[i].Building != option.BuildingType) continue;
+                var native = Adapters[i]; var stored = StoredDeliveryAdapters[i];
+                if (native?.Ready != true || stored?.Ready != true || !StoredDeliveryRouteMatches(option.BuildingType)) return false;
+                try
+                {
+                    native.ValidatePrepared(true); stored.ValidatePrepared(true);
+                    if (WeaponProductionRuntime.NeedsIngredientAdapter(option))
+                    {
+                        var ingredients = IngredientAdapters[i];
+                        if (ingredients?.Ready != true) return false;
+                        ingredients.ValidatePrepared(true);
+                    }
+                    return true;
+                }
+                catch { return false; }
+            }
+            return false;
+        }
         internal static string StoredDeliveryAvailabilityReason(eStructs building)
         {
             for (int i = 0; i < StoredDeliveryAdapters.Length; i++)
@@ -195,7 +222,7 @@ namespace APIShared.Economy
                     !new ReadOnlySpan<byte>((void*)(module + rva), bytes.Length).SequenceEqual(bytes))
                     throw new InvalidOperationException("Stored-delivery native bytes differ at 0x" + rva.ToString("X") + ".");
             }
-            private void ValidatePrepared(bool installed)
+            internal void ValidatePrepared(bool installed)
             {
                 native.ValidatePrepared(true);
                 if (site.Building == eStructs.STRUCT_TANNERS_WORKSHOP)
@@ -231,11 +258,19 @@ namespace APIShared.Economy
                 try
                 {
                     if (unitId != CurrentUnit) return 2;
-                    if (!TryGetWorker(role, unitId, out GameUnit* worker) ||
-                        !WeaponProductionRuntime.TryGetBatch(worker->r_LinkedProductionBuildingId, worker->r_LinkedProductionBuildingGlobalId,
-                            unitId, worker->r_GlobalId, out WeaponProductionOption option) || option.StoredOutput == null)
-                        return 0;
+                    bool workerReady = TryGetWorker(role, unitId, out GameUnit* worker);
+                    // The native gate saw a stored-output wire row. Failure to read
+                    // its actor is not evidence that native template delivery is safe.
+                    if (worker == null || worker->r_GlobalId == 0) return 2;
+                    if (!WeaponProductionRuntime.TryGetWorkerBatch(unitId, worker->r_GlobalId,
+                        out WeaponProductionOption option, out int homeId, out uint homeGid) || option.StoredOutput == null)
+                        return 0; // Proven absent/stale-generation or native-only custody.
                     custom = true;
+                    // Classify the exact carrier before testing its mutable native
+                    // home. A lost/reassigned home must retain custom cargo, never
+                    // reinterpret it as the template good. Saved home is no authority.
+                    if (!workerReady || worker->r_LinkedProductionBuildingId != homeId ||
+                        worker->r_LinkedProductionBuildingGlobalId != homeGid) return 2;
                     if (!StoredDeliveryRouteMatches(role.Building))
                     {
                         ReportFault(true, "Stored Tanner route changed after its recipe was admitted.");
@@ -257,7 +292,7 @@ namespace APIShared.Economy
                     // Do not disable a demanded custom gate after a fault: reverting to the
                     // native fallback would lose its cargo or issue the template good.
                     ReportFault(custom, "Stored-delivery callback fault.", error);
-                    return custom ? 2 : 0;
+                    return 2; // An unclassified failure behind the custom wire gate cannot authorize native credit.
                 }
             }
             private void ReportFault(bool custom, string message, Exception error = null)

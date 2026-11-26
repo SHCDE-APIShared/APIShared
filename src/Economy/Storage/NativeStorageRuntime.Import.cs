@@ -137,15 +137,21 @@ namespace APIShared.Economy
             if (!ImportContext(plan, out object world, out NativeStorageState before, out reason)) return false;
             NativeStorageImportPlan[] pendingBefore;
             Dictionary<CriticalSaveParticipant, NativeStorageImportPlan> completedBefore;
+            WeaponProductionManufacturingAdoption manufacturingAdoption;
             lock (importSync)
             {
                 if (importGeneration != plan.Origin.Generation)
                 { reason = "The import's original generation was replaced."; return false; }
+                manufacturingAdoption = plan.ManufacturingAdoption;
                 completedBefore = ReferenceEquals(importWorld, world) ? completedImports : null;
                 if (completedBefore != null && completedBefore.TryGetValue(plan.Participant, out var prior))
                 {
                     if (ReferenceEquals(prior.Origin, plan.Origin) && SameImportIntent(prior.Intent, plan.Intent))
-                    { status = GoodsTransactionStatus.AlreadyApplied; reason = string.Empty; return true; }
+                    {
+                        if (manufacturingAdoption != null && !ReferenceEquals(manufacturingAdoption.PublishedWorld, world))
+                        { reason = "The storage receipt has no matching manufacturing publication."; return false; }
+                        status = GoodsTransactionStatus.AlreadyApplied; reason = string.Empty; return true;
+                    }
                     status = GoodsTransactionStatus.Conflict; reason = "This participant already imported another original or intent in this world."; return false;
                 }
                 pendingBefore = pendingImports;
@@ -159,8 +165,11 @@ namespace APIShared.Economy
             NativeStorageState candidate;
             Dictionary<CriticalSaveParticipant, NativeStorageImportPlan> next;
             NativeStorageImportPlan[] remaining;
+            WeaponProductionRuntime.PreparedManufacturingPublication manufacturing = null;
             try
             {
+                if (manufacturingAdoption != null &&
+                    !WeaponProductionRuntime.TryPrepareManufacturingPublication(manufacturingAdoption, world, out manufacturing, out reason)) return false;
                 NativeStorageProbe Probe(int slot)
                 {
                     if (!observed.TryGetValue(slot, out var value)) { value = readProbe(slot); observed.Add(slot, value); }
@@ -208,6 +217,20 @@ namespace APIShared.Economy
                     !ReferenceEquals(preparedLoad, prepared) || !ReferenceEquals(publication, before.PublicationIdentity) ||
                     !ReferenceEquals(cargoPublication, before.CargoPublicationIdentity))
                 { reason = "The final import generation, source, pending cohort or state changed."; return false; }
+                if (manufacturingAdoption != null)
+                {
+                    if (!ReferenceEquals(manufacturingAdoption, plan.ManufacturingAdoption) || manufacturing == null || !manufacturing.IsCurrent(out reason))
+                    { reason = "The attached producer actor state changed before publication."; return false; }
+                    // Native actor/capability reads above are outside the registry lease. A
+                    // replacement load or another import during those reads must still refuse.
+                    // Ordinary unattached imports retain their original validation path.
+                    if (importGeneration != plan.Origin.Generation || !ReferenceEquals(pendingBefore, pendingImports) ||
+                        !ImportContext(plan, out finalWorld, out finalState, out reason) ||
+                        !ReferenceEquals(world, finalWorld) || !ReferenceEquals(before, finalState) ||
+                        !ReferenceEquals(preparedLoad, prepared) || !ReferenceEquals(publication, before.PublicationIdentity) ||
+                        !ReferenceEquals(cargoPublication, before.CargoPublicationIdentity))
+                    { reason = "The producer validation changed the final import source/state."; return false; }
+                }
                 // Lock order is actual engine -> importSync -> registry. The registry
                 // allocates its guard before locking, then rechecks only owned metadata.
                 // This closes invalidation between source validation and publication;
@@ -216,10 +239,15 @@ namespace APIShared.Economy
                     plan.Origin, criticalPreparedSource, plan.MissionSessionId, out var lease, out reason)) return false;
                 using (lease)
                 {
+                    manufacturing?.PublishManaged();
                     state = candidate; completedImports = next; importWorld = world;
                     Volatile.Write(ref boundWorld, world); staged = null;
                     Volatile.Write(ref pendingImports, remaining);
                 }
+                // The registry lease has ended. Publish only trusted process-owned wire
+                // bytes/demand while engine/import monitors still exclude native execution.
+                // No native actor/resource write or consumer callback follows publication.
+                manufacturing?.PublishWire();
             }
             prepared?.ReleaseState();
             RefreshImportPublicationDemand();

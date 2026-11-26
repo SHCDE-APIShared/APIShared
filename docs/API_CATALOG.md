@@ -1184,7 +1184,10 @@ APIShared reserves the original recipes within the four choices per workshop typ
 It supplies the building HUD, Shift selection, synchronized execution and saved
 production state. `WithStoredOutput` binds an owner-matching registered Armory good
 for offline/editor production, with atomic native cargo/custom-stock delivery and
-verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+verified joint save capture. `TryPrepareManufacturingAdoption` can attach exact-origin,
+already-paid native-timed Armourer work to a legacy storage import; Ready and Carrying
+need separate qualified adoption. See [the recipe contract and example](WEAPON_PRODUCTION.md)
+and [paid manufacturing adoption](WEAPON_PRODUCTION.md#adopt-an-already-paid-legacy-manufacturing-charge).
 
 ## Huntable prey
 

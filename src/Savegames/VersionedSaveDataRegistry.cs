@@ -43,6 +43,9 @@ namespace APIShared.Savegames
         private Slot[] slots = new Slot[0];
         private bool windowOpen;
         private long generation;
+        // Closed executable-admission stamps read this scalar without taking the registry
+        // lock or waiting for observers. Both existing writers publish atomically below.
+        internal long CurrentGeneration => Interlocked.Read(ref generation);
         // Closing the transport window precedes Loaded callbacks. Critical cold
         // operations wait for the entire matching EndLoad pass instead.
         private long finalizedLoadGeneration = -1;
@@ -262,7 +265,7 @@ namespace APIShared.Savegames
             lock (sync)
             {
                 windowOpen = true;
-                generation++;
+                Interlocked.Increment(ref generation);
                 finalizedLoadGeneration = -1;
                 windowSource = source;
                 windowFile = filePath;
@@ -280,7 +283,7 @@ namespace APIShared.Savegames
             lock (sync)
             {
                 if (windowOpen) return; // The game unloads the previous map while loading the next one.
-                generation++;
+                Interlocked.Increment(ref generation);
                 finalizedLoadGeneration = -1;
                 windowMissionSessionId = 0;
                 foreach (Slot slot in slots) slot.ResetMission();
