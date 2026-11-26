@@ -1,5 +1,15 @@
 # API catalog
 
+## Custom goods inventory
+
+`APIShared.Goods.CustomGoodsInventory` in the game-independent Content assembly
+provides owner-qualified virtual goods, bounded player stock/capacities, atomic
+multi-good changes, sequenced retry protection and one-shot reservations.
+Caller-owned mission state has canonical snapshots for existing versioned saves.
+Native goods slots, wallets, physical storage and multiplayer transport require
+separate adapters. See [usage, persistence and limits](CUSTOM_GOODS.md) and the
+[compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
+
 ## AI military admission
 
 `ModApiClient.TryGetAiMilitary` exposes semantic military roles, invocation-scoped
