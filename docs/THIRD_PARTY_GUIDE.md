@@ -1390,6 +1390,14 @@ cover AI planning, execution and ally valuations consistently on all multiplayer
 peers. CalculateTradeTotal preserves Vanilla's signed division before unchecked
 multiplication. Do not install a competing detour at either shared query entry.
 
+For per-setting price explanations, create a typed request with
+`MarketPriceModifiers.CreateStatusQuery` and pass it to
+`APIShared.Modifiers.ValueModifiers.TryGetStatus`. The immutable result includes
+the cached shared/AI base-price projection, the current shared-table observation
+with its comparison value, ordered contributions and applied bounds. Keep
+formatting and localization in the consumer. See the
+[status, thread and lifetime contract](MARKET_PRICE_MODIFIERS.md#read-only-composition-status).
+
 ## Ordering units taken from AI groups
 
 `GameTribeManagerAPI.IssueMoveHereCommand` and Vanilla's other group moves silently skip a member
