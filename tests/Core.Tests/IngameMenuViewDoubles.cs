@@ -150,7 +150,12 @@ namespace APIShared.Presentation
         internal static int TestFailures;
         internal static bool TestUnity = true;
         private static void RequireUnity() { if (!TestUnity) throw new InvalidOperationException("Unity required"); }
-        private static void Report(IngameMenuRegistry.Entry? entry, Exception error) { TestFailures++; }
+        private static void Report(IngameMenuRegistry.Registration? entry, Exception error)
+        {
+            if (entry?.FailureReported == true) return;
+            if (entry != null) entry.FailureReported = true;
+            TestFailures++;
+        }
         private static bool MenuVisible() => observedMain?.Show_HUD_IngameMenu == true;
         private static bool Refresh(bool all)
         { CaptureVanilla(); registry.Evaluate(all, null); Render(registry.Resolve()); return true; }

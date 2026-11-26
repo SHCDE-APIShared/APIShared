@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.IO;
 using System.Linq;
 using APIShared.Buildings;
 using MessagePack;
@@ -15,6 +16,36 @@ namespace APISharedTests
     public sealed class BuildingStateTests
     {
         private static readonly byte[] TwoValues = { 3, 1 };
+
+        [TestMethod]
+        [TestCategory("BuildingState")]
+        public void RepairReplacesTripAndRunsOnlyForTheRepairedIdentity()
+        {
+            var host = new BuildingStateMemory(TwoValues);
+            var client = new BuildingStateMemory(TwoValues);
+            host.Set(4, 41, 0, 2);
+            host.Set(4, 41, 1, 1);
+            host.Set(5, 51, 0, 3);
+            host.Set(6, 61, 0, 3);
+            client.Set(4, 41, 0, 1);
+            client.Set(5, 52, 0, 3);
+            BuildingStateMemory.ResyncIdentity? Host(int id, uint global) => new BuildingStateMemory.ResyncIdentity(2, 3);
+            BuildingStateMemory.ResyncIdentity? Repaired(int id, uint global) => id == 5 ? null :
+                new BuildingStateMemory.ResyncIdentity((ushort)(id == 6 ? 1 : 2), 3);
+            var wire = host.CaptureResync(Host);
+            var replacement = client.PrepareResync(wire, Repaired);
+            Assert.AreEqual(1, client.Get(4, 41, 0), "prepare cannot publish values");
+            ulong address = client.Address;
+            client.CommitResync(replacement);
+            Assert.AreEqual(address, client.Address);
+            Assert.AreEqual(2, client.Get(4, 41, 0));
+            Assert.AreEqual(1, client.Get(4, 41, 1));
+            Assert.AreEqual(0, client.Get(5, 52, 0));
+            Assert.AreEqual(0, client.Get(6, 61, 0));
+            wire[16] = byte.MaxValue;
+            Assert.ThrowsExactly<InvalidDataException>(() => client.PrepareResync(wire, Repaired));
+            Assert.AreEqual(2, client.Get(4, 41, 0));
+        }
 
         [TestMethod]
         [TestCategory("BuildingState")]

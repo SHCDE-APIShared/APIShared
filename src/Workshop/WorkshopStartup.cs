@@ -80,17 +80,20 @@ namespace APIShared.Workshop
                     }
                     try {
                         var status = WorkshopLocalStatus.Missing;
+                        Version localVersion = null;
                         bool offers = WorkshopRuntime.OffersEnabled(item.WorkshopId);
                         if (item.IsSubscribed) {
-                            var evidence = await WorkshopRuntime.InspectLocalAsync(item);
+                            var evidence = await WorkshopRuntime.InspectLocalAsync(item, inspectPackageVersion: true);
                             status = evidence.Status;
+                            localVersion = evidence.LocalVersion;
                             context = WorkshopDiagnostics.InstallationContext(item, evidence.Bootstrap, "local installation");
                             WorkshopRuntime.Log(context + "; localState=" + status + "; startupOffers=" + offers +
                                 (evidence.Difference == null ? "" : "; difference=" + evidence.Difference));
                             WorkshopDiagnostics.ReportOwnership(WorkshopRuntime.WriteDiagnostic, context, evidence.Conflicts);
                         }
                         bool repair = repairs.Contains(item.WorkshopId);
-                        bool verified = status == WorkshopLocalStatus.Verified && item.Receipt?.ManifestHash == item.ManifestHash;
+                        bool verified = status == WorkshopLocalStatus.Verified && item.Receipt?.ManifestHash == item.ManifestHash
+                            && (!repair || WorkshopLocalState.StartupVersionBlock(item.Package, item.Receipt, localVersion) == null);
                         if (repair && verified) {
                             repairs.Remove(item.WorkshopId);
                             verifiedRepairs.Add(item.WorkshopId);
@@ -98,7 +101,7 @@ namespace APIShared.Workshop
                         // An intact old receipt does not prove that a later legacy install finished.
                         var action = WorkshopLocalState.StartupAction(item,
                             repair && !verified && status == WorkshopLocalStatus.Verified ? WorkshopLocalStatus.Modified : status,
-                            offers, repair && !verified);
+                            offers, repair && !verified, localVersion, WorkshopRuntime.Log);
                         if (action != null) plans.Add(await WorkshopRuntime.PrepareStartupAsync(item.WorkshopId, action.Value));
                     }
                     catch (Exception ex) {

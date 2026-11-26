@@ -44,6 +44,24 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void CriticalResyncFailureStopsWorldWithoutAnAgreementFeature()
+        {
+            using (var world = new World())
+            {
+                var agreement = typeof(APIShared.Multiplayer.SimulationAgreement).GetField("world", PrivateStatic);
+                object before = agreement.GetValue(null);
+                try
+                {
+                    agreement.SetValue(null, null); // Admit with no registered features has no receipt.
+                    APIShared.Multiplayer.MultiplayerResyncNativeRuntime.ReportFault(new InvalidOperationException("participant"));
+                    Assert.IsTrue(WorkerProductionWorldSafety.IsFaulted);
+                    Assert.IsTrue(WorkerProductionWorldSafety.Enabled);
+                }
+                finally { agreement.SetValue(null, before); }
+            }
+        }
+
+        [TestMethod]
         public void FaultIsPublishedBeforeRetirementCanInvalidateDeferredTermination()
         {
             using (var world = new World())

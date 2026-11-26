@@ -27,6 +27,11 @@ try
             Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(model.ConstructionGoldCallAllowances()
                 .Select(call => new { Path = Path.GetFullPath(call.SyntaxTree.FilePath), Line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1 })));
             return 0;
+        case "raw-call-publications":
+            model.CheckHooks();
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(model.ConstructionGoldCallAllowances().Concat(model.ResyncDataCallAllowances())
+                .Select(call => new { Path = Path.GetFullPath(call.SyntaxTree.FilePath), Line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1 })));
+            return 0;
         case "lifecycle": model.CheckLifecycle(); break;
         case "interop":
             var selected = model.Types.Where(t => t.Identifier.ValueText is "UnitAccess" or "UnitSettledScriptExtenderSource").Cast<Microsoft.CodeAnalysis.SyntaxNode>()

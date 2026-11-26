@@ -40,14 +40,226 @@ internal static class Program
         object[] arguments = { Mp, null, false, false, false };
         return (bool)Boundary.RefreshHook.DynamicInvoke(arguments);
     }
-    private static void Save() => Boundary.SaveHook.DynamicInvoke(Mp, "save-name");
+    // Vanilla's selected save name is the basename of its real local file. The
+    // production coordinator now rechecks that same identity after observers run.
+    private static void Save() => Boundary.SaveHook.DynamicInvoke(Mp, Path.GetFileNameWithoutExtension(Boundary.Path));
     private static void Tick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/21-map-record-readiness"]();
+    private static void SaveTick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/20-save-load"]();
     private static SavegameLoadPacket Reply(SavegameLoadPacket packet, int operation = 1) => new SavegameLoadPacket {
         Version = packet.Version, Operation = operation, Lobby = packet.Lobby, Token = packet.Token, SaveName = packet.SaveName, Checksum = packet.Checksum,
         Fingerprint = packet.Fingerprint, Roster = packet.Roster, Records = packet.Records,
         Metadata = operation == 0 ? packet.Metadata : null
     };
     private static void Receive(SavegameLoadPacket packet, ulong sender = 2002) => Boundary.Receive(new MapRecordReadinessPacket { Value = packet }, sender);
+
+    private static void TestSavePreparingDispatch()
+    {
+        bool enabled = false, backendBound = true, earlyTickSafe = true, releaseBeforeOriginal = true, nativeDelivered = false, throwNext = false;
+        int mode = 0, backendCalls = 0;
+        string first = null, second = null;
+        var bound = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+        var state = MultiplayerSavePreparation.State;
+        Check(state.TryRegister("fixture.save-dispatch", "early", snapshot => {
+            if (!enabled) return;
+            if (snapshot.Phase == MultiplayerSavePreparationPhase.Preparing)
+            {
+                if (MultiplayerSavePreparation.Current?.OperationId != snapshot.OperationId) return;
+                if (first == null) first = snapshot.OperationId;
+                else if (second == null && snapshot.OperationId != first) second = snapshot.OperationId;
+                if (mode == 1)
+                {
+                    int before = backendCalls;
+                    SaveTick(); earlyTickSafe &= before == backendCalls && Boundary.SaveStarts == 0;
+                    Save(); // Duplicate request must not invalidate the admitted generation.
+                }
+                if (mode == 2) { mode = 0; SavegameLoadCoordinator.CancelSelection(); }
+                else if (mode == 3) { mode = 0; SavegameLoadCoordinator.CancelSelection(); Save(); }
+            }
+            else if (snapshot.Phase == MultiplayerSavePreparationPhase.Ended)
+            {
+                if ((mode == 4 || mode == 7) && snapshot.OperationId == first)
+                { if (mode == 7) throwNext = true; Save(); }
+                else if (mode == 7 && snapshot.OperationId == second)
+                { mode = 0; Save(); }
+            }
+            else if (snapshot.Phase == MultiplayerSavePreparationPhase.Released)
+            {
+                releaseBeforeOriginal &= Boundary.SaveStarts == 0;
+                if (mode == 5) Mp.activeLobby = null;
+            }
+            else if (snapshot.Phase == MultiplayerSavePreparationPhase.NativeLoading)
+            {
+                nativeDelivered = true;
+                if (mode == 6) Mp.activeLobby = null;
+            }
+        }, out _, replay: false, order: -100), "early dispatch observer registers");
+        Check(state.TryRegister("fixture.save-dispatch", "binder", snapshot => {
+            if (enabled && snapshot.Phase == MultiplayerSavePreparationPhase.Preparing &&
+                MultiplayerSavePreparation.Current?.OperationId == snapshot.OperationId) bound.Add(snapshot.OperationId);
+        }, out _, replay: false, order: 100), "late dispatch binder registers");
+        Action<bool> beginCase = solo => {
+            enabled = false; Reset(solo: solo);
+            bound.Clear(); first = second = null; backendCalls = 0;
+            backendBound = earlyTickSafe = releaseBeforeOriginal = true; nativeDelivered = throwNext = false;
+            Boundary.DuringPrepare = () => {
+                backendCalls++; backendBound &= bound.Contains(MultiplayerSavePreparation.Current?.OperationId ?? "");
+                if (throwNext) { throwNext = false; throw new IOException("fixture B preparation failed"); }
+            };
+            enabled = true;
+        };
+        try
+        {
+            beginCase(true); mode = 1; Save();
+            Check(earlyTickSafe && backendBound && releaseBeforeOriginal && Boundary.SaveStarts == 1,
+                "normal solo delivery precedes even a synchronous observer Tick; duplicate request keeps one continuation");
+            SavegameLoadCoordinator.ValidateStart(Boundary.Path, true);
+            Check(nativeDelivered && SavegameLoadCoordinator.IsLoadingMultiplayerSave,
+                "NativeLoading observers return synchronously before actual admission returns");
+
+            beginCase(true); mode = 4; Boundary.SaveGuardWaiting = true; Save();
+            Check(Boundary.SaveStarts == 0, "source save waits before reentrant replacement");
+            Boundary.SaveGuardWaiting = false; SavegameLoadCoordinator.CancelSelection();
+            Check(second != null && backendBound && releaseBeforeOriginal && Boundary.SaveStarts == 1 &&
+                MultiplayerSavePreparation.Current?.OperationId == second,
+                "Ended observer's actual HostLoadGame binds B before its first guard and synchronously delivers Released before Vanilla");
+
+            beginCase(true); mode = 2; Save();
+            Check(Boundary.SaveStarts == 0 && backendCalls == 0 && MultiplayerSavePreparation.Current == null,
+                "cancelled Preparing never executes its queued continuation");
+
+            beginCase(true); mode = 3; Save();
+            Check(second != null && backendBound && Boundary.SaveStarts == 1 &&
+                MultiplayerSavePreparation.Current?.OperationId == second,
+                "replacement during Preparing drops A and executes only B's bound continuation");
+
+            beginCase(true); mode = 5; Save();
+            Check(Boundary.SaveStarts == 0 && MultiplayerSavePreparation.Current == null,
+                "Released observer lobby mutation is checked before Vanilla dispatch");
+
+            beginCase(true); mode = 6; Save();
+            bool failed = false;
+            try { SavegameLoadCoordinator.ValidateStart(Boundary.Path, true); } catch (InvalidOperationException) { failed = true; }
+            Check(nativeDelivered && failed && !SavegameLoadCoordinator.IsLoadingMultiplayerSave && MultiplayerSavePreparation.Current == null,
+                "NativeLoading observer mutation fails final admission and retires that operation");
+
+            beginCase(true); mode = 7; Boundary.SaveGuardWaiting = true; Save();
+            Boundary.SaveGuardWaiting = false; SavegameLoadCoordinator.CancelSelection();
+            Check(first != null && second != null && MultiplayerSavePreparation.Current != null &&
+                MultiplayerSavePreparation.Current.OperationId != first && MultiplayerSavePreparation.Current.OperationId != second &&
+                backendBound && releaseBeforeOriginal && Boundary.SaveStarts == 1 &&
+                Boundary.Logs.Any(text => text.Contains("fixture B preparation failed")),
+                "failed B continuation cannot abort C installed by its terminal observer");
+
+            beginCase(false); mode = 0; Save();
+            Check(Boundary.SaveStarts == 0 && bound.Contains(MultiplayerSavePreparation.Current.OperationId),
+                "two-peer save remains asynchronous after synchronous Preparing delivery");
+            var proposal = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+            var acknowledgement = Reply(proposal); acknowledgement.Time = proposal.Time;
+            Boundary.Receive(acknowledgement, 2002); SaveTick();
+            Check(backendBound && releaseBeforeOriginal && Boundary.SaveStarts == 1,
+                "later peer acknowledgement releases exactly one normally bound save");
+        }
+        finally { enabled = false; Reset(solo: true); }
+    }
+
+    private static void TestManualRepeatedLoadsWithoutConsumer()
+    {
+        // This fixture links only SDK coordinators and controlled external game/Steam
+        // boundaries. There is no restart/testmod consumer or worker barrier in it.
+        foreach (bool client in new[] { false, true })
+        {
+            string previousToken = null;
+            string originalHash = null, originalFingerprint = null;
+            var retainedPlatform = new Platform_Multiplayer();
+            for (int iteration = 0; iteration < 3; iteration++)
+            {
+                Reset(client: client);
+                retainedPlatform.activeLobby = Mp.activeLobby;
+                Platform_Multiplayer.Instance = retainedPlatform;
+                Mp.activeLobby.id = new Steamworks.CSteamID((ulong)(100 + iteration + (client ? 10 : 0)));
+                string hash = Sha256Hex.Of(File.ReadAllBytes(Boundary.Path));
+                string fingerprint = SavegameModSettings.CaptureHostFingerprint();
+                if (iteration == 0) { originalHash = hash; originalFingerprint = fingerprint; }
+                Check(ReferenceEquals(Mp, retainedPlatform) && hash == originalHash && fingerprint == originalFingerprint,
+                    "manual repeated loads retain the same Platform singleton, unchanged save bytes and identical host fingerprint");
+                SavegameLoadPacket proposal;
+                if (client)
+                {
+                    proposal = new SavegameLoadPacket { Operation = 0, Lobby = Mp.activeLobby.id.m_SteamID,
+                        Token = Guid.NewGuid().ToString("N"), SaveName = Path.GetFileNameWithoutExtension(Boundary.Path),
+                        Checksum = 1, Time = 2, Fingerprint = SavegameModSettings.CaptureHostFingerprint(), Roster = "2001,2002" };
+                    Boundary.Receive(proposal, 2001);
+                    Check(Boundary.Sent.OfType<SavegameLoadPacket>().Count(packet => packet.Operation == 1) == 1,
+                        "manual client load acknowledges the selected save in every fresh lobby");
+                    if (iteration % 2 == 0)
+                    { var release = Reply(proposal, 2); release.Time = proposal.Time; Boundary.Receive(release, 2001); }
+                }
+                else
+                {
+                    Save(); proposal = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
+                    var acknowledgement = Reply(proposal); acknowledgement.Time = proposal.Time;
+                    Boundary.Receive(acknowledgement, 2002);
+                    Check(Boundary.SaveStarts == 1, "manual host save releases once in every fresh lobby");
+                }
+                Check(proposal.Token != previousToken && MultiplayerSavePreparation.Current?.OperationId == proposal.Token,
+                    "same-file manual reload owns a fresh operation rather than a stale scope");
+                SavegameLoadCoordinator.ValidateStart(Boundary.Path, true);
+                if (client && iteration % 2 != 0)
+                { var release = Reply(proposal, 2); release.Time = proposal.Time; Boundary.Receive(release, 2001); }
+                Check(SavegameLoadCoordinator.IsLoadingMultiplayerSave &&
+                    MultiplayerSavePreparation.Current?.Phase == MultiplayerSavePreparationPhase.NativeLoading,
+                    "repeated manual save passes native admission, including late client release");
+                SavegameLoadCoordinator.FinishLoad();
+                Check(!SavegameLoadCoordinator.IsLoadingMultiplayerSave && MultiplayerSavePreparation.Current == null &&
+                    APIShared.Economy.WorkerProductionAgreement.PreparedDataPath == null,
+                    "normal manual load completion retires only its preparation and production path");
+                var late = client ? proposal : Reply(proposal); late.Time = proposal.Time;
+                Boundary.Receive(late, client ? 2001UL : 2002UL);
+                Check(MultiplayerSavePreparation.Current == null, "late packets cannot resurrect a completed manual save");
+                previousToken = proposal.Token;
+            }
+
+            // A normal new game after the same-file load sequence still needs all
+            // record, peer, production and final immutable file admission checks.
+            Reset();
+            if (!client) { retainedPlatform.activeLobby = Mp.activeLobby; Platform_Multiplayer.Instance = retainedPlatform; }
+            Start();
+            var mapProposal = Reply(RequestPacket, 0);
+            if (client)
+            {
+                mapProposal.Token = Guid.NewGuid().ToString("N"); // Another process has its own retired-token set.
+                Reset(client: true); retainedPlatform.activeLobby = Mp.activeLobby; Platform_Multiplayer.Instance = retainedPlatform;
+                Receive(mapProposal, 2001); Receive(Reply(mapProposal, 2), 2001);
+            }
+            else Receive(Reply(mapProposal));
+            Check(ReferenceEquals(Mp, retainedPlatform) && ValidateMapStart() && MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true),
+                "normal new game remains admissible after repeated manual save loads without any consumer");
+            MapRecordLoadCoordinator.FinishLoad();
+        }
+    }
+
+    private static void TestMapLobbyPacketAuthority()
+    {
+        Reset();
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _),
+            "handshake staging has no authority before a coordinated map request");
+        Start(); int captures = Boundary.Captures;
+        Check(MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out string token, out ulong lobby, out ulong host, out var humans) &&
+            token == RequestPacket.Token && lobby == Mp.activeLobby.id.m_SteamID && host == 2001 && humans.SequenceEqual(new ulong[] { 2001, 2002 }) &&
+            Boundary.Captures == captures && Boundary.MapStarts == 0,
+            "map handshake authority is a detached authenticated pending proposal even before P2P release, without archive access");
+        Boundary.Host = 2002;
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "owner migration invalidates map packet authority");
+        Boundary.Host = 2001; Mp.activeLobby.members[1].dummyToBeKicked = true;
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _) && humans[1] == 2002,
+            "changing roster invalidates packet authority without mutating an already captured roster");
+        Mp.activeLobby.members[1].dummyToBeKicked = false; Mp.activeLobby.id = new Steamworks.CSteamID(100);
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "different lobby cannot inherit a pending map token");
+        Mp.activeLobby.id = new Steamworks.CSteamID(99); Boundary.MainThread = false;
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "packet authority is not inspected from a worker");
+        Boundary.MainThread = true; MapRecordLoadCoordinator.FinishLoad();
+        Check(!MapRecordLoadCoordinator.TryGetLobbyPacketAdmission(out _, out _, out _, out _), "retired map token cannot authorize staged lobby packets");
+    }
 
     private static void TestMapLoadPolicy()
     {
@@ -113,6 +325,7 @@ internal static class Program
         Check(Boundary.MapStarts == 1 && Boundary.Captures == 1 && Boundary.Sent.Count == 0, "solo MP captures own map but needs no network echo");
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "GO publication alone never grants a native ticket");
         Check(ValidateMapStart(), "solo platform start creates a verified admission ticket");
+        var sourceFile = MapRecordLoadCoordinator.CurrentAdmission;
         Boundary.MainThread = false;
         Check(MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "native admission is independent of Unity/Steam access");
         Boundary.MainThread = true;
@@ -120,6 +333,14 @@ internal static class Program
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "native admission rejects a file changed after platform start");
         MapRecordLoadCoordinator.FinishLoad();
         Check(!MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true) && MapRecordLoadCoordinator.ValidateNativeAdmission("unused", false), "finished ticket cannot be replayed; SP needs none");
+        Check(!MapRecordLoadCoordinator.MatchesFile(sourceFile, Boundary.Path),
+            "a source mission cannot confirm a changed map file for a later restart");
+        Reset(solo: true); Start(); Check(ValidateMapStart(), "restart fixture obtains a confirmed source file");
+        sourceFile = MapRecordLoadCoordinator.CurrentAdmission;
+        MapRecordLoadCoordinator.FinishLoad();
+        Check(MapRecordLoadCoordinator.MatchesFile(sourceFile, Boundary.Path) &&
+            !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true),
+            "a completed mission can verify its original file without reviving the consumed lobby admission");
         Reset(solo: true); Start(); Check(ValidateMapStart(), "worker failure fixture has a native ticket");
         Boundary.MainThread = false; MapRecordLoadCoordinator.Abort("native file failure");
         Check(Boundary.Popups == 0 && !MapRecordLoadCoordinator.ValidateNativeAdmission(Boundary.Path, true), "worker failure revokes the ticket without UI or lobby processing");
@@ -474,7 +695,6 @@ internal static class Program
         Check(productionRejected && APIShared.Economy.WorkerProductionAgreement.Checks>admittedProductionChecks &&
             !SavegameLoadCoordinator.IsLoadingMultiplayerSave,"Final production rejection revokes admission before native loading");
 
-        void SaveTick() => APIShared.Presentation.UiWorkRuntime.Ticks["internal/20-save-load"]();
         Reset(); Boundary.SaveGuardWaiting = true; Save(); SaveTick();
         saveRequest = Boundary.Sent.OfType<SavegameLoadPacket>().Single(packet => packet.Operation == 0);
         Check(Boundary.SaveExchangeChecks == 1 && Boundary.SaveStarts == 0,
@@ -522,6 +742,9 @@ internal static class Program
         catch (InvalidOperationException) { waitingRejected = true; }
         Check(waitingRejected && !SavegameLoadCoordinator.IsLoadingMultiplayerSave && Boundary.Broadcast.Count == 1,
             "Loss of a simulation decision after release fails closed at the native boundary");
+        TestSavePreparingDispatch();
+        TestManualRepeatedLoadsWithoutConsumer();
+        TestMapLobbyPacketAuthority();
         MapRecordLoadCoordinator.FinishLoad(); SavegameLoadCoordinator.FinishLoad();
         Console.WriteLine("PASS: " + checks + " production map-readiness checks: all-peer records, authority, immutable native tickets, file changes, selection changes and mutual save/map exclusion.");
     }

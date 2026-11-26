@@ -24,6 +24,8 @@ namespace APIShared.Economy
         public static IReadOnlyList<eGoods> SupportedGoods => supported;
         /// <summary>Whether startup prepared the validated query and transfer owner. This does not imply a current mission or multiplayer agreement.</summary>
         public static bool IsAvailable => AllyTransfersNative.IsAvailable;
+        /// <summary>Whether the validated optional gift-chat boundary can suppress rows for a request that explicitly opts out. This does not imply a current mission or permission to mutate.</summary>
+        public static bool CanSuppressVanillaChatMessages => AllyTransfersNative.CanSuppressVanillaChatMessages;
         /// <summary>Whether a good is supported by the safe service. Native observation events can report other raw values.</summary>
         public static bool IsSupportedGood(eGoods good) => good >= eGoods.STORED_WOOD_PLANKS && good <= eGoods.STORED_METAL_ARMOUR &&
             good != eGoods.STORED_COW_HIDES && good != eGoods.STORED_PITCH_REFINED;
@@ -40,6 +42,7 @@ namespace APIShared.Economy
     internal interface IAllyTransfersBackend
     {
         bool IsReady { get; }
+        bool CanSuppressVanillaChatMessages { get; }
         bool AreAlliedLiving(int sender, int recipient);
         bool TryReadStock(int player, eGoods good, out int amount);
         int GetFreeCapacity(int recipient, eGoods good);
@@ -109,6 +112,8 @@ namespace APIShared.Economy
                 request.SenderPlayerId == request.RecipientPlayerId || !AllyTransfers.IsSupportedGood(request.Good) ||
                 request.MaximumAmount <= 0 || request.MinimumSenderRemaining < 0 || request.MaximumRecipientAmount < 0)
             { reason = "Distinct valid players, a supported good and nonnegative bounds are required."; return false; }
+                if (!request.ShowVanillaChatMessages && !backend.CanSuppressVanillaChatMessages)
+                { reason = "Vanilla gift-chat suppression is unavailable."; return false; }
                 if (!backend.AreAlliedLiving(request.SenderPlayerId, request.RecipientPlayerId))
                 { reason = "Both players must have living Lords and belong to the same team."; return false; }
                 if (!backend.TryReadStock(request.SenderPlayerId, request.Good, out int sender) || sender < 0)

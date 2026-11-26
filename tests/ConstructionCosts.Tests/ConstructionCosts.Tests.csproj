@@ -1,10 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><StartupObject>Program</StartupObject><TargetFramework>net10.0</TargetFramework><IsTestProject>false</IsTestProject><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><StartupObject>Program</StartupObject><TargetFramework>net10.0</TargetFramework><IsTestProject>false</IsTestProject><EnableDefaultCompileItems>false</EnableDefaultCompileItems><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
   <ItemGroup>
     <Reference Include="SHCDESE"><HintPath>$(ExtenderDir)/SHCDESE.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath><Private>true</Private></Reference>
     <Compile Include="../../src/Buildings/ConstructionCosts/ConstructionCostTarget.cs" />
     <Compile Include="../../src/Buildings/ConstructionCosts/ConstructionCostValues.cs" />
     <Compile Include="../../src/Buildings/ConstructionCosts/ConstructionCosts.cs" />
+    <Compile Include="../../src/Buildings/ConstructionCosts/ConstructionMaterialStock.cs" />
     <Compile Include="Program.cs" /><Compile Include="Boundary.cs" />
   </ItemGroup>
 </Project>

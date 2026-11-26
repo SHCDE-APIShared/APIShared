@@ -10,9 +10,14 @@ namespace APIShared.Presentation
     public sealed class BuildingPanelContext
     {
         internal BuildingPanelContext(int buildingId, uint globalId, eStructs type, int owner, int local, int viewed, long generation)
+            : this(buildingId, globalId, type, owner, local, viewed, generation, local, null, null) { }
+
+        internal BuildingPanelContext(int buildingId, uint globalId, eStructs type, int owner, int local, int viewed, long generation,
+            int acting, string presenterOwner, string presenterId)
         {
             BuildingId = buildingId; GlobalId = globalId; BuildingType = type; OwnerPlayerId = owner;
             LocalPlayerId = local; ViewedPlayerId = viewed; PanelGeneration = generation;
+            ActingPlayerId = acting; PresenterOwnerGuid = presenterOwner; PresenterRegistrationId = presenterId;
         }
         /// <summary>One-based building game ID of the open panel.</summary>
         public int BuildingId { get; }
@@ -30,10 +35,70 @@ namespace APIShared.Presentation
         public bool IsOwnedByLocalPlayer => LocalPlayerId > 0 && OwnerPlayerId == LocalPlayerId;
         /// <summary>Changes whenever the building HUD instance is replaced; not a mission or network identity.</summary>
         public long PanelGeneration { get; }
+        /// <summary>Since 0.73.0: the player the panel's controls act for. For Vanilla's own selection this is
+        /// <see cref="LocalPlayerId"/>; for a presented panel it is the player the presenter acts for.</summary>
+        public int ActingPlayerId { get; }
+        /// <summary>Since 0.73.0: GUID of the presenter that shows this building, or null for Vanilla's own selection.</summary>
+        public string PresenterOwnerGuid { get; }
+        /// <summary>Since 0.73.0: the presenter's owner-local registration ID, or null for Vanilla's own selection.</summary>
+        public string PresenterRegistrationId { get; }
+        /// <summary>Since 0.73.0: whether a presenter shows this building on another mod's behalf
+        /// (see <see cref="BuildingPanelSections.TryRegisterPresenter"/>).</summary>
+        public bool IsPresented => PresenterOwnerGuid != null;
+        /// <summary>Since 0.73.0: whether the acting player owns this building, so the panel may offer the owner's
+        /// controls. For a presented panel, route them with <see cref="BuildingPanelSections.TrySubmitAction"/>.</summary>
+        public bool CanActAsOwner => ActingPlayerId > 0 && OwnerPlayerId == ActingPlayerId;
 
-        internal bool Same(int buildingId, uint globalId, eStructs type, int owner, int local, int viewed, long generation) =>
+        internal bool Same(int buildingId, uint globalId, eStructs type, int owner, int local, int viewed, long generation,
+            int acting, string presenterOwner, string presenterId) =>
             BuildingId == buildingId && GlobalId == globalId && BuildingType == type && OwnerPlayerId == owner &&
-            LocalPlayerId == local && ViewedPlayerId == viewed && PanelGeneration == generation;
+            LocalPlayerId == local && ViewedPlayerId == viewed && PanelGeneration == generation &&
+            ActingPlayerId == acting && PresenterOwnerGuid == presenterOwner && PresenterRegistrationId == presenterId;
+    }
+
+    /// <summary>Since 0.73.0: Unity thread, on every GUI check while sections exist: the building the presenter's
+    /// building panel shows right now.</summary>
+    /// <param name="buildingId">1-based building ID of the shown building.</param>
+    /// <param name="actingPlayerId">1-based player the presenter acts for (normally the building's owner).</param>
+    /// <returns>False while the presenter shows no building panel. Keep it cheap and allocation-free.</returns>
+    public delegate bool BuildingPanelPresentationQuery(out int buildingId, out int actingPlayerId);
+
+    /// <summary>Since 0.73.0: Unity thread: a section's control on the presenter's panel asks to run a building action.
+    /// The presenter starts its own authorized execution (an authenticated Chore on every peer, or a single-player engine
+    /// action) that ends in <see cref="Buildings.BuildingActions.TryExecute"/>. It must not apply anything locally ahead
+    /// of a multiplayer Chore.</summary>
+    /// <param name="request">The action, acting player and building of the presented panel.</param>
+    /// <param name="reason">Why the presenter refused, or null.</param>
+    /// <returns>Whether the request was accepted for execution (not that it was applied already).</returns>
+    public delegate bool BuildingPanelActionSubmit(Buildings.BuildingActionRequest request, out string reason);
+
+    /// <summary>Since 0.73.0: describes a building panel presenter for <see cref="BuildingPanelSections.TryRegisterPresenter"/>:
+    /// a mod that shows Vanilla's building panel for a building other than the local player's own selection, for
+    /// example a spectator tool or a foreign-control mod. Read once during registration.</summary>
+    public sealed class BuildingPanelPresenterOptions
+    {
+        /// <summary>Creates options.</summary>
+        /// <param name="ownerGuid">The presenter plugin's GUID.</param>
+        /// <param name="registrationId">Stable owner-local ID.</param>
+        /// <param name="query">The building its panel shows; see <see cref="BuildingPanelPresentationQuery"/>.</param>
+        /// <param name="submit">Runs actions for the shown building; see <see cref="BuildingPanelActionSubmit"/>.</param>
+        public BuildingPanelPresenterOptions(string ownerGuid, string registrationId, BuildingPanelPresentationQuery query,
+            BuildingPanelActionSubmit submit)
+        {
+            OwnerGuid = ownerGuid; RegistrationId = registrationId; Query = query; Submit = submit;
+        }
+
+        /// <summary>The presenter plugin's GUID.</summary>
+        public string OwnerGuid { get; }
+        /// <summary>Stable owner-local ID.</summary>
+        public string RegistrationId { get; }
+        /// <summary>The shown-building query.</summary>
+        public BuildingPanelPresentationQuery Query { get; }
+        /// <summary>The action submit callback.</summary>
+        public BuildingPanelActionSubmit Submit { get; }
+        /// <summary>Order among presenters, ascending, then ordinal owner GUID and ID: the first presenter that reports a
+        /// building owns the panel.</summary>
+        public int Order { get; set; }
     }
 
     /// <summary>Unity-thread factory input. Create and return a fresh, unattached control; APIShared adds it to

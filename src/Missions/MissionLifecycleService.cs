@@ -84,6 +84,13 @@ namespace APIShared
             internal EngineInterface.LoadMapReturnData? Data;
             internal string MapAlias, MapAliasPath;
             internal string MapAliasFailure;
+            internal MultiplayerMapArguments MapArguments;
+            internal MapRecordLoadCoordinator.NativeAdmissionTicket ConfirmedMapFile;
+            internal MultiplayerMapStart ValidatedMap, RestartSourceMap;
+            internal bool DirectMultiplayerRestart;
+            internal string RestartFailure;
+            internal bool HasRestartProductionApproval;
+            internal Economy.WorkerProductionRuntime.RestartAgreement RestartProductionApproval;
         }
 
         private MissionLifecycleService(ManualLogSource log)
@@ -115,12 +122,31 @@ namespace APIShared
             .Field(typeof(global::EngineInterface.LoadMapReturnData), "skirmishTrailLevel", typeof(int))
             .Field(typeof(global::FatControler), "currentScene", typeof(global::Enums.SceneIDS))
             .Field(typeof(global::FileHeader), "filePath", typeof(string))
+            .Field(typeof(global::FileHeader), "crc", typeof(uint))
             .Field(typeof(global::FileHeader), "missionMap", typeof(bool))
             .Field(typeof(global::FileHeader), "skirmishMap", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer), "activeLobby", typeof(global::Platform_Multiplayer.MPLobby))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "id", typeof(global::Steamworks.CSteamID))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "mapFileName", typeof(string))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "isHost", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "crc", typeof(string))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "coopOrderSwapped", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPLobby), "members", typeof(global::System.Collections.Generic.List<global::Platform_Multiplayer.MPLobbyMember>))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "id", typeof(global::Steamworks.CSteamID))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "dummyToBeKicked", typeof(bool))
+            .Field(typeof(global::Platform_Multiplayer.MPLobbyMember), "SkirmishMember", typeof(bool))
+            .Field(typeof(global::EngineInterface.MultiplayerSetupData), "preferredAIVs", typeof(int[]))
+            .Field(typeof(global::EngineInterface.MultiplayerSetupData), "start_keep_location_order", typeof(int[]))
             .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnStartMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapStartEventArgs>))
             .Field(typeof(global::SHCDESE.EventAPI.MapLoaderR3EventHooks), "OnUnloadMap", typeof(global::SHCDESE.EventAPI.R3EventHook<global::SHCDESE.EventAPI.MapLoader.MapUnloadEventArgs>))
             .Method(typeof(global::Platform_Multiplayer), "get_Instance", typeof(global::Platform_Multiplayer))
             .Method(typeof(global::Platform_Multiplayer), "IsGameMemberHost", typeof(bool))
+            .Method(typeof(global::Platform_Multiplayer.MPLobby), "AIVDataChecksum", typeof(string))
+            .Method(typeof(global::Platform_Multiplayer.MPLobby), "getTeam", typeof(int), typeof(global::Platform_Multiplayer.MPLobbyMember))
+            .Method(typeof(global::Platform_Multiplayer.MPLobby), "CountTeamMembers", typeof(int), typeof(int))
+            .Method(typeof(global::Platform_Multiplayer.MPLobby), "getThisPlayerFromSteamID", typeof(int), typeof(ulong))
+            .Method(typeof(global::Platform_Multiplayer.MPLobbyMember), "GetLordType", typeof(int))
+            .Method(typeof(global::Platform_Multiplayer.MPLobbyMember), "GetLordSubType", typeof(int))
             .Method(typeof(global::CrusaderDE.MainViewModel), "get_Instance", typeof(global::CrusaderDE.MainViewModel))
             .Method(typeof(global::CrusaderDE.MainViewModel), "set_Show_BlackOut", typeof(void), typeof(bool))
             .Method(typeof(global::CrusaderDE.MainViewModel), "InitNewScene", typeof(void), typeof(global::Enums.SceneIDS))
@@ -225,25 +251,19 @@ namespace APIShared
             });
             tutorial = Hook<Tutorial>(typeof(HUD_Tutorial), nameof(HUD_Tutorial.StartTutorial), self =>
                 Run(Seed(MissionStartKind.NewGame, GameModeKind.Tutorial), () => tutorial(self)));
-            multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), (self, setup, map, coop, mission) =>
-            {
-                // Vanilla's lobby Update marks itself as loading and hides its panels right after this
-                // call returns, even when nothing started. Like a rejected StartSave, a rejected map
-                // start therefore unwinds that frame; the coordinator withdraws the host's start value.
-                if (!MapRecordLoadCoordinator.ValidateStart(map?.filePath, true, coop > 0, out string alias))
-                    throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
-                var operation = new Operation { Kind = MissionStartKind.NewGame,
-                    Intent = coop > 0 ? GameModeKind.CoopTrail : GameModeKind.CustomGame,
-                    Multiplayer = true, File = map?.filePath, MapAliasPath = map?.filePath, MapAlias = alias };
-                Run(operation, () => multiplayerNew(self, setup, map, coop, mission));
-                if (operation.MapAliasFailure != null)
-                    throw new InvalidOperationException("The multiplayer map start was rejected; the lobby stays open.");
-            });
+            multiplayerNew = Hook<MultiplayerNew>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartGame), StartMultiplayerMap);
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
                 SavegameModSettings.BeginLoad(map?.filePath, true);
-                Run(new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true },
-                    () => multiplayerSave(self, setup, map));
+                var operation = new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true };
+                Run(operation, () =>
+                {
+                    var receipt = ScriptExtenderFixes.LobbyStartPacketRuntime.BeginNativeStart(self, operation.Id);
+                    bool returnedNormally = false;
+                    try { multiplayerSave(self, setup, map); returnedNormally = true; }
+                    finally { Safe(() => ScriptExtenderFixes.LobbyStartPacketRuntime.EndNativeStart(receipt,
+                        returnedNormally && operation.NativeSucceeded && !operation.NativeFailed)); }
+                });
             });
             multiplayerInit = Hook<MultiplayerInit>(typeof(EngineInterface), nameof(EngineInterface.initMultiplayerGame), (skirmishGame, restart, coop, mission, test, custom, extreme) =>
             {
@@ -269,6 +289,8 @@ namespace APIShared
             {
                 Safe(() => { if (executing != null) { executing.File = file; executing.Campaign = id > 0 ? id : 0; executing.Trail = type; } });
                 var op = executing;
+                if (op?.MapArguments != null && op.Kind == MissionStartKind.NewGame)
+                    CheckMultiplayerMapBeforeNativeLoad(op);
                 return CaptureNative(() =>
                 {
                     if (op?.MapAlias == null || id > 0 || dummy || fromSave || type >= 0 ||
@@ -279,7 +301,8 @@ namespace APIShared
                         op.MapAliasFailure = "The native map filename hook became unavailable before loading. Filename length " +
                             System.IO.Path.GetFileName(file).Length + ", native limit " + MapLoadPolicy.NativeFileNameLimit +
                             " UTF-16 code units. Path: " + file;
-                        if (op.Multiplayer) MapRecordLoadCoordinator.AbortBeforeMapLoad(op.MapAliasFailure);
+                        if (op.DirectMultiplayerRestart) op.RestartFailure = op.MapAliasFailure;
+                        else if (op.Multiplayer) MapRecordLoadCoordinator.AbortBeforeMapLoad(op.MapAliasFailure);
                         throw new NativeAdmissionAbort(op.MapAliasFailure);
                     }
                     return MapLoadPolicy.RunWithName(file, op.MapAlias,
@@ -412,6 +435,8 @@ namespace APIShared
         {
             if (executing != null) return original(); // Nested custom-trail -> skirmish belongs to the outer attempt.
             executing = op;
+            completedMap = null;
+            completedMapSession = 0;
             if (waiting?.Kind == MissionStartKind.LoadedSave && op.Kind != MissionStartKind.LoadedSave)
                 SavegameModSettings.FinishLoad();
             waiting = null;
@@ -441,12 +466,14 @@ namespace APIShared
                 Safe(() =>
                 {
                     var context = Capture(op);
+                    if (normal && op.NativeSucceeded && !op.NativeFailed && op.ManagedSucceeded)
+                        PublishCompletedMap(op, context);
                     if (state.Finish(op.Id, context, normal, op.NativeSucceeded && !op.NativeFailed,
                         op.ManagedSucceeded, op.Multiplayer && context.IsHost == false)) waiting = op;
                 });
                 if (op.Kind == MissionStartKind.LoadedSave && waiting == null)
                     SavegameModSettings.FinishLoad();
-                if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null)
+                if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null && !op.DirectMultiplayerRestart)
                     MapRecordLoadCoordinator.FinishLoad();
                 if (op.MapAliasFailure != null && !op.Multiplayer)
                 {
@@ -502,8 +529,13 @@ namespace APIShared
         private void CompleteDeferredMessage(Operation op) =>
             Safe(() => CompleteDeferredRestore(
                 () => SavegameModSettings.ApplyLoadedSettings(Capture(op)),
-                () => state.Ready(op.Id, Capture(op)),
-                () => { SavegameModSettings.FinishLoad(); MapRecordLoadCoordinator.FinishLoad(); },
+                () =>
+                {
+                    var context = Capture(op);
+                    PublishCompletedMap(op, context);
+                    state.Ready(op.Id, context);
+                },
+                () => { SavegameModSettings.FinishLoad(); if (!op.DirectMultiplayerRestart) MapRecordLoadCoordinator.FinishLoad(); },
                 SavegameModSettings.ReportRestoreFailure));
 
         internal static void CompleteDeferredRestore(Action restore, Action ready,
@@ -522,10 +554,25 @@ namespace APIShared
             finally { cleanup?.Invoke(); }
         }
 
+        internal static Economy.WorkerProductionRuntime.RestartAgreement RestartProductionApproval(long sessionId)
+        {
+            var op = published?.executing;
+            return op?.Id == sessionId && op.DirectMultiplayerRestart ? op.RestartProductionApproval : null;
+        }
+
         private EngineInterface.LoadMapReturnData CaptureNative(Func<EngineInterface.LoadMapReturnData> original)
         {
             var op = executing;
-            if (op != null && op.Multiplayer && op.Kind == MissionStartKind.NewGame &&
+            if (op?.DirectMultiplayerRestart == true)
+            {
+                if (!MapRecordLoadCoordinator.MatchesFile(op.ConfirmedMapFile, op.File))
+                {
+                    op.NativeFailed = true;
+                    op.RestartFailure = "The confirmed multiplayer map file changed before restart loading.";
+                    throw new NativeAdmissionAbort(op.RestartFailure);
+                }
+            }
+            else if (op != null && op.Multiplayer && op.Kind == MissionStartKind.NewGame &&
                 !MapRecordLoadCoordinator.ValidateNativeAdmission(op.File, true))
             {
                 op.NativeFailed = true;
@@ -540,6 +587,7 @@ namespace APIShared
             if(!string.IsNullOrEmpty(productionRejection))
             {
                 op.NativeFailed=true;
+                if (op.DirectMultiplayerRestart) op.RestartFailure = productionRejection;
                 Safe(()=>state.CompleteNativeLoad(op.Id,false));
                 throw new NativeAdmissionAbort(productionRejection);
             }
@@ -547,6 +595,7 @@ namespace APIShared
             if (!string.IsNullOrEmpty(simulationRejection))
             {
                 op.NativeFailed = true;
+                if (op.DirectMultiplayerRestart) op.RestartFailure = simulationRejection;
                 Safe(() => state.CompleteNativeLoad(op.Id, false));
                 Report(new InvalidOperationException(simulationRejection));
                 throw new NativeAdmissionAbort(simulationRejection);
@@ -577,7 +626,9 @@ namespace APIShared
                             op.Multiplayer && op.Kind == MissionStartKind.NewGame))
                     {
                         op.NativeFailed = true;
-                        if (op.Kind == MissionStartKind.NewGame)
+                        if (op.DirectMultiplayerRestart)
+                            op.RestartFailure = "Protected multiplayer map initialization failed.";
+                        else if (op.Kind == MissionStartKind.NewGame)
                             MapRecordLoadCoordinator.Abort("The multiplayer map could not complete protected native initialization.");
                         throw new NativeAdmissionAbort("Protected multiplayer map initialization failed.");
                     }
@@ -600,6 +651,8 @@ namespace APIShared
         private void MarkManaged() => Safe(() => { if (executing != null) executing.ManagedSucceeded = true; });
         private void End(MissionEndReason reason)
         {
+            completedMap = null;
+            completedMapSession = 0;
             bool abandonedSave = waiting?.Kind == MissionStartKind.LoadedSave;
             waiting = null;
             try { state.End(reason); }

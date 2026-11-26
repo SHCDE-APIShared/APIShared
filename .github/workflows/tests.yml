@@ -170,7 +170,7 @@ jobs:
         shell: pwsh
         run: ./tools/Validation/Test-WorkshopHotfixBoundaries.ps1
       - name: Safe Workshop installation on the native Linux file system
-        run: dotnet test tests/Core.Tests/Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ProtonPathsTests|FullyQualifiedName~WorkshopStartupTests|FullyQualifiedName~WorkshopSafeInstallTests|FullyQualifiedName~WorkshopPackageTests' --logger trx --results-directory TestResults
+        run: dotnet test tests/Core.Tests/Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~ProtonPathsTests|FullyQualifiedName~WorkshopStartupTests|FullyQualifiedName~WorkshopLocalStateTests|FullyQualifiedName~WorkshopSafeInstallTests|FullyQualifiedName~WorkshopPackageTests' --logger trx --results-directory TestResults
       - name: Proton Extender updater shell fixture
         shell: bash
         run: |
