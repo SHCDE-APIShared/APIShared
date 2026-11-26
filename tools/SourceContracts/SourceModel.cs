@@ -614,8 +614,20 @@ internal sealed class SourceModel
         {
             string name = Name(call), owner = Owner(call)?.Identifier.ValueText ?? "";
             bool hookReceiver = HookReceiver(call);
+            var method = call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+            // The shared managed installer creates its local hook with ManualApply.
+            // Its first Apply and catch-local rollback both precede returning the handle.
+            bool safeIlCandidate = owner == "SafeIlHook" && method?.Identifier.ValueText == "TryInstall" &&
+                method.DescendantNodes().OfType<AssignmentExpressionSyntax>().Any(a =>
+                    Text(a.Left) == "native" && a.Right is ObjectCreationExpressionSyntax creation &&
+                    Text(creation.Type) == "ILHook" && creation.DescendantNodes().OfType<AssignmentExpressionSyntax>().Any(option =>
+                        Text(option.Left) == "ManualApply" && option.Right.IsKind(SyntaxKind.TrueLiteralExpression))) &&
+                (Text(call.Expression) == "native.Apply" ||
+                    (name == "Dispose" && call.Parent is ConditionalAccessExpressionSyntax conditional &&
+                        Text(conditional.Expression) == "native" && call.Ancestors().OfType<CatchClauseSyntax>().Any()));
             if (bootstrapFiles.Contains(call.SyntaxTree.FilePath) && hookReceiver)
-                Require(name is not ("Dispose" or "Undo" or "Apply" or "Disable" or "Enable"), "Bootstrap hook mutation after constructor publication: " + call.GetLocation().GetLineSpan());
+                Require(safeIlCandidate || name is not ("Dispose" or "Undo" or "Apply" or "Disable" or "Enable"),
+                    "Bootstrap hook mutation outside candidate installation: " + call.GetLocation().GetLineSpan());
             if (call.Expression is MemberAccessExpressionSyntax access && access.Expression is MemberAccessExpressionSyntax handle &&
                 handle.Name.Identifier.ValueText == "Hook")
                 Require(name is not ("Enable" or "Disable") || unitVoiceAllowances.Contains(call), "Published handle acquired an executable toggle: " + call.GetLocation().GetLineSpan());
@@ -638,7 +650,6 @@ internal sealed class SourceModel
                         i.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any() && i.SpanStart < call.SpanStart) == true,
                     "Published native preparation code can be freed: " + call.GetLocation().GetLineSpan());
             if (!Mutations.Contains(name) || !hookReceiver) continue;
-            var method = call.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
             // Other managed installers have legacy candidate cleanup in installation catches.
             // Preserve that pre-existing guardrail scope; a catch is NOT runtime safety evidence.
             // Their partial-publication behavior is recorded as an audit limitation.

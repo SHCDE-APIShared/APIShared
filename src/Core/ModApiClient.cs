@@ -24,6 +24,8 @@ namespace APIShared
         public Networking.ModNetworkClient Network { get; }
         /// <summary>Owner-bound Workshop upload, receipt-based installation and catalog service. Steam calls require the Unity thread; planning never installs files.</summary>
         public Workshop.WorkshopClient Workshop { get; }
+        /// <summary>Local Steam app access queries for this client. Calls require Unity-thread Steam readiness.</summary>
+        public Steam.SteamClient Steam { get; } = new Steam.SteamClient();
         /// <summary>Owner-bound deferred Unity work and coalesced before-render refreshes; independent of native/network readiness.</summary>
         public Presentation.UiWorkClient Ui { get; }
         /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>

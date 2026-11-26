@@ -76,6 +76,30 @@ and compatibility-result dumps are silent. No separate trace file or optional
 verbose mode is provided. Internal package/index checks and exception containment
 remain active; desktop delegate generation never substitutes for Mono-JIT evidence.
 
+## Steam app dependencies
+
+The matching APIShared bootstrap and runtime pair enables the optional
+`SteamAppDependencies` field for normal loose asset mods and `.semod` files.
+Install the plugin under `BepInEx/plugins` and the companion under
+`BepInEx/patchers` from the same APIShared package. See the
+[client asset and C# examples](THIRD_PARTY_GUIDE.md#steam-game-dependencies).
+
+Before the Extender's plugin Awake, the bootstrap checks the active pair and
+the managed asset registration contract. The Extender still selects candidates,
+checks ordinary mod dependencies and performs its optional early Steam
+initialization. The gate runs at asset registration before the selected
+candidate contributes overrides, localizations or Lua. It closes a skipped
+package's resource handle. The in-memory registration hook lasts for the
+process, including Unity's startup cleanup.
+
+Look for `SteamAppDependencies` and the affected GUID under
+`APIShared.DependencyBootstrap` in the BepInEx log. The warning identifies
+whether Steam answered that access was missing, Steam was unavailable, or the
+manifest was invalid. Make Steam available and restart after resolving the
+cause. The gate does not initialize Steam on its own. An installation error
+for the hook means the Extender can still register the package through the stock
+path. A missing preloader cannot emit this error.
+
 ## Development and manual removal
 
 Build the current working tree with `build.bat /workspace /nopause /noinstall`. Outputs and build evidence remain inside

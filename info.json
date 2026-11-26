@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.73.4",
+  "Version": "0.74.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.74.0",
+      "Changes": [
+        "Let client-side asset mods declare Steam game dependencies in info.json. When the matching APIShared preloader is active, the Script Extender loads the mod's graphics and other assets only if Steam reports access to every required game.",
+        "Give C# mods a Steam access query so they can enable individual local features for players with access to a related game."
+      ]
+    },
     {
       "Version": "0.73.4",
       "Changes": [

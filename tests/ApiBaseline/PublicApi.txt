@@ -1701,6 +1701,7 @@ APIShared.ModApiClient | public APIShared.Automation.AutomationClient Automation
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
+APIShared.ModApiClient | public APIShared.Steam.SteamClient Steam { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
 APIShared.ModApiClient | public bool TryGetAivBuildStep(out APIShared.IAivBuildStepCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -3716,6 +3717,12 @@ APIShared.Statistics.LordStatistics | public static class APIShared.Statistics.L
 APIShared.Statistics.LordStatistics | public static APIShared.Statistics.LordStatisticCatalog GetCatalog()
 APIShared.Statistics.LordStatistics | public static bool TryRegister(string ownerGuid, APIShared.Statistics.LordStatisticColumnDefinition definition, out APIShared.Statistics.LordStatisticColumn column, out string reason)
 APIShared.Statistics.LordStatistics | public static event System.Action<APIShared.Statistics.LordStatisticCatalog> CatalogChanged
+APIShared.Steam.SteamAppAccess | public enum APIShared.Steam.SteamAppAccess : int
+APIShared.Steam.SteamAppAccess | Available = 1
+APIShared.Steam.SteamAppAccess | NotAvailable = 2
+APIShared.Steam.SteamAppAccess | SteamUnavailable = 0
+APIShared.Steam.SteamClient | public sealed class APIShared.Steam.SteamClient
+APIShared.Steam.SteamClient | public APIShared.Steam.SteamAppAccess GetAppAccess(uint appId)
 APIShared.TemporaryGateRouteAcceptanceBridge | public static class APIShared.TemporaryGateRouteAcceptanceBridge
 APIShared.TemporaryGateRouteAcceptanceBridge | public static APIShared.ITemporaryGateRouteAcceptanceObserver Current { get; }
 APIShared.TemporaryGateRouteAcceptanceBridge | public static APIShared.ITemporaryGateRouteAcceptanceObserver CurrentRequested { get; }

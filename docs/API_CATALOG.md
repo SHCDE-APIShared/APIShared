@@ -884,6 +884,14 @@ declared `SimulationRelevant` are compared across players before a multiplayer s
 Usage, the record-version migration policy, the comparison boundary, limits and
 implementation are in [Save data](SAVE_DATA.md).
 
+## Steam app access
+
+`ApiShared.ForMod(guid).Steam.GetAppAccess(appId)` reads the current local
+Steam user's access to a related app on the Unity main thread. It distinguishes
+available access, no access and an unavailable Steam session. See
+[Steam game dependencies](THIRD_PARTY_GUIDE.md#steam-game-dependencies) for the
+C# and asset-manifest examples.
+
 ## Workshop inventory
 
 `APIShared.Workshop.WorkshopInventory` exposes the schema-1 file inventory.
