@@ -283,6 +283,78 @@ namespace APISharedTests
             }
             finally { if (File.Exists(path)) File.Delete(path); }
         }
+        [TestMethod]
+        public void NestedWriterCannotEscapeTheOuterTransactionThroughAnUnrequiredMapScope()
+        {
+            var type = typeof(WorkerProductionCriticalSaveRuntime);
+            var saving = type.GetField("saving", BindingFlags.NonPublic | BindingFlags.Static);
+            var failed = type.GetField("lastFailed", BindingFlags.NonPublic | BindingFlags.Static);
+            bool oldSaving = (bool)saving.GetValue(null), oldFailed = (bool)failed.GetValue(null);
+            int originals = 0;
+            try
+            {
+                // Substitute only the current thread's outer-transaction marker. No native
+                // publication or world is needed: scope/availability must not bypass this guard.
+                saving.SetValue(null, true);
+                foreach (byte map in new byte[] { 0, 1 })
+                {
+                    failed.SetValue(null, false);
+                    ulong result = WorkerProductionCriticalSaveRuntime.RunWriter(IntPtr.Zero, IntPtr.Zero, map,
+                        (archive, sections, mode) => { originals++; return 1; });
+                    Assert.AreEqual(0UL, result);
+                    Assert.IsTrue((bool)failed.GetValue(null), "A nested attempt must poison the outer commit.");
+                    Assert.IsTrue((bool)saving.GetValue(null), "The nested path cannot retire its outer transaction.");
+                }
+                Assert.AreEqual(0, originals);
+            }
+            finally { saving.SetValue(null, oldSaving); failed.SetValue(null, oldFailed); }
+        }
+
+        [TestMethod]
+        public void RequiredRecordProofRejectsMissingOrStaleArchiveBeforeAtomicCommit()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "api-required-" + Guid.NewGuid().ToString("N") + ".sav");
+            string destination = path + ".destination";
+            var old = new byte[] { 4, 7, 9 };
+            File.WriteAllBytes(destination, old);
+            var required = new VersionedSaveDataRegistry.AtomicSnapshot();
+            byte[] record = VersionedSaveRecordCodec.Encode(1, 1,
+                new[] { new KeyValuePair<string, byte[]>("ledger", new byte[] { 4, 1, 2 }) });
+            required.Records.Add("Test_Required", record);
+            try
+            {
+                foreach (int mode in new[] { 0, 1, 2 })
+                {
+                    using (var file = File.Create(path))
+                    {
+                        file.Write(new byte[1024], 0, 1024);
+                        using (var zip = new ZipOutputStream(file) { IsStreamOwner = false })
+                        {
+                            zip.PutNextEntry(new ZipEntry(mode == 0 ? "other" : "_SE_ModData_Test_Required.msgpack"));
+                            byte[] bytes = (byte[])record.Clone();
+                            if (mode == 1) bytes[bytes.Length - 1] ^= 1;
+                            zip.Write(bytes, 0, bytes.Length); zip.CloseEntry(); zip.Finish();
+                        }
+                    }
+                    var io = new WorkerProductionSaveIoState();
+                    io.ObserveWrite(7, 4, 4); io.ObserveClose(7, 0);
+                    if (mode < 2)
+                    {
+                        Assert.ThrowsExactly<InvalidDataException>(() => WorkerProductionCriticalSaveRuntime.CommitSavedFile(path, destination, null, in io, required));
+                        CollectionAssert.AreEqual(old, File.ReadAllBytes(destination));
+                        Assert.IsTrue(File.Exists(path));
+                    }
+                    else
+                    {
+                        WorkerProductionCriticalSaveRuntime.CommitSavedFile(path, destination, null, in io, required);
+                        WorkerProductionCriticalSaveRuntime.VerifyRequiredRecords(destination, required);
+                        Assert.IsFalse(File.Exists(path));
+                    }
+                }
+            }
+            finally { if (File.Exists(path)) File.Delete(path); if (File.Exists(destination)) File.Delete(destination); }
+        }
+
         private static void WriteArchive(string path, byte[] payload)
         {
             var entries = new List<KeyValuePair<string, byte[]>>();

@@ -3,6 +3,9 @@
   <Operation Type="AddNamespace" AttributeName="apt" Value="clr-namespace:APIShared.Presentation;assembly=APIShared" />
   <Operation Type="SetAttribute" XPath="//n:Grid[@Name='TroopSelectionControls']" AttributeName="Panel.ZIndex" Value="3" />
   <Operation Type="SetAttribute" XPath="//n:Button[@Name='ToggleControlGroups']" AttributeName="Panel.ZIndex" Value="4" />
+  <!-- The raised troop container has a transparent, hit-testable background over the page arrows. -->
+  <Operation Type="SetAttribute" XPath="//n:Button[@Name='ButtonTroopPanelPage1']" AttributeName="Panel.ZIndex" Value="4" />
+  <Operation Type="SetAttribute" XPath="//n:Button[@Name='ButtonTroopPanelPage2']" AttributeName="Panel.ZIndex" Value="4" />
   <Operation Type="Add" XPath="//n:UserControl.Resources">
     <Content>
       <Style x:Key="APISharedTroopActionButtonStyle" TargetType="{x:Type Button}">

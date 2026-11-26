@@ -1,6 +1,8 @@
 using System;
 using System.Runtime.InteropServices;
 using APIShared.Units.AiMilitary.Orders;
+using SHCDESE.API;
+using SHCDESE.Interop.Enums;
 
 namespace APIShared.Units.AiMilitary.Native
 {
@@ -63,7 +65,11 @@ namespace APIShared.Units.AiMilitary.Native
             {
                 context[0] = 0; context[1] = 0; context[2] = allAssassins(TribeManager, group.Id) != 0 ? 1 : 0;
                 if (!AiUnitMoveReceipts.TryRun(unitId, x, y, 0,
-                    () => buildRoute(UnitManager, unitId, x, y, 0), out reason)) return false;
+                    () => buildRoute(UnitManager, unitId, x, y, 0), out reason, out bool refused))
+                {
+                    routeRefusedByNative = refused;
+                    return false;
+                }
                 if (!IsWorldCurrent(operationWorld) || unit->r_GlobalId != globalId || !HasMember(group, unitId) ||
                     *(short*)(raw + 0x744) != x || *(short*)(raw + 0x746) != y)
                 { reason = "The effective singleton movement was rejected or changed."; return false; }
@@ -71,6 +77,22 @@ namespace APIShared.Units.AiMilitary.Native
             }
             finally
             { if (IsWorldCurrent(operationWorld)) { context[0] = previous0; context[1] = previous1; context[2] = previous2; } }
+        }
+
+        // 3E650 (FBCB9319): E2610(path context, owner, component(leader tile), component(target), 0) != 0.
+        // The components are the signed-short path-connection layer; E2610 returns the start
+        // component when both are equal and 0 when either is 0. Query mode 0 is the Extender's
+        // ExcludeLadderClimb, the value 3E650 passes. A negative component (never observed) is
+        // treated as unreachable because the public wrapper refuses it.
+        internal bool IsDefenseTargetReachable(int owner, int fromTile, int toTile)
+        {
+            Span<ushort> layer = GameTileManagerAPI.Instance.GetPathConnectionLayer();
+            if (fromTile <= 0 || toTile <= 0 || fromTile >= layer.Length || toTile >= layer.Length) return false;
+            int from = (short)layer[fromTile], to = (short)layer[toTile];
+            if (from == to) return from != 0;
+            if (from <= 0 || to <= 0) return false;
+            return GamePathingManagerAPI.Instance.FindNextComponentTowardDestination(owner, from, to,
+                PathConnectionQueryMode.ExcludeLadderClimb) != 0;
         }
 
         internal int InitializeJobPosition(int unitId) => jobPosition(UnitManager, unitId);

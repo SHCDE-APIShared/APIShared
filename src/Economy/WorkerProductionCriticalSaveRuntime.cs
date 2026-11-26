@@ -108,11 +108,16 @@ namespace APIShared.Economy
         // ulong native return ABI and never install another52B0 detour.
         internal static ulong RunWriter(IntPtr archive, IntPtr sections, byte map, PlayerViewSaveScope.WriterCall original)
         {
-            if (!IsAvailable) return original(archive, sections, map);
+            // A nested writer must not bypass an active transaction merely because its
+            // own map/save scope has no required records. Preserve the outer path/I/O proof.
+            if (saving) return Failed("Nested protected save rejected; the previous save remains untouched.");
+            bool requiredRecords = VersionedSaveDataRuntime.RequiresAtomicWrite(map != 0);
+            if (!IsAvailable)
+                return requiredRecords ? Failed("Required atomic save support is unavailable.") : original(archive, sections, map);
             sequence++; lastFailed = false;
-            if (!WorkerProductionStateRuntime.IsExtended && !WorkerProductionWorldSafety.IsFaulted)
-                return original(archive, sections, map);
-            if (saving) return Failed("Nested production save rejected; the previous save remains untouched.");
+            bool production = WorkerProductionStateRuntime.IsExtended || WorkerProductionWorldSafety.IsFaulted;
+            if (!production && !requiredRecords) return original(archive, sections, map);
+            VersionedSaveDataRegistry.AtomicSnapshot required = null;
             string temporary = null;
             byte[] oldPath = null;
             int selector = 0;
@@ -120,11 +125,12 @@ namespace APIShared.Economy
             saving = true;
             try
             {
-                if (!System.Threading.Monitor.IsEntered(WorkerProductionWorldSafety.EngineGate))
+                object engineMonitor = Internal.EngineMonitor.Current;
+                if (engineMonitor == null || !System.Threading.Monitor.IsEntered(engineMonitor))
                     throw new InvalidOperationException("Critical saving requires the actual engine monitor.");
                 // A fault is rejected before capture or ANY native file open/truncation.
-                byte[] payload = WorkerProductionStateRuntime.FreezeForSave();
-                if (payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
+                byte[] payload = production ? WorkerProductionStateRuntime.FreezeForSave() : null;
+                if (production && payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
                 WeaponProductionRuntime.FreezeSave();
                 selector = Marshal.ReadInt32(module + SelectorRva);
                 if (selector != 1) throw new InvalidDataException("The native save path selector differs from the audited save callers.");
@@ -132,6 +138,7 @@ namespace APIShared.Economy
                 int end = chars.IndexOf('\0');
                 if (end <= 0) throw new InvalidDataException("The native destination path is missing or unterminated.");
                 string destination = Path.GetFullPath(new string(chars.Slice(0, end).ToArray()));
+                required = VersionedSaveDataRuntime.BeginAtomicSave(map != 0, destination);
                 string folder = Path.GetDirectoryName(destination);
                 temporary = Path.Combine(folder, ".wp-" + Guid.NewGuid().ToString("N") + ".tmp");
                 if (temporary.Length >= PathCapacity) throw new PathTooLongException("The native temporary save path exceeds its UTF-16 slot.");
@@ -149,15 +156,16 @@ namespace APIShared.Economy
                 try { result = original(archive, sections, map); }
                 finally { nativeIoActive = false; }
                 if (result != 1 || lastFailed) throw new IOException("Native saving returned failure or attempted a nested save.");
-                WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
+                if (production) WorkerProductionStateRuntime.RequireCurrentCaptureWritten();
+                VersionedSaveDataRegistry.RequireAtomicDelivered(required);
                 WeaponProductionRuntime.VerifySaveWritten(temporary);
                 // MoveFileExW replacement commits only the verified complete file. Failed capture,
                 // omitted/stale archive records and append errors leave the old destination intact.
-                CommitSavedFile(temporary, destination, payload, in nativeIo);
+                CommitSavedFile(temporary, destination, payload, in nativeIo, required);
                 temporary = null;
                 return 1;
             }
-            catch (Exception error) { return Failed("Production save failed: " + error.Message); }
+            catch (Exception error) { return Failed((production ? "Production save failed: " : "Required simulation save failed: ") + error.Message); }
             finally
             {
                 if (swapped)
@@ -165,6 +173,7 @@ namespace APIShared.Economy
                     Marshal.Copy(oldPath, 0, module + PathSlotRva, oldPath.Length);
                     Marshal.WriteInt32(module + SelectorRva, selector);
                 }
+                VersionedSaveDataRuntime.EndAtomicSave(required);
                 WorkerProductionStateRuntime.EndSaveCapture();
                 WeaponProductionRuntime.EndSaveCapture();
                 saving = false;
@@ -185,11 +194,26 @@ namespace APIShared.Economy
             try { NativeApiLog.Error(log, reason); } catch { }
             return 0;
         }
-        internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io)
+        internal static void CommitSavedFile(string temporary, string destination, byte[] payload, in WorkerProductionSaveIoState io,
+            VersionedSaveDataRegistry.AtomicSnapshot required = null)
         {
             if (!io.IsComplete) throw new IOException("A native save write was incomplete or the save file could not close successfully.");
-            VerifySavedPayload(temporary, payload);
+            VerifyRequiredRecords(temporary, required);
+            if (payload != null) VerifySavedPayload(temporary, payload);
             Internal.AtomicFileReplacement.Replace(temporary, destination);
+        }
+        internal static void VerifyRequiredRecords(string path, VersionedSaveDataRegistry.AtomicSnapshot required)
+        {
+            if (required == null || required.Records.Count == 0) return;
+            if (!MapArchive.TryLoad(path, out MapArchive archive))
+                throw new InvalidDataException("The required mod archive is missing or damaged.");
+            using (archive)
+                foreach (var record in required.Records)
+                {
+                    byte[] actual = archive.TryReadBinaryFile("_SE_ModData_" + record.Key + ".msgpack", true);
+                    if (actual == null || !actual.AsSpan().SequenceEqual(record.Value))
+                        throw new InvalidDataException("The required save record is missing or stale: " + record.Key);
+                }
         }
         internal static void VerifySavedPayload(string path, byte[] expected)
         {

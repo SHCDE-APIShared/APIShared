@@ -50,6 +50,83 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void SilentPrimitiveDoesNotSuppressSeOrSharedCallbacksOrTheirManualGifts()
+        {
+            using (var fixture = new SeFixture())
+            {
+                bool nesting = false;
+                fixture.Events.TryRegister("test", "scope", pre => Assert.IsFalse(AllyTransferChatScope.IsSuppressed),
+                    post => Assert.IsFalse(AllyTransferChatScope.IsSuppressed), out _);
+                using (PlayerR3EventHooks.OnPlayerAIRequestReceivedGoods.Observable.Subscribe(args => {
+                    Assert.IsFalse(AllyTransferChatScope.IsSuppressed, "SE Pre/Post are outside the primitive's chat choice.");
+                    if (!nesting)
+                    {
+                        nesting = true;
+                        try { fixture.CallManaged(2, eGoods.STORED_WOOD_PLANKS, 10, 1); }
+                        finally { nesting = false; }
+                    }
+                }))
+                {
+                    var result = fixture.Bridge.Execute(new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS,
+                        10, 0, int.MaxValue, false), 10);
+                    Assert.IsTrue(result.OriginalWasCalled); Assert.IsTrue(result.HasNestedTransfer);
+                    CollectionAssert.AreEqual(new[] { false, true, false }, fixture.ChatSuppression);
+                    Assert.AreEqual(70, fixture.Source); Assert.AreEqual(30, fixture.Target);
+                }
+                Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
+                Assert.AreEqual(0L, fixture.Events.CallbackFailures);
+            }
+        }
+
+        [TestMethod]
+        public void SharedPreAndPostManualGiftsStayOutsideTheSilentPrimitiveScope()
+        {
+            using (var fixture = new SeFixture())
+            {
+                Action manual = () => {
+                    Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
+                    fixture.CallManaged(2, eGoods.STORED_WOOD_PLANKS, 10, 1);
+                };
+                fixture.Events.TryRegister("test", "manual", pre => manual(), post => manual(), out _);
+                var result = fixture.Bridge.Execute(new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS,
+                    10, 0, int.MaxValue, false), 10);
+                CollectionAssert.AreEqual(new[] { false, true, false }, fixture.ChatSuppression);
+                Assert.AreEqual(0L, fixture.Events.CallbackFailures);
+                Assert.IsTrue(result.HasNestedTransfer); Assert.AreEqual(70, fixture.Source); Assert.AreEqual(30, fixture.Target);
+                Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
+            }
+        }
+
+        [TestMethod]
+        public void ManualGiftWithIdenticalArgumentsNestedInSilentOriginalKeepsItsOwnChat()
+        {
+            using (var fixture = new SeFixture())
+            {
+                bool nesting = false;
+                fixture.OriginalCallback = () => {
+                    if (nesting) return;
+                    Assert.IsTrue(AllyTransferChatScope.IsSuppressed);
+                    nesting = true;
+                    try { fixture.CallManaged(2, eGoods.STORED_WOOD_PLANKS, 10, 1); }
+                    finally { nesting = false; }
+                    Assert.IsTrue(AllyTransferChatScope.IsSuppressed, "The outer primitive regains its scope after the nested wrapper exits.");
+                };
+                var result = fixture.Bridge.Execute(new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS,
+                    10, 0, int.MaxValue, false), 10);
+                CollectionAssert.AreEqual(new[] { true, false }, fixture.ChatSuppression);
+                Assert.AreEqual(AllyTransferStatus.Uncertain, result.Status); Assert.IsTrue(result.HasNestedTransfer);
+                Assert.AreEqual(80, fixture.Source); Assert.AreEqual(20, fixture.Target);
+                Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
+                fixture.OriginalCallback = null; fixture.ChatSuppression.Clear();
+                fixture.Bridge.Execute(new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10), 10);
+                fixture.CallManaged(2, eGoods.STORED_WOOD_PLANKS, 10, 1);
+                CollectionAssert.AreEqual(new[] { false, false }, fixture.ChatSuppression,
+                    "Default service and dormant manual calls retain Vanilla chat after the silent frame.");
+                Assert.AreEqual(0x76543210, fixture.LastOpaqueReturn);
+            }
+        }
+
+        [TestMethod]
         public void ActualSeIlAndItsSoleNativeOwnerPreserveEffectiveMutationPostAndOpaqueReturn()
         {
             using (var fixture = new SeFixture())
@@ -84,7 +161,7 @@ namespace APISharedTests
             {
                 int apiPre = 0, sePost = 0;
                 fixture.Events.TryRegister("test", "observe", pre => apiPre++, null, out _);
-                var request = new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10, 90, 10);
+                var request = new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10, 90, 10, false);
                 using (PlayerR3EventHooks.OnPlayerAIRequestReceivedGoods.Observable.Subscribe(args => {
                     if (args.Phase == EventHookPhase.Pre) { args.SkipOriginalFunction = true; args.ReturnValue = true; }
                     else sePost++;
@@ -103,6 +180,7 @@ namespace APISharedTests
                     Assert.AreEqual(0, apiPre); Assert.AreEqual(100, fixture.Source); Assert.AreEqual(0, fixture.Target);
                 }
                 Assert.IsFalse(AllyTransfersSeBridge.HasServiceFrame);
+                Assert.IsFalse(AllyTransferChatScope.IsSuppressed); Assert.AreEqual(0, fixture.ChatSuppression.Count);
             }
         }
 
@@ -113,8 +191,11 @@ namespace APISharedTests
             {
                 int sePost = 0;
                 fixture.Admit = false;
-                var request = new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10);
-                using (PlayerR3EventHooks.OnPlayerAIRequestReceivedGoods.Observable.Subscribe(args => { if (args.Phase == EventHookPhase.Post) sePost++; }))
+                var request = new AllyTransferRequest(1, 2, eGoods.STORED_WOOD_PLANKS, 10, 0, int.MaxValue, false);
+                using (PlayerR3EventHooks.OnPlayerAIRequestReceivedGoods.Observable.Subscribe(args => {
+                    Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
+                    if (args.Phase == EventHookPhase.Post) sePost++;
+                }))
                 {
                     var rejected = fixture.Bridge.Execute(request, 10);
                     Assert.AreEqual(AllyTransferStatus.Rejected, rejected.Status); Assert.IsFalse(rejected.OriginalWasCalled);
@@ -124,6 +205,7 @@ namespace APISharedTests
                     var veto = fixture.Bridge.Execute(request, 10);
                     Assert.AreEqual(AllyTransferStatus.Vetoed, veto.Status); Assert.AreEqual(2, sePost);
                     Assert.AreEqual(100, fixture.Source); Assert.AreEqual(0, fixture.Target);
+                    Assert.AreEqual(0, fixture.ChatSuppression.Count); Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
                 }
             }
         }
@@ -137,11 +219,12 @@ namespace APISharedTests
             var events = new InterceptionEvent<AllyTransferPreEventArgs, AllyTransferPostEventArgs>();
             AllyTransferSeEntry entry = (r,g,a,s) => { bridge.EnterWrapper(); try { bridge.Invoke(new Action(() => {}), r,g,a,s); throw new Exception("later SE Post failed"); } finally { bridge.LeaveWrapper(); } };
             bridge = new AllyTransfersSeBridge(entry, (original,r,g,a,s) => { source -= a; target += a; return 73; }, Read, (request,amount) => true, events);
-            var result = bridge.Execute(new AllyTransferRequest(1, 2, eGoods.STORED_GOLD, 10), 10);
+            var result = bridge.Execute(new AllyTransferRequest(1, 2, eGoods.STORED_GOLD, 10, 0, int.MaxValue, false), 10);
             Assert.AreEqual(AllyTransferStatus.Faulted, result.Status); Assert.IsTrue(result.OriginalWasCalled);
             Assert.AreEqual(10L, result.SenderDebit); Assert.AreEqual(10L, result.RecipientCredit);
             Assert.IsFalse(AllyTransfersSeBridge.HasServiceFrame); Assert.AreEqual(90, source); Assert.AreEqual(10, target);
             Assert.IsFalse(AllyTransfersSeBridge.IsInsideWrapper);
+            Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
         }
 
         [TestMethod]
@@ -189,7 +272,9 @@ namespace APISharedTests
             using (var fixture = new SeFixture { ThrowInOriginal = true })
             {
                 int sePosts = 0; AllyTransferResult observed = null;
-                fixture.Events.TryRegister("test", "fault", null, post => observed = post.Result, out _);
+                fixture.Events.TryRegister("test", "fault", null, post => {
+                    Assert.IsFalse(AllyTransferChatScope.IsSuppressed); observed = post.Result;
+                }, out _);
                 using (PlayerR3EventHooks.OnPlayerAIRequestReceivedGoods.Observable.Subscribe(args => {
                     if (args.Phase == EventHookPhase.Post) sePosts++;
                 }))
@@ -199,10 +284,13 @@ namespace APISharedTests
                     Assert.IsTrue(observed.OriginalWasCalled); Assert.AreEqual(0L,observed.SenderDebit); Assert.AreEqual(10L,observed.RecipientCredit);
                     Assert.IsFalse(AllyTransfersSeBridge.IsInsideWrapper);
                     Marshal.WriteInt32(fixture.Receipt,20,0);
-                    var result=fixture.Bridge.Execute(new AllyTransferRequest(1,2,eGoods.STORED_WOOD_PLANKS,10),10);
+                    var result=fixture.Bridge.Execute(new AllyTransferRequest(1,2,eGoods.STORED_WOOD_PLANKS,10,0,int.MaxValue,false),10);
                     Assert.AreEqual(0,sePosts); Assert.AreEqual(AllyTransferStatus.Faulted,result.Status);
                     Assert.IsTrue(result.OriginalWasCalled); Assert.AreEqual(0L,result.SenderDebit); Assert.AreEqual(10L,result.RecipientCredit);
                     Assert.IsFalse(AllyTransfersSeBridge.IsInsideWrapper); Assert.IsFalse(AllyTransfersSeBridge.HasServiceFrame);
+                    Assert.IsFalse(AllyTransferChatScope.IsSuppressed);
+                    CollectionAssert.AreEqual(new[] { false, true }, fixture.ChatSuppression);
+                    Assert.AreEqual(0L, fixture.Events.CallbackFailures);
                 }
             }
         }
@@ -216,6 +304,8 @@ namespace APISharedTests
             internal bool Admit = true;
             internal bool ThrowInOriginal;
             internal int LastOpaqueReturn;
+            internal readonly List<bool> ChatSuppression = new List<bool>();
+            internal Action OriginalCallback;
             private readonly FieldInfo handleField;
             private readonly object previousHandle;
             private readonly object nativeHook;
@@ -239,6 +329,8 @@ namespace APISharedTests
                 AllyTransferSeEntry compiled = null;
                 Bridge = new AllyTransfersSeBridge((r,g,a,s) => compiled(r,g,a,s),
                     (d,r,g,a,s) => {
+                        ChatSuppression.Add(AllyTransferChatScope.IsSuppressed);
+                        OriginalCallback?.Invoke();
                         if (ThrowInOriginal) { Marshal.WriteInt32(Receipt,20,Target+a); throw new InvalidOperationException("private original failure after partial credit"); }
                         LastOpaqueReturn=forward(d,r,g,a,s); return LastOpaqueReturn;
                     }, Read, (request,amount) => Admit, Events);

@@ -4,6 +4,14 @@ using SHCDESE.Interop;
 
 namespace APIShared.Presentation
 {
+    /// <summary>Explicit section anchor. Existing registration overloads retain PanelRootBottom.</summary>
+    public enum AllyGoodsSectionPlacement
+    {
+        /// <summary>Below the original entire menu root; preserves the legacy layout contract.</summary>
+        PanelRootBottom = 0,
+        /// <summary>Below the marked visible goods frame; requires unambiguous goods-frame and footer anchors.</summary>
+        GoodsDialogBottom = 1
+    }
     /// <summary>Immutable UI selection, not an authorization or a completed transfer.</summary>
     public sealed class AllyGoodsPanelContext
     {
@@ -68,6 +76,18 @@ namespace APIShared.Presentation
         /// <summary>Recreates this section and retries a failed factory on the next open-dialog GUI update.</summary>
         public void RequestContentRefresh()
         { AllyGoodsPanelExtensions.RequireUnity(); entry.Revision++; invalidate(); }
+        /// <summary>Reads current layout availability on Unity, independently of visibility or gameplay permission.
+        /// False supplies a diagnostic reason, not localized player text. Read again after a notification.</summary>
+        public bool TryGetLayoutAvailability(out string reason)
+        { AllyGoodsPanelExtensions.RequireUnity(); reason = entry.LayoutReason; return entry.LayoutAvailable; }
+        /// <summary>Runs on Unity when layout availability/reason changes, including closure and host recreation.
+        /// There is no subscription replay: subscribe, then read TryGetLayoutAvailability. Subscriber failures
+        /// are isolated. This notification grants no gameplay authorization and never submits a command.</summary>
+        public event Action LayoutAvailabilityChanged
+        {
+            add { AllyGoodsPanelExtensions.RequireUnity(); entry.LayoutChanged += value; }
+            remove { AllyGoodsPanelExtensions.RequireUnity(); entry.LayoutChanged -= value; }
+        }
     }
 
     /// <summary>Process-lifetime, noninteractive goods-marker registration. Access requires the initialized Unity thread.</summary>
