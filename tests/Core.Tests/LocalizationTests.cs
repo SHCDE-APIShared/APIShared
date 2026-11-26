@@ -1,3 +1,4 @@
+using ApiCompatibility;
 using APIShared.Localization;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -81,8 +82,7 @@ namespace APISharedTests
         [TestMethod]
         public void EveryShippedCatalogHasTheSameKeysAndPlaceholders()
         {
-            var directory = new DirectoryInfo(AppContext.BaseDirectory);
-            while (directory != null && !File.Exists(Path.Combine(directory.FullName, "APIShared.csproj"))) directory = directory.Parent;
+            var directory = new DirectoryInfo(ApiBaselineFiles.RepositoryRoot());
             Assert.IsNotNull(directory, "Test checkout root is unavailable.");
             string root = Path.Combine(directory.FullName, "Locales");
             CollectionAssert.AreEquivalent(LocaleSelection.SupportedLocales.ToArray(), Directory.GetFiles(root, "*.txt").Select(Path.GetFileNameWithoutExtension).ToArray(),
