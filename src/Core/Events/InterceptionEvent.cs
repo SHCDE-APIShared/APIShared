@@ -136,13 +136,15 @@ namespace APIShared.Events
                     args.ResetState();
                     object before = args.Capture();
                     bool skip = args.Veto;
-                    try { snapshot[index].Pre?.Invoke(args); if (invocation.States.Length != 0) invocation.States[index] = args.State; }
+                    try { snapshot[index].Pre(args); }
                     catch (Exception ex)
                     {
                         args.Restore(before); args.RestoreVeto(skip);
                         Interlocked.Increment(ref failures);
                         LogFailure(snapshot[index], "Pre", ex);
+                        continue;
                     }
+                    invocation.SaveState(index, args.State);
                 }
             }
             finally { notification = previous; args.Freeze(); }
@@ -176,20 +178,27 @@ namespace APIShared.Events
             private readonly bool hasFinalValidators;
             private bool completed;
             private bool acceptedNotified;
-            internal readonly object[] States;
+            internal object[] States = Array.Empty<object>();
             internal readonly TPre Pre;
             internal bool HasPostObservers { get; }
             internal Invocation(InterceptionEvent<TPre, TPost> owner, Registration[] snapshot, TPre pre)
             {
                 this.owner = owner; this.snapshot = snapshot; Pre = pre;
-                bool needsStates = false;
                 foreach (Registration entry in snapshot) {
                     if (entry.Post != null) HasPostObservers = true;
                     if (entry.FinalValidation != null) hasFinalValidators = true;
-                    if (entry.Pre != null && (entry.Post != null || entry.Accepted != null || entry.FinalValidation != null))
-                        needsStates = true;
                 }
-                States = needsStates ? new object[snapshot.Length] : Array.Empty<object>();
+            }
+            // Empty storage already means null State to every paired notification. Allocate only
+            // after a successful Pre supplies state that this registration will actually receive.
+            // Keep allocation outside callback isolation: storage failure is not a handler failure.
+            internal void SaveState(int index, object state)
+            {
+                if (state == null) return;
+                Registration entry = snapshot[index];
+                if (entry.Post == null && entry.Accepted == null && entry.FinalValidation == null) return;
+                if (States.Length == 0) States = new object[snapshot.Length];
+                States[index] = state;
             }
             internal bool BlocksNestedCall(InterceptionEvent<TPre, TPost> registry, int key)
             {
