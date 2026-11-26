@@ -9,7 +9,7 @@ namespace APIShared.Savegames
 
         /// <summary>Enrolls one exact versioned record into the process-lived protected save cohort.</summary>
         /// <param name="handle">This owner's already registered versioned handle, with Prepared, SaveGamesAndMaps and SimulationRelevant.</param>
-        /// <param name="options">Marker, reader-floor and synchronous callback description, snapshotted during this call.</param>
+        /// <param name="options">Marker, reader-floor, aggregate ceiling and synchronous callbacks, snapshotted during this call.</param>
         /// <param name="participant">The process-lived participant on success; null on refusal.</param>
         /// <param name="reason">Diagnostic text on refusal.</param>
         /// <returns>True when enrollment succeeds; false when prerequisites or requested protection are unavailable.</returns>
@@ -31,6 +31,10 @@ namespace APIShared.Savegames
         /// original passive and refuses saving, including adding a participant with NoRecord. No membership migration is supplied.
         /// This check requires a registered owner to read an original protected record; absent APIShared/all original
         /// providers, no enforcement is promised. New NoRecord-only owners cannot discover removed unregistered records.
+        /// AggregateBudget is a snapshotted ceiling: the least permissive joined source sets the total encoded
+        /// byte limit. Existing/default and internal sources keep 8 MiB; all sources must accept 16 MiB to raise it.
+        /// This resource option changes no original marker identity or record format and cannot raise per-record
+        /// or per-entry limits. A later lower ceiling refuses an oversized replacement rather than dropping data.
         /// Enrollment is not legacy import, a state snapshot or permission to discard an existing consumer ledger.</remarks>
         public bool TryEnroll(VersionedSaveDataHandle handle, CriticalSaveOptions options,
             out CriticalSaveParticipant participant, out string reason) =>

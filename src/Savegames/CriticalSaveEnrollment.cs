@@ -226,6 +226,8 @@ namespace APIShared.Savegames
             string marker = options.ReservedMarkerEntry;
             int reader = options.MinimumReaderVersion;
             bool storage = options.RequiresNativeStorage;
+            if (!CriticalSaveOptions.TryGetAggregateBytes(options.AggregateBudget, out int aggregateBytes))
+            { reason = "The aggregate budget must select the standard 8 MiB or explicit 16 MiB ceiling."; return false; }
             var prepare = options.Prepare; var release = options.Release;
             lock (sync)
             {
@@ -245,7 +247,7 @@ namespace APIShared.Savegames
                 if (newPrepared && preparedSourceCount >= MaximumPreparedSources)
                 { reason = "The bounded prepared-source catalogue is full."; return false; }
                 var source = slot.PreparedSource ?? new VersionedSavePreparedSource(this, slot.Handle, slot.Scope, slot.Current, slot.MinimumReader);
-                var critical = new VersionedSaveCriticalSource(source, marker, reader);
+                var critical = new VersionedSaveCriticalSource(source, marker, reader, aggregateBytes);
                 var participant = new CriticalSaveParticipant(source, critical, slot.Handle, storage);
                 var member = new CriticalSaveMember { Participant = participant, Prepare = prepare, Release = release };
                 var members = new List<CriticalSaveMember>(criticalParticipants.Length + 1);

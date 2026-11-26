@@ -12,10 +12,14 @@ namespace APIShared.Savegames
     internal sealed class VersionedSaveCriticalSource
     {
         internal VersionedSaveCriticalSource(VersionedSavePreparedSource source, string entry, int reader)
-        { PreparedSource = source; ReservedEntry = entry; MinimumCutoverReader = reader; }
+            : this(source, entry, reader, VersionedSaveRecordCodec.MaximumRecordBytes) { }
+        internal VersionedSaveCriticalSource(VersionedSavePreparedSource source, string entry, int reader,
+            int maximumAggregateBytes)
+        { PreparedSource = source; ReservedEntry = entry; MinimumCutoverReader = reader; MaximumAggregateBytes = maximumAggregateBytes; }
         internal VersionedSavePreparedSource PreparedSource { get; }
         internal string ReservedEntry { get; }
         internal int MinimumCutoverReader { get; }
+        internal int MaximumAggregateBytes { get; }
         internal bool WriterCohortJoined; // Startup-only; standalone captures stay independent.
     }
 
@@ -305,6 +309,16 @@ namespace APIShared.Savegames
             }
         }
 
+        // Called under sync. Resource consent belongs to every joined source, including internal storage;
+        // an explicit participant cannot raise the limit of another source which kept its default.
+        // This is startup metadata, deliberately absent from the existing persisted CCH1 marker.
+        private int WriterCohortMaximumBytes()
+        {
+            int bytes = CriticalSaveOptions.MaximumAggregateBytes;
+            foreach (var source in writerCohort) bytes = Math.Min(bytes, source.MaximumAggregateBytes);
+            return writerCohort.Length == 0 ? VersionedSaveRecordCodec.MaximumRecordBytes : bytes;
+        }
+
         // Only the exact existing EditorCreated boundary may call this. This is
         // intentionally not a Prepared delivery and never finalizes an archive.
         internal bool TryAuthorizeCriticalCreatedWorld(VersionedSavePreparedSource source, object world,
@@ -505,8 +519,10 @@ namespace APIShared.Savegames
                 if (actual.IsSaveFile != pinned.IsSaveFile || actual.IsMapEditorSave != pinned.IsMapEditorSave ||
                     !string.Equals(actual.FilePath, pinned.FilePath, StringComparison.Ordinal))
                     throw new InvalidOperationException("The actual factory differs from the owned pre-capture context.");
+                int aggregateBytes;
+                lock (sync) aggregateBytes = WriterCohortMaximumBytes();
                 if (!TryGetWriterRecords(out var requested, out string reason) ||
-                    !TryFreezeCriticalRecordsCore(requested, actual, VersionedSaveRecordCodec.MaximumRecordBytes, true, out var capture, out reason))
+                    !TryFreezeCriticalRecordsCore(requested, actual, aggregateBytes, true, out var capture, out reason))
                     throw new InvalidOperationException(reason);
                 return capture;
             });
@@ -535,7 +551,9 @@ namespace APIShared.Savegames
         // Logical SaveContext belongs to the Extender/PlayerViewSaveScope. Its path
         // is not the native temporary destination, and flags must not be inferred
         // from the native writer's map byte. The real owner supplies that context.
-        // The aggregate bound is explicit, at most the existing 8-MiB record bound.
+        // The explicit aggregate bound cannot exceed any selected source's consent. Joined sources also
+        // retain the entire cohort's minimum ceiling, even for an internal subset request. Per-record limits
+        // remain the codec's 8 MiB; ordinary internal sources still permit only their prior aggregate range.
         internal bool TryFreezeCriticalRecords(IReadOnlyList<VersionedSaveCriticalRecord> requested,
             VersionedSaveContext context, int maximumTotalBytes,
             out VersionedSaveCriticalCapture capture, out string reason) =>
@@ -547,7 +565,7 @@ namespace APIShared.Savegames
         {
             capture = null;
             if (requested == null || requested.Count == 0 || requested.Count > MaximumPreparedSources ||
-                maximumTotalBytes <= 0 || maximumTotalBytes > VersionedSaveRecordCodec.MaximumRecordBytes)
+                maximumTotalBytes <= 0 || maximumTotalBytes > CriticalSaveOptions.MaximumAggregateBytes)
             { reason = "A bounded nonempty critical source set and aggregate byte limit are required."; return false; }
             VersionedSaveCriticalCapture bundle;
             lock (sync)
@@ -559,6 +577,9 @@ namespace APIShared.Savegames
                 foreach (VersionedSaveCriticalRecord item in requested)
                 {
                     Slot slot = FindPreparedSource(item.Source?.PreparedSource);
+                    if (item.Source != null && (maximumTotalBytes > item.Source.MaximumAggregateBytes ||
+                        (item.Source.WriterCohortJoined && maximumTotalBytes > WriterCohortMaximumBytes())))
+                    { reason = "The requested aggregate bound exceeds a source or joined cohort ceiling."; return false; }
                     if (slot == null || !ReferenceEquals(slot.CriticalSource, item.Source) ||
                         (created ? (item.CreatedOrigin == null || !ReferenceEquals(slot.CreatedWorldOrigin, item.CreatedOrigin) ||
                             item.CreatedOrigin.Generation != generation || !ReferenceEquals(item.CreatedOrigin.World, requested[0].CreatedOrigin.World) ||

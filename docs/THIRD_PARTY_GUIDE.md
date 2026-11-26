@@ -1139,6 +1139,10 @@ before its first registration when needed. Follow the authoritative
 [protected participant workflow](SAVE_DATA.md#opt-in-protected-save-participants)
 for same-thread callbacks, original-marker observations, SP/editor limits and
 process lifetime. The compiled example keeps this opt-in separate from ordinary registration.
+The cohort defaults to 8 MiB of encoded records in total. A 16 MiB aggregate requires
+explicit consent from every joined source; default/internal sources keep 8 MiB, and
+record/entry limits do not change. See the same protected workflow for the typed
+`CriticalSaveAggregateBudget` option, snapshot timing and lower-ceiling behavior.
 
 Keeping an identifier and adding a legacy reader only decodes that record; neither
 it nor critical enrollment atomically transfers stock, cargo or authority to
