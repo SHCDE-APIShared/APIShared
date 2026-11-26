@@ -32,6 +32,9 @@ namespace APIShared.Wildlife
         internal static HuntablePreyCatalog Compile(IReadOnlyList<HuntablePreyRegistration> registrations)
         {
             var winners = new Dictionary<int, HuntablePreyRegistration>();
+            // A corpse lifetime is a lower bound each requesting mod needs: every enabled registration of the
+            // type contributes, independent of priority, and the longest one wins (order-independent).
+            var lifetimes = new Dictionary<int, int>();
             foreach (var registration in registrations.OrderByDescending(item => item.Priority)
                 .ThenBy(item => item.OwnerGuid, StringComparer.Ordinal)
                 .ThenBy(item => item.RegistrationId, StringComparer.Ordinal))
@@ -41,12 +44,18 @@ namespace APIShared.Wildlife
                     registration.SetStatus(HuntablePreyRegistrationStatus.Unsupported);
                 else if (!registration.IsEnabled)
                     registration.SetStatus(HuntablePreyRegistrationStatus.Disabled);
-                else if (winners.ContainsKey(type))
-                    registration.SetStatus(HuntablePreyRegistrationStatus.ExcludedByPriority);
                 else
                 {
-                    winners.Add(type, registration);
-                    registration.SetStatus(HuntablePreyRegistrationStatus.Admitted);
+                    if (winners.ContainsKey(type))
+                        registration.SetStatus(HuntablePreyRegistrationStatus.ExcludedByPriority);
+                    else
+                    {
+                        winners.Add(type, registration);
+                        registration.SetStatus(HuntablePreyRegistrationStatus.Admitted);
+                    }
+                    int? lifetime = registration.Definition.MinimumCorpseLifetime;
+                    if (lifetime.HasValue && (!lifetimes.TryGetValue(type, out int longest) || lifetime.Value > longest))
+                        lifetimes[type] = lifetime.Value;
                 }
             }
 
@@ -57,7 +66,8 @@ namespace APIShared.Wildlife
             foreach (var winner in winners.Values)
                 entries.Add(new HuntablePreyEntry(winner.Definition.UnitType, winner.Definition.HandlingCost,
                     winner.Definition.BaseMeat, winner.Definition.AllowsOwnPlayerPrey, winner.Definition.RemovesCorpseWhenButchered,
-                    winner.OwnerGuid, winner.RegistrationId, false));
+                    winner.OwnerGuid, winner.RegistrationId, false,
+                    lifetimes.TryGetValue(winner.Definition.UnitType, out int corpseLifetime) ? corpseLifetime : (int?)null));
             var ordered = entries.OrderBy(entry => entry.UnitType).ToArray();
             return new HuntablePreyCatalog(ordered, DigestOf(ordered), winners.Count != 0);
         }
@@ -68,10 +78,11 @@ namespace APIShared.Wildlife
             using (var data = new MemoryStream())
             using (var writer = new BinaryWriter(data, Encoding.UTF8))
             {
-                // Version 2 adds base meat, own-player prey and corpse removal; catalogs without any of them
-                // keep the version-1 bytes and digest.
-                bool extended = entries.Any(entry => entry.BaseMeat.HasValue || entry.AllowsOwnPlayerPrey || entry.RemovesCorpseWhenButchered);
-                writer.Write(extended ? "huntable-prey/2" : "huntable-prey/1");
+                // Version 2 adds base meat, own-player prey and corpse removal, version 3 corpse lifetimes; a
+                // catalog without the newer fields keeps the older bytes and digest.
+                bool lifetimes = entries.Any(entry => entry.MinimumCorpseLifetime.HasValue);
+                bool extended = lifetimes || entries.Any(entry => entry.BaseMeat.HasValue || entry.AllowsOwnPlayerPrey || entry.RemovesCorpseWhenButchered);
+                writer.Write(lifetimes ? "huntable-prey/3" : extended ? "huntable-prey/2" : "huntable-prey/1");
                 writer.Write(entries.Length);
                 foreach (var entry in entries)
                 {
@@ -83,6 +94,7 @@ namespace APIShared.Wildlife
                         writer.Write(entry.AllowsOwnPlayerPrey);
                         writer.Write(entry.RemovesCorpseWhenButchered);
                     }
+                    if (lifetimes) writer.Write(entry.MinimumCorpseLifetime ?? -1);
                     writer.Write(entry.OwnerGuid);
                     writer.Write(entry.RegistrationId);
                     writer.Write(entry.IsVanilla);

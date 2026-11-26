@@ -211,7 +211,9 @@ namespace APIShared.Savegames
                 model.Show_HUD_LoadSaveRequesterMP = mp;
                 model.Show_HUD_LoadSaveRequester = !session.Trails && !mp;
                 if (!Economy.WorkerProductionCriticalSaveRuntime.FailedSince(saveOutcome))
-                    HUD_ConfirmationPopup.ShowConfirmationOKMessage(APIShared.Localization.UiText.Get("Savegames.OperationNotReady"), null, APIShared.Localization.UiText.Get("Savegames.SettingsTitle"), false);
+                    HUD_ConfirmationPopup.ShowConfirmationOKMessage(
+                        session.Request.PreparationRejection ?? APIShared.Localization.UiText.Get("Savegames.OperationNotReady"),
+                        null, APIShared.Localization.UiText.Get("Savegames.SettingsTitle"), false);
             }
         }
 

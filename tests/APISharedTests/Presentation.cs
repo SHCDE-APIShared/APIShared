@@ -134,6 +134,30 @@ namespace APISharedTests
         [TestCategory("Presentation")]
         public void VerifyUnitHudActivation() => TestUnitHudActivation();
 
+        [TestMethod]
+        [TestCategory("Presentation")]
+        public void UnitHudInteractionContinuesAfterUnformattableCallbackFailure()
+        {
+            const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic;
+            Type type = typeof(UnitHudPresentationService);
+            var service = (UnitHudPresentationService)type.GetConstructors(instance).Single()
+                .Invoke(new object[] { "test", null, null, false });
+            var failure = new UnformattableCallbackException();
+            int calls = 0;
+            Assert(service.Bind("a").TryRegisterInteraction("fails", _ => throw failure, out _),
+                "failing HUD handler registered");
+            Assert(service.Bind("b").TryRegisterInteraction("healthy", _ => calls++, out _),
+                "healthy HUD handler registered");
+
+            // Exercise the managed callback dispatch without entering the Unity click handler.
+            MethodInfo notify = type.GetMethod("NotifyInteraction", instance);
+            var args = new object[] { new UnitHudInteractionContext(default, null) };
+            notify.Invoke(service, args);
+            Assert(calls == 1, "the first failure must not interrupt the later handler");
+            notify.Invoke(service, args);
+            Assert(calls == 2 && failure.FormatAttempts == 0, "repeat isolation must not depend on throttling");
+        }
+
         private static void TestUnitHudActivation()
         {
             Type type = typeof(UnitHudPresentationService);

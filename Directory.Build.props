@@ -1,4 +1,23 @@
-<Project>
+<Project InitialTargets="_APISharedValidateArtifactsRoot">
+  <!-- Opt in before Common.props selects the NuGet/project extension directory.
+       SDK projects append their normal Configuration/TFM/RID pivots. Never pass
+       one shared OutputPath or IntermediateOutputPath to a project graph. -->
+  <PropertyGroup Condition="'$(APISharedArtifactsRoot)' != ''">
+    <_APISharedArtifactsRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '$(APISharedArtifactsRoot)'))</_APISharedArtifactsRoot>
+    <BaseOutputPath>$(_APISharedArtifactsRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(_APISharedArtifactsRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <!-- Preserve the SDK's source-tree exclusions when switching an existing
+         project to this output root, as its own artifacts mode does. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+  <!-- Imported initial targets run before requested Restore/Build/custom targets.
+       Refuse unsupported roots explicitly; never reinterpret or redirect them. -->
+  <Target Name="_APISharedValidateArtifactsRoot" Condition="'$(APISharedArtifactsRoot)' != ''">
+    <Error Condition="$(APISharedArtifactsRoot.Contains('%')) Or $(_APISharedArtifactsRoot.Contains('%'))"
+           Code="APISHARED1001"
+           Text="APISharedArtifactsRoot does not support percent characters. Choose an artifact directory without percent characters." />
+  </Target>
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <GameDir Condition="'$(GameDir)' == ''">$(SHCDE_GAME_DIR)</GameDir>

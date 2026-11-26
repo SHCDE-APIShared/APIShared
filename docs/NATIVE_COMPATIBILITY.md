@@ -32,6 +32,20 @@ other bytes keep the full unique scan. A pattern
 match is not permission to bypass function, layout, overlap or backend validation.
 Game or Extender version numbers alone are not evidence of native compatibility.
 
+### Foreign patches
+
+The site registry only sees owners that register. Before APIShared writes a hook or
+CALL-site patch into CrusaderDE.dll, it compares the live bytes of the span the backend
+will overwrite with the Script Extender's load snapshot (`CrusaderLibraryLoadContext.Region`).
+A difference inside the span is a patch of the Extender or another mod: that service
+stays Vanilla and an Error names the feature, RVA, expected and live bytes and, for a
+`jmp rel32`/`jmp [rip+disp32]`, its target module. A foreign patch directly before or
+behind the span is allowed and not reported (mostly APIShared's own neighbouring hooks). After publication APIShared
+records each span's bytes and compares them again at every mission and editor start;
+a later overwrite by a mod loaded afterwards is logged once per change as an Error
+(`NATIVE_FOREIGN_PATCH_LATE`). APIShared never rewrites or undoes a published span.
+Implementation: `src/Core/Internal/Native/NativeForeignPatchGuard.cs`.
+
 ## Hook backend contracts
 
 The single audited exception is the [Fixes wheat-sale startup correction](FIXES_COMPATIBILITY.md):
@@ -131,3 +145,29 @@ Audio owns coordinated native source-capture entries and managed playback
 interception. See [bridge validation](AUDIO.md#native-bridge-validation) for the
 specific backend contract and [UpdateToNewDLL](../UpdateToNewDLL.md) for hashes,
 addresses and the feature update checklist.
+
+## Paired AI market observations
+
+`AiMarketEvents` owns the complete entries `3EC90/6`, `40740/12`,
+`29650/10` and `29700/9` on the audited image. These are purchase selection,
+recruitment demand generation, actual purchase and actual sale respectively.
+It does not hook controller `3F270`, which is modified by Fixes, or the shared
+price and sale-policy interiors. Both diagnostic consumers register with this
+owner; neither may install a second entry detour.
+
+The sale entry includes `TEST R9D,R9D; JS 2979F`. Preparation and publication
+validate the actual installed backend's relocated conditional destination,
+fallthrough continuation, pointer slot, padding and displaced span. The other
+three prologues replay equivalent non-RIP instructions; redundant REX prefixes may
+be normalized by the backend, so validation compares decoded instruction meaning.
+All handles acquire originals
+before the first patch, and publication permanently roots partial failures.
+
+Callback pairs preserve individual tokens through nested operations and logical
+disabling. An immutable observer snapshot and bounded stack-local tokens avoid
+managed allocation and shared-depth overflow. Native arguments, result and
+exception remain unchanged; completed callback pairs do not prove trade success.
+The process-local invocation identity is diagnostic only, never network state.
+`AiMarketEventsTests` executes all four real displaced entries on private native
+fixtures, both sale branches, nested tokens, callback failure, disable-in-flight
+and original exceptions. It does not prove the complete game's economy behavior.
