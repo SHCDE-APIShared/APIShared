@@ -11,7 +11,7 @@ namespace APIShared.Buildings
     // published native consumer code reads it until the process ends. Writers: the authenticated
     // Chore and simulation writes during play, archive loads and mission starts while the
     // simulation is not running. All of them produce identical bytes on every peer.
-    internal sealed unsafe class BuildingStateMemory
+    internal sealed unsafe partial class BuildingStateMemory
     {
         // Far above the game's building array (the weapon-workshop owner audits 3999); IDs above it
         // are simply not stored. Native readers compare unsigned against this capacity.

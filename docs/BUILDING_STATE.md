@@ -12,6 +12,13 @@ Contracts are documented at the declarations in
 
 ## Usage
 
+`BuildingStateTable.TryRegisterMultiplayerResync` (0.69.0) opts a table into
+host-authoritative repair. Call it once on Unity after table registration and
+before multiplayer admission. Register the same tables on every peer and
+include a refused registration in the dependent multiplayer feature's readiness.
+Repair checks the live identity, owner and type and retains the existing native
+address. Save records and local request acknowledgements keep their contracts.
+
 Register each table once at startup on the initialized Unity thread after Script Extender
 readiness, unconditionally and in the same order on every peer, like a Chore channel:
 

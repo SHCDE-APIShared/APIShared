@@ -59,10 +59,48 @@ namespace APIShared
         private static NativeAdmissionTicket admission;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
-        private sealed class NativeAdmissionTicket
+        internal sealed class NativeAdmissionTicket
         {
             internal readonly string Path, Hash;
             internal NativeAdmissionTicket(string path, string hash) { Path = path; Hash = hash; }
+        }
+        internal static NativeAdmissionTicket CurrentAdmission =>
+            System.Threading.Volatile.Read(ref admission);
+        internal static bool HasPendingPreparation => pending != null;
+
+        // Read-only authority for the shared lobby-packet staging service. A published
+        // start can precede its P2P release; it still needs this authenticated proposal.
+        // This rare handshake query performs no archive/header or file access.
+        internal static bool TryGetLobbyPacketAdmission(out string token, out ulong lobbyId,
+            out ulong authenticatedHostId, out IReadOnlyList<ulong> humanPeers)
+        {
+            token = null; lobbyId = authenticatedHostId = 0; humanPeers = null;
+            if (!Internal.UnityMainThreadDispatch.IsMainThread || !initialized || pending == null) return false;
+            var proposal = pending;
+            var lobby = owner?.activeLobby;
+            if (lobby == null || !ReferenceEquals(lobby, Platform_Multiplayer.Instance?.activeLobby) ||
+                lobby.id.m_SteamID != proposal.Lobby || lobby.isHost != attemptHost ||
+                SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID != hostId) return false;
+            try
+            {
+                ulong[] humans = Humans(lobby);
+                if (string.Join(",", humans) != proposal.Roster) return false;
+                token = proposal.Token; lobbyId = proposal.Lobby; authenticatedHostId = hostId;
+                humanPeers = Array.AsReadOnly(humans);
+                return true;
+            }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        internal static bool MatchesFile(NativeAdmissionTicket ticket, string path)
+        {
+            if (ticket == null || string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                return string.Equals(Path.GetFullPath(path), ticket.Path, StringComparison.OrdinalIgnoreCase) &&
+                    Hash(ticket.Path) == ticket.Hash;
+            }
+            catch { return false; }
         }
 
         internal static void Initialize(ManualLogSource logger)
@@ -624,13 +662,7 @@ namespace APIShared
         {
             if (!multiplayer) return true;
             var ticket = System.Threading.Volatile.Read(ref admission);
-            if (ticket == null) return false;
-            try
-            {
-                return string.Equals(Path.GetFullPath(path), ticket.Path, StringComparison.OrdinalIgnoreCase) &&
-                    Hash(ticket.Path) == ticket.Hash && ReferenceEquals(ticket, System.Threading.Volatile.Read(ref admission));
-            }
-            catch { return false; }
+            return MatchesFile(ticket, path) && ReferenceEquals(ticket, CurrentAdmission);
         }
         internal static bool CancelSelection()
         {

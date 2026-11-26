@@ -741,7 +741,15 @@ For an expected rejection during save selection or confirmation, see
 
 For a same-mission restart, wrap the complete preparation and loading action in
 `MissionRestart.Run(ownerGuid, action)` on the Unity thread. This requires a ready
-gameplay session. The dedicated Skirmish restart and the confirmed in-game menu
+gameplay mission. For a direct multiplayer reload in its retained Steam lobby, call
+`MissionRestart.TryValidateMultiplayerMap` on every peer before acknowledging the
+restart. Supply the actual `StartGame` arguments. This read-only check requires a
+completed new-map start, the same participants and launch configuration, and the
+unchanged locally confirmed map. The consumer owns commit coordination. APIShared
+revalidates the committed load and retires its authorization with that attempt.
+A new lobby uses normal map readiness.
+
+The dedicated Skirmish restart and the confirmed in-game menu
 restart already use this boundary; opening or cancelling confirmation does not.
 Nested calls share one attempt. Other launches must use their normal entry points.
 Restart authorization retains the source's Customize provenance,
@@ -816,6 +824,83 @@ on all peers when even one peer cannot participate. Use the admitted value for b
 sending and receiving simulation commands for the whole match. When an active
 feature detects a runtime loss, call `SimulationAgreement.ReportFault` to stop the
 world through the shared terminal boundary.
+
+## Multiplayer repair boundaries
+
+`MultiplayerResyncEvents` requires 0.62.0. Register both critical callbacks after
+native initialization and before the first world; registrations last for the process.
+They run in order/owner/ID order on the engine-serialized native caller thread,
+outside registry locks. They are not Unity dispatch and have no replay or cancellation.
+Start runs before executed Chore54; completion runs after executed Chore67.
+Serialization and size queries do not notify consumers. A local abort never invents
+a completion callback. Callback exceptions stop the agreed simulation feature.
+
+Use these boundaries to suspend and reset consumer-owned deterministic state on
+every peer. They do not transfer mod state or change native repair data.
+`IsInProgress` is false inside successful completion callbacks so consumers can
+rearm their admitted gates; a failed callback restores the terminal fence. Do not
+start an engine run, load or save from these callbacks. `CheckIntegrity()` is a
+side-effect-free startup/admission probe, not a per-tick query. Combine readiness
+with `SimulationAgreement` for simulation-changing consumers.
+
+### Host-authoritative mod data during repair
+
+`MultiplayerResyncData` requires APIShared 0.65.0. Register each record once
+on the Unity thread after native initialization. Use the same owner GUID, record
+ID, schema version and declared maximum on every peer. The owner GUID and record
+ID each accept 1 to 96 ASCII letters, digits, periods, underscores or hyphens.
+Use `auto-send-rules` for a feature prefix, since `/` is outside that character set.
+The first resolved multiplayer lobby closes registration for the process. Use a gameplay
+package with `NetworkMode=1`. Active records form one required cohort in the
+multiplayer simulation agreement. Check the return value from registration and
+include readiness in your gameplay feature admission.
+
+1. `capture` returns a deterministic byte snapshot. Return an empty array for
+   an inactive record. The client captures at executed repair start and the
+   host captures after Vanilla reaches the repair completion boundary.
+2. `prepare` validates the host bytes against the locally repaired world and
+   builds a private replacement. Prepare all state here and keep simulation
+   unchanged until commit.
+3. `commit` publishes the prepared state. This callback must be short,
+   non-allocating and non-throwing. Rearm any suspended simulation hooks in the
+   existing `MultiplayerResyncEvents` completion callback.
+
+These callbacks run on the native caller thread under the engine monitor.
+Keep Unity APIs, nested engine runs, saves and loads out of the callbacks.
+Registration is retained for the process. Use your own mission lifecycle to
+scope state and your own save record for persistence. The service accepts up
+to 32 records, 1 MiB per record and 4 MiB of declared capacity across records.
+
+The host sends record lengths and SHA-256 digests on Steam's reliable
+channel. Clients reuse matching local bytes and request whole changed records
+in bounded windows. The host waits for every admitted human peer to finish
+preparing before it publishes its own replacements and releases Vanilla's
+completion command. Each client publishes just before executing that command.
+A changed roster, an exceeded transfer deadline or a provider failure stops
+the agreed world through the existing terminal boundary. The guarantee
+requires the supported native image and matching gameplay packages.
+
+Use the owning service's existing integration for
+[per-building tables](BUILDING_STATE.md#usage) and
+[butchered Hunter prey](HUNTING.md#missions-and-multiplayer).
+
+#### Early capture for frozen records
+
+`TryRegisterEarlyCapture` (0.67.0) captures the host record after the
+`MultiplayerResyncEvents` start callbacks, before executed Chore54. Choose it
+for a private record whose writers are already suspended and whose canonical
+bytes stay valid through the repair. For example, a mod can capture frozen
+wall deposit history early and filter it against the repaired grid in
+`prepare`. Use ordinary `TryRegister` for snapshots that read changing or
+repaired native state. Use the same registration mode on every peer.
+
+When every record opts in, the host can advertise the manifest during the
+Vanilla repair. Clients with matching bytes can validate against their
+repaired world and confirm readiness while the host waits for Vanilla's
+acknowledgements. If a client requests changed bytes early, the host holds
+the request until its native completion gate. With a mix of early and
+ordinary records, the host captures opted-in records at repair start and
+sends the combined manifest at the completion gate.
 
 ## Multiplayer actions and messages
 
@@ -930,6 +1015,18 @@ effect is implied. These rules apply only to authenticated channels.
 
 The adapter is deliberately tied to audited native layout and loaded SE method
 contracts; see [native update requirements](../UpdateToNewDLL.md#authenticated-chore-context-and-submission).
+
+### Native readiness proofs
+
+Create one `NativeReadinessProof` per outgoing proof stream. Call `Begin` with a
+snapshot of peer Steam identities and world nonces, plus the local identity and
+current token and attempt. Feed `TryAccept` the authenticated transport identity
+and each peer's receipt. A ready result requires every peer to agree with the
+local receipt on both native command ID and scheduled tick. Conflicting receipts
+from one peer mark the attempt as mismatched, even if a later duplicate matches. Clear the proof at
+session end or when outgoing readiness is invalidated. Serialize access with
+your existing protocol lock. Consumers still own channel registration,
+world-token issuance, replay checks and execution receipts.
 
 ### Control-plane messages
 
@@ -1209,6 +1306,8 @@ meaning, including the absolute coefficient in fear `SetMultiplier`. Read the
 For maximum HP, register `HealthModifiers` after `LibraryLoaded` and enable
 immutable contributions at synchronized mission boundaries. APIShared captures
 the completed native basis and freezes each generation after one application.
+Policies used in real multiplayer should opt into the shared repair ledger via
+`HealthModifiers.TryEnableMultiplayerResync` during `LibraryLoaded`.
 See [the health contract](HEALTH.md) for save migration, category ownership,
 limits, linked siege towers and the [compiled example](../examples/ThirdPartyMod/HealthExample.cs).
 
@@ -1216,6 +1315,27 @@ For market prices use [MarketPriceModifiers](MARKET_PRICE_MODIFIERS.md) to compo
 per-lot base prices across manual trade, AI, autotrade, HUD and valuation. Existing
 low-level query veto totals remain distinct and compatible. ExtraFeatures' AI
 exception now omits only its own factors, allowing other registered mods to work.
+
+## Observing AI trade and recruitment
+
+`AiMarketEvents` (0.62.0) owns the common native entries for purchase decisions,
+recruitment and actual market buy/sell attempts. Register after LibraryLoaded
+initialization and enable the initially disabled `AiMarketRegistration` logically.
+Never install another hook at those entries. Paired callbacks use immutable value
+contexts and an owner-private numeric token; nested calls retain independent tokens.
+The original runs exactly once with unchanged arguments and return value even when
+an observer fails. A failed Begin has no matching End; a successful Begin always
+receives its paired End, including after logical disabling. Exceptions are isolated
+and optionally reported through the registration's failure callback.
+
+Callbacks execute synchronously on the native caller thread outside registry locks.
+Keep them bounded and do not retain `ProfileRoot`: it is an immediate opaque native
+address. `InvocationId` is local evidence, never a synchronized or persisted identity.
+Observations describe attempts; the consumer must verify actual resource changes.
+Use `CheckIntegrity()` at admission to detect overwritten shared entries, and
+`SimulationAgreement` for any gameplay-changing interpretation. Registrations are
+process-rooted; disabling does not remove executable hooks. Public declarations
+document exact ordering and failure semantics.
 
 ## Sharing native market price queries
 
@@ -1657,10 +1777,39 @@ text and display name are not authenticated gameplay authority.
 Vanilla truncates each displayed lobby message at 300 characters. Consumers must
 split longer support reports before sending them and prevent receive/send loops.
 
+### Local lobby system messages
+
+For an informational hint such as a completed Workshop update, call
+`APIShared.Lobby.LobbyLaunchStatus.TryShowLocalSystemMessage(lobbyId, localizedText)`
+on the Unity thread with the Steam lobby ID that the hint belongs to. This renders
+one local system line even when ordinary chat is muted. It uses the normal chat
+notification and leaves the player's chat visibility alone. It returns `false`
+when called outside the specified active Steam lobby, during a mission, before the
+renderer is available, from another thread, or with empty or oversized text.
+Each line must fit Vanilla's 300-character limit. The caller decides when to
+show a line and what to log.
+
+### Lobby launch status
+
 `APIShared.Lobby.LobbyLaunchStatus` explains why a multiplayer lobby cannot start yet.
 For blocking Ready/Start and prepared multiplayer-save admission, `LobbyLaunchGuards` supplies a context whose
 `RequiresPeerAgreement` distinguishes the exact Vanilla local Play/Coop branches
-from fresh network lobbies. Prepared saves run the same guards after settings and
+from fresh network lobbies. The additive `PreparedSave` snapshot identifies an
+SDK-owned selected-save attempt; it is null for ordinary buttons. Typed readiness
+registrations may return `Waiting` while peer data arrives, or `Rejected` for an
+invalid attempt. Existing string registrations retain their rejection behavior.
+See [prepared-save lifetime](SAVE_DATA.md#prepared-multiplayer-save-lifetime).
+
+`LobbyActionEvents.TryRegisterObserver` observes commands through the same permanent
+button hook. Register on Unity with your own owner GUID and stable ID. Notifications
+contain the lobby, command, Ready before/after, and whether the existing original
+hook chain was invoked. They do not prove physical user input or a successful game
+start. To preserve manual Unready, mark your own synchronous automatic command,
+then stop its intent on an observed `Ready` true-to-false transition outside that
+scope. Settings/map resets are not button notifications. Observer exceptions are
+isolated; nested observer commands execute normally without recursive observation.
+
+Prepared saves run the same guards after settings and
 fingerprint validation at host release, client acknowledgement and final start;
 their `HostLoadGame` context has a null lobby receiver, and only a freshly validated
 solo-host roster bypasses peer agreement. In-game MP flags are not lobby evidence. See the
@@ -1829,6 +1978,52 @@ control's `FontSize`. `state.Text` labels diagnostics/occupancy rather than repl
 content. Existing button APIs, Vanilla objects and commands are unchanged.
 See `RegisterInlineEditor` in the [menu example](../examples/ThirdPartyMod/IngameMenuExample.cs).
 
+To reuse an original game button instead of adding or displacing an action, call
+`IngameMenuActions.TryOverrideVanillaAction(ownerGuid, id, row, enabled, execute,
+out registration, out reason)`. This applies to any `IngameMenuRow`. It creates no
+placement claim or extra-page entry and retains the existing button's label,
+visibility, style, command binding and identity. The `Func<bool?>` provider returns
+null to keep Vanilla behavior, false to disable and consume the command, or true
+to enable the button and invoke your action instead of Vanilla. It is evaluated
+freshly at the click, including when the visible enabled state has become stale.
+The consumer supplies its own authority/session checks and confirmation/pause flow.
+If APIShared cannot take over a menu's layout (for example after a game update; the
+error is logged), that menu stays Vanilla: the override neither changes the button
+nor intercepts its command, and the provider is not called.
+
+Only one permanent override may own a row. Conflicts and duplicate owner-local IDs
+are rejected without replacing the earlier registration. Providers, commands and
+registration run on initialized Unity. The mission-lifecycle capability must be
+available because its existing menu-command dispatcher owns the interception;
+registration rejects without changing the menu if that prerequisite is unavailable.
+Use the returned handle or owner-wide
+`Invalidate` after relevant changes. Closed-menu and recursive invalidation rules
+are the same as ordinary actions. Provider exceptions disable and consume the
+command; command exceptions are isolated without falling through to Vanilla.
+Failures are logged once per registration, and later events may retry the provider.
+Restoring null removes only the override's own enabled value: later foreign writes
+are preserved. Before each Vanilla `Init`, APIShared removes only its own enabled
+values; Vanilla's subsequent mode-specific writes take precedence, while buttons
+that Vanilla leaves unchanged retain their original baseline. Existing
+placement claims remain independent; if another mod displaces the original button,
+the override still belongs to that original button rather than its replacement.
+
+With APIShared 0.66.0 or later, hide an original button on both pages by calling
+`IngameMenuActions.TryRegisterVanillaSuppression(ownerGuid, id, row, shouldSuppress, out reason)`
+on initialized Unity outside menu callbacks. Identify the button with `IngameMenuRow`
+and use an ID unique across your menu registrations. Each registration lasts until
+process exit. Any provider returning true hides the original. When all providers
+return false, its current game-mode visibility and ordinary placement apply.
+Suppression affects local presentation. Mod controls can still occupy the row,
+and the original retains its bindings, command and any registered override.
+
+Providers run at menu opening, on return from a dialog, during menu action
+revalidation and on owner invalidation while open. Call `IngameMenuActions.Invalidate(ownerGuid)`
+after relevant changes. Provider exceptions count as false for that evaluation
+and are logged once per registration. Cached occupancy shows the original claim's
+last observed `State` and reports suppression separately via `IsSuppressed`.
+See `RegisterHelpSuppression` in the [menu example](../examples/ThirdPartyMod/IngameMenuExample.cs).
+
 Rows have stable `IngameMenuRow` names independent of mode-specific visibility.
 Each has Left and Right; Vanilla is the Right fallback. A single visible button
 uses the normal full width; two share a row. A mod can activate a position even
@@ -1866,7 +2061,8 @@ state and effective ownership. Before first evaluation HasState can be false;
 closed-menu snapshots can be stale. Queries do not read native state or call mods.
 
 `new IngameMenuActionOptions()` registers exclusively for the additional-actions
-page. Every visible displaced mod or Vanilla action also appears there, once.
+page. Visible displaced mod actions and visible, unsuppressed displaced Vanilla
+actions also appear there once.
 Entries sort by order, ordinal owner GUID, then action ID. Invisible actions take
 no space; disabled actions remain listed. The extra-page button appears before
 Resume only while the page has entries. Both pages support bounded scrolling and
@@ -2035,7 +2231,9 @@ and the detection and calls Opened, Updated and Closed on Unity. Use
 [BuildingStates](BUILDING_STATE.md) for the player's per-building choice behind such a control:
 owner requests are validated and applied on every peer in the same tick, saved with the game and
 readable from managed and native simulation code. A table can opt in to applying one owner value
-to all of the sender's living buildings of the selected type.
+to all of the sender's living buildings of the selected type. Register a control's owner commands
+as [building actions](BUILDING_PANELS.md#presenters-and-building-actions) so that spectator and
+foreign-control mods that present another player's panel can use it without reflection.
 
 ## Local input and mod keybinds
 
@@ -2072,9 +2270,15 @@ existing authenticated command path for effects shared in multiplayer.
 
 ## Ally gifts and send-dialog extensions
 
-Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to add a section or noninteractive per-ware icon markers without replacing existing controls or owning another mod's layout. Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates owner-local section registration.
+Use [AllyGoodsPanelExtensions](ALLY_GOODS_PANEL.md) to extend the send dialog without replacing existing controls or owning another mod's layout. New sections can select `AllyGoodsSectionPlacement.GoodsDialogBottom` to follow the marked visible goods frame, even if another mod enlarges the surrounding menu root. The original overload retains `PanelRootBottom`. Query `TryGetLayoutAvailability` after subscribing to `LayoutAvailabilityChanged`; this reports presentation availability, not gameplay permission.
 
-Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion.
+`TryRegisterFooterControl` adds a compact launcher independently of section visibility. Multiple owners share one centered row and a bounded **More...** popup when necessary. Controls remain cached across selection and visibility changes; explicit content refresh or host replacement recreates them. Replacement layouts can declare the `GoodsFrame`, `Footer` and optional direct-child `FooterBackground` roles. Unmarked foreign footer content is never assumed to be decoration. See the dialog contract for geometry and failure behavior.
+
+For an optional shared background, use `TryRegisterFramePresentation` with a fresh noninteractive decoration and immutable `AllyGoodsFrameOptions`: specify content padding, visual overflow, maximum extension height, viewport margin and section spacing. The first enabled profile in order/GUID/ID order wins; registrations start disabled and factory failures retain the standard presentation without trying a lower-priority profile. Consumers own all styles and metric values. APIShared assigns bounds and temporarily owns only the original frame's opacity when safe; foreign opacity bindings prevent joining. Legacy sections, footer controls and gameplay remain independent. See the dialog contract for caching and failure behavior.
+
+Marker factories create durable controls per ware and host; update their Visibility on Unity and request rearrangement through the registration. Read the current selection again when executing a UI command. The compiled `AllyGoodsExample` demonstrates anchored sections, an explicitly configured frame presentation, a footer launcher and layout availability, and retains a separate legacy-overload example.
+
+Use [AllyTransfers](ALLY_TRANSFERS.md) for immediate gifts only within the shared synchronous simulation context. Authenticate rule edits through the existing Chore channel and schedule matching deterministic decisions with native simulation ticks. Net transfer observations, source bounds and capacity are separate from UI command completion. Optional silent gifts use the explicit request overload and `CanSuppressVanillaChatMessages`; existing constructor calls retain Vanilla messages. Synchronize this option with the transfer decision; see the transfer contract for observer/nesting and unchanged sound/reaction behavior.
 
 <a id="fixed-worker-production-bonus"></a>
 
@@ -2153,6 +2357,33 @@ Vanilla has no corresponding visual row. -1 is a consumer setting sentinel, not 
 remain operation-time checks. Braziers have only a human-extra-cost identity. Never fall
 back to unchecked SE cost methods when the service rejects a target. Unknown native
 hashes disable this service independently until its table/layout contract is re-audited.
+
+### Construction material stock and quarry piles
+
+While holding the game engine monitor in an active world, use
+`ConstructionCosts.TryGetPlayerMaterialStock(playerId, out stock, out reason)`
+to read the actual builder's wood, stone, iron, pitch and gold. Compare that
+snapshot with `TryGetCurrent` for base affordability. Mission-specific free builds,
+reservations and additional costs are consumer decisions. The stock read works
+on the simulation thread and has no local-viewpoint dependency.
+
+`QuarryPilePlacement.TryFindInitialCandidate` takes the top-left quarry tile
+and a synchronous predicate for eligible pile coordinates. The native search
+applies its own placement and path-component rules in native order.
+`TryGetRelocationCandidate` returns the indexed perimeter candidate for the requested
+attempt. The consumer owns target validation and relocation policy.
+`TryWithInitialCandidateFilter` scopes an allowed pile tile to one synchronous
+construction callback. Check the resulting quarry and pile records after construction.
+Use the same engine monitor for these operations. The callbacks must not yield
+or start another quarry build.
+
+### Refreshing path components
+
+`PathComponentRefresh.TryRefresh(force, out rebuilt, out reason)` requires the
+game engine monitor in an active world. Set `force` only if a consumer has
+changed topology and must publish a new generation even when the game has not
+marked the grid dirty. Otherwise a clean grid returns success with `rebuilt`
+false. After a failed rebuild, skip the dependent operation.
 
 ### Human-only construction extras and refunds
 

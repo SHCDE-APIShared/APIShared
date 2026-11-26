@@ -72,7 +72,9 @@ namespace APIShared.Workshop
             return await PrepareAsync(APISharedPlugin.PluginGuid, item.WorkshopId, WorkshopLocalState.ManualAction(item));
         }
 
-        internal static async Task<(WorkshopLocalStatus Status, string Difference, string Bootstrap, IReadOnlyList<WorkshopOwnershipConflict> Conflicts)> InspectLocalAsync(WorkshopCatalogItem item)
+        internal static async Task<(WorkshopLocalStatus Status, string Difference, string Bootstrap,
+            IReadOnlyList<WorkshopOwnershipConflict> Conflicts, Version LocalVersion)> InspectLocalAsync(
+            WorkshopCatalogItem item, bool inspectPackageVersion = false)
         {
             string game = Paths.GameRootPath;
             var evidence = await Task.Run(() => {
@@ -80,13 +82,16 @@ namespace APIShared.Workshop
                 var receipt = item.Receipt;
                 var roots = receipt == null ? item.Package?.Roots : WorkshopLocalState.ReceiptRoots(receipt);
                 var guids = receipt?.ModGuids ?? (item.Package == null ? Array.Empty<string>() : WorkshopPaths.ReadDeclaredGuids(item.Package, item.ContentRoot));
-                return (State: state, Roots: roots, Guids: guids, Bootstrap: BootstrapVersion(game, item.Package?.Bootstrap));
+                var localVersion = inspectPackageVersion && item.Package != null
+                    ? WorkshopLocalState.ReadInstalledPackageVersion(game, item.Package)
+                    : null;
+                return (State: state, Roots: roots, Guids: guids, Bootstrap: BootstrapVersion(game, item.Package?.Bootstrap), LocalVersion: localVersion);
             });
             if (!UnityMainThreadDispatch.IsMainThread)
                 throw new InvalidOperationException("Registered Workshop paths must be inspected on the Unity thread.");
             var conflicts = evidence.Roots == null ? Array.Empty<WorkshopOwnershipConflict>() : FindOwnershipConflicts(evidence.Roots, evidence.Guids);
             var status = conflicts.Count > 0 ? WorkshopLocalStatus.Modified : evidence.State.Status;
-            return (status, evidence.State.Difference, evidence.Bootstrap, conflicts);
+            return (status, evidence.State.Difference, evidence.Bootstrap, conflicts, evidence.LocalVersion);
         }
 
         private static string BootstrapVersion(string game, WorkshopBootstrap bootstrap)

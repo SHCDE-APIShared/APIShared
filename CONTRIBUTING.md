@@ -61,8 +61,9 @@ environment or properties.
 
 For a direct MSBuild or `dotnet` command that must keep project outputs outside
 the checkout, pass `-p:APISharedArtifactsRoot="D:/build outputs/APIShared"` to
-the outer command. This opt-in root routes each project's `bin` and `obj`
-separately, including Content's nested build and NuGet restore metadata. Percent characters
+the outer command. This opt-in root routes the Framework API and SDK projects'
+`bin` and `obj` separately, including Content's nested build and NuGet restore
+metadata. Percent characters
 are unsupported in the requested or normalized root: builds/restores refuse
 them with `APISHARED1001` before their targets run. Choose another directory;
 there is no automatic decoding, renaming or fallback. Spaces and ordinary
@@ -85,7 +86,8 @@ can build against an extracted package with `-p:ApiSharedDir="C:/path/to/APIShar
 Use the directory containing `APIShared.dll` (and `APIShared.Content.dll` for
 ThirdPartyMod); configure the game and Extender dependencies as above. Without
 this property, both projects use the repository's `BepInEx/plugins/APIShared_Serp`
-directory.
+directory. Their explicit `bin` output locations stay local; `ApiSharedDir`
+selects distributed input references, not output routing.
 
 ## Tests
 

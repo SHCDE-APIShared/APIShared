@@ -1,6 +1,10 @@
 using System;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using APIShared.Buildings;
+using RedBird.Core.Memory;
+using SHCDESE.API;
 using SHCDESE.Interop;
 
 internal static class Program
@@ -62,6 +66,45 @@ internal static class Program
             Check(!ConstructionCosts.TrySetCurrent(brazier, eGoods.STORED_GOLD, 20, out _), "public API rejects unsupported target before initialization");
         }
         finally { Marshal.FreeHGlobal(defaults); Marshal.FreeHGlobal(current); }
-        Console.WriteLine("Construction costs: " + checks + " checks passed (real SE enum/mapping, isolated native buffers; no game rendering).");
+        CheckPlayerMaterialStock();
+        Console.WriteLine("Construction costs: " + checks + " checks passed (real SE enum/mapping and isolated game resource buffers).");
+    }
+
+    private static unsafe void CheckPlayerMaterialStock()
+    {
+        Check(!ConstructionCosts.TryGetPlayerMaterialStock(0, out _, out _), "public stock API rejects player zero before startup");
+        Check(!ConstructionCosts.TryGetPlayerMaterialStock(1, out _, out _), "public stock API rejects access before native binding");
+
+        int playerCount = GamePlayerManagerAPI.MAX_PLAYERS;
+        var players = (GamePlayerManagerAPI)RuntimeHelpers.GetUninitializedObject(typeof(GamePlayerManagerAPI));
+        Check(!ConstructionCosts.TryReadPlayerMaterialStock(players, 1, out var unavailable, out _) &&
+            unavailable.Wood == 0 && unavailable.Gold == 0, "missing buffer returns a default snapshot");
+        var slots = stackalloc GamePlayerResources[playerCount];
+        slots[0] = default;
+        slots[playerCount - 1] = default;
+        slots[0].r_TotalGoodsWoodPlanks = 13;
+        ref var last = ref slots[playerCount - 1];
+        last.r_TotalGoodsWoodPlanks = uint.MaxValue;
+        last.r_TotalGoodsStoneBlocks = 117;
+        last.r_TotalGoodsIronIngots = 53;
+        last.r_TotalGoodsPitchRaw = 91;
+        last.r_TotalGoodsGold = -32;
+        typeof(GamePlayerManagerAPI).GetField("_playerResources", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(players, new SimpleNativeArray<GamePlayerResources>((byte*)slots, playerCount));
+
+        Check(ConstructionCosts.TryReadPlayerMaterialStock(players, 1, out var first, out _) && first.Wood == 13,
+            "explicit first player reads the first native slot");
+        Check(ConstructionCosts.TryReadPlayerMaterialStock(players, playerCount, out var final, out _),
+            "explicit final player reads the final native slot");
+        Check(final.GetAmount(eGoods.STORED_WOOD_PLANKS) == uint.MaxValue &&
+            final.GetAmount(eGoods.STORED_STONE_BLOCKS) == 117 && final.GetAmount(eGoods.STORED_IRON_INGOTS) == 53 &&
+            final.GetAmount(eGoods.STORED_PITCH_RAW) == 91 && final.GetAmount(eGoods.STORED_GOLD) == -32,
+            "five stock fields preserve the installed SE ranges and units");
+        Check(final.GetAmount(eGoods.STORED_NULL) == 0, "non-construction goods have no stock in the snapshot");
+        last.r_TotalGoodsGold = 0;
+        Check(final.Gold == -32 && ConstructionCosts.TryReadPlayerMaterialStock(players, playerCount, out var newer, out _) &&
+            newer.Gold == 0, "snapshot is independent of later writes and fresh reads observe the new state");
+        Check(!ConstructionCosts.TryReadPlayerMaterialStock(players, playerCount + 1, out _, out _),
+            "past the final slot is rejected");
     }
 }
