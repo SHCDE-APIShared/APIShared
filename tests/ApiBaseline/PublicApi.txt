@@ -334,6 +334,7 @@ APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerab
 APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> LoadSave(string path)
 APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> SetPause(APIShared.MissionContext mission, bool paused)
 APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> StartSkirmish(string map, System.Collections.Generic.IEnumerable<SHCDESE.Interop.AILords> opponents, int? peaceTimeMinutes = null)
+APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> StartSkirmish(string map, System.Collections.Generic.IEnumerable<SHCDESE.Interop.AILords> opponents, int? peaceTimeMinutes, System.Action beforeLaunch)
 APIShared.Automation.AutomationRun | public System.Collections.Generic.IEnumerable<APIShared.Automation.AutomationWait> ZoomStep(APIShared.MissionContext mission, bool zoomIn, System.Action<float> actualScale)
 APIShared.Automation.AutomationRun | public T InSimulation<T>(APIShared.MissionContext mission, System.Func<T> action)
 APIShared.Automation.AutomationRun | public bool TrySpawnBuilding(APIShared.MissionContext mission, int playerId, int tileX, int tileY, SHCDESE.Interop.eMappers mapper, int spriteVariation, out int buildingId, out uint globalId)

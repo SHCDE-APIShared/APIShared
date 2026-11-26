@@ -111,6 +111,7 @@ See [Safe managed IL patches](THIRD_PARTY_GUIDE.md#safe-managed-il-patches).
 | --- | --- |
 | `ModApiClient.Automation.Start` | Explicit Unity-thread test run, one active run per process, frame-driven steps and monotonic timeouts |
 | `AutomationRun.LoadSave`, `StartSkirmish` | Local game transitions with a matching managed mission receipt |
+| `StartSkirmish(map, opponents, peaceTimeMinutes, beforeLaunch)` | One synchronous Unity preparation after lobby setup, followed by live room/map revalidation before ordinary Play; existing overload remains unchanged |
 | `WaitForPlayState`, `WaitForTicks`, `SetPause`, `ZoomStep` | Separate current-mission readiness, native time, pause state and applied zoom checks |
 | `ClickNoesis`, `InSimulation`, `TrySpawnBuilding` | Local UI input, short Extender operations under the engine monitor, and confirmed building identity |
 

@@ -138,6 +138,25 @@ continues every frame only while pending and not already loading.
 
 ## In-game test automation
 
+Use the four-required-argument overload
+`StartSkirmish(map, opponents, peaceTimeMinutes, beforeLaunch)` for deterministic
+consumer preparation after the SDK has selected the map, added opponents and
+applied optional lobby peace time. The synchronous Unity callback runs once,
+then the SDK revalidates the exact live room and selected map before ordinary
+Play. Throwing aborts launch. Keep it short; do not yield, start another mission
+or retain transient native pointers. The existing three-argument overload keeps
+its optional peace argument and delegates with no callback. In particular, a
+third `null` remains unambiguous and argument validation stays deferred until
+enumeration. Do not interleave preparation with unspecified iterator yields:
+old frontend lobby objects may remain visible before the SDK opens a new room.
+
+`AutomationRun.StartSkirmish` accepts the native `AILords` enum (Rat is1),
+and translates it to Vanilla's distinct zero-based lobby type (Rat is0) for
+both adding and confirming opponents. Earlier builds passed the native value
+directly and therefore selected the next lord. This corrects that behavior
+without changing the public signature or accepted enum range; callers must not
+compensate by passing a different enum member. It does not bypass DLC eligibility.
+
 Get the owner-bound client with `ApiShared.ForMod(yourGuid).Automation`. After
 APIShared initialization, explicitly start a run on Unity from your development
 build. A run receives a GUID, a sequence of named `AutomationStep` objects and a
