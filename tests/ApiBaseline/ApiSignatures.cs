@@ -365,16 +365,51 @@ namespace ApiCompatibility
     internal static class ApiBaselineFiles
     {
         internal const string PublicSurfaceFile = "PublicApi.txt";
+        internal const string ContentSurfaceFile = "Content.PublicApi.txt";
+        internal const string SourceRootVariable = "APISHARED_TEST_SOURCE_ROOT";
         internal const string FriendFilePrefix = "FriendInternals.";
         internal const string UpdateVariable = "APISHARED_UPDATE_API_BASELINE";
 
         internal static bool UpdateRequested => Environment.GetEnvironmentVariable(UpdateVariable) == "1";
 
+        // Optional caller-selected test input, never a new runtime API. With no
+        // variable the legacy ancestor lookup is unchanged. A present value must
+        // identify an absolute checkout with its declared baseline data; bad input
+        // never falls back. No root is cached. Set it before discovery/execution.
         internal static string RepositoryRoot()
         {
+            string explicitRoot = Environment.GetEnvironmentVariable(SourceRootVariable);
+            if (explicitRoot != null) return ExplicitRepositoryRoot(explicitRoot);
             for (DirectoryInfo directory = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory); directory != null; directory = directory.Parent)
                 if (File.Exists(Path.Combine(directory.FullName, "APIShared.csproj"))) return directory.FullName;
             throw new DirectoryNotFoundException("The APIShared repository root was not found above " + AppDomain.CurrentDomain.BaseDirectory);
+        }
+
+        private static string ExplicitRepositoryRoot(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || !Path.IsPathRooted(value))
+                throw new ArgumentException(SourceRootVariable + " must name an absolute APIShared checkout.");
+            string full = Path.GetFullPath(value);
+            // Path.IsPathRooted alone accepts C:relative and \root-relative on
+            // Windows. A fully qualified input keeps its root when made absolute.
+            string suppliedRoot = Path.GetPathRoot(value).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            string fullRoot = Path.GetPathRoot(full).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            if (!string.Equals(suppliedRoot, fullRoot, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException(SourceRootVariable + " must not depend on the current drive or directory.");
+            if (!System.IO.Directory.Exists(full))
+                throw new DirectoryNotFoundException(SourceRootVariable + " directory was not found: " + full);
+            if (full.Length > fullRoot.Length) full = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            RequireSourceFile(full, "APIShared.csproj");
+            RequireSourceFile(full, Path.Combine("tests", "ApiBaseline", PublicSurfaceFile));
+            RequireSourceFile(full, Path.Combine("tests", "ApiBaseline", ContentSurfaceFile));
+            return full;
+        }
+
+        private static void RequireSourceFile(string root, string relative)
+        {
+            string path = Path.Combine(root, relative);
+            if (!File.Exists(path) || new FileInfo(path).Length == 0)
+                throw new FileNotFoundException(SourceRootVariable + " requires this nonempty checked-in input: " + relative, path);
         }
 
         internal static string Directory() => Path.Combine(RepositoryRoot(), "tests", "ApiBaseline");
@@ -392,6 +427,11 @@ namespace ApiCompatibility
 
         internal static void Write(string path, IEnumerable<string> entries)
         {
+            // An explicit source root grants read access only, even when the
+            // separate update flag is set. Default in-checkout update behavior
+            // is unchanged; no destination is inspected before this refusal.
+            if (Environment.GetEnvironmentVariable(SourceRootVariable) != null)
+                throw new InvalidOperationException(SourceRootVariable + " is read-only; unset it before the normal baseline-update workflow.");
             List<string> header = File.Exists(path)
                 ? File.ReadAllLines(path).TakeWhile(line => line.StartsWith("#", StringComparison.Ordinal)).ToList()
                 : new List<string>();

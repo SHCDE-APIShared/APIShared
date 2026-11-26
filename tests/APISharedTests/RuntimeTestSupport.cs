@@ -17,6 +17,20 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace APISharedTests
 {
+    internal sealed class UnformattableCallbackException : Exception
+    {
+        internal int FormatAttempts { get; private set; }
+
+        public override string Message => FailFormatting();
+        public override string ToString() => FailFormatting();
+
+        private string FailFormatting()
+        {
+            FormatAttempts++;
+            throw new FormatException("Callback exception formatting must not run.");
+        }
+    }
+
     [TestClass]
     [DoNotParallelize]
     public partial class RuntimeTests
@@ -440,25 +454,28 @@ namespace APISharedTests
             private readonly List<string> calls;
             private readonly bool failBegin;
             private readonly bool failComplete;
+            private readonly Exception failure;
 
             internal RecordingAivObserver(
                 string name,
                 List<string> calls,
                 bool failBegin = false,
-                bool failComplete = false)
+                bool failComplete = false,
+                Exception failure = null)
             {
                 this.name = name;
                 this.calls = calls;
                 this.failBegin = failBegin;
                 this.failComplete = failComplete;
+                this.failure = failure;
             }
 
             public IAivBuildStepInvocation TryBegin(AivBuildStepContext context)
             {
                 calls.Add("begin:" + name);
                 if (failBegin)
-                    throw new InvalidOperationException("injected begin failure");
-                return new RecordingAivInvocation(name, calls, failComplete);
+                    throw failure ?? new InvalidOperationException("injected begin failure");
+                return new RecordingAivInvocation(name, calls, failComplete, failure);
             }
         }
         private static void AssertSequenceEqual(string[] actual, string[] expected, string message)
@@ -481,19 +498,21 @@ namespace APISharedTests
             private readonly string name;
             private readonly List<string> calls;
             private readonly bool fail;
+            private readonly Exception failure;
 
-            internal RecordingAivInvocation(string name, List<string> calls, bool fail)
+            internal RecordingAivInvocation(string name, List<string> calls, bool fail, Exception failure)
             {
                 this.name = name;
                 this.calls = calls;
                 this.fail = fail;
+                this.failure = failure;
             }
 
             public void Complete(AivBuildStepCompletion completion)
             {
                 calls.Add($"complete:{name}:{completion.VanillaCompleted}:{completion.VanillaResult}");
                 if (fail)
-                    throw new InvalidOperationException("injected completion failure");
+                    throw failure ?? new InvalidOperationException("injected completion failure");
             }
         }
 

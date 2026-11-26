@@ -468,6 +468,34 @@ to Documents and preserves old JSON files. Explicit deletion removes personal co
 of the selected identity from both directories and reports partial failures.
 Bundled and external provider presets remain read-only in their original locations.
 
+The **Open folder** action in the save and load dialogs opens the mod's personal
+`Presets` directory in the desktop file manager. APIShared creates the directory
+on demand. On Linux under Wine or Proton, APIShared resolves the prefix's path
+and hands it to the desktop's `xdg-open`.
+
+To add the action to an existing dialog, bind `System_OpenPresetFolderCommand`,
+`System_PresetFolderText` and `System_PresetFolderHelpText`. Bind visibility to
+`System_PresetFolderVisibility` with `FallbackValue=Collapsed` so older APIShared
+builds hide the button.
+
+In a supported multiplayer lobby, **Share** offers the preset selected in the
+load dialog to compatible human players. The offer appears in the lobby chat
+area. A player can open it, choose a name and request a personal copy. The
+sender transfers the preset only to that player after the request. APIShared
+uses a bounded retry until each eligible lobby peer acknowledges the offer and
+reports when some or all peers have not confirmed receipt. A fresh request made
+immediately after a previous download receives a retry message. Preset sharing
+is limited to the lobby and to 64 KiB of preset JSON.
+
+Bind the Share button to `System_SharePresetCommand`,
+`System_CanSharePreset` and `System_PresetShareVisibility`. Use
+`System_PresetShareText` and `System_PresetShareHelpText` for the label and
+tooltip. On pages where certain players cannot apply presets, provide the
+`System_PresetShareOnlyPickerVisibility` entry point with
+`System_OpenPresetLoadCommand`. Keep Load and Delete gated by their existing
+permissions. Use `FallbackValue=Collapsed` for the sharing visibility
+bindings to preserve older APIShared installations.
+
 When no Documents working file exists, APIShared loads the previous plugin-local
 `.msgpack` and writes the validated/migrated state to Documents, retaining the original.
 A present but corrupt or inaccessible new file does not fall back to stale installation
@@ -559,6 +587,12 @@ callback returned, not that the mission initialized successfully. Use the missio
 lifecycle for the latter. A rejected confirmation keeps its request/selection and
 restores the requester view; it does not invoke the original action.
 
+For an expected preparation rejection, call `context.RejectPreparation(reason)`
+synchronously from `Prepare` and return. Supply a non-empty, localized player-facing
+reason when translations are available. The first reason wins. APIShared stops later
+preparation, runs attempt cleanup and displays that reason. The next confirmation
+starts with no rejection reason. Unexpected preparation exceptions are logged.
+
 Do not install another requester hook. Vanilla hides the requester before invoking
 its confirmation callback; APIShared captures checkbox availability before that hide.
 An installed ExtendedData plugin must advertise the shared dialog integration with
@@ -610,6 +644,48 @@ comparer and null values. In-place conversion and a rejected conversion leave th
 stored data unchanged; the converter's returned dictionary is used as-is. Without a
 converter, an unchanged snapshot can be returned directly, so the result is not a
 general-purpose deep copy of the input.
+
+### Converting missing stored values before defaults
+
+Implement `IModSettingsStoredSnapshotMigration` when a conversion needs to distinguish
+an omitted property from an explicitly selected value. APIShared calls
+`System_MigrateStoredSnapshot(Dictionary<string, byte[]>)` after declared renames and
+source/Player selection, before adding missing defaults or applying setters. Its input
+and buffers are detached; the helper also detaches the returned values. Keep every
+input key. Add only properties belonging to the same settings endpoint.
+
+Use `ContainsKey`, not a comparison against a default: explicit null, empty values and
+explicitly selected ModDefault/creator Mode0 values are present and remain authoritative.
+The converter must be pure, deterministic and idempotent, without live settings, UI,
+file or native-state access. An unrecognized legacy representation must not invent data.
+
+Personal schema1/2/3 values, working/published presets and prepared save/Map/Trail
+sources use this opt-in contract. Published policies are resolved for the selected
+properties first; newly derived values are represented as Fixed when overwriting that
+preset. Defaults, exports and authenticated host values received by clients do not
+run an extra conversion. Added properties pass the regular type, scope and host checks
+before application and fingerprinting.
+
+Trail-rule capture for opted-in endpoints keeps rules sparse: it records selected
+Player/Fixed fields and authorized derived Fixed fields, without synthesizing new
+Mode0 rules for omitted properties. It reads no live settings; Player selections
+appear as presence-only null markers during that fixed-value conversion and retain
+their Player mode. Existing explicit Mode0 rules in saved data remain authoritative.
+
+Direct controller entry converts raw mission input. API-owned prepared entry uses
+an endpoint-bound single-use token so a normalized host/source snapshot is not
+converted again. Nested fresh working operations do not inherit that exemption.
+
+A failed conversion rejects that snapshot before its setters and persistence. A
+previously applied independent snapshot is retained. Converter failures do not classify
+a valid personal file as corrupt or replace it with defaults.
+
+Custom stored-format readers call `ModSettingsMigration.MigrateRawStoredSnapshot`
+before their default merge. This new contract does not invoke the older
+`IModSettingsSnapshotMigration` callback. That callback and
+`ModSettingsMigration.MigrateStoredSnapshot` retain their established semantics;
+prepared save loads can run the old mission conversion after the raw conversion and
+default merge. Endpoints that do not opt in retain their existing behavior.
 
 ## Moving mission settings between mods
 

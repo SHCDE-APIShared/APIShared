@@ -14,6 +14,11 @@ namespace APIShared.ModSettings
         /// A missing entry uses mode 0; Player uses 1; Fixed uses 2 with the existing MessagePack value and savegame
         /// property size limit. Unknown properties are ignored. A failed fixed conversion retains the preceding
         /// default/Player rule and reports through onError; diagnostic callback failures are isolated.
+        /// Endpoints opting into IModSettingsStoredSnapshotMigration instead return sparse rules: explicit
+        /// Player/Fixed selections and authorized Fixed values derived from the raw Fixed selection. Unselected
+        /// settings have no synthetic mode-0 rule, preserving absence for future raw migration while retaining
+        /// the normal default fallback. Player selections are presence markers, never read or inherited by
+        /// derived settings. Converter failures reject capture; existing explicit savegame mode-0 rules remain binding.
         /// Call on the Unity thread after registration; the result owns its mutable buffers. Schema validation
         /// and selecting the authorized active document remain the caller's responsibility.</summary>
         public static Dictionary<string, TrailCreatorRule> Capture(IModSettingsPresetEndpoint endpoint,
@@ -22,7 +27,8 @@ namespace APIShared.ModSettings
             if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
             var properties = ModSettingsApplication.GetMissionHostProperties(endpoint).ToDictionary(property => property.Name, StringComparer.Ordinal);
             var result = properties.Keys.ToDictionary(name => name, _ => new TrailCreatorRule { Mode = 0 }, StringComparer.Ordinal);
-            if (entry == null) return result;
+            if (entry == null) return endpoint is IModSettingsStoredSnapshotMigration
+                ? new Dictionary<string, TrailCreatorRule>(StringComparer.Ordinal) : result;
             entry = MissionModSettingsPreparation.WithCurrentNames(endpoint, entry);
             foreach (string name in entry.PlayerSettings ?? Array.Empty<string>())
                 if (properties.ContainsKey(name)) result[name] = new TrailCreatorRule { Mode = 1 };
@@ -40,6 +46,24 @@ namespace APIShared.ModSettings
                     }
                     catch (Exception error) { Report(onError, setting.Key, error); }
                 }
+            if (endpoint is IModSettingsStoredSnapshotMigration)
+            {
+                var selected = result.Where(item => item.Value.Mode == 2).ToDictionary(
+                    item => item.Key, item => (byte[])item.Value.FixedValue.Clone(), StringComparer.Ordinal);
+                var player = new HashSet<string>(result.Where(item => item.Value.Mode == 1).Select(item => item.Key), StringComparer.Ordinal);
+                foreach (string name in player) selected[name] = null;
+                var migrated = ModSettingsMigration.MigrateRawStoredSnapshot(endpoint, selected);
+                foreach (string name in result.Where(item => item.Value.Mode == 0).Select(item => item.Key).ToArray()) result.Remove(name);
+                foreach (var setting in migrated)
+                {
+                    if (player.Contains(setting.Key) || !properties.TryGetValue(setting.Key, out PropertyInfo property)) continue;
+                    byte[] bytes = setting.Value;
+                    if (bytes == null || bytes.Length > SavegameModSettings.MaximumPropertyBytes ||
+                        MessagePackSerializer.Deserialize(property.PropertyType, bytes) == null)
+                        throw new InvalidDataException("The migrated fixed Trail setting is invalid: " + setting.Key);
+                    result[setting.Key] = new TrailCreatorRule { Mode = 2, FixedValue = (byte[])bytes.Clone() };
+                }
+            }
             return result;
         }
 

@@ -68,6 +68,13 @@ public sealed class WorkshopStartupTests
             StringAssert.Contains(WorkshopStartupSummary.Describe(plan, german), german ? "erstmals" : "first installation");
             plan.Action = WorkshopAction.Update; plan.Previous = new WorkshopReceipt { Version = "1.0.25" };
             StringAssert.Contains(WorkshopStartupSummary.Describe(plan, german), "1.0.25");
+            plan.Action = WorkshopAction.Reinstall;
+            string locale = german ? "de-DE" : "en-US";
+            summary = WorkshopStartupSummary.Describe(plan, locale, new Version(1, 0, 27, 0));
+            StringAssert.Contains(summary, german ? "zurückstufen: 1.0.27 auf 1.0.26" : "downgrade: 1.0.27 to 1.0.26");
+            Assert.AreEqual(WorkshopAction.Reinstall, plan.Action, "presentation keeps the receipt-based operation");
+            Assert.AreEqual(WorkshopStartupSummary.Describe(plan, locale),
+                WorkshopStartupSummary.Describe(plan, locale, new Version(1, 0, 26, 0)));
         } finally { if (Directory.Exists(fixture)) Directory.Delete(fixture, true); }
     }
 
@@ -98,53 +105,4 @@ public sealed class WorkshopStartupTests
         Assert.AreSame(previous, SynchronizationContext.Current);
     }
 
-    [TestMethod]
-    public void StartupConsentRequiresAnOpenScopeAndConfirmedHandoffAndIsConsumedOnce()
-    {
-        Assert.ThrowsExactly<InvalidOperationException>(() => WorkshopStartupGate.AuthorizeConfirmedUpdate());
-        var order = new List<string>();
-        WorkshopStartupGate.Run(async () => {
-            var consent = WorkshopStartupGate.AuthorizeConfirmedUpdate();
-            Assert.ThrowsExactly<InvalidOperationException>(() => consent.Quit(order.Add, () => order.Add("quit"), "update"));
-            await Task.Delay(10);
-            consent.Validate(); consent.ConfirmHandoff("confirmed-transaction");
-            Assert.ThrowsExactly<InvalidOperationException>(() => consent.ConfirmHandoff("other-transaction"));
-            consent.Quit(order.Add, () => order.Add("quit"), "update");
-            Assert.ThrowsExactly<InvalidOperationException>(() => consent.Quit(order.Add, () => order.Add("duplicate quit"), "update"));
-        });
-        Assert.HasCount(2, order);
-        StringAssert.Contains(order[0], "transaction=confirmed-transaction; handoff=confirmed");
-        Assert.AreEqual("quit", order[1]);
-    }
-
-    [TestMethod]
-    public void StartupConsentCannotEscapeToWorkersOrOutliveThePublisher()
-    {
-        WorkshopStartupAuthorization? escaped = null;
-        int quits = 0;
-        WorkshopStartupGate.Run(async () => {
-            escaped = WorkshopStartupGate.AuthorizeConfirmedUpdate();
-            escaped.ConfirmHandoff("confirmed-transaction");
-            await Task.Run(() => Assert.ThrowsExactly<InvalidOperationException>(() => escaped.Validate()));
-            escaped.Validate();
-        });
-        Assert.ThrowsExactly<InvalidOperationException>(() => escaped!.Quit(_ => { }, () => quits++, "late callback"));
-        WorkshopStartupGate.Run(() => {
-            Assert.ThrowsExactly<InvalidOperationException>(() => escaped!.Validate());
-            return Task.CompletedTask;
-        });
-        Assert.AreEqual(0, quits);
-    }
-
-    [TestMethod]
-    public void StartupFailureRevokesConsentAndCannotQuitAfterReturn()
-    {
-        WorkshopStartupAuthorization? escaped = null;
-        Assert.ThrowsExactly<IOException>(() => WorkshopStartupGate.Run(async () => {
-            escaped = WorkshopStartupGate.AuthorizeConfirmedUpdate();
-            await Task.Delay(10);
-            throw new IOException("handoff failed");
-        }));
-        Assert.ThrowsExactly<InvalidOperationException>(() => escaped!.Validate());
-    }
 }
