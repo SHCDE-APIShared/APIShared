@@ -19,8 +19,7 @@ This pair-gated companion does not repair a failed initial Script Extender deplo
 The separate [Linux first-install patcher](WORKSHOP.md#linux-paths-and-first-install-repair)
 works without APIShared and has no dependency on this companion or its pair manifest.
 
-No public capability, consumer registration or changed dependency declaration is
-required, and no APIShared public type or method is involved. The correction only adds eligible missing providers to a separate local check dictionary.
+The dependency-index correction itself requires no consumer registration or changed dependency declaration. It only adds eligible missing providers to a separate local check dictionary. The optional early-plugin observer below shares the existing loader boundary independently of this SE correction.
 It never overwrites original entries, registers assets, reorders plugins or filters
 the original compatibility result. An unknown BepInEx binary or failed SE contract validation preserves
 the original check. Later successful plugin Awake is not guaranteed.
@@ -161,3 +160,50 @@ Native helper DLLs in patcher packages are distinguished by their PE/CLR header
 before managed assembly metadata is inspected. Invalid/unreadable images and
 renamed competing bootstraps still reject activation. The bootstrap creates no diagnostic files;
 the Workshop installation result file is installation state, not tracing.
+
+
+## Early plugin activation observers
+
+The public `APIShared.DependencyBootstrap.EarlyPluginActivation` contract lives in
+`APIShared.DependencyBootstrap.dll`, not `APIShared.dll`. A consumer preloader
+companion calls `TryRegister(ownerGuid, id, targetGuid, callback, out registration,
+out reason, order)` in its `Finish()`. Reference the bootstrap assembly with
+`Private=false`; ship neither an APIShared copy nor a second loader hook. Keep
+consumer runtime correction code deferred until the callback; Finish must not
+initialize Unity, MonoMod, native hooks or plugin instances. A complete matching
+bootstrap/runtime pair and the supported loader contract are prerequisites.
+
+Registration is process-lifetime and closes at the selected-winner snapshot,
+including when no consumer was registered. Accepted means Pending, not ready.
+The returned object exposes the explicit state/reason: unselected owner/target,
+previous owner failure, unavailable loader/pair, skipped target, completed callback
+or isolated callback failure. There is no late registration, replay, cancellation,
+retry or veto. Startup completion retires targets that never reached AddComponent.
+A callback returning does not prove the target's subsequent Awake succeeded.
+
+The existing APIShared Chainloader hook dispatches synchronously after the real
+loader selected and loaded the target assembly and immediately before its ordinary
+AddComponent(Type). Observers run in ascending order, then ordinal owner GUID and
+registration ID. They execute outside registry locks. Exceptions and even failed
+diagnostics cannot escape to the loader or prevent the next observer. The legacy
+SE/dependency-shadow callback still runs afterwards. No new native hook is involved.
+
+Context contains immutable selected owner/target GUID, plugin version, absolute
+assembly path, entry type and selected inventory, plus the actual loaded Type,
+assembly full name and module MVID. Target type and loaded path must match the
+selected metadata. These facts identify the selected plugin assembly; they do not
+certify every package asset or guarantee a selected owner will later load. An owner
+already in the loader's failure set is refused. Consumers remain responsible for
+validating correction-specific IL/ABI/native contracts and dependency readiness.
+
+An unknown loader, missing or disabled companion/runtime, invalid pair, missed
+selection, or late registration leaves the observer unavailable. Do not repair an
+already published native hook or retry from ordinary plugin Awake. AssemblyLoad
+alone is not equivalent: an already loaded assembly need not produce another event,
+and that event precedes the loader's exact PluginInfos assignment. The service uses
+the existing selected-plugin AddComponent boundary instead.
+
+Source-only staging and desktop tests do not prove Unity-Mono early compilation,
+startup ordering or game behavior. Those require explicit integrated startup tests
+with the same selected package pair before release. No consumer-specific correction
+or mod identifier belongs in this service.

@@ -34,10 +34,10 @@ namespace APIShared.DependencyBootstrap
             activation = PairActivation.Prepare();
             ShadowRuntime.Configure(activation);
             var assembly = typeof(BepInEx.Bootstrap.Chainloader).Assembly;
-            if (!HashMatches(assembly.Location, CoreHash)) { ProbeTrace.Warning("unknown BepInEx binary"); return; }
+            if (!HashMatches(assembly.Location, CoreHash)) { EarlyPluginActivation.Unavailable("Unsupported Chainloader binary."); ProbeTrace.Warning("unknown BepInEx binary"); return; }
             var type = typeof(BepInEx.Bootstrap.Chainloader);
             var loaded = type.GetField("_loaded", BindingFlags.NonPublic | BindingFlags.Static);
-            if (loaded == null || (bool)loaded.GetValue(null)) { ProbeTrace.Warning("Chainloader already ran or contract changed"); return; }
+            if (loaded == null || (bool)loaded.GetValue(null)) { EarlyPluginActivation.Unavailable("Chainloader already ran or its contract changed."); ProbeTrace.Warning("Chainloader already ran or contract changed"); return; }
             var method = type.GetMethod("Start", BindingFlags.Public | BindingFlags.Static);
             using (var copy = new DynamicMethodDefinition(method))
             using (var context = new ILContext(copy.Definition))
@@ -129,6 +129,8 @@ namespace APIShared.DependencyBootstrap
 
         private static void Snapshot(object closure)
         {
+            // Close even with zero demand: registration after this boundary must never silently miss a target.
+            bool observeEarly = EarlyPluginActivation.BeginSelection();
             try
             {
                 var field = closure.GetType().GetField("pluginsByGUID", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -139,10 +141,55 @@ namespace APIShared.DependencyBootstrap
                 snapshotSeen = true;
             }
             catch (Exception ex) { ProbeTrace.Error("Snapshot " + ex); }
+            if (observeEarly) CaptureEarlySelection(closure);
+        }
+
+        // BepInEx.PluginInfo.TypeName is internal in the verified actual core, not a publicized API.
+        // Cache its exact getter metadata after readiness; no plugin construction or private loader mutation.
+        private static readonly PropertyInfo selectedTypeName = typeof(BepInEx.PluginInfo).GetProperty("TypeName",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+        internal static string ReadSelectedTypeName(BepInEx.PluginInfo info)
+        {
+            var getter = selectedTypeName?.GetGetMethod(true);
+            if (info == null || selectedTypeName == null || selectedTypeName.PropertyType != typeof(string) || getter == null ||
+                getter.IsStatic || getter.GetParameters().Length != 0 || getter.DeclaringType != typeof(BepInEx.PluginInfo))
+                throw new InvalidOperationException("Selected plugin entry-type metadata contract changed.");
+            string value = (string)selectedTypeName.GetValue(info, null);
+            if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException("Selected entry type is missing.");
+            return value;
+        }
+
+        private static void CaptureEarlySelection(object closure)
+        {
+            try
+            {
+                var field = closure.GetType().GetField("pluginsByGUID", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var winners = (IDictionary)field.GetValue(closure);
+                var identities = new List<EarlyPluginIdentity>();
+                var pairWinners = new List<ShadowPlugin>();
+                foreach (DictionaryEntry entry in winners)
+                {
+                    var info = (BepInEx.PluginInfo)entry.Value;
+                    if ((string)entry.Key != info.Metadata.GUID) throw new InvalidOperationException("Selected GUID mismatch.");
+                    identities.Add(new EarlyPluginIdentity(info.Metadata.GUID, info.Metadata.Version.ToString(), info.Location, ReadSelectedTypeName(info)));
+                    pairWinners.Add(new ShadowPlugin { Guid=info.Metadata.GUID, Version=info.Metadata.Version.ToString(), Path=info.Location });
+                }
+                // Only package ownership is shared. No SE/shadow decision or dependency parsing gates the observer.
+                if (activation == null || !activation.Bind(pairWinners))
+                    EarlyPluginActivation.Unavailable("Selected bootstrap/runtime pair was rejected.");
+                else EarlyPluginActivation.BindSelected(identities);
+            }
+            catch { EarlyPluginActivation.Unavailable("Selected plugin metadata unavailable."); }
         }
 
         private static void BeforePlugin(Type type, object failed)
         {
+            // Generic observers precede the SE-only branch and never throw into the original AddComponent.
+            if (EarlyPluginActivation.HasRegistrations)
+            {
+                try { EarlyPluginActivation.BeforePlugin(type, failed as ISet<string>, activation != null && activation.CanCorrect()); }
+                catch { EarlyPluginActivation.Unavailable("Early activation boundary failed."); }
+            }
             try
             {
                 if (type == null || type.Assembly.GetName().Name != "SHCDESE" || extenderSeen || compatibilityHook != null) return;

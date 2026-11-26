@@ -24,17 +24,22 @@ namespace APIShared.DependencyBootstrap
                 // Finish runs before the chainloader opens plugins. Recovery also runs when the
                 // companion was disabled or its runtime removed after an interrupted swap.
                 WorkshopInstallPass.Run(BepInEx.Paths.GameRootPath, mode == "Active");
-                listener = new ReadinessListener(new ReadyGate(OnReady, () => { }, (marker, detail) => ProbeTrace.Error(detail)));
+                listener = new ReadinessListener(new ReadyGate(OnReady, EarlyPluginActivation.CompleteStartup, (marker, detail) => { EarlyPluginActivation.Unavailable("Readiness boundary failed."); ProbeTrace.Error(detail); }));
                 Logger.Listeners.Add(listener);
             }
-            catch (Exception ex) { ProbeTrace.Error("Finish " + ex); }
+            catch (Exception ex) { EarlyPluginActivation.Unavailable("Bootstrap Finish failed."); ProbeTrace.Error("Finish " + ex); }
         }
         private static void OnReady()
         {
             // A retained companion is inert after plugin removal. Keep this gate
             // before runtime resolution, pair reads and any hook preparation.
-            if (mode == "Active" && PairContract.HasRuntimeDirectory(BepInEx.Paths.GameRootPath))
-                InvokeHookRuntime("Install");
+            try
+            {
+                if (mode == "Active" && PairContract.HasRuntimeDirectory(BepInEx.Paths.GameRootPath))
+                    InvokeHookRuntime("Install");
+                else EarlyPluginActivation.Unavailable("Bootstrap disabled or runtime removed.");
+            }
+            catch { EarlyPluginActivation.Unavailable("Early loader-hook installation failed."); throw; }
         }
         // String-based dispatch deliberately avoids a runtime type token on the early path.
         private static object InvokeHookRuntime(string method)

@@ -1,5 +1,7 @@
 # Third-party integration guide
 
+For a correction that must run before another plugin's Awake, use the bootstrap companion's [early plugin activation observer](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers). Register from your preloader Finish, never ordinary plugin Awake. It observes an existing loader boundary and does not instantiate, reorder or veto plugins.
+
 **Contents**
 
 - [Example package requirements](#example-package-requirements)
