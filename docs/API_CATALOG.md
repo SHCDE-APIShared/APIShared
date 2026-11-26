@@ -1,6 +1,6 @@
 # API catalog
 
-`APIShared.DependencyBootstrap.EarlyPluginActivation` (bootstrap companion assembly) observes the actual selected plugin immediately before construction/Awake. Preloader-only registration, identity, deadline and failure contracts: [early activation](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers).
+`APIShared.DependencyBootstrap.EarlyPluginActivation` (bootstrap companion assembly) observes the actual selected plugin immediately before construction/Awake. Preloader registration or deferred assembly declarations, identity, deadline and failure contracts: [early activation](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers).
 
 ## Effective native unit moves
 

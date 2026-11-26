@@ -32,3 +32,11 @@ collection. The community API does not require SerpsModsHost.
 The contracts were verified from the actually installed BepInEx and SHCDESE
 assemblies, including the Script Extender's dependency discovery and inclusive
 version comparison. Neither upstream implementation needs a custom modification.
+
+
+Consumers needing a callback before another selected plugin is constructed may
+use the bootstrap's [early activation observers](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers).
+An assembly-level declaration in the selected normal consumer DLL avoids an extra
+preloader payload. It validates selected hard dependencies and known failures,
+not future Awake readiness; keep the provider early-safe. Ordinary dependency
+attributes and manifests remain necessary and unchanged.

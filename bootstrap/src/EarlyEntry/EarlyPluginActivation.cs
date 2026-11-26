@@ -56,6 +56,7 @@ namespace APIShared.DependencyBootstrap
         private int state;
         private string reason="Waiting for the selected plugin snapshot.";
         internal readonly Action<EarlyPluginActivationContext> Callback;
+        internal Action<EarlyPluginActivationContext,ISet<string>> ProviderCallback;
         internal EarlyPluginActivationRegistration(string owner,string id,string target,int order,Action<EarlyPluginActivationContext> callback)
         {OwnerGuid=owner;Id=id;TargetGuid=target;Order=order;Callback=callback;}
         public string OwnerGuid { get; }
@@ -84,7 +85,8 @@ namespace APIShared.DependencyBootstrap
             broker.TryRegister(ownerGuid,id,targetGuid,callback,out registration,out reason,order);
         internal static bool HasRegistrations => broker.HasRegistrations;
         internal static bool BeginSelection() => broker.BeginSelection();
-        internal static void BindSelected(IEnumerable<EarlyPluginIdentity> identities) => broker.BindSelected(identities);
+        internal static void BindSelected(IEnumerable<EarlyPluginIdentity> identities,EarlyProviderCatalog providers=null)
+        {providers?.Register(broker);broker.BindSelected(identities);}
         internal static void BeforePlugin(Type type,ISet<string> failed,bool validPair) => broker.BeforePlugin(type,failed,validPair);
         internal static void Unavailable(string reason) => broker.Unavailable(reason);
         internal static void CompleteStartup() => broker.CompleteStartup();
@@ -117,6 +119,19 @@ namespace APIShared.DependencyBootstrap
                 {reason="Duplicate owner-local registration ID.";return false;}
                 registration=new EarlyPluginActivationRegistration(owner,id,target,order,callback);
                 registrations.Add(registration);reason=string.Empty;return true;
+            }
+        }
+        // Only the immutable selected-metadata adapter may append declarations after external registration closes.
+        // Existing preloader registrations win owner-local ID conflicts and retain their original callbacks/order.
+        internal bool AddProvider(string owner,string id,string target,int order,
+            Action<EarlyPluginActivationContext,ISet<string>> callback)
+        {
+            lock(sync)
+            {
+                if(selected!=null || finished || unavailable!=null)return false;
+                foreach(var item in registrations)if(item.OwnerGuid==owner && item.Id==id)return false;
+                var registration=new EarlyPluginActivationRegistration(owner,id,target,order,null);
+                registration.ProviderCallback=callback;registrations.Add(registration);return true;
             }
         }
         internal bool BeginSelection()
@@ -182,7 +197,12 @@ namespace APIShared.DependencyBootstrap
                     catch {item.Set(EarlyPluginActivationState.Unavailable,"Loaded module identity unavailable.");continue;}
                     item.Set(EarlyPluginActivationState.Running,"Callback is running before AddComponent.");
                 }
-                try {item.Callback(context);item.Set(EarlyPluginActivationState.Completed,"Callback returned; plugin Awake outcome is unknown.");}
+                try {if(item.ProviderCallback!=null)item.ProviderCallback(context,failed);else item.Callback(context);item.Set(EarlyPluginActivationState.Completed,"Callback returned; plugin Awake outcome is unknown.");}
+                catch(EarlyProviderRejectedException rejected)
+                {
+                    item.Set(EarlyPluginActivationState.Unavailable,rejected.Reason);
+                    try {report?.Invoke("Early provider refused: "+item.OwnerGuid+"/"+item.Id+": "+rejected.Reason);}catch{}
+                }
                 catch
                 {
                     item.Set(EarlyPluginActivationState.CallbackFailed,"Observer threw; original loader and other observers continue.");

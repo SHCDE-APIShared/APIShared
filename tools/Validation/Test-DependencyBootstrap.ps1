@@ -13,5 +13,12 @@ if(-not $MSBuild){
 if(-not $GameDir -or -not $MSBuild){throw 'Game references and MSBuild required.'}
 & $MSBuild (Join-Path $root 'tests/DependencyBootstrap.Tests/DependencyBootstrap.Tests.csproj') /nologo /verbosity:minimal /p:Configuration=Release "/p:GameDir=$GameDir"
 if($LASTEXITCODE -ne 0){throw 'Bootstrap contract test compilation failed.'}
-& (Join-Path $root 'tests/DependencyBootstrap.Tests/bin/APIShared.DependencyBootstrap.Tests.exe') $GameDir
-if($LASTEXITCODE -ne 0){throw 'Bootstrap contract tests failed.'}
+$providerFixtures=[IO.Path]::GetFullPath((Join-Path $root 'tests/DependencyBootstrap.Tests/bin/early-provider-fixtures'))
+$testBin=[IO.Path]::GetFullPath((Join-Path $root 'tests/DependencyBootstrap.Tests/bin'))
+if([IO.Path]::GetDirectoryName($providerFixtures) -ne $testBin){throw 'Provider fixture cleanup escaped the test output directory.'}
+try {
+    & (Join-Path $testBin 'APIShared.DependencyBootstrap.Tests.exe') $GameDir
+    if($LASTEXITCODE -ne 0){throw 'Bootstrap contract tests failed.'}
+} finally {
+    if(Test-Path -LiteralPath $providerFixtures){Remove-Item -LiteralPath $providerFixtures -Recurse -Force}
+}

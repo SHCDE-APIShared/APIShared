@@ -26,6 +26,8 @@
     <Compile Include="..\..\bootstrap\src\EarlyEntry\ReadyGate.cs" />
     <Compile Include="..\..\bootstrap\src\EarlyEntry\EarlyPluginActivation.cs" />
     <Compile Include="EarlyPluginActivationTests.cs" />
+    <Compile Include="..\..\bootstrap\src\EarlyEntry\EarlyPluginProvider.cs" />
+    <Compile Include="EarlyProviderTests.cs" />
     <Compile Include="..\..\bootstrap\src\Workshop\WorkshopInstallPass.cs" />
     <Compile Include="..\..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Shared\WorkshopSafeInstall.cs</Link></Compile>
     <Compile Include="..\..\src\Workshop\Install\WorkshopBatchInstall.cs"><Link>Shared\WorkshopBatchInstall.cs</Link></Compile>

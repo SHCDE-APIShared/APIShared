@@ -50,6 +50,7 @@ namespace APIShared.DependencyBootstrap
             TestEarlyEntry();
             TestRemovedPlugin();
             EarlyPluginActivationTests.Run();
+            EarlyProviderTests.Run();
             var pluginInfo=(BepInEx.PluginInfo)Activator.CreateInstance(typeof(BepInEx.PluginInfo),true);
             var entryName=typeof(BepInEx.PluginInfo).GetProperty("TypeName",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic);
             entryName.SetValue(pluginInfo,"Actual.Loader.Entry",null);
@@ -237,7 +238,9 @@ namespace APIShared.DependencyBootstrap
             using (var module = ModuleDefinition.ReadModule(typeof(ContractTests).Assembly.Location))
             {
                 var names = new[] { "DependencyBootstrapPatcher", "ReadyGate", "ProbeTrace", "ProbeIdentity",
-                    "EarlyPluginActivation", "EarlyPluginActivationBroker", "EarlyPluginActivationRegistration", "EarlyPluginActivationContext", "EarlyPluginIdentity", "EarlyPluginActivationState" };
+                    "EarlyPluginActivation", "EarlyPluginActivationBroker", "EarlyPluginActivationRegistration", "EarlyPluginActivationContext", "EarlyPluginIdentity", "EarlyPluginActivationState",
+                    "EarlyPluginActivationProviderAttribute", "EarlyProviderCatalog", "EarlyProviderModule",
+                    "EarlyProviderDeclaration", "EarlyProviderPlugin", "EarlyProviderDependency", "EarlyProviderRejectedException" };
                 var types = module.Types.Where(t => names.Contains(t.Name)).ToArray();
                 Require(types.Length == names.Length, "Early types missing");
                 foreach (var type in types.Concat(types.SelectMany(t => t.NestedTypes)))

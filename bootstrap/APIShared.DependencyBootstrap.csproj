@@ -25,6 +25,7 @@
     <Compile Include="src\DependencyCorrection\HookRuntime.cs" />
     <Compile Include="src\EarlyEntry\ReadyGate.cs" />
     <Compile Include="src\EarlyEntry\EarlyPluginActivation.cs" />
+    <Compile Include="src\EarlyEntry\EarlyPluginProvider.cs" />
     <Compile Include="src\Workshop\WorkshopInstallPass.cs" />
     <Compile Include="..\src\Workshop\Install\WorkshopSafeInstall.cs"><Link>Shared\WorkshopSafeInstall.cs</Link></Compile>
     <Compile Include="..\src\Workshop\Install\WorkshopBatchInstall.cs"><Link>Shared\WorkshopBatchInstall.cs</Link></Compile>

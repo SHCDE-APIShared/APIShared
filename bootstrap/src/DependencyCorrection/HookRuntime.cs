@@ -130,7 +130,7 @@ namespace APIShared.DependencyBootstrap
         private static void Snapshot(object closure)
         {
             // Close even with zero demand: registration after this boundary must never silently miss a target.
-            bool observeEarly = EarlyPluginActivation.BeginSelection();
+            EarlyPluginActivation.BeginSelection();
             try
             {
                 var field = closure.GetType().GetField("pluginsByGUID", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -141,7 +141,8 @@ namespace APIShared.DependencyBootstrap
                 snapshotSeen = true;
             }
             catch (Exception ex) { ProbeTrace.Error("Snapshot " + ex); }
-            if (observeEarly) CaptureEarlySelection(closure);
+            // Declarations can be present even with no preloader registrations. Metadata only, no consumer load.
+            CaptureEarlySelection(closure);
         }
 
         // BepInEx.PluginInfo.TypeName is internal in the verified actual core, not a publicized API.
@@ -166,18 +167,25 @@ namespace APIShared.DependencyBootstrap
                 var field = closure.GetType().GetField("pluginsByGUID", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 var winners = (IDictionary)field.GetValue(closure);
                 var identities = new List<EarlyPluginIdentity>();
+                var providers = new List<EarlyProviderPlugin>();
                 var pairWinners = new List<ShadowPlugin>();
                 foreach (DictionaryEntry entry in winners)
                 {
                     var info = (BepInEx.PluginInfo)entry.Value;
                     if ((string)entry.Key != info.Metadata.GUID) throw new InvalidOperationException("Selected GUID mismatch.");
-                    identities.Add(new EarlyPluginIdentity(info.Metadata.GUID, info.Metadata.Version.ToString(), info.Location, ReadSelectedTypeName(info)));
+                    var identity=new EarlyPluginIdentity(info.Metadata.GUID, info.Metadata.Version.ToString(), info.Location, ReadSelectedTypeName(info));
+                    identities.Add(identity);
+                    var dependencies=new List<EarlyProviderDependency>();
+                    foreach(var dependency in info.Dependencies)
+                        if((dependency.Flags & BepInEx.BepInDependency.DependencyFlags.HardDependency)!=0)
+                            dependencies.Add(new EarlyProviderDependency(dependency.DependencyGUID,dependency.MinimumVersion));
+                    providers.Add(new EarlyProviderPlugin(identity,dependencies.ToArray()));
                     pairWinners.Add(new ShadowPlugin { Guid=info.Metadata.GUID, Version=info.Metadata.Version.ToString(), Path=info.Location });
                 }
                 // Only package ownership is shared. No SE/shadow decision or dependency parsing gates the observer.
                 if (activation == null || !activation.Bind(pairWinners))
                     EarlyPluginActivation.Unavailable("Selected bootstrap/runtime pair was rejected.");
-                else EarlyPluginActivation.BindSelected(identities);
+                else EarlyPluginActivation.BindSelected(identities,new EarlyProviderCatalog(providers,ProbeTrace.Error));
             }
             catch { EarlyPluginActivation.Unavailable("Selected plugin metadata unavailable."); }
         }
