@@ -780,6 +780,7 @@ APIShared.Economy.MarketPriceModifierContext | public int OriginalBasePrice { ge
 APIShared.Economy.MarketPriceModifierHandle | public sealed class APIShared.Economy.MarketPriceModifierHandle
 APIShared.Economy.MarketPriceModifierHandle | public void SetEnabled(bool enabled)
 APIShared.Economy.MarketPriceModifiers | public static class APIShared.Economy.MarketPriceModifiers
+APIShared.Economy.MarketPriceModifiers | public static APIShared.Modifiers.ValueModifierStatusQuery CreateStatusQuery(SHCDESE.Interop.eGoods good, APIShared.Economy.MarketPriceDirection direction, bool isAIPlayer)
 APIShared.Economy.MarketPriceModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Economy.MarketPriceModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Economy.MarketPriceModifierHandle handle, out string reason, int order = 0)
 APIShared.Economy.MarketPriceModifiers | public static long CallbackFailures { get; }
 APIShared.Economy.MarketPriceModifiers | public static void Refresh()
@@ -2343,6 +2344,10 @@ APIShared.ModSettings.ToolTipPresentation | public static float AutomaticFontSiz
 APIShared.ModSettings.ToolTipPresentation | public static float AutomaticMaximumWidth { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float FontSize { get; }
 APIShared.ModSettings.ToolTipPresentation | public static float MaximumWidth { get; }
+APIShared.Modifiers.ValueModifierBounds | public struct APIShared.Modifiers.ValueModifierBounds
+APIShared.Modifiers.ValueModifierBounds | public bool WasClamped { get; }
+APIShared.Modifiers.ValueModifierBounds | public decimal Maximum { get; }
+APIShared.Modifiers.ValueModifierBounds | public decimal Minimum { get; }
 APIShared.Modifiers.ValueModifierCalculator | public static class APIShared.Modifiers.ValueModifierCalculator
 APIShared.Modifiers.ValueModifierCalculator | public static decimal Calculate(decimal baseline, System.Collections.Generic.IEnumerable<APIShared.Modifiers.ValueModifierContribution> orderedContributions, decimal minimumValue, decimal maximumValue)
 APIShared.Modifiers.ValueModifierContribution | public struct APIShared.Modifiers.ValueModifierContribution
@@ -2352,13 +2357,34 @@ APIShared.Modifiers.ValueModifierContribution | public decimal Value { get; }
 APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution Factor(decimal factor, APIShared.Modifiers.ValueModifierStage stage = (APIShared.Modifiers.ValueModifierStage)0)
 APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution FixedValue(decimal value)
 APIShared.Modifiers.ValueModifierContribution | public static APIShared.Modifiers.ValueModifierContribution None { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public struct APIShared.Modifiers.ValueModifierContributionStatus
+APIShared.Modifiers.ValueModifierContributionStatus | public APIShared.Modifiers.ValueModifierContribution Contribution { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public bool ProviderFailed { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public bool SupersededByFixedValue { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public int Order { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public string OwnerGuid { get; }
+APIShared.Modifiers.ValueModifierContributionStatus | public string RegistrationId { get; }
 APIShared.Modifiers.ValueModifierKind | public enum APIShared.Modifiers.ValueModifierKind : int
 APIShared.Modifiers.ValueModifierKind | Factor = 1
 APIShared.Modifiers.ValueModifierKind | FixedValue = 2
 APIShared.Modifiers.ValueModifierKind | None = 0
+APIShared.Modifiers.ValueModifierObservation | public struct APIShared.Modifiers.ValueModifierObservation
+APIShared.Modifiers.ValueModifierObservation | public bool DiffersFromReference { get; }
+APIShared.Modifiers.ValueModifierObservation | public decimal ReferenceValue { get; }
+APIShared.Modifiers.ValueModifierObservation | public decimal Value { get; }
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Modifiers.ValueModifierStatus | public sealed class APIShared.Modifiers.ValueModifierStatus
+APIShared.Modifiers.ValueModifierStatus | public APIShared.Modifiers.ValueModifierBounds? Bounds { get; }
+APIShared.Modifiers.ValueModifierStatus | public APIShared.Modifiers.ValueModifierObservation? Observation { get; }
+APIShared.Modifiers.ValueModifierStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Modifiers.ValueModifierContributionStatus> Contributions { get; }
+APIShared.Modifiers.ValueModifierStatus | public decimal BaselineValue { get; }
+APIShared.Modifiers.ValueModifierStatus | public decimal ResolvedValue { get; }
+APIShared.Modifiers.ValueModifierStatus | public decimal? ExternalFixedValue { get; }
+APIShared.Modifiers.ValueModifierStatusQuery | public abstract class APIShared.Modifiers.ValueModifierStatusQuery
+APIShared.Modifiers.ValueModifiers | public static class APIShared.Modifiers.ValueModifiers
+APIShared.Modifiers.ValueModifiers | public static bool TryGetStatus(APIShared.Modifiers.ValueModifierStatusQuery query, out APIShared.Modifiers.ValueModifierStatus status, out string reason)
 APIShared.Multiplayer.MultiplayerResyncData | public static class APIShared.Multiplayer.MultiplayerResyncData
 APIShared.Multiplayer.MultiplayerResyncData | public static bool CheckIntegrity()
 APIShared.Multiplayer.MultiplayerResyncData | public static bool IsAvailable { get; }
