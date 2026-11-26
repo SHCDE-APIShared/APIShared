@@ -56,7 +56,7 @@ namespace APIShared.Workshop.Proton
 
         // Wine before 10.13 (Proton 10 and older) reports every drive except a Z: mapped to
         // "/" as "<prefix>/dosdevices/<x>:/...", whose drive component is a symlink that the
-        // host updaters' link checks refuse. Later Wine reports the server's realpath, which
+        // host helpers' link checks refuse. Later Wine reports the server's realpath, which
         // never matches here. Only Wine's own drive link is resolved; links below the drive
         // root stay visible to every later link check.
         private string Canonical(string windowsPath, string host)

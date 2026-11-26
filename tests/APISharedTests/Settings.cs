@@ -342,11 +342,11 @@ namespace APISharedTests
             MethodInfo setStatus = typeof(PresetLobbyModSettingsViewModel).GetMethod(
                 "SetPresetStatus",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            setStatus.Invoke(viewModel, new object[] { "injected failure", true });
+            setStatus.Invoke(viewModel, new object[] { "injected failure", true, false });
             Assert(viewModel.System_PresetOperationStatusVisibility == Noesis.Visibility.Visible &&
                     viewModel.System_PresetOperationErrorVisibility == Noesis.Visibility.Visible,
                 "preset operation failures must remain visible");
-            setStatus.Invoke(viewModel, new object[] { "obsolete success", false });
+            setStatus.Invoke(viewModel, new object[] { "obsolete success", false, false });
             Assert(viewModel.System_PresetOperationStatusVisibility == Noesis.Visibility.Collapsed &&
                     viewModel.System_PresetOperationSuccessVisibility == Noesis.Visibility.Collapsed,
                 "successful preset operations must never expose a result banner");
@@ -382,6 +382,56 @@ namespace APISharedTests
                     (int)PresetSaveBulkMode.Mixed == 4,
                 "the bulk selector contract must expose four actions plus the Mixed status");
         }
+        [TestMethod]
+        [TestCategory("Settings")]
+        [DoNotParallelize]
+        public void SharedPresetImportCreatesAnIndependentPersonalCopy()
+        {
+            const string guid = "Tests.SharedPreset";
+            string root = Path.Combine(Path.GetTempPath(), "preset-share-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            var previous = PersonalSettingsPaths.TestDocumentsDirectory;
+            PersonalSettingsPaths.TestDocumentsDirectory = _ => root;
+            try
+            {
+                var viewModel = new DynamicDefaultTestViewModel { DynamicValues = new[] { "working" } };
+                viewModel.PreparePresets(null, Path.Combine(root, "Target.dll"), "Target", guid, new Version(1, 0));
+                var controller = (LobbyPresetController)typeof(PresetLobbyModSettingsViewModel).GetField(
+                    "presetController", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(viewModel);
+                var settings = new Dictionary<string, PublishedPresetSetting>
+                {
+                    [nameof(viewModel.DynamicValues)] = new PublishedPresetSetting { Mode = PublishedPresetValueMode.ModDefault },
+                };
+                string Json(string target, string minimum) => ModSettingsPresetJson.Serialize(
+                    target, "same-id", "Remote name", "", minimum, "", settings);
+                string existing = controller.ImportPresetJson(Json(guid, ""));
+                string original = File.ReadAllText(existing);
+
+                controller.ImportSharedPresetJson(Json(guid, "1.0"), "  Eigene Kopie  ");
+                PublishedModSettingsPreset copy = controller.PublishedPresets.Single(preset => preset.Name == "Eigene Kopie");
+                Assert(copy.Id != "same-id" && File.ReadAllText(existing) == original &&
+                    viewModel.DynamicValues.SequenceEqual(new[] { "working" }) &&
+                    copy.SourceKind == ModSettingsPresetSourceKind.Personal &&
+                    copy.Settings[nameof(viewModel.DynamicValues)].Mode == PublishedPresetValueMode.ModDefault,
+                    "a shared import must preserve working values, the old file and the offered setting modes");
+                controller.RefreshCatalog();
+                Assert(controller.PublishedPresets.Any(preset => preset.Id == copy.Id && preset.Name == copy.Name),
+                    "the renamed personal copy must survive catalog reload");
+
+                AssertThrows<InvalidDataException>(() => controller.ImportSharedPresetJson(Json(guid, "2.0"), "Rejected"),
+                    "an incompatible target version must be rejected before publication");
+                AssertThrows<InvalidDataException>(() => controller.ImportSharedPresetJson(Json("Tests.Other", ""), "Rejected"),
+                    "a preset for another target must not be importable");
+                Assert(Directory.GetFiles(Path.GetDirectoryName(existing), "preset_*.json").Length == 2,
+                    "rejected offers must not leave personal preset files");
+            }
+            finally
+            {
+                PersonalSettingsPaths.TestDocumentsDirectory = previous;
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
         [TestMethod]
         [TestCategory("Settings")]
         public void VerifyDynamicModDefaults() => TestDynamicModDefaults();

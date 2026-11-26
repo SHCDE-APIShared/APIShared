@@ -43,6 +43,7 @@ namespace APIShared.Audio
         // DLL_RunTick receives short[14,700,000]. The pending native buffer is
         // even larger; this conservative capacity covers every normal tick.
         internal const int MaxRecords = 14700000 / 21;
+        private const string ForeignPatchFeature = "Audio unit context";
 
         private static SoundRuntime processContext;
         private static SafeIlHook playbackHook;
@@ -199,6 +200,10 @@ namespace APIShared.Audio
                 CreateHooks(Address(context, NativeContract.WrapperRva), Address(context, NativeContract.FlagWrapperRva), Address(context, NativeContract.EmitRva),
                     NativeStartupPatchWindow.SuspendThreads);
                 ValidateHooks(context);
+                // A foreign patch inside a prologue refuses all three before the first write.
+                NativeForeignPatchGuard.RequireUnpatched(wrapperHook, ForeignPatchFeature);
+                NativeForeignPatchGuard.RequireUnpatched(flagWrapperHook, ForeignPatchFeature);
+                NativeForeignPatchGuard.RequireUnpatched(emitHook, ForeignPatchFeature);
             }
             catch { RollbackUnpublished(); throw; }
             publicationStarted = true;
@@ -208,6 +213,9 @@ namespace APIShared.Audio
             if (!wrapperHook.IsInstalled || !flagWrapperHook.IsInstalled || !emitHook.IsInstalled)
                 throw new InvalidOperationException("Hook publication incomplete.");
             ValidateHooks(context);
+            NativeForeignPatchGuard.Watch(wrapperHook, ForeignPatchFeature);
+            NativeForeignPatchGuard.Watch(flagWrapperHook, ForeignPatchFeature);
+            NativeForeignPatchGuard.Watch(emitHook, ForeignPatchFeature);
             SoundContextPolicy.SetReady(true);
             if (killReady) Volatile.Write(ref killStatus, "Ready");
             Info(log, "AUDIO_CONTEXT_READY: 91 soldier source entries; NativeX64/Absolute; wrappers=0x2960..0x296F,0x2990..0x299F (4+3+8),next=mov r9d,r8d; emitter=0x1A41E0..0x1A41EE (4+3+4+3),next=write x; gameId=1-based,stride=0x490,slot1=manager+0xAEC,chimp=+0x8A,state=+0x2BC,tiles=+0xC0/+0xC2; rooted return-address bridges behind native demand guards (wrapper=" + SoundNativeDemand.WrapperValue + ",emitter=" + SoundNativeDemand.EmitterValue + "); melee kill sources=" + (killReady ? SoundSources.Kills.Length.ToString() : "unavailable") + "; inferred situations are not in-game confirmations.");

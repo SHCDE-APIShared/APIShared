@@ -68,9 +68,11 @@ namespace APIShared
             if (manager == IntPtr.Zero) return null;
             int wood = Marshal.ReadInt32(manager, WoodCostOffset);
             int stone = Marshal.ReadInt32(manager, StoneCostOffset);
-            int baseIron = buildings.GetIronIngotCost(type);
-            int basePitch = buildings.GetRawPitchCost(type);
-            int baseGold = buildings.GetGoldCost(type);
+            if (!Buildings.ConstructionCosts.TryGetCurrent(Buildings.ConstructionCostTarget.FromStructure(type), out var constructionCost, out string costReason))
+                throw new InvalidOperationException("Building repair cost safety unavailable: " + costReason);
+            int baseIron = constructionCost.Iron;
+            int basePitch = constructionCost.Pitch;
+            int baseGold = constructionCost.Gold;
             if (wood < 0 || stone < 0 || baseIron < 0 || basePitch < 0 || baseGold < 0)
                 return null;
             int iron = RepairCost(baseIron, building->r_CurrentHealth, building->r_MaxHealth);

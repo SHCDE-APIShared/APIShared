@@ -114,10 +114,13 @@ namespace APISharedTests
         }
 
         private static SaveLoadDialogRequest Create(params SaveLoadDialogCallbacks[] callbacks)
+            => Create(_ => { }, callbacks);
+
+        private static SaveLoadDialogRequest Create(Action<Exception> report, params SaveLoadDialogCallbacks[] callbacks)
         {
             var entries = new List<SaveLoadDialogRequest.Entry>();
             foreach (var callback in callbacks) entries.Add(new SaveLoadDialogRequest.Entry(callback));
-            return new SaveLoadDialogRequest(7, Enums.RequesterTypes.LoadSinglePlayerGame, entries, _ => { });
+            return new SaveLoadDialogRequest(7, Enums.RequesterTypes.LoadSinglePlayerGame, entries, report);
         }
 
         [TestMethod]
@@ -136,12 +139,60 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void PreparationRejectionKeepsReasonAndRetriesAfterReverseCleanup()
+        {
+            const string reason = "Player 2 has not confirmed this save.";
+            var calls = new List<string>();
+            var errors = new List<Exception>();
+            bool ready = false;
+            var request = Create(errors.Add,
+                new SaveLoadDialogCallbacks { Prepare = _ => calls.Add("a"), AttemptFinished = _ => calls.Add("undo-a") },
+                new SaveLoadDialogCallbacks
+                {
+                    Prepare = context =>
+                    {
+                        calls.Add("b:" + context.FileName);
+                        if (ready) return;
+                        context.RejectPreparation(reason);
+                        context.RejectPreparation("secondary reason");
+                    },
+                    AttemptFinished = _ => calls.Add("undo-b")
+                },
+                new SaveLoadDialogCallbacks { Prepare = _ => calls.Add("c"), AttemptFinished = _ => calls.Add("undo-c") });
+
+            bool Confirm() => request.Confirm("coop-save", null, () => { calls.Add("core"); return true; },
+                () => calls.Add("original"), () => calls.Add("rollback"));
+
+            Assert.IsFalse(Confirm());
+            Assert.AreEqual(reason, request.PreparationRejection);
+            Assert.IsFalse(request.IsClosed);
+            CollectionAssert.AreEqual(new[] { "a", "b:coop-save", "undo-b", "undo-a", "rollback" }, calls);
+
+            ready = true;
+            calls.Clear();
+            Assert.IsTrue(Confirm());
+            Assert.IsNull(request.PreparationRejection);
+            Assert.IsFalse(Confirm());
+            Assert.AreEqual(0, errors.Count);
+            CollectionAssert.AreEqual(new[] { "a", "b:coop-save", "c", "core", "original", "undo-c", "undo-b", "undo-a" }, calls);
+        }
+
+        [TestMethod]
         public void ThrowingPreparationCleansUpItselfAndEarlierParticipantsInReverseOrder()
         {
             var calls = new List<string>();
-            var request = Create(new SaveLoadDialogCallbacks { Prepare = _ => calls.Add("a"), AttemptFinished = _ => calls.Add("undo-a") },
-                new SaveLoadDialogCallbacks { Prepare = _ => { calls.Add("b"); throw new Exception(); }, AttemptFinished = _ => calls.Add("undo-b") });
+            var errors = new List<Exception>();
+            var error = new InvalidOperationException("unexpected preparation error");
+            var request = Create(errors.Add,
+                new SaveLoadDialogCallbacks { Prepare = _ => calls.Add("a"), AttemptFinished = _ => calls.Add("undo-a") },
+                new SaveLoadDialogCallbacks
+                {
+                    Prepare = context => { calls.Add("b"); context.RejectPreparation("expected wait"); throw error; },
+                    AttemptFinished = _ => calls.Add("undo-b")
+                });
             Assert.IsFalse(request.Confirm("a", null, () => true, () => Assert.Fail("original ran"), () => calls.Add("rollback")));
+            Assert.IsNull(request.PreparationRejection);
+            CollectionAssert.AreEqual(new[] { error }, errors);
             CollectionAssert.AreEqual(new[] { "a", "b", "undo-b", "undo-a", "rollback" }, calls);
         }
 

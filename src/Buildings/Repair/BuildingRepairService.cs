@@ -55,6 +55,7 @@ namespace APIShared
         private readonly object errorSync = new object();
         private readonly HashSet<string> seenErrors = new HashSet<string>(StringComparer.Ordinal);
         private readonly Queue<string> pendingErrors = new Queue<string>();
+        private readonly RepairRejectionDiagnostics repairRejections = new RepairRejectionDiagnostics();
         private readonly Dictionary<string, OwnerView> owners = new Dictionary<string, OwnerView>(StringComparer.Ordinal);
         private readonly ConditionalWeakTable<EngineInterface.PlayState, BuildingRepairQuote> snapshots =
             new ConditionalWeakTable<EngineInterface.PlayState, BuildingRepairQuote>();
@@ -110,10 +111,21 @@ namespace APIShared
 
         private void FlushErrors()
         {
-            lock (errorSync)
+            for (RepairRejectionReason reason = RepairRejectionReason.BuildingManagerUnavailable;
+                reason < RepairRejectionReason.Count; reason++)
             {
-                while (pendingErrors.Count > 0)
-                    NativeApiLog.Error(log, pendingErrors.Dequeue());
+                if (repairRejections.TryTake(reason, out var report))
+                    NativeApiLog.Error(log, report.Describe());
+            }
+            while (true)
+            {
+                string message;
+                lock (errorSync)
+                {
+                    if (pendingErrors.Count == 0) break;
+                    message = pendingErrors.Dequeue();
+                }
+                NativeApiLog.Error(log, message);
             }
         }
 

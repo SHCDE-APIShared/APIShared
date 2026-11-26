@@ -80,6 +80,71 @@ namespace APIShared.ModSettings
             return result;
         }
 
+        /// <summary>Applies declared renames and only the optional pre-default stored-value converter.</summary>
+        /// <remarks>Pass selected/authorized stored properties before merging defaults. Does not invoke the
+        /// older IModSettingsSnapshotMigration contract. Without the new interface, retains rename-only
+        /// behavior and may return the input. A converter receives detached buffers; its returned values
+        /// are detached again. Existing keys, including explicit null, must remain present. Errors reject
+        /// this snapshot; the caller must not classify a converter failure as corrupt storage.</remarks>
+        public static Dictionary<string, byte[]> MigrateRawStoredSnapshot(object settings, Dictionary<string, byte[]> stored)
+        {
+            if (settings == null) throw new ArgumentNullException(nameof(settings));
+            if (stored == null) throw new ArgumentNullException(nameof(stored));
+            var renamed = ApplyRenames(settings.GetType(), stored);
+            if (!(settings is IModSettingsStoredSnapshotMigration migration)) return renamed;
+            var input = CopyStoredValues(renamed);
+            var converted = migration.System_MigrateStoredSnapshot(input) ??
+                throw new InvalidDataException("Stored settings migration returned nothing: " + settings.GetType().FullName);
+            foreach (string key in renamed.Keys)
+                if (!converted.ContainsKey(key))
+                    throw new InvalidDataException("Stored settings migration removed an input property: " + key);
+            return CopyStoredValues(converted);
+        }
+
+        private static Dictionary<string, byte[]> CopyStoredValues(Dictionary<string, byte[]> source)
+        {
+            var result = new Dictionary<string, byte[]>(source.Count, source.Comparer);
+            foreach (var entry in source)
+                result.Add(entry.Key, entry.Value == null ? null : (byte[])entry.Value.Clone());
+            return result;
+        }
+
+        // API-owned source preparation has already merged defaults (or accepted authenticated
+        // host values). Preserve normal interface dispatch through consumer overrides, while
+        // allowing exactly that endpoint's next controller Enter to bypass the raw converter.
+        // This is not a callback-wide suppression: working applications still convert normally.
+        [ThreadStatic] private static PreparedMissionEntry preparedMissionEntry;
+
+        internal static IDisposable PrepareMissionEntry(object endpoint)
+        {
+            if (endpoint == null) throw new ArgumentNullException(nameof(endpoint));
+            var entry = new PreparedMissionEntry(endpoint, preparedMissionEntry);
+            preparedMissionEntry = entry;
+            return entry;
+        }
+
+        internal static bool TryConsumePreparedMissionEntry(object endpoint)
+        {
+            var entry = preparedMissionEntry;
+            if (entry == null || entry.Consumed || !ReferenceEquals(entry.Endpoint, endpoint)) return false;
+            entry.Consumed = true;
+            return true;
+        }
+
+        // Synchronous same-thread LIFO scopes, disposed by the owning API call's using/finally.
+        private sealed class PreparedMissionEntry : IDisposable
+        {
+            internal readonly object Endpoint;
+            internal bool Consumed;
+            private readonly PreparedMissionEntry previous;
+            internal PreparedMissionEntry(object endpoint, PreparedMissionEntry previous)
+            { Endpoint = endpoint; this.previous = previous; }
+            public void Dispose()
+            {
+                if (ReferenceEquals(preparedMissionEntry, this)) preparedMissionEntry = previous;
+            }
+        }
+
         // Moves values stored under former names to their current property names. The same instance is
         // returned when the class declares no rename or the data holds no former name.
         internal static Dictionary<string, T> ApplyRenames<T>(Type settingsType, Dictionary<string, T> stored)
