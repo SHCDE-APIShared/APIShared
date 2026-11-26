@@ -156,6 +156,10 @@ unrelated applications. Keep SDK/cache/environment overrides in child processes,
 preserve normal user settings and saves, and verify their restoration after live
 runs. Each result states its runtime/fixture limits and any remaining acceptance.
 
+The opt-in [Core allocation diagnostic](docs/ALLOCATION_DIAGNOSTICS.md) captures one
+hosted occurrence for issue 124 with bounded type/stack/thread evidence. It preserves
+strict assertions and reports missing evidence or no reproduction separately from a fix.
+
 ### Selecting build sources and installation
 
 Run the full build without installing its output:

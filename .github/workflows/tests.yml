@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      value_modifier_allocation_diagnostic:
+        description: 'One bounded attribution run for issue 124; not a correction or rerun-for-green'
+        type: boolean
+        default: false
       historical_workshop_hotfix_audit:
         description: 'Audit the historical 0.9.2 hotfix scope against the published 0.9.0 tree'
         type: boolean
@@ -25,6 +29,7 @@ permissions:
   contents: read
 jobs:
   core:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.value_modifier_allocation_diagnostic) }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -48,6 +53,7 @@ jobs:
           name: test-results
           path: TestResults/*.trx
   workshop-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.value_modifier_allocation_diagnostic) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -121,3 +127,28 @@ jobs:
           path: ${{ runner.temp }}/public-extender-metadata-result/*.json
           if-no-files-found: error
           retention-days: 7
+  value-modifier-allocation-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.value_modifier_allocation_diagnostic }}
+    runs-on: windows-latest
+    timeout-minutes: 5
+    env:
+      ALLOCATION_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: 'false'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.404'
+      - name: Capture one bounded full-suite allocation occurrence
+        shell: pwsh
+        run: ./tools/Validation/Invoke-CoreAllocationDiagnostic.ps1 -OutputDirectory "$env:RUNNER_TEMP/core-allocation-${{ github.run_id }}-${{ github.run_attempt }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-allocation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/core-allocation-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error

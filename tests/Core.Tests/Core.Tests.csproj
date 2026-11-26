@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <!-- Attribution-only opt-in; ordinary test methods compile their original branch. -->
+  <PropertyGroup Condition="'$(CoreAllocationDiagnostics)' == 'true'">
+    <DefineConstants>$(DefineConstants);CORE_ALLOCATION_DIAGNOSTICS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(CoreAllocationDiagnostics)' != 'true'">
+    <Compile Remove="CoreAllocationDiagnostics.cs" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../Content/APIShared.Content.csproj" />
     <ProjectReference Include="../../tools/AssemblyMetadata/AssemblyMetadata.csproj" />

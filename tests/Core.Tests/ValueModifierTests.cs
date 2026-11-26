@@ -33,19 +33,41 @@ public sealed class ValueModifierTests
     [TestMethod]
     public void InvalidInputsAreRejectedAndCompiledCommonPathDoesNotAllocate()
     {
+#if CORE_ALLOCATION_DIAGNOSTICS
+        CoreAllocationDiagnostics.Prepare();
+#endif
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(()=>ValueModifierContribution.Factor(-1));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(()=>ValueModifierContribution.Factor(1,(ValueModifierStage)7));
         Assert.ThrowsExactly<ArgumentException>(()=>ValueModifierCalculator.Calculate(1,null,2,1));
         Assert.ThrowsExactly<ArgumentException>(()=>ValueModifierCalculator.Calculate(1,null,.1m,10));
         var plan=ValueModifierPlan.Create(new[]{ValueModifierContribution.Factor(1.5m)});
         for(int i=0;i<100;i++)Assert.AreEqual(15m,plan.Calculate(10,-100,100));
+#if CORE_ALLOCATION_DIAGNOSTICS
+        CoreAllocationDiagnostics.EmptyMarkerControl();
+        CoreAllocationDiagnostics.Log.Begin(1, Environment.CurrentManagedThreadId);
+#endif
         long before=GC.GetAllocatedBytesForCurrentThread();
         for(int i=0;i<10000;i++)plan.Calculate(10,-100,100);
+#if CORE_ALLOCATION_DIAGNOSTICS
+        long after=GC.GetAllocatedBytesForCurrentThread();
+        CoreAllocationDiagnostics.Log.End(1, before, after);
+        Assert.AreEqual(before,after);
+#else
         Assert.AreEqual(before,GC.GetAllocatedBytesForCurrentThread());
+#endif
         Assert.AreEqual(5m,plan.CalculateRatio(85,25,-100,100));
+#if CORE_ALLOCATION_DIAGNOSTICS
+        CoreAllocationDiagnostics.Log.Begin(2, Environment.CurrentManagedThreadId);
+#endif
         before=GC.GetAllocatedBytesForCurrentThread();
         for(int i=0;i<10000;i++)plan.CalculateRatio(85,25,-100,100);
+#if CORE_ALLOCATION_DIAGNOSTICS
+        after=GC.GetAllocatedBytesForCurrentThread();
+        CoreAllocationDiagnostics.Log.End(2, before, after);
+        Assert.AreEqual(before,after);
+#else
         Assert.AreEqual(before,GC.GetAllocatedBytesForCurrentThread());
+#endif
     }
     [TestMethod]
     public void CallbackCheckpointRestoresFixedWritesAndTypedContributions()
