@@ -141,7 +141,10 @@ if ($Worker) {
             throw 'The report rejection controls failed.'
         }
 
-        $coreDirectory = Join-Path $buildRoot 'bin/Core.Tests/Release/net10.0'
+        # The selected 6b8132 baseline predates test-output routing (PR117).
+        # Its Core project keeps this conventional path despite APISharedArtifactsRoot;
+        # retain that build context and verify the actual testhost assembly below.
+        $coreDirectory = Join-Path $repository 'tests/Core.Tests/bin/Release/net10.0'
         $assembly = Join-Path $coreDirectory 'Core.Tests.dll'
         $cohortNames = @('Core.Tests.dll', 'Core.Tests.pdb', 'Core.Tests.deps.json', 'Core.Tests.runtimeconfig.json')
         $binaryBefore = @($cohortNames | ForEach-Object { Get-Pin (Join-Path $coreDirectory $_) })
