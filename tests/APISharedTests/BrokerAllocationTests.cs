@@ -108,6 +108,44 @@ namespace APISharedTests
             }
         }
 
+
+        [TestMethod]
+        public void NullPrivateStateAvoidsOwnerArraysOnObservedProductionPaths()
+        {
+            // Same public Pre/Post payloads and rollback captures on both sides. Only the
+            // actual paired State differs. The live array control supplies this host's size.
+            double array = Measure(() => GC.KeepAlive(new object[1]));
+            var gameNull = new InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs>();
+            var gameState = new InterceptionEvent<GameActionPreEventArgs, GameActionPostEventArgs>();
+            gameNull.TryRegister("bench", "null", a => { }, Post<GameActionPostEventArgs>(true), out _);
+            gameState.TryRegister("bench", "state", a => a.State = Marker, Post<GameActionPostEventArgs>(true), out _);
+            double gameNullBytes = Measure(() => GameActionEvents.DispatchObserved(gameNull, Enums.GameActionCommand.MakeTroop, 1, 2, 3, GameOriginal));
+            double gameStateBytes = Measure(() => GameActionEvents.DispatchObserved(gameState, Enums.GameActionCommand.MakeTroop, 1, 2, 3, GameOriginal));
+
+            var marketNull = new InterceptionEvent<MarketPricePreEventArgs, MarketPricePostEventArgs>();
+            var marketState = new InterceptionEvent<MarketPricePreEventArgs, MarketPricePostEventArgs>();
+            marketNull.TryRegister("bench", "null", a => { }, Post<MarketPricePostEventArgs>(true), out _);
+            marketState.TryRegister("bench", "state", a => a.State = Marker, Post<MarketPricePostEventArgs>(true), out _);
+            double marketNullBytes = Measure(() => MarketPriceEvents.DispatchObserved(marketNull, MarketPriceDirection.Sell, new IntPtr(1), 2, 3, 4, MarketOriginal));
+            double marketStateBytes = Measure(() => MarketPriceEvents.DispatchObserved(marketState, MarketPriceDirection.Sell, new IntPtr(1), 2, 3, 4, MarketOriginal));
+
+            var guiNull = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var guiState = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            guiNull.TryRegister("bench", "null", a => { }, Post<PresentationPostEventArgs>(true), out _);
+            guiState.TryRegister("bench", "state", a => a.State = Marker, Post<PresentationPostEventArgs>(true), out _);
+            double guiNullBytes = Measure(() => PresentationEvents.Execute(guiNull,
+                new PresentationPreEventArgs(PresentationOperation.GuiChecks, null, null), (FatControler)null, GuiOriginal));
+            double guiStateBytes = Measure(() => PresentationEvents.Execute(guiState,
+                new PresentationPreEventArgs(PresentationOperation.GuiChecks, null, null), (FatControler)null, GuiOriginal));
+
+            TestContext.WriteLine("BROKER_PRIVATE_STATE_PRODUCTION_ALLOC iterations={0} arrayControl={1:F1}; GameAction null={2:F1} state={3:F1}; MarketPrice null={4:F1} state={5:F1}; Presentation null={6:F1} state={7:F1}",
+                Iterations, array, gameNullBytes, gameStateBytes, marketNullBytes, marketStateBytes, guiNullBytes, guiStateBytes);
+            Assert.IsTrue(array > 0, "The explicit one-owner array allocation control must allocate.");
+            Assert.AreEqual(array, gameStateBytes - gameNullBytes, "GameAction null paired State needs no owner array.");
+            Assert.AreEqual(array, marketStateBytes - marketNullBytes, "MarketPrice null paired State needs no owner array.");
+            Assert.AreEqual(array, guiStateBytes - guiNullBytes, "Presentation null paired State needs no owner array.");
+        }
+
         [TestMethod]
         public void CompiledObservedPathsCreateNoClosuresOrDelegates()
         {

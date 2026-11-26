@@ -30,10 +30,16 @@ namespace APIShared.Presentation
         private static readonly HashSet<IngameMenuRegistry.Entry> failedContents = new HashSet<IngameMenuRegistry.Entry>();
         private static readonly List<Grid> overflowRows = new List<Grid>();
 
+        // A view whose layout contract was rejected before any change. It stays entirely Vanilla,
+        // so its original commands also keep Vanilla dispatch instead of an override (see IsRejectedView).
+        private static HUD_IngameMenu rejectedView;
+        internal static bool IsRejectedView(HUD_IngameMenu view) => view != null && ReferenceEquals(view, rejectedView);
+
         private static void ResolveView(HUD_IngameMenu menu)
         {
             if (menu == null) return;
             if (ReferenceEquals(current, menu) && surface != null) return;
+            rejectedView = menu;
             var root = menu.FindName("LayoutRoot") as Grid;
             var original = menu.FindName("LeftPanel") as StackPanel;
             var parent = original?.Parent as Panel;
@@ -48,6 +54,7 @@ namespace APIShared.Presentation
             if (!(menu.TryFindResource("BTN_SH_GlowSDisable") is Style) ||
                 !(menu.TryFindResource("APISharedMenuTooltipStyle") is Style))
                 throw new InvalidOperationException("APIShared ESC menu XAML resources unavailable.");
+            rejectedView = null;
             if (viewport != null) viewport.SizeChanged -= OnViewportSizeChanged;
             menuTooltips?.Detach();
             foreach (Button button in vanillaButtons) if (button != null) UnobserveLabel(button);
@@ -354,6 +361,8 @@ namespace APIShared.Presentation
             float desired = additionalVisible
                 ? Math.Max(vanillaMenuHeight, HeaderHeight + (overflowRows.Count + 1) * RowPitch + BottomSpace)
                 : vanillaMenuHeight + Math.Max(0, mainRowCount - vanillaRowCount) * RowPitch;
+            // Reviewed 2026-11-24, intentionally kept: both pages keep at least Vanilla's height, so a suppressed
+            // Vanilla row leaves free space instead of shrinking the frame.
             if (additionalVisible)
             {
                 float bodyHeight = (overflowRows.Count + 1) * RowPitch;

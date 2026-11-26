@@ -18,6 +18,8 @@
     <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
     <Compile Include="../../src/Modifiers/ValueModifiers.cs" Link="Production/ValueModifiers.cs" />
     <Compile Include="../../src/GameModes/GameplayModModePolicy.cs" Link="Production/GameplayModModePolicy.cs" />
+    <Compile Include="../../src/Economy/ProductionGoodsReceivedNativeAssembly.cs" Link="Production/ProductionGoodsReceivedNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Economy/ProductionGoodsReceivedNativeDefinition.cs" Link="Production/ProductionGoodsReceivedNativeDefinition.cs" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Economy/WorkerProductionBonusNativeDefinition.cs" Link="Production/WorkerProductionBonusNativeDefinition.cs" />
     <Compile Include="../../src/Core/Internal/Native/NativeInlineStub.cs" Link="Production/NativeInlineStub.cs" />
     <Compile Include="../../src/Economy/WorkerProductionBonusNativeAssembly.cs" Link="Production/WorkerProductionBonusNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
@@ -31,6 +33,10 @@
     <Compile Include="../../src/Economy/WeaponProduction/WeaponProductionNativeDefinition.*.cs;../../src/Economy/WeaponProduction/WeaponProductionNativeAssembly.*.cs" Link="Production/%(Filename)%(Extension)" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Wildlife/HunterNativeAssembly.cs" Link="Wildlife/HunterNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
     <Compile Include="../../src/Wildlife/HerdNativeAssembly.cs" Link="Wildlife/HerdNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Wildlife/CorpseLifetimeNativeAssembly.cs" Link="Wildlife/CorpseLifetimeNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Wildlife/ChickenPopulationNativeAssembly.cs" Link="Wildlife/ChickenPopulationNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Buildings/BuildMenu/BuildMenuAvailabilityAssembly.cs" Link="Buildings/BuildMenuAvailabilityAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
+    <Compile Include="../../src/Sight/SightNativeAssembly.cs" Link="Sight/SightNativeAssembly.cs" Condition="'$(MathOnly)' != 'true'" />
     <Reference Include="Iced"><HintPath>$(ExtenderDir)/Iced.dll</HintPath></Reference>
     <Reference Include="RedBird.Abstractions"><HintPath>$(ExtenderDir)/RedBird.Abstractions.dll</HintPath></Reference>
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)/RedBird.Core.dll</HintPath></Reference>

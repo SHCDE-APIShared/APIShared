@@ -28,8 +28,11 @@ namespace APIShared.Workshop
         public Task<IReadOnlyList<WorkshopCatalogItem>> GetCatalogAsync() => WorkshopRuntime.GetCatalogAsync();
         /// <summary>Prepares an immutable installation preview. Source must be the installed folder Steam reports for WorkshopId; removal requires a valid receipt.</summary>
         public Task<WorkshopInstallPlan> PrepareInstallAsync(ulong workshopId, WorkshopAction action) => WorkshopRuntime.PrepareAsync(owner, workshopId, action);
-        /// <summary>Explicitly approves this owner's plan. Revalidates Steam state and prerequisites, stages on a worker and dispatches updater launch on Unity.
-        /// Requires an idle game and no Extender startup restart. Successful staging does not mean installation succeeded; consult the receipt after restart.</summary>
+        /// <summary>Explicitly approves this owner's plan. Revalidates Steam state and prerequisites, then stages a verified copy on a worker; BepInEx/plugins
+        /// is not changed in this session and the game is not closed. APIShared's preloader installs it at the next game start (docs/WORKSHOP.md, safe installation).
+        /// AwaitingRestart means "staged, applied at the next start"; consult the receipt after that start. Failed means nothing was staged.
+        /// Throws before staging when APIShared's preloader is missing or disabled (nothing would ever apply the change), when Steam or the
+        /// startup conditions (pending downloads, Script Extender staging, external management) no longer allow it, or when prerequisites fail.</summary>
         public Task<WorkshopOperation> ApplyAsync(WorkshopInstallPlan plan) => WorkshopRuntime.ApplyAsync(owner, plan);
         /// <summary>Creates a complete local immutable upload snapshot on a worker. Nothing is uploaded and no existing install is read as a release source.</summary>
         public Task<WorkshopUploadPlan> PrepareUploadAsync(WorkshopUploadOptions options) => Task.Run(() => {

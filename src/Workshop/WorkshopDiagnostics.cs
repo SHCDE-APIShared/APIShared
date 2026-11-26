@@ -96,6 +96,11 @@ namespace APIShared.Workshop
                 Failure(write, context, item.DiagnosticError);
                 return Level(item.DiagnosticError);
             }
+            if (item.ManagedBy != null && item.Package != null) {
+                // Deliberately taken over by an external mod manager: expected, not a blocker.
+                write(WorkshopDiagnosticLevel.Info, context + "; managed by external mod manager " + item.ManagedBy + "; APIShared changes nothing.");
+                return null;
+            }
             if (item.IsSubscribed && (item.Package == null || !item.CanInstall)) {
                 write(WorkshopDiagnosticLevel.Warning, context + "; reason=" + item.Status + "; source=" + item.ContentRoot +
                     "; subscribed=" + item.IsSubscribed + "; packagePresent=" + (item.Package != null) +

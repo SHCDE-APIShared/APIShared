@@ -33,7 +33,7 @@ namespace APIShared
         public Func<HudExtrasButtonContext, Button> ButtonFactory { get; }
         /// <summary>Ascending order, followed by ordinal mod GUID and button ID. Defaults to zero.</summary>
         public int Order { get; }
-        /// <summary>Optional fresh tooltip with an explicit Style or Template; Content is set to the current tooltip text. Null uses the modoptions style.</summary>
+        /// <summary>Optional fresh tooltip with an explicit Style or Template and its own sizing; Content is set to the current tooltip text. Null uses the shared popup style sized relative to the button.</summary>
         public Func<HudExtrasButtonContext, ToolTip> TooltipFactory { get; }
     }
 

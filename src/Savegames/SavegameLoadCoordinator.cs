@@ -29,6 +29,7 @@ namespace APIShared
         private static SavegameLoadAgreement agreement;
         private static Platform_Multiplayer owner;
         private static DateTime deadline, waitNoticeAt;
+        private static long nextExchangeCheck;
         private static string waitingReason, announcedWaiting;
         private static bool acknowledged, released, loading, initialized;
         private static ulong hostId;
@@ -36,6 +37,8 @@ namespace APIShared
         private static string localSavePath, localSaveHash;
         private static string attempt, observedFingerprint;
         private static bool attemptHost;
+        private static long requestGeneration;
+        private static SavegameLoadPacket preparingDelivered;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
         // The map coordinator's lobby-refresh observer hides the start value of a rejected attempt.
@@ -49,6 +52,7 @@ namespace APIShared
         {
             if (initialized) return;
             log = logger;
+            MultiplayerSavePreparation.ReportError = error => NativeApiLog.Error(log, "Save preparation observer: " + error);
             channel = ApiShared.ForMod(APISharedPlugin.PluginGuid).Network.RegisterMessage<SavegameLoadPacket>(
                 "SavegameLoadReadiness", Receive, new MessageChannelOptions<SavegameLoadPacket> { MaximumBodyBytes = LobbyReadinessSupport.MaximumBodyBytes });
             Hook candidate = null;
@@ -89,13 +93,18 @@ namespace APIShared
         {
             if (self.activeLobby?.isHost != true) { original(self, name); return; }
             if (!MapRecordLoadCoordinator.CancelSelection())
-            { ShowBlocked("A confirmed multiplayer map is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true); return; }
+            { ShowBlocked("A confirmed multiplayer map is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true, name); return; }
             if (pending != null)
             {
                 if (pending.SaveName == name) return; // Repeated button callback, not another load.
                 if (released || loading)
-                { ShowBlocked("A confirmed multiplayer save is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true); return; }
-                Abort("Selected save changed.", notify: true, showError: false);
+                { ShowBlocked("A confirmed multiplayer save is already starting.", self.activeLobby, LobbyReadinessSupport.NewAttemptId(), "request", true, name); return; }
+            }
+            long generation = ++requestGeneration;
+            if (pending != null)
+            {
+                Abort("Selected save changed.", notify: true, showError: false, endReason: MultiplayerSavePreparationEndReason.Replaced);
+                if (generation != requestGeneration) return;
             }
             owner = self;
             attempt = LobbyReadinessSupport.NewAttemptId();
@@ -129,11 +138,18 @@ namespace APIShared
                 agreement = new SavegameLoadAgreement(pending.Token, fingerprint, humans.Where(x => x != local), records);
                 deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
                 acknowledged = false; released = false; loading = false;
-                SavegameModSettings.PublishPreparedHostValues();
-                if (!agreement.Ready) Send(pending);
-                Tick(); // Solo host: no network echo, no artificial delay.
+                var proposal = pending;
+                PublishPreparingCore(humans, () => {
+                    SavegameModSettings.PublishPreparedHostValues();
+                    if (!IsCurrentProposal(proposal, generation)) return;
+                    if (!agreement.Ready) Send(proposal);
+                    if (IsCurrentProposal(proposal, generation)) Tick();
+                }); // Solo host: resumes synchronously, without a frame or network echo.
             }
-            catch (Exception error) { Abort(error.Message, phase: "request"); }
+            catch (Exception error)
+            {
+                if (generation == requestGeneration) Abort(error.Message, phase: "request", saveName: name);
+            }
             finally { ScheduleWaitingCheck(); }
         }
 
@@ -168,13 +184,18 @@ namespace APIShared
                 if (!result.Submitted) NativeApiLog.Error(log, "Could not cancel the protocol-1 peer's preparation: " + result.Reason);
             }
             if (pending != null) { Abort(text, phase: "protocol"); return; }
-            ShowBlocked(text, lobby, packet.Token ?? LobbyReadinessSupport.NewAttemptId(), "protocol", lobby.isHost);
+            ShowBlocked(text, lobby, packet.Token ?? LobbyReadinessSupport.NewAttemptId(), "protocol", lobby.isHost, packet.SaveName);
         }
 
         private static void Receive(NetworkMessage<SavegameLoadPacket> message)
         {
+            long generation = requestGeneration;
             try { ReceiveCore(message); }
-            catch (Exception error) { Abort(error.Message, phase: "receive"); }
+            catch (Exception error)
+            {
+                if (pending != null ? pending.Token == message.Packet?.Token : generation == requestGeneration)
+                    Abort(error.Message, phase: "receive");
+            }
         }
 
         private static void ReceiveCore(NetworkMessage<SavegameLoadPacket> message)
@@ -214,17 +235,28 @@ namespace APIShared
                 // The host compares every peer's declared simulation records with its own; a difference
                 // ends the preparation for everyone with the explanation.
                 if (packet.Operation == 1 && pending != null && agreement != null && packet.SaveName == pending.SaveName &&
-                    packet.Checksum == pending.Checksum && packet.Time == pending.Time &&
-                    !agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint, packet.Records,
-                        LobbyReadinessSupport.PlayerName(message.SenderSteamId), out string mismatch) && mismatch != null)
-                { Abort(mismatch, phase: "peer-comparison"); return; }
+                    packet.Checksum == pending.Checksum && packet.Time == pending.Time)
+                {
+                    var recordDetails = new List<string>();
+                    if (!agreement.Accept(message.SenderSteamId, packet.Token, packet.Fingerprint, packet.Records,
+                        LobbyReadinessSupport.PlayerName(message.SenderSteamId), out string mismatch, recordDetails) && mismatch != null)
+                    {
+                        Abort(mismatch, phase: "peer-comparison", logDetails: "peerSteamId=" + message.SenderSteamId +
+                            " peerSettingsFingerprint=" + packet.Fingerprint +
+                            (recordDetails.Count == 0 ? "" : "; " + string.Join("; ", recordDetails)));
+                        return;
+                    }
+                }
                 Tick(); return;
             }
             if (retired.Contains(packet.Token)) return;
             if (packet.Operation == 0)
             {
                 if (pending?.Token == packet.Token) { Tick(); return; }
-                if (pending != null) Abort("Host replaced the save preparation.", notify: false, showError: false);
+                long generation = ++requestGeneration;
+                if (pending != null) Abort("Host replaced the save preparation.", notify: false, showError: false,
+                    endReason: MultiplayerSavePreparationEndReason.Replaced);
+                if (generation != requestGeneration) return;
                 pending = packet; owner = mp; attempt = packet.Token; agreement = null;
                 waitNoticeAt = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.WaitingNoticeDelaySeconds);
                 acknowledged = false; released = false; loading = false; hostId = host; attemptHost = false;
@@ -243,13 +275,53 @@ namespace APIShared
                 // state, so a previous single-player session or different local settings do not count.
                 localRecords = VersionedSaveDataRuntime.CaptureSimulationDigests(localSavePath);
                 deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.PreparationSeconds);
-                Tick();
+                PublishPreparingCore(Humans(lobby), Tick);
             }
-            else if (pending?.Token == packet.Token && packet.Operation == 2)
-            {
-                if (!released) deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
-                released = true;
-            }
+            else if (pending?.Token == packet.Token && packet.Operation == 2) ApplyHostRelease();
+        }
+
+        // Vanilla starts clients through the "start" lobby value, which is not ordered with this
+        // P2P release. Once ValidateStart admitted the native load (NativeLoading), a late release
+        // is implied and must not move the phase backwards, which would abort the running load.
+        private static void ApplyHostRelease()
+        {
+            if (released || loading) return;
+            deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
+            released = true;
+            PublishPhase(MultiplayerSavePreparationPhase.Released);
+        }
+
+        private static bool IsCurrentProposal(SavegameLoadPacket proposal, long generation) =>
+            ReferenceEquals(pending, proposal) && generation == requestGeneration &&
+            MultiplayerSavePreparation.Current?.OperationId == proposal.Token;
+        private static bool PublishPreparingCore(ulong[] humans, Action continuation)
+        {
+            var proposal = pending;
+            if (proposal == null) return false;
+            long generation = requestGeneration;
+            preparingDelivered = null;
+            var snapshot = new MultiplayerSavePreparationSnapshot(proposal.Token, 0, proposal.Lobby, hostId,
+                attemptHost, humans, proposal.SaveName, proposal.Checksum, proposal.Time, localSavePath,
+                localSaveHash, MultiplayerSavePreparationPhase.Preparing);
+            return MultiplayerSavePreparation.State.Begin(snapshot, () => {
+                if (!IsCurrentProposal(proposal, generation)) return;
+                preparingDelivered = proposal;
+                try { continuation?.Invoke(); }
+                catch (Exception error)
+                {
+                    if (IsCurrentProposal(proposal, generation))
+                        Abort(error.Message, phase: "prepared-continuation", saveName: proposal.SaveName);
+                }
+                finally { ScheduleWaitingCheck(); }
+            }) && ReferenceEquals(pending, proposal);
+        }
+        private static bool PublishPhase(MultiplayerSavePreparationPhase phase)
+        {
+            var proposal = pending;
+            if (proposal != null && !MultiplayerSavePreparation.State.CanDeliverSynchronously)
+                throw new InvalidOperationException("Save admission cannot advance inside a preparation observer or cleanup boundary.");
+            return proposal != null && MultiplayerSavePreparation.State.Advance(proposal.Token, phase) &&
+                ReferenceEquals(pending, proposal);
         }
 
         // A release or acknowledgement always compares a fresh fingerprint, as does ValidateStart.
@@ -271,7 +343,9 @@ namespace APIShared
 
         private static void Tick()
         {
-            if (pending == null || loading) return;
+            if (pending == null || loading || !ReferenceEquals(preparingDelivered, pending) ||
+                !MultiplayerSavePreparation.State.CanDeliverSynchronously) return;
+            var tickProposal = pending;
             try
             {
                 var lobby = owner?.activeLobby;
@@ -286,7 +360,18 @@ namespace APIShared
                 {
                     if (!FingerprintMatches(false))
                         throw new InvalidOperationException("Prepared host settings changed.");
-                    if (released || !agreement.Ready) return;
+                    if (released) return;
+                    if (!agreement.Ready)
+                    {
+                        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                        if (now < nextExchangeCheck) return;
+                        nextExchangeCheck = now + System.Diagnostics.Stopwatch.Frequency;
+                        var exchange = Multiplayer.SimulationAgreement.AdvancePreparedSaveExchange(pending.Lobby);
+                        if (exchange.State == Lobby.LobbyLaunchGuardState.Rejected)
+                            throw new InvalidOperationException(exchange.Reason);
+                        waitingReason = exchange.Reason;
+                        return;
+                    }
                     if (!ModSettings.ModSettingsApplication.PrepareLaunch())
                     { waitingReason = UiText.Get("LobbyLaunch.MapConfigurationWaiting"); return; }
                     if (!FingerprintMatches(true))
@@ -297,9 +382,11 @@ namespace APIShared
                         waitingReason = productionReason;
                         return;
                     }
-                    RequirePreparedLaunchGuards(lobby);
+                    if (!RequirePreparedLaunchGuards(lobby, allowWaiting: true)) return;
                     released = true;
                     deadline = DateTime.UtcNow.AddSeconds(LobbyReadinessSupport.StartWindowSeconds);
+                    if (!PublishPhase(MultiplayerSavePreparationPhase.Released)) return;
+                    ValidatePreparedAdmission(tickProposal, localSavePath);
                     if (Humans(lobby).Length > 1) Send(Reply(2));
                     NativeApiLog.Debug(log, "SAVE_SETTINGS_CONFIRMED: all current human peers ready; releasing Vanilla load once.");
                     original(owner, pending.SaveName);
@@ -316,14 +403,20 @@ namespace APIShared
                         waitingReason = productionReason;
                         return;
                     }
-                    RequirePreparedLaunchGuards(lobby);
+                    if (!RequirePreparedLaunchGuards(lobby, allowWaiting: true)) return;
                     SavegameModSettings.AcceptPreparedClient(header.filePath, record);
                     var result = channel.SendToSteamPeer(Reply(1), SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID);
                     if (!result.Submitted) throw new InvalidOperationException(result.Reason);
                     acknowledged = true;
+                    PublishPhase(MultiplayerSavePreparationPhase.Acknowledged);
                 }
             }
-            catch (Exception error) { Abort(error.Message, phase: error is TimeoutException ? "timeout" : "preparation"); }
+            catch (Exception error)
+            {
+                if (ReferenceEquals(pending, tickProposal))
+                    Abort(error.Message, phase: error is TimeoutException ? "timeout" : "preparation",
+                        endReason: error is TimeoutException ? MultiplayerSavePreparationEndReason.Timeout : MultiplayerSavePreparationEndReason.Rejected);
+            }
             finally
             {
                 ScheduleWaitingCheck();
@@ -359,32 +452,23 @@ namespace APIShared
         internal static void ValidateStart(string path, bool multiplayer)
         {
             if (!multiplayer) return;
+            var admissionProposal = pending;
             try
             {
-                var header = MapFileManager.Instance.GetHeaderFromMpSaveFileName(Path.GetFileNameWithoutExtension(path));
-                if (pending == null || !Matches(header, pending) ||
-                    owner?.activeLobby?.id.m_SteamID != pending.Lobby || Roster(owner.activeLobby) != pending.Roster ||
-                    SteamMatchmaking.GetLobbyOwner(owner.activeLobby.id).m_SteamID != hostId ||
-                    !string.Equals(Path.GetFullPath(path), localSavePath, StringComparison.OrdinalIgnoreCase) ||
-                    (owner.activeLobby.isHost ? !released : !acknowledged))
-                    throw new InvalidOperationException("Multiplayer save has no confirmed settings preparation.");
-                // Client saves can legitimately differ; compare this peer's own file with its earlier copy.
-                if (HashLocalSave(localSavePath) != localSaveHash)
-                    throw new InvalidDataException("Local save changed after readiness confirmation.");
-                observedFingerprint = SavegameModSettings.CaptureHostFingerprint();
-                if (observedFingerprint != pending.Fingerprint)
-                    throw new InvalidOperationException("Multiplayer save settings changed before loading.");
-                if (!ModSettings.ModSettingsApplication.PrepareLaunch())
-                    throw new InvalidOperationException("Multiplayer save configuration is still being applied.");
-                observedFingerprint = SavegameModSettings.CaptureHostFingerprint();
-                if (observedFingerprint != pending.Fingerprint)
-                    throw new InvalidOperationException("Multiplayer save settings changed before loading.");
-                if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localSavePath, out _, out string productionReason))
-                    throw new InvalidOperationException(productionReason);
-                RequirePreparedLaunchGuards(owner.activeLobby);
+                ValidatePreparedAdmission(admissionProposal, path);
+                loading = true;
+                if (!PublishPhase(MultiplayerSavePreparationPhase.NativeLoading))
+                    throw new InvalidOperationException("Save preparation changed during native admission observation.");
+                // Observers are synchronous external code. The same pending object does
+                // not prove its lobby, roster, file or effective settings stayed intact.
+                ValidatePreparedAdmission(admissionProposal, path);
+                ScheduleWaitingCheck();
             }
             catch (Exception error)
             {
+                // An observer may have retired this attempt and started another one.
+                // Fail the old native call without aborting or marking the replacement.
+                if (admissionProposal != null && !ReferenceEquals(pending, admissionProposal)) throw;
                 // BeginLoad has not entered its mission state yet. Revoke this released
                 // preparation now, including remote peers, instead of waiting for timeout.
                 // Cleanup/reporting must never turn the rejection into a normal return.
@@ -395,7 +479,7 @@ namespace APIShared
                     string.Equals(path, rejectedNativePath, StringComparison.OrdinalIgnoreCase)) throw;
                 rejectedNativeLobby = lobby;
                 rejectedNativePath = path;
-                try { Abort(error.Message, phase: "native-start"); }
+                try { Abort(error.Message, phase: "native-start", saveName: path); }
                 catch (Exception cleanup)
                 {
                     try { NativeApiLog.Error(log, "Save launch rejection cleanup failed: " + cleanup); }
@@ -403,15 +487,52 @@ namespace APIShared
                 }
                 throw;
             }
-            loading = true;
-            ScheduleWaitingCheck();
         }
-        private static void RequirePreparedLaunchGuards(Platform_Multiplayer.MPLobby lobby)
+        private static void ValidateAdmissionScope(SavegameLoadPacket proposal, string path)
+        {
+            if (proposal == null || !ReferenceEquals(pending, proposal) || !ReferenceEquals(preparingDelivered, proposal) ||
+                !MultiplayerSavePreparation.State.CanDeliverSynchronously ||
+                owner?.activeLobby?.id.m_SteamID != proposal.Lobby || Roster(owner.activeLobby) != proposal.Roster ||
+                SteamMatchmaking.GetLobbyOwner(owner.activeLobby.id).m_SteamID != hostId ||
+                !string.Equals(Path.GetFullPath(path), localSavePath, StringComparison.OrdinalIgnoreCase) ||
+                (owner.activeLobby.isHost ? !released : !acknowledged))
+                throw new InvalidOperationException("Multiplayer save has no confirmed settings preparation.");
+            var header = MapFileManager.Instance.GetHeaderFromMpSaveFileName(Path.GetFileNameWithoutExtension(path));
+            if (!Matches(header, proposal)) throw new InvalidDataException("Local save no longer matches the prepared selection.");
+        }
+        private static void RequireUnchangedFingerprint(SavegameLoadPacket proposal)
+        {
+            if (!ReferenceEquals(pending, proposal)) throw new InvalidOperationException("Save preparation changed during admission.");
+            observedFingerprint = SavegameModSettings.CaptureHostFingerprint();
+            if (!ReferenceEquals(pending, proposal) || observedFingerprint != proposal.Fingerprint)
+                throw new InvalidOperationException("Multiplayer save settings changed before loading.");
+        }
+        private static void ValidatePreparedAdmission(SavegameLoadPacket proposal, string path)
+        {
+            ValidateAdmissionScope(proposal, path);
+            RequireUnchangedFingerprint(proposal);
+            if (!ModSettings.ModSettingsApplication.PrepareLaunch())
+                throw new InvalidOperationException("Multiplayer save configuration is still being applied.");
+            RequireUnchangedFingerprint(proposal);
+            if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localSavePath, out _, out string productionReason))
+                throw new InvalidOperationException(productionReason);
+            if (!ReferenceEquals(pending, proposal)) throw new InvalidOperationException("Save preparation changed during admission.");
+            RequirePreparedLaunchGuards(owner.activeLobby);
+            ValidateAdmissionScope(proposal, path);
+            // Compare this peer's own exact file; different peers' save bytes can differ.
+            if (HashLocalSave(localSavePath) != localSaveHash)
+                throw new InvalidDataException("Local save changed after readiness confirmation.");
+            RequireUnchangedFingerprint(proposal);
+        }
+        private static bool RequirePreparedLaunchGuards(Platform_Multiplayer.MPLobby lobby, bool allowWaiting = false)
         {
             // A previous Ready button does not admit a selected save: preparation can
             // apply different settings, and peer capability reports are not fingerprints.
             var decision = Lobby.LobbyLaunchGuards.EvaluatePreparedMultiplayerLoad(Humans(lobby).Length);
+            if (allowWaiting && decision.Waiting)
+            { waitingReason = decision.Reason; return false; }
             if (decision.Blocked) throw new InvalidOperationException(decision.Reason);
+            return true;
         }
         internal static bool CancelSelection()
         {
@@ -420,19 +541,24 @@ namespace APIShared
             // values fingerprint. After publication, retain admission until the
             // load completes; dialog cleanup must not revoke a committed load.
             if (released || loading) return false;
-            Abort("Save selection cancelled.", notify: true, showError: false);
+            Abort("Save selection cancelled.", notify: true, showError: false, endReason: MultiplayerSavePreparationEndReason.Cancelled);
             return true;
         }
-        private static void Abort(string reason, bool notify = true, bool showError = true, string phase = "preparation")
+        private static void Abort(string reason, bool notify = true, bool showError = true, string phase = "preparation",
+            string saveName = null, string logDetails = null,
+            MultiplayerSavePreparationEndReason endReason = MultiplayerSavePreparationEndReason.Rejected)
         {
+            string endedOperation = pending?.Token;
             var lobby = owner?.activeLobby ?? Platform_Multiplayer.Instance?.activeLobby;
             ulong lobbyId = pending?.Lobby ?? lobby?.id.m_SteamID ?? 0;
             bool isHost = attempt != null ? attemptHost : lobby?.isHost == true;
             string attemptId = attempt ?? LobbyReadinessSupport.NewAttemptId();
-            string comparison = " expected=" + (pending?.Fingerprint ?? "unavailable") +
-                " observed=" + (observedFingerprint ?? "unavailable");
-            if (phase == "timeout" && agreement != null)
+            string comparison = showError
+                ? SaveDetails(localSavePath ?? pending?.SaveName ?? saveName, localSaveHash, pending?.Fingerprint, observedFingerprint)
+                : null;
+            if (showError && phase == "timeout" && agreement != null)
                 comparison += " unconfirmed=" + string.Join(",", agreement.Unconfirmed);
+            if (showError && logDetails != null) comparison += "; " + logDetails;
             bool relayed = false;
             if (pending != null)
             {
@@ -461,9 +587,10 @@ namespace APIShared
                 rejectedNativeLobby = lobby;
                 rejectedNativePath = localSavePath;
             }
-            pending = null; agreement = null; record = null; owner = null;
+            pending = null; preparingDelivered = null; agreement = null; record = null; owner = null;
             localSavePath = localSaveHash = null; localRecords = null;
             acknowledged = released = loading = false;
+            nextExchangeCheck = 0;
             attempt = observedFingerprint = waitingReason = announcedWaiting = null;
             try
             {
@@ -474,16 +601,41 @@ namespace APIShared
             }
             finally
             {
-                if (showError) ShowBlocked(reason, lobbyId, isHost, attemptId, phase, notify && isHost, notify && !relayed, comparison);
-                else NativeApiLog.Debug(log, "SAVE_SETTINGS_PREPARATION_CANCELLED: " + reason);
+                // Terminal observers may immediately start a new selection. Every old
+                // attempt's diagnostic/UI side effect must precede that notification.
+                CompleteAbortPublication(endedOperation, endReason, reason, () => {
+                    if (showError) ShowBlocked(reason, lobbyId, isHost, attemptId, phase, notify && isHost, notify && !relayed, comparison);
+                    else NativeApiLog.Debug(log, "SAVE_SETTINGS_PREPARATION_CANCELLED: " + reason);
+                });
             }
         }
 
-        private static void ShowBlocked(string reason, Platform_Multiplayer.MPLobby lobby, string attemptId, string phase, bool broadcast) =>
-            ShowBlocked(reason, lobby.id.m_SteamID, lobby.isHost, attemptId, phase, broadcast, !broadcast);
+        private static void CompleteAbortPublication(string operation, MultiplayerSavePreparationEndReason endReason,
+            string reason, Action report)
+        {
+            try { report(); }
+            finally
+            {
+                if (operation != null) MultiplayerSavePreparation.State.End(operation, endReason, reason);
+            }
+        }
+
+        private static string SaveDetails(string path, string saveHash, string expectedSettings, string observedSettings)
+        {
+            // An invalid path can itself be the failure. Log only the final component without validating it.
+            string name = string.IsNullOrEmpty(path) ? "unavailable" :
+                path.Substring(Math.Max(path.LastIndexOf('\\'), path.LastIndexOf('/')) + 1);
+            return " saveName='" + name + "' localSaveSha256=" + (saveHash ?? "unavailable") +
+                " expectedSettingsFingerprint=" + (expectedSettings ?? "unavailable") +
+                " observedSettingsFingerprint=" + (observedSettings ?? "unavailable");
+        }
+
+        private static void ShowBlocked(string reason, Platform_Multiplayer.MPLobby lobby, string attemptId, string phase, bool broadcast, string saveName) =>
+            ShowBlocked(reason, lobby.id.m_SteamID, lobby.isHost, attemptId, phase, broadcast, !broadcast,
+                SaveDetails(saveName, null, null, null));
 
         private static void ShowBlocked(string reason, ulong lobbyId, bool isHost, string attemptId, string phase,
-            bool broadcast, bool showLocal, string comparison = "")
+            bool broadcast, bool showLocal, string comparison)
         {
             Lobby.LobbyLaunchStatus.ReportPreparationBlocked(log, reason, "SAVE_SETTINGS_LOAD_BLOCKED attempt=" + attemptId +
                 " role=" + (isHost ? "host" : "client") + " phase=" + phase + comparison, lobbyId, broadcast, showLocal);
@@ -505,15 +657,25 @@ namespace APIShared
         }
         internal static void FinishLoad()
         {
+            string endedOperation = pending?.Token;
+            nextExchangeCheck = 0;
             if (pending != null) retired.Add(pending.Token);
-            pending = null; agreement = null; record = null; owner = null;
+            pending = null; preparingDelivered = null; agreement = null; record = null; owner = null;
             attempt = observedFingerprint = waitingReason = announcedWaiting = null;
             rejectedNativeLobby = null; rejectedNativePath = null;
-            frameWork?.CancelPending();
-            frameWork?.SetContinuous(false);
-            localSavePath = localSaveHash = null; localRecords = null;
-            Economy.WorkerProductionAgreement.SetPreparedSavePath(null);
-            acknowledged = released = loading = false;
+            try
+            {
+                frameWork?.CancelPending();
+                frameWork?.SetContinuous(false);
+                localSavePath = localSaveHash = null; localRecords = null;
+                Economy.WorkerProductionAgreement.SetPreparedSavePath(null);
+                acknowledged = released = loading = false;
+            }
+            finally
+            {
+                if (endedOperation != null) MultiplayerSavePreparation.State.End(endedOperation,
+                    MultiplayerSavePreparationEndReason.ScopeFinished, null);
+            }
         }
     }
 }

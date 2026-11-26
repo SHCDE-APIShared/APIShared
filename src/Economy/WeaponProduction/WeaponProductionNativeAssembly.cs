@@ -8,13 +8,13 @@ namespace APIShared.Economy
     internal static partial class WeaponProductionNativeAssembly
     {
         internal static byte[] ExpectedStub(WeaponProductionNativeSite site, ulong image, ulong stub,
-            ulong enabled, ulong buildingDemand, ulong callback) =>
+            ulong enabled, ulong buildingDemand, ulong callback, ulong receiptAdapter = 0) =>
             Internal.NativeInlineStub.ExpectedStub(image + (uint)site.Rva, site.Bytes, site.Bytes.Length,
-                (assembler, original, back) => Generate(assembler, original, back, site, image, enabled, buildingDemand, callback),
+                (assembler, original, back) => Generate(assembler, original, back, site, image, enabled, buildingDemand, callback, receiptAdapter),
                 stub, WorkerProductionBonusNativeDefinition.BoundaryError);
 
         internal static void Generate(Assembler assembler, ReadOnlySpan<Instruction> original, ulong back,
-            WeaponProductionNativeSite site, ulong image, ulong enabled, ulong buildingDemand, ulong callback)
+            WeaponProductionNativeSite site, ulong image, ulong enabled, ulong buildingDemand, ulong callback, ulong receiptAdapter = 0)
         {
             if (callback == 0 || original.Length == 0 || back != image + (uint)site.Rva + (uint)site.Bytes.Length ||
                 original[original.Length - 1].NextIP != back)
@@ -57,7 +57,13 @@ namespace APIShared.Economy
             RestoreDemandRegisters(assembler);
 
             assembler.Label(ref finish);
-            WorkerProductionBonusNativeAssembly.Replay(assembler, original.Slice(prefixLength));
+            // Receipt observation follows recipe filtering on both the configured and
+            // vanilla-demand paths. Tanner's adjacent call belongs to its source owner.
+            if (site.Operation == WeaponProductionNativeOperation.Deposit && !site.FilterBeforeAdjacentCall)
+                ProductionGoodsReceivedNativeAssembly.ReplayDeposit(assembler, original.Slice(prefixLength), image,
+                    receiptAdapter);
+            else
+                WorkerProductionBonusNativeAssembly.Replay(assembler, original.Slice(prefixLength));
             assembler.AddUnrestrictedJmp(back);
         }
 

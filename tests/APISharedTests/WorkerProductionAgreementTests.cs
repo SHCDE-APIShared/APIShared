@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Reflection;
 using APIShared.Economy;
 using MessagePack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -46,6 +49,123 @@ namespace APISharedTests
             round.Report(12,"epoch",available);Assert.IsTrue(round.Resolve(available).Ready);
             var newer=new WorkerProductionAgreementDescriptor("native","rules","wire","sidecar",2,0,true,false,true,"saved");
             Assert.IsTrue(available.Matches(newer),"Different readable maxima are compatible when both read the required schema.");
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        public void RepublishedReceiptNotifiesWaitingMissionEvenIfStatusStaysReady()
+        {
+            const BindingFlags fields = BindingFlags.Static | BindingFlags.NonPublic;
+            var agreement = typeof(WorkerProductionAgreement);
+            var current = agreement.GetField("current", fields);
+            var rosterKey = agreement.GetField("rosterKey", fields);
+            var localDigest = agreement.GetField("localDigest", fields);
+            var approvedDigest = agreement.GetField("approvedDescriptorDigest", fields);
+            var setResult = agreement.GetMethod("SetResult", fields);
+            var stateFields = new[] { current, rosterKey, localDigest, approvedDigest };
+            var previous = Array.ConvertAll(stateFields, field => field.GetValue(null));
+            string digest = Ready().Digest();
+            string observed = null;
+            int notifications = 0;
+            void OnChanged()
+            {
+                observed = WorkerProductionAgreement.ApprovedDescriptorDigest;
+                notifications++;
+            }
+
+            WorkerProductionAgreement.Changed += OnChanged;
+            try
+            {
+                current.SetValue(null, new WorkerProductionAgreementResult(""));
+                rosterKey.SetValue(null, "authenticated-roster");
+                localDigest.SetValue(null, digest);
+                // RequestRefresh invalidates the receipt before the queued refresh runs.
+                approvedDigest.SetValue(null, "");
+
+                setResult.Invoke(null, new object[] { "", "" });
+                Assert.AreEqual(digest, observed);
+                Assert.AreEqual(1, notifications);
+
+                setResult.Invoke(null, new object[] { "", "" });
+                Assert.AreEqual(1, notifications, "An identical published receipt needs no second admission attempt.");
+
+                string newDigest = Ready(rules: "updated-rules").Digest();
+                localDigest.SetValue(null, newDigest);
+                setResult.Invoke(null, new object[] { "", "" });
+                Assert.AreEqual(newDigest, observed);
+                Assert.AreEqual(2, notifications, "A different approved digest is observable even while Ready.");
+            }
+            finally
+            {
+                WorkerProductionAgreement.Changed -= OnChanged;
+                for (int i = 0; i < stateFields.Length; i++) stateFields[i].SetValue(null, previous[i]);
+            }
+        }
+
+        [TestMethod]
+        public void RepeatedFailuresYieldBetweenAttemptsAndExpireExactlyOnce()
+        {
+            long now = 0;
+            int attempts = 0, timeouts = 0;
+            var timers = new Queue<ScheduledStep>();
+            var wait = new WorkerProductionAdmissionWait(() => now, (run, delay) =>
+            {
+                var step = new ScheduledStep(run, delay);
+                timers.Enqueue(step);
+                return step;
+            }, () => { attempts++; return true; }, () => timeouts++);
+            wait.Arm();
+            for (int seconds = 1; seconds <= WorkerProductionAdmissionWait.TimeoutSeconds; seconds++)
+            {
+                wait.Arm();
+                Assert.AreEqual(1, timers.Count);
+                var step = timers.Dequeue();
+                Assert.AreEqual(TimeSpan.FromSeconds(1), step.Delay);
+                now += Stopwatch.Frequency;
+                step.Run();
+                Assert.IsTrue(step.Disposed);
+                step.Run(); // Simulates an already delivered callback being encountered again.
+            }
+            Assert.AreEqual(29, attempts);
+            Assert.AreEqual(1, timeouts);
+            Assert.AreEqual(0, timers.Count);
+        }
+
+        [TestMethod]
+        public void RecoveryOrRetirementCancelsAnAlreadyEnqueuedCheck()
+        {
+            ScheduledStep scheduled = null;
+            WorkerProductionAdmissionWait wait = null;
+            int activations = 0;
+            long now = 0;
+            wait = new WorkerProductionAdmissionWait(() => now,
+                (run, delay) => scheduled = new ScheduledStep(run, delay),
+                () => { activations++; return false; }, () => Assert.Fail("A finished wait must not expire."));
+            wait.Arm();
+            var recovered = scheduled;
+            now += Stopwatch.Frequency;
+            recovered.Run(); recovered.Run();
+            Assert.AreEqual(1, activations);
+            Assert.AreSame(recovered, scheduled);
+
+            var retired = new WorkerProductionAdmissionWait(() => now,
+                (run, delay) => scheduled = new ScheduledStep(run, delay),
+                () => { Assert.Fail("A retired wait must not refresh the replacement mission."); return false; },
+                () => Assert.Fail("A retired wait must not terminate the replacement mission."));
+            retired.Arm();
+            retired.Cancel();
+            now += 31 * Stopwatch.Frequency;
+            Assert.IsTrue(scheduled.Disposed);
+            scheduled.Run();
+        }
+
+        private sealed class ScheduledStep : IDisposable
+        {
+            internal ScheduledStep(Action run, TimeSpan delay) { Run = run; Delay = delay; }
+            internal Action Run { get; }
+            internal TimeSpan Delay { get; }
+            internal bool Disposed { get; private set; }
+            public void Dispose() => Disposed = true;
         }
 
         [TestMethod]

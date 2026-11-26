@@ -110,6 +110,53 @@ namespace APIShared.Economy
             lock (engineMonitor) RefreshLocked();
         }
 
+        /// <summary>Creates a reusable query for a market base price per lot of five goods.</summary>
+        /// <param name="good">Native goods type, within the current native price table.</param>
+        /// <param name="direction">Buy or sell base-price column.</param>
+        /// <param name="isAIPlayer">Selects the cached AI helper projection.</param>
+        /// <remarks>Read with <see cref="ValueModifiers.TryGetStatus"/> on any thread outside a price
+        /// provider. The read may wait for the engine monitor and requires a successful reconciliation
+        /// of the requested cell in the current completed mission. It samples the shared table against
+        /// its last composed value even when the AI projection is selected. Inside a native AI helper,
+        /// a reentrant read can sample the helper's temporary table substitution. Trade totals and
+        /// caller-specific quantity arithmetic have their own contracts.</remarks>
+        public static ValueModifierStatusQuery CreateStatusQuery(eGoods good, MarketPriceDirection direction, bool isAIPlayer) =>
+            new MarketStatusQuery(good, direction, isAIPlayer);
+
+        private sealed class MarketStatusQuery : ValueModifierStatusQuery
+        {
+            private readonly eGoods good;
+            private readonly MarketPriceDirection direction;
+            private readonly bool ai;
+
+            internal MarketStatusQuery(eGoods good, MarketPriceDirection direction, bool ai)
+            { this.good = good; this.direction = direction; this.ai = ai; }
+
+            internal override bool TryRead(out ValueModifierStatus status, out string reason) =>
+                TryGetStatus(good, direction, ai, out status, out reason);
+        }
+
+        private static bool TryGetStatus(eGoods good, MarketPriceDirection direction, bool isAIPlayer,
+            out ValueModifierStatus status, out string reason)
+        {
+            status = null;
+            if (evaluating)
+            { reason = "A market-price provider cannot query a reconciliation in progress."; return false; }
+            if ((int)good < 0 || (int)good >= (int)eGoods.Count ||
+                (direction != MarketPriceDirection.Buy && direction != MarketPriceDirection.Sell))
+            { reason = "A valid native good and buy/sell direction are required."; return false; }
+            object gate = Volatile.Read(ref engineMonitor);
+            if (!Volatile.Read(ref initialized) || gate == null || !sessionActive)
+            { reason = "Market-price composition is unavailable outside an initialized completed mission."; return false; }
+            lock (gate)
+            {
+                if (!sessionActive)
+                { reason = "The market-price mission has ended."; return false; }
+                return Table.TryGetStatus((int)good, direction == MarketPriceDirection.Buy,
+                    isAIPlayer, out status, out reason);
+            }
+        }
+
         internal static void SetEnabled(MarketPriceModifierHandle handle, bool enabled)
         {
             if (evaluating) throw new InvalidOperationException("A market-price provider cannot change activation.");
@@ -199,13 +246,17 @@ namespace APIShared.Economy
         {
             if (!sessionActive) return;
             var selected = Volatile.Read(ref snapshot);
-            Table.Refresh((good, buying, ai, baseline, foreign) => Resolve(selected, good, buying, ai, baseline, foreign), Report);
+            Table.Refresh((good, buying, ai, baseline, foreign, trace) => Resolve(selected, good, buying, ai, baseline, foreign, trace), Report);
             contextualPrices = Table.HasContextualPrices;
         }
 
         internal static MarketPriceResolution Resolve(MarketPriceModifierHandle[] selected, int good, bool buying,
-            bool ai, int baseline, int? foreign)
+            bool ai, int baseline, int? foreign) => Resolve(selected, good, buying, ai, baseline, foreign, null);
+
+        internal static MarketPriceResolution Resolve(MarketPriceModifierHandle[] selected, int good, bool buying,
+            bool ai, int baseline, int? foreign, MarketPriceCompositionTrace trace)
         {
+            trace?.Begin(selected.Length);
             var values = new List<ValueModifierContribution>(selected.Length + 1);
             var context = new MarketPriceModifierContext((eGoods)good,
                 buying ? MarketPriceDirection.Buy : MarketPriceDirection.Sell, ai, baseline);
@@ -218,12 +269,14 @@ namespace APIShared.Economy
                     try
                     {
                         ValueModifierContribution value = item.Provider(context);
+                        trace?.Add(item, value, false);
                         if (value.Kind == ValueModifierKind.None) continue;
                         values.Add(value); effect = true;
                         after |= value.Kind == ValueModifierKind.Factor && value.Stage == ValueModifierStage.AfterFixedValue && value.Value != 1;
                     }
                     catch (Exception ex)
                     {
+                        trace?.Add(item, ValueModifierContribution.None, true);
                         if (FailureThrottle.ShouldReport(ref callbackFailures)) Report("Market-price provider " + item.Owner + "/" + item.Id + " failed: " + ex.Message);
                     }
                 }
@@ -231,17 +284,29 @@ namespace APIShared.Economy
             finally { evaluating = false; }
             // An unregistered direct writer has no comparable registration order. Preserve its
             // absolute cell as the final fixed value; only an explicit After factor may alter it.
-            if (foreign.HasValue)
-            {
-                if (!after) return new MarketPriceResolution(foreign.Value, false);
-                values.Add(ValueModifierContribution.FixedValue(foreign.Value));
-            }
-            if (!effect) return new MarketPriceResolution(foreign ?? baseline, false);
             // HUD 25-good buy preview multiplies the Int16 lot price by five;
             // sell uses division before multiplication: floor(base / 5) * 25.
             int maximum = buying ? short.MaxValue / 5 : (short.MaxValue / 25) * 5 + 4;
+            if (foreign.HasValue)
+            {
+                if (!after)
+                {
+                    var unchanged = new MarketPriceResolution(foreign.Value, false);
+                    trace?.Finish(baseline, foreign, unchanged, false, maximum);
+                    return unchanged;
+                }
+                values.Add(ValueModifierContribution.FixedValue(foreign.Value));
+            }
+            if (!effect)
+            {
+                var unchanged = new MarketPriceResolution(foreign ?? baseline, false);
+                trace?.Finish(baseline, foreign, unchanged, false, maximum);
+                return unchanged;
+            }
             int price = (int)ValueModifierCalculator.Calculate(baseline, values, 0, maximum);
-            return new MarketPriceResolution(price, true);
+            var result = new MarketPriceResolution(price, true);
+            trace?.Finish(baseline, foreign, result, true, maximum);
+            return result;
         }
 
         // Runs in the original-call slot, after all legacy Pre vetoes. The original native

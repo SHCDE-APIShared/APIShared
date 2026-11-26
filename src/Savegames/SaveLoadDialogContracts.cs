@@ -21,6 +21,9 @@ namespace APIShared.Savegames
     /// Exceptions from the original game action propagate after cleanup; contribution gate/preparation errors reject the attempt.</remarks>
     public sealed class SaveLoadDialogContext
     {
+        private bool preparing;
+        private string preparationRejection;
+
         internal SaveLoadDialogContext(long generation, Enums.RequesterTypes type)
         { Generation = generation; RequesterType = type; }
         /// <summary>Process-local identity; a replaced request cannot confirm the new request.</summary>
@@ -33,6 +36,34 @@ namespace APIShared.Savegames
         public FileHeader Header { get; internal set; }
         /// <summary>State private to this registration for this request.</summary>
         public object State { get; set; }
+
+        /// <summary>Rejects the current confirmation with a player-facing reason. Call synchronously
+        /// within this registration's <see cref="SaveLoadDialogCallbacks.Prepare"/> callback.</summary>
+        /// <remarks>The first reason wins. After the callback returns, the requester stops preparation,
+        /// runs attempt cleanup and shows the reason, keeping the request available for retry.</remarks>
+        /// <exception cref="InvalidOperationException">The preparation callback is not active.</exception>
+        /// <exception cref="ArgumentException">The reason is empty.</exception>
+        public void RejectPreparation(string reason)
+        {
+            if (!preparing) throw new InvalidOperationException("Save dialog preparation is not active.");
+            if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("A rejection reason is required.", nameof(reason));
+            if (preparationRejection == null) preparationRejection = reason;
+        }
+
+        internal string RunPreparation(Action<SaveLoadDialogContext> prepare)
+        {
+            preparing = true;
+            try
+            {
+                prepare(this);
+                return preparationRejection;
+            }
+            finally
+            {
+                preparing = false;
+                preparationRejection = null;
+            }
+        }
     }
 
     /// <summary>Contributions to the common requester. Delegates are copied when registered.</summary>
@@ -42,7 +73,8 @@ namespace APIShared.Savegames
         public Action<SaveLoadDialogContext> Opened { get; set; }
         /// <summary>Required gate when supplied. False or an exception rejects confirmation before any preparation.</summary>
         public Func<SaveLoadDialogContext, bool> Validate { get; set; }
-        /// <summary>Preparation after all gates passed. Exceptions reject confirmation and run attempt cleanup.</summary>
+        /// <summary>Preparation after all gates passed. Use <see cref="SaveLoadDialogContext.RejectPreparation"/>
+        /// for an expected rejection. Exceptions reject confirmation, are logged and run attempt cleanup.</summary>
         public Action<SaveLoadDialogContext> Prepare { get; set; }
         /// <summary>Runs in reverse order after each prepared attempt, including a partially throwing preparation.
         /// This releases temporary write decisions, not a successfully transferred mission.</summary>
