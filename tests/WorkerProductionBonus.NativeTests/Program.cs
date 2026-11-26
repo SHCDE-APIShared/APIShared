@@ -72,6 +72,10 @@ internal static partial class Program
                 TestHunterSites();
                 TestHunterOwnerGates();
                 TestHerdFlightGates();
+                TestCorpseLifetimeSites();
+                TestMapperAvailability();
+                TestChickenTarget();
+                TestSightBuildingDispatch();
                 TestWeaponProductionAdapters();
                 TestWeaponStoredDelivery();
                 TestProductionReceiptNative();

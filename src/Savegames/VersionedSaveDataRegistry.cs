@@ -44,6 +44,52 @@ namespace APIShared.Savegames
         private VersionedSaveLoadSource windowSource;
         private string windowFile;
         private long failures;
+        [ThreadStatic] private static AtomicSnapshot atomicSnapshot;
+
+        internal sealed class AtomicSnapshot
+        {
+            internal VersionedSaveDataRegistry Owner;
+            internal readonly Dictionary<string, byte[]> Records = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            internal readonly HashSet<string> Delivered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        internal bool RequiresAtomicWrite(VersionedSaveContext context)
+        {
+            Slot[] snapshot; lock (sync) snapshot = slots;
+            foreach (Slot slot in snapshot) if (slot.RequireAtomicWrite && slot.Writes(context)) return true;
+            return false;
+        }
+
+        // Caller owns the actual engine monitor. No registry lock surrounds consumer callbacks.
+        internal AtomicSnapshot BeginAtomicSave(VersionedSaveContext context)
+        {
+            if (atomicSnapshot != null) throw new InvalidOperationException("Nested atomic save capture.");
+            Slot[] snapshot; lock (sync) snapshot = slots;
+            var frozen = new AtomicSnapshot { Owner = this };
+            foreach (Slot slot in snapshot)
+            {
+                if (!slot.RequireAtomicWrite || !slot.Writes(context)) continue;
+                byte[] bytes = SaveCore(slot, context, true);
+                if (bytes == null || slot.Handle.LastWriteStatus != VersionedSaveWriteStatus.Written || slot.Handle.KeepsLoadedRecord)
+                    throw new InvalidDataException("Required fresh save capture failed: " + slot.Identifier);
+                frozen.Records.Add(slot.Identifier, bytes);
+            }
+            atomicSnapshot = frozen;
+            return frozen;
+        }
+
+        internal void EndAtomicSave(AtomicSnapshot frozen)
+        {
+            if (ReferenceEquals(atomicSnapshot, frozen)) atomicSnapshot = null;
+        }
+
+        internal static void RequireAtomicDelivered(AtomicSnapshot frozen)
+        {
+            if (frozen == null) return;
+            foreach (string identifier in frozen.Records.Keys)
+                if (!frozen.Delivered.Contains(identifier))
+                    throw new InvalidDataException("Required fresh archive record was omitted: " + identifier);
+        }
 
         internal VersionedSaveDataRegistry(Transport transport, Action<string> warning, Action<string> error)
         {
@@ -377,12 +423,20 @@ namespace APIShared.Savegames
             }
         }
 
-        private byte[] SaveCore(Slot slot, VersionedSaveContext context)
+        private byte[] SaveCore(Slot slot, VersionedSaveContext context, bool freezing = false)
         {
             if (!slot.Writes(context))
             {
                 slot.Handle.SetLastWrite(VersionedSaveWriteStatus.NotWritten);
                 return null;
+            }
+            if (slot.RequireAtomicWrite && !freezing)
+            {
+                AtomicSnapshot atomic = atomicSnapshot;
+                if (atomic == null || !ReferenceEquals(atomic.Owner, this) || !atomic.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
+                    throw new InvalidOperationException("Required record bypassed the protected atomic writer: " + slot.Identifier);
+                atomic.Delivered.Add(slot.Identifier);
+                return (byte[])frozenBytes.Clone();
             }
             byte[] loaded;
             VersionedSaveCriticalCapture frozen;
@@ -519,6 +573,7 @@ namespace APIShared.Savegames
                 Scope = registration.Scope;
                 Legacy = registration.LegacyReader;
                 SimulationRelevant = registration.SimulationRelevant;
+                RequireAtomicWrite = registration.RequireAtomicWrite;
                 Handle = new VersionedSaveDataHandle(Owner, Identifier);
             }
 
@@ -531,7 +586,7 @@ namespace APIShared.Savegames
             internal readonly Action<VersionedSaveLoad> Prepared;
             internal readonly VersionedSaveScope Scope;
             internal readonly VersionedSaveLegacyReader Legacy;
-            internal readonly bool SimulationRelevant;
+            internal readonly bool SimulationRelevant, RequireAtomicWrite;
             internal readonly VersionedSaveDataHandle Handle;
             // The save data identifier is the registration ID.
             internal static readonly Func<Slot, RegistrationKey> Key = slot => new RegistrationKey(slot.Owner, slot.Identifier);

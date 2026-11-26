@@ -55,6 +55,35 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        [DataRow(true, false)]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        public void RenderIsolatesUnformattableCallbackFailures(bool failBefore, bool originalThrows)
+        {
+            var trace = new List<string>();
+            var failure = new UnformattableCallbackException();
+            var bad = new VisibleMapRenderRegistration("bad", "case", 0,
+                _ => { trace.Add("bad+"); if (failBefore) throw failure; },
+                _ => { trace.Add("bad-"); if (!failBefore) throw failure; }) { Enabled = true };
+            var good = new VisibleMapRenderRegistration("good", "case", 0,
+                _ => trace.Add("good+"), _ => trace.Add("good-")) { Enabled = true };
+            var snapshot = failBefore ? new[] { bad, good } : new[] { good, bad };
+            var originalFailure = new InvalidOperationException("injected render failure");
+            void Render() => VisibleMapRenderEvents.Dispatch(snapshot, IntPtr.Zero, 0, 0, 0, 0, 0,
+                (map, l, r, t, b, z) => { trace.Add("original"); if (originalThrows) throw originalFailure; });
+
+            if (originalThrows)
+                Assert.AreSame(originalFailure, Assert.Throws<InvalidOperationException>(Render));
+            else
+                Render();
+
+            CollectionAssert.AreEqual(failBefore
+                ? new[] { "bad+", "good+", "original", "good-", "bad-" }
+                : new[] { "good+", "bad+", "original", "bad-", "good-" }, trace);
+            Assert.AreEqual(0, failure.FormatAttempts);
+        }
+
+        [TestMethod]
         public void ExecutedRenderBridgePreservesSixArgumentsAndDormantBypass()
         {
             int callbacks = 0, originals = 0;
