@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [switch]$Worker,
+    [switch]$GuardProbeOnly,
     [string]$GateToken
 )
 
@@ -19,7 +20,8 @@ $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
 if (-not $output.StartsWith($runnerTemp, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'OutputDirectory must be a fresh child of RUNNER_TEMP.'
 }
-$dotnet = (Get-Command dotnet.exe -CommandType Application -ErrorAction Stop).Source
+$dotnet = $null
+if (-not $GuardProbeOnly) { $dotnet = (Get-Command dotnet.exe -CommandType Application -ErrorAction Stop).Source }
 $sdkVersion = '10.0.404'
 $runtimeVersion = '10.0.15'
 $traceProvider = 'Microsoft-Windows-DotNETRuntime:432b0098:5,APIShared-CoreAllocationDiagnostics:ffffffffffffffff:5'
@@ -30,6 +32,15 @@ function Write-Json([string]$Path, [object]$Value) {
     $stream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
     try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
 }
+# Directory-enumeration lengths are observations only. A writer can keep NTFS
+# directory metadata stale until close. FileShare.Write also prevents .NET 10
+# from treating this freshly opened stream's Length as an immutable-file cache.
+function Get-OpenLength([string]$Path) {
+    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try { return [long]$stream.Length } finally { $stream.Dispose() }
+}
+
 function Get-Pin([string]$Path) {
     $file = Get-Item -LiteralPath $Path
     [ordered]@{ path = $file.FullName; bytes = $file.Length; sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -66,6 +77,29 @@ if ($Worker) {
     }
     $admission = Get-Content -LiteralPath $gate -Raw | ConvertFrom-Json
     if ($admission.token -cne $GateToken -or $admission.workerPid -ne $PID) { throw 'Worker admission differs.' }
+    if ($GuardProbeOnly) {
+        # This is only a passive size-guard fixture. It does not execute Core,
+        # dotnet, EventPipe or a trace decoder, and cannot qualify their behavior.
+        $path = Join-Path $output 'allocation.nettrace'
+        $block = [byte[]]::new(64KB)
+        $written = [long]0
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $held = [IO.FileStream]::new($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write,
+            ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        try {
+            Write-Json (Join-Path $output 'probe-writer-ready.json') @{ processId = $PID;
+                readerTestOnly = $true; chunkBytes = 64KB; maximumBytes = 4MB; maximumSeconds = 2 }
+            while ($written -lt 4MB -and $clock.Elapsed.TotalSeconds -lt 2) {
+                $held.Write($block, 0, $block.Length)
+                $held.Flush()
+                $written += $block.Length
+                Start-Sleep -Milliseconds 20
+            }
+        } finally { $held.Dispose() }
+        Write-Json (Join-Path $output 'probe-writer-completed.json') @{ writtenBytes = $written;
+            elapsedSeconds = $clock.Elapsed.TotalSeconds; reachedNormalEnd = $true }
+        exit 0 # Reaching here is NOT the expected stop-while-open qualification.
+    }
     $invocations = [Collections.Generic.List[object]]::new()
     $testExit = $null
     $reportExit = $null
@@ -149,6 +183,19 @@ if ($Worker) {
         $cohortNames = @('Core.Tests.dll', 'Core.Tests.pdb', 'Core.Tests.deps.json', 'Core.Tests.runtimeconfig.json')
         $binaryBefore = @($cohortNames | ForEach-Object { Get-Pin (Join-Path $coreDirectory $_) })
         Write-Json (Join-Path $output 'compiled-cohort-before.json') $binaryBefore
+        # Preserve exactly the four compiled public-source files before the test.
+        # This is evidence retention, not a dependency or runtime corpus copy.
+        $retainedDirectory = Join-Path $output 'compiled-cohort'
+        [void][IO.Directory]::CreateDirectory($retainedDirectory)
+        $retained = @()
+        foreach ($pin in $binaryBefore) {
+            $destination = Join-Path $retainedDirectory ([IO.Path]::GetFileName($pin.path))
+            [IO.File]::Copy($pin.path, $destination, $false)
+            $copy = Get-Pin $destination
+            if ($copy.bytes -ne $pin.bytes -or $copy.sha256 -cne $pin.sha256) { throw 'Retained compiled cohort differs from the actual pre-test bytes.' }
+            $retained += $copy
+        }
+        Write-Json (Join-Path $output 'compiled-cohort-retained.json') $retained
         $runtimeConfig = Get-Content -LiteralPath (Join-Path $coreDirectory 'Core.Tests.runtimeconfig.json') -Raw | ConvertFrom-Json
         if ($runtimeConfig.runtimeOptions.framework.version -cne $runtimeVersion -or $runtimeConfig.runtimeOptions.rollForward -cne 'Disable') {
             throw 'The test runtime configuration is not pinned to 10.0.15/Disable.'
@@ -243,7 +290,7 @@ if ($Worker) {
         }
         $validatedCohort = Get-Pin $cohortPath
         $trace = $tracePath
-        if (-not (Test-Path -LiteralPath $trace) -or (Get-Item -LiteralPath $trace).Length -gt 128MB) { throw 'The exact testhost trace is missing or over budget.' }
+        if (-not (Test-Path -LiteralPath $trace) -or (Get-OpenLength $trace) -gt 128MB) { throw 'The exact testhost trace is missing or over budget.' }
         $reportExit = Invoke-DotNet 'trace-report' @('exec', '--fx-version', $runtimeVersion, $tool,
             '--trace', $trace, '--cohort', $cohortPath, '--output', (Join-Path $output 'allocation-report.json'))
         if ($reportExit -ne 0) { throw 'Trace attribution is incomplete; preserve the original test result.' }
@@ -311,10 +358,12 @@ public sealed class CoreAllocationOwnedJob {
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetHandleInformation(IntPtr handle,out uint flags);
     IntPtr handle;
     static void Require(bool value) { if(!value) throw new Win32Exception(Marshal.GetLastWin32Error()); }
-    public CoreAllocationOwnedJob() {
+    public CoreAllocationOwnedJob(bool guardProbeOnly) {
         handle=CreateJobObjectW(IntPtr.Zero,null); if(handle==IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
         var limits=new Limits(); limits.Basic.Flags=0x2300; // kill on close + process/job commit limits
-        limits.ProcessMemory=new UIntPtr(2UL*1024*1024*1024); limits.JobMemory=new UIntPtr(3UL*1024*1024*1024);
+        limits.ProcessMemory=new UIntPtr(guardProbeOnly ? 384UL*1024*1024 : 2UL*1024*1024*1024);
+        limits.JobMemory=new UIntPtr(guardProbeOnly ? 512UL*1024*1024 : 3UL*1024*1024*1024);
+        if(guardProbeOnly) { limits.Basic.Flags |= 0x10; limits.Basic.Affinity=new UIntPtr(3UL); } // two logical processors only
         try { Require(SetInformationJobObject(handle,9,ref limits,Marshal.SizeOf<Limits>())); }
         catch { CloseHandle(handle); handle=IntPtr.Zero; throw; }
     }
@@ -332,19 +381,25 @@ public sealed class CoreAllocationOwnedJob {
 
 $job = $null; $child = $null; $raw = $null; $errorReason = $null
 $closed = $false; $empty = $false; $peaks = $null; $identity = $null
-$drain = [ordered]@{ attempted = $false; initial = $null; final = $null }
+$drain = [ordered]@{ attempted = $false; terminationSucceeded = $false; initial = $null; final = $null }
 $cleanupErrors = [Collections.Generic.List[object]]::new()
 $workerTerminal = [ordered]@{ signaled = $false; handleClosed = $false; handleInvalidated = $false }
 $started = [Diagnostics.Stopwatch]::StartNew()
 $stdoutStream = $null; $stderrStream = $null; $stdoutCopy = $null; $stderrCopy = $null
 $reportClock = $null
+$operationSeconds = if ($GuardProbeOnly) { 15 } else { 240 }
+$traceStopBytes = if ($GuardProbeOnly) { 512KB } else { 96MB }
+$maximumTraceBytes = if ($GuardProbeOnly) { 2MB } else { 128MB }
+$liveSizeSamples = [Collections.Generic.List[object]]::new()
+$thresholdObservedWhileAlive = $false
 try {
-    $job = [CoreAllocationOwnedJob]::new()
+    $job = [CoreAllocationOwnedJob]::new($GuardProbeOnly.IsPresent)
     $token = [Guid]::NewGuid().ToString('N')
     $start = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
     $start.UseShellExecute = $false; $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
     foreach ($argument in @('-NoProfile','-NonInteractive','-File',$PSCommandPath,'-OutputDirectory',$output,'-Worker','-GateToken',$token)) { $start.ArgumentList.Add($argument) }
+    if ($GuardProbeOnly) { $start.ArgumentList.Add('-GuardProbeOnly') }
     $start.WorkingDirectory = $output
     # Tracing is added only to the generated testhost settings, not inherited by
     # the owner, worker, compiler, CLI, or report process.
@@ -355,8 +410,8 @@ try {
     $start.Environment['DOTNET_ADD_GLOBAL_TOOLS_TO_PATH'] = 'false'
     $start.Environment['DOTNET_GENERATE_ASPNET_CERTIFICATE'] = 'false'
     $child = [Diagnostics.Process]::Start($start)
-    $stdoutStream = [IO.File]::Create((Join-Path $output 'worker.log'))
-    $stderrStream = [IO.File]::Create((Join-Path $output 'worker.stderr.log'))
+    $stdoutStream = [IO.FileStream]::new((Join-Path $output 'worker.log'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    $stderrStream = [IO.FileStream]::new((Join-Path $output 'worker.stderr.log'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
     $stdoutCopy = $child.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
     $stderrCopy = $child.StandardError.BaseStream.CopyToAsync($stderrStream)
     $job.Assign($child)
@@ -368,24 +423,50 @@ try {
         $traceBytes = [long]0; $logBytes = [long]0; $totalBytes = [long]0; $derivedBytes = [long]0
         $derivedRoot = Join-Path $output 'allocation-report.json.work'
         foreach ($file in $files) {
-            $totalBytes += $file.Length
-            if ($file.Extension -eq '.nettrace') { $traceBytes += $file.Length }
-            if ($file.Extension -eq '.log') { $logBytes += $file.Length }
-            if ($file.FullName.StartsWith($derivedRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { $derivedBytes += $file.Length }
+            $isTrace = $file.Extension -eq '.nettrace'
+            $isLog = $file.Extension -eq '.log'
+            $isDerived = $file.FullName.StartsWith($derivedRoot + '\', [StringComparison]::OrdinalIgnoreCase)
+            # Unknown critical reads throw to the owner's fail-closed cleanup. Never
+            # fall back to a directory length for a live trace, log or ETLX output.
+            $length = if ($isTrace -or $isLog -or $isDerived -or $file.Extension -eq '.etlx') {
+                Get-OpenLength $file.FullName
+            } else { [long]$file.Length }
+            $totalBytes += $length
+            if ($isTrace) {
+                $traceBytes += $length
+                $alive = -not $child.HasExited
+                if ($length -ge $traceStopBytes -and $alive) { $thresholdObservedWhileAlive = $true }
+                if ($liveSizeSamples.Count -lt 32) {
+                    $directoryLength = $null
+                    try { $directoryLength = [long]$file.Length } catch { }
+                    $liveSizeSamples.Add(@{ path = $file.Name; directoryBytes = $directoryLength;
+                        handleBytes = $length; elapsedSeconds = $started.Elapsed.TotalSeconds; workerAlive = $alive })
+                }
+            }
+            if ($isLog) { $logBytes += $length }
+            if ($isDerived) { $derivedBytes += $length }
         }
         if ($null -eq $reportClock -and (Test-Path -LiteralPath (Join-Path $output 'trace-report.started'))) { $reportClock = [Diagnostics.Stopwatch]::StartNew() }
-        if ($started.Elapsed.TotalSeconds -gt 240) { $errorReason = 'DIAGNOSTIC_DEADLINE' }
+        if ($started.Elapsed.TotalSeconds -gt $operationSeconds) { $errorReason = 'DIAGNOSTIC_DEADLINE' }
         elseif ($null -ne $reportClock -and $reportClock.Elapsed.TotalSeconds -gt 110) { $errorReason = 'TRACE_READER_DEADLINE' }
-        elseif ($traceBytes -ge 96MB) { $errorReason = 'TRACE_STOP_LIMIT' }
+        elseif ($traceBytes -ge $traceStopBytes) { $errorReason = 'TRACE_STOP_LIMIT' }
         elseif ($derivedBytes -gt 256MB) { $errorReason = 'DERIVED_TRACE_STOP_LIMIT' }
         elseif ($logBytes -gt 4MB) { $errorReason = 'LOG_STOP_LIMIT' }
         elseif ($totalBytes -gt 512MB -or $files.Count -gt 4096) { $errorReason = 'OWNED_OUTPUT_LIMIT' }
-        if ($null -ne $errorReason) { $job.Stop(); break }
+        if ($null -ne $errorReason) {
+            $drain.attempted = $true
+            $job.Stop()
+            $drain.terminationSucceeded = $true
+            break
+        }
     }
     if (-not $child.WaitForExit(1500)) { throw 'The exact worker is not terminal.' }
     $raw = $child.ExitCode
 }
-catch { if ($null -eq $errorReason) { $errorReason = 'OWNER_EXCEPTION: ' + $_.Exception.Message } }
+catch {
+    $cleanupErrors.Add(@{ stage = 'owner-operation'; message = $_.Exception.Message })
+    if ($null -eq $errorReason) { $errorReason = 'OWNER_EXCEPTION: ' + $_.Exception.Message }
+}
 finally {
     if ($null -ne $job) {
         try {
@@ -394,6 +475,7 @@ finally {
                 if ($null -eq $errorReason) { $errorReason = 'DESCENDANTS_AFTER_WORKER_EXIT' }
                 $drain.attempted = $true
                 $job.Stop()
+                $drain.terminationSucceeded = $true
                 $drainClock = [Diagnostics.Stopwatch]::StartNew()
                 do { $drain.final = $job.Active(); if ($drain.final -eq 0) { break }; Start-Sleep -Milliseconds 25 } while ($drainClock.Elapsed.TotalSeconds -lt 1.5)
                 $empty = $drain.final -eq 0
@@ -441,16 +523,21 @@ try {
         derivedBytes = [long]0; totalBytes = [long]0; reservedOwnerResultBytes = 4MB }
     $derivedRoot = Join-Path $output 'allocation-report.json.work'
     foreach ($file in $files) {
-        $finalBudget.totalBytes += $file.Length
-        if ($file.Extension -eq '.nettrace') { $finalBudget.traceBytes += $file.Length }
-        if ($file.Extension -eq '.log') { $finalBudget.logBytes += $file.Length }
-        if ($file.FullName.StartsWith($derivedRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { $finalBudget.derivedBytes += $file.Length }
+        $length = Get-OpenLength $file.FullName
+        $finalBudget.totalBytes += $length
+        if ($file.Extension -eq '.nettrace') { $finalBudget.traceBytes += $length }
+        if ($file.Extension -eq '.log') { $finalBudget.logBytes += $length }
+        if ($file.FullName.StartsWith($derivedRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { $finalBudget.derivedBytes += $length }
     }
-    if ($finalBudget.traceBytes -gt 128MB -or $finalBudget.logBytes -gt 4MB -or $finalBudget.derivedBytes -gt 256MB -or
+    if ($finalBudget.traceBytes -gt $maximumTraceBytes -or $finalBudget.logBytes -gt 4MB -or $finalBudget.derivedBytes -gt 256MB -or
         $finalBudget.totalBytes + $finalBudget.reservedOwnerResultBytes -gt 512MB -or $finalBudget.fileCount + 1 -gt 4096) {
         if ($null -eq $errorReason) { $errorReason = 'FINAL_OWNED_OUTPUT_LIMIT' }
     }
-} catch { if ($null -eq $errorReason) { $errorReason = 'FINAL_OWNED_OUTPUT_UNKNOWN: ' + $_.Exception.Message } }
+} catch {
+    $finalBudget = $null
+    $cleanupErrors.Add(@{ stage = 'final-owned-size'; message = $_.Exception.Message })
+    if ($null -eq $errorReason) { $errorReason = 'FINAL_OWNED_OUTPUT_UNKNOWN: ' + $_.Exception.Message }
+}
 $workerResult = $null
 try {
     $workerResultPath = Join-Path $output 'worker-result.json'
@@ -463,12 +550,33 @@ if ($null -ne $workerResult) {
         if ($null -eq $errorReason) { $errorReason = 'WORKER_RESULT_STATUS_UNKNOWN' }
     } elseif ($null -eq $errorReason) { $ownerStatus = $statusProperty.Value }
 }
+$guardProbeQualification = $null
+$finalElapsedSeconds = $started.Elapsed.TotalSeconds
+if ($GuardProbeOnly) {
+    $withinFinalBudget = $null -ne $finalBudget -and $finalBudget.traceBytes -le 2MB -and
+        $finalBudget.logBytes -le 4MB -and $finalBudget.derivedBytes -eq 0 -and
+        $finalBudget.totalBytes + $finalBudget.reservedOwnerResultBytes -le 512MB -and $finalBudget.fileCount + 1 -le 4096
+    $qualified = $errorReason -ceq 'TRACE_STOP_LIMIT' -and $raw -eq 1 -and $thresholdObservedWhileAlive -and
+        $drain.attempted -and $drain.terminationSucceeded -and
+        $drain.final -eq 0 -and $empty -and $closed -and
+        $workerTerminal.signaled -and $workerTerminal.handleClosed -and $workerTerminal.handleInvalidated -and
+        $cleanupErrors.Count -eq 0 -and $withinFinalBudget -and $finalElapsedSeconds -le 15 -and
+        $null -ne $peaks -and $peaks.Length -eq 2 -and $peaks[0] -le 384MB -and $peaks[1] -le 512MB
+    $guardProbeQualification = @{ passed = $qualified; expectedNegativeWorkerExit = 1;
+        thresholdObservedWhileWorkerAlive = $thresholdObservedWhileAlive;
+        elapsedSeconds = $finalElapsedSeconds; peaks = $peaks;
+        reader = 'fresh shared-open FileStream.Length'; samples = @($liveSizeSamples.ToArray());
+        scope = 'Owned size guard and cleanup only; no Core, SDK, EventPipe or allocation attribution exercised.' }
+}
 Write-Json (Join-Path $output 'owner-result.json') @{ schema = 'core-allocation-diagnostic-owner/1'; workerRawExit = $raw;
-    status = $ownerStatus; error = $errorReason; worker = $identity; elapsedSeconds = $started.Elapsed.TotalSeconds;
+    status = $ownerStatus; error = $errorReason; worker = $identity; elapsedSeconds = $finalElapsedSeconds;
     jobEmpty = $empty; jobClosedAndInvalidated = $closed; peaks = $peaks; drain = $drain;
     cleanupErrors = @($cleanupErrors.ToArray()); workerTerminal = $workerTerminal; finalBudget = $finalBudget; outcome = $workerResult;
-    limits = @{ processMiB = 2048; jobMiB = 3072; workerSeconds = 240; traceReaderSeconds = 110;
-        traceStopMiB = 96; maximumAcceptedTraceMiB = 128; derivedTraceMiB = 256; outputMiB = 512; logMiB = 4 };
-    productionFix = $false; normalCiChanged = $false }
+    liveSizeSamples = @($liveSizeSamples.ToArray()); guardProbeQualification = $guardProbeQualification;
+    limits = @{ processMiB = $(if ($GuardProbeOnly) { 384 } else { 2048 }); jobMiB = $(if ($GuardProbeOnly) { 512 } else { 3072 });
+        workerSeconds = $operationSeconds; traceReaderSeconds = 110; traceStopBytes = $traceStopBytes;
+        maximumAcceptedTraceBytes = $maximumTraceBytes; derivedTraceMiB = 256; outputMiB = 512; logMiB = 4;
+        guardProbeLogicalProcessors = $(if ($GuardProbeOnly) { 2 } else { $null }) };
+    guardProbeOnly = $GuardProbeOnly.IsPresent; productionFix = $false; normalCiChanged = $false }
 if ($null -ne $raw -and $raw -ne 0) { exit $raw }
 exit 2
