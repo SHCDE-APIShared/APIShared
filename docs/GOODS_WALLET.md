@@ -101,3 +101,5 @@ commit, changing funds, overflow, world replacement and restored/reset generatio
 Cecil checks the compiled critical section for one direct gold store and the known
 preallocated publication, whose body contains no calls or allocations. These
 fixtures do not verify UI feel, physical storage execution or live multiplayer.
+Gameplay status: not yet tested in an installed game, across save/load or in a
+multiplayer session.
