@@ -34,7 +34,8 @@ namespace APIShared
             // Register before setters run so a partially failed entry is rolled back.
             preparedEndpoints[id] = endpoint;
             preparedSnapshots[id] = snapshot.ToDictionary(x => x.Key, x => x.Value == null ? null : (byte[])x.Value.Clone(), StringComparer.Ordinal);
-            endpoint.System_EnterMissionPreset(snapshot, "Savegame", false);
+            using (ModSettingsMigration.PrepareMissionEntry(endpoint))
+                endpoint.System_EnterMissionPreset(snapshot, "Savegame", false);
             if (!endpoint.IsMissionPresetActive) throw new InvalidOperationException("Savegame preset did not become active.");
             foreach (var property in ModSettingsApplication.GetMissionHostProperties(endpoint))
             {
@@ -131,8 +132,10 @@ namespace APIShared
             {
                 // The fingerprint was checked after authenticated host sync.
                 // Capture all host values plus this client's own personal values.
-                var snapshot = ResolveStartupSnapshot(entry.Key, entry.Value, null,
-                    CaptureCompatibleHostSettings(), null);
+                // These live values have already been normalized by the host before the
+                // authenticated sync/fingerprint agreement. Do not migrate that raw source twice.
+                var snapshot = ResolveStartupSnapshotCore(entry.Key, entry.Value, null,
+                    CaptureCompatibleHostSettings(), null, false);
                 EnterPreparedPreset(entry.Key, entry.Value.Endpoint, snapshot);
             }
             preparedPath = Normalize(path);

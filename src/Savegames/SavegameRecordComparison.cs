@@ -76,7 +76,8 @@ namespace APIShared.Savegames
 
         /// <summary>Null when every declared record matches; otherwise an explanation naming the player,
         /// mod and record. Identifiers are compared ignoring case, as the Extender's archive names are.</summary>
-        internal static string Describe(IReadOnlyList<SavegameRecordDigest> host, IReadOnlyList<SavegameRecordDigest> peer, string peerName)
+        internal static string Describe(IReadOnlyList<SavegameRecordDigest> host, IReadOnlyList<SavegameRecordDigest> peer, string peerName,
+            List<string> logDetails = null)
         {
             var hostById = host.ToDictionary(x => x.Identifier, StringComparer.OrdinalIgnoreCase);
             var peerById = peer.ToDictionary(x => x.Identifier, StringComparer.OrdinalIgnoreCase);
@@ -96,7 +97,12 @@ namespace APIShared.Savegames
                     h.State == SavegameRecordState.Absent ? record + " is missing from the host's save but present in " + peerName + "'s" :
                     p.State == SavegameRecordState.Absent ? record + " is in the host's save but missing from " + peerName + "'s" :
                     record + " differs between the host's save and " + peerName + "'s";
-                if (difference != null) differences.Add(difference);
+                if (difference == null) continue;
+                differences.Add(difference);
+                if (logDetails != null)
+                    logDetails.Add("record='" + id + "' mod='" + (h ?? p).Owner + "' hostState=" + DescribeState(h) +
+                        " hostRecordSha256=" + DescribeHash(h) + " peerState=" + DescribeState(p) +
+                        " peerRecordSha256=" + DescribeHash(p));
             }
             if (differences.Count == 0) return null;
             var text = new StringBuilder("Saved simulation data differs between players, so loading would desynchronize the game: ");
@@ -106,5 +112,10 @@ namespace APIShared.Savegames
                 " if that is the case, report this to the mod's author.");
             return text.ToString();
         }
+
+        private static string DescribeState(SavegameRecordDigest digest) => digest == null ? "Undeclared" : digest.State.ToString();
+
+        private static string DescribeHash(SavegameRecordDigest digest) =>
+            digest?.State == SavegameRecordState.Present ? Sha256Hex.Format(digest.Hash) : "unavailable";
     }
 }

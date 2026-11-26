@@ -36,6 +36,15 @@ namespace APIShared.Units.AiMilitary.Orders
             if (CanObserve(worldGeneration, group) && rawOriginalResult != 0)
             { if (order.Kind == AiOrderKind.Unknown) orders.Remove(group); else orders[group] = order; }
         }
+        // APIShared's own initial order for the first member of an empty group. Valid while every
+        // group command is observed: 11B520 move, 11E960 targeted (incl. 199C70) and 122B40 strategic
+        // (audit FBCB9319: harassment 3E200 and siege dispatch only command through these), and
+        // foreign single-unit routes (196280) invalidate the group. Never overwrites an observation.
+        internal void RecordAdmissionOrder(long worldGeneration, AiNativeGroup group, AiCurrentOrder order)
+        {
+            if (CanObserve(worldGeneration, group) && order.Kind != AiOrderKind.Unknown && !orders.ContainsKey(group))
+                orders[group] = order;
+        }
         internal void ObserveStrategic(long worldGeneration, AiNativeGroup group, int action, long rawOriginalResult)
         {
             if (!CanObserve(worldGeneration, group) || rawOriginalResult == 0) return;

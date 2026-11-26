@@ -61,6 +61,25 @@ if($CacheOnly){exit 0}
 foreach ($name in @('SHCDE_BRANCH_SOURCE_ROOT','SHCDE_BRANCH_PINNED')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('build-choice-' + [guid]::NewGuid().ToString('N').Substring(0,8))
+# Removes only this run's fixture; links are deleted, never followed.
+function Remove-OwnFixture {
+    $full = [IO.Path]::GetFullPath($fixture).TrimEnd('\','/')
+    $prefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/') + '\'
+    if (-not $full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -cnotmatch '^build-choice-[0-9a-f]{8}$') { throw 'Unsafe build-choice fixture cleanup path.' }
+    if (-not [IO.Directory]::Exists($full)) { return }
+    if ([IO.File]::GetAttributes($full) -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked build-choice fixture root.' }
+    function Remove-Tree([IO.DirectoryInfo]$Directory) {
+        foreach ($entry in $Directory.GetFileSystemInfos()) {
+            if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                if ($entry -is [IO.DirectoryInfo]) { [IO.Directory]::Delete($entry.FullName, $false) } else { [IO.File]::Delete($entry.FullName) }
+            } elseif ($entry -is [IO.DirectoryInfo]) { Remove-Tree $entry }
+            else { $entry.IsReadOnly = $false; $entry.Delete() }
+        }
+        $Directory.Delete()
+    }
+    Remove-Tree ([IO.DirectoryInfo]::new($full))
+}
+try {
 [void][IO.Directory]::CreateDirectory((Join-Path $fixture 'tools/BranchBuild'))
 . (Join-Path $root 'tools/BranchBuild/BranchBuild.Common.ps1')
 Copy-Item -LiteralPath (Join-Path $root 'build.bat') -Destination $fixture
@@ -155,4 +174,4 @@ foreach ($mode in @('full','quick','none')) {
     if ($code -eq 0 -or ($output -join "`n") -notmatch 'FIXTURE_TOOLCHAIN_BOUNDARY') { throw 'Production BAT did not reach the production driver with its test selection.' }
 }
 Write-Host 'PASS: independent source/installation choices, automatic default, conflicts and menus; no real builds/installations.'
-Write-Host "Fixture retained: $fixture"
+} finally { Remove-OwnFixture }

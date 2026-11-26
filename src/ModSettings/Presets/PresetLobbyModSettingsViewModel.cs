@@ -146,6 +146,8 @@ namespace APIShared.ModSettings
             ModSettingsSearchCatalog.SourceChanged += OnModSettingsSearchSourceChanged;
             System_OpenPresetLoadCommand = new RelayCommand(OpenPresetLoad);
             System_ConfirmPresetLoadCommand = new RelayCommand(ConfirmPresetLoad);
+            System_SharePresetCommand = new RelayCommand(ShareSelectedPreset);
+            System_OpenPresetFolderCommand = new RelayCommand(OpenPresetFolder);
             System_DeletePresetCommand = new RelayCommand(DeleteSelectedPreset);
             System_CancelPresetLoadCommand = new RelayCommand(CancelPresetLoad);
             System_OpenPresetSaveCommand = new RelayCommand(OpenPresetSave);
@@ -296,6 +298,7 @@ namespace APIShared.ModSettings
             ModSettingsApplication.Register(id, this, assemblyPath);
 #if !API_SHARED_PRESET_TESTS
             ModSettingsWorkingSourceRegistry.SourcesChanged += RebuildSettingsSources;
+            PresetShareService.Changed += RaisePresetShareAvailability;
 #endif
         }
 

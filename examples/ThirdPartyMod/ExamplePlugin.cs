@@ -54,6 +54,7 @@ namespace ThirdPartyMod
                 {
                     PathfindingReplacementExample.Inspect(Log);
                     NativeSiteExample.Inspect(Log);
+                    UnitIdentityExample.Register(client, Log);
                     if (client.TryGetUnitHudPresentation(out var hud, out var diagnostic))
                         HudExample.Register(hud, Log);
                     else Log(diagnostic.Reason);

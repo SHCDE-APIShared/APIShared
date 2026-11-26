@@ -96,6 +96,10 @@ namespace APIShared.Audio
         internal static void Play(SFXManager self, int channel, string path, float volume,
             bool ignoreMuting, bool ignorePause, EngineInterface.PlayState state)
         {
+            // A failed copy-hook rebuild can leave an already accepted token unbound.
+            // Restore its file even while dormant, without attributing it to an older state binding.
+            if (UnitVoiceTransport.TryRecoverOriginalPath(path, out string recovered))
+            { self.playSpeech(channel, recovered, volume, ignoreMuting, ignorePause); return; }
             // Do not allocate a closure or touch live game state on dormant or recursive paths.
             if (!ManagedReady || !UnitVoiceEvents.Demand || UnitVoiceEvents.InCallback ||
                 !UnityMainThreadDispatch.IsMainThread || ExecutionContext.IsFlowSuppressed() ||
