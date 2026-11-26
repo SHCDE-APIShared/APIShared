@@ -18,7 +18,7 @@ namespace APIShared.Workshop
         Ready, /// <summary>A Steam request is in flight.</summary>
         Submitted, /// <summary>The remote operation completed.</summary>
         Succeeded, /// <summary>The diagnostic explains the failed step.</summary>
-        Failed, /// <summary>The updater awaits game exit; inspect its journal and receipt after restart.</summary>
+        Failed, /// <summary>Staged; APIShared's preloader applies it at the next game start. Inspect the receipt after that start.</summary>
         AwaitingRestart }
 
     /// <summary>A delivered immutable file. Path is relative to the game root, uses forward slashes and is restricted to declared plugin folders.</summary>
@@ -114,6 +114,8 @@ namespace APIShared.Workshop
         internal Exception DiagnosticError;
         internal WorkshopReceipt Receipt;
         internal string ManifestHash;
+        // Name of the external mod manager that took this item over (WorkshopManagerPolicy), or null.
+        internal string ManagedBy;
         /// <summary>Steam-issued item identity; zero or empty means unavailable.</summary>
         public ulong WorkshopId { get; internal set; }
         /// <summary>Human-readable item or upload title.</summary>
@@ -138,7 +140,6 @@ namespace APIShared.Workshop
         internal string Owner, GameRoot, Source, ManifestHash, ReceiptHash;
         internal WorkshopReceipt Previous;
         internal WorkshopPackage Package;
-        internal IReadOnlyDictionary<string, string> TargetHashes;
         internal WorkshopInstallPlan() { }
         /// <summary>Unique local operation identity used for snapshots, transactions and diagnostics.</summary>
         public string OperationId { get; internal set; }

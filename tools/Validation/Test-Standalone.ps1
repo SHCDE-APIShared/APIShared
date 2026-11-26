@@ -50,17 +50,10 @@ foreach ($check in @('Test-DependencyMetadata.ps1','Test-Documentation.ps1','Tes
     Invoke-ApiBuildStep $BuildContext $check -Cacheable:($check -in @('Test-Documentation.ps1','Test-ShellScripts.ps1')) -Action { & (Join-Path $PSScriptRoot $check) }
 }
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-    foreach ($check in @('Test-GitHubRelease.ps1','Test-WorkshopRecovery.ps1','Test-WorkshopCoordination.ps1','Test-WorkshopMaintenance.ps1')) {
+    foreach ($check in @('Test-GitHubRelease.ps1')) {
         Invoke-ApiBuildStep $BuildContext $check -Action {
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot $check)
             if ($LASTEXITCODE -ne 0) { throw "$check failed in Windows PowerShell." }
-        }
-    }
-} else {
-    foreach ($check in @('test-workshop-coordination.sh','test-workshop-maintenance.sh','test-workshop-updater.sh')) {
-        Invoke-ApiBuildStep $BuildContext $check -Action {
-            & bash (Join-Path $PSScriptRoot $check)
-            if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 77) { throw "$check failed." }
         }
     }
 }

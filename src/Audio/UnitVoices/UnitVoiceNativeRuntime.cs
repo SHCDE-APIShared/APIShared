@@ -182,6 +182,8 @@ namespace APIShared.Audio
             entry.Hook = (NativeDetour<NativeCall>)NativeContract.Backend(target.FunctionLength, NativeStartupPatchWindow.SuspendThreads).CreateDetour(in request);
             UnitVoiceNativeContract.ValidateHook(entry.Hook, target, request.TargetAddress);
             entry.Bridge.Validate(entry.Hook);
+            // A foreign patch inside this entry's prologue retires only this unpublished candidate.
+            NativeForeignPatchGuard.RequireUnpatched(entry.Hook, Group(entry));
             entry.Prepared = true;
         }
 
@@ -192,6 +194,7 @@ namespace APIShared.Audio
             UnitVoiceNativeContract.ValidateHook(entry.Hook, entry.Target, moduleBase + (uint)entry.Target.Rva);
             entry.Bridge.Validate(entry.Hook);
             if (!entry.Hook.IsInstalled) throw new InvalidOperationException("Unit voice hook publication incomplete.");
+            NativeForeignPatchGuard.Watch(entry.Hook, Group(entry));
             entry.Ready = true;
         }
 

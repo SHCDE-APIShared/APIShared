@@ -187,6 +187,7 @@ namespace APIShared.ModSettings
 
         public IReadOnlyList<PublishedModSettingsPreset> PublishedPresets => publishedPresets;
         public string TargetGuid => targetGuid;
+        internal string ModName => modName;
         public bool HasPersistentSettings => persistedProperties.Length != 0;
 
         public string GetStatusText(

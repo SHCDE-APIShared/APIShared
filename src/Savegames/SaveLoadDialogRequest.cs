@@ -30,6 +30,7 @@ namespace APIShared.Savegames
         private bool busy, closed;
         private SaveLoadDialogOutcome? pendingOutcome;
         internal bool IsClosed => closed;
+        internal string PreparationRejection { get; private set; }
         internal SaveLoadDialogRequest(long generation, Enums.RequesterTypes type, IEnumerable<Entry> entries, Action<Exception> report)
         {
             this.report = report;
@@ -49,6 +50,7 @@ namespace APIShared.Savegames
         {
             if (busy || closed) return false;
             busy = true;
+            PreparationRejection = null;
             var attempted = new List<Participant>();
             bool completed = false, originalFailed = false;
             try
@@ -67,8 +69,11 @@ namespace APIShared.Savegames
                 foreach (var p in participants)
                 {
                     attempted.Add(p);
-                    p.Entry.Callbacks.Prepare?.Invoke(p.Context);
+                    var preparation = p.Entry.Callbacks.Prepare;
+                    if (preparation != null)
+                        PreparationRejection = p.Context.RunPreparation(preparation);
                     if (closed) return false;
+                    if (PreparationRejection != null) return false;
                 }
                 if (!prepare()) return false;
                 if (closed) return false;

@@ -37,6 +37,7 @@ namespace APIShared.ModSettings
         public void ApplyWorkingSnapshot(Dictionary<string, byte[]> snapshot, bool writeLocalStorage = true)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            snapshot = MigrateStoredSelection(snapshot);
             bool mission = owner.IsMissionPresetSelected, host = owner.IsLocalHost;
             if (mission && !owner.MissionPresetEditable) throw new InvalidOperationException("Mission settings are not currently editable.");
             var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
@@ -137,6 +138,7 @@ namespace APIShared.ModSettings
             if (!owner.IsMissionPresetSelected || !owner.MissionPresetEditable)
                 throw new InvalidOperationException("Mission settings are not currently editable.");
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            snapshot = MigrateStoredSelection(snapshot);
             Dictionary<string, byte[]> merged = Clone(missionPreset ?? defaults);
             bool host = owner.IsLocalHost;
             foreach (KeyValuePair<string, byte[]> entry in snapshot)
@@ -160,41 +162,8 @@ namespace APIShared.ModSettings
             if (preset == null)
                 throw new ArgumentNullException(nameof(preset));
 
-            Dictionary<string, byte[]> playerPreset = owner.IsMissionPresetSelected
-                ? Clone(preset1 ?? defaults)
-                : CaptureCurrentSettings();
-            var prepared = new Dictionary<PresetPropertyAccessor, byte[]>();
             bool host = owner.IsLocalHost;
-            foreach (KeyValuePair<string, PublishedPresetSetting> entry in preset.Settings)
-            {
-                if (owner.IsRetiredPresetProperty(entry.Key)) continue;
-                PresetPropertyAccessor property = persistedPropertiesByName[entry.Key];
-                if (IsHostProperty(property) && !host)
-                    continue;
-
-                byte[] bytes;
-                switch (entry.Value.Mode)
-                {
-                    case PublishedPresetValueMode.ModDefault:
-                        if (!defaults.TryGetValue(property.Name, out bytes))
-                            throw new InvalidDataException($"Code default for [{property.Name}] is unavailable.");
-                        break;
-                    case PublishedPresetValueMode.Player:
-                        if (!playerPreset.TryGetValue(property.Name, out bytes) &&
-                            !defaults.TryGetValue(property.Name, out bytes))
-                        {
-                            throw new InvalidDataException($"Player value for [{property.Name}] is unavailable.");
-                        }
-                        break;
-                    case PublishedPresetValueMode.Fixed:
-                        object converted = ModSettingsPresetJson.ConvertValue(entry.Value.Value, property.PropertyType);
-                        bytes = MessagePackSerializer.Serialize(property.PropertyType, converted);
-                        break;
-                    default:
-                        throw new InvalidDataException($"Unsupported published preset mode for [{property.Name}].");
-                }
-                prepared[property] = (byte[])bytes.Clone();
-            }
+            var prepared = MaterializePublishedSelection(preset, host);
 
             // The stored copy reads the live values back, so a substituted default or a
             // rejected value is recorded as it now is; the preset then counts as modified.
@@ -227,6 +196,56 @@ namespace APIShared.ModSettings
                 $"source={SanitizeLogValue(ModSettingsApplication.ContextId)}, preset={SanitizeLogValue(preset.StableId)}, " +
                 $"modified={(owner.IsMissionPresetSelected ? missionPresetDirty : presetDirty)}, " +
                 $"persistence={(owner.IsMissionPresetSelected ? "temporary" : "personal")}.");
+        }
+
+        // Both applying a preset and preparing its overwrite dialog must see the derived
+        // properties. Resolving only in Apply would later save those properties as Player.
+        private Dictionary<PresetPropertyAccessor, byte[]> MaterializePublishedSelection(PublishedModSettingsPreset preset, bool host)
+        {
+            Dictionary<string, byte[]> playerPreset = owner.IsMissionPresetSelected
+                ? Clone(preset1 ?? defaults)
+                : CaptureCurrentSettings();
+            var selected = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, PublishedPresetSetting> entry in preset.Settings)
+            {
+                if (owner.IsRetiredPresetProperty(entry.Key)) continue;
+                PresetPropertyAccessor property = persistedPropertiesByName[entry.Key];
+                if (IsHostProperty(property) && !host)
+                    continue;
+
+                byte[] bytes;
+                switch (entry.Value.Mode)
+                {
+                    case PublishedPresetValueMode.ModDefault:
+                        if (!defaults.TryGetValue(property.Name, out bytes))
+                            throw new InvalidDataException($"Code default for [{property.Name}] is unavailable.");
+                        break;
+                    case PublishedPresetValueMode.Player:
+                        if (!playerPreset.TryGetValue(property.Name, out bytes) &&
+                            !defaults.TryGetValue(property.Name, out bytes))
+                        {
+                            throw new InvalidDataException($"Player value for [{property.Name}] is unavailable.");
+                        }
+                        break;
+                    case PublishedPresetValueMode.Fixed:
+                        object converted = ModSettingsPresetJson.ConvertValue(entry.Value.Value, property.PropertyType);
+                        bytes = MessagePackSerializer.Serialize(property.PropertyType, converted);
+                        break;
+                    default:
+                        throw new InvalidDataException($"Unsupported published preset mode for [{property.Name}].");
+                }
+                selected[property.Name] = bytes == null ? null : (byte[])bytes.Clone();
+            }
+            return MigrateStoredSelection(selected).ToDictionary(entry => persistedPropertiesByName[entry.Key], entry => entry.Value);
+        }
+
+        internal Dictionary<string, PublishedPresetValueMode> GetPresetSaveModes(PublishedModSettingsPreset preset)
+        {
+            var modes = preset.Settings.ToDictionary(entry => entry.Key, entry => entry.Value.Mode, StringComparer.Ordinal);
+            if (owner.SettingsTarget is IModSettingsStoredSnapshotMigration)
+                foreach (var property in MaterializePublishedSelection(preset, host: true).Keys)
+                    if (!modes.ContainsKey(property.Name)) modes[property.Name] = PublishedPresetValueMode.Fixed;
+            return modes;
         }
 
         private static string SanitizeLogValue(string value) =>
